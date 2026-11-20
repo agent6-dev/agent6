@@ -25,7 +25,7 @@ from agent6 import child_records, directive, kinds
 from agent6.app import children, finalize
 from agent6.config import Config
 from agent6.graph import curator, models
-from agent6.harness import loop, operator_bridge, parallel_join, provider_call, run_chain
+from agent6.harness import loop, operator_bridge, parallel_merge, provider_call, run_chain
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import results as tools_results
@@ -495,8 +495,8 @@ def test_two_tasks_merge_in_the_order_written_and_stamp_their_nodes(tmp_path: pa
     # The steer's answer says what started; each child's end and each task's merge follow.
     (started,) = [t for t in texts if t.startswith("[parallel] started")]
     assert started.splitlines() == [
-        parallel_join.started_text(["run-abc-p1-l1"]),
-        parallel_join.started_text(["run-abc-p2-l1"]),
+        parallel_merge.started_text(["run-abc-p1-l1"]),
+        parallel_merge.started_text(["run-abc-p2-l1"]),
     ]
     ends = [t for t in texts if t.startswith("[parallel] child")]
     assert ends == [

@@ -34,7 +34,7 @@ from agent6.harness import (
     loop_steer,
     metric_rules,
     operator_bridge,
-    parallel_join,
+    parallel_merge,
     provider_call,
     quiet_turns,
     run_chain,
@@ -7888,7 +7888,7 @@ def test_dispatch_returns_what_started_and_settle_tells_the_rest(tmp_path: pathl
         conversation, 3, _state(), [directive.Segment(spec="", task="consult")], source="model"
     )
     assert started == child_records.Started(
-        ("run-p1-l1",), parallel_join.started_text(["run-p1-l1"]), ("run-p1",)
+        ("run-p1-l1",), parallel_merge.started_text(["run-p1-l1"]), ("run-p1",)
     )
     assert len(conversation.messages) == before
     dispatched = [e for e in ev.events if e["type"] == "parallel.dispatched"]

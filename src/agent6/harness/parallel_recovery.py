@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, token_usage
-from agent6.harness import parallel_dispatch, parallel_join
+from agent6.harness import parallel_dispatch, parallel_merge
 from agent6.sessions import child_dispatch
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
@@ -181,7 +181,7 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
         dispatcher.open[record.identity] = reopened(record, results)
     dispatcher.settle(conversation, turn)
     stopped = [
-        f"  - {child.session_id}: {parallel_join.join_words(parallel_join.join_of(child))}"
+        f"  - {child.session_id}: {parallel_merge.join_words(parallel_merge.join_of(child))}"
         for record in child_dispatch.read_records(dispatcher.session_dir)
         for child in record.children
         if record.source != "panel" and child.join is not None and child.join.status == "stopped"

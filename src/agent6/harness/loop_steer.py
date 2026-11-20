@@ -15,7 +15,7 @@ from agent6.harness import (
     loop_snapshot,
     loop_state,
     metric_rules,
-    parallel_join,
+    parallel_merge,
     parallel_recovery,
 )
 from agent6.sessions import child_dispatch, journal
@@ -206,7 +206,7 @@ def ranked_opening(
             return asked
     groups = [harness.parallel.joins(group) for group in started.groups]
     missing = len(groups) != len(harness.opening)
-    summaries = [parallel_join.rank_summary(group) for group in groups if group]
+    summaries = [parallel_merge.rank_summary(group) for group in groups if group]
     if missing:
         summaries.insert(0, started.message)
     summary = "\n".join(summaries) or started.message
@@ -215,7 +215,7 @@ def ranked_opening(
     failed = [
         status
         for status, group in zip(statuses, groups, strict=True)
-        if parallel_join.segment_stamp(group)[0] != "passed"
+        if parallel_merge.segment_stamp(group)[0] != "passed"
     ]
     if missing or failed:
         spent = harness.budget is not None and harness.budget.is_exhausted()

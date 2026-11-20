@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
-from agent6.harness import child_continue, child_merge, operator_bridge, parallel_join
+from agent6.harness import child_continue, child_merge, operator_bridge, parallel_merge
 from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
@@ -56,7 +56,7 @@ def standing(
         return "running"
     res = dispatcher.result_of(task.record, started)
     if res.ok and res.stopped_by:
-        return parallel_join.join_words(parallel_join.stopped_join(res))
+        return parallel_merge.join_words(parallel_merge.stopped_join(res))
     return "being ranked" if task.judging is not None and res.ok else "ended, task pending"
 
 
@@ -115,7 +115,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             sid = child.session_id
             state = open_now.get(sid, "ended, task pending")
             if child.join is not None:
-                state = parallel_join.join_words(parallel_join.join_of(child))
+                state = parallel_merge.join_words(parallel_merge.join_of(child))
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
             # A wait has something to wait for: the child itself, or the judges ranking it.
             running = state in ("starting", "running", "in review", "stopping", "being ranked")

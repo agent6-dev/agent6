@@ -6,7 +6,7 @@ import pathlib
 from typing import TYPE_CHECKING
 
 from agent6 import child_records
-from agent6.harness import parallel_join
+from agent6.harness import parallel_merge
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import tool_errors
 from agent6.vcs.git import read as git_read
@@ -106,10 +106,10 @@ def settle(
                     child = child.model_copy(update={"join": outcome})
                 record = record.with_child(child)
                 dispatcher.write(record)
-            parallel_join.stamp_segment_node(
+            parallel_merge.stamp_segment_node(
                 dispatcher.curator,
                 record.node_id,
-                [parallel_join.join_of(c) for c in record.children],
+                [parallel_merge.join_of(c) for c in record.children],
                 log=dispatcher.log,
             )
             dispatcher.emit_graph_snapshot()
@@ -123,8 +123,8 @@ def settle(
                     detail=outcome.detail,
                 )
             )
-            result = parallel_join.join_of(child.model_copy(update={"join": outcome}))
-            conversation.notice(parallel_join.summary_text(record.identity, [result]))
+            result = parallel_merge.join_of(child.model_copy(update={"join": outcome}))
+            conversation.notice(parallel_merge.summary_text(record.identity, [result]))
             record = record.with_child(
                 child.model_copy(
                     update={"merge_request": asked.model_copy(update={"delivered": True})}

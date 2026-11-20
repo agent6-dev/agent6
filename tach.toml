@@ -182,7 +182,7 @@ depends_on = [
 # The package re-exports prompt_preview; it uses dag_focus, prompt_blocks,
 # repo_context and toolset within this boundary.
 # parallel_dispatch shares one executor and budget reservation path for work and panels.
-# parallel_join owns merge/DAG projections; child_repo retains descendant session records.
+# parallel_merge owns merge/DAG projections; child_repo retains descendant session records.
 path = "agent6.harness"
 depends_on = [
   "agent6.budget",  # loop harness needs BudgetExceededError

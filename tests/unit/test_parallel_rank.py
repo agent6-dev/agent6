@@ -24,7 +24,7 @@ from agent6.harness import (
     loop_conversation,
     loop_state,
     parallel_dispatch,
-    parallel_join,
+    parallel_merge,
     parallel_rank,
     parallel_recovery,
     run_chain,
@@ -657,13 +657,13 @@ def test_a_task_with_one_child_merges_without_a_ranking(
 def test_a_ranked_child_reads_as_its_place_in_the_task_graph_note() -> None:
     """The DAG note says where the child placed, not that it failed."""
     join = child_records.ChildJoin(ONE, f"agent6/{ONE}", "ranked", "", "3 of 3")
-    assert parallel_join.child_note(join) == f"{ONE} ranked 3 of 3; not joined"
+    assert parallel_merge.child_note(join) == f"{ONE} ranked 3 of 3; not joined"
 
 
 def test_the_rank_summary_states_a_failed_childs_reason_once() -> None:
     """A failed child's line read `no result: no result (...)`."""
     reason = "no result (failed · crashed); no branch (the run made no commit)"
-    text = parallel_join.rank_summary(
+    text = parallel_merge.rank_summary(
         [child_records.ChildJoin(ONE, f"agent6/{ONE}", "failed", "", reason)]
     )
     assert text.splitlines() == ["0 of 1 child(ren) ranked:", f"  {ONE}: {reason}"]

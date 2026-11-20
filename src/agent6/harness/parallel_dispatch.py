@@ -4,7 +4,7 @@
 
 `ParallelDispatcher` owns the policy: when to cut children, the DAG stamps, the events, the
 injected group spawner. A work dispatch starts its children in the background and returns;
-`settle` merges what finished at a turn boundary. `parallel_join` projects child results into
+`settle` merges what finished at a turn boundary. `parallel_merge` projects child results into
 ordered merges, DAG stamps and notices; `parallel_panel` runs a panel's record-only batches
 through the same executor, and a rank join merges the one child `parallel_rank` puts first.
 """
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, errors
 from agent6.graph import curator as graph_curator
-from agent6.harness import child_merge, child_repo, parallel_join, parallel_rank, run_chain
+from agent6.harness import child_merge, child_repo, parallel_merge, parallel_rank, run_chain
 from agent6.sessions import budget_events, child_dispatch, journal
 from agent6.vcs.git import read as git_read
 
@@ -199,7 +199,7 @@ class ParallelDispatcher:
         if self.budget is not None and self.budget.is_exhausted():
             reason = self.budget.snapshot().exhausted_reason
             return self.refused(f"the budget is exhausted ({reason}); nothing dispatched.")
-        parent_id = parallel_join.parallel_parent_id(self.curator, state.root_task_id)
+        parent_id = parallel_merge.parallel_parent_id(self.curator, state.root_task_id)
         base = self.chain.tip() or self.chain.head_sha()
         prepared: list[tuple[child_dispatch.DispatchRecord, list[child_records.ChildTask]]] = []
         lines: list[str] = []
@@ -289,7 +289,7 @@ class ParallelDispatcher:
         self.open[record.identity] = OpenDispatch(record, started)
         ids = tuple(child.session_id for child in started)
         return child_records.Started(
-            ids, parallel_join.started_text(ids), groups=(record.identity,)
+            ids, parallel_merge.started_text(ids), groups=(record.identity,)
         )
 
     def announce(
@@ -423,7 +423,7 @@ class ParallelDispatcher:
             child = told.child(res.spec.session_id)
             if child.reported:
                 continue
-            conversation.notice(parallel_join.end_notice(res))
+            conversation.notice(parallel_merge.end_notice(res))
             told = told.with_child(
                 child.model_copy(update={"reported": True, "report": res.report})
             )
@@ -462,7 +462,7 @@ class ParallelDispatcher:
         if self.session_dir is None:
             return []
         record = child_dispatch.read_record(child_dispatch.record_path(self.session_dir, group))
-        return [parallel_join.join_of(child) for child in record.children if child.join is not None]
+        return [parallel_merge.join_of(child) for child in record.children if child.join is not None]
 
     def close(self, turn: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """End the execution's children: stop each still running, wait, charge what it used.
@@ -530,12 +530,12 @@ class ParallelDispatcher:
         record = self.settled(record, by_id, turn=turn)
         clean = record.join_policy == "record_only" or self.ensure_clean(turn, "merging children")
         record = self.joined(record, by_id, clean=clean)
-        joins = [parallel_join.join_of(child) for child in record.children]
+        joins = [parallel_merge.join_of(child) for child in record.children]
         if record.node_id is None:
             # Its id is on the record before its stamp: a resume never adds a second node.
             record = self.noded(record)
             self.write(record)
-        parallel_join.stamp_segment_node(self.curator, record.node_id, joins, log=self.log)
+        parallel_merge.stamp_segment_node(self.curator, record.node_id, joins, log=self.log)
         self.emit_graph_snapshot()
         payload = [
             {
@@ -560,7 +560,7 @@ class ParallelDispatcher:
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
-        message = parallel_join.summary_text(record.identity, joins, record.ranking)
+        message = parallel_merge.summary_text(record.identity, joins, record.ranking)
         record = record.advanced("complete", message=message)
         self.write(record)
         return child_records.DispatchResult(
@@ -654,7 +654,7 @@ class ParallelDispatcher:
                     (res.error or res.stopped_by) if res is not None else "no imported record",
                 )
             elif res is not None and res.ok and res.stopped_by:
-                join = parallel_join.stopped_join(res)
+                join = parallel_merge.stopped_join(res)
             elif (
                 res is not None
                 and res.ok
@@ -741,7 +741,7 @@ class ParallelDispatcher:
             return child_records.ChildJoin(
                 res.spec.session_id, res.branch, "joined", sha or (self.chain.tip() or ""), ""
             )
-        return parallel_join.join_child_result(
+        return parallel_merge.join_child_result(
             self.chain.root,
             res,
             ref=ref,
@@ -805,7 +805,7 @@ class ParallelDispatcher:
         """
         if record.source == "panel" or record.node_id is not None or not record.children:
             return record
-        node_id = parallel_join.add_parallel_node(
+        node_id = parallel_merge.add_parallel_node(
             self.curator,
             record.children[0].task,
             record.parent_node,
@@ -827,7 +827,7 @@ class ParallelDispatcher:
             The record naming the node, for the caller to write.
         """
         record = self.noded(record)
-        parallel_join.stamp_parallel_node(
+        parallel_merge.stamp_parallel_node(
             self.curator, record.node_id, status="failed", note=note, log=self.log
         )
         self.emit_graph_snapshot()

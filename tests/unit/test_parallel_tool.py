@@ -21,7 +21,7 @@ from agent6.config import Config
 from agent6.harness import (
     loop,
     operator_bridge,
-    parallel_join,
+    parallel_merge,
     provider_call,
     run_chain,
     toolset,
@@ -523,7 +523,7 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
     assert answer == {
         "dispatched": True,
         "children": ids,
-        "message": parallel_join.started_text(ids),
+        "message": parallel_merge.started_text(ids),
     }
     # The fake's children had ended, so the first boundary told their ends and merged the task.
     wire = json.dumps(messages)

@@ -19,7 +19,7 @@ import pytest
 
 from agent6 import paths
 from agent6.config import Config, layer
-from agent6.harness import parallel_join
+from agent6.harness import parallel_merge
 from agent6.sessions import child_dispatch
 from agent6.tools import schema
 from agent6.ui.cli import cli_main
@@ -492,6 +492,6 @@ def test_child_tool_text_and_notices_state_both_git_policies() -> None:
     text = schema.ParallelInput.TOOL_DESCRIPTION
     assert 'git.control = "model"' in text and "names the ref" in text
     for ids in (["one"], ["one", "two"]):
-        notice = parallel_join.started_text(ids)
+        notice = parallel_merge.started_text(ids)
         assert "task completes" in notice
         assert "first merges" not in notice

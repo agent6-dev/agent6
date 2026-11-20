@@ -14,7 +14,7 @@ from agent6.harness import (
     child_work,
     loop_conversation,
     loop_state,
-    parallel_join,
+    parallel_merge,
     parallel_recovery,
 )
 from agent6.sessions import child_dispatch
@@ -46,7 +46,7 @@ def test_stopped_context_survives_completion_and_resume(
     dispatcher.open[next(iter(dispatcher.open))].children[:] = [
         child_records.StartedChild(sid, future)
     ]
-    monkeypatch.setattr(parallel_join.time, "time", lambda: 1120)
+    monkeypatch.setattr(parallel_merge.time, "time", lambda: 1120)
     dispatcher.settle(conversation, 2)
     expected = "conversation at last call: 1234 tokens; last ran 2m ago"
     assert expected in json.dumps(conversation.to_wire())
@@ -56,7 +56,7 @@ def test_stopped_context_survives_completion_and_resume(
     assert join is not None
     assert join.context == result.context
     assert not (repo / f"{sid}.txt").exists()
-    monkeypatch.setattr(parallel_join.time, "time", lambda: 1600)
+    monkeypatch.setattr(parallel_merge.time, "time", lambda: 1600)
     resumed = loop_conversation.Conversation()
     parallel_recovery.reconcile(dispatcher, state, resumed, turn=3)
     text = json.dumps(resumed.to_wire())
@@ -68,7 +68,7 @@ def test_stopped_context_survives_completion_and_resume(
 
 def test_missing_context_is_not_reported_as_zero() -> None:
     """Old or incomplete child records retain their ref and name unknown measurements."""
-    words = parallel_join.join_words(
+    words = parallel_merge.join_words(
         child_records.ChildJoin("child", "agent6/child", "stopped", "", "stopped")
     )
     assert "agent6/child holds 0 commit(s)" in words

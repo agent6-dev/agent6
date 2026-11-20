@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import child_records, directive, errors
 from agent6.app import children
-from agent6.harness import parallel_dispatch, parallel_join
+from agent6.harness import parallel_dispatch, parallel_merge
 from agent6.vcs.git import ops as git_ops
 
 
@@ -61,7 +61,7 @@ def test_join_child_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None
         "identity": None,
         "also_branch": None,
     }
-    assert parallel_join.join_child_result(
+    assert parallel_merge.join_child_result(
         pathlib.Path("/r"), _res(ok=False, error="died"), **kw
     ) == child_records.ChildJoin("child-1", "agent6/child-1", "failed", "", "died")
 
@@ -70,7 +70,7 @@ def test_join_child_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(git_ops, "chain_merge", _conflict)
     assert (
-        parallel_join.join_child_result(pathlib.Path("/r"), _res(ok=True), **kw).status
+        parallel_merge.join_child_result(pathlib.Path("/r"), _res(ok=True), **kw).status
         == "conflict"
     )
 
@@ -78,14 +78,14 @@ def test_join_child_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None
         raise errors.GitError("fetch failed")
 
     monkeypatch.setattr(git_ops, "chain_merge", _boom)
-    j = parallel_join.join_child_result(pathlib.Path("/r"), _res(ok=True), **kw)
+    j = parallel_merge.join_child_result(pathlib.Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.detail) == ("failed", "fetch failed")
 
     def _clean(*_a: Any, **_k: Any) -> str | None:
         return "a" * 40
 
     monkeypatch.setattr(git_ops, "chain_merge", _clean)
-    j = parallel_join.join_child_result(pathlib.Path("/r"), _res(ok=True), **kw)
+    j = parallel_merge.join_child_result(pathlib.Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.sha) == ("joined", "a" * 40)
 
 
@@ -109,7 +109,7 @@ def test_a_child_without_commits_joins_as_no_changes_without_merging(
         "identity": None,
         "also_branch": None,
     }
-    j = parallel_join.join_child_result(pathlib.Path("/r"), _res(ok=True, has_commits=False), **kw)
+    j = parallel_merge.join_child_result(pathlib.Path("/r"), _res(ok=True, has_commits=False), **kw)
     assert j == child_records.ChildJoin("child-1", "agent6/child-1", "no_changes", "", "")
     assert merges == []
     # A child with commits merges the ref the import merged, not the branch name it was given.
@@ -123,7 +123,7 @@ def test_a_child_without_commits_joins_as_no_changes_without_merging(
         imported_tip="c" * 40,
         has_commits=True,
     )
-    assert parallel_join.join_child_result(pathlib.Path("/r"), res, **kw).status == "joined"
+    assert parallel_merge.join_child_result(pathlib.Path("/r"), res, **kw).status == "joined"
     assert merges == ["refs/agent6/child-1"]
 
 
@@ -135,32 +135,32 @@ def _join(status: Any, session_id: str = "child-1", sha: str = "") -> child_reco
 
 def test_segment_stamp_reduces_children() -> None:
     # Single child keeps the old shape: passed with the join sha, or failed.
-    assert parallel_join.segment_stamp([_join("joined", sha="abc123def4567")]) == (
+    assert parallel_merge.segment_stamp([_join("joined", sha="abc123def4567")]) == (
         "passed",
         "child-1 joined at abc123def456",
         "abc123def4567",
     )
-    status, note, sha = parallel_join.segment_stamp([_join("failed")])
+    status, note, sha = parallel_merge.segment_stamp([_join("failed")])
     assert (status, sha) == ("failed", "")
     assert "child-1 failed: boom" in note
     # Multi-child: any join passes, recording the LAST joined sha; the note
     # names every child. All-conflict fails (NodeStatus has no "blocked").
-    status, note, sha = parallel_join.segment_stamp(
+    status, note, sha = parallel_merge.segment_stamp(
         [_join("joined", "a", sha="1111111111111"), _join("joined", "b", sha="2222222222222")]
     )
     assert (status, sha) == ("passed", "2222222222222")
     assert "a joined at" in note and "b joined at" in note
-    status, note, _sha = parallel_join.segment_stamp([_join("conflict"), _join("conflict", "b")])
+    status, note, _sha = parallel_merge.segment_stamp([_join("conflict"), _join("conflict", "b")])
     assert status == "failed"
     assert "conflicted; merge manually" in note
     # A segment whose children all ended with no changes passed: there was nothing to merge.
-    assert parallel_join.segment_stamp([_join("no_changes")]) == (
+    assert parallel_merge.segment_stamp([_join("no_changes")]) == (
         "passed",
         "child-1 made no changes",
         "",
     )
     # Mixed: the sha is the last joined child's; a no-change child adds none.
-    status, note, sha = parallel_join.segment_stamp(
+    status, note, sha = parallel_merge.segment_stamp(
         [_join("joined", "a", sha="1111111111111"), _join("no_changes", "b")]
     )
     assert (status, sha) == ("passed", "1111111111111")
@@ -168,7 +168,7 @@ def test_segment_stamp_reduces_children() -> None:
 
 
 def test_summary_text_names_every_outcome() -> None:
-    text = parallel_join.summary_text(
+    text = parallel_merge.summary_text(
         "p1",
         [
             _join("joined", "a", sha="abc123def4567"),
@@ -188,7 +188,7 @@ def test_summary_text_names_every_outcome() -> None:
 def test_retained_notice_names_the_ref_without_claiming_a_merge() -> None:
     """The recorded ref says where the work is, not what the model must do next."""
     retained = child_records.ChildJoin("one", "refs/agent6/one/head", "retained", "", "", commits=1)
-    notice = parallel_join.summary_text("p1", [retained])
+    notice = parallel_merge.summary_text("p1", [retained])
     assert notice.splitlines()[1:] == [
         "  - one: retained on refs/agent6/one/head (1 commit).",
         "Agent6 made no merge.",
@@ -197,12 +197,12 @@ def test_retained_notice_names_the_ref_without_claiming_a_merge() -> None:
 
 def test_child_note_wordings() -> None:
     assert (
-        parallel_join.child_note(_join("joined", sha="abc123def4567"))
+        parallel_merge.child_note(_join("joined", sha="abc123def4567"))
         == "child-1 joined at abc123def456"
     )
-    assert parallel_join.child_note(_join("conflict")) == "child-1 conflicted; merge manually"
-    assert parallel_join.child_note(_join("failed")) == "child-1 failed: boom"
-    assert parallel_join.child_note(_join("no_changes")) == "child-1 made no changes"
+    assert parallel_merge.child_note(_join("conflict")) == "child-1 conflicted; merge manually"
+    assert parallel_merge.child_note(_join("failed")) == "child-1 failed: boom"
+    assert parallel_merge.child_note(_join("no_changes")) == "child-1 made no changes"
 
 
 def test_segment_children_carry_the_operator_pins_out_of_band() -> None:
@@ -238,7 +238,7 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_merge_gives_its_jo
     """
     said = "The suite passes as it is.\n3 tests, exit 0."
     ended = dataclasses.replace(_res(ok=True, has_commits=False), report=said)
-    assert parallel_join.end_notice(ended).splitlines() == [
+    assert parallel_merge.end_notice(ended).splitlines() == [
         "[parallel] child child-1 finished.",
         "summary: The suite passes as it is.",
         "  3 tests, exit 0.",
@@ -246,14 +246,14 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_merge_gives_its_jo
     stopped = dataclasses.replace(
         _res(ok=True), stopped_by="stopped at the run's budget", commits=2
     )
-    assert parallel_join.end_notice(stopped) == (
+    assert parallel_merge.end_notice(stopped) == (
         "[parallel] child child-1 stopped at the run's budget, not merged;"
         " agent6/child-1 holds 2 commit(s); conversation at last call: unknown; last ran: unknown."
     )
-    assert parallel_join.end_notice(_res(ok=False, error="no result (failed)")) == (
+    assert parallel_merge.end_notice(_res(ok=False, error="no result (failed)")) == (
         "[parallel] child child-1 ended without a result: no result (failed)"
     )
-    text = parallel_join.summary_text(
+    text = parallel_merge.summary_text(
         "p1",
         [
             dataclasses.replace(_join("no_changes", "a"), report=said),
@@ -272,10 +272,10 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_merge_gives_its_jo
 
 def test_started_text_tells_one_child_from_attempts() -> None:
     """The line a dispatch answers with names each child's id, the handle the tools take."""
-    assert parallel_join.started_text(["run-p1-l1"]).startswith(
+    assert parallel_merge.started_text(["run-p1-l1"]).startswith(
         "[parallel] started child run-p1-l1. "
     )
-    assert parallel_join.started_text(["run-p1-l1", "run-p1-l2"]).startswith(
+    assert parallel_merge.started_text(["run-p1-l1", "run-p1-l2"]).startswith(
         "[parallel] started 2 attempts at one task: run-p1-l1, run-p1-l2. "
     )
 
@@ -288,7 +288,7 @@ def test_summary_text_says_a_stopped_child_did_not_merge() -> None:
     """
     idle = dataclasses.replace(_join("stopped", "a"), detail="stopped at the run's budget")
     busy = dataclasses.replace(_join("stopped", "b"), detail="stopped by its parent", commits=3)
-    text = parallel_join.summary_text("p1", [idle, busy])
+    text = parallel_merge.summary_text("p1", [idle, busy])
     assert text.splitlines() == [
         "[parallel] group p1 complete (2 child(ren)):",
         "  - a (agent6/a): stopped at the run's budget, not merged; the branch holds 0 commit(s);"
@@ -298,17 +298,17 @@ def test_summary_text_says_a_stopped_child_did_not_merge() -> None:
         "Every child stopped: nothing merged.",
     ]
     # A task whose every child stopped did not pass; one that merged a sibling did.
-    assert parallel_join.segment_stamp([idle, busy]) == (
+    assert parallel_merge.segment_stamp([idle, busy]) == (
         "failed",
         "a stopped at the run's budget; not merged; b stopped by its parent; not merged",
         "",
     )
     merged = _join("joined", "c", sha="abc123def4567")
-    assert parallel_join.segment_stamp([busy, merged])[0] == "passed"
-    assert parallel_join.summary_text("p1", [busy, merged]).splitlines()[-1] == (
+    assert parallel_merge.segment_stamp([busy, merged])[0] == "passed"
+    assert parallel_merge.summary_text("p1", [busy, merged]).splitlines()[-1] == (
         "Review what merged and continue."
     )
-    assert parallel_join.join_words(busy) == (
+    assert parallel_merge.join_words(busy) == (
         "stopped by its parent, not merged; agent6/b holds 3 commit(s);"
         " conversation at last call: unknown; last ran: unknown"
     )
@@ -320,13 +320,13 @@ def test_summary_hands_a_conflicted_child_to_the_operator() -> None:
     Git is agent6's in a run and `.git` is read-only in the jail, so the line names the operator and
     tells the model to continue rather than run `git merge` itself.
     """
-    text = parallel_join.summary_text("g", [_join("conflict")])
+    text = parallel_merge.summary_text("g", [_join("conflict")])
     assert "(`git merge agent6/child-1` for the operator)" in text
     assert "nothing merged" in text and "continue without it" in text
     assert "resolve" not in text
     named = dataclasses.replace(_join("conflict"), detail="merge conflict in a.py, b.py")
     assert "CONFLICT -- merge conflict in a.py, b.py; nothing merged." in (
-        parallel_join.summary_text("g", [named])
+        parallel_merge.summary_text("g", [named])
     )
 
 
@@ -365,7 +365,7 @@ def test_a_children_result_carries_its_finish_summary(tmp_path: pathlib.Path) ->
         stopped_by="stopped at the run's budget",
     )
     assert res.ok and res.stopped_by == "stopped at the run's budget"
-    join = parallel_join.stopped_join(res)
+    join = parallel_merge.stopped_join(res)
     assert (join.status, join.detail, join.commits) == ("stopped", "stopped at the run's budget", 0)
 
     # A child the operator stopped, or a resume found stopped, reads stopped, not finished.
@@ -373,12 +373,12 @@ def test_a_children_result_carries_its_finish_summary(tmp_path: pathlib.Path) ->
         spec, "", halted, child_records.Imported(halted), origin=tmp_path
     )
     assert res.ok and res.stopped_by == "stopped"
-    assert parallel_join.end_notice(res).splitlines()[0] == (
+    assert parallel_merge.end_notice(res).splitlines()[0] == (
         "[parallel] child done stopped, not merged; 0 commit(s); ref unknown;"
         " conversation at last call: unknown; last ran: unknown."
     )
-    join = parallel_join.stopped_join(res)
-    assert parallel_join.summary_text("g", [join]).splitlines()[1:] == [
+    join = parallel_merge.stopped_join(res)
+    assert parallel_merge.summary_text("g", [join]).splitlines()[1:] == [
         "  - done (): stopped, not merged; the branch holds 0 commit(s);"
         " conversation at last call: unknown; last ran: unknown.",
         "Every child stopped: nothing merged.",
