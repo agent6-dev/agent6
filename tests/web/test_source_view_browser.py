@@ -150,6 +150,44 @@ def test_the_blame_card_opens_beside_its_line_near_the_bottom_edge(
     assert not errors
 
 
+def test_blame_loads_on_its_button_and_the_code_holds_still(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """While blame loaded, a line above the code pushed it down, then let it snap back."""
+    from playwright.sync_api import Route, expect
+
+    port, _, _ = long_file
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/git/blame*", hold)
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    line = page.locator("[data-line='1']")
+    line.wait_for()
+    top = "e => e.getBoundingClientRect().top"
+    still = line.evaluate(top)
+    blame = page.locator(".files-blame")
+    blame.click()
+    expect(blame).to_have_attribute("aria-busy", "true")
+    while not held:
+        page.wait_for_timeout(50)
+    assert line.evaluate(top) == still
+    held.pop().continue_()
+    page.wait_for_selector("[data-line='1'] .blame-cell")
+    expect(blame).to_have_attribute("aria-busy", "false")
+    assert line.evaluate(top) == still
+    blame.click()
+    page.unroute("**/api/git/blame*", hold)
+    page.route("**/api/git/blame*", lambda route: route.fulfill(status=500, json={"error": "nope"}))
+    blame.click()
+    expect(page.locator(".files-text .gf-note.err")).to_have_text("nope")
+    expect(blame).to_have_attribute("aria-busy", "false")
+    assert [e for e in errors if "500" not in e] == []  # the failed blame's response
+
+
 def test_escape_closes_the_blame_card_until_the_pointer_or_the_focus_moves(
     open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
 ) -> None:

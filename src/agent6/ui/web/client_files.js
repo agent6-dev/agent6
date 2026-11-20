@@ -255,24 +255,26 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     sourceBox.appendChild(source);
     blame.disabled = false;
     let blaming = false, blameRequest = 0;
+    // The button reads busy while blame loads, so the code holds still; a note says why it failed.
+    const failed = (reason) => sourceBox.insertBefore(el('div', 'err gf-note blame-note', reason), source);
     blame.onclick = async () => {
       const request = ++blameRequest;
       blaming = !blaming;
       blame.setAttribute('aria-pressed', String(blaming)); blame.classList.toggle('active', blaming);
+      blame.setAttribute('aria-busy', String(blaming));
       clearBlame(source);
       sourceBox.querySelectorAll('.blame-note').forEach(c => c.remove());
       if (!blaming) return;
-      const notice = el('div', 'muted blame-note', 'loading blame…'); sourceBox.insertBefore(notice, source);
       try {
         const d = await getJSON('/api/git/blame?' + readQuery);
         if (!current() || request !== blameRequest) return;
-        if (d.digest !== t.digest) { notice.classList.add('err'); notice.textContent = 'the file changed since it was opened: open it again to blame'; return; }
-        notice.remove();
+        blame.setAttribute('aria-busy', 'false');
+        if (d.digest !== t.digest) { failed('the file changed since it was opened: open it again to blame'); return; }
         const lines = new Map(d.lines.map(l => [l.line, l]));
         renderBlame([...source.querySelectorAll('[data-line]')].map(node => ({
           node, line: lines.get(Number(node.dataset.line)), side: 'head', path: f.path,
         })));
-      } catch (e) { if (current() && request === blameRequest) { notice.classList.add('err'); notice.textContent = e.message; } }
+      } catch (e) { if (current() && request === blameRequest) { blame.setAttribute('aria-busy', 'false'); failed(e.message); } }
     };
     if (!rendersMarkdown) return;
     // A Markdown file cut at the size cap has no rendering: its text alone shows.
