@@ -101,6 +101,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
 - **Files page**: the files at one revision; a symlink shows its target, a link when the revision lists it; it reads the repository `agent6 web` was started in and writes nothing
     - a markdown file opens rendered, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - the tree keeps the folders you open and opens the ones holding a linked file; ↑ and ↓ move through it, → and ← open and close a folder
+    - Back and Forward move between the files opened, and the tree keeps its filter and folds
 
 Start a machine on the State machines page and watch the current state stream, answering its approvals and questions in place:
 

@@ -67,9 +67,14 @@ function treeView(root, fileRow, folderNote, folded, folderMark, opened) {
   paint(root, box, 0);
   const shown = () => [...box.querySelectorAll('[role=treeitem]')].filter(r => !r.closest('.gtree-kids[hidden]'));
   // The Tab stop is the selected row, or the nearest folder showing where it is folded away.
-  let stop = box.querySelector('[aria-selected=true]') || box.querySelector('[role=treeitem]');
-  for (let kids; (kids = stop?.closest('.gtree-kids[hidden]'));) stop = kids.previousElementSibling;
-  if (stop) stop.tabIndex = 0;
+  const seat = () => {
+    let stop = box.querySelector('[aria-selected=true]') || box.querySelector('[role=treeitem]');
+    for (let kids; (kids = stop?.closest('.gtree-kids[hidden]'));) stop = kids.previousElementSibling;
+    for (const r of box.querySelectorAll('[role=treeitem][tabindex="0"]')) r.tabIndex = -1;
+    if (stop) stop.tabIndex = 0;
+  };
+  seat();
+  new MutationObserver(seat).observe(box, { subtree: true, attributeFilter: ['aria-selected'] }); // and follows the selection
   box.addEventListener('focusin', (e) => {
     if (e.target.getAttribute('role') !== 'treeitem') return;
     for (const r of box.querySelectorAll('[role=treeitem][tabindex="0"]')) r.tabIndex = -1;

@@ -223,6 +223,7 @@ gitPicker = (name, value, choose) => { shown = value; return picker(name, value,
 await renderFiles(1);
 chooseRevision({rev: 'refs/heads/topic', label: 'topic'});
 await tick();
+view.innerHTML = ''; // another page in between, so the files page builds anew
 const opening = renderFiles(1, 'refs/heads/topic', 'a.txt');
 await tick();
 pending[pending.length - 1].resolve({text: 'a', lines: 1, spans: []});

@@ -4,18 +4,14 @@
 // with line numbers and highlighting, an image, or a binary file's size and kind. The
 // picked revision and the folders opened outlive a visit to another tab; the tree is fetched
 // again on return.
-// The picker's { rev, label }; each folder path → open; the Markdown file shown, if any.
-const filesState = { rev: null, folders: new Map(), markdown: null };
+// The picker's { rev, label }; each folder path → open; the page's in-place opener, if any.
+const filesState = { rev: null, folders: new Map(), open: null };
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
 async function renderFiles(gen, revision = '', path = '', query = new URLSearchParams()) {
   if (query.has('panel')) return renderReviewedFile(gen, path, query);
-  // A hash naming the Markdown file shown moves within it: a link to a heading, and Back and
-  // Forward between them, scroll in place.
-  const markdown = filesState.markdown;
-  if (markdown?.view.isConnected && markdown.rev === revision && markdown.path === path) {
-    markdown.view.closest('.files-app').removeAttribute('aria-busy'); // route() marked the page it expected to replace
-    return markdown.scroll(query.get('anchor'));
-  }
+  // A hash at the revision listed, or naming none, moves within the page: the tree keeps its state.
+  const inPlace = (!revision || revision === filesState.rev?.rev) && filesState.open?.(path, query);
+  if (inPlace) return inPlace;
   const refsData = await getJSON('/api/git/refs');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
@@ -76,7 +72,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   bar.insertBefore(toggle, pick.root);
 
   // -- the tree ----------------------------------------------------------------------
-  let entries = [], truncated = false, rev = '', ignored = false, loading = 0, shown = null;
+  let entries = [], truncated = false, rev = '', ignored = false, loading = 0, shown = null, markdown = null;
   // A working-tree row's mark says how it differs from HEAD: M modified, A untracked, I ignored. A
   // clean row keeps an empty slot, so the names stay in line; a commit's rows have no marks.
   const stateMark = (files) => {
@@ -111,7 +107,10 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
     count((q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : ''));
   };
-  const closeFile = () => { pane.innerHTML = ''; if (entries.length) pane.appendChild(unopened); body.classList.remove('viewing'); };
+  const closeFile = () => {
+    pane.innerHTML = ''; if (entries.length) pane.appendChild(unopened); body.classList.remove('viewing');
+    shown = null; for (const r of tree.querySelectorAll('.gf[aria-selected=true]')) r.setAttribute('aria-selected', 'false');
+  };
   // A failed read says why; one the server did not refuse (a 4xx) offers to read again.
   const failure = (cls, e, retry) => {
     const note = el('div', cls, e.message);
@@ -299,7 +298,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       const href = a.getAttribute('href');
       if (href.startsWith(listed)) a.setAttribute('href', filesHash() + '/' + href.slice(listed.length));
     }
-    filesState.markdown = { rev: filesState.rev.rev, path: f.path, view: md, scroll: (id) => {
+    markdown = { path: f.path, view: md, scroll: (id) => {
       const heading = id && [...md.querySelectorAll('[id]')].find(h => h.id === id);
       if (heading) heading.scrollIntoView({ block: 'start' }); else box.scrollTo(0, 0);
     } };
@@ -318,6 +317,17 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     }
     for (const button of modes.children) button.disabled = false;
     selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
+  };
+  // Back, Forward or a link opens another listed file, scrolls the Markdown shown, or closes the file.
+  filesState.open = (file, hashQuery) => {
+    if (!app.isConnected || !rev) return null; // no page, or no listing yet: render anew
+    app.removeAttribute('aria-busy'); // route() marked the page it expected to replace
+    query = hashQuery;
+    if (!file) { closeFile(); return true; }
+    if (markdown?.path === file && markdown.view.isConnected) { body.classList.add('viewing'); markdown.scroll(query.get('anchor')); return true; }
+    shown = file; reveal(file);
+    if (![...tree.querySelectorAll('.gf')].find(r => r.dataset.path === file)?.checkVisibility()) paintTree();
+    return showFile(entries.find(f => f.path === file) || { path: file, kind: 'file', size: null }, false, true);
   };
   await loadTree(path);
 }

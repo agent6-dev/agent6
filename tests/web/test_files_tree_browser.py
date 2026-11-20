@@ -656,6 +656,48 @@ def test_a_long_file_path_wraps_after_a_slash(
     assert not errors
 
 
+def test_back_between_files_keeps_the_tree_as_it_is(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """Back to a file rebuilt the page: the filter emptied and the tree loaded and painted anew.
+
+    In place, Tab then entered the tree at the file left, not the file shown.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    listings: list[str] = []
+    page.on("request", lambda r: listings.append(r.url) if "/api/git/tree" in r.url else None)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    search = page.locator(".files-bar input.filter")
+    search.fill("f10")
+    head = page.locator(".files-head .gf-path")
+    for name in ("f100.txt", "f101.txt"):
+        page.locator(_row("many/" + name)).click()
+        expect(head).to_have_text("many/" + name)
+    tree = page.locator(".files-tree .gtree")
+    tree.evaluate("e => e.dataset.painted = 'once'")
+    for step, name in ((page.go_back, "f100.txt"), (page.go_forward, "f101.txt")):
+        step()
+        expect(head).to_have_text("many/" + name)
+        expect(page.locator(_row("many/" + name))).to_have_attribute("aria-selected", "true")
+        search.focus()
+        page.keyboard.press("Tab")
+        expect(page.locator(_row("many/" + name))).to_be_focused()
+    page.go_back()
+    page.go_back()  # the bare listing the page opened on
+    expect(head).to_have_count(0)
+    expect(page.locator(".files-tree [aria-selected=true]")).to_have_count(0)
+    search.focus()
+    page.keyboard.press("Tab")
+    expect(page.locator(_row("many"))).to_be_focused()  # with no file shown, the first row
+    expect(search).to_have_value("f10")
+    expect(tree).to_have_attribute("data-painted", "once")
+    expect(page.locator(".files-app")).not_to_have_attribute("aria-busy", "true")
+    assert len(listings) == 1, listings
+    assert not errors
+
+
 def test_a_revision_change_keeps_the_open_file_where_it_is_listed(
     open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
 ) -> None:
