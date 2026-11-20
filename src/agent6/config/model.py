@@ -241,7 +241,7 @@ class Config(pydantic.BaseModel):
             The model unchanged.
 
         Raises:
-            ValueError: A role or pinned reviewer names an unknown provider.
+            ValueError: An unknown provider, invalid judge selector or oversized judge roster.
         """
         routes = {f"models.{role}.model": rm for role, rm in self.models.configured().items()}
         routes.update(
@@ -257,12 +257,12 @@ class Config(pydantic.BaseModel):
                     f" [providers.{rm.provider}] is not configured."
                     f" Known providers: {known}."
                 )
-        for selector in self.harness.parallel.judge_selectors():
-            if selector not in kinds.MODEL_ROLES:
-                try:
+        try:
+            for selector, _ in self.harness.parallel.judge_counts():
+                if selector not in kinds.MODEL_ROLES:
                     self.model_route(selector)
-                except validation.ConfigError as exc:
-                    raise ValueError(f"harness.parallel.judges: {exc}") from exc
+        except validation.ConfigError as exc:
+            raise ValueError(f"harness.parallel.judges: {exc}") from exc
         return self
 
     @pydantic.model_validator(mode="after")

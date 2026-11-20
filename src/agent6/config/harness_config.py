@@ -186,8 +186,8 @@ class ParallelConfig(pydantic.BaseModel):
         default=4,
         description=(
             "The most children a run has running at once, `1` to `1024`; a dispatch asking "
-            "for more is refused before anything is cloned; a review roster longer than this "
-            "runs in batches of this width, with no reviewer dropped."
+            "for more is refused before anything is cloned; `review.reviewers` runs in batches "
+            "limited by both this setting and `review.concurrency`, with no reviewer dropped."
         ),
     )
 
@@ -195,9 +195,10 @@ class ParallelConfig(pydantic.BaseModel):
         default=("reviewer",),
         description=(
             "who ranks the attempts at one task and the candidates of `sessions compare`: "
-            "a role, `provider/model`, or a count of reviewers (such as `'2'`); each is "
-            "a reviewer child that reads and runs the attempts under `review.max_turns` and "
-            "answers with an order; the lowest sum of ranks wins, a tie going to the "
+            'one role, `provider/model`, or positive reviewer count (such as `"2"`) per entry; '
+            "the judges start together, so their total must fit `harness.parallel.max_children`; "
+            "each reviewer child reads and runs the attempts under `review.max_turns` and answers "
+            "with an order; the lowest sum of ranks wins, a tie going to the "
             "mechanical order (a passed gate first, then the lower cost); a role with no "
             "model route judges nothing; `[]`, or no usable order: the mechanical order alone"
         ),
@@ -218,23 +219,26 @@ class ParallelConfig(pydantic.BaseModel):
             ValueError: An entry is blank.
         """
         if any(not judge.strip() for judge in v):
-            raise ValueError("a judge is a role name or a `provider/model`; one entry is blank")
+            raise ValueError(
+                "a judge is a role, a `provider/model` or a positive count; one entry is blank"
+            )
         return v
 
-    def judge_selectors(self) -> tuple[str, ...]:
-        """Expand each judge count to that many reviewers.
+    def judge_counts(self) -> list[tuple[str, int]]:
+        """Count all requested judges before validation or scheduling resolves their routes.
 
         Returns:
-            One selector per judge.
+            Each entry's selector and number of seats, in order.
+
+        Raises:
+            ConfigError: A count is invalid or the roster exceeds `max_children`.
         """
-        selectors: list[str] = []
-        for judge in self.judges:
-            if judge.strip().isdecimal():
-                seats = directive.parse_spec(judge, limit=self.max_children)
-                selectors.extend("reviewer" for _ in seats)
-            else:
-                selectors.append(judge.strip())
-        return tuple(selectors)
+        try:
+            return directive.counted_selectors(
+                self.judges, default="reviewer", limit=self.max_children
+            )
+        except directive.DirectiveError as exc:
+            raise validation.ConfigError(str(exc)) from exc
 
 
 class PromptConfig(pydantic.BaseModel):

@@ -456,7 +456,7 @@ For a continuous score beside the pass/fail gate, [give the run a metric](usage.
 
 ### `[harness.parallel]`
 
-The most children a run has running at once, for `run --parallel N|selector,...`, the `/parallel` steer and the `parallel` tool.
+The most children a run has running at once, for `run --parallel SPEC`, the `/parallel` steer and the `parallel` tool.
 Each child works in a disposable clone.
 Under agent6-owned git, one child's work joins the parent's chain; with several attempts, the first-ranked one joins.
 Under model-owned git, completed work stays on the imported refs.
@@ -473,8 +473,8 @@ Headless surfaces without a dispatcher answer "not available".
 | Field | Default | Meaning |
 |---|---|---|
 | `tool` | `false` | offer a run's model the `parallel` tool, which starts one task in isolated children (fresh clones of the committed tree, each an ordinary run that may edit) and completes their tasks at turn boundaries (`git.control` decides who merges), and `steer_child`, which instructs a running child or continues a stopped one; a child runs under the run's own config and its remaining budget, which the children share; `harness.parallel.tool = false`: no run is offered either; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
-| `max_children` | `4` | The most children a run has running at once, `1` to `1024`; a dispatch asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no reviewer dropped. |
-| `judges` | `["reviewer"]` | who ranks the attempts at one task and the candidates of `sessions compare`: a role, `provider/model`, or a count of reviewers (such as `'2'`); each is a reviewer child that reads and runs the attempts under `review.max_turns` and answers with an order; the lowest sum of ranks wins, a tie going to the mechanical order (a passed gate first, then the lower cost); a role with no model route judges nothing; `[]`, or no usable order: the mechanical order alone |
+| `max_children` | `4` | The most children a run has running at once, `1` to `1024`; a dispatch asking for more is refused before anything is cloned; `review.reviewers` runs in batches limited by both this setting and `review.concurrency`, with no reviewer dropped. |
+| `judges` | `["reviewer"]` | who ranks the attempts at one task and the candidates of `sessions compare`: one role, `provider/model`, or positive reviewer count (such as `"2"`) per entry; the judges start together, so their total must fit `harness.parallel.max_children`; each reviewer child reads and runs the attempts under `review.max_turns` and answers with an order; the lowest sum of ranks wins, a tie going to the mechanical order (a passed gate first, then the lower cost); a role with no model route judges nothing; `[]`, or no usable order: the mechanical order alone |
 
 ### `[harness.prompt]`
 

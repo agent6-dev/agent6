@@ -89,11 +89,11 @@ def configured_judges(cfg: Config, *, log: Callable[[str], None]) -> tuple[Judge
         log: Told of a selector that names nothing.
 
     Returns:
-        One judge per entry with a model route; a role with none judges nothing.
+        One judge per requested seat with a model route; a role with none judges nothing.
     """
     unrouted = {role for role in kinds.MODEL_ROLES if cfg.models.resolve(role) is None}
     judges: list[Judge] = []
-    for selector in cfg.harness.parallel.judge_selectors():
+    for selector, count in cfg.harness.parallel.judge_counts():
         if selector in unrouted:
             continue
         try:
@@ -102,7 +102,7 @@ def configured_judges(cfg: Config, *, log: Callable[[str], None]) -> tuple[Judge
             log(f"judge {selector} names no model ({exc}); it ranks nothing")
             continue
         if settings is not None:
-            judges.append(Judge(selector, settings))
+            judges.extend([Judge(selector, settings)] * count)
     return tuple(judges)
 
 

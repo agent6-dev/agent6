@@ -580,7 +580,7 @@ One rule holds for every child (a child, a reviewer): the parent hands down, the
 Three consumers drive it: `run --parallel`, the web and TUI composers' `/parallel` new-work directive, and a live run's `/parallel` steer.
 
 All three share `parse_spec` in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `harness` and `ui` import.
-It maps a child count or model list to one model per child.
+It checks the total before expanding a spec's counts, roles and `provider/model` routes into one selector per child.
 The composers and steering use `parse_directive` to split `/parallel [SPEC --] TASK` segments ([grammar and examples](usage.md#parallel-directive)).
 
 Before any clone, a spec's models are checked against what a child can run.

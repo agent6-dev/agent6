@@ -21,6 +21,7 @@ from __future__ import annotations
 import dataclasses
 import re
 import shlex
+from collections.abc import Sequence
 from typing import Literal
 
 # A whitespace-delimited `/parallel` token; not MULTILINE, so the anchors are the whole string's.
@@ -110,6 +111,49 @@ class Segment:
     task: str
 
 
+def counted_selectors(entries: Sequence[str], *, default: str, limit: int) -> list[tuple[str, int]]:
+    """Count one roster without building a list of its children.
+
+    Args:
+        entries: The individual counts or selectors, in roster order.
+        default: The selector a count repeats.
+        limit: The most children this roster may request.
+
+    Returns:
+        One (selector, count) per nonblank entry.
+
+    Raises:
+        DirectiveError: A count is invalid or the roster exceeds the limit.
+    """
+    counted: list[tuple[str, int]] = []
+    total = 0
+    for index, entry in enumerate(entries, 1):
+        selector = entry.strip()
+        if not selector:
+            continue
+        count = 1
+        if selector.isdecimal():
+            try:
+                count = int(selector)
+            except ValueError as exc:
+                raise DirectiveError(
+                    f"parallel child count is too long; request 1 to {limit}"
+                ) from exc
+            if not count:
+                raise DirectiveError("parallel child count must be >= 1")
+            selector = default
+        total += count
+        if total > limit:
+            qualifier = "at least " if index < len(entries) else ""
+            raise DirectiveError(
+                f"parallel spec requests {qualifier}{total} children but"
+                f" [harness.parallel].max_children = {limit}."
+                " Request fewer, or raise [harness.parallel].max_children."
+            )
+        counted.append((selector, count))
+    return counted
+
+
 def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     """Parse a child spec into one entry per child, the grammar the directive and the CLI share.
 
@@ -126,30 +170,12 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
         DirectiveError: The count is not positive or over the limit, or the list
             names no models.
     """
-    s = spec.strip()
-    if not s:
+    if not spec.strip():
         return [None]
-    selectors = [token.strip() for token in s.split(",") if token.strip()]
-    if not selectors:
+    counted = counted_selectors(spec.split(","), default="", limit=limit)
+    if not counted:
         raise DirectiveError(f"parallel spec {spec!r} names no models")
-    children: list[str | None] = []
-    for selector in selectors:
-        count = int(selector) if selector.isdecimal() else 1
-        if not count:
-            raise DirectiveError("parallel child count must be >= 1")
-        if len(children) + count > limit:
-            raise DirectiveError(_over_limit(len(children) + count, limit))
-        children.extend([None if selector.isdecimal() else selector] * count)
-    return children
-
-
-def _over_limit(requested: int, limit: int) -> str:
-    """Return the refusal for a child count over the limit."""
-    return (
-        f"parallel spec requests {requested} children but"
-        f" [harness.parallel].max_children = {limit}."
-        " Request fewer, or raise [harness.parallel].max_children."
-    )
+    return [selector or None for selector, count in counted for _ in range(count)]
 
 
 # A leading `/pin` token; everything after it is one pinned instruction.

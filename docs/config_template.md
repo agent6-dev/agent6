@@ -346,7 +346,7 @@ For a continuous score beside the pass/fail gate, [give the run a metric](usage.
 
 ### `[harness.parallel]`
 
-The most children a run has running at once, for `run --parallel N|selector,...`, the `/parallel` steer and the `parallel` tool.
+The most children a run has running at once, for `run --parallel SPEC`, the `/parallel` steer and the `parallel` tool.
 Each child works in a disposable clone.
 Under agent6-owned git, one child's work joins the parent's chain; with several attempts, the first-ranked one joins.
 Under model-owned git, completed work stays on the imported refs.

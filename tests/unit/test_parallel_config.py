@@ -9,9 +9,9 @@ import tomllib
 
 import pytest
 
-from agent6 import child_records, kinds, paths
+from agent6 import child_records, directive, kinds, paths
 from agent6.app import confine, worktrees
-from agent6.config import Config, ParallelConfig, layer
+from agent6.config import Config, ConfigError, ParallelConfig, layer, validate_config
 
 
 def _write_repo_config(repo: pathlib.Path, toml: str) -> None:
@@ -42,6 +42,26 @@ def test_parallel_max_children_bounds() -> None:
     with pytest.raises(ValueError):
         ParallelConfig(max_children=1025)
     assert ParallelConfig(max_children=1024).max_children == 1024
+
+
+@pytest.mark.parametrize("judges", [["2", "2"], ["2", "worker", "reviewer"], ["helper"] * 4])
+def test_judge_limit_counts_the_whole_roster(judges: list[str]) -> None:
+    """Counts and names share one limit, even when a role has no route."""
+    with pytest.raises(ConfigError, match=r"harness.parallel.judges.*4.*max_children = 3"):
+        validate_config({"harness": {"parallel": {"max_children": 3, "judges": judges}}})
+
+
+def test_judge_validation_checks_routes_without_building_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit route after a count is checked without expanding the count."""
+
+    def refuse_expansion(spec: str, *, limit: int) -> list[str | None]:
+        pytest.fail(f"config validation expanded {spec!r} with limit {limit}")
+
+    monkeypatch.setattr(directive, "parse_spec", refuse_expansion)
+    with pytest.raises(ConfigError, match=r"harness.parallel.judges.*unknown provider 'absent'"):
+        validate_config({"harness": {"parallel": {"judges": [" 2 ", "absent/model"]}}})
 
 
 def test_parallel_and_workspace_override_via_repo_config(repo: pathlib.Path) -> None:

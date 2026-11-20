@@ -18,7 +18,7 @@ from agent6 import budget, child_records, directive, kinds, paths
 from agent6.app import children as app_children
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
-from agent6.config import Config
+from agent6.config import Config, ConfigError
 from agent6.harness import (
     child_work,
     loop_conversation,
@@ -286,6 +286,23 @@ def test_a_judge_is_a_reviewer_child_with_the_tools_a_reviewer_is_handed() -> No
     bare = Config.model_validate({"harness": {"parallel": {"judges": []}}})
     assert parallel_rank.configured_judges(bare, log=lambda _m: None) == ()
     assert parallel_rank.configured_judges(Config(), log=lambda _m: None) == ()
+
+
+def test_scheduling_checks_the_whole_roster_against_the_current_limit() -> None:
+    """A config copy with a lower limit must not schedule a previously valid judge roster."""
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"backend": "openai"}},
+            "models": {"default": {"model": "p/base"}},
+            "harness": {"parallel": {"judges": ["2", "2"]}},
+        }
+    )
+    parallel = cfg.harness.parallel.model_copy(update={"max_children": 3})
+    narrowed = cfg.model_copy(
+        update={"harness": cfg.harness.model_copy(update={"parallel": parallel})}
+    )
+    with pytest.raises(ConfigError, match=r"4 children.*max_children = 3"):
+        parallel_rank.configured_judges(narrowed, log=lambda _m: None)
 
 
 # ---- the dispatcher: judges in the background of the run -----------------------------------------
