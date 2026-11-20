@@ -784,13 +784,14 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 
 ### 10. Parallel children
 
-`agent6 run --parallel` and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each dispatch children.
+`agent6 run --parallel`, a live run's `/parallel` steer directive and the model's `parallel` tool (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each dispatch children.
 
 - Every work child is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.child_agent`
     - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/child-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
     - the bootstrap reads the file `AGENT6_LAUNCH` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_child_launch_boundary.py`)
     - a detached child has no terminal: its `run_commands = "ask"` prompt is asked on its parent, whose operator answers it; with no parent watching, the launch file's away mode parks it (`wait`) or answers it empty (`deny`), never approves it
-    - a child is tied to its parent with PDEATHSIG (SIGTERM), so a parent that dies cannot leave a model child running; a child that does not stop when asked is TERMed, KILLed after the grace and reaped by its recorded pid; a dispatch's deadline is enforced by the parent's await and by the child's own backstop
+    - a child is tied to its parent with PDEATHSIG (SIGTERM), so a parent that dies cannot leave a model child running; a child that does not stop when asked is TERMed, KILLed after the grace and reaped by its recorded pid; a reviewer's deadline is enforced by the parent's await and by the child's own backstop
+    - a work child runs while its parent takes turns and ends with the parent's execution at the latest: the execution's end stops it and charges what it used, and its commits land only when the parent, or its resume, lands them
 - A child whose launch file carries a conversation contract is a `reviewer` session: the same bootstrap and jail over its own clone of the reviewed snapshot, with the tool surface cut at both boundaries
     - the contract lists the tools the parent hands down: the ones the parent's model is offered, within the reading tools, `run_command` with `read_background` and `stop_background`, `run_verify_command`, `fetch`, `read_session` and `use_skill`; the tool list offers exactly those, and the dispatcher refuses every other name that slips past the list (an edit, the task list, `parallel`, an MCP tool); no MCP server starts
     - a reviewer's command runs under the child's own `run_commands` policy, jail and `sandbox.network`, as a work child's does: `"deny"` on the parent withholds the command tools from the reviewer's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the reviewer may run commands
@@ -804,13 +805,16 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 - Import retains descendant session directories, dispatch records, objects, lineage and hidden target refs before worker-clone cleanup; stop follows live links across state directories and session buckets, including through a dead worker.
     - ancestor settlement keeps the allowance held until cumulative `budget.update` rows confirm every panel child's charge through `settled_children`; importing descendant records does not charge that inclusive spend again
     - child evidence binds only the child's retained review target, never the top-level checkout after a merge or later edit
-- The model's `parallel` tool is off by default (`[harness.parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a child and with a child dispatcher installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel; a child the model dispatches is an ordinary run that may edit its clone, under 200 turns, 30 minutes and the parent's remaining budget, which its children share, and its commits join the parent's chain
+- The model's `parallel` tool is off by default (`[harness.parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a child and with the loop's children installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel
+    - a child the model starts is an ordinary run that may edit its clone, under its parent's config and the parent's remaining budget, which its children share, with no turn cap or deadline of its own; at most `harness.parallel.max_children` run at once, and its commits join the parent's chain when its task lands
+    - `read_background` and `stop_background` reach a child only by a session id the run's own dispatch records name, so the model reads or stops through them no session it did not start; under `run_commands = "deny"` a run with the `parallel` tool keeps `stop_background`, which then stops children only
+    - the parent's model cannot end the run over a child: `finish_session` is refused until every task has landed
 - A child's config carries key references, never secret values
     - the parent writes each child's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)
     - the child reads the same `secrets.toml` or provider env var as any other run
 - Child git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; child spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
 - A child starts from committed state only
-    - a dispatch cuts children at the run's chain tip after chain-committing changes
+    - a dispatch cuts children at the run's chain tip after chain-committing changes, and a landing chain-commits the parent's own changes before it merges a child
     - `run --parallel` settles uncommitted tracked changes first, as every run does (`git.dirty_tree`)
 
 ### 11. State machines

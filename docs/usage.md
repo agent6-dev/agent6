@@ -139,14 +139,15 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 A child belongs to the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
 The child gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
 Its record is in the repository's state from its first event, so `sessions list --children`, `attach` and the hubs read a child while it runs.
-The two land differently: a live run's steer merges each child's work onto the run's chain in dispatch order, and `run --parallel` joins one child.
-`run --parallel` is a run that makes no model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank the children, the first-ranked child joins the run's branch, the run's own gate judges the result, and the run ends `finished · children ranked`.
+Every entry lands a task once: one child's work is merged onto the run's chain, and several children on one task are attempts, of which the first-ranked lands.
+`run --parallel` is a run that makes no model call of its own and waits for its children: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child joins the run's branch, the run's own gate judges the result, and the run ends `finished · children ranked`.
 The other children keep their branches, so `agent6 sessions merge <child>` still lands one by hand.
 `SPEC` is a positive child count or a comma-separated list of selectors, the same as `run --parallel`.
+A count above one, or several selectors, means attempts at the one task; a second `/parallel` in the message is a second task.
 A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `[provider/]model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
 The spec ends at a whitespace-delimited `--` token.
 Without `--`, the whole segment is task text for one default child, even if it starts with a path, a number or a model name.
-A bare `--`, a missing task, or more children than `[harness.parallel].max_children` across the message's segments is refused with the reason.
+A bare `--`, a missing task, or more children than `[harness.parallel].max_children` allows to run at once, counting the children already running, is refused with the reason.
 
 ```text
 /parallel src/x.py: add a test
@@ -159,15 +160,23 @@ Repeat the `/parallel` token to batch tasks in one message.
 Each segment has its own optional spec and separator.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
 
-When the children return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
-Under a child's line the notice gives the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
-A child the run ended at its deadline or at its budget says so on its line (`stopped at the run's budget with no changes to join`, `joined at <sha> (ended at its deadline)`), and a task whose children were all ended before changing anything is marked failed.
+A live run starts the children and goes on: its model keeps taking turns while they work.
+When a child ends, the model reads a notice with the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
+A finished task lands at the run's next turn boundary, after every task written before it.
+The run's uncommitted work is committed first, and one notice per task names each child's outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `ranked 2 of 3` (an attempt that did not land), `CONFLICT` with the files (nothing lands, and the child's branch holds its work for the operator) or `FAILED` with the reason.
+A child the run ended at its budget, or one that was stopped, says so on its line (`stopped at the run's budget with no changes to join`, `joined at <sha> (stopped by its parent)`), and a task whose children were all ended before changing anything is marked failed.
 
 ### The parallel tool
 
 With `harness.parallel.tool = true` ([parallel](config.md#harnessparallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default child).
-The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the children joined back in dispatch order, each child starting under the run's remaining budget, which the children share; the result returns as the tool's answer, naming each child's join.
-Each child is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a child runs under 200 turns, 30 minutes and the run's remaining budget.
+One call is one task.
+The call starts its children through the `/parallel` path (a checkpoint, fresh clones of the committed tree, each child under the run's remaining budget, which the children share) and returns at once with each child's session id.
+Each child is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when its task lands.
+A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
+`read_background` with a child's id reads the child (its state and the tail of its transcript) after waiting up to `wait_s` for it to end; with no id and a `wait_s` it waits for the next child to end.
+`stop_background` with a child's id stops the child, and the commits it made still land.
+The two tools' descriptions mention children only in a run that has the `parallel` tool.
+`finish_session` is refused until every task has landed, and the refusal names the children.
 The run counts its children's spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
 The tool is offered only in run mode, never inside a child and never in a front-end without a child dispatcher; a call that slips past the list is refused with the reason.
@@ -180,7 +189,8 @@ Worker import preserves descendant records and receipts in the original reposito
 Their spend is included in the worker's total, not an extra charge, and their evidence certifies only the child's reviewed target, not the top-level tree.
 A child that needs an approval, or waits on an `ask_user`, asks on the run that dispatched it: the prompt names the child, and a standing answer given there covers the run's children.
 A question nobody answers on that run (`away mode deny`) returns `unanswered` to the child with the same note; a question the child queued (`wait: false`) stays on the child's own row.
-A run interrupted while its children ran finishes that dispatch first when resumed: children still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.
+Children end with the execution that started them: when the run stops, or ends any other way, its running children are stopped and their spend is charged.
+A run that ended while its children ran lands their work first when resumed: children still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears each task's outcome before its first call.
 Every session that dispatched children shows them: `sessions show`, the hubs and `attach --json` list a run's children under it whether it is a `run --parallel` group or a run that used `/parallel`, and the run's receipt carries a `Children` section (one line per child: its join, its spend) with the spend the children added to the run's total named, so the total is read as inclusive.
 The refusal names the child session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
