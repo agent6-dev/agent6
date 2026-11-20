@@ -115,7 +115,9 @@ When the server stops answering, the Sessions and State machines lists, a sessio
 - **Files page**: the files at one revision in the repository `agent6 web` was started in; a symlink shows its target, a link when the revision lists it
     - a markdown file opens rendered in a sandboxed frame, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - an HTML file opens as **Source**; **Preview** shows it in a sandboxed frame, with repository CSS and images at the listed revision
-    - HTML scripts stay off, as the bar above the frame states; previews require HTTPS or localhost, and their addresses refuse direct tabs
+    - HTML scripts are off by default; previews need HTTPS or localhost and refuse direct tabs
+    - **Run scripts** asks each time the page opens; a page with scripts can read files in its folder and send them to any server through WebRTC
+    - closing the preview ends the grant
     - **Source**, another file, navigation away and tab exit close the preview; an abandoned preview expires after 30 seconds without the UI's renewal
     - markdown remote images, video and audio stay blocked until allowed for that open file; the bar inside the frame lists every full address, and **Load** opens a signed-in confirmation ([browser network limits](security.md#5-network))
     - the confirmation lists the same addresses and warns what loading them sends; Cancel leaves them blocked, and closing the preview discards the allowance
@@ -214,13 +216,15 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - a mismatch returns 409; no force flag bypasses this check
     - both routes require the sign-in header and refuse hidden path components, symlinks, hardlinks, special files, binary content and invalid UTF-8; files are limited to 20 MiB
     - saves preserve CRLF line endings and create no directories; these routes neither stage nor commit
-- preview capabilities: signed-in `POST /api/files/preview` accepts `{rev, path, ignored, digest}` and returns a random `key`, a frame `url`, the resolved `rev`, `kind` and full remote image addresses in `images`
+- preview capabilities: signed-in `POST /api/files/preview` accepts `{rev, path, ignored, digest}` and returns a random `key`, a frame `url`, the resolved `rev`, `kind` and full remote addresses in `images` and `media`
     - markdown requires the digest from `/api/git/text`; a mismatch returns 409, and the server keeps the rendered snapshot until close
     - `POST /api/files/preview/renew` and `/close` take `{key}` and require the sign-in header; a key expires after 30 seconds without renewal
     - `GET /preview/<key>/<path>` reads through the Files blob reader with the opened revision and ignored-file permission; query parameters cannot change either
-    - HTML and markdown documents require `Sec-Fetch-Dest: iframe`; other allowed destinations are `style`, `image`, `font` and `empty`, with media types checked by extension
-    - missing metadata, standalone documents, objects, embeds and scripts receive a plain 403; browser previews need HTTPS or localhost for Fetch Metadata
-    - every preview response carries a sandbox CSP and `Referrer-Policy: no-referrer`; HTML scripts are disabled
+    - HTML and markdown documents require `Sec-Fetch-Dest: iframe`; the reader checks resource destinations and media types
+    - missing metadata, standalone documents, objects and embeds receive a plain 403; browser previews need HTTPS or localhost for Fetch Metadata
+    - every preview response carries a sandbox CSP and `Referrer-Policy: no-referrer`
+    - signed-in `POST /api/files/preview/scripts` takes `{key}` and grants inline and repository scripts to the opened HTML document until close
+    - a granted key serves files only from the page's folder and below
     - markdown runs only its nonce-authorized owned script and escapes raw HTML
     - signed-in `POST /api/files/preview/remote` accepts only `{key}` and permits the snapshot's remote image origins in `img-src` and video/audio origins in `media-src` until close; it accepts no host list
     - other resource types gain no remote permission; scheme-relative image addresses use HTTPS

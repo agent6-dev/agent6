@@ -570,8 +570,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Fetch Metadata is browser-controlled and sent only to HTTPS or localhost; non-browser clients can forge it but still need the random key.
   This gate supplies the standalone-navigation restriction that CSP lacks ([containment probe](../bench/web-preview-containment.md)).
 - Every preview response carries CSP `sandbox`, `default-src 'none'`, `frame-ancestors 'self'`, `form-action 'none'`, `base-uri 'none'` and `object-src 'none'`.
-  HTML responses add `script-src 'none'`; the HTML frame has an empty `sandbox` attribute.
-  HTML scripts stay off; there is no permission to enable them.
+  HTML scripts are off by default in both the frame and its policy.
   HTML styles, images, fonts and media are restricted to the key's preview path; inline styles are allowed.
   The UI's `frame-src` restricts frame navigation to the preview path.
   `Referrer-Policy: no-referrer`, `X-DNS-Prefetch-Control: off`, `nosniff` and `no-store` apply to previews, including refusals.
@@ -581,6 +580,15 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Repository images, native video and audio, and error reads use the confined preview path.
   Before consent, `img-src` and `media-src` permit only that path.
   Remote images, video and audio have no fetching attribute before consent.
+- **Run scripts** asks for confirmation each time an HTML preview opens.
+  A page with scripts can send files in its folder to any server through WebRTC.
+  The browser cannot stop that.
+  Only the signed-in UI can grant scripts for the open page.
+  Its frame and document policy then permit scripts but keep the origin opaque.
+  The server restricts every read on the key to that folder and its descendants.
+  Only the opened file can be served as a document on that key.
+  The policy denies outside resource loads, workers and nested frames.
+  Closing the preview discards its grant.
 - The UI accepts markdown messages only from the frame it created (`event.source`).
   The owned checkbox script proposes `{type: "preview-save", name, text}` from the rendered snapshot.
   The UI accepts only the displayed working-tree file's own name.

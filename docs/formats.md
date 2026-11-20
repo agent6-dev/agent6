@@ -2628,7 +2628,7 @@ Source: [`agent6.ui.web.files_preview.OpenPreviewBody`](https://github.com/agent
 
 ### PreviewKeyBody
 
-**Support: public.** The signed-in UI renews, closes or grants remote loads for one preview capability.
+**Support: public.** The signed-in UI renews, closes or grants permission to one preview.
 
 Source: [`agent6.ui.web.files_preview.PreviewKeyBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_preview.py).
 

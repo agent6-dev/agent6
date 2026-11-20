@@ -16,15 +16,18 @@ import pydantic
 from agent6 import errors
 from agent6.ui.web import git_model, markdown
 
-DENY_CSP = (
-    "sandbox; default-src 'none'; frame-ancestors 'self'; form-action 'none'; "
-    "base-uri 'none'; object-src 'none'; script-src 'none'"
+_BOUNDARY = (
+    "default-src 'none'; frame-ancestors 'self'; form-action 'none'; "
+    "base-uri 'none'; object-src 'none'"
 )
+DENY_CSP = f"sandbox; {_BOUNDARY}; script-src 'none'"
 REFUSAL = "Previews open inside the Files page. Previews need https or localhost."
 LEASE_SECONDS = 30
 _RESOURCE_TYPES = {
     **markdown.MEDIA_TYPES,
     "css": ("style", "text/css; charset=utf-8"),
+    "js": ("script", "text/javascript; charset=utf-8"),
+    "mjs": ("script", "text/javascript; charset=utf-8"),
     "otf": ("font", "font/otf"),
     "ttf": ("font", "font/ttf"),
     "woff": ("font", "font/woff"),
@@ -53,7 +56,7 @@ class OpenPreviewBody(pydantic.BaseModel):
 
 
 class PreviewKeyBody(pydantic.BaseModel):
-    """The signed-in UI renews, closes or grants remote loads for one preview capability."""
+    """The signed-in UI renews, closes or grants permission to one preview."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
     key: str = pydantic.Field(description="The key returned when this preview opened.")
@@ -69,6 +72,7 @@ class Preview:
     expires: float
     rendered: markdown.Rendered | None = None
     remote_allowed: bool = False
+    scripts_allowed: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -182,6 +186,18 @@ class Store:
             raise PreviewError("This preview is closed. Open it again in Files.", 403)
         return page
 
+    def allow_scripts(self, key: str) -> None:
+        """Grant scripts to this HTML page until it closes.
+
+        Raises:
+            PreviewError: The preview is closed or is not HTML.
+        """
+        with self._lock:
+            page = self._get(key)
+            if page.rendered is not None:
+                raise PreviewError("Only HTML previews can run page scripts.")
+            self._pages[key] = dataclasses.replace(page, scripts_allowed=True)
+
     def read(self, route: str, destination: str, host: str) -> Response:
         """Return confined bytes only for an allowed browser fetch destination.
 
@@ -197,6 +213,7 @@ class Store:
             "font",
             "iframe",
             "image",
+            "script",
             "style",
             "track",
             "video",
@@ -206,7 +223,15 @@ class Store:
         with self._lock:
             page = self._get(key)
         _visible(path)
-        allowed = sources(host, f"/preview/{key}/")
+        if destination == "script" and not page.scripts_allowed:
+            raise PreviewError(REFUSAL, 403)
+        parent, slash, _ = page.path.rpartition("/")
+        folder = parent + slash if page.scripts_allowed else ""
+        if not path.startswith(folder) or (
+            page.scripts_allowed and destination == "iframe" and path != page.path
+        ):
+            raise PreviewError("This grant serves only the open page and files in its folder.", 403)
+        allowed = sources(host, f"/preview/{key}/{parse.quote(folder)}")
         if destination == "iframe" and page.rendered is not None and path == page.path:
             nonce = secrets.token_urlsafe(32)
             remote = {"img": "", "media": ""}
@@ -214,8 +239,7 @@ class Store:
                 for kind, urls in (("img", page.rendered.images), ("media", page.rendered.media)):
                     remote[kind] = " ".join(sorted({markdown.remote_origin(url) for url in urls}))
             policy = (
-                "sandbox allow-scripts; default-src 'none'; frame-ancestors 'self'; "
-                "form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; "
+                f"sandbox allow-scripts; {_BOUNDARY}; frame-src 'none'; "
                 f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
                 f"img-src {allowed} {remote['img']}; connect-src {allowed}; "
                 f"media-src {allowed} {remote['media']}"
@@ -239,9 +263,16 @@ class Store:
             if expected != destination:
                 raise PreviewError("this resource type is not allowed", 403)
         blob = git_model.blob_payload(self.repo, page.rev, path, ignored=page.ignored)
+        active = page.scripts_allowed and destination == "iframe"
         policy = (
-            f"{DENY_CSP}; style-src 'unsafe-inline' {allowed}; img-src {allowed}; "
-            f"font-src {allowed}; media-src {allowed}; frame-src 'none'; connect-src 'none'"
+            f"sandbox allow-scripts; {_BOUNDARY}; script-src 'unsafe-inline' {allowed}"
+            if active
+            else DENY_CSP
+        )
+        connections = allowed if active else "'none'"
+        policy += (
+            f"; style-src 'unsafe-inline' {allowed}; img-src {allowed}; font-src {allowed}; "
+            f"media-src {allowed}; frame-src 'none'; worker-src 'none'; connect-src {connections}"
         )
         return Response(blob.data, content_type, policy)
 

@@ -89,6 +89,54 @@ def test_html_preview_is_static_and_closes_with_its_view(
     assert closing.value.ok
 
 
+def test_html_scripts_require_a_new_confirmation_each_time(
+    served: tuple[pathlib.Path, int], open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """Cancel and reopening the preview keep scripts off in both sandbox layers."""
+    from playwright import sync_api
+
+    repo, port = served
+    guide = repo / "guide"
+    guide.mkdir()
+    (guide / "index.html").write_text(
+        '<h1>Guide</h1><output>Static</output><script src="app.js"></script>'
+    )
+    (guide / "app.js").write_text(
+        'fetch("title.txt").then(r => r.text()).then(t => '
+        'document.querySelector("output").textContent = t)'
+    )
+    (guide / "title.txt").write_text("Interactive")
+    page, _errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/WORKTREE/guide/index.html")
+    preview = page.get_by_role("button", name="Preview", exact=True)
+    preview.click()
+    iframe = page.locator(".files-preview iframe")
+    result = iframe.content_frame.locator("output")
+    run = page.get_by_role("button", name="Run scripts", exact=True)
+    sync_api.expect(result).to_have_text("Static")
+    run.click(timeout=3000)
+    dialog = page.get_by_role("alertdialog")
+    sync_api.expect(dialog).to_contain_text(
+        "This page's scripts can read the files in its folder and send them to any server. "
+        "The browser cannot stop that."
+    )
+    dialog.get_by_role("button", name="Cancel").click()
+    sync_api.expect(result).to_have_text("Static")
+    run.click()
+    dialog.get_by_role("button", name="Run scripts", exact=True).click()
+    sync_api.expect(iframe).to_have_attribute("sandbox", "allow-scripts")
+    sync_api.expect(result).to_have_text("Interactive")
+    url = iframe.get_attribute("src")
+    assert url
+    with page.expect_response("**/api/files/preview/close") as closing:
+        page.get_by_role("button", name="Source", exact=True).click()
+    assert closing.value.ok
+    assert test_files_preview.get(port, url, "iframe")[0] == 403
+    preview.click()
+    sync_api.expect(result).to_have_text("Static")
+    sync_api.expect(run).to_be_visible()
+
+
 def test_html_preview_uses_the_listed_commit(
     served: tuple[pathlib.Path, int], open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:

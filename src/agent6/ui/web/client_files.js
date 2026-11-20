@@ -95,7 +95,21 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
       frame.onload = () => viewState(true);
       theme.observe(document.documentElement, {attributes: true, attributeFilter: ['class']});
       filesState.previewScroll = id => { anchor = id || ''; viewState(true); };
-    } else note.textContent = 'Scripts are off for this page.';
+    } else {
+      const run = el('button', null, 'Run scripts');
+      note.replaceChildren(el('span', null, 'Scripts are off for this page.'), ' ', run);
+      run.onclick = async () => {
+        const warning = "This page's scripts can read the files in its folder and send them to any server. The browser cannot stop that.";
+        if (!await confirmDialog('Run scripts?', warning, 'Run scripts', true) || closed) return;
+        run.disabled = true;
+        try {
+          await postJSON('/api/files/preview/scripts', {key});
+          if (closed) return;
+          frame.setAttribute('sandbox', 'allow-scripts'); frame.src = opened.url;
+          note.textContent = 'Scripts are on for this page.';
+        } catch (e) { if (!closed) { toast(e.message, true); run.disabled = false; } }
+      };
+    }
     frame.src = opened.url; host.appendChild(frame);
     timer = setTimeout(renew, 10000);
   } catch (e) {

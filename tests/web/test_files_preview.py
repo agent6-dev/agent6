@@ -268,6 +268,40 @@ def test_preview_pins_revision_and_ignored_permission(served: tuple[pathlib.Path
     assert get(port, address, "iframe")[0] == 422
 
 
+def test_script_grant_only_serves_the_open_pages_folder(served: tuple[pathlib.Path, int]) -> None:
+    """Granting scripts narrows all reads to the folder and executes only the opened page."""
+    repo, port = served
+    folder = repo / "guide"
+    (folder / "assets").mkdir(parents=True)
+    (folder / "index.html").write_text("<h1>Guide</h1>")
+    (folder / "other.html").write_text("<h1>Other page</h1>")
+    (folder / "assets/app.js").write_text("document.title = 'Guide'")
+    _, opened = api(port, rev="WORKTREE", path="guide/index.html")
+    url = opened["url"]
+    prefix = url.removesuffix("guide/index.html")
+    assert get(port, prefix + "plan.md", "empty")[0] == 200
+    assert get(port, prefix + "guide/assets/app.js?scripts=1", "script")[0] == 403
+    assert api(port, "/scripts", key=opened["key"], path="plan.md")[0] == 400
+    assert api(port, "/scripts", key=opened["key"])[0] == 200
+    status, headers, _ = get(port, url, "iframe")
+    assert status == 200
+    policy = headers["Content-Security-Policy"]
+    assert "sandbox allow-scripts;" in policy
+    assert "script-src 'unsafe-inline'" in policy
+    assert "worker-src 'none'" in policy
+    assert "frame-src 'none'" in policy
+    assert "allow-same-origin" not in policy
+    assert "'unsafe-eval'" not in policy
+    assert get(port, prefix + "plan.md", "empty")[0] == 403
+    assert get(port, prefix + "guidebook/other.html", "iframe")[0] == 403
+    assert get(port, prefix + "guide/other.html", "iframe")[0] == 403
+    assert get(port, prefix + "guide/assets/app.js", "script")[0] == 200
+    assert get(port, url, "document")[0] == 403
+    assert api(port, "/close", key=opened["key"])[0] == 200
+    assert get(port, prefix + "guide/assets/app.js", "script")[0] == 403
+    assert api(port, "/scripts", key=opened["key"])[0] == 403
+
+
 def test_preview_actions_require_the_sign_in_header(served: tuple[pathlib.Path, int]) -> None:
     repo, port = served
     (repo / "index.html").write_text("private")
@@ -275,6 +309,7 @@ def test_preview_actions_require_the_sign_in_header(served: tuple[pathlib.Path, 
     for action, body in (
         ("", {"rev": "WORKTREE", "path": "index.html"}),
         ("/renew", {"key": opened["key"]}),
+        ("/scripts", {"key": opened["key"]}),
         ("/close", {"key": opened["key"]}),
     ):
         conn = client.HTTPConnection("127.0.0.1", port, timeout=10)

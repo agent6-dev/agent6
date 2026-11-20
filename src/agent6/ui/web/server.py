@@ -703,6 +703,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             "/api/files/preview/close",
             "/api/files/preview/remote",
             "/api/files/preview/renew",
+            "/api/files/preview/scripts",
         ):
             self._preview_action(path)
             return
@@ -1163,7 +1164,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._send_json({"error": f"not found: {path}"}, status=404)
 
     def _preview_action(self, path: str) -> None:
-        """Let only signed-in UI requests change a preview's lease or remote-load grant."""
+        """Change a preview's lease or permissions only for the signed-in UI."""
         try:
             if path == "/api/files/preview":
                 body = files_preview.OpenPreviewBody.model_validate(self._read_body())
@@ -1174,6 +1175,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     self.server.previews.close(key)
                 elif path.endswith("/remote"):
                     self.server.previews.allow_remote(key)
+                elif path.endswith("/scripts"):
+                    self.server.previews.allow_scripts(key)
                 else:
                     self.server.previews.renew(key)
                 self._send_json({"ok": True})

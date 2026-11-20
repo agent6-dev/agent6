@@ -1,7 +1,7 @@
 # Preview containment
 
 **The proposed sandbox and CSP do not prevent a standalone HTML preview from sending repository text through its own navigation.**
-The web server's static preview route instead refuses standalone documents using Fetch Metadata and disables HTML scripts.
+The Files preview route refuses standalone documents using Fetch Metadata and disables HTML scripts by default.
 
 ## Reproduce
 
@@ -81,6 +81,7 @@ They do not measure UDP traffic from an executing script.
 
 The script keeps the no-egress assertion failing rather than marking the observed exits as expected passes.
 Arbitrary HTML scripts with a directly executable preview address need a boundary beyond these tested browser policies.
-The web server uses both restrictions: HTML scripts are disabled, and preview documents require `Sec-Fetch-Dest: iframe`.
+The web server disables HTML scripts by default and requires `Sec-Fetch-Dest: iframe` for every preview document.
+**Run scripts** requires a signed-in grant for that page because the browser does not contain WebRTC.
 The [preview boundary](../docs/security.md#5-network) describes its policies and authenticated capabilities.
 This synthetic probe tests the arbitrary-script design, not the production route, and still fails on its navigation exits.
