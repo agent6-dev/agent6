@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import itertools
 import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -573,6 +574,31 @@ def test_the_git_toggles_and_the_open_commit_expose_their_state(
     page.locator(".git-side .gf-open").first.click()
     page.get_by_role("button", name="split", exact=True).click()
     pressed(("split", "inline", "old", "new"))
+    assert errors == [], errors
+
+
+def test_a_segmented_toggle_draws_one_seam_and_a_whole_focus_ring(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Two of the mode seams were 2px, and a focused mode's ring hid under its neighbours."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.locator(".gc-row").first.click()
+    page.locator(".git-side .gf-open").first.click()
+    modes = page.locator(".git-diff .gview button")
+    edges = modes.evaluate_all(
+        "bs => bs.map(b => { const r = b.getBoundingClientRect(); return [r.left, r.right]; })"
+    )
+    assert len(edges) == 4, edges
+    assert [round(b[0] - a[1], 2) for a, b in itertools.pairwise(edges)] == [-1] * 3
+    page.keyboard.press("Shift")  # a key first, so the focus below is a keyboard user's
+    split = page.get_by_role("button", name="split", exact=True)
+    split.focus()
+    z = "b => b.matches(':focus-visible') ? +getComputedStyle(b).zIndex : null"
+    pressed = page.locator(".git-diff .gview [aria-pressed=true]").evaluate(
+        "b => +getComputedStyle(b).zIndex"
+    )
+    assert split.evaluate(z) > pressed, split.evaluate(z)
     assert errors == [], errors
 
 
