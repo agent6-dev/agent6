@@ -17,7 +17,7 @@ import pytest
 from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import journal, process
-from agent6.ui.cli import cli_main, common, sessions_show
+from agent6.ui.cli import common, entry, sessions_show
 from agent6.vcs.git import read as git_read
 from tests import child_env
 
@@ -1191,7 +1191,8 @@ def test_status_reports_a_checkout_merge_only_while_it_covers_the_hidden_chain(
     git(repo, "update-ref", chain, "HEAD")
     git(repo, "switch", "-c", "release", "main")
     assert (
-        cli_main(["sessions", "merge", run.name, "--into", "release", "--method", "ff_only"]) == 0
+        entry.cli_main(["sessions", "merge", run.name, "--into", "release", "--method", "ff_only"])
+        == 0
     )
     assert (repo / "answer").read_text() == "done\n"
     capsys.readouterr()
@@ -1199,9 +1200,9 @@ def test_status_reports_a_checkout_merge_only_while_it_covers_the_hidden_chain(
         later = git(repo, "commit-tree", "HEAD^{tree}", "-p", chain, "-m", "next turn")
         git(repo, "update-ref", chain, later)
 
-    assert sessions_show._cmd_status(run.name) == 0
+    assert entry.cli_main(["sessions", "show", run.name]) == 0
     text = capsys.readouterr().out
-    assert sessions_show._cmd_status(run.name, as_json=True) == 0
+    assert entry.cli_main(["sessions", "show", run.name, "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert (shown["run_branch"], shown["merged_into_checkout"], "merged into release" in text) == (
         None,
