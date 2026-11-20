@@ -78,6 +78,23 @@ Each response reported 300 uncached and 700 cached input tokens by construction.
 | `helper` | 11 | helper accepted |
 | `worker` with a summary tool call | 12 | worker rejected; helper accepted; `fallback: summary contains a tool call` |
 
-No live cache rate or quality score was measured.
-The live token counts are the operator's to fill in from the host receipts.
-The operator can read `compact.summarise.done.summary` in ordinary runs to assess what survived.
+No live cache rate or quality score was measured on the stand-in.
+
+## Live observations
+
+One run per setting used `chatgpt/gpt-5.6-luna` at `low` effort for both roles, with the overlay above.
+Each run made 11 model calls, dropped four results in one step, accepted its first summary and finished with `abcdefghz`.
+
+| Setting | Summary call input (uncached / cached) | Summary length | First worker call after the restart (uncached / cached) | Run input (uncached / cached) |
+| --- | ---: | ---: | ---: | ---: |
+| `worker` | 24,438 / 5,120 | 9 chars | 24,264 / 3,328 | 59,906 / 37,120 |
+| `helper` | 531 / 0 | 834 chars | 24,456 / 3,328 | 37,341 / 30,464 |
+
+- The worker summary call read the earlier request prefix from the cache; its uncached input is the `z.txt` result, which no earlier call held.
+- The retained tail holds that result again, so the `worker` setting sent it uncached twice and the `helper` setting once.
+- The worker summary was the task's answer (`abcdefghz`), without the four numbered parts the instruction asks for.
+- The helper summary said the letters could not be determined and that `z.txt` was not read: its input has no tool output and stops before the retained tail.
+- One call in each run read nothing from the cache although its system text and tool definitions matched the previous request.
+
+**Limits:** n = 1 per setting on a nine-file read task; the last result is 48,000 characters by construction, so the repeated uncached input is at its largest.
+Recall on real work is unmeasured: read `compact.summarise.done.summary` in ordinary runs.
