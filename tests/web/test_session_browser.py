@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent6 import paths
-from tests.web import session_logs, test_web_browser
+from tests.web import geometry, session_logs, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -189,7 +189,8 @@ def test_a_prompt_lands_after_the_conversation_and_moves_neither_bar(
     _append(session, _reads(1, 40))
     expect(box.locator(".ci").filter(has_text="f40.py")).to_be_attached()
     assert prompt.evaluate(PROMPT_PLACE)["whole"]
-    box.evaluate("b => { b.scrollTop = 0; }")
+    # The page learns of the reader's scroll at the next frame: wait for it before a new line.
+    box.evaluate("b => { b.scrollTop = 0; return new Promise(requestAnimationFrame); }")
     _append(session, _reads(1, 41))
     expect(box.locator(".ci").filter(has_text="f41.py")).to_be_attached()
     place = prompt.evaluate(PROMPT_PLACE)
@@ -476,12 +477,15 @@ def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     expect(fields).to_have_count(2)
     expect(fields.first).to_have_attribute("placeholder", "pick or type an answer…")
     expect(fields.last).to_have_attribute("placeholder", "type an answer…")
-    first, last = fields.first.bounding_box(), fields.last.bounding_box()
-    second = box.locator(".q").last.bounding_box()
-    send = box.get_by_role("button", name="Submit all", exact=True).bounding_box()
-    option = box.get_by_role("button", name="no, raise", exact=True).bounding_box()
-    row = box.locator(".form-row").first.bounding_box()
-    assert first and last and second and send and option and row
+    # One reading: the conversation above the box arrives after it and moves it down.
+    first, last, second, send, option, row = geometry.boxes(
+        fields.first,
+        fields.last,
+        box.locator(".q").last,
+        box.get_by_role("button", name="Submit all", exact=True),
+        box.get_by_role("button", name="no, raise", exact=True),
+        box.locator(".form-row").first,
+    )
     assert second["y"] - (first["y"] + first["height"]) == 14
     assert send["y"] - (last["y"] + last["height"]) == 14
     if width > 780:
