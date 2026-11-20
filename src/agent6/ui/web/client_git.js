@@ -553,7 +553,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     }
     if (!markRow(selected)) settle(graph.querySelector('.gc-row'));
     const n = selectedRefs().length;
-    counts.textContent = (loadError ? '' : commits.length + (hasMore ? '+' : '') + ' commits · ') + n + ' of ' + refs.length + ' refs';
+    counts.textContent = (loadError ? '' : commits.length + (hasMore ? '+' : '') + (commits.length === 1 && !hasMore ? ' commit · ' : ' commits · ')) + n + ' of ' + refs.length + ' refs';
   };
   // While a page loads, the graph reads busy and, past a moment, dims. A first page that fails
   // reads as the error in the graph; a later one keeps the rows it has and raises a toast.
