@@ -271,6 +271,9 @@ def test_two_tasks_started_in_one_turn_run_while_the_parent_works_and_land_in_or
         "run-p1",
         "run-p2",
     ]
+    # A landing's rows carry the turn they are written at: the views read the turn off any row.
+    turns = [row["turn"] for row in _events(tmp_path / "run", "budget.turn")]
+    assert turns == sorted(turns) and turns[-1] == 5
 
 
 def test_an_end_stops_the_children_still_running_and_a_resume_lands_their_work(
@@ -470,11 +473,11 @@ def test_close_stops_what_runs_charges_each_child_once_and_forgets_it(
     _start(dispatcher, ("", "write a"), ("", "write b"))
     children.end("root-p2-l1", path="b.txt")
 
-    assert dispatcher.close() == ("root-p1-l1", "root-p2-l1")
+    assert dispatcher.close(3) == ("root-p1-l1", "root-p2-l1")
 
     assert children.stopped == ["root-p1-l1"]
     assert dispatcher.budget.estimate_usd()[0] == pytest.approx(0.5)
-    assert dispatcher.close() == ()
+    assert dispatcher.close(3) == ()
     assert dispatcher.budget.estimate_usd()[0] == pytest.approx(0.5)
     assert [r.state for r in child_dispatch.read_records(repo.parent / "root")] == ["settling"] * 2
 

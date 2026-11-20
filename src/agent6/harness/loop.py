@@ -1540,7 +1540,7 @@ class Harness:
             The execution's result.
         """
         # Children end with the execution that started them; a resume lands their work.
-        unlanded = self.children.close() if self.children is not None else ()
+        unlanded = self.children.close(turn) if self.children is not None else ()
         if unlanded:
             self.log(f"LOOP: {len(unlanded)} child(ren) had not landed: {', '.join(unlanded)}")
             end = dataclasses.replace(

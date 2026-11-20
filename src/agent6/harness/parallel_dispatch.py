@@ -658,11 +658,14 @@ class ParallelDispatcher:
         record = child_dispatch.read_record(child_dispatch.record_path(self.session_dir, group))
         return [parallel_join.join_of(child) for child in record.children if child.join is not None]
 
-    def close(self) -> tuple[str, ...]:
+    def close(self, turn: int) -> tuple[str, ...]:
         """End the execution's children: stop each still running, wait, charge what it used.
 
         Their work stays on their branches and their records stay unlanded: the next
         execution lands them before its first model call.
+
+        Args:
+            turn: The turn the execution ended on.
 
         Returns:
             The children whose dispatch had not landed.
@@ -676,6 +679,7 @@ class ParallelDispatcher:
             self.settled(
                 task.record,
                 {child.session_id: self.result_of(task.record, child) for child in task.children},
+                turn=turn,
             )
         self.open.clear()
         return left
@@ -702,15 +706,14 @@ class ParallelDispatcher:
             The result, its message the record's; "" when a stop held a rank join's ranking.
         """
         by_id = {res.spec.session_id: res for res in results}
-        record = self.settled(record, by_id)
+        turn = record.turn if turn is None else turn
+        record = self.settled(record, by_id, turn=turn)
         if record.join_policy == "rank" and record.ranking is None and self.stop_pending():
             # No judge is asked after a stop: the record stays here and a resume ranks from it.
             self.log(f"PARALLEL: group {record.identity} stopped before its ranking")
             return child_records.DispatchResult(record.identity, True, (), "", base=record.base)
-        clean = record.join_policy == "record_only" or self.ensure_clean(
-            record.turn if turn is None else turn, "landing children"
-        )
-        record = self.joined(record, by_id, clean=clean)
+        clean = record.join_policy == "record_only" or self.ensure_clean(turn, "landing children")
+        record = self.joined(record, by_id, clean=clean, turn=turn)
         joins = [parallel_join.join_of(child) for child in record.children]
         if record.node_id is None:
             # Its id is on the record before its stamp: a resume never adds a second node.
@@ -749,12 +752,15 @@ class ParallelDispatcher:
         self,
         record: child_dispatch.DispatchRecord,
         by_id: dict[str, child_records.ChildResult],
+        *,
+        turn: int | None = None,
     ) -> child_dispatch.DispatchRecord:
         """Charge each child's usage once; a child whose usage is unknown stays unsettled.
 
         Args:
             record: The dispatch's record.
             by_id: The children's results by session id.
+            turn: The turn the charge is journaled at; None for the turn of the dispatch.
 
         Returns:
             The record in the `settling` state.
@@ -784,7 +790,7 @@ class ParallelDispatcher:
                 )
             )
         record = record.model_copy(update={"children": tuple(children)})
-        self.emit_budget(record.turn)
+        self.emit_budget(record.turn if turn is None else turn)
         self.write(record)
         return record
 
@@ -794,6 +800,7 @@ class ParallelDispatcher:
         by_id: dict[str, child_records.ChildResult],
         *,
         clean: bool = True,
+        turn: int | None = None,
     ) -> child_dispatch.DispatchRecord:
         """Join each child not yet joined, in child order, recording each join as it lands.
 
@@ -803,6 +810,7 @@ class ParallelDispatcher:
             record: The dispatch's record.
             by_id: The children's results by session id.
             clean: Whether the tree holds only committed work; a merge needs it.
+            turn: The turn the judges' spend is journaled at; None for the turn of the dispatch.
 
         Returns:
             The record in the `joining` state with every child's join recorded.
@@ -810,7 +818,7 @@ class ParallelDispatcher:
         record = record.advanced("joining")
         self.write(record)
         if record.join_policy == "rank" and record.ranking is None:
-            record = self.ranked(record, by_id)
+            record = self.ranked(record, by_id, turn=record.turn if turn is None else turn)
         order = record.ranking.order if record.ranking is not None else ()
         winner = record.ranking.winner if record.ranking is not None else ""
         for child in record.children:
@@ -871,12 +879,15 @@ class ParallelDispatcher:
         self,
         record: child_dispatch.DispatchRecord,
         by_id: dict[str, child_records.ChildResult],
+        *,
+        turn: int,
     ) -> child_dispatch.DispatchRecord:
         """Rank a rank join's children and write the order before any join.
 
         Args:
             record: The dispatch's record.
             by_id: The children's results by session id.
+            turn: The turn the judges' spend is journaled at.
 
         Returns:
             The record with its ranking: the children that ended with a result, best first.
@@ -907,7 +918,7 @@ class ParallelDispatcher:
             }
         )
         # The judges' spend is on the meter now.
-        self.emit_budget(record.turn)
+        self.emit_budget(turn)
         self.write(record)
         return record
 
