@@ -110,9 +110,23 @@
       "plan_observed_points": 0.0,
       "usd_cap": null,
       "tokens_fallback_cap": null,
-      "plan_cap": null
+      "plan_cap": null,
+      "child_model_tokens": {
+        "input_tokens": null,
+        "output_tokens": null
+      }
     },
     "account": null,
+    "prior_model_tokens": {
+      "parent": {
+        "input_tokens": 5850,
+        "output_tokens": 82
+      },
+      "children": {
+        "input_tokens": null,
+        "output_tokens": null
+      }
+    },
     "usd_text": "$0.0048",
     "plan_text": ""
   },
