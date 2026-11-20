@@ -159,6 +159,25 @@ def test_a_verification_line_is_painted_its_outcomes_colour(
     assert not errors
 
 
+def test_a_red_gates_end_line_is_painted_the_error_colour(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A red gate's end line was painted --warn under its --err verify line."""
+    from playwright.sync_api import expect
+
+    failed = test_transcript_verify.attempt()
+    failed[-1].update(exit_code=1, outcome="failed")
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "failed"}
+    session_logs.write_run(tmp_path, "red-gate-AAA111", [*failed, stop])
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/red-gate-AAA111")
+    line = page.locator(".card-conv .ci span").filter(has_text="● finished · gate red")
+    expect(line).to_have_count(1)
+    color, want = line.evaluate(PAINT, "--err")
+    assert color == want
+    assert not errors
+
+
 @pytest.mark.parametrize("width", [1280, 820])
 def test_the_conversation_heading_lines_up_with_the_drawers_first_card(
     open_page: Callable[[int], tuple[Page, list[str]]],

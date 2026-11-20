@@ -77,7 +77,7 @@ _STYLE_RICH: dict[transcript_style.StyleName, str] = {
     "commit": "magenta",
     "marker": "dim italic",
     "done-ok": "bold green",
-    "done-fail": "bold yellow",
+    "done-fail": "bold red",
     "done-neutral": "bold",
     "body": "",
     "done-detail": "dim",

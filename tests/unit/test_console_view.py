@@ -140,6 +140,28 @@ def test_failed_tool_shows_its_output_tail() -> None:
     assert "No such file" in out
 
 
+def test_a_red_gates_end_line_is_bold_red_as_its_verify_line() -> None:
+    """A red gate's end line read bold yellow under its bold red verify line."""
+    buf = io.StringIO()
+    view = console_render.ConsoleView(buf, color=True)
+    for event in [
+        {"type": "verify.start", "verify_id": "v1", "command": ["pytest", "-q"]},
+        {
+            "type": "verify.end",
+            "verify_id": "v1",
+            "command": ["pytest", "-q"],
+            "exit_code": 1,
+            "outcome": "failed",
+            "duration_s": 0.4,
+        },
+        {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
+    ]:
+        view.feed(event)
+    red = "\033[1m\033[31m"
+    assert red + "verify: ✗ exit 1" in buf.getvalue()
+    assert red + "● finished · gate red" in buf.getvalue()
+
+
 def test_steer_request_closes_open_dim_block() -> None:
     # The open dim thinking block is reset before the pause message, so it does not inherit the dim.
     buf = io.StringIO()

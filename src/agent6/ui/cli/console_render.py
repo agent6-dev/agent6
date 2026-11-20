@@ -56,7 +56,7 @@ _STYLE_ANSI: dict[transcript_style.StyleName, str] = {
     "commit": _ANSI["magenta"],
     "marker": _ANSI["dim"] + _ANSI["italic"],
     "done-ok": _ANSI["bold"] + _ANSI["green"],
-    "done-fail": _ANSI["bold"] + _ANSI["yellow"],
+    "done-fail": _ANSI["bold"] + _ANSI["red"],
     "done-neutral": _ANSI["bold"],
     "body": "",
     "done-detail": _ANSI["dim"],

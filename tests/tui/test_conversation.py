@@ -200,6 +200,36 @@ def test_harness_end_labels_reach_the_conversation_and_dashboard(
     asyncio.run(scenario())
 
 
+def test_a_red_gates_end_line_takes_its_verify_lines_red(tmp_path: pathlib.Path) -> None:
+    """A red gate's end line read bold yellow under its bold red verify line."""
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "verify.start", "verify_id": "v1", "command": ["pytest", "-q"]},
+        {
+            "type": "verify.end",
+            "verify_id": "v1",
+            "command": ["pytest", "-q"],
+            "exit_code": 1,
+            "outcome": "failed",
+            "duration_s": 0.4,
+        },
+        {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
+    ]
+
+    async def scenario() -> None:
+        app = _hosted(tmp_path / "run", events)
+        async with app.run_test() as pilot:
+            await waits.wait_for(pilot, lambda: "gate red" in _body_text(app), "the end line")
+            styles = {
+                line.plain: [str(span.style) for span in line.spans]
+                for line in app._conv._content.split("\n")
+            }
+            assert styles["● finished · gate red"] == ["bold red"]
+            assert styles["verify: ✗ exit 1 · 0.4s"] == ["bold red"]
+
+    asyncio.run(scenario())
+
+
 def test_conversation_screen_follows_live(tmp_path: pathlib.Path) -> None:
     """Events appended after mount (a live run / a resume) show up via the poll."""
     run = tmp_path / "run"
