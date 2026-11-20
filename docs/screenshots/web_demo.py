@@ -194,7 +194,8 @@ def drive_repo(page: Page, mode: str) -> None:
     click(page, rail % "files", label="Files: any revision, read-only", settle=1200)
     page.wait_for_selector(".gtree")
     click(page, ".gtree [data-path='README.md']", label="A Markdown file, rendered", settle=1400)
-    page.wait_for_selector(".md-view")
+    # Rendered Markdown lives in the preview frame.
+    page.frame_locator(".files-preview iframe").locator(".md-view").wait_for()
     click(
         page,
         ".files-md-mode button[data-mode=source]",
@@ -304,7 +305,8 @@ def drive_machine(page: Page, base: str, t0: float) -> float:
     is a REAL `agent6 machine run` whose agent calls the replay proxy serves
     (web_machine_demo.sh), so the stream is deterministic and key-free."""
     page.goto(base + "/#/machines", wait_until="networkidle")
-    page.wait_for_selector("button:has-text('code-fixer')")
+    run = ".machine-files button[aria-label^='Run code-fixer']"
+    page.wait_for_selector(run)
     page.wait_for_timeout(600)
     ready = time.monotonic() - t0
     toast(page, "State machines: author, run, and watch — from the browser")
@@ -313,14 +315,15 @@ def drive_machine(page: Page, base: str, t0: float) -> float:
     # Start it: POST /api/machine/run spawns a detached `agent6 machine run`.
     # The Run button asks first (a paid run must not start from one click);
     # the question's Run starts it.
-    click(page, "button:has-text('code-fixer')", label="Run the code-fixer machine", settle=900)
+    click(page, run, label="Run the code-fixer machine", settle=900)
     click(page, "dialog[open] button.primary", settle=1300)
     # The instance registers its journal + worker pid almost immediately; the
     # page re-renders itself once, then the instance row is clickable.
-    page.wait_for_selector(".list .item", timeout=30000)
+    instance = ".list:not(.machine-files) .item"
+    page.wait_for_selector(instance, timeout=30000)
     toast(page, "The instance appears in the list — open it to watch")
     page.wait_for_timeout(600)
-    click(page, ".list .item", label="Watch it live", settle=1300)
+    click(page, instance, label="Watch it live", settle=1300)
     page.wait_for_selector(".tree", timeout=15000)
     toast(page, "A fix-loop: an agent edits, a tool re-checks, a branch routes on the result")
     page.wait_for_timeout(1800)
