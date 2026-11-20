@@ -599,8 +599,6 @@ class AnthropicProvider:
         saw_message_stop = False
         usage_input = 0
         usage_output = 0
-        usage_cache_read = 0
-        usage_cache_write = 0
         reported_cache: dict[str, int] = {}
         history_fields: dict[str, Any] = {}
         iteration_usage: dict[str, Any] = {}
@@ -633,8 +631,7 @@ class AnthropicProvider:
                 ProviderError: A malformed event or a stream error frame.
             """
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
-            nonlocal usage_cache_read, usage_cache_write, saw_input_usage, saw_output_usage
-            nonlocal saw_usage
+            nonlocal saw_input_usage, saw_output_usage, saw_usage
             for event_type, data_str in stream_lifecycle.sse_events(resp):
                 if not data_str:
                     continue
@@ -667,10 +664,6 @@ class AnthropicProvider:
                         saw_input_usage = True
                     usage_input = anthropic_parse.usage_count(u, "input_tokens")
                     usage_output = anthropic_parse.usage_count(u, "output_tokens")
-                    usage_cache_read = anthropic_parse.usage_count(u, "cache_read_input_tokens")
-                    usage_cache_write = anthropic_parse.usage_count(
-                        u, "cache_creation_input_tokens"
-                    )
                     for key in ("cache_read_input_tokens", "cache_creation_input_tokens"):
                         if u.get(key) is not None:
                             reported_cache[key] = anthropic_parse.usage_count(u, key)
@@ -879,21 +872,32 @@ class AnthropicProvider:
             Returns:
                 The observed usage; None when the stream reported none.
             """
+            # A summary reports its cost only in the iterations.
+            billed = anthropic_parse.billed_usage(
+                {
+                    "input_tokens": usage_input,
+                    "output_tokens": usage_output,
+                    **reported_cache,
+                    **iteration_usage,
+                }
+            )
+            read, write = "cache_read_input_tokens", "cache_creation_input_tokens"
+            counts = {key: anthropic_parse.usage_count(billed, key) for key in billed}
             stream_lifecycle.record_billed_usage(
                 self.budget,
                 kinds.ModelRoute(self.provider_name, self.model),
-                input_tokens=usage_input,
-                output_tokens=usage_output,
-                cache_read_tokens=usage_cache_read,
-                cache_write_tokens=usage_cache_write,
+                input_tokens=counts.get("input_tokens", 0),
+                output_tokens=counts.get("output_tokens", 0),
+                cache_read_tokens=counts.get(read, 0),
+                cache_write_tokens=counts.get(write, 0),
             )
             if not saw_usage:
                 return None
             call.transcript.usage = provider_types.ProviderUsage(
-                input_tokens=usage_input,
-                output_tokens=usage_output,
-                cache_read_tokens=reported_cache.get("cache_read_input_tokens"),
-                cache_write_tokens=reported_cache.get("cache_creation_input_tokens"),
+                input_tokens=counts.get("input_tokens", 0),
+                output_tokens=counts.get("output_tokens", 0),
+                cache_read_tokens=counts.get(read),
+                cache_write_tokens=counts.get(write),
             )
             return call.transcript.usage
 

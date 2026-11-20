@@ -131,6 +131,49 @@ def test_an_operator_prefix_setting_stands(monkeypatch: pytest.MonkeyPatch) -> N
     assert bodies[0]["thinking"]["block_binding"] == strict["block_binding"]
 
 
+def test_every_usage_iteration_is_billed() -> None:
+    """Pin the sum: a reply with a message iteration beside the summary lost the message's cost."""
+    raw = SAMPLES["compact"]["response"]
+    summary = raw["usage"]["iterations"][0]
+    message = {"type": "message", "input_tokens": 7, "output_tokens": 100}
+    message["cache_creation_input_tokens"] = 688
+    usage = {**raw["usage"], "iterations": [summary, message]}
+    response = anthropic_parse.parse_response({**raw, "usage": usage})
+    assert response.usage == provider_types.ProviderUsage(67, 534, 33050, 688)
+
+
+def test_a_summary_stream_cut_before_its_end_is_billed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the cut stream: its cost sits in the iterations and the budget stayed at zero."""
+    raw = SAMPLES["compact"]["response"]
+    zero = {k: v for k, v in raw["usage"].items() if k != "iterations"}
+    events: list[tuple[str, dict[str, Any]]] = [
+        ("message_start", {"message": {"usage": zero}}),
+        ("content_block_start", {"index": 0, "content_block": raw["content"][0]}),
+        ("content_block_stop", {"index": 0}),
+        ("message_delta", {"delta": {"stop_reason": "compaction"}, "usage": raw["usage"]}),
+    ]
+
+    def stream(*_args: Any, **_kwargs: Any) -> wire._FakeStreamResponse:
+        return wire._FakeStreamResponse(status_code=200, lines=wire._sse(events))
+
+    monkeypatch.setattr(wire.httpx2, "stream", stream)
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    provider = anthropic.AnthropicProvider(api_key="test", model="claude-haiku-5-5", budget=tracker)
+    with pytest.raises(provider_types.ProviderError) as cut:
+        provider.call(
+            system="s",
+            messages=SAMPLES["turn3"]["messages"],
+            text_delta_callback=lambda _: None,
+            compaction=provider_types.Summarise("Keep the goal."),
+        )
+    assert cut.value.usage == provider_types.ProviderUsage(60, 434, 33050, 0)
+    assert (tracker._input_total, tracker._output_total, tracker._cache_read_total) == (
+        60,
+        434,
+        33050,
+    )
+
+
 @pytest.mark.parametrize("sample", ["compact", "own-restart-drop_block", "clearing-strict"])
 def test_stream_reports_the_same_history_and_cost(
     monkeypatch: pytest.MonkeyPatch, sample: str

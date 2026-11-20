@@ -110,11 +110,11 @@ def billed_usage(value: Any) -> Mapping[str, Any]:
         value: The reply's usage object.
 
     Returns:
-        The compaction iterations' counts or the ordinary message usage.
+        The sum over `usage.iterations` when the reply lists them, else the message usage.
     """
     usage = usage_mapping(value)
-    iterations = _objects(usage.get("iterations"), "usage.iterations")
-    parts = [part for part in iterations if part.get("type") == "compaction"]
+    # The top-level counts leave out a summary's own iteration.
+    parts = _objects(usage.get("iterations"), "usage.iterations")
     if not parts:
         return usage
     return {
