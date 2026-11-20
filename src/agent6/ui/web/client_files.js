@@ -117,7 +117,10 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
       const run = el('button', null, 'Run scripts');
       note.replaceChildren(el('span', null, 'Scripts are off for this page.'), ' ', run);
       run.onclick = async () => {
-        const warning = "This page's scripts can read the files in its folder and send them to any server. The browser cannot stop that.";
+        // The grant covers the page's folder and everything under it: the whole listing for a top-level page.
+        const folder = path.slice(0, path.lastIndexOf('/') + 1);
+        const reach = folder ? 'every file under ' + folder : 'every file Files shows in this repository';
+        const warning = "This page's scripts can read " + reach + ' and send them to any server. The browser cannot stop that.';
         if (!await confirmDialog('Run scripts?', warning, 'Run scripts', true) || closed) return;
         run.disabled = true;
         try {

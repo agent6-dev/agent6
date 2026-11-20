@@ -581,7 +581,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Before consent, `img-src` and `media-src` permit only that path.
   Remote images, video and audio have no fetching attribute before consent.
 - **Run scripts** asks for confirmation each time an HTML preview opens.
-  A page with scripts can send files in its folder to any server through WebRTC.
+  A page with scripts can send every file under its folder to any server through WebRTC.
+  For a page at the top of the repository that is every file Files shows.
   The browser cannot stop that.
   Only the signed-in UI can grant scripts for the open page.
   Its frame and document policy then permit scripts but keep the origin opaque.

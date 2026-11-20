@@ -117,7 +117,7 @@ def test_html_scripts_require_a_new_confirmation_each_time(
     run.click(timeout=3000)
     dialog = page.get_by_role("alertdialog")
     sync_api.expect(dialog).to_contain_text(
-        "This page's scripts can read the files in its folder and send them to any server. "
+        "This page's scripts can read every file under guide/ and send them to any server. "
         "The browser cannot stop that."
     )
     dialog.get_by_role("button", name="Cancel").click()
@@ -135,6 +135,24 @@ def test_html_scripts_require_a_new_confirmation_each_time(
     preview.click()
     sync_api.expect(result).to_have_text("Static")
     sync_api.expect(run).to_be_visible()
+
+
+def test_the_script_warning_names_the_whole_repository_for_a_top_level_page(
+    served: tuple[pathlib.Path, int], open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """The warning said "its folder" for a top-level page, whose grant covers every shown file."""
+    from playwright import sync_api
+
+    repo, port = served
+    (repo / "top.html").write_text("<h1>Top</h1>")
+    page, _errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/WORKTREE/top.html")
+    page.get_by_role("button", name="Preview", exact=True).click()
+    page.get_by_role("button", name="Run scripts", exact=True).click()
+    sync_api.expect(page.get_by_role("alertdialog")).to_contain_text(
+        "This page's scripts can read every file Files shows in this repository"
+        " and send them to any server. The browser cannot stop that."
+    )
 
 
 def test_html_preview_uses_the_listed_commit(

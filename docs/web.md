@@ -116,7 +116,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - a markdown file opens rendered in a sandboxed frame, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - an HTML file opens as **Source**; **Preview** shows it in a sandboxed frame, with repository CSS and images at the listed revision
     - HTML scripts are off by default; previews need HTTPS or localhost and refuse direct tabs
-    - **Run scripts** asks each time the page opens; a page with scripts can read files in its folder and send them to any server through WebRTC
+    - **Run scripts** asks each time the page opens; a page with scripts can read every file under its folder and send them to any server through WebRTC; for a page at the top of the repository that is every file Files shows
     - closing the preview ends the grant
     - a working-tree HTML form can submit answers with `<form method="post">` and no `action`
     - **Save form answers?** shows the sibling file, byte count and whether Save creates or replaces it
