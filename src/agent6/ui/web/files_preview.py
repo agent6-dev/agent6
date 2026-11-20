@@ -8,12 +8,13 @@ import re
 import secrets
 import threading
 import time
+from typing import Any
 from urllib import parse
 
 import pydantic
 
 from agent6 import errors
-from agent6.ui.web import git_model
+from agent6.ui.web import git_model, markdown
 
 DENY_CSP = (
     "sandbox; default-src 'none'; frame-ancestors 'self'; form-action 'none'; "
@@ -45,10 +46,13 @@ class OpenPreviewBody(pydantic.BaseModel):
     rev: str = pydantic.Field(description="The Files revision, or WORKTREE.")
     path: str = pydantic.Field(description="The repository-relative file to preview.")
     ignored: bool = pydantic.Field(default=False, description="Include ignored working-tree files.")
+    digest: str = pydantic.Field(
+        default="", description="The displayed digest, required for markdown."
+    )
 
 
 class PreviewKeyBody(pydantic.BaseModel):
-    """The signed-in UI renews or closes one preview capability."""
+    """The signed-in UI renews, closes or grants images for one preview capability."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
     key: str = pydantic.Field(description="The key returned when this preview opened.")
@@ -62,6 +66,8 @@ class Preview:
     path: str
     ignored: bool
     expires: float
+    rendered: markdown.Rendered | None = None
+    images_allowed: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -93,7 +99,7 @@ class Store:
         self._pages: dict[str, Preview] = {}
         self._lock = threading.Lock()
 
-    def open(self, body: OpenPreviewBody) -> dict[str, str]:
+    def open(self, body: OpenPreviewBody) -> dict[str, Any]:
         """Pin the revision and check the document through the Files blob reader.
 
         Attributes:
@@ -101,6 +107,7 @@ class Store:
             url: Its frame address.
             rev: The resolved commit, or WORKTREE.
             kind: The preview document kind.
+            images: The full remote image addresses in this markdown snapshot.
 
         Returns:
             The frame address and its lease key.
@@ -109,22 +116,37 @@ class Store:
             PreviewError: The path is hidden, unsupported, or the preview limit is reached.
         """
         _visible(body.path)
-        if pathlib.PurePosixPath(body.path).suffix.lower() not in {".htm", ".html"}:
+        suffix = pathlib.PurePosixPath(body.path).suffix.lower()
+        if suffix not in {".htm", ".html", ".md", ".markdown"}:
             raise PreviewError("this file has no preview")
         rev = str(git_model.tree_payload(self.repo, body.rev, ignored=body.ignored)["rev"])
-        git_model.blob_payload(self.repo, rev, body.path, ignored=body.ignored)
         key = secrets.token_urlsafe(32)
+        rendered = None
+        if suffix in {".md", ".markdown"}:
+            text = git_model.text_payload(
+                self.repo, rev, body.path, whole=True, ignored=body.ignored
+            )
+            if text["binary"]:
+                raise PreviewError("this file is binary")
+            if text["digest"] != body.digest:
+                raise PreviewError("The file changed. Reopen it in Files.", 409)
+            rendered = markdown.render(
+                text["text"], rev=rev, path=body.path, prefix=f"/preview/{key}/"
+            )
+        else:
+            git_model.blob_payload(self.repo, rev, body.path, ignored=body.ignored)
         now = time.monotonic()
         with self._lock:
             self._pages = {k: p for k, p in self._pages.items() if p.expires > now}
             if len(self._pages) >= 128:
                 raise PreviewError("close a preview before opening another", 429)
-            self._pages[key] = Preview(rev, body.path, body.ignored, now + LEASE_SECONDS)
+            self._pages[key] = Preview(rev, body.path, body.ignored, now + LEASE_SECONDS, rendered)
         return {
             "key": key,
             "url": f"/preview/{key}/{parse.quote(body.path, safe='/')}",
             "rev": rev,
-            "kind": "html",
+            "kind": "markdown" if rendered is not None else "html",
+            "images": list(rendered.images) if rendered is not None else [],
         }
 
     def close(self, key: str) -> None:
@@ -137,6 +159,18 @@ class Store:
         with self._lock:
             page = self._get(key)
             self._pages[key] = dataclasses.replace(page, expires=time.monotonic() + LEASE_SECONDS)
+
+    def allow_images(self, key: str) -> None:
+        """Grant only the image origins captured when the signed-in UI opened the page.
+
+        Raises:
+            PreviewError: The key is closed or the preview is not markdown.
+        """
+        with self._lock:
+            page = self._get(key)
+            if page.rendered is None:
+                raise PreviewError("Only markdown previews can load remote images.")
+            self._pages[key] = dataclasses.replace(page, images_allowed=True)
 
     def _get(self, key: str) -> Preview:
         page = self._pages.get(key)
@@ -169,6 +203,25 @@ class Store:
         with self._lock:
             page = self._get(key)
         _visible(path)
+        allowed = sources(host, f"/preview/{key}/")
+        if destination == "iframe" and page.rendered is not None and path == page.path:
+            nonce = secrets.token_urlsafe(32)
+            remote = (
+                " ".join(sorted({markdown.image_origin(url) for url in page.rendered.images}))
+                if page.images_allowed
+                else ""
+            )
+            policy = (
+                "sandbox allow-scripts; default-src 'none'; frame-ancestors 'self'; "
+                "form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; "
+                f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+                f"img-src {allowed} {remote}; connect-src {allowed}"
+            )
+            return Response(
+                markdown.document(page.rendered, nonce, images_allowed=page.images_allowed),
+                "text/html; charset=utf-8",
+                policy,
+            )
         extension = pathlib.PurePosixPath(path).suffix.lower().lstrip(".")
         if destination == "iframe":
             if extension not in {"htm", "html"}:
@@ -183,7 +236,6 @@ class Store:
             if expected != destination:
                 raise PreviewError("this resource type is not allowed", 403)
         blob = git_model.blob_payload(self.repo, page.rev, path, ignored=page.ignored)
-        allowed = sources(host, f"/preview/{key}/")
         policy = (
             f"{DENY_CSP}; style-src 'unsafe-inline' {allowed}; img-src {allowed}; "
             f"font-src {allowed}; media-src {allowed}; frame-src 'none'; connect-src 'none'"

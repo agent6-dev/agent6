@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
+import re
 from http import client
 from typing import Any
 
@@ -39,6 +41,78 @@ def get(port: int, url: str, destination: str | None) -> tuple[int, dict[str, st
         return response.status, dict(response.getheaders()), response.read()
     finally:
         conn.close()
+
+
+def test_markdown_images_need_a_signed_in_snapshot_grant(served: tuple[pathlib.Path, int]) -> None:
+    """Only the signed-in UI grants the image origins stored with the rendered snapshot."""
+    repo, port = served
+    source = "# Plan\n\n![Remote](https://images.example.test/pic.svg?text=private)\n"
+    (repo / "plan.md").write_text(source)
+    status, opened = api(
+        port, rev="WORKTREE", path="plan.md", digest=hashlib.sha256(source.encode()).hexdigest()
+    )
+    assert status == 200, opened
+    assert opened["kind"] == "markdown"
+    assert opened["images"] == ["https://images.example.test/pic.svg?text=private"]
+    status, headers, content = get(port, opened["url"], "iframe")
+    assert status == 200
+    policy = headers["Content-Security-Policy"]
+    assert "sandbox allow-scripts;" in policy
+    nonce = re.search(r"script-src 'nonce-([^']+)'", policy)
+    assert nonce and f'<script nonce="{nonce[1]}">'.encode() in content
+    assert b"Remote images are blocked" in content and b">Load</button>" in content
+    assert b"https://images.example.test/pic.svg?text=private" in content
+    assert "images.example.test" not in policy
+    assert (
+        "images.example.test"
+        not in get(port, opened["url"] + "?hosts=https://images.example.test", "iframe")[1][
+            "Content-Security-Policy"
+        ]
+    )
+    conn = client.HTTPConnection("127.0.0.1", port)
+    try:
+        conn.request(
+            "POST",
+            "/api/files/preview/images",
+            json.dumps({"key": opened["key"]}),
+            {"Content-Type": "application/json", "Origin": "null"},
+        )
+        response = conn.getresponse()
+        assert response.status == 401
+        response.read()
+    finally:
+        conn.close()
+    assert api(port, "/images", key=opened["key"], hosts=["https://other.test"])[0] == 400
+    (repo / "plan.md").write_text("# Replaced\n\n![New](https://other.test/pic.png)\n")
+    assert api(port, "/images", key=opened["key"])[0] == 200
+    _, headers, content = get(port, opened["url"], "iframe")
+    assert "img-src" in headers["Content-Security-Policy"]
+    assert "https://images.example.test" in headers["Content-Security-Policy"]
+    assert "other.test" not in headers["Content-Security-Policy"]
+    assert b"Replaced" not in content
+    assert b"Remote images are blocked" not in content
+    assert nonce[1] not in headers["Content-Security-Policy"]
+    (repo / "plan.md").write_text(source)
+    _, separate = api(
+        port, rev="WORKTREE", path="plan.md", digest=hashlib.sha256(source.encode()).hexdigest()
+    )
+    assert (
+        "images.example.test"
+        not in get(port, separate["url"], "iframe")[1]["Content-Security-Policy"]
+    )
+    assert get(port, opened["url"], "document")[0] == 403
+    assert api(port, "/close", key=opened["key"])[0] == 200
+    assert api(port, "/images", key=opened["key"])[0] == 403
+
+
+def test_markdown_open_refuses_a_changed_source_snapshot(served: tuple[pathlib.Path, int]) -> None:
+    """A frame cannot silently replace the source the Files page loaded."""
+    repo, port = served
+    (repo / "plan.md").write_text("# Changed\n")
+    assert (
+        api(port, rev="WORKTREE", path="plan.md", digest=hashlib.sha256(b"# Plan\n").hexdigest())[0]
+        == 409
+    )
 
 
 def test_preview_is_static_confined_and_revoked_on_close(served: tuple[pathlib.Path, int]) -> None:

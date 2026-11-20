@@ -2224,6 +2224,7 @@ Source: [`ui.web.files_preview.Store.open`](https://github.com/agent6-dev/agent6
 | `url` | `JSON` | Its frame address. |
 | `rev` | `JSON` | The resolved commit, or WORKTREE. |
 | `kind` | `JSON` | The preview document kind. |
+| `images` | `JSON` | The full remote image addresses in this markdown snapshot. |
 
 ### `/api/git/refs` ref row
 
@@ -2432,7 +2433,7 @@ Source: [`ui.web.git_model.tree_payload`](https://github.com/agent6-dev/agent6/b
 
 ### `/api/git/text` payload
 
-**Support: public.** Return a file's text, highlight spans and rendered markdown at a revision.
+**Support: public.** Return a file's text and highlight spans at a revision.
 
 Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
@@ -2442,7 +2443,6 @@ Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/b
 | `path` | `JSON` | The repository-relative file path. |
 | `digest` | `JSON` | The SHA-256 digest of the complete checked file bytes. |
 | `text` | `JSON` | The file text, or an empty string for binary content. |
-| `rendered_html` | `JSON` | Rendered markdown with raw HTML escaped; null for other or incomplete text. |
 | `lines` | `JSON` | The number of displayed text lines. |
 | `binary` | `JSON` | Whether the file is binary. |
 | `truncated` | `JSON` | Whether the displayed text reached its cap. |
@@ -2623,10 +2623,11 @@ Source: [`agent6.ui.web.files_preview.OpenPreviewBody`](https://github.com/agent
 | `rev` | `str` | The Files revision, or WORKTREE. |
 | `path` | `str` | The repository-relative file to preview. |
 | `ignored` | `bool` | Include ignored working-tree files. |
+| `digest` | `str` | The displayed digest, required for markdown. |
 
 ### PreviewKeyBody
 
-**Support: public.** The signed-in UI renews or closes one preview capability.
+**Support: public.** The signed-in UI renews, closes or grants images for one preview capability.
 
 Source: [`agent6.ui.web.files_preview.PreviewKeyBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_preview.py).
 

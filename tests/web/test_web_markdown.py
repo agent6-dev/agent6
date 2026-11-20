@@ -13,7 +13,8 @@ def test_raw_html_is_text_and_markdown_extensions_render() -> None:
         '```html\n<img onerror="bad">\n```\n',
         rev="abc123",
         path="docs/readme.md",
-    )
+        prefix="/preview/key/",
+    ).html
     assert "<script" not in rendered and "<img" not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
     assert "&lt;img src=x onerror=alert(1)&gt;" in rendered
@@ -34,7 +35,9 @@ def test_raw_html_is_text_and_markdown_extensions_render() -> None:
 )
 def test_unsafe_links_and_images_are_not_emitted(url: str) -> None:
     """Link validation applies to links and images, including raster data URLs."""
-    rendered = markdown.render(f"[bad]({url})\n\n![bad]({url})", rev="HEAD", path="README.md")
+    rendered = markdown.render(
+        f"[bad]({url})\n\n![bad]({url})", rev="HEAD", path="README.md", prefix="/preview/key/"
+    ).html
     assert "<a " not in rendered and "<img " not in rendered
     assert "bad" in rendered
 
@@ -48,17 +51,18 @@ def test_links_and_images_keep_the_revision_and_encoded_repository_path() -> Non
         "[outside](../../private.md)",
         rev="refs/heads/topic",
         path="docs/readme.md",
-    )
+        prefix="/preview/key/",
+    ).html
     assert (
         'href="#/files/refs%2Fheads%2Ftopic/other%20%23%25.markdown?anchor=next-step"' in rendered
     )
-    assert (
-        'data-blob-src="/api/git/blob?rev=refs%2Fheads%2Ftopic&amp;path=docs%2Fimages%2Fa+b.png"'
-        in rendered
-    )
+    assert 'src="/preview/key/docs/images/a%20b.png"' in rendered
     assert 'href="#/files/refs%2Fheads%2Ftopic/docs/readme.md?anchor=read-me"' in rendered
     assert 'href="#/files/refs%2Fheads%2Ftopic/README.md"' in rendered
-    assert 'href="https://example.com/a?q=1&amp;b=2" target="_blank" rel="noopener"' in rendered
+    assert (
+        'href="https://example.com/a?q=1&amp;b=2" target="_blank" rel="noopener noreferrer"'
+        in rendered
+    )
     assert "<a>outside</a>" in rendered
     assert ' src="/api/' not in rendered
 
@@ -69,10 +73,42 @@ def test_heading_ids_follow_visible_text_and_do_not_collide() -> None:
         "# Read *me* & `code`!\n\n## Read me & code!\n\n## Read me code-1\n",
         rev="WORKTREE",
         path="README.md",
-    )
+        prefix="/preview/key/",
+    ).html
     assert '<h1 id="read-me-code">' in rendered
     assert '<h2 id="read-me-code-1">' in rendered
     assert '<h2 id="read-me-code-1-1">' in rendered
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:password@example.test/a",
+        "https://a.test:99999/a",
+        "https://a.test;script-src/a",
+        "https://[bad]/a",
+        "ftp://example.test/a",
+    ],
+)
+def test_invalid_image_origins_cannot_become_policy_sources(url: str) -> None:
+    """CSP delimiters, credentials and unsupported image schemes cannot widen a grant."""
+    assert markdown.image_origin(url) == ""
+
+
+def test_remote_images_are_listed_without_a_fetching_attribute() -> None:
+    """The renderer records full addresses but gives only repository images a source."""
+    rendered = markdown.render(
+        "![A](https://images.test/a.png?text=one&more=two)\n\n![B](//other.test/b.svg)\n\n![A again](https://images.test/a.png?text=one&more=two)",
+        rev="WORKTREE",
+        path="docs/plan.md",
+        prefix="/preview/key/",
+    )
+    assert rendered.images == (
+        "https://images.test/a.png?text=one&more=two",
+        "https://other.test/b.svg",
+    )
+    assert 'data-remote-src="https://images.test/a.png?text=one&amp;more=two"' in rendered.html
+    assert " src=" not in rendered.html
 
 
 def test_raw_html_shows_as_its_source() -> None:
@@ -81,7 +117,8 @@ def test_raw_html_shows_as_its_source() -> None:
         "Text\n\n<table>\n  <tr><td>cell</td></tr>\n</table>\n\nA <b>bold</b> word\n",
         rev="HEAD",
         path="README.md",
-    )
+        prefix="/preview/key/",
+    ).html
     raw = '<code class="md-raw">'
     assert (
         '<pre class="md-raw"><code>&lt;table&gt;\n'

@@ -15,7 +15,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import errors, paths
-from agent6.ui.web import diff_highlight, highlight, markdown
+from agent6.ui.web import diff_highlight, highlight
 from agent6.vcs.git import diff as git_diff
 from agent6.vcs.git import fetch as git_fetch
 from agent6.vcs.git import files as git_files
@@ -985,7 +985,7 @@ def blame_payload(
 def text_payload(
     repo: pathlib.Path, rev: str, path: str, *, whole: bool = False, ignored: bool = False
 ) -> dict[str, Any]:
-    """Return a file's text, highlight spans and rendered markdown at a revision.
+    """Return a file's text and highlight spans at a revision.
 
     Attributes:
         digest: The SHA-256 digest of the complete checked file bytes.
@@ -993,7 +993,6 @@ def text_payload(
         truncated: Whether the displayed text reached its cap.
         max_bytes: The byte cap, or null when whole content was requested.
         text: The file text, or an empty string for binary content.
-        rendered_html: Rendered markdown with raw HTML escaped; null for other or incomplete text.
         lines: The number of displayed text lines.
         language: The tree-sitter language name, or an empty string when unknown.
         spans: Per-line highlight spans as start, end and CSS class triples.
@@ -1012,8 +1011,7 @@ def text_payload(
         `rev` resolved, `path`, `digest` (sha256 of the bytes read; the blame route sends
         the same, so rows attach only to the text shown), `text` ("" for a binary file),
         `lines`, `binary`, `truncated`, `max_bytes`, `language` (the pack's name, "" when
-        none), `spans` (per line `[start, end, class]`, empty when nothing is highlighted),
-        and `rendered_html` for complete markdown text (null otherwise).
+        none), `spans` (per line `[start, end, class]`, empty when nothing is highlighted).
 
     Raises:
         GitRequestError: The revision or path is malformed, or no regular file is there.
@@ -1024,17 +1022,11 @@ def text_payload(
     cap = None if whole else TEXT_MAX_BYTES
     text, binary, truncated = _display_text(data, cap)
     language = highlight.language_of(path)
-    rendered_html = (
-        markdown.render(text, rev=sha, path=path, ignored=ignored and sha == git_history.WORKTREE)
-        if not binary and not truncated and path.lower().endswith((".md", ".markdown"))
-        else None
-    )
     return {
         "rev": sha,
         "path": path,
         "digest": hashlib.sha256(data).hexdigest(),
         "text": text,
-        "rendered_html": rendered_html,
         "lines": _line_count(text),
         "binary": binary,
         "truncated": truncated,

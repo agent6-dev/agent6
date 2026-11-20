@@ -561,7 +561,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - Review comparison and file routes read Git objects by recorded tree ID.
   Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
   Finding text and resolution reasons enter the browser as text, not HTML.
-- Preview creation, renewal and close require the sign-in header.
+- Preview creation, renewal, image grants and close require the sign-in header.
   A random 256-bit key grants read access through the Files blob reader at one resolved revision and ignored-file permission, capped at 20 MiB per file.
   Hidden paths and symlinks are refused.
   The server holds at most 128 live keys; close revokes a key, and its lease expires after 30 seconds without signed-in renewal.
@@ -569,15 +569,22 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Missing metadata, standalone documents, objects, embeds and scripts receive 403.
   Fetch Metadata is browser-controlled and sent only to HTTPS or localhost; non-browser clients can forge it but still need the random key.
   This gate supplies the standalone-navigation restriction that CSP lacks ([containment probe](../bench/web-preview-containment.md)).
-- Every preview response carries CSP `sandbox`, `default-src 'none'`, `frame-ancestors 'self'`, `form-action 'none'`, `base-uri 'none'`, `object-src 'none'` and `script-src 'none'`.
-  The HTML frame also has an empty `sandbox` attribute, with no `allow-scripts` or other allowance.
+- Every preview response carries CSP `sandbox`, `default-src 'none'`, `frame-ancestors 'self'`, `form-action 'none'`, `base-uri 'none'` and `object-src 'none'`.
+  HTML responses add `script-src 'none'`; the HTML frame has an empty `sandbox` attribute.
   HTML scripts stay off; there is no permission to enable them.
-  Styles, images, fonts and media are restricted to the key's preview path; inline styles are allowed.
+  HTML styles, images, fonts and media are restricted to the key's preview path; inline styles are allowed.
   The UI's `frame-src` restricts frame navigation to the preview path.
   `Referrer-Policy: no-referrer`, `X-DNS-Prefetch-Control: off`, `nosniff` and `no-store` apply to previews, including refusals.
   The preview response permits CORS reads only from the sandbox's opaque `null` origin; API routes grant no CORS permission.
-- Markdown remote images load without a consent step and can disclose their full addresses to the remote server.
-  `sandbox.network` does not constrain the browser.
+- Markdown requires the displayed source digest and keeps one rendered snapshot per capability.
+  Its CSP adds `sandbox allow-scripts` and permits only the owned nonce-authorized script and styles; raw HTML stays escaped.
+  Repository images and error reads use the confined preview path.
+  Remote images have no fetching attribute before consent, and `img-src` also blocks their origins.
+- The image grant route accepts only a preview key, never a host list.
+  The server grants the snapshot's HTTP image origins, not addresses from a frame message, URL parameter or later disk contents.
+  Origin serialization rejects credentials, malformed ports and CSP delimiters.
+  Closing the key discards its grant.
+  Loading an image sends the full address and the browser's IP address to that server; `sandbox.network` does not constrain the browser.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   Telemetry requires an operator-started export or the opt-in scrape route ([Telemetry export](cli.md#telemetry-export)); no auto-update, no remote control plane.
 

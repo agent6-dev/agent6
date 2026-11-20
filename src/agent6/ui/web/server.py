@@ -698,7 +698,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/login":
             self._login()
             return
-        if path in ("/api/files/preview", "/api/files/preview/close", "/api/files/preview/renew"):
+        if path in (
+            "/api/files/preview",
+            "/api/files/preview/close",
+            "/api/files/preview/images",
+            "/api/files/preview/renew",
+        ):
             self._preview_action(path)
             return
         if path == "/api/files/text":
@@ -1158,7 +1163,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._send_json({"error": f"not found: {path}"}, status=404)
 
     def _preview_action(self, path: str) -> None:
-        """Let only signed-in UI requests open, renew or close a preview."""
+        """Let only signed-in UI requests change a preview's lease or image grant."""
         try:
             if path == "/api/files/preview":
                 body = files_preview.OpenPreviewBody.model_validate(self._read_body())
@@ -1167,6 +1172,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 key = files_preview.PreviewKeyBody.model_validate(self._read_body()).key
                 if path.endswith("/close"):
                     self.server.previews.close(key)
+                elif path.endswith("/images"):
+                    self.server.previews.allow_images(key)
                 else:
                     self.server.previews.renew(key)
                 self._send_json({"ok": True})

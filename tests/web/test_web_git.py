@@ -582,10 +582,10 @@ def test_text_bounds_reads_and_refuses_invalid_paths(
 
 
 @pytest.mark.parametrize("extension", ["md", "markdown"])
-def test_text_renders_complete_markdown_at_the_resolved_revision(
+def test_markdown_source_uses_the_resolved_revision(
     repo: tuple[pathlib.Path, dict[str, str]], port: int, extension: str
 ) -> None:
-    """Markdown HTML uses the same bytes and resolved revision as the source payload."""
+    """The source route keeps markdown text separate from sandbox document rendering."""
     path, _ = repo
     name = f"README.{extension}"
     source = "# Read me\n\n[notes](dir/f.txt)\n"
@@ -596,33 +596,32 @@ def test_text_renders_complete_markdown_at_the_resolved_revision(
     (path / name).write_text("# Working copy\n", encoding="utf-8")
     body = _ok(port, f"/api/git/text?rev=HEAD&path={name}")
     assert body["text"] == source and body["rev"] == sha
-    assert body.get("rendered_html") == (
-        f'<h1 id="read-me">Read me</h1>\n<p><a href="#/files/{sha}/dir/f.txt">notes</a></p>\n'
-    )
+    assert "rendered_html" not in body
     working = _ok(port, f"/api/git/text?rev=WORKTREE&path={name}")
-    assert working["rendered_html"] == '<h1 id="working-copy">Working copy</h1>\n'
+    assert working["text"] == "# Working copy\n"
 
 
-def test_text_withholds_markdown_html_for_truncated_binary_and_other_files(
+def test_markdown_source_retains_the_text_cap_and_binary_detection(
     repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The source cap applies before rendering, and whole content can still be requested."""
+    """Markdown source has the same size cap and whole-file option as other text."""
     path, _ = repo
     (path / "README.md").write_text("# Heading\n\nTail\n", encoding="utf-8")
     (path / "binary.md").write_bytes(b"\x00binary")
     (path / "empty.md").write_text("", encoding="utf-8")
     for name in ("b.txt", "binary.md"):
         body = _ok(port, f"/api/git/text?rev=WORKTREE&path={name}")
-        assert "rendered_html" in body and body["rendered_html"] is None
-    assert _ok(port, "/api/git/text?rev=WORKTREE&path=empty.md")["rendered_html"] == ""
+        assert "rendered_html" not in body
+        assert body["binary"] is (name == "binary.md")
+    assert _ok(port, "/api/git/text?rev=WORKTREE&path=empty.md")["text"] == ""
     monkeypatch.setattr(git_model, "TEXT_MAX_BYTES", 10)
     route = "/api/git/text?rev=WORKTREE&path=README.md"
     cut = _ok(port, route)
-    assert cut["truncated"] is True and cut["rendered_html"] is None
+    assert cut["truncated"] is True
     assert cut["text"] == "# Heading\n" and cut["max_bytes"] == 10
     whole = _ok(port, route + "&whole=1")
     assert whole["truncated"] is False and whole["max_bytes"] is None
-    assert whole["rendered_html"] == '<h1 id="heading">Heading</h1>\n<p>Tail</p>\n'
+    assert whole["text"] == "# Heading\n\nTail\n"
 
 
 @pytest.mark.parametrize("route", ["blob", "text", "blame"])
@@ -827,7 +826,7 @@ def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
 def test_ignored_tree_and_file_routes_require_explicit_worktree_opt_in(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
-    """Opt-in ignored markdown uses the text renderer and safe blob reader, not a new route."""
+    """Ignored text and images use the same explicit working-tree permission."""
     path, _ = repo
     (path / ".git" / "info" / "exclude").write_text("plans/\n", encoding="utf-8")
     (path / "plans").mkdir()
@@ -841,11 +840,7 @@ def test_ignored_tree_and_file_routes_require_explicit_worktree_opt_in(
     for flag in ("", "&ignored=0", "&ignored=true"):
         assert "no file" in _refused(port, "/api/git/text?rev=WORKTREE&path=plans/plan.md" + flag)
     body = _ok(port, "/api/git/text?rev=WORKTREE&path=plans/plan.md&ignored=1")
-    assert '<h1 id="plan">Plan</h1>' in body["rendered_html"]
-    assert (
-        'data-blob-src="/api/git/blob?rev=WORKTREE&amp;path=plans%2Flogo.png&amp;ignored=1"'
-        in body["rendered_html"]
-    )
+    assert body["text"] == "# Plan\n\n![logo](logo.png)\n"
     blame = _ok(port, "/api/git/blame?rev=WORKTREE&path=plans/plan.md&ignored=1")
     assert len(blame["lines"]) == 3 and all(row["sha"] == "" for row in blame["lines"])
     status, _, data = _raw(port, "/api/git/blob?rev=WORKTREE&path=plans/logo.png&ignored=1")

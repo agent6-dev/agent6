@@ -208,12 +208,16 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - a mismatch returns 409; no force flag bypasses this check
     - both routes require the sign-in header and refuse hidden path components, symlinks, hardlinks, special files, binary content and invalid UTF-8; files are limited to 20 MiB
     - saves preserve CRLF line endings and create no directories; these routes neither stage nor commit
-- static preview capabilities: signed-in `POST /api/files/preview` accepts `{rev, path, ignored}` and returns a random `key`, a frame `url`, the resolved `rev` and `kind`
+- preview capabilities: signed-in `POST /api/files/preview` accepts `{rev, path, ignored, digest}` and returns a random `key`, a frame `url`, the resolved `rev`, `kind` and full remote image addresses in `images`
+    - markdown requires the digest from `/api/git/text`; a mismatch returns 409, and the server keeps the rendered snapshot until close
     - `POST /api/files/preview/renew` and `/close` take `{key}` and require the sign-in header; a key expires after 30 seconds without renewal
     - `GET /preview/<key>/<path>` reads through the Files blob reader with the opened revision and ignored-file permission; query parameters cannot change either
-    - HTML documents require `Sec-Fetch-Dest: iframe`; other allowed destinations are `style`, `image`, `font` and `empty`, with media types checked by extension
+    - HTML and markdown documents require `Sec-Fetch-Dest: iframe`; other allowed destinations are `style`, `image`, `font` and `empty`, with media types checked by extension
     - missing metadata, standalone documents, objects, embeds and scripts receive a plain 403; browser previews need HTTPS or localhost for Fetch Metadata
-    - every preview response carries a sandbox CSP and `Referrer-Policy: no-referrer`; HTML scripts are disabled and no external hosts are allowed
+    - every preview response carries a sandbox CSP and `Referrer-Policy: no-referrer`; HTML scripts are disabled
+    - markdown runs only its nonce-authorized owned script and escapes raw HTML
+    - signed-in `POST /api/files/preview/images` accepts only `{key}` and permits the snapshot's remote origins in `img-src` until close; it accepts no host list
+    - other resource types gain no remote permission; scheme-relative image addresses use HTTPS
 - writes, small JSON `POST`s: `/api/git/{stage,unstage,discard,commit,branch,switch}` (409 while a session is live in the checkout, 422 for git's own refusal), `/api/git/fetch`, `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,review,stop,compact,rm}`, `/api/session/<id>/findings/<fid>/{fix,resolve,reopen}`, `/api/session/<id>/findings/fix`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - session rows, session snapshots and machine snapshots list their fields, the operator's words and the spend among them, on [Formats](formats.md#cli-json)
 - roster writes use the [typed request bodies](formats.md#reviewerbody) for additions and [removals](formats.md#removereviewerbody)
