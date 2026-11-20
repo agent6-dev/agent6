@@ -671,6 +671,20 @@ def test_worktree_reads_refuse_unsafe_files(
     assert "no file" in json.loads(body)["error"]
 
 
+def test_a_missing_file_names_a_full_sha_by_its_short_form(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A missing file's error named the commit by its 40-character sha, beside a 7-character one."""
+    _, shas = repo
+    sha = shas["merge"]
+    for route in ("text", "blob"):
+        reason = _refused(port, f"/api/git/{route}?rev={sha}&path=missing.txt")
+        assert reason == f"no file 'missing.txt' in {sha[:7]}"
+    assert _refused(port, "/api/git/text?rev=HEAD&path=missing.txt") == (
+        "no file 'missing.txt' in HEAD"
+    )
+
+
 def test_blame_attributes_lines_and_marks_uncommitted_content(
     repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:

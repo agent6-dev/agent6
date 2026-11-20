@@ -20,7 +20,11 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const app = el('div', 'files-app'); view.appendChild(app);
-  if (revision && revision !== filesState.rev?.rev) filesState.rev = { rev: revision, label: revision === GIT_WORKTREE ? 'working tree' : revision };
+  // A revision from the hash reads as the picker names it: a ref by its name, a full sha short.
+  if (revision && revision !== filesState.rev?.rev) {
+    const ref = refsData.refs.find(r => r.full === revision), sha = /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(revision);
+    filesState.rev = { rev: revision, label: revision === GIT_WORKTREE ? 'working tree' : ref ? ref.name : sha ? revision.slice(0, 7) : revision };
+  }
   if (!filesState.rev) filesState.rev = refsData.head.sha ? { rev: 'HEAD', label: 'HEAD' } : GIT_WORKTREE_PICK;
   // The hash names the revision picked, so a reload keeps HEAD or a branch; the reads use the
   // commit its listing resolved to.

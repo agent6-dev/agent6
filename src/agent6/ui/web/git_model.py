@@ -896,7 +896,7 @@ def _read(repo: pathlib.Path, rev: str, path: str, *, ignored: bool = False) -> 
         where = "the working tree"
     else:
         blob = git_files.blob_at(repo, sha, path, max_bytes=BLOB_MAX_BYTES)
-        where = rev
+        where = sha[:7] if rev == sha else rev  # a full sha reads short, as the page shows one
     if blob is None:
         raise GitRequestError(f"no file {path!r} in {where}")
     if blob.data is None:

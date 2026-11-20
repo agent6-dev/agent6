@@ -268,6 +268,23 @@ def test_the_revision_field_drops_text_it_did_not_apply(
     assert not errors
 
 
+def test_a_revision_from_the_hash_reads_as_the_picker_names_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """After a reload a picked commit read as its 40-character sha, and a ref as its full name."""
+    from playwright.sync_api import expect
+
+    sha = _git(tmp_path, "rev-parse", "HEAD")
+    page, errors = open_page(git_port)
+    field = page.get_by_role("combobox", name="revision")
+    for hash_, label in ((sha, sha[:7]), ("refs%2Fheads%2Ffeature", "feature")):
+        page.goto(f"http://127.0.0.1:{git_port}/#/files/{hash_}")
+        page.reload()
+        expect(field).to_have_value(label)
+        expect(page.locator(_row("b.txt"))).to_be_visible()
+    assert not errors
+
+
 def test_the_file_head_keeps_one_height(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
