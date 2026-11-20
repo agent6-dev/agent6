@@ -303,6 +303,21 @@ class Conversation:
         else:
             self.notice(notice)
 
+    def unsign(self, notice: Callable[[str], str]) -> None:
+        """Replace a leading summary block with a notice any route can read.
+
+        Args:
+            notice: Build the notice from the summary text.
+        """
+        first = self._messages[0] if self._messages else None
+        if (
+            isinstance(first, AssistantMessage)
+            and len(first.raw_content) == 1
+            and first.raw_content[0].get("type") == "compaction"
+        ):
+            text = notice(str(first.raw_content[0].get("content", "")))
+            self._messages[0] = UserMessage(items=(Notice(text),))
+
     def notice(self, text: str, *, origin: Literal["harness", "operator"] = "harness") -> None:
         """Append harness or operator text as its own user message.
 

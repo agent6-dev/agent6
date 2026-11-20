@@ -129,6 +129,27 @@ def test_endpoint_strategy_journals_each_clearing_step_once() -> None:
     assert driver.Endpoint().clearing(off) is None
 
 
+def test_a_route_without_the_endpoint_reads_an_adopted_summary_as_text() -> None:
+    """Pin the cross-route resume: other backends skipped the block and lost the summary."""
+    from agent6.harness import loop_state
+    from agent6.prompts import compaction as prompts
+
+    block = captured.SAMPLES["compact"]["response"]["content"][0]
+    conv = loop_conversation.Conversation()
+    conv.adopt(block, [], "task and pins")
+    wf = test_harness._wf(provider=fixtures.Writer(fixtures.response()))
+    state = loop_state.LoopState("task", 1, system="sys")
+    wire = wf._turn_pre_call(
+        conversation=conv,
+        state=state,
+        ctx=wf._turn_context(state, turn=2, execution_start=1),
+        tools=[],
+    )
+    assert isinstance(wire, list) and wire[0]["role"] == "user"
+    assert prompts.progress_summary_from_notice(wire[0]["content"][0]["text"]) == block["content"]
+    assert "compaction" not in str([b.get("type") for m in wire for b in m["content"]])
+
+
 def test_size_summary_uses_all_messages_then_repeats_task_and_pins() -> None:
     response = anthropic_parse.parse_response(captured.SAMPLES["compact"]["response"])
     worker, helper = fixtures.Writer(response), fixtures.Writer(fixtures.response())

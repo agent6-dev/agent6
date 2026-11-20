@@ -704,6 +704,8 @@ class Harness:
         endpoint = self.compaction.endpoint.writes_summary
         for call_id, reason in conversation.limit_attachments(append_only=endpoint):
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
+        if not endpoint:
+            conversation.unsign(compaction_prompts.unsigned_summary_notice)
         conversation.roll_cache_marks()
         assert self.compactor is not None
         # An endpoint summary covers a request already sent, so it follows the reply instead.

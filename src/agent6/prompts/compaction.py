@@ -92,6 +92,18 @@ def progress_summary_from_notice(text: str) -> str:
     return tail.strip() if sep else ""
 
 
+def unsigned_summary_notice(summary: str) -> str:
+    """Build the notice that carries an endpoint's summary to a route that cannot replay it.
+
+    Args:
+        summary: The summary text from the endpoint's block.
+
+    Returns:
+        A restart notice `progress_summary_from_notice` reads back.
+    """
+    return f"{_CONTEXT_RESTART_HEAD}\n\nPROGRESS SUMMARY:\n{summary}"
+
+
 def context_restart_notice(
     mode: Literal["run", "plan", "ask", "read_only", "reviewer"],
     pins: Sequence[str] = (),
