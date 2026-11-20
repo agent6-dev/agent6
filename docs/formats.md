@@ -378,6 +378,19 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `outcome` | `str` | settled or unknown. |
 | `reason` | `str` | Why settlement is unknown, empty when confirmed. |
 
+### execution.settings
+
+**Support: public.** Record the non-default settings of one execution.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str` | The execution whose settings were observed. |
+| `settings` | `list` | The observed settings. |
+| `settings[].key` | `str` | The dotted config key. |
+| `settings[].value` | `str or float or int or bool or null` | The observed value, or *** for text that could contain credentials. |
+| `settings[].source` | `str` | The winning layer, preset, flag or runtime policy. |
+| `settings[].file` | `str, optional` | The defining config file, if any. |
+
 ### execution.target
 
 **Support: public.** Immutable target facts recorded before workspace commands.

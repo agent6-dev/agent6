@@ -549,7 +549,9 @@ def _nested_record(annotation: Any) -> tuple[type[Any] | None, str]:
     for t in _types(annotation):
         if issubclass(t, pydantic.BaseModel):
             text = _type_text(annotation)
-            return t, "list" if text.startswith("collections.abc.Sequence") else "object"
+            return t, "list" if text.startswith(
+                ("collections.abc.Sequence", "tuple[")
+            ) else "object"
     return None, _record_kind(annotation)
 
 
@@ -558,6 +560,10 @@ def _record_kind(annotation: Any) -> str:
         return _type_text(annotation)
     text = _type_text(annotation).replace("\\|", "|")
     base = text.replace(" | None", "")
+    if " | " in base:
+        return " or ".join(
+            "null" if part == "None" else _RECORD_KINDS[part] for part in text.split(" | ")
+        )
     return _RECORD_KINDS[base]
 
 

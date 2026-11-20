@@ -2021,6 +2021,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "environment.starting": EnvironmentStarting,
     "execution.environment": ExecutionEnvironment,
     "execution.jobs": ExecutionJobs,
+    "execution.settings": ExecutionSettings,
     "execution.target": ExecutionTarget,
     "finish.refused.children": FinishRefusedChildren,
     "finish.refused.contract": FinishRefusedContract,

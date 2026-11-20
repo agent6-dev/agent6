@@ -37,6 +37,16 @@ def test_every_record_has_a_writer_and_the_map_is_in_type_order() -> None:
             continue
         referenced |= _record_references(path.read_text(encoding="utf-8"))
     records = {cls.__name__: event_type for event_type, cls in journal.EVENT_TYPES.items()}
+    written = {
+        name
+        for name in referenced
+        if isinstance(cls := getattr(journal, name, None), type)
+        and issubclass(cls, journal.Event)
+        and cls is not journal.Event
+    }
+    assert not (written - records.keys()), (
+        f"unregistered records: {sorted(written - records.keys())}"
+    )
     unwritten = {name for name in records if name not in referenced}
     assert not unwritten, f"records nothing writes: {sorted(unwritten)}"
     assert list(journal.EVENT_TYPES) == sorted(journal.EVENT_TYPES)
