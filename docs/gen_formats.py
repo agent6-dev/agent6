@@ -407,6 +407,9 @@ WEB = (
     ),
     Producer("ui.web.model", "conversation_payload", "`/api/session/<id>/conversation` payload"),
     Producer(
+        "ui.web.model", "recent_conversation", "`/api/session/<id>/conversation?recent=1` payload"
+    ),
+    Producer(
         "ui.web.model", "conversation_items", "`/api/session/<id>/conversation` item", "entry"
     ),
     Producer("ui.web.model", "restate_payload", "`/api/session/<id>/restate` payload"),

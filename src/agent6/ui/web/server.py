@@ -708,6 +708,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
         Attributes:
             session_id: The session created by new work.
+            preview: The requested tasks and attempts, or the reason the draft cannot start.
             message: The action's result text.
             draft: The machine-authoring draft identifier.
 

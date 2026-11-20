@@ -1713,7 +1713,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `placement` | `dict[str, Any] \| None` | The child's rank and group id, or null outside a compared child. |
 | `comparison` | `dict[str, Any] \| None` | The group record on its parent, or null for other sessions. |
 | `parallel` | `dict[str, Any] \| None` | The ParallelLineage, or null outside a child. |
-| `children` | `list[SummaryRow]` | The parent's summary_row objects. |
+| `children` | `list[dict[str, Any]]` | ChildView rows in dispatch order. Lineage-only groups keep their listing fields. |
 | `run_branch` | `str \| None` | The existing run branch, or null. |
 | `base_branch` | `str \| None` | The base branch, or null when unknown. |
 | `merged_into` | `str \| None` | The merge destination, or null when not merged. |
@@ -2019,6 +2019,7 @@ Source: [`ui.web.server._Handler._route_post`](https://github.com/agent6-dev/age
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `preview` | `JSON` | The requested tasks and attempts, or the reason the draft cannot start. |
 | `session_id` | `JSON` | The session created by new work. |
 | `draft` | `JSON` | The machine-authoring draft identifier. |
 | `message` | `JSON` | The action's result text. |
@@ -2140,6 +2141,17 @@ Source: [`ui.web.model.conversation_payload`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `items` | `JSON` | The folded conversation items. |
 | `operator_inputs` | `JSON` | The operator's past inputs for composer history. |
+
+### `/api/session/<id>/conversation?recent=1` payload
+
+**Support: public.** Return a child's conversation tail, including the reply in progress.
+
+Source: [`ui.web.model.recent_conversation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `live` | `JSON` | Whether the session is live. |
+| `text` | `JSON` | The tail of the last six items and the reply in progress. |
 
 ### `/api/session/<id>/conversation` item
 
@@ -2993,6 +3005,18 @@ Source: [`agent6.ui.web.server.NewWorkBody`](https://github.com/agent6-dev/agent
 | `worktree` | `bool` | Work in a new git worktree (`run --worktree`); run mode only. |
 | `seed_from` | `str` | The session whose context seeds the run (`run --from`); a plan becomes the task when `task` is empty. |
 | `max_usd` | `float \| None` | The metered spend ceiling (`--max-usd`), or null for the config's. |
+
+### ParallelPreviewBody
+
+**Support: public.** A composer draft to parse without dispatching its tasks.
+
+Source: [`agent6.ui.web.server.ParallelPreviewBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `text` | `str` | The unsent text. |
+| `preset` | `str` | The selected preset override. |
+| `session_id` | `str` | The run to steer or resume. An empty id starts new work. |
 
 ### SteerBody
 
