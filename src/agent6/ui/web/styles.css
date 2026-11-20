@@ -232,7 +232,7 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 .pickers .pick > span { flex: none; } /* the dropdown narrows, never its label */
 .pickers .pick:has(:disabled) > span { opacity: .55; } /* a label dims with its control */
 .pickers .field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); }
-.pickers select.field { field-sizing: content; } /* as wide as the chosen option, not the longest */
+.pickers select.field { field-sizing: content; text-overflow: ellipsis; } /* as wide as the chosen option, not the longest */
 /* The spend cap holds a few digits. */
 .pickers input.field { width: 7em; }
 .pickers[hidden] { display: none; }

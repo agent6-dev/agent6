@@ -683,6 +683,27 @@ def test_a_picker_is_as_wide_as_its_chosen_option(
     assert not errors
 
 
+def test_a_cut_picker_label_ends_in_an_ellipsis(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A plan's option cut its task at 40 characters mid-word, and a phone cut a label bare."""
+    from playwright.sync_api import expect
+
+    task = "Plan moving the argument parsing onto subcommand modules, one module per verb"
+    _run(tmp_path, "plan-AAAAAA", task, STOP, mode="plan")
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    option = page.locator(".dock select[title^='seed the run'] option").nth(1)
+    expect(option).to_have_text(f"plan-AAAAAA · {task[:40]}…")
+    selects = page.locator(".dock .pickers select")
+    expect(selects).to_have_count(4)
+    assert set(selects.evaluate_all("ss => ss.map(s => getComputedStyle(s).textOverflow)")) == {
+        "ellipsis"
+    }
+    assert not errors
+
+
 def test_a_model_list_that_fails_to_load_leaves_the_config_default(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

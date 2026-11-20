@@ -730,7 +730,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   const noSeed = el('option', null, 'none'); noSeed.value = ''; seed.appendChild(noSeed);
   const live = new Set(['running', 'starting', 'waiting']);
   for (const r of (sessions || []).filter(r => r.mode === 'plan' && !live.has(r.status))) {
-    const o = el('option', null, r.session_id + ' · ' + (r.task_line || '').split('\n')[0].slice(0, 40));
+    const o = el('option', null, r.session_id + ' · ' + firstLine(r.task_line, 41));
     o.value = r.session_id; seed.appendChild(o);
   }
   const cap = el('input', 'field'); cap.placeholder = 'config';
