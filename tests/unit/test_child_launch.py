@@ -168,6 +168,47 @@ def test_launch_dir_is_under_the_origin_state(tmp_path: pathlib.Path) -> None:
     assert private.is_relative_to(paths.state_base())
 
 
+@pytest.mark.parametrize("reports", [True, False])
+def test_a_slow_child_is_waited_for_until_its_report_or_exit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reports: bool
+) -> None:
+    """A live child without a start report was counted failed after 25 seconds."""
+    elapsed = 0.0
+    directory = tmp_path / "child"
+
+    def tick(_interval: float) -> None:
+        nonlocal elapsed
+        elapsed += 30.0
+        if reports:
+            directory.mkdir()
+            (directory / "logs.jsonl").write_text('{"type":"session.start"}\n')
+
+    class Proc:
+        pid = 4242
+
+        def poll(self) -> int | None:
+            return 7 if elapsed and not reports else None
+
+    def popen(*_args: object, **_kwargs: object) -> Proc:
+        return Proc()
+
+    monkeypatch.setattr(spawn.subprocess, "Popen", popen)
+    monkeypatch.setattr(spawn.time, "monotonic", lambda: elapsed)
+    monkeypatch.setattr(spawn.time, "sleep", tick)
+    found, pid, err = spawn.spawn_child(
+        child_launch.bootstrap_argv(),
+        tmp_path,
+        ready=lambda _: directory if directory.exists() else None,
+        stop_reason=lambda: "",
+        env={},
+    )
+    assert pid == 4242
+    if reports:
+        assert (found, err) == (directory, "")
+    else:
+        assert found is None and "exited 7" in err
+
+
 def test_spawn_child_returns_the_pid_with_a_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -184,7 +225,11 @@ def test_spawn_child_returns_the_pid_with_a_failure(
 
     monkeypatch.setattr(spawn.subprocess, "Popen", fake_popen)
     found, pid, err = spawn.spawn_child(
-        child_launch.bootstrap_argv(), tmp_path, before=set(), list_dirs=list, env={}
+        child_launch.bootstrap_argv(),
+        tmp_path,
+        ready=lambda _: None,
+        stop_reason=lambda: "",
+        env={},
     )
     assert (found, pid) == (None, 4242)
     assert "agent6 child agent exited 2" in err
@@ -194,7 +239,11 @@ def test_spawn_child_returns_the_pid_with_a_failure(
 
     monkeypatch.setattr(spawn.subprocess, "Popen", failing_popen)
     found, pid, err = spawn.spawn_child(
-        child_launch.bootstrap_argv(), tmp_path, before=set(), list_dirs=list, env={}
+        child_launch.bootstrap_argv(),
+        tmp_path,
+        ready=lambda _: None,
+        stop_reason=lambda: "",
+        env={},
     )
     assert (found, pid) == (None, 0)
     assert "failed to start agent6 child agent" in err

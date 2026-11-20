@@ -21,6 +21,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import IO
 
 from agent6 import directive, kinds, paths
+from agent6.app import child_wait
 from agent6.models import validate
 from agent6.sandbox import jail
 from agent6.sessions import id, layout, lock, process
@@ -484,8 +485,13 @@ def spawn_and_locate(
     Returns:
         The new dir and "", or None and why.
     """
-    found, _pid, err = spawn_child(
-        argv, cwd, before=before, list_dirs=list_dirs, env=env, timeout_s=timeout_s
+    found, _pid, err = _spawn_and_wait(
+        argv,
+        cwd,
+        ready=lambda pid: _located(list_dirs, before, pid),
+        env=env,
+        timeout_s=timeout_s,
+        preexec=jail.die_with_parent(os.getpid(), signal.SIGTERM),
     )
     return found, err
 
@@ -494,36 +500,29 @@ def spawn_child(
     argv: list[str],
     cwd: pathlib.Path,
     *,
-    before: set[pathlib.Path],
-    list_dirs: Callable[[], list[pathlib.Path]],
-    env: dict[str, str] | None = None,
-    timeout_s: float = 25.0,
-    tie_to_parent: bool = True,
+    ready: Callable[[int], pathlib.Path | None],
+    env: dict[str, str],
+    stop_reason: Callable[[], str],
 ) -> tuple[pathlib.Path | None, int, str]:
-    """Spawn a child detached, locate its session dir and keep the child's pid.
-
-    The pid lets the parent stop a child that never reports a session dir; the parent
-    tie (PDEATHSIG) ends the child with a parent that dies, as a Ctrl-C stop would.
+    """Wait on the watch thread for its child's start report, exit or requested stop.
 
     Args:
         argv: The command.
         cwd: The clone.
-        before: The session dirs that existed before the spawn.
-        list_dirs: Lists the session dirs now.
-        env: The child's environment; None inherits this process's.
-        timeout_s: How long to wait for the dir.
-        tie_to_parent: Deliver SIGTERM to the child when this process dies.
+        ready: The child's directory once this execution reports its start.
+        env: The child's environment.
+        stop_reason: Why the parent asks the child to end, empty to keep waiting.
 
     Returns:
-        The new dir, the pid and "", or None, the pid (0 when nothing started) and why.
+        The directory, pid and empty error, or None, pid and why the launch ended.
     """
     return _spawn_and_wait(
         argv,
         cwd,
-        ready=lambda pid: _located(list_dirs, before, pid),
+        ready=ready,
         env=env,
-        timeout_s=timeout_s,
-        preexec=jail.die_with_parent(os.getpid(), signal.SIGTERM) if tie_to_parent else None,
+        stop_reason=stop_reason,
+        preexec=jail.die_with_parent(os.getpid(), signal.SIGTERM),
     )
 
 
@@ -533,7 +532,8 @@ def _spawn_and_wait[T](
     *,
     ready: Callable[[int], T | None],
     env: dict[str, str] | None,
-    timeout_s: float,
+    timeout_s: float | None = None,
+    stop_reason: Callable[[], str] | None = None,
     clean_exit: T | None = None,
     preexec: Callable[[], None] | None = None,
 ) -> tuple[T | None, int, str]:
@@ -546,7 +546,8 @@ def _spawn_and_wait[T](
         cwd: The checkout.
         ready: The answer for the child with this pid, or None while not ready.
         env: The child's environment; None inherits this process's.
-        timeout_s: How long to poll.
+        timeout_s: The front-end check-in, None on a child watch thread.
+        stop_reason: Why to stop and reap the child before handing back a failure.
         clean_exit: The answer for a child that exited 0 without one; None hands back
             its exit instead.
         preexec: Runs in the child before exec; a child's parent tie.
@@ -575,20 +576,28 @@ def _spawn_and_wait[T](
         except OSError as exc:
             return None, 0, f"failed to start agent6 {label}: {exc}"
         jail.keep_out_of_the_sweep(proc.pid)
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
+        started = time.monotonic()
+        while True:
             if (found := ready(proc.pid)) is not None:
                 return found, proc.pid, ""
             rc = proc.poll()
             if rc is not None:
-                # The answer may have landed in the same instant.
+                # The child can write its report between the readiness check and exit.
                 if (found := ready(proc.pid)) is not None:
                     return found, proc.pid, ""
                 if rc == 0 and clean_exit is not None:
                     return clean_exit, proc.pid, ""
-                return None, proc.pid, _child_exit_message(label, rc, _stderr_tail(err))
+                error = _child_exit_message(label, rc, _stderr_tail(err))
+                break
+            if stop_reason is not None and (reason := stop_reason()):
+                how = child_wait.stop_child(proc.pid)
+                error = f"{reason} before reporting its start; its process {how}"
+                break
+            if timeout_s is not None and time.monotonic() - started >= timeout_s:
+                error = _not_started_message(label, timeout_s, _stderr_tail(err))
+                break
             time.sleep(0.2)
-        return None, proc.pid, _not_started_message(label, timeout_s, _stderr_tail(err))
+        return None, proc.pid, error
     finally:
         # The child keeps the unlinked inode as its stderr; its real output is its own log.
         err.close()

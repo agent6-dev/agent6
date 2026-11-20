@@ -46,7 +46,7 @@ def test_a_parent_continues_its_stopped_child(tmp_path: pathlib.Path, control: s
     answer = child_work.steer(dispatcher, sid, "finish the test")
     assert "continues" in answer
     assert continued[0].task == "work"
-    assert child_work.unmerged(dispatcher) == ((sid, "running"),)
+    assert child_work.unmerged(dispatcher) == ((sid, "starting"),)
     record = child_dispatch.read_records(tmp_path / "parent")[0]
     continuation = record.child(sid).continuation
     assert continuation is not None
@@ -143,7 +143,7 @@ def test_a_second_attempt_keeps_its_number_on_continuation(
 
     dispatcher.child_spawner = start
     child_work.steer(dispatcher, second, "continue")
-    assert child_work.unmerged(dispatcher) == ((second, "running"),)
+    assert child_work.unmerged(dispatcher) == ((second, "starting"),)
     record = child_dispatch.read_records(tmp_path / "parent")[0]
     assert record.child(first) == before
     future.set_result(dataclasses.replace(children.results[second].result(), stopped_by=""))

@@ -823,11 +823,11 @@ def test_child_setup_output_survives_import_and_a_failed_one_reaches_the_operato
         argv: list[str],
         cwd: pathlib.Path,
         *,
-        before: set[pathlib.Path],
-        list_dirs: Any,
+        ready: Callable[[int], pathlib.Path | None],
+        stop_reason: Callable[[], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path, int, str]:
-        del before, list_dirs
+        del ready, stop_reason
         # A detached child's stdout and stderr are not the group's own streams.
         child_output, child_errors = io.StringIO(), io.StringIO()
         with (
@@ -2231,12 +2231,12 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         _argv: list[str],
         cwd: pathlib.Path,
         *,
-        before: set[pathlib.Path],
-        list_dirs: Callable[[], list[pathlib.Path]],
+        ready: Callable[[int], pathlib.Path | None],
+        stop_reason: Callable[[], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, int, str]:
         assert cwd == children[0].worktree
-        assert not before and not list_dirs()
+        assert ready(1) is None and not stop_reason()
         envelope = _launch_of(env)
         assert (envelope.parent, envelope.group, envelope.number) == ("failed11", "failed11", 1)
         assert worktrees.sweep_group_clones(origin, cfg) == (0, 1)

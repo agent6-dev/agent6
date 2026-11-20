@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable
 
 from agent6 import budget as agent6_budget
-from agent6.sessions import budget_events, ipc, journal, layout
+from agent6.sessions import budget_events, ipc, journal, layout, process
 from agent6.tools import operator_prompts, schema
 from agent6.viewmodel import tail
 from agent6.viewmodel.session import log as session_log
@@ -75,7 +75,12 @@ class ChildWatch:
             self._journal_meter(self._budget, now=over)
             if over:
                 return True
-        if status == "waiting":
+        # A live worker can ask a preflight question before it reports its start or resume.
+        if status == "waiting" or (
+            status == "starting"
+            and process.worker_is_alive(child_dir)
+            and session_log.scan_session_log(child_dir / layout.LOGS_NAME).operator_blocked
+        ):
             self._relay(child_dir, label)
         return False
 

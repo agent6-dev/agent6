@@ -55,7 +55,8 @@ class ChildView:
         spend_usd: The cumulative child spend.
         usd_partial: Whether unpriced calls make the spend a lower bound.
         settled: Whether the parent charged its usage; False while it is unknown.
-        launched: Whether the child has a session record or a live worker.
+        launched: Whether the child reported this execution's start, or a lineage-only
+            child has a session record or live worker.
         current_tool: The tool running now, or an empty string.
         turn: Its latest recorded turn, or None before one.
         tokens: Input, cache and output tokens in its current execution, or None if unreported.
@@ -205,21 +206,31 @@ def children_of(
     return tuple(sorted(children, key=lambda child: (child.group, child.number, child.session_id)))
 
 
+def reported_start(child: child_dispatch.ChildRecord, scan: session_log.LogScan) -> bool:
+    """Return whether this execution has started, ignoring any earlier continuation."""
+    previous = child.continuation.sequence if child.continuation is not None else 0
+    return scan.saw_start and scan.executions > previous
+
+
 def _session_child(
     row: ChildView,
     child_dir: pathlib.Path,
-    join: child_dispatch.JoinRecord | None = None,
+    child: child_dispatch.ChildRecord | None = None,
     *,
     version: int = child_dispatch.RECORD_VERSION,
 ) -> ChildView:
     commits = (
         None
         if row.source == "panel"
-        else child_dispatch.read_commit_count(child_dir, join, version=version)
+        else child_dispatch.read_commit_count(
+            child_dir, child.join if child else None, version=version
+        )
     )
     if listing.is_session_husk(child_dir):
         return dataclasses.replace(row, commits=commits)
     scan = session_log.scan_session_log(child_dir / layout.LOGS_NAME)
+    if child is not None and not reported_start(child, scan):
+        return dataclasses.replace(row, commits=commits)
     status, reason = session_status.status_for_session_dir(child_dir, scan.status_facts())
     live = status in session_status.LIVE_STATUS_WORDS
     end = time.time() if live else scan.end_ep or scan.last_ep
@@ -303,7 +314,7 @@ def _recorded_child(
     if not layout.is_safe_session_id(child.session_id):
         return dataclasses.replace(row, status="failed", error="invalid child session id")
     child_dir = bucket / child.session_id
-    row = _session_child(row, child_dir, child.join, version=record.version)
+    row = _session_child(row, child_dir, child, version=record.version)
     if record.source == "panel" and row.launched:
         try:
             verdict = completion.read_completion(child_dir)
@@ -355,4 +366,8 @@ def _recorded_child(
         return dataclasses.replace(row, status="being ranked")
     if record.state == "complete" and not row.launched:
         return dataclasses.replace(row, status="failed", error=record.message or "never started")
+    if record.state == "running" and not row.launched:
+        return dataclasses.replace(
+            row, status="ended, task pending" if child.reported else "starting"
+        )
     return row

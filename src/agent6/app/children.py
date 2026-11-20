@@ -48,29 +48,29 @@ class ParallelError(Exception):
 
 
 class SpawnRun(Protocol):
-    """Spawn a detached agent6 command and locate its session dir: the front-end's primitive."""
+    """Spawn an owned child and wait for its start report, exit or requested stop."""
 
     def __call__(
         self,
         argv: list[str],
         cwd: pathlib.Path,
         *,
-        before: set[pathlib.Path],
-        list_dirs: Callable[[], list[pathlib.Path]],
+        ready: Callable[[int], pathlib.Path | None],
+        stop_reason: Callable[[], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, int, str]:
-        """Spawn the command and wait for its session dir.
+        """Spawn the command on its watch thread.
 
         Args:
             argv: The full command: the interpreter, its flags and the bootstrap module.
             cwd: Where to spawn.
-            before: The session dirs that existed before the spawn.
-            list_dirs: Lists the candidate session dirs.
+            ready: The session dir once this process reports starting its execution.
+            stop_reason: Why to stop and reap it, empty to keep waiting.
             env: The child's environment.
 
         Returns:
-            `(session_dir, pid, "")` once a new dir with a log appears, else
-            `(None, pid, error)`, the pid 0 when nothing started.
+            `(session_dir, pid, "")` after the report, else `(None, pid, error)`
+            after exit. The pid is zero if the command could not start.
         """
         ...
 
@@ -183,6 +183,7 @@ def bridge_spawner(
     contract: kinds.ConversationContract | None = None,
     continuation: str = "",
     runtime: ChildRuntime,
+    stop_reason: Callable[[], str] = lambda: "",
 ) -> child_records.ChildResult:
     """Clone the origin and start the child bootstrap detached in the clone.
 
@@ -212,6 +213,7 @@ def bridge_spawner(
         contract: The harness-owned read-only conversation; None for work.
         continuation: The next instruction in a retained child clone; empty starts a new child.
         runtime: The front-end's spawn primitive.
+        stop_reason: Why to end the child before its start report, empty to keep waiting.
 
     Returns:
         The child's result once its session dir is located, the run still going;
@@ -269,18 +271,14 @@ def bridge_spawner(
     memory.seed_store(paths.state_dir(origin), paths.state_dir(spec.worktree))
     # The child's record lives in the origin's state from its first event.
     child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
-    logs = child_dir / sessions_layout.LOGS_NAME
-    previous = session_log.scan_session_log(logs).execution_id if continuation else None
+    reader = tail.LogTail(child_dir / sessions_layout.LOGS_NAME)
+    reader.read()  # A continuation appends to the stopped execution's journal.
+    report = journal.SessionResume.TYPE if continuation else journal.SessionStart.TYPE
 
-    def list_dirs() -> list[pathlib.Path]:
-        if not child_dir.is_dir():
-            return []
-        if continuation and not process.worker_is_alive(child_dir):
-            # A new execution can finish before the first launch poll.
-            current = session_log.scan_session_log(logs).execution_id
-            if current is None or current == previous:
-                return []
-        return [child_dir]
+    def ready(pid: int) -> pathlib.Path | None:
+        if process.read_worker_pid(child_dir) not in (None, pid):
+            return None
+        return child_dir if any(row.get("type") == report for row in reader.read()) else None
 
     # A child's model cannot dispatch work; only the harness may dispatch reviewers.
     markers = {
@@ -291,8 +289,8 @@ def bridge_spawner(
     session_dir, pid, err = runtime.spawn(
         child_launch.bootstrap_argv(),
         spec.worktree,
-        before=set(),
-        list_dirs=list_dirs,
+        ready=ready,
+        stop_reason=stop_reason,
         env={**os.environ, **markers},
     )
     if session_dir is None:
@@ -392,6 +390,19 @@ def run_child_to_completion(
     Returns:
         The child's result, its `session_dir` the imported dir on success.
     """
+    deadline_at = limits.deadline_at if limits is not None else None
+    label = f"{spec.number_label} {spec.session_id}"
+
+    def stop_before_start() -> str:
+        if deadline_at is not None and clock() >= deadline_at:
+            return "ended at its deadline"
+        if (hard_stop is not None and hard_stop.is_set()) or (should_stop and should_stop()):
+            return "stopped by its parent"
+        directory = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
+        return (
+            "stopped at the run's budget" if watch and watch(directory, label, "starting") else ""
+        )
+
     if spawner is None:
         spawner = functools.partial(
             bridge_spawner,
@@ -412,13 +423,10 @@ def run_child_to_completion(
             contract=contract,
             continuation=continuation,
             runtime=runtime,
+            stop_reason=stop_before_start,
         )
     res = spawner(spec, task)
     if not res.ok:
-        # A child that never reported its session dir is still a process of ours.
-        how = child_wait.stop_child(res.pid)
-        if how != "gone":
-            res = dataclasses.replace(res, error=f"{res.error}; its process {how}")
         return res
     if parent_events is not None:
         parent_events.emit(
@@ -426,9 +434,7 @@ def run_child_to_completion(
                 child=spec.session_id, activity="started", detail=task[:200]
             )
         )
-    deadline_at = limits.deadline_at if limits is not None else None
     overdue = over_budget = False
-    label = f"{spec.number_label} {spec.session_id}"
 
     def on_poll(status: str) -> bool:
         nonlocal over_budget

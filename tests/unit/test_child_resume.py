@@ -213,12 +213,14 @@ def test_continuation_readiness_distinguishes_executions(
         argv: list[str],
         cwd: pathlib.Path,
         *,
-        before: set[pathlib.Path],
-        list_dirs: Callable[[], list[pathlib.Path]],
+        ready: Callable[[int], pathlib.Path | None],
+        stop_reason: Callable[[], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, int, str]:
         assert argv == child_launch.bootstrap_argv() and cwd == spec.worktree
-        assert not before and not list_dirs(), "the stopped execution is not a new launch"
+        assert not stop_reason()
+        process.write_worker_pid(directory, os.getpid())
+        assert ready(os.getpid()) is None, "a live pid with the old journal is not a new start"
         assert child_launch.read_file(pathlib.Path(env[child_launch.ENV])).continuation == "finish"
         if phase == "unstarted":
             return None, 0, "no new execution"
@@ -241,7 +243,7 @@ def test_continuation_readiness_distinguishes_executions(
             )
             process.clear_worker_pid(directory)
         try:
-            assert list_dirs() == [directory]
+            assert ready(os.getpid()) == directory
             return directory, os.getpid(), ""
         finally:
             process.clear_worker_pid(directory)

@@ -114,6 +114,15 @@ def test_a_denial_goes_down_as_a_denial(tmp_path: pathlib.Path) -> None:
     assert _answer(child) == "no"
 
 
+def test_a_prompt_before_the_start_report_reaches_the_parent(tmp_path: pathlib.Path) -> None:
+    """A child waiting for a preflight answer cannot report its start yet."""
+    child = _child(tmp_path)
+    (child / "logs.jsonl").write_text(json.dumps(_prompt()) + "\n")
+    parent = _Parent(tmp_path, "no")
+    parent.watch()(child, "attempt 1 child", "starting")
+    assert _answer(child) == "no"
+
+
 def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) -> None:
     """An "allow all" given on the parent stops the child asking; a "deny all" asks nobody."""
     child = _child(tmp_path, _prompt())

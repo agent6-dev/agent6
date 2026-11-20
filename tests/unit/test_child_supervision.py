@@ -9,6 +9,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
@@ -145,7 +146,8 @@ from pathlib import Path
 from agent6.ui import spawn
 found, pid, err = spawn.spawn_child(
     [sys.executable, "-c", "import time; time.sleep(60)"],
-    Path(sys.argv[1]), before=set(), list_dirs=list, env=dict(os.environ), timeout_s=0.3,
+    Path(sys.argv[1]), ready=lambda pid: Path(sys.argv[1]),
+    stop_reason=lambda: "", env=dict(os.environ),
 )
 print(pid, flush=True)
 time.sleep(60)
@@ -254,34 +256,55 @@ def test_a_child_is_stopped_once_the_runs_budget_is_spent(
     assert not process.pid_alive(deaf.pid) and _reaped(deaf.pid)
 
 
-def test_a_child_that_never_reported_is_killed_not_left_running(
-    tmp_path: pathlib.Path,
+@pytest.mark.parametrize("end", ["stop", "teardown", "deadline", "budget"])
+def test_a_child_can_be_stopped_before_its_start_report(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, end: str
 ) -> None:
-    """A spawn that timed out before a session dir appeared still owns a process: it is stopped."""
-    polite = _child(_POLITE, tmp_path)
-    spec = _spec(tmp_path, "mute-l1")
+    """Dispatch returns a handle while the child is starting; its watch still owns the stop."""
+    from tests.unit import test_children_background as background
 
-    def spawner(spec: child_records.ChildSpec, task: str) -> child_records.ChildResult:
-        return child_records.ChildResult(
-            spec, tmp_path / "none", "agent6/x", False, "has not reported starting", pid=polite.pid
-        )
-
-    res = app_children.run_child_to_completion(
-        spec,
-        "t",
-        explicit_leaves=frozenset(),
-        cfg=Config(),
-        origin=tmp_path,
-        record_state=tmp_path / "origin-state",
-        group="fan",
-        parent="co",
-        runtime=parallel.child_runtime(),
-        spawner=spawner,
-        poll_interval_s=0.01,
+    repo = tmp_path / "repo"
+    background._init_repo(repo)
+    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    monkeypatch.setattr(
+        child_launch,
+        "bootstrap_argv",
+        lambda: [sys.executable, "-c", "import time; time.sleep(15)"],
     )
-    assert not res.ok
-    assert "has not reported starting" in res.error and "stopped" in res.error
-    assert not process.pid_alive(polite.pid) and _reaped(polite.pid)
+    waiting, spent = threading.Event(), threading.Event()
+
+    def watch(_directory: pathlib.Path, _label: str, status: str) -> bool:
+        assert status == "starting"
+        waiting.set()
+        return spent.is_set()
+
+    group = app_children.build_child_spawner(
+        cfg,
+        repo,
+        paths.state_dir(repo),
+        explicit_leaves=frozenset(),
+        parent_session_id="co",
+        runtime=parallel.child_runtime(),
+        watch=watch,
+    )
+    limits = child_records.ChildLimits(deadline_at=time.time() if end == "deadline" else None)
+    (child,) = group([child_records.ChildTask(task="t", model=None, limits=limits)], "p1")
+    try:
+        if end != "deadline":
+            assert waiting.wait(5) and not child.result.done()
+        if end == "stop":
+            child.stop()
+        elif end == "teardown":
+            group.close()
+        elif end == "budget":
+            spent.set()
+        res = child.result.result(timeout=5)
+    finally:
+        group.close()
+    reason = {"deadline": "deadline", "budget": "budget"}.get(end, "stopped by its parent")
+    assert not res.ok and reason in res.error
+    assert res.pid > 0 and not process.pid_alive(res.pid) and _reaped(res.pid)
+    assert not res.session_dir.exists() and res.spec.worktree.is_dir()
 
 
 def test_arm_deadline_writes_the_stop_at_the_deadline(tmp_path: pathlib.Path) -> None:

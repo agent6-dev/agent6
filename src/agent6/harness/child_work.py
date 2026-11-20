@@ -19,6 +19,7 @@ from agent6.harness import child_continue, child_merge, operator_bridge, paralle
 from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
+from agent6.viewmodel import children as vm_children
 from agent6.viewmodel.session import log as session_log
 
 if TYPE_CHECKING:
@@ -48,6 +49,8 @@ def standing(
         ):
             directory = dispatcher.session_dir.with_name(started.session_id)
             scan = session_log.scan_session_log(directory / sessions_layout.LOGS_NAME)
+            if not vm_children.reported_start(task.record.child(started.session_id), scan):
+                return "starting"
             if not scan.finished and scan.review.in_review(scan.execution_id):
                 return "in review"
         return "running"
@@ -81,7 +84,7 @@ def unmerged(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[st
         for task in dispatcher.open.values()
         for started in task.children
         if (state := standing(dispatcher, task, started))
-        in ("running", "in review", "ended, task pending", "being ranked")
+        in ("starting", "running", "in review", "ended, task pending", "being ranked")
     )
 
 
@@ -115,7 +118,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
                 state = parallel_join.join_words(parallel_join.join_of(child))
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
             # A wait has something to wait for: the child itself, or the judges ranking it.
-            running = state in ("running", "in review", "stopping", "being ranked")
+            running = state in ("starting", "running", "in review", "stopping", "being ranked")
             mergeable = child.join is not None and child.join.status == "stopped"
             if child_merge.pending(child):
                 state = "merge requested"
@@ -218,11 +221,15 @@ def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: st
             f"child {child} has ended ({ended.state}); nothing was sent."
             " parallel starts another child."
         )
+    if state == "stopping":
+        raise tool_errors.ToolError(f"child {child} is stopping; nothing was sent.")
     assert dispatcher.session_dir is not None
     state_dir = sessions_layout.layout_of(dispatcher.session_dir).state_dir
     child_dir = sessions_layout.bucket_dir(state_dir, kinds.session_bucket("run")) / child
-    if not child_dir.is_dir() or not ipc.submit_steer(
-        child_dir, f"{operator_bridge.PARENT_STEERING}\n{text}"
+    if (
+        state == "starting"
+        or not child_dir.is_dir()
+        or not ipc.submit_steer(child_dir, f"{operator_bridge.PARENT_STEERING}\n{text}")
     ):
         raise tool_errors.ToolError(
             f"child {child} has not started yet; nothing was sent. Send it again once"

@@ -697,8 +697,8 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
 
     # Only the requested child and its transcript are in this read.
     read = _tool_answers(provider.seen[2])[-1]
-    assert read["children"] == [f"[{one}] attempt 1 · running: write a"]
-    assert read["output"] == f"[{one}] attempt 1 · running: write a\n\n(no transcript yet)"
+    assert read["children"] == [f"[{one}] attempt 1 · starting: write a"]
+    assert read["output"] == f"[{one}] attempt 1 · starting: write a\n\n(no transcript yet)"
     # The stop answers at once; the child ends in the background and never merges.
     assert children.stopped == [two]
     stopped = _tool_answers(provider.seen[3])[-1]
@@ -814,7 +814,7 @@ def test_a_pending_steer_ends_a_child_wait_without_consuming_it(
     wf.run("start")
 
     assert _tool_answers(provider.seen[2])[-1]["children"] == [
-        "[run-p1-l1] attempt 1 · running: write a"
+        "[run-p1-l1] attempt 1 · starting: write a"
     ]
     assert ipc.read_steer_answer(session_dir) == "inspect the output"
 
@@ -852,7 +852,7 @@ def test_finish_session_is_refused_until_every_task_has_merged(tmp_path: pathlib
     assert (result.reason, result.turns) == ("finish_session", 4)
     refusal = (
         "[harness] finish_session refused: 1 child(ren) have pending work:\\n"
-        f"- {child}: running\\n"
+        f"- {child}: starting\\n"
         "read_background with a child's id reads it, read_background with wait_s and no id"
         " waits for the next to end, and stop_background stops one, whose work then does not"
         " merge. Tasks complete at a turn boundary after their children end, and attempts"
@@ -915,7 +915,7 @@ def test_a_prose_only_turn_does_not_end_a_run_whose_children_run(tmp_path: pathl
 
     assert (result.reason, result.turns) == ("finish_session", 6)
     assert "[harness] the run cannot end yet: 1 child(ren) have pending work:" in provider.seen[4]
-    assert f"- {child}: running" in provider.seen[4]
+    assert f"- {child}: starting" in provider.seen[4]
     (refused,) = _events(tmp_path / "run", "finish.refused.children")
     assert (refused["turn"], refused["trigger"]) == (4, "silent_finish")
 

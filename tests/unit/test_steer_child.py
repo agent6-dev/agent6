@@ -276,7 +276,12 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
     one, two = "root-p1-l1", "root-p2-l1"
     runs = tmp_path / "state" / "sessions" / "runs"
 
-    # A child with no session dir has not started: nothing is written anywhere.
+    # Before the start report both rosters say starting and finish still waits.
+    assert dispatcher.session_dir is not None
+    assert vm_children.children_of(dispatcher.session_dir)[0].status == "starting"
+    line = child_work.roster(dispatcher)[0]
+    assert line.state == "starting" and line.running
+    assert (one, "starting") in child_work.unmerged(dispatcher)
     with pytest.raises(tool_errors.ToolError) as early:
         child_work.steer(dispatcher, one, "also write the test")
     assert str(early.value) == (
@@ -286,6 +291,15 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
     assert not (runs / one).exists()
 
     (runs / one).mkdir()
+    process.write_worker_pid(runs / one, os.getpid())
+    log = runs / one / "logs.jsonl"
+    log.touch()
+    with pytest.raises(tool_errors.ToolError, match="has not started yet"):
+        child_work.steer(dispatcher, one, "wait for the report")
+    assert not ipc.steer_request_pending(runs / one)
+    log.write_text('{"type":"session.start","mode":"run","user_task":"write a"}\n')
+    assert vm_children.children_of(dispatcher.session_dir)[0].status == "running"
+    assert child_work.roster(dispatcher)[0].state == "running"
     said = child_work.steer(dispatcher, one, "also write the test")
     assert said == f"[parallel] child {one}: steer queued for another turn, if any."
     assert (runs / one / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == (
@@ -299,9 +313,15 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
     assert queued.text.endswith("this child):\nabort") and not queued.now
     assert not ipc.steer_answer_is_abort(runs / one)
 
+    # A stop before a start report must not open the steer channel either.
+    (runs / two).mkdir()
+    child_work.stop(dispatcher, two)
+    with pytest.raises(tool_errors.ToolError, match="stopping"):
+        child_work.steer(dispatcher, two, "one more thing")
+    assert not ipc.steer_request_pending(runs / two)
+
     # Nothing is sent to a child that has ended, or to an id this run did not start.
     children.end(two, tmp_path / "state")
-    (runs / two).mkdir()
     with pytest.raises(tool_errors.ToolError) as ended:
         child_work.steer(dispatcher, two, "one more thing")
     assert str(ended.value) == (

@@ -9,9 +9,6 @@ drive (the detached spawn from `ui.spawn`, the reviewer provider and judging spi
 
 from __future__ import annotations
 
-import pathlib
-from collections.abc import Callable
-
 from agent6 import directive
 from agent6.app import children as app_children
 from agent6.config import Config, ConfigError
@@ -29,30 +26,7 @@ def child_runtime() -> app_children.ChildRuntime:
     Returns:
         The primitives.
     """
-
-    def spawn(
-        argv: list[str],
-        cwd: pathlib.Path,
-        *,
-        before: set[pathlib.Path],
-        list_dirs: Callable[[], list[pathlib.Path]],
-        env: dict[str, str],
-    ) -> tuple[pathlib.Path | None, int, str]:
-        """Spawn a detached child and locate its session dir.
-
-        Args:
-            argv: The full command, the child bootstrap.
-            cwd: Where to spawn.
-            before: The session dirs that existed before the spawn.
-            list_dirs: Lists the candidate session dirs.
-            env: The child's environment.
-
-        Returns:
-            The session dir, the pid and an error text, from `spawn_child`.
-        """
-        return ui_spawn.spawn_child(argv, cwd, before=before, list_dirs=list_dirs, env=env)
-
-    return app_children.ChildRuntime(spawn=spawn)
+    return app_children.ChildRuntime(spawn=ui_spawn.spawn_child)
 
 
 def spec_refusal(cfg: Config, spec: str) -> str | None:

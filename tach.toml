@@ -339,6 +339,8 @@ path = "agent6.ui.spawn"
 # validates its models, refuses a busy checkout, and locates the new session
 # dir among the listing's.
 depends_on = [
+  # A stop before a child reports its start uses the same group signal and reap as a later stop.
+  "agent6.app",
   "agent6.directive",
   "agent6.kinds",
   "agent6.models.validate",
