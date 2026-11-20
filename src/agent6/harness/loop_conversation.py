@@ -237,7 +237,7 @@ class Conversation:
         blocks = tuple(raw_blocks)
         message = AssistantMessage(raw_content=blocks, tool_uses=_parse_tool_uses(blocks))
         self._messages.append(message)
-        if not message.tool_uses:
+        if not message.tool_uses and message.is_substantive():
             self._deliver_restart_notice()
         return message
 
@@ -265,6 +265,11 @@ class Conversation:
             )
         self._messages.append(message)
         self._deliver_restart_notice()
+
+    @property
+    def pending_notice_chars(self) -> int:
+        """Count the restart text reserved after the waiting reply or tool result."""
+        return len(self._after_results or "")
 
     def _deliver_restart_notice(self) -> None:
         if self._after_results is not None:
@@ -337,6 +342,7 @@ class Conversation:
             and not last.is_substantive()
         ):
             self._messages.pop()
+            self._deliver_restart_notice()
 
     def restart(self, summary_text: str, keep: Sequence[Message] = (), *, task: str = "") -> None:
         """Replace everything after the initial message with a summary notice and a tail.

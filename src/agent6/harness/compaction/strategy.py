@@ -24,6 +24,7 @@ class Context:
         prefix_chars: The size of the system text and tool definitions.
         task: The original task.
         pins: Operator instructions that survive a restart.
+        endpoint_notice: Build the notice that follows a signed summary and its reply.
         restart_notice: Build the restart header with current pins, rulings and verify fact.
         call_endpoint: Ask the endpoint to summarise the given request.
         call_worker: Append one instruction to the worker request using the supplied call id.
@@ -38,6 +39,7 @@ class Context:
         root_task_id: The parent for tasks discovered during compaction.
         emit_graph_snapshot: Record a graph change after a check-off.
         execution_id: The execution that owns this turn.
+        awaiting_reply: The reply to this request has not entered the conversation.
     """
 
     conversation: loop_conversation.Conversation
@@ -81,7 +83,7 @@ class IdleStrategy(Protocol):
 
 
 class Strategy(Protocol):
-    """Compact one prepared turn before its ordinary provider call."""
+    """Compact the history of one worker request."""
 
     def compact(self, context: Context) -> bool:
         """Keep a valid history with the original task and complete tool exchanges.

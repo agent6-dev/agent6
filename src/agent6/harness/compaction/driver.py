@@ -67,10 +67,12 @@ class _Scheduled(abc.ABC):
         total = context.prefix_chars + compaction_window.context_chars(context.conversation)
         if total <= idle.min_chars or total < self.tier2_floor_chars:
             return None
+        # Gate notices can follow a prose reply while the run parks for the operator.
+        sent_count = len(context.conversation.complete(keep_reply=True)) if self.endpoint else None
         return waits.Deadline(
             request_started + idle.seconds,
             lambda: self.summarise_and_restart(
-                context, idle_gap_s=time.monotonic() - request_started
+                context, idle_gap_s=time.monotonic() - request_started, sent_count=sent_count
             ),
         )
 
@@ -114,6 +116,7 @@ class _Scheduled(abc.ABC):
         *,
         focus: str | None = None,
         idle_gap_s: float | None = None,
+        sent_count: int | None = None,
     ) -> bool:
         """Replace history only after either writer returns an accepted summary.
 
@@ -121,6 +124,7 @@ class _Scheduled(abc.ABC):
             context: The prepared turn.
             focus: The operator's focus for the summary.
             idle_gap_s: Seconds since the last worker request began for an idle summary.
+            sent_count: The endpoint request length at the start of the wait.
 
         Returns:
             True if the history was replaced.
@@ -130,7 +134,7 @@ class _Scheduled(abc.ABC):
         reason = "size" if focus is None else "requested"
         if idle_gap_s is not None:
             reason = "idle"
-            tail_start = len(conversation.complete(keep_reply=self.endpoint))
+            tail_start = sent_count if sent_count is not None else len(conversation.complete())
         elif self.endpoint:
             tail_start = len(messages)
         else:
@@ -168,7 +172,12 @@ class _Scheduled(abc.ABC):
             conversation.restart(context.restart_notice() + summary, keep=keep, task=context.task)
         # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.
         self.tier2_floor_chars = int(
-            (compaction_window.context_chars(conversation) + context.prefix_chars) * 1.25
+            (
+                compaction_window.context_chars(conversation)
+                + conversation.pending_notice_chars
+                + context.prefix_chars
+            )
+            * 1.25
         )
         context.emit(
             journal.CompactSummariseDone(

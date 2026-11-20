@@ -160,3 +160,65 @@ def test_size_repeats_the_successful_worker_request_before_adopting_its_reply() 
     conv.results([loop_conversation.ToolResultItem(tu.id, "result", tu)])
     assert conv.to_wire()[1]["content"] == got.raw["content"]
     assert "original task" in str(conv.to_wire()[3:])
+
+
+def test_idle_summary_only_covers_the_request_sent_before_parking() -> None:
+    worker = fixtures.Writer(
+        anthropic_parse.parse_response(captured.SAMPLES["compact"]["response"])
+    )
+    turn = fixtures.context(worker, worker, [], idle=window.IdleCompaction("p", 1, 0))
+    before = turn.conversation.to_wire()
+    turn.conversation.assistant([{"type": "text", "text": "Answer before parking."}])
+    alarm = driver.Endpoint().idle(turn, time.monotonic())
+    turn.conversation.notice("A gate notice before the wait.")
+    assert alarm and alarm.callback()
+    assert worker.calls[0]["messages"] == before
+    assert "Answer before parking." in str(turn.conversation.to_wire()[1])
+    assert "A gate notice before the wait." in str(turn.conversation.to_wire()[2])
+
+
+def test_idle_floor_counts_the_notice_waiting_for_a_tool_result() -> None:
+    worker = fixtures.Writer(
+        anthropic_parse.parse_response(captured.SAMPLES["compact"]["response"])
+    )
+    turn = fixtures.context(
+        worker, worker, [], task="x" * 12000, idle=window.IdleCompaction("p", 1, 0)
+    )
+    pending = turn.conversation.assistant(
+        captured.SAMPLES["adopt-strict"]["messages"][1]["content"]
+    )
+    compactor = driver.Endpoint()
+    alarm = compactor.idle(turn, time.monotonic())
+    assert alarm and alarm.callback()
+    use = pending.tool_uses[0]
+    turn.conversation.results([loop_conversation.ToolResultItem(use.id, "ok", use)])
+    assert not compactor.compact(turn)
+    assert len(worker.calls) == 1
+
+
+def test_quiet_reply_to_a_summarised_request_never_enters_the_next_request() -> None:
+    conv = fixtures.history()
+    block = captured.SAMPLES["compact"]["response"]["content"][0]
+    conv.adopt(block, [], "task and pins", awaiting_reply=True)
+    conv.assistant([])
+    conv.pop_quiet_assistant()
+    assert conv.to_wire() == [
+        {"role": "assistant", "content": [block]},
+        {"role": "user", "content": [{"type": "text", "text": "task and pins"}]},
+    ]
+
+
+def test_helper_restart_after_an_endpoint_block_reads_the_prior_summary() -> None:
+    block = captured.SAMPLES["compact"]["response"]["content"][0]
+    worker = fixtures.Writer(fixtures.response("", stop_reason="refusal"))
+    helper = fixtures.Writer(fixtures.response("Helper summary."))
+    turn = fixtures.context(worker, helper, [], task="verbatim task")
+    turn.conversation.adopt(block, [], turn.endpoint_notice())
+    turn.conversation.assistant([{"type": "text", "text": "a reply"}])
+    turn.conversation.notice("Continue.")
+    assert driver.Endpoint().compact(dataclasses.replace(turn, compact_requested=lambda: ""))
+    assert len(worker.calls) == len(helper.calls) == 1
+    assert block["content"] in helper.calls[0]["messages"][0]["content"]
+    after = turn.conversation.to_wire()
+    assert after[0]["content"][0]["text"] == "verbatim task" and "Helper summary." in str(after[1])
+    assert "compaction" not in after[0]["content"][0]
