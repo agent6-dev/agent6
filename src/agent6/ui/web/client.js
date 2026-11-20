@@ -1153,9 +1153,9 @@ function draftsCard() {
 function machineFilesCard() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Run a machine'));
-  const frow = el('div', 'form-row machine-files');
+  const frow = el('div', 'list machine-files'); frow.setAttribute('role', 'list');
   const run = (mf) => {
-    const b = el('button', null, '▶\u00a0' + mf.name); // the mark keeps to the name's first line
+    const b = el('button', null, 'Run');
     b.setAttribute('aria-label', 'Run ' + mf.name);
     runOnce(b, async () => {
       // A machine run spends against your provider from this one click, so
@@ -1164,7 +1164,10 @@ function machineFilesCard() {
       if (!await confirmDialog('Run ' + mf.name + '?', 'It starts a paid machine run now and spends against your provider.', 'Run')) return;
       try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); }
     });
-    return b;
+    return itemRow((row, text) => {
+      text.append(el('div', 'title name', mf.name), el('div', 'sub', mf.path));
+      row.appendChild(b);
+    });
   };
   card.appendChild(frow);
   card.show = (files, hold) => patchRows(frow, files.map(mf => ({ key: mf.path, data: mf, paint: () => run(mf) })), hold);
