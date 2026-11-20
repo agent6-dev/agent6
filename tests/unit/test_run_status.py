@@ -1067,7 +1067,8 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
     real_emit = event_log.EventSink.emit
 
     def spy(self: event_log.EventSink, event: journal.Event, /) -> None:
-        pid_present_at_emit.append((sdir / "worker.pid").exists())
+        if isinstance(event, journal.SessionStart):
+            pid_present_at_emit.append((sdir / "worker.pid").exists())
         real_emit(self, event)
 
     monkeypatch.setattr(event_log.EventSink, "emit", spy)

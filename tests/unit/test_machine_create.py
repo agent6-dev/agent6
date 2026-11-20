@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import types
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -149,7 +148,7 @@ def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
 
 
 def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _load(_root: object, _explicit: object = None) -> object:
+    def _load(_root: object, _explicit: object = None) -> layer_data.EffectiveConfig:
         # A real Config: the authoring execution materializes it as its overlay.
         cfg = Config.model_validate(
             {
@@ -159,7 +158,7 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
                 "models": {"default": {"model": "openrouter/test-model"}},
             }
         )
-        return types.SimpleNamespace(config=cfg, explicit_leaves=frozenset())
+        return layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _keys_ok(_cfg: object) -> str | None:
         return None
