@@ -288,6 +288,80 @@ def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
     return (*_GIT_HARDENING, *hooks, *repo_driver_overrides(cwd))
 
 
+def work_tree(cwd: pathlib.Path) -> str | None:
+    """Return the checkout git works on from a directory, for `GIT_WORK_TREE`.
+
+    Unnamed, git takes the work tree from the repository's `core.worktree`, a key a jailed
+    command can write where `.git` is writable. The checkout is the directory holding `cwd`
+    whose `.git` is the git dir git found: the one git names, or the parent of a `.git`
+    directory when the key names another.
+
+    Args:
+        cwd: The directory git runs in.
+
+    Returns:
+        The checkout, or None where git finds no work tree: outside a repository, inside a
+        git dir, in a bare one.
+
+    Raises:
+        GitError: The repository is reached through a `.git` file and its `core.worktree`
+            names a directory that is not its checkout.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                git(),
+                *_GIT_HARDENING,
+                "-C",
+                str(cwd),
+                "rev-parse",
+                "--absolute-git-dir",
+                "--show-toplevel",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=git_environment(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = proc.stdout.splitlines()
+    if proc.returncode != 0 or len(found) != 2:
+        return None
+    git_dir, named = (pathlib.Path(line).resolve() for line in found)
+    here = cwd.resolve()
+    for checkout in (named, git_dir.parent):
+        if here.is_relative_to(checkout) and _git_dir_of(checkout) == git_dir:
+            return str(checkout)
+    raise errors.GitError(
+        f"core.worktree names {named}, which is not the checkout of {git_dir}; agent6 runs git"
+        " on the checkout that holds .git (remove the key: git config --unset core.worktree,"
+        " with --worktree in a linked worktree)"
+    )
+
+
+def _git_dir_of(checkout: pathlib.Path) -> pathlib.Path | None:
+    """Return the git dir a checkout's `.git` names, or None when it names none."""
+    pointer = checkout / ".git"
+    if pointer.is_dir():
+        return pointer.resolve()
+    try:
+        # A `.git` file, a linked worktree's or a submodule's: git reads it.
+        proc = subprocess.run(
+            [git(), "rev-parse", "--resolve-git-dir", str(pointer)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            cwd="/",
+            env=git_environment(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return pathlib.Path(proc.stdout.strip()).resolve() if proc.returncode == 0 else None
+
+
 def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
     """Build Git's environment without shell overrides of its repository or command policy.
 

@@ -39,9 +39,14 @@ def spawn(
         The full argv, the exit code, stdout and stderr as bytes.
 
     Raises:
-        GitError: The command timed out.
+        GitError: The command timed out, or `git_policy.work_tree` refused the checkout.
     """
     env = git_policy.git_environment(env_extra)
+    # `init` and `clone` make a repository: they have no checkout to name, and `init` refuses one.
+    if not {"GIT_DIR", "GIT_WORK_TREE"} & env.keys() and args[:1] not in (("init",), ("clone",)):
+        checkout = git_policy.work_tree(cwd)
+        if checkout is not None:
+            env["GIT_WORK_TREE"] = checkout
     hardening = git_policy.git_hardening_flags(repo or cwd)
     # Split temporary indexes otherwise write sharedindex files into the real git directory.
     if env_extra and "GIT_INDEX_FILE" in env_extra:
@@ -141,7 +146,7 @@ def run(
         The command's result, its output decoded lossily.
 
     Raises:
-        GitError: The command failed with check set, or timed out.
+        GitError: The command failed with check set, timed out, or was refused its checkout.
     """
     full_argv, returncode, out, err = spawn(cwd, args, env_extra, stdin_text, repo=repo)
     result = kinds.CommandResult(
@@ -180,7 +185,7 @@ def nul_fields(
         The fields, the empty one after a trailing NUL included.
 
     Raises:
-        GitError: The command failed with check set, or timed out.
+        GitError: The command failed with check set, timed out, or was refused its checkout.
     """
     _, returncode, out, err = spawn(cwd, args, env_extra, stdin_text)
     if check and returncode != 0:

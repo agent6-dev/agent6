@@ -808,12 +808,13 @@ class _HungGit:
 
 
 def _hang_the_op_only(fake: _HungGit) -> object:
-    """A Popen replacement that hangs only the git op, not the driver-neutralization enumeration."""
+    """A Popen replacement that hangs only the git op, not the runner's two probes before it."""
     real = git_command.subprocess.Popen
+    probes = {"--get-regexp", "--show-toplevel"}  # the driver names, the work tree
 
     def fake_popen(*a: object, **k: object) -> object:
         argv = a[0] if a else k.get("args", [])
-        if isinstance(argv, list | tuple) and "--get-regexp" in [str(x) for x in argv]:
+        if isinstance(argv, list | tuple) and probes & {str(x) for x in argv}:
             return real(*a, **k)  # type: ignore[arg-type]
         return fake
 

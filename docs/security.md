@@ -632,6 +632,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - a fetch between the repository and a session's clone takes a local path only (`GIT_ALLOW_PROTOCOL`), whatever `url.<base>.insteadOf` rewrites the path to
     - that fetch downloads no bundle (`fetch.bundleURI`), runs no `core.alternateRefsCommand` and fetches no submodule
     - a missing object is never fetched from a promisor remote (`GIT_NO_LAZY_FETCH`): in a partial clone, agent6's git fails on an object the clone lacks
+- `core.worktree` never sends agent6's git to another directory: every call names its checkout (`GIT_WORK_TREE`), the directory whose `.git` is the git dir git found.
+    - a linked worktree's or a submodule's git dir keeps no other record of its checkout: there, a `core.worktree` that names another directory refuses the call
 - `core.pager` and `pager.<cmd>` never run: every agent6 git call carries `GIT_PAGER`, set to your `GIT_PAGER`, else your `PAGER`, else `less`.
 - `blame.ignoreRevsFile` is honoured for a repository-relative regular file, which blame reads as a private copy in a private work tree, since git opens the configured path itself after any check; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
     - Finding line-origin classification uses the same bounded blame reader and records an unknown reason on refusal.
