@@ -2,10 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The context compaction driver.
 
-Tier 1 elides old tool results (deduped, gisted, the old thinking dropped)
-at `CompactionSettings.drop_at_chars`. Tier 2 checks for a restart before tier 1.
-It restarts from the task and summary at `summarise_at_chars`, during a long wait
-or on the operator's request. The driver owns writer selection and DAG check-off.
+Both strategies share the size, manual and idle restart rules and DAG check-off.
+Tiered elides old results and restarts from prose. Endpoint adopts a signed block.
 """
 
 from __future__ import annotations

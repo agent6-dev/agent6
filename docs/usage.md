@@ -202,6 +202,11 @@ Every background wait uses the shorter of `wait_s` and [`harness.command_checkin
 With an id, an omitted `wait_s` uses the check-in interval; without an id, it returns the roster at once.
 When the check-in ends a wait, the result names the interval and lists the work still running.
 
+**Who compacts.** The threshold line at startup names `agent6` or `endpoint`.
+With [Anthropic server compaction](anthropic.md), the endpoint clears old tool output and writes a signed summary.
+The size settings, `/compact [focus]` and idle limits still apply.
+`summariser`, `keep_recent_chars`, `elision_gists` and `keep_thinking_turns` apply only when agent6 compacts by itself.
+
 **Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
 The timer starts when the worker starts its model request.
 It can compact during a blocking command, a background wait, an approval, a question or an interactive run parked for a message.
@@ -448,7 +453,9 @@ Calls without input or cache-read counts are excluded, partial coverage is named
 Historical journals that recorded an unreported count as zero cannot distinguish it from a reported zero.
 
 Each `Summary attempt` line names its writer, cached and uncached input, outcome and any fallback reason.
-If the worker reads less than half its idle summary input from cache, the log and receipt name the limit to shorten.
+An `endpoint` attempt reports the billed summary iteration.
+When the endpoint drops thinking or clears tool results, the receipt shows the session counts.
+If the worker or endpoint reads less than half its idle summary input from cache, the log and receipt name the limit to shorten.
 This notice appears once per execution and only for reported cache counts.
 `unreported` means the provider supplied no count.
 

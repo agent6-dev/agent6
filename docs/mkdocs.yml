@@ -139,6 +139,7 @@ nav:
   - Web UI: web.md
   - Editor integration: acp.md
   - Configuration: config.md
+  - Anthropic Messages: anthropic.md
   - Formats: formats.md
   - Security: security.md
   - Workflows: state-machines.md

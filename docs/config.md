@@ -124,7 +124,7 @@ A minimal block is just `backend` (plus `base_url` for a non-default host).
 | `<name>.extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
 | `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
-| `<name>.prompt_caching` | `true` | prompt caching for `backend = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
+| `<name>.prompt_caching` | `true` | Mark the system prompt and last tool for caching on `backend = "anthropic"`. Only local compaction also moves cache marks through the messages. |
 | `<name>.server_compaction` | `true` | When true on a supported model, the endpoint clears old tool results and writes the summary. agent6 changes no earlier message there. On other models or when false, agent6 compacts by itself. Defaults to true on a direct deployment with no configured base_url, false otherwise. |
 | `<name>.binary` | `"claude"` | executable for `backend = "claude_code"` only; a name on PATH or an absolute path |
 
@@ -200,6 +200,8 @@ redirect_uri = "http://127.0.0.1:8765/auth/callback"
 ```
 
 ### Deployments
+
+See [Anthropic Messages](anthropic.md) for model support and signed compaction.
 
 ```toml
 # Anthropic direct (default)
@@ -549,7 +551,8 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 
 ## `[compaction]`
 
-Tiered context compaction (approximate chars; tokens ≈ chars/4).
+Both writers use the size thresholds (about four characters per token).
+Only local compaction uses `summariser`, `keep_recent_chars`, `keep_thinking_turns` and `elision_gists`.
 
 | Field | Default | Meaning |
 |---|---|---|

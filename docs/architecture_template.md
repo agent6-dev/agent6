@@ -121,7 +121,7 @@ What the turn leans on sits beside it, one module each:
 - `operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`)
 - `parallel_dispatch` (a run's children: the dispatch, the merge at a turn boundary), `parallel_rank` (the judges of a task's attempts and the order they give), `parallel_panel` (a panel's reviewers, in batches through the same dispatcher), `parallel_recovery` (a resumed execution settling the dispatches left behind) and `child_work` (the children as the run's tools reach them)
 - `run_checkpoint` (the per-turn commit and the final one)
-- `compaction/strategy.py` (the strategy interface) and `compaction/driver.py` (the built-in tiered strategy)
+- `compaction/strategy.py` (the strategy interface) and `compaction/driver.py` (the local and endpoint strategies)
 - `memory_touch` (what a tool call did to the memory store)
 - the settings each sibling owns (`review_gate`, `compaction_window`, `provider_call`)
 
@@ -210,7 +210,19 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - a re-entry round landing no executed tool call escalates the nudge; `[harness].standing_patience` bounds the streak (`-1` default: never self-ends; landed work resets)
 - an interactive run parks the same way on a quiet turn: the conversation waits on the steer bridge; any composer or the pause menu continues it in place
 
-**Context compaction has two tiers**, thresholds in `[compaction]`.
+**Context compaction.** The driving route reports whether the endpoint clears tool results, writes summaries or keeps its own session.
+The harness selects `Endpoint` or `Tiered` once from those facts.
+Both strategies use the same size, manual and idle triggers and the same growth floor.
+
+`Endpoint` leaves earlier messages intact.
+On ordinary requests over the drop threshold it asks for clearing without removing any local results.
+For a summary it replays the worker request without clearing.
+It adopts the signed block as the first message and keeps the worker reply after it.
+The restart notice follows that reply and its tool results.
+If no usable block comes back, the helper gets one attempt without changing the history first.
+See [Anthropic Messages](anthropic.md) for the supported models and wire behaviour.
+
+`Tiered` compacts locally:
 
 - tier 1, `drop_at_chars`: above this bound, the oldest tool results become placeholders until the total reaches half the bound or no eligible results remain
 - the newest two results, undelivered results and operator answers stay whole; reads of recently-edited files elide last
@@ -240,11 +252,13 @@ A resume after a death there runs none of the turn's calls again: the model gets
 
 **Writing a compaction strategy.** Pass an object with `compact(self, context: strategy.Context) -> bool` as `Harness(compactor=...)`.
 Import `strategy` from `agent6.harness.compaction`.
-The harness calls it once after preparing the turn and before saving the worker request.
+For local compaction the harness checks the prepared turn before saving the worker request.
+For endpoint compaction it checks the successful request before dispatching the reply.
 The context supplies the live conversation, settings, task, pins, restart notice, graph, journal emitter, and stop and budget checks.
 `call_worker(instruction, call_id)` appends an instruction to the prepared request.
 `call_helper(system, prompt, call_id)` asks the helper without tools.
-Both calls use the run's metering and cancellation signals.
+`call_endpoint(instruction, call_id, count)` sends the summary instruction outside the first `count` messages.
+All three calls use the run's metering and cancellation signals.
 
 `strategy.IdleStrategy` adds an optional `idle(context, request_started)` method.
 It returns one deadline for the turn's waits, or `None`.
@@ -960,10 +974,11 @@ Claude Code receives MCP image or resource items, replays retained attachments a
 - [Tools](usage.md#tools) lists the fixed image and PDF limits.
 - `AttachmentBudget` counts original bytes; Claude Code checks its complete encoded stdin line against the 8 MiB line cap.
 - `media_files.inspect_media` checks bounded container bytes without decoding pixels.
-- Compaction elides delivered attachments without gisting their payloads; `MEDIA_CONTEXT_CHARS` reserves context independently of base64 length and needs live calibration, especially for PDFs.
+- Local compaction elides delivered attachments without gisting their payloads; `MEDIA_CONTEXT_CHARS` reserves context independently of base64 length and needs live calibration, especially for PDFs.
 - `models.cache.cached_input_capabilities` reads explicit image and document facts from fresh listings, bound to the endpoint, provider entry and exact model.
 - Missing modality data means unknown; names never imply support.
 - `provider_call.call_with_media_recovery` applies the calling role's facts to canonical tool results and retries one recognized `MediaInputError` without rerunning tools.
+- An endpoint that writes signed summaries keeps delivered media intact and refuses excess new attachments.
 - Delivery refusals emit `media.refused` with each affected tool use's `provider_tool_call_id` and update the worker's latest snapshot before retrying.
 - Confirmed unsupported modalities stay unsupported for that route during the execution; malformed media and size rejections do not change capability facts.
 

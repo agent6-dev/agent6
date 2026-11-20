@@ -268,8 +268,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `writer` | `Literal['worker', 'helper'], optional` | The summary writer. |
-| `fallback_reason` | `str, optional` | Why the worker yielded to the helper. |
+| `writer` | `Literal['worker', 'helper', 'endpoint'], optional` | The summary writer. |
+| `fallback_reason` | `str, optional` | Why the helper wrote the summary instead. |
 | `model_call_id` | `str, optional` | The summary attempt identity. |
 | `messages` | `int` | Number of conversation messages. |
 
@@ -281,8 +281,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `reason` | `Literal['size', 'requested', 'idle', ''], optional` | What triggered the restart, empty when not recorded. |
 | `gap_s` | `float, optional` | Seconds from the worker request start to the idle summary call. |
-| `writer` | `Literal['worker', 'helper'], optional` | The summary writer. |
-| `fallback_reason` | `str, optional` | Why the worker yielded to the helper. |
+| `writer` | `Literal['worker', 'helper', 'endpoint'], optional` | The summary writer. |
+| `fallback_reason` | `str, optional` | Why the helper wrote the summary instead. |
 | `summary_chars` | `int` | Length of the summary in characters. |
 | `summary` | `str` | The result or outcome in words. |
 | `kept_messages` | `int` | Number of recent messages kept after the summary. |
@@ -293,7 +293,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `writer` | `Literal['worker', 'helper'], optional` | The summary writer. |
+| `writer` | `Literal['worker', 'helper', 'endpoint'], optional` | The summary writer. |
 | `error` | `str` | The failure diagnostic. |
 
 ### compact.thinking_dropped
@@ -630,6 +630,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `thinking_blocks_dropped` | `int, optional` | Thinking blocks the endpoint dropped. |
+| `tool_results_cleared` | `int, optional` | Tool results the endpoint cleared. |
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `role` | `str` | The calling model role. |
@@ -2891,6 +2893,8 @@ Source: [`agent6.viewmodel.cache_usage.CacheUsage`](https://github.com/agent6-de
 | `cache_write_tokens` | `int` | Input written to cache on reported calls. |
 | `post_compaction_calls` | `int` | Reported worker calls following a history rewrite. |
 | `post_compaction_uncached_tokens` | `int` | Fresh plus cache-write input on those calls. |
+| `thinking_blocks_dropped` | `int` | Thinking blocks the endpoint dropped during the session. |
+| `tool_results_cleared` | `int` | Tool results the endpoint cleared during the session. |
 | `summaries` | `tuple[SummaryAttempt, ...]` | Summary attempts in journal order, excluded from ordinary worker usage. |
 | `idle_notices` | `tuple[str, ...]` | Cold idle summary notices in execution order. |
 

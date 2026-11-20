@@ -150,6 +150,8 @@ redirect_uri = "http://127.0.0.1:8765/auth/callback"
 
 ### Deployments
 
+See [Anthropic Messages](anthropic.md) for model support and signed compaction.
+
 ```toml
 # Anthropic direct (default)
 [providers.anthropic]
@@ -405,7 +407,8 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 
 ## `[compaction]`
 
-Tiered context compaction (approximate chars; tokens ≈ chars/4).
+Both writers use the size thresholds (about four characters per token).
+Only local compaction uses `summariser`, `keep_recent_chars`, `keep_thinking_turns` and `elision_gists`.
 
 <!-- config-table: compaction -->
 

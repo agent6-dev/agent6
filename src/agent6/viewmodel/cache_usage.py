@@ -57,6 +57,8 @@ class CacheUsage:
         cache_write_tokens: Input written to cache on reported calls.
         post_compaction_calls: Reported worker calls following a history rewrite.
         post_compaction_uncached_tokens: Fresh plus cache-write input on those calls.
+        thinking_blocks_dropped: Thinking blocks the endpoint dropped during the session.
+        tool_results_cleared: Tool results the endpoint cleared during the session.
         summaries: Summary attempts in journal order, excluded from ordinary worker usage.
         idle_notices: Cold idle summary notices in execution order.
     """

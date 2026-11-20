@@ -1,4 +1,4 @@
-"""Build the two summary requests and validate their shared output contract."""
+"""Build the summary instructions and check the replies."""
 
 from __future__ import annotations
 
