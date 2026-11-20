@@ -336,6 +336,26 @@ def test_the_per_turn_tree_runs_no_filter_whose_name_holds_an_equals_sign(
     assert _git(root, "show", f"{sha}:f.txt").stdout == "v2\n"
 
 
+def test_the_per_turn_tree_runs_no_filter_whose_name_is_not_utf8(tmp_path: pathlib.Path) -> None:
+    """A driver name of bytes that are no UTF-8 made the listing, and every git call, raise.
+
+    The name goes from git's listing back onto git's argv byte for byte.
+    """
+    marker = tmp_path / "pwned"
+    root = _repo(tmp_path / "r")
+    base = _git(root, "rev-parse", "HEAD").stdout.strip()
+    with (root / ".git/config").open("ab") as config:
+        config.write(b'[filter "n\xff"]\n\tclean = touch ' + os.fsencode(marker) + b"\n")
+    (root / ".gitattributes").write_bytes(b"* filter=n\xff\n")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+    git_policy.set_policy(git_policy.GitPolicy())
+
+    sha = git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
+
+    assert not marker.exists(), "the repo's clean filter ran a host command"
+    assert _git(root, "show", f"{sha}:f.txt").stdout == "v2\n"
+
+
 def test_a_driver_name_supplies_no_command_to_its_own_override(tmp_path: pathlib.Path) -> None:
     """The override for a filter named `x.clean=<command> #` set `filter.x.clean` to the command."""
     marker = tmp_path / "pwned"

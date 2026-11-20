@@ -234,7 +234,9 @@ def _query(cwd: pathlib.Path, cause: str, *args: str) -> subprocess.CompletedPro
         proc = subprocess.run(
             [git(), "-C", str(cwd), *args],
             capture_output=True,
-            text=True,
+            # A name that is no UTF-8 goes back onto git's argv byte for byte.
+            encoding="utf-8",
+            errors="surrogateescape",
             timeout=10,
             check=False,
             env=git_environment(),
