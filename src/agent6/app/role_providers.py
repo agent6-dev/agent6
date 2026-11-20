@@ -457,6 +457,7 @@ class InstrumentedProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
     ) -> ProviderResponse:
         """Call the inner provider and emit the role and budget events around it.
@@ -535,6 +536,7 @@ class InstrumentedProvider:
         )
         effective_text_cb = _on_text if stream else None
         effective_thinking_cb = _on_thinking if stream else None
+        options: dict[str, Any] = {"compaction": compaction} if compaction is not None else {}
         try:
             resp = self.inner.call(
                 system=system,
@@ -548,6 +550,7 @@ class InstrumentedProvider:
                 should_abort=should_abort,
                 should_interrupt=should_interrupt,
                 context=context,
+                **options,
             )
         except Exception as exc:
             if isinstance(exc, ProviderError) and not exc.provider:
@@ -571,9 +574,10 @@ class InstrumentedProvider:
             context,
             request_ids,
             {"ok": True, "stop_reason": resp.stop_reason, **_usage_fields(resp.usage)},
-            ends_call=provider_call.settles_call(resp, context),
+            ends_call=isinstance(compaction, provider_types.Summarise)
+            or provider_call.settles_call(resp, context),
             # The settled prose: a headless run streams no deltas, so this is its only text.
-            text=resp.text,
+            response=resp,
         )
         self._emit_budget()
         return resp
@@ -586,7 +590,7 @@ class InstrumentedProvider:
         outcome: dict[str, Any],
         *,
         ends_call: bool,
-        text: str | None = None,
+        response: ProviderResponse | None = None,
     ) -> None:
         """Journal one attempt's row and, when it ends the logical call, the call's result.
 
@@ -596,7 +600,7 @@ class InstrumentedProvider:
             request_ids: The HTTP requests observed so far; the last is this attempt's.
             outcome: The attempt's `ok`, usage and stop reason or error.
             ends_call: Whether no retry of the call follows.
-            text: The response text the result carries; None for a failure.
+            response: The endpoint result, absent on a failure.
         """
         if self.events is None:
             return
@@ -610,7 +614,13 @@ class InstrumentedProvider:
             )
         )
         if ends_call:
-            settled: dict[str, Any] = {"text": text} if text is not None else {}
+            settled: dict[str, Any] = {}
+            if response is not None:
+                settled["text"] = response.text
+                if response.thinking_blocks_dropped:
+                    settled["thinking_blocks_dropped"] = response.thinking_blocks_dropped
+                if response.tool_results_cleared:
+                    settled["tool_results_cleared"] = response.tool_results_cleared
             self.events.emit(journal.ModelResult(**identity, **outcome, **settled))
 
     def _identity(self, call_context: kinds.CallContext) -> dict[str, Any]:

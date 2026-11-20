@@ -340,6 +340,7 @@ class ProviderCaller:
         tools: list[ToolDefinition],
         max_tokens: int,
         *,
+        compaction: provider_types.CompactionRequest | None = None,
         initiator: str = "agent",
         call_context: kinds.CallContext | None = None,
     ) -> ProviderResponse:
@@ -350,6 +351,7 @@ class ProviderCaller:
             messages: The conversation.
             tools: The tool definitions.
             max_tokens: The output cap.
+            compaction: A supported endpoint operation, omitted on ordinary calls.
             initiator: `user` when the latest input is the operator's, else `agent`; every
                 attempt of this logical call carries it.
             call_context: The logical call's identity, shared by every attempt; a fresh one
@@ -365,6 +367,7 @@ class ProviderCaller:
             ProviderAborted: An operator stop.
             ProviderInterrupted: An operator steer.
         """
+        options: dict[str, Any] = {"compaction": compaction} if compaction is not None else {}
         attempts = max(1, self.retry_count + 1)
         attempt = 1
         # One logical call: its retries share the call id, each attempt with its own request id.
@@ -385,6 +388,7 @@ class ProviderCaller:
                     should_abort=self.should_abort,
                     should_interrupt=self.should_interrupt,
                     context=context,
+                    **options,
                 )
             except (ProviderAborted, ProviderInterrupted, provider_types.MediaInputError):
                 raise  # an operator stop or steer is handled, never retried
@@ -409,7 +413,7 @@ class ProviderCaller:
                 self.emit(journal.ProviderRetry(attempt=attempt, error=str(exc)[:200]))
             else:
                 self.counter.output_tokens += resp.output_tokens
-                if settles_call(resp, context):
+                if isinstance(compaction, provider_types.Summarise) or settles_call(resp, context):
                     return resp
                 # Model flakiness, not rate limiting: a short fixed delay.
                 delay = min(self.retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311

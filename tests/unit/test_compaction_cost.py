@@ -201,3 +201,18 @@ def test_cold_idle_notice_is_part_of_the_receipt(tmp_path: pathlib.Path) -> None
     lines: list[str] = []
     finalize.print_session_usage(session, emit=lines.append)
     assert not any(message in line for line in lines), "the live run already logged the notice"
+
+
+def test_receipt_counts_endpoint_changes_on_ordinary_and_summary_results(
+    tmp_path: pathlib.Path,
+) -> None:
+    rows = [
+        {"type": "compact.summarise.call", "writer": "endpoint", "model_call_id": "s"},
+        *_call("s", input_tokens=60, cache_read_tokens=33050, thinking_blocks_dropped=1),
+        {"type": "compact.summarise.done", "writer": "endpoint", "summary_chars": 18},
+        *_call("w", thinking_blocks_dropped=1, tool_results_cleared=3),
+    ]
+    _write(tmp_path / "logs.jsonl", rows)
+    text = receipt.render(receipt.read_receipt(tmp_path, tmp_path))
+    assert "Summary attempt 1: endpoint; 60 uncached, 33,050 cached" in text
+    assert "Endpoint (session): 2 thinking blocks dropped, 3 tool results cleared" in text

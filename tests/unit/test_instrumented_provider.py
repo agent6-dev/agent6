@@ -226,3 +226,18 @@ def test_a_provider_error_is_stamped_with_the_provider_name() -> None:
     with pytest.raises(ProviderError) as info:
         _wrap(inner).call(system="s", messages=[])
     assert info.value.provider == "openai"
+
+
+def test_compaction_option_and_counts_follow_the_logical_call() -> None:
+    from agent6.providers import provider_types
+
+    inner = mock.MagicMock()
+    inner.call.return_value = dataclasses.replace(
+        _resp(), thinking_blocks_dropped=2, tool_results_cleared=7
+    )
+    wrapper = _wrap(inner)
+    option = provider_types.ClearToolResults(("ask_user",))
+    wrapper.call(system="s", messages=[], compaction=option)
+    assert inner.call.call_args.kwargs["compaction"] is option
+    (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]
+    assert result["thinking_blocks_dropped"] == 2 and result["tool_results_cleared"] == 7

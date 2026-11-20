@@ -289,11 +289,11 @@ class CompactSummariseCall(Event):
     """The model was asked to summarize the conversation."""
 
     TYPE: ClassVar[str] = "compact.summarise.call"
-    writer: Literal["worker", "helper"] = pydantic.Field(
+    writer: Literal["worker", "helper", "endpoint"] = pydantic.Field(
         default="helper", description="The summary writer."
     )
     fallback_reason: str = pydantic.Field(
-        default="", description="Why the worker yielded to the helper."
+        default="", description="Why the helper wrote the summary instead."
     )
     model_call_id: str = pydantic.Field(default="", description="The summary attempt identity.")
     messages: int = pydantic.Field(description="Number of conversation messages.")
@@ -309,11 +309,11 @@ class CompactSummariseDone(Event):
     gap_s: float | None = pydantic.Field(
         default=None, description="Seconds from the worker request start to the idle summary call."
     )
-    writer: Literal["worker", "helper"] = pydantic.Field(
+    writer: Literal["worker", "helper", "endpoint"] = pydantic.Field(
         default="helper", description="The summary writer."
     )
     fallback_reason: str = pydantic.Field(
-        default="", description="Why the worker yielded to the helper."
+        default="", description="Why the helper wrote the summary instead."
     )
     summary_chars: int = pydantic.Field(description="Length of the summary in characters.")
     summary: str = pydantic.Field(description="The result or outcome in words.")
@@ -338,7 +338,7 @@ class CompactSummariseFailed(Event):
     """The conversation-summary call failed."""
 
     TYPE: ClassVar[str] = "compact.summarise.failed"
-    writer: Literal["worker", "helper"] = pydantic.Field(
+    writer: Literal["worker", "helper", "endpoint"] = pydantic.Field(
         default="helper", description="The summary writer."
     )
     error: str = pydantic.Field(description="The failure diagnostic.")
@@ -733,6 +733,12 @@ class ModelResult(Event):
     """A model call returned or failed, once per logical call, with its last attempt's usage."""
 
     TYPE: ClassVar[str] = "model.result"
+    thinking_blocks_dropped: int = pydantic.Field(
+        default=0, description="Thinking blocks the endpoint dropped."
+    )
+    tool_results_cleared: int = pydantic.Field(
+        default=0, description="Tool results the endpoint cleared."
+    )
     execution_id: str | None = pydantic.Field(
         default=None,
         description="The execution the call ran in; null for a call outside one.",

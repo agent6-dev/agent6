@@ -68,6 +68,8 @@ class CacheUsage:
     cache_write_tokens: int = 0
     post_compaction_calls: int = 0
     post_compaction_uncached_tokens: int = 0
+    thinking_blocks_dropped: int = 0
+    tool_results_cleared: int = 0
     summaries: tuple[SummaryAttempt, ...] = ()
     idle_notices: tuple[str, ...] = ()
 
@@ -79,6 +81,11 @@ class CacheUsage:
         """
         total = self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
         attempts = tuple(s.line(i) for i, s in enumerate(self.summaries, start=1))
+        if self.thinking_blocks_dropped or self.tool_results_cleared:
+            attempts += (
+                f"Endpoint (session): {self.thinking_blocks_dropped:,} thinking blocks dropped, "
+                f"{self.tool_results_cleared:,} tool results cleared",
+            )
         if not self.reported_calls or not total:
             return attempts
         partial = (
@@ -122,6 +129,15 @@ class CacheUsageFold:
                 self.usage, idle_notices=(*self.usage.idle_notices, message)
             )
             return
+        if kind == "model.result":
+            dropped = _count(row, "thinking_blocks_dropped") or 0
+            cleared = _count(row, "tool_results_cleared") or 0
+            if dropped or cleared:
+                self.usage = dataclasses.replace(
+                    self.usage,
+                    thinking_blocks_dropped=self.usage.thinking_blocks_dropped + dropped,
+                    tool_results_cleared=self.usage.tool_results_cleared + cleared,
+                )
         if self._summary(row):
             return
         if (
