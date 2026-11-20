@@ -765,6 +765,27 @@ def test_the_refs_filter_lists_refs_in_its_groups_order(open_page: OpenPage, git
     assert errors == [], errors
 
 
+def test_a_focused_list_toggle_scrolls_under_the_panels_head(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A focused list or tree toggle, raised over its neighbours, painted over the sticky head."""
+    sha = _long_history(tmp_path)  # forty files, so the commit panel scrolls
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}")
+    tree = page.get_by_role("button", name="tree", exact=True)
+    tree.wait_for()
+    page.keyboard.press("Shift")  # a key first, so the focus below is a keyboard user's
+    tree.focus()
+    under_head = """t => {
+      const side = t.closest('.git-side'), head = side.querySelector('.git-side-head');
+      side.scrollTop += t.getBoundingClientRect().top - head.getBoundingClientRect().top - 4;
+      const r = t.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + 4);
+      return !!top.closest('.git-side-head'); }"""
+    assert tree.evaluate(under_head), "the focused toggle paints over the panel's head"
+    assert errors == [], errors
+
+
 def test_a_disabled_ref_in_the_filter_reads_not_allowed(open_page: OpenPage, git_port: int) -> None:
     """A ref of an unticked group kept the pointer cursor while its checkbox was disabled."""
     page, errors = open_page(git_port)

@@ -32,7 +32,7 @@
 .hl-property { color: var(--hl-property); } .hl-operator { color: var(--hl-operator); } .hl-punctuation { color: var(--hl-punctuation); }
 .hl-attribute { color: var(--hl-attribute); } .hl-tag { color: var(--hl-tag); }
 
-.gview { display: inline-flex; }
+.gview { display: inline-flex; isolation: isolate; } /* its buttons' stacking stays inside it, under a sticky head */
 .gview button.mini { border-radius: 0; }
 .gview button.mini + button.mini { margin-left: -1px; } /* one border between two buttons */
 .gview button.mini:first-child { border-radius: 6px 0 0 6px; }
