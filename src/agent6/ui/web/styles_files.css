@@ -27,7 +27,6 @@
 /* The cut-list note keeps the rows' inset; loading and errors sit as the file pane's empty state. */
 .files-tree > .gf-note { margin: 0; padding: 0.5rem var(--files-inset); }
 .files-tree > :is(.gf-note, .empty) { overflow-wrap: anywhere; }
-.gf[aria-selected=true] { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 /* The path is a mini button tall, so the head keeps one height whatever the file shows and while
    its text loads. The path asks for its whole width, so the buttons and the note move to the next
    row before it wraps. The note keeps to the right and holds the width of a full note, such as

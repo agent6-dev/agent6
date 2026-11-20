@@ -260,7 +260,10 @@ def test_the_focus_follows_a_file_into_its_diff_and_back(
     head.get_by_role("button", name="\u2039 files", exact=True).click()
     focused = "document.activeElement.closest('.gf')?.dataset.path"
     page.wait_for_function(f"{focused} === 'b.txt'")
-    expect(page.locator(".git-side .gf.sel")).to_have_attribute("data-path", "b.txt")
+    row = page.locator(".git-side .gf.sel")
+    expect(row).to_have_attribute("data-path", "b.txt")
+    shadow = "r => getComputedStyle(r).boxShadow"
+    assert row.evaluate(shadow) != "none", "the row a diff went back to reads unmarked"
     assert errors == [], errors
 
 

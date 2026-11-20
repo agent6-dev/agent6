@@ -55,6 +55,8 @@
 .gf-note { font-size: var(--fs-s); margin: 0.25rem 0; }
 .gf { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.25rem; border-top: 1px solid var(--border); cursor: pointer; }
 @media (hover: hover) { .gf:hover { background: var(--surface2); } }
+/* The open file's row in Files, and the row a Git diff went back to. */
+.gf:is(.sel, [aria-selected=true]) { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 .gf-st { flex: none; font-family: var(--mono); font-weight: 700; font-size: var(--fs-s); width: 1.6em; text-align: center; border-radius: 4px; border: 1px solid var(--border); }
 .gf-st.st-A { color: var(--ok); border-color: var(--ok); }
 .gf-st.st-M { color: var(--warn); border-color: var(--warn); }
