@@ -20,7 +20,10 @@ def passthrough_env() -> dict[str, str]:
     return {k: os.environ[k] for k in PASSTHROUGH_ENV_KEYS if k in os.environ}
 
 
-_NUMBER = re.compile(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)")
+_NUMBER = re.compile(
+    r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|(?<!\w)[+-]?(?:nan|inf(?:inity)?)(?!\w))",
+    re.IGNORECASE,
+)
 
 
 _CAPTURE_GAP = re.compile(
@@ -39,8 +42,6 @@ def metric_match(text: str, pattern: str | None) -> re.Match[str] | None:
         except re.error:
             return None
     text = terminal.scrub_terminal_escapes(text).removesuffix("\n[agent6-jail] timeout")
-    if _CAPTURE_INCOMPLETE.search(text):
-        return None
     # Only output after the last unknown bytes can establish a last printed number.
     start = 0
     for gap in _CAPTURE_GAP.finditer(text):
@@ -67,6 +68,8 @@ def parse_metric_score(stdout: str, stderr: str, *, pattern: str | None) -> floa
         The score, or None when the regex does not compile, does not match, or captures a
         non-number; the caller treats that as no score this turn.
     """
+    if pattern is None and _CAPTURE_INCOMPLETE.match(stderr.rstrip().rpartition("\n")[2]):
+        return None
     m = metric_match(f"{stdout}\n{stderr}", pattern)
     if m is None:
         return None

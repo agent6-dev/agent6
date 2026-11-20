@@ -65,6 +65,9 @@ def test_only_a_leading_composer_directive_sets_the_metric(tmp_path: pathlib.Pat
         ("4.7", "best +1.5E-3", 0.0015),
         ("\033[31m42\033[0m", "", 42.0),
         ("no number", "", None),
+        ("iteration 4: loss NaN", "", None),
+        ("iteration 4: loss -INFINITY", "", None),
+        ("[agent6-jail] output capture failed: historical diagnostic\nfinal: 22", "", 22.0),
     ],
 )
 def test_metric_without_a_pattern_reads_the_last_number(
