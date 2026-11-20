@@ -348,7 +348,7 @@ For a continuous score beside the pass/fail gate, [give the run a metric](usage.
 
 The most children a run has running at once, for `run --parallel SPEC`, the `/parallel` steer and the `parallel` tool.
 Each child works in a disposable clone.
-Under agent6-owned git, one child's work joins the parent's chain; with several attempts, the first-ranked one joins.
+Under agent6-owned git, the parent merges one child's work into its chain; with several attempts, it merges only the winner.
 Under model-owned git, completed work stays on the imported refs.
 `harness.parallel.judges` names who ranks them: each judge is a reviewer child that reads and runs the attempts and answers with an order, and the lowest sum of ranks wins.
 A judge takes at most `review.max_turns` replies; with no usable order from any judge, the order is verify-pass first, then the cheaper.

@@ -263,15 +263,15 @@ An `agent` state spins up a normal agent6 run: its own transcript, budget slice,
 - `"read_only"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`; the same `read_only` session kind a child runs under a conversation contract, driven here by the machine agent inside the instance
 - `"run"`: coding work (edit + verify tools and the auto-commit), as `agent6 run` has
 
-Where a run state's work lands:
+Where a run state's commits go:
 
 - each run state executes in a fresh clone (the `--parallel` child mechanism, `[git.worktree].base_dir` cache) checked out at the machine chain's tip
 - run states require `git.commit_per_turn = true`: the committed chain is the only path out of a clone
-- its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
+- at the end of each state, agent6 fast-forwards the visible `agent6/machine-<id>` branch to include the state's commits without touching your checkout
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
 - the hub's machine card shows supervision state only
 - configured reviewers use the shared child executor; a machine state cannot claim a child worker's authority without that worker's matching private launch, and a reviewer cannot schedule another panel
-- a state's clone is removed as it lands
+- agent6 removes the state's clone after importing its commits; a failed import keeps the clone
 - `sessions prune` sweeps leftover `machine-*/state-*` clones when their chain tips are reachable in the origin
   A live machine or unreachable work keeps the group, with a note.
 - the chain ref (`refs/agent6/machine-<id>/head`) and visible branch (`agent6/machine-<id>`) outlive the instance dir

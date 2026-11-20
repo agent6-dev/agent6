@@ -57,7 +57,7 @@ The children table refreshes every second and keeps the same child selected when
 Each row labels the attempt within its task or the reviewer within its panel.
 It shows the id, task, model route, status, current tool, turn, tokens, spend and elapsed seconds.
 The result column shows a work child's measured commits beyond start and the ref for stopped or retained work.
-It names the parent's chain and commit for a child that joined.
+For a child merged into its parent's chain, it names the parent and the commit on that chain.
 It also shows why a launch failed or how a reviewer ranked the attempts.
 
 - `Tab` to the table and use `↑` or `↓` to select a child.

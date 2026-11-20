@@ -88,7 +88,7 @@ agent6 run "your task here"
 ```
 
 agent6 edits your working tree and commits each editing turn to the run's own chain (an `agent6/<id>` branch by default).
-Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#git) lands the work; `sessions merge` lands it by hand.
+Your branch, HEAD and index stay untouched until you merge the work with `sessions merge` or [`git.auto_merge`](config.md#git) merges it for you.
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
 - without a terminal (CI, cron) a run refuses to start under `ask` unless an away-mode is set; a hub-spawned run parks at a prompt until a front-end answers it ([approvals](security.md#6-approvals))
@@ -191,8 +191,8 @@ Inspect the parent with `agent6 sessions list --children`, `agent6 sessions show
 The children list labels each work child by its attempt number within its task: two separate tasks each start with `attempt 1`.
 It gives each child's task, model, status, current tool, turn, tokens, spend and elapsed time.
 The parent reports when a child starts, reads an operator message, stops or finishes.
-A join records the commit on the parent's chain, not a merge into the checkout branch.
-`sessions show <child>` names the parent it joined.
+`merged into parent chain` in the transcript means the child's commits are on the parent's chain, not necessarily on the checkout branch.
+`sessions show <child>` reports `parent merge: merged into PARENT's chain at <sha>` and shows the checkout merge separately.
 `sessions show <parent>` shows the parent's recorded checkout merge or how to merge its work.
 A failed launch has a row with its reason even when there is no child session to open.
 A work child shows its measured number of commits beyond start, including while it runs.
@@ -243,7 +243,7 @@ Attempts are ranked first: their judges start when the last attempt ends and run
 While a child's own reviewers are working, the child is `in review` and still holds the parent's finish.
 Under agent6-owned git, tasks that finish before the same boundary merge in the order written, so when two touch the same lines the later one to merge gets the conflict.
 Before an automatic merge, the run's uncommitted work is committed first.
-One notice per task names each child's outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `ranked 2 of 3` (an attempt that did not merge), `CONFLICT` with the files (nothing merges, and the child's branch holds its work for the operator) or `FAILED` with the reason.
+One notice per task names each child's outcome: the commit on the parent chain if it merged, no changes to merge if it finished without a commit, `ranked 2 of 3` for an attempt that did not merge, `CONFLICT` with the files (the child's branch still holds its work), or `FAILED` with the reason.
 A stopped child never merges by itself, whoever stopped it: its parent, the operator, the run's budget or the end of the execution that started it.
 Its end notice and its line say what stopped it, that it did not merge, what holds its work, its conversation size at the last measured provider call, and how long ago it last ran; the model decides what to do with it.
 Missing measurements read as unknown.
@@ -307,7 +307,7 @@ The two tools are offered only in run mode, never inside a child and never in a 
 A worker child's configured harness panel may still run its reviewers; neither the worker's model nor its `/parallel` steer may dispatch work.
 The knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel.
 
-A `run --parallel` run made no model call: `agent6 resume <id> --steer "..."` continues it from the joined work with the worker model.
+A `run --parallel` run made no model call: `agent6 resume <id> --steer "..."` continues it with the worker model from the parent's tree, including any merged child work.
 `agent6 stop ID` on a session with live children stops its descendants too, by the lineage their manifests record, including reviewers behind a worker that already ended.
 Worker import preserves descendant records and receipts in the original repository's state directory before clone cleanup.
 Their spend is included in the worker's total, not an extra charge, and their evidence certifies only the child's reviewed target, not the top-level tree.
@@ -362,14 +362,14 @@ State is snapshotted before each model call and checkpointed per turn.
 - under the `agent6` and `conventional` squash message styles, a resumed run's merge keeps the task as its subject (`conventional` prefixes it with the type and scope), with `continued: <steer>` in the body
 - a gate withheld after denied or interrupted approval stays withheld only for that execution.
   When the snapshot records that withholding, a resume with the gate and commands allowed tells the model once that the gate is available again, without claiming it passed
-- a resume after the run's work landed continues from the checkout's HEAD when HEAD holds the merge: the run's next commits, `sessions diff` and its next merge then hold only the new work, so nothing lands twice
-- a run whose workspace does not hold the merge (a `--worktree` run, a fork) continues on its own chain: after a resume, `sessions diff`, `sessions commits` and its next merge start from the landed tip
-- a run merged `--into` a branch other than the one it started on keeps its base, and merges into that branch again from its landed tip
-- `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with what landed
-- a `sessions merge` that lands names the other ended, unmerged runs that changed some of the same paths (`unmerged runs that changed some of the same paths: <id> (src/a.py and 2 more)`); each one's own merge then meets what landed
+- after the run's work is merged, a resume continues from the checkout's HEAD if HEAD contains that merge: the run's next commits, `sessions diff` and its next merge then hold only the new work
+- a run whose workspace does not contain the merge (a `--worktree` run, a fork) continues on its own chain: after a resume, `sessions diff`, `sessions commits` and its next merge start from the run's last merged tip
+- a run merged `--into` a branch other than the one it started on keeps its base; another merge into that target starts from the run's last tip merged there
+- `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with the target version
+- a successful `sessions merge` names the other ended, unmerged runs that changed some of the same paths (`unmerged runs that changed some of the same paths: <id> (src/a.py and 2 more)`)
   The TUI's and the web's Merge confirm states that line before the merge.
-- a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` lands it with the run, or `resume --force` continues without it
-- a `sessions merge` that conflicts names `agent6 resume <id> --merge <branch>` for a run with its own worktree: the resume merges the branch into the run's work there, leaves each conflict's markers in the file for the run to resolve as its first task, and the next `sessions merge` lands cleanly
+- a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` merges that commit with the run's work, or `resume --force` continues without it
+- a `sessions merge` that conflicts names `agent6 resume <id> --merge <branch>` for a run with its own worktree: the resume merges the branch into the run's work there and leaves conflict markers for the run to resolve before the next `sessions merge`
 - files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` leaves them in place, named to the model before its first call, for the run's next commit to take ([Config](config.md#git))
   Under `git.control = "model"`, resume names the uncommitted files that still match the run's last stop and leaves committing them to the model.
   It compares both working and staged contents.
@@ -545,14 +545,14 @@ This notice appears once per execution and only for reported cache counts.
   Other commands are not verification evidence.
 - **Review:** the receipt shows recorded panel state and names each reviewer's session.
 - **How to revert:** recorded merge bounds determine the explanation.
-  A squash names its landed commit; a merge verifies its target parent; a fast-forward lists landed commits in reverse order.
+  A squash names its commit on the target; a merge verifies its target parent; a fast-forward lists the merged commits in reverse order.
   Fast-forwards containing merges need an explicit plan.
   Missing stamps or objects do not produce guessed commands.
   “No merge recorded” does not claim that no merge occurred if recording failed.
 
 Git commands in a receipt are explanations only.
 **Ask a run to revert** in the web or TUI opens the new-work composer with a proposed task; inspect it before submitting.
-You can also copy the recorded landing facts into a steer request to prepare the reversal.
+You can also copy the recorded merge details into a steer request to prepare the reversal.
 The reversal needs its own checks; the original receipt does not certify a merge against a moved target or the later reversal.
 
 ## Verification

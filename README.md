@@ -19,8 +19,10 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
 - Routes each role to a hosted, local or subscription model.
 - Resumes or forks a saved session from an earlier turn.
 - Runs your verification command and marks an unverified tree.
-- Reviews the diff with a model panel; blocking findings stop the merge.
-- Runs in a worktree, or as [parallel attempts][parallel-runs] in clones, ranked for you; a top-level run may dispatch children itself when `harness.parallel.tool` is on.
+- Reviews the diff with a model panel; blocking findings stop a merge into the checkout branch.
+- Runs in a worktree, or as ranked [parallel attempts][parallel-runs] in clones.
+  When agent6 controls git, it merges the winner into the parent's chain, not into the checkout branch.
+  A top-level run may dispatch children itself when `harness.parallel.tool` is on.
 - Defines workflows as [TOML state machines][state-machines] with recovery and replay.
 - Follows `AGENTS.md` and [SKILL.md packs][skills]; [MCP servers][mcp] are opt-in.
 - No telemetry unless you [export it][telemetry], and no automatic updates.

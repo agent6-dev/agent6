@@ -27,7 +27,7 @@ Observed (one run each, 2026-06-29):
   transitions, $0.0025). A rigged split exercised the sonnet tiebreaker → 4
   transitions, ending `decided`.
 - **code-fixer**: claude-sonnet-4-6 fixed `median` in one attempt (3
-  transitions); the verify `tool` confirmed; the agent's commits landed.
+  transitions); the verify `tool` confirmed the fix; the machine branch holds the agent's commits.
 - **repo-digest**: 5 commits → 4 transitions, digest with 4 highlights written
   to the data dir (claude-haiku-4-5).
 - **triage-inbox**: 4 items triaged over 26 transitions (~26s, paced by the

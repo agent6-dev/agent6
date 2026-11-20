@@ -92,10 +92,10 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - on a phone, **Stop now** stays visible and **More** holds the other run actions
     - **Tool calls** rows open to selectable arguments and recorded output
     - **Budget** shows labelled meters for capped usage and plain text for uncapped usage
-    - **Children** folds to one line in Details, such as `children: 3 running, 1 joined`.
+    - **Children** folds to one line in Details, such as `children: 3 running, 1 merged`.
       On a phone, choose **Children** from **Widgets**.
       Open the card to see each task, its status, and its recorded model, tool, turn, tokens, spend and elapsed time.
-      A joined child names the parent's chain and the join commit.
+      A merged child names the parent and the commit on its chain.
       A stopped child shows the commits its ref holds; a model-owned child names its retained ref.
       A work child shows the measured number of commits beyond its start, including while it runs.
       A child that never started shows the reason.
@@ -117,6 +117,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
 - **Config page**: every setting with value and source, one collapsible section per table in the order every surface shares (`[agent6]`, `[providers]`, `[models]`, then the rest by name), filterable; click a row to set it, with the choices an enum or a provider's model listing offers, or to add or remove an entry of its table (a provider, an MCP server, a skill, a reviewer) from the same popup; **Preset: name** sets `preset`, and the page edits the selected preset's table, as a line under the bar says ([Presets](config.md#presets)); secrets never shown
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
+    - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge
     - your own hands, file by file: the working-tree panel stages and unstages a file, discards one tracked file's unstaged edits after a confirm (restored from the index; no untracked file is ever deleted), and commits the index with the message you type under the repository's own identity; the toolbar switches branches, creates one at HEAD, and **Review** fills the new-work composer with `/review <branch>`
     - each working-tree row says when its changes are staged or partly staged, and an untracked file reads `U`
     - every write is refused while a session is live in this checkout (a worktree run, a fork or a child works elsewhere and does not block); push, pull, rebase, amend and reset stay in your terminal

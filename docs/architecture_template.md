@@ -61,8 +61,8 @@ The four optional roles inherit each unset field directly from it; their jobs ar
 | checkpoint | saved harness state for resume | its checkpoint file |
 | task | one node in the task graph | its task id |
 
-A commit lands on the session's chain after a turn that changed the tree.
-`git.commit_per_turn` controls whether editing turns commit; the diff pane's commit picker lists those commits.
+With `git.commit_per_turn` enabled, agent6 commits each turn's changes to the session's chain.
+The diff pane's commit picker lists those commits.
 `run` is the mode beside `plan` and `ask`, and the command that opens a session.
 
 ## The run lifecycle
@@ -570,7 +570,7 @@ The directive uses the session's tools and permissions and returns markdown, wit
 
 ## Parallel runs
 
-The primitive is a task run as a child in its own worktree, whose branch joins back.
+A child runs a task in its own worktree; its parent can merge the child's commits into its own chain.
 One rule holds for every child (a child, a reviewer): the parent hands down, the child pushes up, and the root is the one owner.
 
 - handed down: the config snapshot, the task and pins, the turn cap and deadline, and what the parent's budget has left
@@ -620,15 +620,15 @@ TOML cannot preserve a selected `None` temperature with the unchanged sampling v
 The snapshot records each affected field in `parallel.config_notes`, written with the child's first manifest and printed in the child's end report and when the run imports the child.
 These notes survive manifest rewrites, import and temporary config cleanup; they document the loss and do not override the child config.
 
-- `run --parallel` is a run: `ExecutionInputs.opening` carries its spec and task to the harness, and the loop's opening step (`loop_steer.ranked_opening`) dispatches the task in place of the first model call and waits for its children (`ParallelDispatcher.wait`); several children join under the policy `rank`, one under `merge`
-    - under `rank` the dispatcher ranks once the children settle (`harness.parallel_rank.rank`), writes the order on the dispatch record before any join, joins the first child onto the run's chain and records each other child as `ranked` with its place; the opening waits for the judges as it waited for the children
-    - the journal: the dispatch, the judges' own dispatch and return (`source = "panel"`), `parallel.compared` with the ranking and rationale, `parallel.joined`, the end (`children_ranked`, `no_child_result` or `budget_exhausted`)
+- `run --parallel` is a run: `ExecutionInputs.opening` carries its spec and task to the harness, and the loop's opening step (`loop_steer.ranked_opening`) dispatches the task in place of the first model call and waits for its children (`ParallelDispatcher.wait`); `merge_policy` is `rank` for several attempts and `merge` for one
+    - under `rank` the dispatcher ranks once the children settle (`harness.parallel_rank.rank`) and writes the order before any merge; under agent6-owned git it merges the winner into the run's chain and records the other ranked attempts with their places; the opening waits for the judges as it waited for the children
+    - the journal: the dispatch, the judges' own dispatch and return (`source = "panel"`), `parallel.compared` with the ranking and rationale, `parallel.merged` with each child's outcome, the end (`children_ranked`, `no_child_result` or `budget_exhausted`)
     - a manifest comparison record: the group id, ranking, method, rationale and judge cost; child manifests keep only their placement and group id
-    - `VerifyGate.after_rank_join` applies the parent's gate policy to the joined tree
+    - the parent's verify gate applies its policy to the merged tree
     - without a parent result, `session.stop.child_verification` can cite a child's full pass on the same tree by the same command (child, attempt id, argv and tree)
     - `git.auto_merge` requires the parent's own gate pass or no gate (`finalize.auto_merge_eligible`)
-    - under `git.control = "model"` the run has no chain: every child is placed and none is joined
-    - a resume with a steer continues from the joined work with the worker model
+    - under `git.control = "model"` the run has no chain: every child is placed and none is merged automatically
+    - a resume with a steer continues from the parent's tree with the worker model
 - every child's manifest names the session that dispatched it (`parallel.parent`, stamped from the private launch), so each listing nests children under their parent, folded into a count
 - a child's session dir is in its mode's bucket under the state of the root repository from its first event (its launch file names that state dir, `ChildLaunch.record_state`), and so is every reviewer a child dispatches: a child is visible in every hub while it runs, and nothing is moved when it ends
 - The parent polls a work child's commit line while it waits: its hidden chain under agent6-owned git, or `HEAD` under model-owned git.
@@ -651,11 +651,15 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - `budget.update` keeps the tracker's own input and output separate from `input_settled_children` and `output_settled_children` charged through settlement.
   Each child contributes its inclusive counts once, not its per-call rows as well.
   A continuation contributes only its increase over `usage_before`.
-- every live dispatch is recorded before any child launches (`sessions/child_dispatch.py`, `<session_dir>/dispatch/<group>.json`, version 13, written atomically): the identity, source, join policy, owner execution, base, the task's spec, the DAG node it was dispatched under, each child's limits and whether its end was told; a work record is one task; an unwritable record refuses the dispatch; the record advances `prepared`, `running` (across the parent's turns), `settling` (each child's usage charged once, or marked outstanding), `ranking` (a task's attempts have ended and their judges run), `joining` (each join written as it merges with the chain tip before and after; a stopped child's join is `stopped` with its ref, commit count and measured context) and `complete` with the outcome notice, then `delivered`
+- Before launching children, `sessions/child_dispatch.py` writes `<session_dir>/dispatch/<group>.json` atomically (version 14); a failed write refuses the dispatch.
+    - A work record holds one task: its identity, source, `merge_policy`, owner execution, base, spec, parent DAG node, and each child's limits and whether its end was reported.
+    - The state advances from `prepared` to `running` across the parent's turns, then `settling` as each child's usage is charged once or marked outstanding, and `ranking` while a task's judges run.
+    - In `merging`, each child's `merge` field records the outcome and the parent chain tip before and after; `merged` means its commits are on that chain, and `stopped` records its ref, commit count and measured context instead.
+    - The record reaches `complete` with the outcome notice; `delivered` marks that notice as added to the parent's conversation.
 - `viewmodel.children.ChildView` describes one child in the parent's `children` list.
     - The dispatch gives the child its number, task, group and outcome.
-    - A join names the parent and the commit on its chain, including on `sessions show <child>`.
-      Only a covering merge stamp names a checkout merge destination.
+    - `merged_into_parent` names the parent session and `parent_merge_sha` the commit on its chain.
+      `sessions show <child> --json` reports the checkout target branch separately as `merged_into_checkout`, from `MergeStamp.into` only when the stamp covers the run's tip.
     - A child that never started keeps its row and the reason it failed.
     - A stopped child's row names its ref and the number of commits it holds.
     - The child's own journal supplies its running tool, turn, tokens, spend and elapsed time.
@@ -663,7 +667,13 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - A session without dispatch records finds its children through their recorded lineage.
 - the model's `parallel` tool (`[harness.parallel].tool`, off by default) runs through the same dispatcher with `source = "model"`: the tool dispatcher's `children` is the loop's `harness.child_work.ChildWork` (the Protocol `tools.child_tools.Children`), which starts one task for the turn in progress and returns the children's session ids as the tool's answer; `read_background` and `stop_background` reach a child by that id through the same object (its roster line, a wait for its end, a stop), beside a command's `bg<N>`; `steer_child` sends a running child an instruction (`child_work.steer`): `ipc.submit_steer` on the child's session dir, the text under `operator_bridge.PARENT_STEERING`, which the child's `Steering.handle` injects as one notice and journals as `steer.parent`, apart from the operator's verbs and directives; `parallel` and `steer_child` are listed only when `ToolDispatcher.parallel_available()` holds (the knob, run mode, not a child, the loop's children installed), the same gates refuse a call that slips past the list, and the two background tools' descriptions mention children only then
 - a child's end comes with the execution's at the latest: `Harness.finish` closes the dispatcher (`ParallelDispatcher.close` stops each running child, waits for its watch and charges its usage), and `GroupSpawner.close` at the execution's teardown ends by signal a child an escape left running; the records stay incomplete, and the end's summary counts the children stopped and the ones that had ended
-- a resumed execution reconciles every record that is not complete or whose panel charges lack journal confirmation before its first provider call: the grant is restored as recorded (settled children released, never a second split), the recoverer finds the children by their session dirs (a live one is stopped as `agent6 stop` stops a run, one whose record is only in its clone is imported, one already imported is read as it stands), usage is settled exactly once, and a task is re-opened with its children's results (`parallel_recovery.reopened`) and settled as a turn boundary settles it: each child's end not yet told is told, a stopped child joins as `stopped` and never merges by itself, a child whose work the chain already reaches is recorded joined at its merge commit and never merged twice, a task whose children ended by themselves completes under its git policy, and the notice is delivered once; a record with no child found completes as `dispatch interrupted before launch; nothing ran`; a complete record never delivered is delivered; a session older than the records has none to reconcile
+- Before its first provider call, a resumed execution reconciles incomplete dispatches and panel charges the journal has not confirmed.
+    - Recovery restores the recorded grant, releases settled children and never splits the budget again.
+    - It finds children by their session directories, stops live children as `agent6 stop` would, imports records still in a clone and reads imported records in place.
+    - It settles usage once and reopens the task with the children's results (`parallel_recovery.reopened`), reporting any child's end not yet reported.
+    - A stopped child keeps outcome `stopped` without a merge; if the parent chain already contains a finished child's work, recovery records `merged` at its merge commit without repeating the merge.
+    - A task whose children ended by themselves completes under its git policy, as at a turn boundary; a record with no child found completes as `dispatch interrupted before launch; nothing ran`.
+    - Recovery delivers each outcome notice once, including for a record already complete; a session older than the records has none to reconcile.
 - a child's `ContinuationRecord` keeps its instruction, sequence and already charged usage; its settlement key is `<child>:<sequence>`, so live readings and recovery count only new spend and an earlier execution's settlement cannot suppress the continuation's charge
 - a panel gives each reviewer `ChildLimits` (a turn cap and a wall-clock deadline) in its launch file: the bootstrap clamps `harness.max_turns` (a configured `-1` cannot lift the cap) and arms its own backstop, the stop bridges at the deadline and SIGTERM to itself a grace later; the parent's await ends at the same deadline, and a child that reaches it reads `ended at its deadline`, never a success; a work child has no limits of its own and runs under its parent's config
 - the ranking is [parallel_rank.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/parallel_rank.py): a judge is a reviewer child whose verdict is an order
@@ -674,7 +684,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - a resume never starts a task's judges twice: a judges' record an earlier execution left is settled and read for what its judges answered
     - `app.compare.rank` hosts the same reviewers for `sessions compare`, which has no run: it starts them through a spawner filed under `compare-<hex>` and waits
 - the app records each ranking (`app_children.build_rank_recorder`, `OperatorBridge.rank_recorder`): it stamps each child's manifest (`placement`, one writer), so every view shows the rank and why and listings star the winner, journals `parallel.compared` and prints the ranked table
-- under agent6-owned git, only the first-ranked child joins; the other children keep their refs
+- under agent6-owned git, only the winner's commits merge into the parent chain; the other children keep their refs
 - under model-owned git, every child keeps its ref for the model to merge with git
 - `--max-usd` is the run's cap: the judges are the run's children, settled on its tracker as the attempts are
 
@@ -689,15 +699,15 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - each child that ended is told to the model once (`parallel_merge.end_notice`, with its finish summary)
     - each task whose children have all ended completes, in the order written; a task with a child still running completes at a later boundary and holds no other
     - under agent6-owned git, merging chain-commits the parent's uncommitted work, then merges one child (`chain_merge` syncs merged files into the worktree) or ranks several and merges the first; where `git.commit_per_turn` is off and the tree holds uncommitted work, nothing merges and the branch holds the child's work
-    - a stopped child (its result carries `stopped_by`: the operator's stop, its parent's, the budget's, the end of its execution) never merges by itself: it joins as `stopped`, is no candidate among attempts, and its notice names the ref, commit count, last measured conversation size and time since it last ran (`parallel_merge.stopped_words`)
-- under agent6-owned git, a child that ended with a result and no commit beyond its base joins as `no_changes` and merges nothing
-- a task gets its DAG node when its dispatch completes, under the node it was dispatched from: `passed` when a child joined, finished without changes, or finished with a retained ref under model-owned git; only a join records a sha on the task; a conflict aborts that merge and names its files and the branch; the run continues either way
+    - a stopped child (its result carries `stopped_by`: the operator's stop, its parent's, the budget's, the end of its execution) never merges by itself: its outcome is `stopped`, it is no candidate among attempts, and its notice names the ref, commit count, last measured conversation size and time since it last ran (`parallel_merge.stopped_words`)
+- under agent6-owned git, a child that ended with a result and no commit beyond its base has outcome `no_changes`; nothing merges
+- a task gets its DAG node when its dispatch completes, under the node it was dispatched from: `passed` when a child's work merged into the parent chain, the child finished without changes, or it finished with a retained ref under model-owned git; only a merge records a sha on the task; a conflict aborts that merge and names its files and the branch; the run continues either way
 - an end of the run is held while a task has pending work (`finish_gates.children_finish`, in every gate list): the refusal names each child that runs or awaits task completion; a stopped child holds no end unless its parent requests a merge or continues it
-- `child_merge` records a stopped child's explicit merge in `ChildRecord.merge_request` (`MergeRequest.result`, `delivered`), completes it at the next boundary through the same chain operation as a finished child, stamps the task and journals `parallel.child_merged`; the request holds finish and survives resume, a success replaces the child's join, and a conflict keeps the stopped join retryable
+- `child_merge` records a stopped child's explicit merge in `ChildRecord.merge_request` (`MergeRequest.result`, `delivered`), completes it at the next boundary through the same chain operation as a finished child, stamps the task and journals `parallel.child_merged`; the request holds finish and survives resume, a success replaces the child's recorded `stopped` outcome, and a conflict leaves it retryable
 - `child_continue` reopens a stopped child's dispatch before its private bootstrap resumes the same session and clone (`app.child_resume` validates ownership); `ContinuationRecord` records its instruction, sequence and cumulative usage baseline, `parallel.child_continued` journals the new execution, and the parent charges only its new usage
 - stopped children keep their clone and launch file; a finished continuation fast-forwards its retained ref before cleanup, and direct operator child resume remains refused
 - `merge_child` is offered only to a parent with stopped unmerged work under `git.control = "agent6"`; it does not require the parallel tool knob, since an operator directive can start children
-- `parallel.dispatched` and `parallel.joined` name the same group as its dispatch record.
+- `parallel.dispatched` and `parallel.merged` name the same group as its dispatch record.
 - The parent's transcript names a steer, a refused finish, a continuation and the result of a requested merge.
 - The child's transcript shows a steer from its parent as a parent message.
 
@@ -769,7 +779,7 @@ After an execution that died mid-turn the rule turns over: a call of that turn m
 
 Uncommitted changes to tracked files are asked about over the `ask_user` channel: stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes".
 `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before writing a manifest, discarding the empty dir.
-An included tree that is exactly an unmerged run's tip is recorded (`includes` in the manifest): when the including run merges and that run is still at the tip, it is stamped merged too (`merged.via`), so its own merge has nothing left to land.
+An included tree that is exactly an unmerged run's tip is recorded (`includes` in the manifest): when the including run merges and that run is still at the tip, it is stamped merged too (`merged.via`).
 
 Every end the loop reaches records the tree the run left (`session.stop.tree`), and a resume applies the same policy to the paths that differ from it: those changed outside the run.
 Under `git.control = "model"` the checkout's HEAD seeds the comparison with that tree, so the model's commits decide which files are tracked even when an ignore rule matches them.
@@ -778,12 +788,12 @@ Under `git.control = "model"` the checkout's HEAD seeds the comparison with that
 It refuses when the run also changed one of those paths, since stashing it would take the run's work with the edit.
 A resume after a death, a detach or an older session has no recorded tree: the changes no commit has and no tool of the run wrote follow the same policy, and its note names what the next commit takes.
 
-A resume whose merge stamp covers everything the run committed, in a checkout whose HEAD holds the landing commit, continues from HEAD (`app/resume_chain.py`).
-The chain ref and run branch only move forward: to HEAD after a `merge` or `ff_only` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier commits stay reachable for `fork --at-turn`.
+A resume whose merge stamp covers everything the run committed continues from the checkout's HEAD if HEAD contains the recorded result of the merge (`app/resume_chain.py`).
+The chain ref and run branch only move forward: to HEAD when it descends from the run's tip, or to a commit with HEAD's tree and both tips as parents when they have diverged, so the earlier commits stay reachable for `fork --at-turn`.
 The manifest's `base_sha` and the merge stamp's tip move to that commit, so `sessions diff`, `sessions commits`, the squash message, the review diff and the next merge read only the new work.
-`base_branch` moves to the branch the merge landed on when the checkout has it out.
-Where the workspace's HEAD does not hold the landing commit (a worktree run, a fork of a squash-merged run), the chain stays as it is and a resume moves `base_sha` alone, to the commit the next merge into `base_branch` starts from.
-`app/merge_message.py` builds the squash message from the commits after the base its own merge starts from, so it names what that merge lands.
+`base_branch` changes to the merge target if that branch is checked out.
+Where the workspace's HEAD does not contain the result of the merge (a worktree run, a fork of a squash-merged run), the chain stays as it is and a resume moves `base_sha` alone, to the commit the next merge into `base_branch` starts from.
+`app/merge_message.py` builds the squash message from the commits after that merge's base.
 A run branch that is not at the chain tip (a commit made on `agent6/<id>`) refuses the resume, naming the commit; `--force` continues on the chain and leaves the branch.
 
 ## Session state on disk
@@ -819,7 +829,8 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `steers/` | the instructions queued behind the steer in flight, one file each in the order sent; the worker moves the oldest into the slot when it clears |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
-Session manifest version 14 identifies the journal and transcript format that records the [actor](usage.md#model-call-actors) of a model call.
+Session manifest version 15 identifies the journal that records dispatch outcomes as `parallel.merged` (`ParallelMerged`).
+The journal and provider transcripts record the [actor](usage.md#model-call-actors) of each model call.
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
 Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.
@@ -891,7 +902,7 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 - A worker still alive after that wait (5 s for a run, 30 s for one draining its children) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
 - A run's worker takes the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130).
 - Every target is named by process identity (pid plus start time), so a pid recycled before the identity check is never signalled.
-- `--after-turn` writes the plain marker alone, so the turn's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
+- `--after-turn` writes the plain marker alone, so the turn's running command finishes (or reaches `[harness].command_checkin_s`) and the run records its tool results and auto-commit before stopping.
 - A session's live children, found by the lineage their manifests record, stop with it at the same urgency: a plain marker lets each child finish its turn, a `now` marker ends their running commands at once; a parent that already ended still stops them (`children_stopped`).
 - An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
 - An immediate stop ends a foreground `run_command` the launcher hands back.
@@ -918,7 +929,7 @@ Missing historical references stay unknown, even beside a newer manifest stamp.
 Start blocks and session inspection use these recorded facts, not the current config or runtime.
 
 The manifest's optional `MergeStamp.method` and `target_before` own reversal bounds.
-`RevertPlan` uses those facts and `vcs/commit_graph.py` to check parents and enumerate landed commits without depending on source refs.
+`RevertPlan` uses those facts and `vcs/commit_graph.py` to check parents and list merged commits without depending on source refs.
 See [Session receipts](usage.md#session-receipts) for output caps and reversal limits.
 
 The journal is durable.

@@ -11,7 +11,7 @@
 - **Simplicity first.** Less code beats more; build an abstraction the moment it is needed.
   Inline a one-caller helper, make a stateless class a function, drop pass-through wrappers.
   Every series leaves the shapes it touched simpler.
-- **Rip out wrong shapes.** A rename lands everywhere in one change, the old name gone with it.
+- **Rip out wrong shapes.** A rename replaces the old name everywhere in one change.
 - **Right-shaped data.** Fix the shape first and the code around it gets small.
   Settle a feature's config keys, schema and payload before implementing behind them.
   Fields set together live in one frozen type; repeated conversion between shapes means the shape is wrong.
@@ -153,7 +153,7 @@
 - Bench workspaces live on a real disk: tmpfs is RAM-backed and an OOM there kills the session scope.
 - One live single-instance smoke precedes every fleet launch, and any mechanism with two enforcement sites gets one even after unit-green: unit fixtures can pass vacuously.
 - Benchmarks: unmodified official scorers, dev/eval split registered before tuning, report split + n verbatim, replicate small effects before shipping them.
-- An arm's finding lands on master, whether it shipped or not: a null is a finding, and it states the mechanism it measured.
+- Record every arm's finding on master, whether the arm ships or not: a null is a finding, and it states the mechanism the arm measured.
 
 ### Git and commit practices
 

@@ -150,7 +150,8 @@ Defines long-running workflows in editable TOML state machines, combining agent 
 
 ### Parallel attempts
 
-Runs parallel attempts in isolated clones with `--parallel N` or a list of models, then ranks the results for you to choose which to merge.
+Runs attempts in isolated clones with `--parallel N` or a list of models, then ranks the results.
+When agent6 controls git, it merges the winner into the parent's chain; merging that work into your checkout branch is a separate step.
 [Parallel runs](architecture.md#parallel-runs)
 
 </div>

@@ -22,12 +22,12 @@ This page is the reference for the command-line surface; the patterns behind the
   A role supplies its own effort and temperature.
   A model uses the worker's settings.
   `harness.parallel.judges` ranks the attempts.
-  Under agent6-owned git the first-ranked attempt joins the parent's chain.
+  Under agent6-owned git the first-ranked attempt merges into the parent's chain.
   Under model-owned git each attempt keeps its ref.
   `sessions list --children` expands the attempts under the parent.
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[git.worktree].base_dir`
     - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([worktrees](usage.md#worktrees)), so you can keep working there or start more runs
-    - `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits
+    - `sessions merge` merges the run's work into its target branch and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits
 - `--metric SPEC`: [measure a run](usage.md#measure-a-run), for example `--metric 'minimize -- python3 elapsed.py'`
 - `--standing "<goal>"`: a fallback goal the run returns to whenever its queue drains; only the operator retires it, and ceilings still end the run (`harness.standing_patience`)
 - `--pin "<text>"`: an instruction re-shown after every compaction
@@ -105,13 +105,13 @@ agent6 stop ID --after-turn   # finish the current turn, then stop
 agent6 ps                     # live sessions of every repository on the machine; --children, --json
 ```
 
-## Inspect and land a session
+## Inspect and merge a session
 
 ```sh
 agent6 sessions show          # status, turn, elapsed, usage, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-turn commits
-agent6 sessions merge         # land on the run's starting branch (warns first when the gate did not certify it); --method, --into BRANCH
+agent6 sessions merge         # merge into the run's starting branch (warns first when the gate did not certify it); --method, --into BRANCH
 agent6 resume ID --merge main # merge main into the run's work first; a conflict's markers are the run's first task
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
@@ -137,9 +137,9 @@ agent6 sessions remove [<id>] # delete one run's history; asks [y/N] on a contro
 ```
 
 `sessions prune` removes merged worktrees, including squash and task merges (`tasks` is the default), but keeps worktrees holding work no commit has.
-A run you landed by hand (a squash, a cherry-pick, a rebase) has no merge record: prune records it as merged when its base branch already holds its content, and says so (`<ref>: main already has its content; recorded as merged into main`).
+A run you merged by hand (a squash, a cherry-pick, a rebase) has no merge record: prune records it as merged when its base branch already holds its content, and says so (`<ref>: main already has its content; recorded as merged into main`).
 When that base branch is gone, prune checks the checked-out branch.
-A later change of the same lines on the base hides the landing: such a run stays unmerged until you delete its ref.
+A later change to the same lines on the base can hide that match: such a run stays unmerged until you delete its ref.
 Only deletion of their unreachable branches and chain refs needs `--delete-squashed`.
 
 `sessions prune --history --older-than DAYS` removes `transcripts/`, `checkpoints/` and `objects/` together from finished sessions whose last execution ended more than DAYS ago, prints each session's id and file counts, and leaves a `pruned.json` receipt; the manifest, logs, receipt, recovery state and graph store stay.
@@ -189,7 +189,7 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted, including a `run --parallel` run whose budget ended every child |
 | `4` | finished over a red or timed-out verify gate, or a never-run gate under `harness.verify.when = "finish"` or `"turn"` |
-| `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
+| `5` | finished, but the run made no commit and left uncommitted edits (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
 | `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask or plan (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
 
@@ -238,7 +238,7 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
 - `finish_session` reads `passed` over a green gate and a bare `finished` with no gate
 - `silent_finish` means the model stopped calling tools without calling `finish_session`, and the harness took its last answer as the end
 - `metric_plateau` means the configured metric stopped improving and the harness ended the run
-- a completed run whose edits sit uncommitted with no commit landed exits `5` in place of `0` (automatic commits under `git.control = "agent6"`)
+- a completed run that made no commit and left uncommitted edits exits `5` in place of `0` (automatic commits under `git.control = "agent6"`)
   - `finish_session` reads `passed · not committed` over a green gate and `finished · not committed` with no gate
   - `silent_finish`, `metric_plateau`, `verify_settled` and `settled` also add `· not committed` to their status
 - `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it

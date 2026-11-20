@@ -113,7 +113,7 @@ Secondary: empty-turn-post-restart rate (for #2, #9, #10), summary token size (f
 
 ## Risks and caveats
 
-- **Compacting earlier is lossy unless paired with structured memory.** Do not ship #5 alone; land #1/#4 first so facts survive. "Summarization drift" (rare critical details vanishing after a few passes) is the failure to watch.
+- **Compacting earlier is lossy unless paired with structured memory.** Do not ship #5 alone; merge #1/#4 first so facts survive. "Summarization drift" (rare critical details vanishing after a few passes) is the failure to watch.
 - **Evidence quality varies.** Strongest (peer-reviewed): StreamingLLM, H2O, Lost in the Middle, NoLiMa, Generative Agents, Reflexion, MemGPT, LongMemEval, Agentless, AutoCodeRover. Preprints (provisional): Complexity Trap, Context-Folding, Active Context Compression, A-MEM, Context Length Alone Hurts. Vendor/official-doc (authoritative for their own systems, not independent benchmarks): Anthropic, Manus, Cursor, Cline, Roo Code, OpenHands, Cognition, Mem0, Chroma. The Anthropic +29/+39/84% numbers are an internal eval; directionally strong, not externally replicated.
 - **KV-cache interaction (#14).** agent6's tier-1 edits old messages in place, which can invalidate provider prompt caches from the edit point. Worth measuring before adding more in-place rewrites; append-only (Manus) is the cheaper shape if the provider caches.
 - **Keep-last-K pairing.** Only slice at a balanced boundary (every tool_use has its tool_result), which the loop already guarantees at compaction time. Slicing mid-pair orphans a tool call and some providers reject it.

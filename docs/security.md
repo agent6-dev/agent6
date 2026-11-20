@@ -567,8 +567,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - A live worker is the only journal writer for finding actions.
   `sessions.ipc` publishes whole request and reply files under the private session's `review-actions/`; request IDs cannot escape that directory.
   Without a live worker, the action path acquires the `worker.lock` and rechecks liveness and the review version before appending.
-- All agent6 merge paths enforce open grounded block findings in `app.merge.execute_merge()`, independent of browser controls and `review.block_on`.
-  The session writer lock excludes dispositions and concurrent session writers until the pinned source commit lands and its merge stamp is recorded.
+- `app.merge.execute_merge()` refuses to merge a run into a checkout branch while it has open grounded block findings, independent of browser controls and `review.block_on`.
+  The session writer lock excludes dispositions and concurrent session writers until the pinned source commit is merged and its merge stamp is recorded.
   Git's conditional target-ref update still refuses a concurrently moved target.
   Resolve-with-reason is the only finding bypass; unreadable evidence refuses with its reason.
 - Review comparison and file routes read Git objects by recorded tree ID.
@@ -672,8 +672,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - The transport is https, ssh or a local path, checked on the URL and again by git (`GIT_ALLOW_PROTOCOL`).
     - A fetch with no answer in 120 s is stopped, and a failure's reason carries no http(s) user or password.
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
-  The base must still hold the recorded commit or the run's content (landing the ref on the base would change no file).
-  Prune writes that record itself for a run landed by hand, on the same content check.
+  The base must still hold the recorded commit or the run's content (merging the ref into the base would change no file).
+  Prune writes that record itself for a run merged by hand, on the same content check.
   A branch's or chain ref's line carries the sha to undelete it.
 - Host-side git calls use `git_policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.
     - Of the shell's `GIT_*` variables, only `GIT_ASKPASS`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_EDITOR`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT` and `GIT_TRACE*` pass through; agent6 can still supply explicit settings such as `GIT_INDEX_FILE`.
@@ -699,7 +699,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - Under `partial` `sandbox.isolation`, `protect_git = "auto"` degrades with a warning and `"on"` refuses to run
     - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_drivers` is set
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
-- `git.control = "agent6"` is enforced where `.git` is read-only to jailed commands; under `sandbox.isolation = "none"` the run warns that a commit the model runs lands on the checkout's branch.
+- `git.control = "agent6"` is enforced where `.git` is read-only to jailed commands; under `sandbox.isolation = "none"` the run warns that `git commit` run by the model commits directly to the checkout's branch.
 - Where a jailed command can write `.git` (`partial` `sandbox.isolation`, `sandbox.protect_git = "off"`, `git.control = "model"`), it can make agent6's own git run a program on the host.
   agent6 lists the repository's content drivers and then runs its git command: a driver written into `.git/config` between the two steps is not blanked.
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
@@ -745,7 +745,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
       Where a directory above one becomes a symbolic link, git refuses the pathspec (`beyond a symbolic link`) and the per-turn commit fails
     - `git stash push` (the auto-stash) leaves them out the same way, and no stash moves a nested checkout
     - git refuses an empty commit by printing a status, which runs git there: agent6 refuses an empty commit itself, and tells git to allow one (`--allow-empty`).
-      A change undone between that check and the commit lands as an empty commit
+      Undoing the change between that check and the commit produces an empty commit
 - `submodule.recurse`, `diff.submodule` and `status.submoduleSummary` are off on every call: no checkout recurses into a submodule, no diff renders inside one, no status summarises one.
 - A directory laid out as a git dir is a repository only as a `.git` (`safe.bareRepository=explicit`): agent6 started below any other finds no repository.
 - Review asks each selected submodule for its status with that submodule's hooks and drivers off, whatever `git.run_repo_hooks` and `git.run_repo_drivers` say.
@@ -887,7 +887,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - `agent6 sessions compare` starts the same reviewers itself, filed under an id it mints (`compare-<hex>`); with no run to relay to, a judge's `"ask"` prompt is answered empty, never approved
     - the contract lists the tools the parent hands down: the ones the parent's model is offered, within the reading tools, `run_command` with `read_background` and `stop_background`, `run_verify_command`, `fetch`, `read_session` and `use_skill`; the tool list offers exactly those, and the dispatcher refuses every other name that slips past the list (an edit, the task list, `parallel`, an MCP tool); no MCP server starts
     - a reviewer's command runs under the child's own `run_commands` policy, jail and `sandbox.network`, as a work child's does: `"deny"` on the parent withholds the command tools from the reviewer's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the reviewer may run commands
-    - a command can change the reviewer's clone, which is removed with the child; a reviewer's join is record-only, so nothing from the clone merges into the parent's chain
+    - a command can change the reviewer's clone, which is removed with the child; the parent imports the reviewer's record but merges no commits from the clone into its chain
     - the loop tells the reviewer its reply count on every turn and ends the session at the contract's turn limit without executing that response's tool calls; a background command dies with the session
 - A child's model and its operator work entry points (`parallel`, `/parallel`, `--parallel`) cannot dispatch work, even with `harness.parallel.tool = true`.
     - a worker child retains its configured harness-panel authority, independent of `harness.parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument

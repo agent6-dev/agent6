@@ -204,7 +204,7 @@ git ls-files --others --exclude-standard -z > /tmp/untracked_base.nul
 # Pass the (long, special-char-laden) issue text as a single argv via Python so
 # no shell quoting can corrupt it.
 # AGENT6_SB_DEADLINE_STEER=<secs>: the deadline-steer arm. That many seconds
-# before the wall, `agent6 steer` tells the run to land its best patch now:
+# before the wall, `agent6 steer` tells the run to apply its best patch now:
 # an empty patch scores 0 with certainty, a partial one might score. Unset
 # (every other arm) the driver behaves as before.
 # A bench leg can never be attended: a no-answer approval (the off-list
@@ -227,7 +227,7 @@ if lead:
     def _steer() -> None:
         subprocess.run(
             ["agent6", "steer", "bench-leg",
-             "Deadline: finish now. Land your best fix with what you already"
+             "Deadline: finish now. Apply your best fix with what you already"
              " know and call finish_session; skip any verification that will"
              " not fit."],
             cwd="/testbed", timeout=60, check=False,
