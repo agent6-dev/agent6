@@ -243,11 +243,11 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     text, and this tool returned the task and a list of tool names. Every fixture that hand-wrote
     `{"type": "model.result", "text": ...}` passed against a shape the engine never emitted.
     """
-    import types
     from unittest import mock
 
     from agent6 import budget
     from agent6.app import role_providers
+    from agent6.providers import provider_types
     from agent6.sessions import event_log
 
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
@@ -263,7 +263,7 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
         )
     )
     inner = mock.MagicMock()
-    inner.call.return_value = types.SimpleNamespace(
+    inner.call.return_value = provider_types.ProviderResponse(
         text="use ffmpeg -c:v libx265",
         tool_uses=(),
         refused={},
@@ -272,7 +272,6 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
         output_tokens=5,
         cache_read_tokens=0,
         cache_write_tokens=0,
-        usage=None,
         raw={},
     )
     role_providers.InstrumentedProvider(

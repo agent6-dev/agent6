@@ -166,17 +166,18 @@ def build(
     ]
     sink = mock.Mock()
     prepared = calls.Calls(
-        sink,
-        window.CompactionSettings(),
-        conversation,
-        following["instructions"],
-        tools,
-        None,
-        "replay",
-        None,
-        lambda: None,
-        lambda: False,
-        lambda: False,
+        worker=sink,
+        caller=mock.Mock(),
+        settings=window.CompactionSettings(),
+        conversation=conversation,
+        system=following["instructions"],
+        tools=tools,
+        temperature=None,
+        execution_id="replay",
+        turn_identity=None,
+        check_budget=lambda: None,
+        should_abort=lambda: False,
+        should_interrupt=lambda: False,
     )
     instruction = writers.instruction(
         writer="worker", task=task, open_tasks=list(open_tasks), pins=pins, focus=focus, messages=()
