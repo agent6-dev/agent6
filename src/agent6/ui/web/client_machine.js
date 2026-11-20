@@ -251,6 +251,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     cards._stop_btn.title = refusals.stop || 'park the machine at its next transition';
   }
   if (cards._input) {
+    cards._input.closest('.row').hidden = !!m.ended;
     cards._input.disabled = !!refusals.steer && !!refusals.poke;
     // The line under the dock says why each dimmed verb is refused: a placeholder is one line and
     // cuts a long reason. An end refuses both verbs for one cause, so it says that once. A closed

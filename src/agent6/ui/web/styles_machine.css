@@ -3,6 +3,7 @@
 .machine-app { display: flex; flex-direction: column; flex: 1 0 auto; }
 /* The action bar keeps the run view's gaps over and under it. */
 .machine-app > .actions { margin-block: var(--page-top); }
+.machine-app .dock > .row[hidden] { display: none; }
 /* A long name or reason wraps: in the summary line and in the States and Path lists. */
 .machine-grid :is(.sub, .tree) { overflow-wrap: anywhere; }
 /* A long reason shows its first two lines, as the dock's does; the Path's end note holds it whole. */
