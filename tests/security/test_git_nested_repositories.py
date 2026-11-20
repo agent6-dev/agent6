@@ -12,11 +12,13 @@ program and runs the agent6 operations of one route.
 from __future__ import annotations
 
 import pathlib
+import shutil
 import subprocess
+from typing import Any
 
 import pytest
 
-from agent6 import path_safety
+from agent6 import errors, kinds, path_safety
 from agent6.vcs import review_submodules
 from agent6.vcs.git import command as git_command
 from agent6.vcs.git import history as git_history
@@ -50,16 +52,22 @@ def _program(tmp_path: pathlib.Path) -> tuple[str, pathlib.Path]:
     return str(program), marker
 
 
+def _nested(root: pathlib.Path) -> pathlib.Path:
+    """Make a repository in `vendor/`, as a jailed command can; the project records nothing."""
+    nested = _repo(root / "vendor")
+    (nested / ".gitattributes").write_text("* filter=x diff=x\n", encoding="utf-8")
+    _git(nested, "add", "-A")
+    _git(nested, "commit", "-qm", "attributes")
+    return nested
+
+
 def _record_nested(root: pathlib.Path) -> pathlib.Path:
     """Make a repository in `vendor/` and commit it to the project as a submodule.
 
     Its `.gitmodules` entry asks for a full comparison (`ignore = none`), which outranks
     `diff.ignoreSubmodules`.
     """
-    nested = _repo(root / "vendor")
-    (nested / ".gitattributes").write_text("* filter=x diff=x\n", encoding="utf-8")
-    _git(nested, "add", "-A")
-    _git(nested, "commit", "-qm", "attributes")
+    nested = _nested(root)
     (root / ".gitmodules").write_text(
         '[submodule "vendor"]\n\tpath = vendor\n\turl = ./vendor\n\tignore = none\n',
         encoding="utf-8",
@@ -82,6 +90,13 @@ def _arm(nested: pathlib.Path, program: str) -> None:
     """Name the program as the nested repository's filter and textconv."""
     for key in ("filter.x.clean", "filter.x.smudge", "diff.x.textconv"):
         _git(nested, "config", key, program)
+
+
+def _move(nested: pathlib.Path, text: str) -> str:
+    """Commit a change in the nested repository, its filter off, and return the new commit."""
+    (nested / "f.txt").write_text(text, encoding="utf-8")
+    _git(nested, "-c", "filter.x.clean=", "commit", "-qam", text.strip())
+    return _git(nested, "rev-parse", "HEAD")
 
 
 def test_a_status_or_a_diff_runs_no_git_inside_a_nested_repository(
@@ -224,3 +239,245 @@ def test_a_review_honors_no_driver_of_a_nested_repository(tmp_path: pathlib.Path
         )
     assert dirty == ("vendor",)
     assert not marker.exists(), "the nested repository's clean filter ran on the host"
+
+
+_RAN = "the nested repository's clean filter ran on the host"
+
+
+def test_a_checkpoint_runs_no_git_inside_the_nested_repository_it_recorded(
+    tmp_path: pathlib.Path,
+) -> None:
+    """One checkpoint recorded a nested repository; the next one's `git add -A` ran its filter."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    base = _git(root, "rev-parse", "HEAD")
+    nested = _nested(root)
+    _arm(nested, program)
+    ref = "refs/agent6/s/head"
+
+    first = git_ops.chain_commit(root, "turn 1", ref=ref, fallback_parent=base)
+    assert first is not None
+    recorded = f"160000 commit {_git(nested, 'rev-parse', 'HEAD')}"
+    assert git_read.tree_entry(root, first, "vendor") == recorded
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+    (root / "other.txt").write_text("x\n", encoding="utf-8")
+    second = git_ops.chain_commit(root, "turn 2", ref=ref, fallback_parent=base)
+    assert second is not None
+    assert git_read.tree_paths(root, second) == {"f.txt", "other.txt", "vendor"}
+    assert git_read.tree_entry(root, second, "vendor") == recorded
+    assert not git_read.chain_dirty(root, ref, base)
+    assert git_read.chain_dirty_paths(root, ref, base, 5) == []
+    assert not marker.exists(), _RAN
+
+
+@pytest.mark.parametrize("state", ["edited", "moved", "new", "deleted"])
+def test_a_checkpoint_records_the_commit_a_nested_repository_is_at(
+    tmp_path: pathlib.Path, state: str
+) -> None:
+    """`update-index` records each gitlink as `git add -A` would, and runs nothing inside it."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _nested(root) if state == "new" else _record_nested(root)
+    head = _git(root, "rev-parse", "HEAD")
+    at = _git(nested, "rev-parse", "HEAD")
+    _arm(nested, program)
+    if state == "moved":
+        at = _move(nested, "v2\n")
+    elif state == "deleted":
+        shutil.rmtree(nested)
+    (nested.parent / "f.txt" if state == "deleted" else nested / "f.txt").write_text(
+        "edited\n", encoding="utf-8"
+    )
+
+    tree = git_read.worktree_tree(root, head, ())
+    entry = "" if state == "deleted" else f"160000 commit {at}"
+    assert git_read.tree_entry(root, tree, "vendor") == entry
+    assert (tree == git_read.tree_sha(root, head)) == (state == "edited")
+    assert not marker.exists(), _RAN
+
+
+def test_a_checkpoint_from_a_subdirectory_records_a_nested_repository(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`update-index` reads its paths from the directory it runs in: the checkout's root."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    (root / "pkg").mkdir()
+    (root / "pkg" / "g.txt").write_text("g\n", encoding="utf-8")
+    head = _git(root, "rev-parse", "HEAD")
+    _arm(nested, program)
+    at = _move(nested, "v2\n")
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+
+    tree = git_read.worktree_tree(root / "pkg", head, ())
+    assert git_read.tree_entry(root, tree, "vendor") == f"160000 commit {at}"
+    assert git_read.tree_entry(root, tree, "pkg/g.txt").startswith("100644 blob ")
+    assert not marker.exists(), _RAN
+
+
+def test_an_excluded_nested_repository_keeps_the_commit_the_seed_records(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A hidden path stays out of every tree: its gitlink is neither added nor recorded anew."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    head = _git(root, "rev-parse", "HEAD")
+    seeded = git_read.tree_entry(root, head, "vendor")
+    _arm(nested, program)
+    _move(nested, "v2\n")
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+
+    tree = git_read.worktree_tree(root, head, {"vendor"})
+    assert git_read.tree_entry(root, tree, "vendor") == seeded
+    assert not marker.exists(), _RAN
+
+
+def test_a_run_diff_runs_no_git_inside_a_nested_repository(tmp_path: pathlib.Path) -> None:
+    """The run diff's `git add -N` ran the clean filter of each nested repository in the index."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    head = _git(root, "rev-parse", "HEAD")
+    _arm(nested, program)
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+    (root / "new.txt").write_text("new\n", encoding="utf-8")
+
+    diff = git_read.diff_since(root, head)
+    assert "+++ b/new.txt" in diff
+    assert "vendor" not in diff
+    assert not marker.exists(), _RAN
+
+    at = _move(nested, "v2\n")
+    assert f"+Subproject commit {at}" in git_read.diff_since(root, head)
+    assert not marker.exists(), _RAN
+
+
+def test_staging_a_path_runs_no_git_inside_a_nested_repository(tmp_path: pathlib.Path) -> None:
+    """The Git page's stage ran the clean filter of a nested repository its path covered."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    _arm(nested, program)
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+
+    git_ops.stage_paths(root, ["vendor"])
+    git_ops.stage_paths(root, ["."])
+    assert _git(root, "diff", "--cached", "--name-only") == "f.txt"
+    assert not marker.exists(), _RAN
+
+    at = _move(nested, "v2\n")
+    git_ops.stage_paths(root, ["f.txt"])
+    assert _git(root, "diff", "--cached", "--name-only") == "f.txt"  # a path beside it stages alone
+    git_ops.stage_paths(root, ["vendor"])
+    assert _git(root, "ls-files", "--stage", "vendor") == f"160000 {at} 0\tvendor"
+    assert not marker.exists(), _RAN
+
+
+def test_staging_no_path_stages_nothing_beside_a_nested_repository(tmp_path: pathlib.Path) -> None:
+    """Left with a gitlink's exclude pathspec alone, `git add` takes the whole tree."""
+    root = _repo(tmp_path / "r")
+    _record_nested(root)
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+
+    git_ops.stage_paths(root, [])
+    assert _git(root, "diff", "--cached", "--name-only") == ""
+
+
+def test_staging_leaves_a_skip_worktree_gitlink_in_the_index(tmp_path: pathlib.Path) -> None:
+    """`update-index --remove` drops a skip-worktree entry unless told to leave it."""
+    root = _repo(tmp_path / "r")
+    nested = _record_nested(root)
+    at = _git(nested, "rev-parse", "HEAD")
+    _git(root, "update-index", "--skip-worktree", "vendor")
+    _move(nested, "v2\n")
+
+    git_ops.stage_paths(root, ["."])
+    assert _git(root, "ls-files", "--stage", "vendor") == f"160000 {at} 0\tvendor"
+
+
+def test_a_path_commit_runs_no_git_inside_a_nested_repository(tmp_path: pathlib.Path) -> None:
+    """`commit_paths` ran the filter on its `git add`, and on the status of an empty commit."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    head = _git(root, "rev-parse", "HEAD")
+    _arm(nested, program)
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+
+    for unchanged in ("f.txt", "vendor"):
+        with pytest.raises(errors.GitError) as refused:
+            git_ops.commit_paths(root, "empty", (unchanged,))
+        assert not marker.exists(), _RAN
+        assert "nothing to commit" in str(refused.value)
+    assert _git(root, "rev-parse", "HEAD") == head
+
+    at = _move(nested, "v2\n")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+    sha = git_ops.commit_paths(root, "pointer", ("vendor",))
+    assert git_read.tree_entry(root, sha, "vendor") == f"160000 commit {at}"
+    assert git_read.tree_diff_paths(root, head, sha) == ["vendor"]
+    assert not marker.exists(), _RAN
+
+
+@pytest.mark.parametrize("commit", ["paths", "index"])
+def test_a_change_undone_before_the_commit_gets_no_status_from_git(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, commit: str
+) -> None:
+    """Between agent6's check and `git commit` the change can go: git printed its status."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    head = _git(root, "rev-parse", "HEAD")
+    _arm(nested, program)
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+    run = git_command.run
+
+    def undo_after_the_check(cwd: pathlib.Path, *args: str, **kwargs: Any) -> kinds.CommandResult:
+        result = run(cwd, *args, **kwargs)
+        if args[:2] == ("diff", "--cached"):
+            (root / "f.txt").write_text("v1\n", encoding="utf-8")
+            _git(root, "add", "f.txt")
+        return result
+
+    monkeypatch.setattr(git_command, "run", undo_after_the_check)
+    if commit == "paths":
+        sha = git_ops.commit_paths(root, "raced", ("f.txt",))
+    else:
+        git_ops.stage_paths(root, ["f.txt"])
+        sha = git_ops.commit_index(root, "raced")
+    assert not marker.exists(), _RAN
+    assert git_read.tree_sha(root, sha) == git_read.tree_sha(root, head)  # an empty commit
+
+
+@pytest.mark.parametrize("paths", [(), ("f.txt",), ("f.txt", "vendor")])
+def test_the_auto_stash_runs_no_git_inside_a_nested_repository(
+    tmp_path: pathlib.Path, paths: tuple[str, ...]
+) -> None:
+    """`git stash push` ran the clean filter of each nested repository in the index."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    _arm(nested, program)
+    (nested / "f.txt").write_text("edited\n", encoding="utf-8")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+
+    git_ops.stash_tracked_changes(root, "kept", paths)
+    entry = git_read.find_stash(root, "kept")
+    assert entry is not None
+    assert git_read.tree_diff_paths(root, "HEAD", entry.sha) == ["f.txt"]
+    assert (root / "f.txt").read_text(encoding="utf-8") == "v1\n"
+    assert not marker.exists(), _RAN
+
+    # A moved nested repository is left out and stays where it is: no stash ever moved one.
+    at = _move(nested, "v2\n")
+    (root / "f.txt").write_text("v3\n", encoding="utf-8")
+    git_ops.stash_tracked_changes(root, "later", paths)
+    entry = git_read.find_stash(root, "later")
+    assert entry is not None
+    assert git_read.tree_diff_paths(root, "HEAD", entry.sha) == ["f.txt"]
+    assert _git(nested, "rev-parse", "HEAD") == at
+    assert not marker.exists(), _RAN

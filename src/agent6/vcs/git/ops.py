@@ -27,17 +27,23 @@ from agent6.vcs.git import read as git_read
 def stash_tracked_changes(path: pathlib.Path, message: str, paths: Collection[str] = ()) -> None:
     """Stash the tracked files' uncommitted changes; untracked files stay in place.
 
+    A nested repository the index records is left out: `git stash push` runs `git status`
+    inside one under its own config, and a stash moves no nested checkout.
+
     Args:
         path: The repository.
         message: The stash message, which the finalizer finds it by.
         paths: The repo-relative paths to stash; empty stashes every tracked change.
     """
-    if not paths:
+    kept = set(git_read.gitlinks(path))
+    if not paths and not kept:
         git_command.run(path, "stash", "push", "--message", message)
         return
-    tracked = git_read.tree_paths(path, "HEAD") | set(git_read.tracked_files(path))
+    if paths:
+        tracked = git_read.tree_paths(path, "HEAD") | set(git_read.tracked_files(path))
+        kept |= tracked - set(paths)
     # Select the root and exclude other tracked paths: stash's add rejects a staged deletion.
-    specs = [":/", *(f":(top,exclude,literal){rel}" for rel in sorted(tracked - set(paths)))]
+    specs = [":/", *(f":(top,exclude,literal){rel}" for rel in sorted(kept))]
     git_command.run(
         path,
         "stash",
@@ -335,14 +341,22 @@ def commit_paths(
         The new HEAD sha.
 
     Raises:
-        GitError: No paths were given.
+        GitError: No paths were given, or the paths hold nothing to commit.
     """
     if not paths:
         raise errors.GitError("commit_paths requires at least one path")
-    git_command.run(path, "add", "--", *paths, env_extra=git_read.LITERAL_PATHSPECS)
-    env_extra = {**(_identity_env(identity) or {}), **git_read.LITERAL_PATHSPECS}
+    stage_paths(path, paths)
+    literal = git_read.LITERAL_PATHSPECS
+    # git refuses an empty commit with a status, which runs git inside nested repositories.
+    if git_command.run(
+        path, "diff", "--cached", "--quiet", "--", *paths, check=False, env_extra=literal
+    ).ok:
+        raise errors.GitError("nothing to commit: the paths hold no change")
+    env_extra = {**(_identity_env(identity) or {}), **literal}
     full_message = _full_message(message, trailers, identity)
-    git_command.run(path, "commit", "-m", full_message, "--", *paths, env_extra=env_extra)
+    git_command.run(
+        path, "commit", "--allow-empty", "-m", full_message, "--", *paths, env_extra=env_extra
+    )
     return git_command.run(path, "rev-parse", "HEAD").stdout.strip()
 
 
@@ -353,7 +367,7 @@ def stage_paths(path: pathlib.Path, paths: Sequence[str]) -> None:
         path: The repository.
         paths: The paths to add to the index.
     """
-    git_command.run(path, "add", "--", *paths, env_extra=git_read.LITERAL_PATHSPECS)
+    git_read.add_to_index(path, specs=[f":(literal){rel}" for rel in paths])
 
 
 def unstage_paths(path: pathlib.Path, paths: Sequence[str]) -> None:
@@ -392,9 +406,12 @@ def commit_index(
     Raises:
         GitError: Nothing is staged.
     """
+    # git refuses an empty commit with a status, which runs git inside nested repositories.
     if git_command.run(path, "diff", "--cached", "--quiet", check=False).ok:
         raise errors.GitError("nothing is staged")
-    git_command.run(path, "commit", "-m", message, env_extra=_identity_env(identity))
+    git_command.run(
+        path, "commit", "--allow-empty", "-m", message, env_extra=_identity_env(identity)
+    )
     return git_command.run(path, "rev-parse", "HEAD").stdout.strip()
 
 

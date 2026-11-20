@@ -10,7 +10,7 @@ import os
 import pathlib
 import shutil
 import tempfile
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 
 from agent6 import errors, paths
 from agent6.vcs import commit_message
@@ -697,6 +697,86 @@ def commit_is_reachable(path: pathlib.Path, sha: str) -> bool:
     return res.ok and bool(res.stdout.strip())
 
 
+def gitlinks(
+    path: pathlib.Path, specs: Sequence[str] = (":/",), *, env_extra: dict[str, str] | None = None
+) -> tuple[str, ...]:
+    """Return the nested repositories the index records under the pathspecs.
+
+    Args:
+        path: Any directory of the checkout.
+        specs: The pathspecs; the whole tree by default.
+        env_extra: Environment entries, the index to read among them.
+
+    Returns:
+        The gitlinks' paths from the repository root, sorted.
+
+    Raises:
+        GitError: git could not list the index.
+    """
+    entries = git_command.nul_fields(
+        path, "ls-files", "--stage", "--full-name", "-z", "--", *specs, env_extra=env_extra
+    )
+    return tuple(sorted({e.partition("\t")[2] for e in entries if e.startswith("160000 ")}))
+
+
+def add_to_index(
+    path: pathlib.Path,
+    *flags: str,
+    specs: Sequence[str] = (":/",),
+    exclude: Collection[str] = (),
+    env_extra: dict[str, str] | None = None,
+    check: bool = True,
+) -> None:
+    """Run `git add` over the pathspecs, running nothing inside a nested repository.
+
+    `git add` runs `git status` inside each gitlink it visits, under that repository's own
+    config, and has no switch for it. A pathspec leaves each gitlink out, and `update-index`
+    records the commit it is at, which git reads in process.
+
+    Args:
+        path: Any directory of the checkout.
+        *flags: The flags of `git add`.
+        specs: The pathspecs to add; the whole tree by default.
+        exclude: Paths from the repository root left as the index has them, each with
+            everything under it.
+        env_extra: Environment entries, the index to write among them; None writes the
+            shared index.
+        check: Raise when the add or the recording fails.
+
+    Raises:
+        GitError: git could not list the index, or failed with check set.
+    """
+    if not specs:
+        return  # exclude pathspecs alone would select the whole tree
+    links = gitlinks(path, specs, env_extra=env_extra)
+    lines = [*specs, *(f":(top,exclude,literal){rel}" for rel in (*exclude, *links))]
+    git_command.run(
+        path,
+        "add",
+        *flags,
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+        check=check,
+        env_extra=env_extra,
+        stdin_text="\0".join(lines),
+    )
+    recorded = [rel for rel in links if not excluded(rel, exclude)]
+    if recorded:
+        # `update-index` names its paths from the directory it runs in.
+        git_command.run(
+            toplevel(path) or path,
+            "update-index",
+            "--add",
+            "--remove",
+            "--ignore-skip-worktree-entries",
+            "-z",
+            "--stdin",
+            check=check,
+            env_extra=env_extra,
+            stdin_text="".join(f"{rel}\0" for rel in recorded),
+        )
+
+
 # Passes of the staging add over a tree other processes may change under it.
 _ADD_ATTEMPTS = 3
 
@@ -712,8 +792,8 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
         path: The repository.
         seed: The commit the tree is diffed or parented against; None in an unborn repo.
         exclude: Repo-relative paths kept out of the tree, each with everything under it:
-            the run's `untracked_at_start` and its hidden paths, passed as pathspecs from a
-            file so any size and filename work.
+            the run's `untracked_at_start` and its hidden paths, passed as pathspecs on
+            stdin so any size and filename work.
 
     Returns:
         The tree sha.
@@ -729,18 +809,11 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
         # git refuses a pathspec naming an ignored path, exclude or not, and `add -A` never
         # takes one: an excluded path the ignore rules cover by now needs no exclude.
         exclude = unignored(path, tuple(sorted(exclude)))
-        add = ["add", "-A"]
-        if exclude:
-            spec = tmp / "pathspec"
-            spec.write_bytes(
-                b"\0".join([b":/", *(f":(top,exclude,literal){rel}".encode() for rel in exclude)])
-            )
-            add += [f"--pathspec-from-file={spec}", "--pathspec-file-nul"]
         # A file a background command removes between git's listing and its stat fails the
         # whole add; the next pass sees the tree without it.
         for attempt in range(_ADD_ATTEMPTS):
             try:
-                git_command.run(path, *add, env_extra=env)
+                add_to_index(path, "-A", exclude=exclude, env_extra=env)
                 break
             except errors.GitError as exc:
                 if attempt == _ADD_ATTEMPTS - 1 or "unable to stat" not in str(exc):
@@ -1035,7 +1108,7 @@ def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = 
         if real_index.is_file():
             shutil.copy2(real_index, index_copy)
         env = {"GIT_INDEX_FILE": str(index_copy)}
-        git_command.run(path, "add", "-N", "--", ".", *specs, check=False, env_extra=env)
+        add_to_index(path, "-N", specs=(".",), exclude=sorted(exclude), check=False, env_extra=env)
         res = git_command.run(path, "diff", base_sha, "--", ".", *specs, check=False, env_extra=env)
         return res.stdout if res.ok else ""
     finally:
