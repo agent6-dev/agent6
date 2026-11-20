@@ -154,20 +154,21 @@ One run used `chatgpt/gpt-5.6-luna` at `low` effort with `providers.chatgpt.idle
 
 Two headless CLI runs used the loopback [Messages stand-in](compaction_messages.py) with `server_compaction = true` and `standin/claude-haiku-5-5` at high effort.
 Each used a fresh git repository and fresh config, state, data and cache directories under `/tmp`.
-The first read returned a 13,201-character file.
+The size run's first read returned a 13,000-character file; the idle run's read returned 48,000 characters.
 Both runs used `drop_at_chars = 1000`.
 
 | Trigger | Worker request | Summary | First request after adoption |
 | --- | --- | --- | --- |
-| Size, 25,000 characters | 5 messages, clearing requested | Same 5 messages, no clearing | Block, signed reply, read result, task and pin |
-| Idle, 1 second, floor 8,000 characters | 5 messages, clearing requested | Same 5 messages at 1.00 s, no clearing | Block, signed reply, command result, task and pin |
+| Size, 25,000 characters | 4 messages, no clearing | Same 4 messages | Block, signed reply, read result, task |
+| Idle, 1 second, floor 8,000 characters | 4 messages, no clearing | Same 4 messages | Block, signed reply, command result, task |
 
 - Both runs finished in four model calls, including one accepted `endpoint` summary.
+- Neither asked for clearing: one result was in the history, and the newest two always stay whole.
 - The stand-in checked the system text, tools and messages against the preceding ordinary request.
 - It checked the block and the kept reply for exact equality on adoption.
 - The idle journal orders `tool.call`, `compact.summarise.done` with `kept_messages: 1`, then `tool.result`.
   The foreground `sleep 4` returned exit 0 after 4.07 seconds under partial isolation.
-- Both receipts reported 60 uncached and 33,050 cached input tokens on the summary, zero thinking blocks dropped and two tool results cleared.
+- Both receipts reported 60 uncached and 33,050 cached input tokens on the summary.
   These counts come from the captured replies, not a measurement of cache performance or signature verification.
 
 **Host smoke with a live key.** Use the throwaway read targets from the first smoke and an Anthropic direct entry with no custom URL.
@@ -189,3 +190,44 @@ done
 ```
 
 Check for `writer: endpoint`, the expected `reason`, and reported transformations on the next worker call.
+
+## Signed endpoint compaction, live observation
+
+Three runs used `anthropic/claude-haiku-5-5` at `high` effort on the direct API, one read of a 2,100-character file per turn.
+Each set `extra_body.thinking.block_binding.prefix_mismatch_behavior = "error"`, so the API refuses a request whose replayed thinking fails its prefix check.
+No request was refused and no reply reported a dropped thinking block.
+
+**Clearing in one step, then a size summary** (`drop_at_chars = 16000`, `summarise_at_chars = 52000`, 19 calls):
+
+| Request | Clearing edit | Results cleared by the endpoint | Input (uncached / cached) |
+| --- | --- | ---: | ---: |
+| 8 | none | 0 | 1,217 / 16,614 |
+| 9 | keep 3 | 5 | 5,148 / 6,471 |
+| 10 | keep 4 | 5 | 2,177 / 11,617 |
+| 11 | keep 5 | 5 | 2,177 / 13,792 |
+| 12 | keep 6 | 5 | 2,145 / 15,967 |
+| 13, the summary of request 12 | none | 0 | 8,924 / 17,829 |
+| 14, block first | none | 0 | 3,090 / 6,200 |
+
+- The step at request 9 emptied the cache back to the system text and tools once; the next three requests cleared the same five results and read the grown prefix from the cache.
+- The summary request carries no clearing edit, so its input from the first cleared result onward was not a cache read.
+- Requests 14 to 19 began with the block, the kept reply and its result; the run read the last four files and finished with all sixteen in order.
+
+**Clearing with a threshold near the result size** (`drop_at_chars = 6000`, 13 calls): the newest two results alone exceeded half the threshold, so the point moved on every request (1 to 10 results cleared) and each request read only the system text and tools from the cache (6,179 to 6,450 of 9,400 to 11,800 input tokens).
+The endpoint's `cleared_tool_uses` equalled agent6's count on every request.
+
+**Idle summary** (`idle_compact_s = 15`, floor 8,000 characters, foreground `sleep 45`, 11 calls):
+
+| Event | Seconds after the worker request began | Input (uncached / cached) |
+| --- | ---: | ---: |
+| Worker request that called `run_command` | 0 | 239 / 15,330 |
+| Idle summary call, endpoint-written, accepted | 15.0 | 359 / 15,567 |
+| `run_command` result, exit 0 | 47.7 | |
+| Next worker call, block first | 48.1 | 1,394 / 6,145 |
+
+- The journal order was `tool.call`, `compact.summarise.done` with `reason: idle` and `kept_messages: 1`, then `tool.result`.
+- The request after adoption carried the block, the waiting reply with its thinking, the command result and the task.
+
+A comparison of each consecutive pair of request bodies in the three runs (40 pairs) found the earlier system text, tools and messages unchanged in every later request.
+
+**Limits:** n = 1 per case, one small model, conversations under 30,000 tokens.
