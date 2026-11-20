@@ -36,6 +36,7 @@ from agent6.viewmodel import (
     produced_result,
     session_is_live,
     summarize_session_dir,
+    tail,
     tail_events,
     wire,
 )
@@ -325,7 +326,7 @@ def run_child_to_completion(
         contract: The harness-owned read-only conversation; None for work.
         continuation: The next instruction in a retained child clone; empty starts a new child.
         clock: The wall clock the deadline is read against.
-        parent_events: The parent execution's sink for a confirmed start.
+        parent_events: The parent execution's sink for child activity.
         watch: The parent's side of the wait, called on each poll with the child's dir,
             its label and its status: it counts the child's spend and answers its prompt,
             and returns whether the parent's budget is spent. None leaves the child's
@@ -355,6 +356,10 @@ def run_child_to_completion(
             continuation=continuation,
             runtime=runtime,
         )
+    child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
+    updates = tail.LogTail(child_dir / sessions_layout.LOGS_NAME)
+    if continuation and parent_events is not None:
+        updates.read()  # The previous execution's steers belong to that execution.
     res = spawner(spec, task)
     if not res.ok:
         # A child that never reported its session dir is still a process of ours.
@@ -372,8 +377,21 @@ def run_child_to_completion(
     overdue = over_budget = False
     label = f"{'reviewer' if contract is not None else 'child'} {spec.number} {spec.session_id}"
 
+    def report_steers() -> None:
+        if parent_events is not None:
+            for row in updates.read():
+                if row.get("type") == journal.SteerInjected.TYPE:
+                    parent_events.emit(
+                        journal.ParallelChildActivity(
+                            child=spec.session_id,
+                            activity="steered",
+                            detail=str(row.get("text", "")),
+                        )
+                    )
+
     def on_poll(status: str) -> bool:
         nonlocal over_budget
+        report_steers()
         over_budget = watch is not None and watch(res.session_dir, label, status)
         return over_budget
 
@@ -417,6 +435,8 @@ def run_child_to_completion(
                 " (its clone keeps its work)",
                 pid=res.pid,
             )
+    # A child can consume its last steer and finish between polls.
+    report_steers()
     try:
         imported = parallel_results.import_child(
             res, origin, import_lock, continuing=bool(continuation)

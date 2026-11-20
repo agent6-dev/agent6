@@ -84,6 +84,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
     (repo / "README.md").write_text("base\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "base")
+    child_a_started = threading.Event()
     parent_waits_for_a = threading.Event()
     seen: list[tuple[str, int, dict[str, Any]]] = []
     lock = threading.Lock()
@@ -96,6 +97,8 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         if who == "PARENT":
             first, second = (*_started(body), "", "")[:2]
             if turn == 2:
+                assert child_a_started.wait(120)
+                assert cli_main(["steer", first, "Use one line."]) == 0
                 parent_waits_for_a.set()
             return [
                 [
@@ -115,6 +118,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
             return [("finish_session", {"summary": f"wrote {name}"})]
         if who == "CHILD-A":
             # The first task's child stays running until the parent has read the second's.
+            child_a_started.set()
             assert parent_waits_for_a.wait(120)
         return [("apply_edit", {"path": name, "old_string": "", "new_string": f"{who}\n"})]
 
@@ -211,10 +215,11 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
             r["activity"]
             for r in rows
             if r["type"] == "parallel.child_activity" and r["child"] == sid
-        ] == ["started", "finished"]
+        ] == (["started", "steered", "finished"] if sid == one else ["started", "finished"])
     assert cli_main(["attach", session]) == 0
     attached = capsys.readouterr().out
     for rendered in (out.out + out.err, attached):
+        assert rendered.count(f"child {one} steered: Use one line.") == 1
         for sid in (one, two):
             assert f"child {sid} started" in rendered
             assert f"child {sid} finished" in rendered
