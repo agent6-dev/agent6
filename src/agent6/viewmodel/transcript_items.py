@@ -26,7 +26,7 @@ class TranscriptItem:
         name: The tool's name; the status label for `done`.
         arg: The tool's salient argument (a path, a pattern, a command); the end reason
             for `done`, which says whose sentence the body is.
-        args_full: The journaled argument preview for the expanded item. Empty when `arg`
+        args_detail: The journaled argument preview for the expanded item. Empty when `arg`
             shows the whole preview.
         ok: The tool or run outcome; None while in flight or when not applicable.
         detail: The tool result's summary, the verify badge or the commit and done
@@ -43,7 +43,7 @@ class TranscriptItem:
     detail: str = ""
     tail: str = ""
     call_id: str = ""
-    args_full: str = ""
+    args_detail: str = ""
 
 
 def _pending_key(event: dict[str, Any], name: str) -> int | str:
@@ -97,9 +97,9 @@ class PendingItems:
             name=name,
             arg=transcript_text.salient_arg(args),
             call_id=str(key),
-            args_full=""
+            args_detail=""
             if transcript_text.head_shows_every_arg(args)
-            else terminal.scrub_terminal_controls(log_line.render_args_full(args)),
+            else terminal.scrub_terminal_controls(log_line.render_args_detail(args)),
         )
         self._pending[key] = (pending, transcript_text.call_preview(name, args))
         out.append(pending)

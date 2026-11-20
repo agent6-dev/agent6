@@ -168,7 +168,7 @@ class SteerModal(screen.ModalScreen[str]):
 
 
 class ToolCallDetailModal(screen.ModalScreen[None]):
-    """The full args and summary of one tool call, selectable; Esc or the backdrop closes."""
+    """Show the recorded argument preview and result summary for one call."""
 
     DEFAULT_CSS = """
     ToolCallDetailModal { align: center middle; }

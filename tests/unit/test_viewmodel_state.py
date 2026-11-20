@@ -49,8 +49,8 @@ def test_tool_results_match_the_execution_and_call_together() -> None:
     assert second.execution_id == "second" and second.exit_code is None
 
 
-def test_expanded_tool_args_are_uncapped_and_keep_nested_values() -> None:
-    """Detail arguments retain long values, every edit and every question option."""
+def test_tool_detail_keeps_each_value_in_the_recorded_preview() -> None:
+    """The detail renders the recorded argument preview without clipping it again."""
     words = "full argument " * 500 + "LAST ARGUMENT BYTE"
     args = {
         "path": "notes.txt",
@@ -62,8 +62,8 @@ def test_expanded_tool_args_are_uncapped_and_keep_nested_values() -> None:
         [{"type": "tool.call", "name": "apply_edit", "args_preview": args}]
     )
     call = state.tool_calls[0]
-    assert words in call.args_full
-    assert "old_string" in call.args_full and "options" in call.args_full
+    assert words in call.args_detail
+    assert "old_string" in call.args_detail and "options" in call.args_detail
     assert "LAST ARGUMENT BYTE" not in call.args_preview
     assert len(log_line.render_args({"new_string": words})) < 100
 
@@ -103,9 +103,9 @@ def test_expanded_tool_args_print_a_multi_line_string_as_its_lines() -> None:
         ]
     )
     call = {"type": "tool.call", "name": "apply_edit", "args_preview": args}
-    assert viewmodel_state.fold_session([call]).tool_calls[0].args_full == whole
+    assert viewmodel_state.fold_session([call]).tool_calls[0].args_detail == whole
     (item,) = fold_transcript([call])
-    assert item.args_full == whole
+    assert item.args_detail == whole
     assert log_line.render_args(args) == (
         "path=a.py, edits=replace, patch=-a\n\n+b, argv=python -c 'import os\nprint(os.sep)'"
     )

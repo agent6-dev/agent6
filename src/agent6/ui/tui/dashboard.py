@@ -462,7 +462,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         if 0 <= event.cursor_row < len(window):
             tc = window[event.cursor_row]
             self.app.push_screen(
-                modals.ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary)
+                modals.ToolCallDetailModal(tc.name, tc.ok, tc.args_detail, tc.result_summary)
             )
 
     def on_tree_node_selected(self, event: textual_widgets.Tree.NodeSelected[str | None]) -> None:

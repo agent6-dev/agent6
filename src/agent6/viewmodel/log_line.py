@@ -109,7 +109,7 @@ def _block(value: Any) -> list[str]:
     return lines
 
 
-def render_args_full(args: dict[str, Any]) -> str:
+def render_args_detail(args: dict[str, Any]) -> str:
     """Render the recorded argument preview for a detail view.
 
     Args:

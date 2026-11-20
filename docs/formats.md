@@ -3620,7 +3620,7 @@ Source: [`agent6.viewmodel.session.records.ToolCallView`](https://github.com/age
 | --- | --- | --- |
 | `name` | `str` | The tool's name. |
 | `args_preview` | `str` | The args rendered with each value truncated, for the inline table. |
-| `args_full` | `str` | The detail text of the journaled argument preview. |
+| `args_detail` | `str` | The detail text of the journaled argument preview. |
 | `result_summary` | `str` | The result's summary once it arrives. |
 | `ok` | `bool \| None` | The tool's verdict; None while in flight. |
 | `task_id` | `str \| None` | The task in focus when the call ran, for filtering. |

@@ -30,7 +30,7 @@
     {
       "name": "read_file",
       "args_preview": "path=src/x.py",
-      "args_full": "path=src/x.py",
+      "args_detail": "path=src/x.py",
       "result_summary": "4773 bytes",
       "ok": true,
       "task_id": "n1",
@@ -42,7 +42,7 @@
     {
       "name": "run_command",
       "args_preview": "argv=ls /nope",
-      "args_full": "argv=['ls', '/nope']",
+      "args_detail": "argv=['ls', '/nope']",
       "result_summary": "exit=2",
       "ok": false,
       "task_id": "n1",
@@ -54,7 +54,7 @@
     {
       "name": "apply_patch",
       "args_preview": "path=src/x.py",
-      "args_full": "path=src/x.py",
+      "args_detail": "path=src/x.py",
       "result_summary": "applied=1",
       "ok": true,
       "task_id": "n1",
@@ -66,7 +66,7 @@
     {
       "name": "finish_session",
       "args_preview": "summary=all green",
-      "args_full": "summary=all green",
+      "args_detail": "summary=all green",
       "result_summary": "finish_session",
       "ok": true,
       "task_id": null,

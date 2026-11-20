@@ -292,8 +292,8 @@ def test_plan_tree_maximizes_to_full_width(tmp_path: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-def test_tool_row_enter_opens_detail_with_full_args(tmp_path: pathlib.Path) -> None:
-    """Enter on a tool-calls row opens a read-only detail modal carrying the full arg value."""
+def test_tool_row_enter_opens_its_recorded_argument_preview(tmp_path: pathlib.Path) -> None:
+    """Enter on a tool row shows its recorded argument preview without further clipping."""
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     long_val = "abc/" * 1500 + "LAST ARGUMENT BYTE"
 
@@ -313,7 +313,7 @@ def test_tool_row_enter_opens_detail_with_full_args(tmp_path: pathlib.Path) -> N
             await pilot.pause()
             assert isinstance(app.screen, modals.ToolCallDetailModal)
             args_text = app.screen.query_one("#tc-args", widgets.TextArea).text
-            assert long_val in args_text  # full value present, not the "…" preview
+            assert long_val in args_text
             await pilot.press("escape")  # closes past the focused read-only TextArea
             await pilot.pause()
             assert not isinstance(app.screen, modals.ToolCallDetailModal)

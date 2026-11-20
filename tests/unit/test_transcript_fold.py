@@ -368,7 +368,7 @@ def test_a_call_lists_its_arguments_only_when_the_head_leaves_some_out() -> None
             {"type": "tool.result", "name": "t", "ok": True, "summary": "ok"},
         ]
         (item,) = fold_transcript(events)
-        assert (item.args_full == "") is (args in whole), args
+        assert (item.args_detail == "") is (args in whole), args
 
 
 def test_interleaved_tool_calls_pair_by_name() -> None:

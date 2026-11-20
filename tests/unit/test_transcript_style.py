@@ -60,7 +60,7 @@ def test_expanded_multi_line_arguments_sit_under_their_label() -> None:
         arg="a.py",
         ok=True,
         detail="applied",
-        args_full="path=a.py\nedits:\n  - old_string:\n      x = 1\n\n      y = 2",
+        args_detail="path=a.py\nedits:\n  - old_string:\n      x = 1\n\n      y = 2",
     )
     assert transcript_style.item_lines(item, detail="expanded")[1:8] == [
         [("  arguments:", "arg")],
@@ -71,7 +71,7 @@ def test_expanded_multi_line_arguments_sit_under_their_label() -> None:
         [("    ", "arg")],
         [("          y = 2", "arg")],
     ]
-    one = dataclasses.replace(item, args_full="path=a.py")
+    one = dataclasses.replace(item, args_detail="path=a.py")
     assert transcript_style.item_lines(one, detail="expanded")[1] == [
         ("  arguments: path=a.py", "arg")
     ]

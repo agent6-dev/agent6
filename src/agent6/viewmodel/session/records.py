@@ -60,7 +60,7 @@ class ToolCallView:
     Attributes:
         name: The tool's name.
         args_preview: The args rendered with each value truncated, for the inline table.
-        args_full: The detail text of the journaled argument preview.
+        args_detail: The detail text of the journaled argument preview.
         result_summary: The result's summary once it arrives.
         ok: The tool's verdict; None while in flight.
         task_id: The task in focus when the call ran, for filtering.
@@ -72,7 +72,7 @@ class ToolCallView:
 
     name: str
     args_preview: str
-    args_full: str = ""
+    args_detail: str = ""
     result_summary: str = ""
     ok: bool | None = None
     task_id: str | None = None
