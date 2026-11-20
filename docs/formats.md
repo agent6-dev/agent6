@@ -118,6 +118,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `usd_partial` | `bool, optional` | Whether unpriced usage makes spend a lower bound. |
 | `usd_cap` | `float, optional` | Spend cap in USD; -1 means unlimited. |
 | `usd_running_children` | `float, optional` | USD the children still running have spent so far; outside `usd_total` until each settles, inside the cap. |
+| `usd_settled_children` | `float, optional` | USD the settled children spent; inside `usd_total`. |
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
 | `tokens_running_children` | `int, optional` | Unpriced tokens of the children still running; outside `tokens_unmetered`. |
 | `tokens_fallback_cap` | `int, optional` | Token cap used for unpriced usage. |
@@ -778,6 +779,16 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `presence` | `str` | The observed operator attachment and away state. |
+
+### pack.quarantined
+
+**Support: public.** An ending operation left a `.agent6/pack.json` that `agent6 pack` did not write.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `str` | The `pack.json` found. |
+| `renamed` | `str, optional` | Its new path; null when it was left where it is. |
+| `warning` | `str` | The warning the operator was given. |
 
 ### parallel.compared
 
@@ -1746,6 +1757,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
 | `children` | `JSON` | The session's children by lineage, from the same listing as `sessions show`, for every session that has any. |
 | `dispatches` | `JSON` | The session's dispatch records, each with its children's outcomes. |
+| `manifest_resume_blocker` | `JSON` | Why the manifest refuses every resume (a child's record, a worktree that is gone), naming the `agent6 fork` command when one continues the run; absent when it refuses none. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
 | `comparison` | `JSON` | The group record from the parent, directly or through the child's group. |
 | `placement` | `JSON` | The child's PlacementStamp when recorded. |
@@ -2720,7 +2732,7 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
 | `status` | `str` | Its own status word; "" when it never started. |
-| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no join is recorded, as for a group's children. |
+| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict`, `failed` or `ranked`; "" when no join is recorded, as for a group's children. |
 | `join_sha` | `str` | The merge commit, "" when none. |
 | `imported_ref` | `str` | The branch the join read, "" when none. |
 | `error` | `str` | The join's detail, "" when none. |
@@ -3280,7 +3292,7 @@ Source: [`agent6.sessions.manifest.ParallelLineage`](https://github.com/agent6-d
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `group` | `str` | The group it was dispatched in: the parent's id for `run --parallel`, `<parent>-p<n>` for a `/parallel` group. |
+| `group` | `str` | The group it was dispatched in: `<parent>-p1` for `run --parallel`, `<parent>-p<n>` for a `/parallel` group. |
 | `number` | `int` | Its number in the group. |
 | `parent` | `str` | The session that dispatched it, which every listing nests it under. |
 | `config_notes` | `tuple[str, ...]` | Resolved sampling values the child's TOML snapshot could not preserve. |

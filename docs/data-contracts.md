@@ -33,8 +33,8 @@ Scan session dirs into the listing rows every front-end's hub shows.
 Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
-- **Read by:** app/{btw, child_wait, children, compare, finalize, fork, fork_worktrees, merge_plan, preflight, resume, run, stop}, app/review/recap, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, children, wire}, viewmodel/session/view
-- **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (27 test files exercise it)
+- **Read by:** pack, app/{btw, child_wait, children, compare, finalize, fork, fork_worktrees, merge_plan, preflight, resume, run, stop}, app/review/recap, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, children, wire}, viewmodel/session/view
+- **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (29 test files exercise it)
 
 ## CLI session status
 
@@ -155,8 +155,8 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** app/{child_launch, children, compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{children, comparison, format, listing, policy, receipt, wire}, viewmodel/session/{status, view}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (50 test files exercise it)
+- **Read by:** pack, app/{child_launch, children, compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/{actions, model}, viewmodel/{children, comparison, format, listing, policy, receipt, wire}, viewmodel/session/{status, view}
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (51 test files exercise it)
 
 ## SessionSnapshot
 
@@ -252,7 +252,7 @@ The parse boundary of a `.asm.toml` machine file.
 | `config` | `dict[str, Any]` | `factory` |
 
 - **Written by:** machine/semantics
-- **Read by:** app/machine/{bundle, create, host_preflight, run, state_configs}, machine/{__init__, contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine/state
+- **Read by:** pack, app/machine/{bundle, create, host_preflight, run, state_configs}, machine/{__init__, contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine/state
 - **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (16 test files exercise it)
 
 ## JournalEvent
