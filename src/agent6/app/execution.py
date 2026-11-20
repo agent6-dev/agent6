@@ -797,7 +797,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 else:
                     if result.reason not in finalize.AUTO_MERGE_ENDS:
                         reason = (
-                            f"the run ended on {result.reason}, not finish_session or children_ranked"
+                            f"the run ended on {result.reason}, not finish_session"
+                            " or children_ranked"
                         )
                     elif result.child_verification:
                         child_id = result.child_verification.session_id
