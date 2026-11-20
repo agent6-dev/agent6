@@ -78,15 +78,18 @@ A failure, a warning and Prune's undelete commands stay on screen until dismisse
 When the server stops answering, the Sessions and State machines lists, a session and a machine keep what they last showed, under a line that names the reason and the time of the last update, until the next answer.
 
 - **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a group's children folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
-    - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** lands the branch as `sessions merge` does when the run holds unmerged commits, after a confirm that names the unmerged runs that changed some of the same paths
+    - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** merges the branch as `sessions merge` does when the run holds unmerged commits, after a confirm that names the unmerged runs that changed some of the same paths
     - the list is one Tab stop: ↑ ↓, Home and End move between rows, and Tab reaches the focused row's buttons; a Ctrl, Cmd, Shift or middle click on a row opens it as one on its title does, in a new tab or window
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it); **worktree** starts the run in a new git worktree (`run --worktree`); **advanced** holds the plan to run from (`run --from`) and a spend cap (`--max-usd`): a plain number such as `2.5`; while the cap holds anything else, Start waits and **advanced** stays open
     - on a phone the pickers fold behind one line that names the mode, the preset, the model and any run option set; a tap on it opens them
     - on a screen under 576px tall at the default text size (a zoomed window, a phone on its side), the composer sits below the list instead of over it and messages show under the top bar, here and on the State machines page
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
-- **State machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one; its lists take the same keys and clicks as the Sessions list
+    - on a phone, **Maintenance** folds the notification, prune and clear-saved-asks controls
+- **State machines page**: instances, `machine create` drafts, and authored machine files listed by name and path with a **Run** button; the composer creates a new one; its lists take the same keys and clicks as the Sessions list
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden, and a click on an item with more to show, or Enter on its first line, opens or closes it; the conversation is one Tab stop, and the arrow keys, Home and End move between those items
     - on a phone, **Stop now** stays visible and **More** holds the other run actions
+    - **Tool calls** rows open to selectable arguments and recorded output
+    - **Budget** shows labelled meters for capped usage and plain text for uncapped usage
     - **Children**: every child the session dispatched (a `run --parallel` group's or a run's `/parallel` groups), each a link to its own view, with its status and usage and, when some child has one, its model and how it joined; the card follows children that appear while the run goes on
     - the composer steers a live run or resumes an ended one under the preset and model picked above it (on a phone, behind one line that names them), and takes the [steer directives](usage.md#follow-and-steer-a-run); its button, **Send** on a live run and **Resume** on an ended one, does what Enter does, and a phone shows it as a send icon; Ctrl+Enter sends a live steer as `/now`, Ctrl+R searches past messages
     - an ended child, and an ended run whose worktree is gone or whose manifest cannot be read, closes the composer; the line under it says why, as `agent6 sessions show` does, and **Fork** continues a child in a worktree of its own
@@ -106,6 +109,8 @@ When the server stops answering, the Sessions and State machines lists, a sessio
         - the fetch goes to the URL shown beside the buttons, over https, ssh or a local path, and reads [none of the repository's own git config](security.md#7-git)
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side
     - recorded review comparisons preserve their tree identities and Files links; full context and commit blame are unavailable there
+    - an open diff hides the repository toolbar, and the unselected graph has no empty details pane
+    - split diffs fall back to inline when the diff pane is too narrow, keeping the saved split choice
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; several lines queue up before you write and start the run
 - **Files page**: the files at one revision; a symlink shows its target, a link when the revision lists it; it reads the repository `agent6 web` was started in and writes nothing
     - a markdown file opens rendered, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
@@ -175,7 +180,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - `GET /metrics` answers Prometheus text when `web.metrics_route = true` and `telemetry.metrics = "prometheus"`, with the web secret as the bearer, not the sign-in token ([telemetry export](cli.md#telemetry-export))
 - reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,merge,resume_defaults}` (`merge` is what the Merge confirm states), `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>?provider=<name>` (an optional provider filter), `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?commit=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
 - git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name or resolved sha>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
-    - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **↻** starts from live refs
+    - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **Refresh** starts from live refs
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
     - `WORKTREE` names the working tree as the `head` of a compare or diff (an untracked file diffs against nothing); as a `base` or a commit it answers `422`
     - `/api/git/diff` accepts `full_context=1` for all unchanged lines, independently of `whole=1`, which lifts the patch byte cap
