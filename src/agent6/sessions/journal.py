@@ -1420,6 +1420,9 @@ class SessionResume(Event):
     """Emitted at the start of every resumed execution."""
 
     TYPE: ClassVar[str] = "session.resume"
+    worker_pid: int | None = pydantic.Field(
+        default=None, description="Pid that reported the resume."
+    )
     session_id: str = pydantic.Field(description="Session identifier.")
     user_task: str = pydantic.Field(description="The displayed task text.")
     steer: str = pydantic.Field(description="The instruction supplied when resuming.")

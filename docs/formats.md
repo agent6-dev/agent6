@@ -1232,6 +1232,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `worker_pid` | `int, optional` | Pid that reported the resume. |
 | `session_id` | `str` | Session identifier. |
 | `user_task` | `str` | The displayed task text. |
 | `steer` | `str` | The instruction supplied when resuming. |

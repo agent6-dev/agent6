@@ -241,9 +241,7 @@ def emit_session_start(
     """
     pid = os.getpid()
     write_worker_pid(session_dir, pid)
-    if isinstance(event, journal.SessionStart):
-        event = event.model_copy(update={"worker_pid": pid})
-    events.emit(event)
+    events.emit(event.model_copy(update={"worker_pid": pid}))
     events.emit(journal.ExecutionSettings(execution_id=event.execution_id, settings=settings))
 
 

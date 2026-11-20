@@ -360,7 +360,7 @@ def test_a_continuation_skips_complete_history_with_bounded_reads(
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])
-@pytest.mark.parametrize("phase", ["unstarted", "short", "live", "finished"])
+@pytest.mark.parametrize("phase", ["unstarted", "short", "live", "finished", "other"])
 def test_continuation_readiness_distinguishes_executions(
     tmp_path: pathlib.Path, retained_child: child_records.ChildSpec, control: str, phase: str
 ) -> None:
@@ -404,6 +404,10 @@ def test_continuation_readiness_distinguishes_executions(
                 execution_id="continued",
             ),
         )
+        if phase == "other":
+            process.clear_worker_pid(directory)
+            assert ready(os.getppid()) is None, "the other worker's report cannot start this child"
+            return None, os.getppid(), "no matching report"
         if phase == "finished":
             sink.emit(
                 journal.SessionStop(execution_id="continued", reason="finish_session", turns=2)

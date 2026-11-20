@@ -307,7 +307,11 @@ def bridge_spawner(
         if process.read_worker_pid(child_dir) not in (None, pid):
             return None
         rows = reader.read(start_at=start_at)
-        return child_dir if any(row.get("type") == report for row in rows) else None
+        return (
+            child_dir
+            if any(row.get("type") == report and row.get("worker_pid") == pid for row in rows)
+            else None
+        )
 
     # A child's model cannot dispatch work; only the harness may dispatch reviewers.
     markers = {
