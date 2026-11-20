@@ -12,9 +12,13 @@ action is needed. agent6 neutralizes each by name unless `git.run_repo_drivers` 
 
 from __future__ import annotations
 
+import errno
+import os
 import pathlib
+import re
 import subprocess
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -208,6 +212,39 @@ def test_a_driver_in_the_operators_global_config_is_left_on(
     overrides = git_policy.git_hardening_flags(root)
     assert _blank("filter.theirs.clean") in overrides
     assert _blank("filter.mine.clean") not in overrides
+
+
+@pytest.mark.parametrize("failure", ["timed out", "did not start", "failed"])
+def test_no_driver_runs_where_git_cannot_list_the_config(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """A listing that failed left every driver on, and the per-turn commit ran the clean filter."""
+    marker = tmp_path / "pwned"
+    root = _repo(tmp_path / "r")
+    base = _git(root, "rev-parse", "HEAD").stdout.strip()
+    _poison_clean_filter(root, marker)
+    git_policy.set_policy(git_policy.GitPolicy())
+    run = subprocess.run
+
+    def no_listing(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "--show-scope" not in argv:
+            return run(argv, **kwargs)
+        if failure == "timed out":
+            raise subprocess.TimeoutExpired(argv, 10)
+        if failure == "did not start":
+            raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+        return subprocess.CompletedProcess(argv, 128, "", "fatal: its own words\n")
+
+    monkeypatch.setattr(git_policy.subprocess, "run", no_listing)
+    with pytest.raises(
+        errors.GitError, match=re.escape(f"agent6 runs no git in {root}: ")
+    ) as caught:
+        git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
+    assert not marker.exists(), "the repo's clean filter ran a host command"
+    said = {"timed out": "no answer within 10s", "failed": "fatal: its own words"}.get(
+        failure, os.strerror(errno.EMFILE)
+    )
+    assert said in str(caught.value) and said not in caught.value.safe_message
 
 
 def _define_drivers(root: pathlib.Path, name: str, command: str) -> None:

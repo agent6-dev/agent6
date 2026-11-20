@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 import os
 import pathlib
+import re
 import subprocess
 from unittest import mock
 
@@ -343,6 +344,21 @@ def test_git_ops_neutralizes_repo_gpg_signing(tmp_path: pathlib.Path) -> None:
 
 def test_is_git_repo_false_for_tmp(tmp_path: pathlib.Path) -> None:
     assert git_read.is_git_repo(tmp_path) is False
+
+
+def test_a_probe_outside_a_repository_answers(tmp_path: pathlib.Path) -> None:
+    """Outside a repository git lists a config with no key of its own, and each probe answers."""
+    assert git_read.toplevel(tmp_path) is None
+    assert git_read.tracked_files(tmp_path) == ()
+    assert git_read.untracked_paths(tmp_path) == frozenset()
+    assert git_read.branch_exists(tmp_path, "main") is False
+
+
+def test_a_probe_of_a_missing_directory_says_no_git_runs_there(tmp_path: pathlib.Path) -> None:
+    """A probe of a directory that does not exist raised the `FileNotFoundError` of its spawn."""
+    missing = tmp_path / "missing"
+    with pytest.raises(errors.GitError, match=re.escape(f"agent6 runs no git in {missing}: ")):
+        git_read.is_git_repo(missing)
 
 
 def test_init_repo_creates_repository(tmp_path: pathlib.Path) -> None:
@@ -2167,6 +2183,7 @@ def test_a_failed_git_command_names_a_git_older_than_the_floor(
     stub.write_text(
         "#!/bin/sh\n"
         f'if [ "$1" = "--version" ]; then echo "git version {version}"; exit 0; fi\n'
+        'if [ "$3" = "config" ]; then exit 1; fi\n'  # the listing: no key
         'echo "usage: git blame [<options>] [<rev-opts>] [<rev>] [--] <file>" >&2\n'
         "exit 129\n",
         encoding="utf-8",
@@ -2182,7 +2199,37 @@ def test_a_failed_git_command_names_a_git_older_than_the_floor(
     note = f"unsupported git version {version}: agent6 needs git 2.47 or newer\n"
     assert str(caught.value).startswith(note) is unsupported
     assert caught.value.safe_message.startswith(note) is unsupported
-    assert "usage: git blame" in str(caught.value)
+    assert "git blame --porcelain HEAD -- f failed: usage: git blame" in str(caught.value)
+
+
+def test_a_config_an_old_git_cannot_list_names_the_unsupported_version(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """A git before 2.26 has no `config --show-scope`, and the refusal named no version."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "git"
+    stub.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "git version 2.20.1"; exit 0; fi\n'
+        "echo \"error: unknown option 'show-scope'\" >&2\n"
+        "exit 129\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    git_policy.installed_version.cache_clear()
+    request.addfinalizer(git_policy.installed_version.cache_clear)
+
+    with pytest.raises(errors.GitError) as caught:
+        git_command.run(tmp_path, "rev-parse", "HEAD", check=False)
+
+    lead = (
+        "unsupported git version 2.20.1: agent6 needs git 2.47 or newer\n"
+        f"agent6 runs no git in {tmp_path}: git could not list the repository's config"
+    )
+    assert str(caught.value) == f"{lead} (error: unknown option 'show-scope')"
+    assert caught.value.safe_message == lead
 
 
 def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: pathlib.Path) -> None:

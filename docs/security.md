@@ -642,6 +642,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - a linked worktree's or a submodule's git dir keeps no other record of its checkout: there, a `core.worktree` that names another directory refuses the call
     - agent6 reads the key before each call, in the listing that names the content drivers.
       Where a jailed command can write `.git/config`, a key it sets between that listing and the call moves the call to the directory it names
+    - where git cannot list the repository's config, or gives no answer when asked for the checkout, the call does not run
 - `core.pager` and `pager.<cmd>` never run: every agent6 git call carries `GIT_PAGER`, set to your `GIT_PAGER`, else your `PAGER`, else `less`.
 - `blame.ignoreRevsFile` is honoured for a repository-relative regular file, which blame reads as a private copy in a private work tree, since git opens the configured path itself after any check; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
     - Finding line-origin classification uses the same bounded blame reader and records an unknown reason on refusal.

@@ -190,12 +190,65 @@ class Hardening:
         flags: The overrides every invocation carries, placed before the subcommand:
             the fixed set, the hooks path unless the policy honors repo hooks, and a blank
             override per content driver the repo defines unless the policy honors drivers.
-        sets_work_tree: Whether the repo's own config sets `core.worktree`; True too when
-            git could not list the config.
+        sets_work_tree: Whether the repo's own config sets `core.worktree`.
     """
 
     flags: tuple[str, ...]
     sets_work_tree: bool
+
+
+def _refusal(cwd: pathlib.Path, cause: str, said: str = "") -> errors.GitError:
+    """Return the error for a directory agent6 runs no git in.
+
+    On a git older than `GIT_FLOOR`, it opens with the unsupported-version line.
+
+    Args:
+        cwd: The directory.
+        cause: What agent6 could not learn there.
+        said: git's or the OS's own words, kept out of the safe reason.
+
+    Returns:
+        The error.
+    """
+    note = unsupported_note()
+    lead = f"{note}\n" if note else ""
+    reason = f"{lead}agent6 runs no git in {cwd}: {cause}"
+    return errors.GitError(f"{reason} ({said})" if said else reason, safe_message=reason)
+
+
+def _query(cwd: pathlib.Path, cause: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Ask git one fixed question about a directory, before any other git runs there.
+
+    Args:
+        cwd: The directory.
+        cause: What a refusal says git could not do.
+        *args: git's arguments.
+
+    Returns:
+        The finished process.
+
+    Raises:
+        GitError: git did not start, gave no answer or was killed.
+    """
+    try:
+        proc = subprocess.run(
+            [git(), "-C", str(cwd), *args],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=git_environment(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        error = _refusal(cwd, cause, f"no answer within {exc.timeout:g}s")
+        raise error from exc
+    except OSError as exc:
+        error = _refusal(cwd, cause, str(exc))
+        raise error from exc
+    if proc.returncode < 0:
+        error = _refusal(cwd, cause, f"killed by signal {-proc.returncode}")
+        raise error
+    return proc
 
 
 def hardening(cwd: pathlib.Path) -> Hardening:
@@ -212,35 +265,31 @@ def hardening(cwd: pathlib.Path) -> Hardening:
 
     Returns:
         The overrides, and whether the repository names its work tree.
+
+    Raises:
+        GitError: git could not list the config.
     """
     # /dev/null is not a directory, so git finds no hooks there.
     hooks = () if current_policy().honor_repo_hooks else ("-c", "core.hooksPath=/dev/null")
     fixed = (*_GIT_HARDENING, *hooks)
-    try:
-        proc = subprocess.run(
-            [
-                git(),
-                "-C",
-                str(cwd),
-                "config",
-                "--show-scope",
-                # A git op follows `[include]` to a repo-controlled file; this enumeration must too.
-                "--includes",
-                "-z",
-                "--name-only",
-                "--get-regexp",
-                _REPO_KEY_RE,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            env=git_environment(),
-        )
-    except (OSError, subprocess.SubprocessError):
-        return Hardening(fixed, sets_work_tree=True)
-    # git exits 1 when no key matches; any other failure leaves the config unread.
-    sets_work_tree = proc.returncode not in (0, 1)
+    unlisted = "git could not list the repository's config"
+    proc = _query(
+        cwd,
+        unlisted,
+        "config",
+        "--show-scope",
+        # A git op follows `[include]` to a repo-controlled file; this enumeration must too.
+        "--includes",
+        "-z",
+        "--name-only",
+        "--get-regexp",
+        _REPO_KEY_RE,
+    )
+    # git exits 1 when no key matches.
+    if proc.returncode not in (0, 1):
+        error = _refusal(cwd, unlisted, proc.stderr.strip() or f"exit {proc.returncode}")
+        raise error
+    sets_work_tree = False
     # A filter with both clean and smudge yields two keys for one driver.
     filters: set[str] = set()
     merges: set[str] = set()
@@ -305,6 +354,9 @@ def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
     Returns:
         The fixed set, the hooks path unless the policy honors repo hooks, and a blank
         override per content driver the repo defines.
+
+    Raises:
+        GitError: git could not list the repository's config.
     """
     return hardening(cwd).flags
 
@@ -325,31 +377,24 @@ def work_tree(cwd: pathlib.Path) -> str | None:
         git dir, in a bare one.
 
     Raises:
-        GitError: The repository is reached through a `.git` file and its `core.worktree`
-            names a directory that is not its checkout.
+        GitError: git gave no answer, a path it names holds a line break, or the
+            repository is reached through a `.git` file and its `core.worktree` names a
+            directory that is not its checkout.
     """
-    try:
-        proc = subprocess.run(
-            [
-                git(),
-                *_GIT_HARDENING,
-                "-C",
-                str(cwd),
-                "rev-parse",
-                "--absolute-git-dir",
-                "--show-toplevel",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            env=git_environment(),
-        )
-    except (OSError, subprocess.SubprocessError):
+    proc = _query(
+        cwd,
+        "git could not name the checkout",
+        *_GIT_HARDENING,
+        "rev-parse",
+        "--absolute-git-dir",
+        "--show-toplevel",
+    )
+    if proc.returncode != 0:
         return None
     found = proc.stdout.splitlines()
-    if proc.returncode != 0 or len(found) != 2:
-        return None
+    if len(found) != 2:
+        error = _refusal(cwd, "the path of its git dir or of its checkout holds a line break")
+        raise error
     git_dir, named = (pathlib.Path(line).resolve() for line in found)
     here = cwd.resolve()
     for checkout in (named, git_dir.parent):

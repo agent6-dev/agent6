@@ -11,7 +11,10 @@ and runs the agent6 operations that read or write files.
 
 from __future__ import annotations
 
+import errno
+import os
 import pathlib
+import re
 import subprocess
 from typing import Any
 
@@ -98,25 +101,57 @@ def test_the_key_is_found_however_the_config_spells_it(
     assert git_read.untracked_paths(root) == {"new.txt"}
 
 
-@pytest.mark.parametrize("failure", ["timed out", "killed"])
-def test_a_config_git_cannot_list_gets_the_checkout_query(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
-) -> None:
-    """A listing that fails says nothing about the key: the call still names its checkout."""
-    root = _repo(tmp_path / "r")
-    _git(root, "config", "core.worktree", str(_outside(tmp_path)))
-    (root / "new.txt").write_text("new\n", encoding="utf-8")
+def _failing(monkeypatch: pytest.MonkeyPatch, flag: str, failure: str) -> None:
+    """Make the one git query whose argv holds the flag fail, in the way named."""
     run = subprocess.run
 
-    def no_listing(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if "--show-scope" not in argv:
+    def query(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if flag not in argv:
             return run(argv, **kwargs)
         if failure == "timed out":
             raise subprocess.TimeoutExpired(argv, 10)
+        if failure == "did not start":
+            raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
         return subprocess.CompletedProcess(argv, -9, "", "")
 
-    monkeypatch.setattr(git_policy.subprocess, "run", no_listing)
-    assert git_read.untracked_paths(root) == {"new.txt"}
+    monkeypatch.setattr(git_policy.subprocess, "run", query)
+
+
+@pytest.mark.parametrize("failure", ["timed out", "did not start", "killed"])
+def test_a_config_git_cannot_list_runs_no_git(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """A listing that fails says nothing about the key: no git runs, wherever the key points."""
+    root = _repo(tmp_path / "r")
+    _git(root, "config", "core.worktree", str(_outside(tmp_path)))
+    _failing(monkeypatch, "--show-scope", failure)
+    with pytest.raises(errors.GitError, match="git could not list the repository's config"):
+        git_read.untracked_paths(root)
+
+
+@pytest.mark.parametrize("failure", ["timed out", "did not start", "killed"])
+def test_a_checkout_git_cannot_name_runs_no_git(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """A checkout query that failed named no checkout, and git read the directory the key names."""
+    root = _repo(tmp_path / "r")
+    _git(root, "config", "core.worktree", str(_outside(tmp_path)))
+    _failing(monkeypatch, "--absolute-git-dir", failure)
+    with pytest.raises(errors.GitError, match=re.escape(f"agent6 runs no git in {root}: ")):
+        git_read.untracked_paths(root)
+
+
+def test_a_key_that_holds_a_line_break_runs_no_git(tmp_path: pathlib.Path) -> None:
+    """A `core.worktree` with a line break is named on two lines: unread, the key was followed."""
+    root = _repo(tmp_path / "r")
+    outside = tmp_path / "out\nside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("another directory's file\n", encoding="utf-8")
+    with (root / ".git" / "config").open("a", encoding="utf-8") as config:
+        config.write(f'[core]\n\tworktree = "{tmp_path}/out\\nside"\n')
+    assert _git(root, "config", "core.worktree") == str(outside)
+    with pytest.raises(errors.GitError, match="line break"):
+        git_read.untracked_paths(root)
 
 
 def test_a_repository_named_apart_from_the_directory_gets_the_checkout_query(

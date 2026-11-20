@@ -39,7 +39,8 @@ def spawn(
         The full argv, the exit code, stdout and stderr as bytes.
 
     Raises:
-        GitError: The command timed out, or `git_policy.work_tree` refused the checkout.
+        GitError: The command timed out, or agent6 could not list the repository's config
+            or name its checkout.
     """
     env = git_policy.git_environment(env_extra)
     listed = git_policy.hardening(repo or cwd)
@@ -149,7 +150,8 @@ def run(
         The command's result, its output decoded lossily.
 
     Raises:
-        GitError: The command failed with check set, timed out, or was refused its checkout.
+        GitError: The command failed with check set or timed out, or agent6 could not list
+            the repository's config or name its checkout.
     """
     full_argv, returncode, out, err = spawn(cwd, args, env_extra, stdin_text, repo=repo)
     result = kinds.CommandResult(
@@ -188,7 +190,8 @@ def nul_fields(
         The fields, the empty one after a trailing NUL included.
 
     Raises:
-        GitError: The command failed with check set, timed out, or was refused its checkout.
+        GitError: The command failed with check set or timed out, or agent6 could not list
+            the repository's config or name its checkout.
     """
     _, returncode, out, err = spawn(cwd, args, env_extra, stdin_text)
     if check and returncode != 0:
