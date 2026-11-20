@@ -61,6 +61,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         operator_task: The task's words before composition; None when they are the task.
         limits: The turn cap and deadline the child runs under; None for the config's own.
         contract: The bounded conversation a `reviewer` child drives; None for a run child.
+        continuation: The next instruction for the same child; empty starts a new session.
     """
 
     worktree: pathlib.Path
@@ -81,6 +82,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     operator_task: str | None = None
     limits: child_records.ChildLimits | None = None
     contract: kinds.ConversationContract | None = None
+    continuation: str = ""
 
 
 def is_child() -> bool:

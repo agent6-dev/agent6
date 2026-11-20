@@ -2618,6 +2618,7 @@ Source: [`agent6.app.child_launch.ChildLaunch`](https://github.com/agent6-dev/ag
 | `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
 | `limits` | `ChildLimits \| None` | The turn cap and deadline the child runs under; None for the config's own. |
 | `contract` | `ConversationContract \| None` | The bounded conversation a `reviewer` child drives; None for a run child. |
+| `continuation` | `str` | The next instruction for the same child; empty starts a new session. |
 
 ### CompletionRecord
 
@@ -3216,6 +3217,7 @@ Source: [`agent6.sessions.child_dispatch.ChildRecord`](https://github.com/agent6
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
 | `settled` | `bool` | Whether its usage was charged; False while it is unknown. |
 | `merge_request` | `MergeRequest \| None` | The explicit request to merge stopped work; None before one. |
+| `continuation` | `ContinuationRecord \| None` | The latest continuation, or None for the initial execution. |
 
 ### ModelsBrief
 
@@ -3762,7 +3764,7 @@ Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `branch` | `str` | The child's branch. |
-| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped']` | The join's outcome. |
+| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped', 'unmerged']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a stopped child; "" when none. |
 | `commits` | `int` | The commits a stopped child's branch holds beyond its base; 0 otherwise. |
@@ -3791,6 +3793,18 @@ Source: [`agent6.sessions.child_dispatch.MergeRequest`](https://github.com/agent
 | --- | --- | --- |
 | `result` | `JoinRecord \| None` | The merge outcome; None while the request awaits a turn boundary. |
 | `delivered` | `bool` | Whether the parent's conversation holds the outcome. |
+
+### ContinuationRecord
+
+**Support: public.** The latest continuation's instruction and accounting baseline.
+
+Source: [`agent6.sessions.child_dispatch.ContinuationRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `sequence` | `int` | The continuation number, starting at 1. |
+| `instruction` | `str` | The parent's next instruction. |
+| `usage_before` | `UsageRecord` | The cumulative child usage charged before this continuation. |
 
 ### ModelBrief
 

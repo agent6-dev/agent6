@@ -1518,10 +1518,16 @@ def test_run_child_to_completion_imports_under_the_group_lock(
         child_session_dir: pathlib.Path,
         *,
         model_control: bool = False,
+        continuing: bool = False,
     ) -> child_records.Imported:
         held.append(lock.locked())
         return real_import_run(
-            origin, child_worktree, branch, child_session_dir, model_control=model_control
+            origin,
+            child_worktree,
+            branch,
+            child_session_dir,
+            model_control=model_control,
+            continuing=continuing,
         )
 
     monkeypatch.setattr(child_repo, "import_run", observe)
@@ -2660,8 +2666,32 @@ def test_the_spawner_returns_while_its_children_run_and_stops_one_by_its_handle(
     assert not one.result.done() and not two.result.done()
     two.stop()
     assert two.result.result(timeout=4.0).ok
-    # The stop its parent asked is named on the result, and so on the child's join.
-    assert two.result.result().stopped_by == "stopped by its parent"
     assert not one.result.done()
     dispatch.close()
     assert one.result.result(timeout=4.0).ok and not one.result.result().stopped_by
+
+
+def test_a_parent_stop_keeps_the_clone_before_the_result_returns(
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime
+) -> None:
+    """A stop observed before import retains the clone even if the child just finished."""
+    state = paths.state_dir(origin)
+    spec = child_records.ChildSpec(1, "parent-p1-l1", tmp_path / "clone", None)
+    result = app_children.run_child_to_completion(
+        spec,
+        "work",
+        cfg=Config(),
+        explicit_leaves=frozenset(),
+        origin=origin,
+        record_state=state,
+        group="parent-p1",
+        parent="parent",
+        runtime=runtime,
+        spawner=_FakeSpawner(origin, state, tmp_path / "child-state", group_id="parent-p1"),
+        should_stop=lambda: True,
+        poll_interval_s=0.01,
+    )
+    assert result.ok
+    assert result.stopped_by == "stopped by its parent"
+    assert spec.worktree.is_dir()
+    assert git_read.branch_exists(origin, result.branch)

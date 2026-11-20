@@ -537,7 +537,7 @@ class ParallelDispatcher:
             p
             for p, j in zip(payload, joins, strict=True)
             # A stopped child is no failed join: nothing of it was meant to merge.
-            if j.status not in ("joined", "no_changes", "ranked", "stopped")
+            if j.status not in ("joined", "no_changes", "ranked", "stopped", "unmerged")
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
@@ -635,15 +635,27 @@ class ParallelDispatcher:
                 join = parallel_join.stopped_join(res)
             elif (
                 res is not None
-                and child.session_id in order
-                # The winner joins where the run has a chain; under `git.control = "model"`
-                # it has none, and every child is placed and left on its ref.
-                and (child.session_id != winner or not self.chain.ref)
+                and res.ok
+                # Model-owned git has no run chain: every child's ref stays unmerged.
+                and (
+                    not self.chain.ref or (child.session_id in order and child.session_id != winner)
+                )
             ):
                 # Its branch stays imported: the operator can still merge it by hand.
-                place = f"{order.index(child.session_id) + 1} of {len(order)}"
+                place = (
+                    f"{order.index(child.session_id) + 1} of {len(order)}"
+                    if child.session_id in order
+                    else ""
+                )
                 held = res.imported_ref or res.branch
-                join = child_records.ChildJoin(child.session_id, held, "ranked", "", place)
+                join = child_records.ChildJoin(
+                    child.session_id,
+                    held,
+                    "ranked" if place else "unmerged",
+                    "",
+                    place,
+                    commits=res.commits,
+                )
             elif not clean and res is not None and res.ok and res.has_commits:
                 # Its branch stays imported: nothing merges over work no commit holds.
                 join = child_records.ChildJoin(

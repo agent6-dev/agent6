@@ -152,7 +152,11 @@ def carry_back(
 
 
 def import_child(
-    res: child_records.ChildResult, origin: pathlib.Path, lock: threading.Lock | None
+    res: child_records.ChildResult,
+    origin: pathlib.Path,
+    lock: threading.Lock | None,
+    *,
+    continuing: bool = False,
 ) -> child_records.Imported:
     """Land a finished child's work in the origin; its record is there from its first event.
 
@@ -160,6 +164,7 @@ def import_child(
         res: The child's result.
         origin: The repository.
         lock: Serializes the import across a group, when one is shared.
+        continuing: The existing child ref may advance by fast-forward.
 
     Returns:
         The child's dir and the ref the work landed in.
@@ -173,7 +178,12 @@ def import_child(
         branch = git_read.status(res.spec.worktree).branch if model_control else ""
         free_branch = branch and branch != "HEAD" and not git_read.branch_exists(origin, branch)
         imported = child_repo.import_run(
-            origin, res.spec.worktree, res.branch, res.session_dir, model_control=model_control
+            origin,
+            res.spec.worktree,
+            res.branch,
+            res.session_dir,
+            model_control=model_control,
+            continuing=continuing,
         )
         if free_branch:
             stamps.write_manifest(

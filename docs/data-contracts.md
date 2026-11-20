@@ -142,7 +142,7 @@ The loop-owned conversation: typed messages over the provider wire.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, standing_goal}, harness/compaction/{driver, rules, window}, harness/verify/gate
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (40 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (41 test files exercise it)
 
 ## SessionManifest
 
@@ -155,8 +155,8 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** pack, app/{child_launch, children, compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/{actions, model}, viewmodel/{children, comparison, format, listing, policy, receipt, wire}, viewmodel/session/{status, view}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (51 test files exercise it)
+- **Read by:** pack, app/{child_launch, child_resume, children, compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/{actions, model}, viewmodel/{children, comparison, format, listing, policy, receipt, wire}, viewmodel/session/{status, view}
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (52 test files exercise it)
 
 ## SessionSnapshot
 

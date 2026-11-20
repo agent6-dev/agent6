@@ -352,9 +352,10 @@ class SteerChildInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "steer_child"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Send an instruction to a running child, by the id `parallel` returned. The child reads"
-        " it at its next turn boundary, marked as from its parent, and keeps working; the call"
-        " returns at once. `read_background` shows what a child has done since."
+        "Send an instruction to a child, by the id `parallel` returned. A running child reads"
+        " it at its next turn boundary, marked as from its parent. A stopped child continues"
+        " in its own clone under this run's budget and approvals, with the text as its next"
+        " instruction. The call returns at once; `read_background` shows what the child has done."
     )
 
     id: str = pydantic.Field(min_length=1)

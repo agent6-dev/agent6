@@ -183,14 +183,18 @@ The call starts its children through the `/parallel` path (a checkpoint, fresh c
 Each child is an ordinary run with the same tools as the parent: it may edit its clone, and its commits are merged onto the parent's chain when its task completes.
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
 `read_background` with a child's id reads the child (its state and the tail of its transcript) after waiting up to `wait_s` for it to end; with no id and a `wait_s` it waits for the next child to end.
-`steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction and returns at once.
+`steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction or continues a stopped child and returns at once.
+A stopped child continues the same conversation in its retained clone, under the parent's remaining budget and approval policy, with the text as its next instruction.
+Its finished work follows the same merge policy as a new child's work.
+The task's other attempts must have ended, with none already merged and no merge pending.
+A missing clone or conversation snapshot refuses continuation; `agent6 fork <child-id> --steer "..."` starts independent work from its commits.
 It travels the steer channel `agent6 steer <child>` uses, so it queues in order with the operator's steers, and the child reads it at its next turn boundary under `PARENT STEERING (an instruction from the run that started this child):`.
 A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` in it are words, not commands.
-It is refused, with what to do instead, for an id that is no child of the run, a child that has ended and one that has not started.
+It is refused for an id that is no child of the run, a child that has finished or merged, or one that has not started.
 `stop_background` with a child's id stops the child; its work does not merge, and its branch holds what it committed.
 The two tools' descriptions mention children only in a run that has the `parallel` tool.
 `finish_session` is refused until every task has merged, and the refusal names the children that hold it: one still running, one that ended and has not merged, or one being ranked.
-A stopped child holds no end unless its parent requests a merge.
+A stopped child holds no end unless its parent requests a merge or continues it.
 `merge_child(id)` requests a stopped child's merge at the next turn boundary and holds the end until its outcome is reported.
 It is offered only while the run has stopped, unmerged work and `git.control = "agent6"`, including children started by `/parallel` when the parallel tool is off.
 The task must have completed without another attempt merged; a pending merge of another attempt also refuses the call.
@@ -246,9 +250,9 @@ State is snapshotted before each model call and checkpointed per turn.
   A plan or ask fork uses the current checkout without edit tools or automatic commits; approved commands can still modify files.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
-- a `--parallel` child continues through `agent6 fork <child-id>`, in a worktree at the child's last commit; `resume` refuses a child from your checkout, whose tree is not the child's
+- a stopped child continues through its parent's `steer_child`; direct `resume` refuses a child, and `agent6 fork <child-id>` starts independent work at its last commit
 - a run whose manifest cannot be read (a newer agent6 wrote it, or it is broken) refuses `resume`, `fork` and `sessions merge`, naming the cause, and no surface offers them
-- a `run --parallel` run whose budget ended every child reads `failed · budget exhausted` and exits `3`; each stopped child continues through `agent6 fork <child-id>`
+- a `run --parallel` run whose budget ended every child reads `failed · budget exhausted` and exits `3`; `agent6 fork <child-id>` starts independent work from a child's commits
 - the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
 - a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
 - under the `agent6` and `conventional` squash message styles, a resumed run's merge keeps the task as its subject (`conventional` prefixes it with the type and scope), with `continued: <steer>` in the body

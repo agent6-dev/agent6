@@ -17,6 +17,8 @@ from collections.abc import Callable
 from agent6 import budget, directive, errors, kinds, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import (
+    child_launch,
+    child_resume,
     execution,
     finalize,
     fork_worktrees,
@@ -27,7 +29,6 @@ from agent6.app import (
     run,
     stamps,
     worktree_setup,
-    worktrees,
 )
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -225,7 +226,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         The process exit code.
     """
     repo = cwd if cwd is not None else pathlib.Path.cwd()
-    state = agent6_paths.state_dir(repo)
+    launch = child_launch.read()
+    state = (
+        launch.record_state
+        if launch is not None and launch.continuation
+        else agent6_paths.state_dir(repo)
+    )
     if steer.strip() and (problem := directive.steer_problem(steer)) is not None:
         reporter.error(problem)
         return 2
@@ -252,7 +258,14 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
-    cwd = manifest.worktree or repo
+    owned_child = child_resume.authorized(launch, manifest, session_id=session_id, root=repo)
+    if launch is not None and launch.continuation and not owned_child:
+        reporter.refuse("the private launch does not authorize this child continuation")
+        return 2
+    if manifest.parallel is not None and not owned_child:
+        reporter.refuse(listing.manifest_resume_blocker(manifest, session_id))
+        return 2
+    cwd = launch.worktree if owned_child and launch is not None else manifest.worktree or repo
     if missing := sessions_manifest.worktree_blocker(manifest.worktree):
         reporter.error(
             f"cannot resume {session_id}: {missing}; {commits_note(repo, manifest)};"
@@ -478,17 +491,6 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             reporter.error(str(exc))
             return 2
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
-        # A child's record is imported into the origin's state with its branch; its tree is no
-        # checkout's. Only its own clone, under the workspace base directory, may continue it.
-        child = manifest.parallel
-        if child is not None and not worktrees.holds(cfg, cwd):
-            reporter.refuse(
-                f"{session_id} is a child of the group {child.parent}: its work is on its"
-                " own branch, and this checkout holds another tree, so it cannot continue here."
-                " Continue it in a worktree of its own:\n"
-                f'    agent6 fork {session_id} --steer "..."'
-            )
-            return 2
         if worktree_setup.session_needs_setup(layout.session_dir):
             cfg = worktree_setup.infer_if_unset(cfg, repo, reporter=reporter, at=resume_base_sha)
 

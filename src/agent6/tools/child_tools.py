@@ -64,7 +64,7 @@ class Children(Protocol):
         ...
 
     def steer(self, child: str, text: str) -> str:
-        """Send a running child an instruction and say when it reads it; a refusal raises."""
+        """Steer a running child or continue a stopped child; a refusal raises."""
         ...
 
     def merge(self, child: str) -> str:

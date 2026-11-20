@@ -19,10 +19,11 @@ import time
 from collections.abc import Callable
 
 from agent6 import kinds
-from agent6.app import child_launch, preflight, stop
+from agent6.app import child_launch, preflight, resume, stop
 from agent6.app import run as app_run
 from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError
+from agent6.harness import operator_bridge
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import common, entry, run
@@ -133,6 +134,18 @@ def main() -> int:
     if launch.limits is not None and launch.limits.deadline_at is not None:
         bucket = sessions_layout.bucket_dir(launch.record_state, kinds.session_bucket(mode))
         arm_deadline(bucket / launch.session_id, launch.limits.deadline_at)
+    if launch.continuation:
+        return resume.resume_task(
+            (launch.config,),
+            launch.session_id,
+            frontend=run.session_frontend((launch.config,)),
+            cwd=launch.worktree,
+            force=False,
+            started_at=time.time(),
+            budget_overrides=budget,
+            sandbox_overrides=sandbox,
+            steer=f"{operator_bridge.PARENT_STEERING}\n{launch.continuation}",
+        )
     return app_run.run_task(
         cfg,
         launch.task,

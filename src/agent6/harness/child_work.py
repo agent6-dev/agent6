@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
-from agent6.harness import child_merge, operator_bridge, parallel_join
+from agent6.harness import child_continue, child_merge, operator_bridge, parallel_join
 from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
@@ -159,7 +159,7 @@ def stop(dispatcher: parallel_dispatch.ParallelDispatcher, child: str) -> None:
 
 
 def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: str) -> str:
-    """Send a running child an instruction, through the steer channel its operator uses.
+    """Steer a running child or continue a stopped child under its parent.
 
     The child reads it at its next turn boundary under `operator_bridge.PARENT_STEERING`:
     text for its model, never a steer verb or a directive.
@@ -188,6 +188,8 @@ def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: st
                 f"no child {child} in this run; read_background with no id lists this run's"
                 " children."
             )
+        if ended.mergeable:
+            return child_continue.start(dispatcher, child, text)
         raise tool_errors.ToolError(
             f"child {child} has ended ({ended.state}); nothing was sent."
             " parallel starts another child."
@@ -254,7 +256,7 @@ class ChildWork:
             stop(dispatcher, child)
 
     def steer(self, child: str, text: str) -> str:
-        """Send a running child an instruction and say when it reads it.
+        """Steer a running child or continue a stopped child with the instruction.
 
         Args:
             child: The child's session id.

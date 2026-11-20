@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import child_records, portable
 
-RECORD_VERSION = 10
+RECORD_VERSION = 11
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
 

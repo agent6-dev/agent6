@@ -23,7 +23,7 @@ DispatchSource = Literal["operator", "model", "panel"]
 # best-ranked one alone.
 JoinPolicy = Literal["merge", "record_only", "rank"]
 # How one child's work joined the parent's chain.
-JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "stopped"]
+JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "stopped", "unmerged"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -72,6 +72,19 @@ class DispatchAuthority:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ChildContinuation:
+    """A parent's instruction for another execution of an existing child.
+
+    Attributes:
+        number: The child's original number in its group.
+        instruction: Its next instruction.
+    """
+
+    number: int
+    instruction: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ChildTask:
     """Name one child to dispatch, as the parent expands a `/parallel` segment.
 
@@ -84,6 +97,7 @@ class ChildTask:
         limits: The child's turn cap and deadline; None for the config's own.
         contract: A harness-owned bounded conversation; None for work.
         settings: Resolved panel-reviewer settings; None resolves the model selector.
+        continuation: The existing child and its next instruction; None starts a new child.
     """
 
     task: str
@@ -93,6 +107,7 @@ class ChildTask:
     limits: ChildLimits | None = None
     contract: kinds.ConversationContract | None = None
     settings: kinds.ModelSettings | None = None
+    continuation: ChildContinuation | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -302,7 +317,8 @@ class ChildJoin:
             the ref exists locally), `failed` (no result or nothing importable),
             `ranked` (a rank join placed the child and did not join it: another child merged,
             or the run has no chain to join onto; the branch holds this one's work) or
-            `stopped` (the child was stopped, so nothing merged; the branch holds its work).
+            `stopped` (the child was stopped, so nothing merged; the branch holds its work),
+            or `unmerged` (finished under model-owned git; the ref holds its work).
         sha: The merge commit, or "".
         detail: The failure's reason; a conflict's files; a ranked child's place (`2 of 3`);
             what stopped a stopped child (`stopped by its parent`); else "".

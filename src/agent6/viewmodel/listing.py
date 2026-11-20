@@ -573,7 +573,7 @@ def unreadable_reason(session_dir: pathlib.Path, exc: sessions_manifest.Manifest
 
 
 def manifest_resume_blocker(manifest: sessions_manifest.SessionManifest, session_id: str) -> str:
-    """Return why a session's manifest refuses every resume, or "".
+    """Return why a session's manifest refuses direct resume, or "".
 
     A child's tree is no checkout's once its clone is gone, and a worktree run whose worktree
     is gone continues through `fork`.
@@ -587,9 +587,9 @@ def manifest_resume_blocker(manifest: sessions_manifest.SessionManifest, session
     """
     if manifest.parallel is not None:
         return (
-            f"a child of the group {manifest.parallel.parent}, whose work is on its own"
-            f' branch; `agent6 fork {session_id} --steer "..."` continues it in a'
-            " worktree of its own"
+            f"{session_id} is a child of {manifest.parallel.parent}; its parent can continue"
+            " it with steer_child after it stops. Direct child resume is unavailable;"
+            f' `agent6 fork {session_id} --steer "..."` starts independent work.'
         )
     return sessions_manifest.worktree_blocker(manifest.worktree)
 

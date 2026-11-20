@@ -130,7 +130,9 @@ def join_words(j: child_records.ChildJoin) -> str:
     if j.status == "joined":
         return f"joined at {j.sha[:12]}"
     if j.status == "ranked":
-        return f"ranked {j.detail}"
+        return f"ranked {j.detail}; not merged; {j.branch} holds its work"
+    if j.status == "unmerged":
+        return f"not merged; {j.branch} holds {j.commits} commit(s)"
     if j.status == "stopped":
         return stopped_words(j.detail, j.branch, j.commits)
     return "no changes" if j.status == "no_changes" else j.status
@@ -138,8 +140,8 @@ def join_words(j: child_records.ChildJoin) -> str:
 
 def child_note(j: child_records.ChildJoin) -> str:
     """Return one child's outcome as a DAG note line."""
-    if j.status == "joined":
-        return f"{j.session_id} joined at {j.sha[:12]}"
+    if j.status in ("joined", "unmerged"):
+        return f"{j.session_id} {join_words(j)}"
     if j.status == "no_changes":
         return f"{j.session_id} made no changes"
     if j.status == "conflict":
@@ -232,6 +234,10 @@ def summary_text(
             # A panel's reviewer the deadline ended did not finish: the line says so.
             ended = j.detail or "finished"
             lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
+        elif j.status == "unmerged":
+            lines.append(
+                f"  - {j.session_id}: {join_words(j)}. git.control = model: merge with git."
+            )
         elif j.status == "stopped":
             words = stopped_words(j.detail, "the branch", j.commits)
             lines.append(f"  - {j.session_id} ({j.branch}): {words}.")
@@ -253,8 +259,10 @@ def summary_text(
         lines.append(ranked_by(ranking))
     if children and all(j.status == "stopped" for j in children):
         lines.append("Every child stopped: nothing merged.")
-    else:
+    elif any(j.status == "joined" for j in children):
         lines.append("Review what merged and continue.")
+    else:
+        lines.append("Nothing merged.")
     return "\n".join(lines)
 
 

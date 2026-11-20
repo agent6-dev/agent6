@@ -974,6 +974,15 @@ class ParallelFailed(Event):
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
 
 
+class ParallelChildContinued(Event):
+    """A parent started another execution of its stopped child."""
+
+    TYPE: ClassVar[str] = "parallel.child_continued"
+    group: str = pydantic.Field(description="The child's dispatch group.")
+    child: str = pydantic.Field(description="The continued child's session id.")
+    sequence: int = pydantic.Field(description="The child's continuation number, starting at 1.")
+
+
 class ParallelChildMerged(Event):
     """An explicit request to merge a stopped child completed."""
 

@@ -43,6 +43,7 @@ def import_run(
     child_session_dir: pathlib.Path,
     *,
     model_control: bool = False,
+    continuing: bool = False,
 ) -> child_records.Imported:
     """Land a finished child's branch in the origin; its record is there already.
 
@@ -55,6 +56,7 @@ def import_run(
         branch: The child's branch.
         child_session_dir: The child's session dir, under the origin's state.
         model_control: Import HEAD instead of a harness-owned branch.
+        continuing: Allow a fast-forward of an existing child ref.
 
     Returns:
         The session dir and the ref the work was imported into, with its tip; a child that committed
@@ -64,7 +66,7 @@ def import_run(
         ChildRepoError: When the branch already exists in the origin, a descendant is still
             running, or a fetch fails.
     """
-    if not model_control and git_read.branch_exists(origin, branch):
+    if not model_control and not continuing and git_read.branch_exists(origin, branch):
         raise ChildRepoError(f"branch {branch!r} already exists in {origin}")
     fetch_retained_refs(origin, child_worktree, child_session_dir)
     ref = tip = ""

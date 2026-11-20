@@ -17,14 +17,14 @@ from typing import Protocol
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, errors, kinds, paths
-from agent6.app import child_launch, child_wait, parallel_results, stop, worktrees
+from agent6.app import child_launch, child_resume, child_wait, parallel_results, stop, worktrees
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
 from agent6.harness import child_repo
 from agent6.models import validate
-from agent6.sessions import child_dispatch, event_log, ipc, journal, lineage
+from agent6.sessions import child_dispatch, event_log, ipc, journal, lineage, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
@@ -123,6 +123,7 @@ def bridge_spawner(
     limits: child_records.ChildLimits | None = None,
     allowance: agent6_budget.BudgetAllowance | None = None,
     contract: kinds.ConversationContract | None = None,
+    continuation: str = "",
     runtime: ChildRuntime,
 ) -> child_records.ChildResult:
     """Clone the origin and start the child bootstrap detached in the clone.
@@ -151,6 +152,7 @@ def bridge_spawner(
         allowance: What the parent had left when the child started, which sets every
             cap; None for the config's.
         contract: The harness-owned read-only conversation; None for work.
+        continuation: The next instruction in a retained child clone; empty starts a new child.
         runtime: The front-end's spawn primitive.
 
     Returns:
@@ -158,18 +160,21 @@ def bridge_spawner(
         `ok=False` when the clone or spawn failed, with the child's pid when one started.
     """
     branch = git_read.run_branch_for(spec.session_id)
+    private = child_launch.launch_dir(paths.state_dir(origin), group_id)
     try:
-        child_repo.clone_worktree(origin, spec.worktree)
-        if at is not None:
-            # A local clone hardlinks the whole odb, so the chain's commits are present.
-            git_ops.checkout_detached(spec.worktree, at)
-    except (child_repo.ChildRepoError, errors.GitError) as exc:
+        if continuation:
+            child_resume.check_workspace(spec, private, parent=parent, record_state=record_state)
+        else:
+            child_repo.clone_worktree(origin, spec.worktree)
+            if at is not None:
+                # A local clone hardlinks the whole odb, so the chain's commits are present.
+                git_ops.checkout_detached(spec.worktree, at)
+    except (child_launch.LaunchError, child_repo.ChildRepoError, errors.GitError) as exc:
         return child_records.ChildResult(
             spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error=str(exc)
         )
     # The child's own manifest records its lineage, so a parent death orphans nothing; the
     # gate's origin was resolved in the origin, where the repo signals are.
-    private = child_launch.launch_dir(paths.state_dir(origin), group_id)
     try:
         config = worktrees.write_child_config(
             cfg, spec, explicit_leaves=explicit_leaves, into=private
@@ -195,6 +200,7 @@ def bridge_spawner(
                 limits=limits,
                 allowance=allowance,
                 contract=contract,
+                continuation=continuation,
             ),
         )
     except (child_launch.LaunchError, OSError) as exc:
@@ -207,7 +213,8 @@ def bridge_spawner(
     child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
 
     def list_dirs() -> list[pathlib.Path]:
-        return [child_dir] if child_dir.is_dir() else []
+        ready = child_dir.is_dir() and (not continuation or process.worker_is_alive(child_dir))
+        return [child_dir] if ready else []
 
     # A child's model cannot dispatch work; only the harness may dispatch reviewers.
     markers = {
@@ -263,6 +270,7 @@ def run_child_to_completion(
     limits: child_records.ChildLimits | None = None,
     allowance: agent6_budget.BudgetAllowance | None = None,
     contract: kinds.ConversationContract | None = None,
+    continuation: str = "",
     clock: Callable[[], float] = time.time,
     watch: Callable[[pathlib.Path, str, str], bool] | None = None,
 ) -> child_records.ChildResult:
@@ -306,6 +314,7 @@ def run_child_to_completion(
         allowance: What the parent had left when the child started, as the child's caps;
             None for the config's caps.
         contract: The harness-owned read-only conversation; None for work.
+        continuation: The next instruction in a retained child clone; empty starts a new child.
         clock: The wall clock the deadline is read against.
         watch: The parent's side of the wait, called on each poll with the child's dir,
             its label and its status: it counts the child's spend and answers its prompt,
@@ -333,6 +342,7 @@ def run_child_to_completion(
             limits=limits,
             allowance=allowance,
             contract=contract,
+            continuation=continuation,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -392,7 +402,9 @@ def run_child_to_completion(
                 pid=res.pid,
             )
     try:
-        imported = parallel_results.import_child(res, origin, import_lock)
+        imported = parallel_results.import_child(
+            res, origin, import_lock, continuing=bool(continuation)
+        )
     except child_repo.ChildRepoError as exc:
         # The clone holds the only copy of the child's work: say where it is.
         return child_records.ChildResult(
@@ -409,7 +421,8 @@ def run_child_to_completion(
         origin=origin,
         group=group,
         reporter=reporter,
-        stopped_by=_stopped_by(overdue=overdue, over_budget=over_budget),
+        stopped_by=_stopped_by(overdue=overdue, over_budget=over_budget)
+        or ("stopped by its parent" if should_stop is not None and should_stop() else ""),
     )
 
 
@@ -454,6 +467,12 @@ def finish_import(
         number=res.spec.number,
         reporter=reporter,
     )
+    result = recorded_result(
+        res.spec, res.branch, dest, imported, origin=origin, stopped_by=stopped_by
+    )
+    # Stopped children keep their clone and private launch for a parent-owned continuation.
+    if result.stopped_by:
+        return result
     # Each child removes its own dirs only; the group dir goes with whichever empties it last.
     worktrees.cleanup(
         [res.spec],
@@ -464,9 +483,6 @@ def finish_import(
         base=worktrees.worktree_base(cfg, origin),
         launch_dir=child_launch.launch_dir(own_state, group),
         cfg=cfg,
-    )
-    result = recorded_result(
-        res.spec, res.branch, dest, imported, origin=origin, stopped_by=stopped_by
     )
     scan = session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
     if scan.stop_reason == "setup_command_failed" and scan.setup_output:
@@ -642,7 +658,7 @@ def recover_children(
         if (spec.worktree / ".git").exists():
             res = child_records.ChildResult(spec, child_dir, branch, True, "")
             try:
-                imported = parallel_results.import_child(res, origin, None)
+                imported = parallel_results.import_child(res, origin, None, continuing=True)
             except child_repo.ChildRepoError as exc:
                 results.append(dataclasses.replace(res, ok=False, error=str(exc)))
                 continue
@@ -935,8 +951,22 @@ def build_child_spawner(
                 settings=chosen,
                 mode="reviewer" if child.contract is not None else "run",
             )
-            for i, (chosen, child) in enumerate(zip(settings, children, strict=True), start=1)
+            for position, (chosen, child) in enumerate(
+                zip(settings, children, strict=True), start=1
+            )
+            for i in (child.continuation.number if child.continuation is not None else position,)
         ]
+        try:
+            for spec, child in zip(specs, children, strict=True):
+                if child.continuation is not None:
+                    child_resume.check_workspace(
+                        spec,
+                        child_launch.launch_dir(paths.state_dir(origin), group_id),
+                        parent=parent_session_id,
+                        record_state=record_state,
+                    )
+        except child_launch.LaunchError as exc:
+            raise ParallelError(str(exc)) from exc
         paths.mkdir_for_real_user(sessions_layout.bucket_dir(record_state, "runs"))
         parent_dir = (
             sessions_layout.bucket_dir(record_state, kinds.session_bucket(parent_mode))
@@ -971,7 +1001,7 @@ def build_child_spawner(
                     or ipc.stop_request_is_now(parent_dir)
                 )
 
-            res = run_child_to_completion(
+            return run_child_to_completion(
                 spec,
                 child.task,
                 pins=child.pins,
@@ -995,11 +1025,11 @@ def build_child_spawner(
                 limits=child.limits,
                 allowance=child.allowance,
                 contract=child.contract,
+                continuation=child.continuation.instruction
+                if child.continuation is not None
+                else "",
                 watch=watch,
             )
-            if asked.is_set() and res.ok and res.stopped_by in ("", "stopped"):
-                res = dataclasses.replace(res, stopped_by="stopped by its parent")
-            return res
 
         def watched(
             spec: child_records.ChildSpec,
