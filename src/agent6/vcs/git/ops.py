@@ -763,7 +763,8 @@ def sync_worktree(path: pathlib.Path, from_rev: str, to_rev: str) -> None:
     HEAD and the shared index stay untouched. The worktree must match the first tree,
     the chain invariant after a chain commit. The temp index is refreshed before the
     merge: `read-tree` records no stat data, and the merge touches only entries it can
-    prove up to date.
+    prove up to date. The merge applies no sparse-checkout pattern: against a temp index
+    that marks no entry skipped, git would delete each file it finds outside the patterns.
 
     Args:
         path: The repository.
@@ -775,7 +776,8 @@ def sync_worktree(path: pathlib.Path, from_rev: str, to_rev: str) -> None:
     try:
         git_command.run(path, "read-tree", from_rev, env_extra=env)
         git_command.run(path, "update-index", "--refresh", env_extra=env, check=False)
-        git_command.run(path, "read-tree", "-m", "-u", from_rev, to_rev, env_extra=env)
+        merge = ("read-tree", "--no-sparse-checkout", "-m", "-u", from_rev, to_rev)
+        git_command.run(path, *merge, env_extra=env)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

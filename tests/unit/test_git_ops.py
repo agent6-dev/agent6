@@ -1219,6 +1219,63 @@ def test_plumb_merge_preserves_the_operators_own_staging(tmp_path: pathlib.Path)
     assert staged == ["README.md"]  # their staging intent, nothing else
 
 
+_SPARSE = [["--cone", "a"], ["--no-cone", "/a/", "/README.md"]]
+
+
+def _sparse_checkout_with_a_file_put_back(path: pathlib.Path, patterns: list[str]) -> str:
+    """Make a sparse checkout of `a/` that still holds `b/y.txt`, and return its HEAD."""
+    _init_repo(path)
+    head = ""
+    for name in ("a/x.txt", "b/y.txt", "b/z.txt"):
+        (path / name).parent.mkdir(exist_ok=True)
+        head = _commit_file(path, name, f"{name}\n", f"add {name}")
+    subprocess.run(["git", "-C", str(path), "sparse-checkout", "set", *patterns], check=True)
+    (path / "b").mkdir(exist_ok=True)
+    (path / "b" / "y.txt").write_text("b/y.txt\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(path), "update-index", "--no-skip-worktree", "b/y.txt"], check=True
+    )
+    return head
+
+
+@pytest.mark.parametrize("patterns", _SPARSE)
+def test_plumb_merge_on_a_sparse_checkout_moves_only_the_files_it_changed(
+    tmp_path: pathlib.Path, patterns: list[str]
+) -> None:
+    """A landing on a sparse checkout deleted a tracked file present outside the patterns."""
+    base = _sparse_checkout_with_a_file_put_back(tmp_path, patterns)
+    theirs = _child_commit(tmp_path, base, "README.md", "run edit\n")
+
+    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="squash", message="land")
+
+    assert res.left_behind == ()
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "run edit\n"
+    assert (tmp_path / "b" / "y.txt").read_text(encoding="utf-8") == "b/y.txt\n"
+    assert not (tmp_path / "b" / "z.txt").exists()
+    status = subprocess.run(
+        ["git", "-C", str(tmp_path), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert status == ""
+
+
+@pytest.mark.parametrize("patterns", _SPARSE)
+def test_sync_worktree_on_a_sparse_checkout_keeps_the_files_both_trees_hold(
+    tmp_path: pathlib.Path, patterns: list[str]
+) -> None:
+    """A chain merge or an undo on a sparse checkout deleted a file its two trees agree on."""
+    base = _sparse_checkout_with_a_file_put_back(tmp_path, patterns)
+    theirs = _child_commit(tmp_path, base, "README.md", "run edit\n")
+
+    git_ops.sync_worktree(tmp_path, base, theirs)
+
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "run edit\n"
+    assert (tmp_path / "b" / "y.txt").read_text(encoding="utf-8") == "b/y.txt\n"
+    assert not (tmp_path / "b" / "z.txt").exists()
+
+
 def test_clone_repo_local_clone(tmp_path: pathlib.Path) -> None:
     origin = tmp_path / "origin"
     origin.mkdir()
