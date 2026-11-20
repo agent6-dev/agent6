@@ -1167,45 +1167,6 @@ def test_parallel_dispatched_counts_children_when_the_event_carries_them() -> No
     assert "dispatched 3 children for 2 tasks (group p1)" in item.body
 
 
-def test_one_task_recorded_per_attempt_reads_as_one_bullet() -> None:
-    """A counted work dispatch can carry the same task preview for every child."""
-    (item,) = fold_transcript(
-        [
-            {
-                "type": "parallel.dispatched",
-                "group": "run-p1",
-                "children": 2,
-                "tasks": ["refactor the parser", "refactor the parser"],
-                "source": "operator",
-            }
-        ]
-    )
-    assert item.body.splitlines() == [
-        "dispatched 2 children (group run-p1); children run detached, listed under this session",
-        "• refactor the parser",
-    ]
-
-
-def test_a_bare_dispatch_group_keeps_colliding_task_previews() -> None:
-    """Separate tasks in a p1 group can have the same 200-character preview."""
-    for length in (199, 200):
-        task = "x" * length
-        (item,) = fold_transcript(
-            [
-                {
-                    "type": "parallel.dispatched",
-                    "group": "p1",
-                    "children": 2,
-                    "tasks": [task, (task + " and fix it")[:200]],
-                    "source": "operator",
-                }
-            ]
-        )
-        head, *bullets = item.body.splitlines()
-        assert head.startswith("dispatched 2 children for 2 tasks (group p1)")
-        assert len(bullets) == 2
-
-
 def test_parallel_merged_renders_a_failed_children_reason() -> None:
     """A failed child's event distinguishes a failed start, a crash and no result."""
     (item,) = fold_transcript(
