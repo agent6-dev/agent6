@@ -845,7 +845,12 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
     assert exc.value.fatal and exc.value.status_code is None
 
 
-def test_a_stray_can_use_tool_is_allowed(tmp_path: pathlib.Path) -> None:
+def test_a_stray_can_use_tool_is_denied(tmp_path: pathlib.Path) -> None:
+    """A permission prompt is answered with a deny, and the CLI's refusal is the call's result.
+
+    `--allowedTools` pre-approves agent6's tools, so a prompt is for nothing agent6 offered; an
+    allow let the CLI run whatever asked.
+    """
     binary, cap = _install(
         tmp_path,
         {
@@ -860,6 +865,10 @@ def test_a_stray_can_use_tool_is_allowed(tmp_path: pathlib.Path) -> None:
     )
     provider = _provider(binary)
     first = provider.call(system="s", messages=USER0, tools=TOOLS)
+    assert first.refused == {
+        "toolu_1": "agent6 grants no permission at a prompt: its tools are pre-approved with"
+        " --allowedTools"
+    }
     second = provider.call(
         system="s",
         messages=[
@@ -873,12 +882,10 @@ def test_a_stray_can_use_tool_is_allowed(tmp_path: pathlib.Path) -> None:
         tools=TOOLS,
     )
     assert second.text == "done"
-    allows = [
-        line
-        for line in _stdin(cap)
-        if ((line.get("response") or {}).get("response") or {}).get("behavior") == "allow"
+    answers = [
+        ((line.get("response") or {}).get("response") or {}).get("behavior") for line in _stdin(cap)
     ]
-    assert len(allows) == 1
+    assert answers.count("deny") == 1 and "allow" not in answers
     provider.close()
 
 

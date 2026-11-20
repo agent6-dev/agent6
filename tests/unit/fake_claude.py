@@ -30,7 +30,8 @@ Scenario keys (all optional):
   many characters (default: one delta per block).
 - `result`: `{"subtype", "is_error", "text", "api_error_status"}` for the
   result line.
-- `can_use_tool`: ask `can_use_tool` before every `tools/call`.
+- `can_use_tool`: ask `can_use_tool` before every `tools/call`; a deny is echoed
+  as the CLI's own `is_error` tool_result and the `tools/call` is never sent.
 - `ping`: send an MCP `ping` request after `tools/list`.
 - a tool use's `refused`: the CLI's own error text; the fake echoes it as an
   `is_error` tool_result and never sends the `tools/call`, as the CLI does
@@ -253,7 +254,8 @@ class _Fake:
                 }
             )
 
-    def tools_call(self, tool_use_id: str, tool_use: dict[str, Any]) -> str:
+    def tools_call(self, tool_use_id: str, tool_use: dict[str, Any]) -> str | None:
+        """Send the `tools/call`; None when a `can_use_tool` answer denied it."""
         if self.scenario.get("can_use_tool"):
             rid = f"req-{self.rpc_id}"
             self.rpc_id += 1
@@ -269,7 +271,10 @@ class _Fake:
                     },
                 }
             )
-            self.wait_response(rid)
+            verdict = self.wait_response(rid)["response"]["response"]
+            if verdict["behavior"] != "allow":
+                self.refuse(tool_use_id, verdict["message"])
+                return None
         self.rpc_id += 1
         return self.request(
             {
@@ -442,7 +447,8 @@ class _Fake:
                 self.refuse(tool_use_id, tool_use["refused_late"])
                 continue
             rid = first_rid if i == 0 else self.tools_call(tool_use_id, tool_use)
-            assert rid is not None
+            if rid is None:
+                continue  # denied at the permission prompt and echoed as refused
             answer = self.wait_response(rid, hold_on_eof=True)
             content = answer["response"]["response"]["mcp_response"]["result"].get("content")
             _emit(

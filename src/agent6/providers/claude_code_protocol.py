@@ -153,7 +153,7 @@ def await_call(
 def absorb(s: claude_code_session.Session, line: Mapping[str, Any], *, model: str) -> None:
     """Handle a line outside a round's stream.
 
-    A tools/call is stashed, a stray can_use_tool allowed, any other control
+    A tools/call is stashed, a stray can_use_tool denied, any other control
     request refused, a plan reading taken, a refused call noted, and the CLI's
     other echoes and progress lines dropped.
 
@@ -201,7 +201,7 @@ def control(s: claude_code_session.Session, line: Mapping[str, Any]) -> None:
             )
         s.calls[tool_use_id] = claude_code_session.ToolCall(rid, rpc.get("id"))
     elif subtype == "can_use_tool":
-        # Never sent under the allowed-tools argv; agent6's approval gate already ran.
+        # The argv's `--allowedTools` pre-approves agent6's tools, so no prompt is for one of them.
         claude_code_session.write(
             s,
             {
@@ -209,7 +209,11 @@ def control(s: claude_code_session.Session, line: Mapping[str, Any]) -> None:
                 "response": {
                     "subtype": "success",
                     "request_id": rid,
-                    "response": {"behavior": "allow", "updatedInput": request.get("input")},
+                    "response": {
+                        "behavior": "deny",
+                        "message": "agent6 grants no permission at a prompt: its tools are"
+                        " pre-approved with --allowedTools",
+                    },
                 },
             },
         )
