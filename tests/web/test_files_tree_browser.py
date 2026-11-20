@@ -537,6 +537,38 @@ def test_the_pane_offers_a_file_only_beside_a_listing_with_files(
     assert [e for e in errors if "500" not in e] == []  # the failed listing's response
 
 
+def test_a_failed_read_offers_to_read_again(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """A failed listing or file read left only red text, with no way to read it again."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(big_tree)
+    failing = {"tree": 1, "text": 1}
+
+    def fail_once(route: Route) -> None:
+        kind = "tree" if "/api/git/tree" in route.request.url else "text"
+        if failing[kind]:
+            failing[kind] -= 1
+            route.fulfill(status=500, json={"error": "busy"})
+        else:
+            route.continue_()
+
+    page.route("**/api/git/tree*", fail_once)
+    page.route("**/api/git/text*", fail_once)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/b.txt")
+    tree, text = page.locator(".files-tree"), page.locator(".files-text")
+    expect(tree.locator(".err")).to_contain_text("busy")
+    tree.get_by_role("button", name="Try again", exact=True).click()
+    expect(text.locator(".err")).to_contain_text("busy")
+    text.get_by_role("button", name="Try again", exact=True).click()
+    expect(text.locator("[data-line='1']")).to_be_visible()
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/no-such-revision")
+    expect(tree.locator(".err")).to_contain_text("unknown revision")
+    expect(page.get_by_role("button", name="Try again", exact=True)).to_have_count(0)
+    assert [e for e in errors if "500" not in e and "422" not in e] == []  # the failed reads
+
+
 def test_the_pane_says_loading_and_failure_in_one_style(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:

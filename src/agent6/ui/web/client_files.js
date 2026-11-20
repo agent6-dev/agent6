@@ -108,6 +108,12 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     count((q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : ''));
   };
   const closeFile = () => { pane.innerHTML = ''; if (entries.length) pane.appendChild(unopened); body.classList.remove('viewing'); };
+  // A failed read says why; one the server did not refuse (a 4xx) offers to read again.
+  const failure = (cls, e, retry) => {
+    const note = el('div', cls, e.message);
+    if (!(e.status < 500)) { const again = el('button', 'mini', 'Try again'); again.onclick = retry; note.append(' ', again); }
+    return note;
+  };
   // A new listing (another revision, ignored files shown or hidden) keeps the open file open
   // when it still lists it; the file stays on screen until the listing answers, and the hash
   // names it again only then.
@@ -125,7 +131,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       const d = await getJSON('/api/git/tree?rev=' + encodeURIComponent(filesState.rev.rev) + (showIgnored && !ignoredToggle.hidden ? '&ignored=1' : ''));
       if (n !== loading || !app.isConnected) return;
       entries = d.files; truncated = d.truncated; rev = d.rev; ignored = !!d.ignored;
-    } catch (e) { if (n === loading && app.isConnected) { closeFile(); tree.innerHTML = ''; tree.appendChild(el('div', 'empty err', e.message)); } return; }
+    } catch (e) { if (n === loading && app.isConnected) { closeFile(); tree.innerHTML = ''; tree.appendChild(failure('empty err', e, () => loadTree(openPath, relisting))); } return; }
     const file = entries.find(f => f.path === openPath) || (openPath && !relisting ? { path: openPath, kind: 'file', size: null } : null);
     if (file) { reveal(file.path); shown = file.path; }
     paintTree();
@@ -198,7 +204,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         img.onload = () => { facts.push(img.naturalWidth + '\u00d7' + img.naturalHeight); note.textContent = facts.join(' · '); loading.replaceWith(wrap); };
         img.onerror = () => { note.textContent = facts.concat('the browser cannot show this image').join(' · '); loading.replaceWith(wrap); };
         img.src = image.url;
-      }).catch(e => { if (current()) loading.replaceWith(el('div', 'err gf-note', e.message)); });
+      }).catch(e => { if (current()) loading.replaceWith(failure('err gf-note', e, () => showFile(f, whole, linked))); });
       return;
     }
     box.appendChild(el('div', 'muted gf-note', 'loading…'));
@@ -234,7 +240,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     let t;
     const readQuery = 'rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (whole ? '&whole=1' : '') + (ignored ? '&ignored=1' : '');
     try { t = await getJSON('/api/git/text?' + readQuery); }
-    catch (e) { if (current()) { blame.remove(); modes.remove(); box.innerHTML = ''; box.appendChild(el('div', 'err gf-note', e.message)); } return; }
+    catch (e) { if (current()) { blame.remove(); modes.remove(); box.innerHTML = ''; box.appendChild(failure('err gf-note', e, () => showFile(f, whole, linked))); } return; }
     if (!current()) return;
     box.innerHTML = '';
     if (t.language) facts.push(t.language);
