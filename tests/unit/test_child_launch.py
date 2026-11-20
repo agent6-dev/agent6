@@ -41,7 +41,7 @@ def _launch(tmp_path: pathlib.Path, **over: Any) -> child_launch.ChildLaunch:
 
 
 def test_write_and_read_round_trip_a_private_file(tmp_path: pathlib.Path) -> None:
-    """The file lands `0600` in a `0700` dir and reads back as written, every field intact."""
+    """The file is written `0600` in a `0700` dir and reads back with every field intact."""
     directory = tmp_path / "launch"
     launch = _launch(tmp_path)
     path = child_launch.write(directory, launch)
@@ -146,7 +146,7 @@ def test_the_bootstrap_argv_is_fixed_and_safe_path(tmp_path: pathlib.Path) -> No
     assert spawn.subcommand_label(argv) == "child agent"
 
 
-def test_write_child_config_lands_in_the_private_dir(tmp_path: pathlib.Path) -> None:
+def test_write_child_config_uses_the_private_dir(tmp_path: pathlib.Path) -> None:
     spec = child_records.ChildSpec(
         number=2, session_id="fan-l2", worktree=tmp_path / "child-2", settings=None
     )

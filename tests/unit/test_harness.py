@@ -7808,7 +7808,7 @@ def test_dispatch_returns_what_started_and_settle_tells_the_rest(tmp_path: pathl
     assert "[parallel] group run-p1 complete (1 child(ren))" in said
     assert "FAILED -- child failed" in said
     assert [j.status for j in wf.parallel.joins("run-p1")] == ["failed"]
-    assert not wf.parallel.settle(conversation, 4), "a landed task is told once"
+    assert not wf.parallel.settle(conversation, 4), "a completed task is told once"
     before = len(conversation.messages)
     # A refusal before any child names itself and dispatches nothing.
     refused = wf.parallel.dispatch(

@@ -56,7 +56,9 @@ def test_clone_worktree_raises_child_repo_error_on_failure(tmp_path: pathlib.Pat
         child_repo.clone_worktree(origin, dest)
 
 
-def test_import_run_lands_the_branch_and_leaves_the_record_in_place(tmp_path: pathlib.Path) -> None:
+def test_import_run_fetches_the_branch_and_leaves_the_record_in_place(
+    tmp_path: pathlib.Path,
+) -> None:
     """The child's record is in the origin's state from its first event: the import moves none."""
     origin = tmp_path / "origin"
     _init_repo(origin)
@@ -82,8 +84,8 @@ def test_import_run_lands_the_branch_and_leaves_the_record_in_place(tmp_path: pa
     assert git_read.branch_exists(origin, branch)
 
 
-def test_import_run_lands_a_child_that_never_committed(tmp_path: pathlib.Path) -> None:
-    """A child stopped before its first commit has no branch to land.
+def test_import_run_accepts_a_child_that_never_committed(tmp_path: pathlib.Path) -> None:
+    """A child stopped before its first commit has no branch to import.
 
     Reported as a failed fetch, each child of a fleet stopped by an expired key reads "couldn't find
     remote ref", with the reason left in a session dir the operator cannot reach.
@@ -103,13 +105,13 @@ def test_import_run_lands_a_child_that_never_committed(tmp_path: pathlib.Path) -
     assert not git_read.branch_exists(origin, "agent6/child-1")
 
 
-def test_import_run_under_model_control_lands_the_hidden_chain_ref(
+def test_import_run_under_model_control_writes_the_hidden_chain_ref(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A model-controlled child's HEAD lands on `refs/agent6/<id>/head`; the record names it.
+    """A model-controlled child's HEAD is stored on `refs/agent6/<id>/head`; the record names it.
 
     The child's own branch name is created in the origin when free, and the returned ref and tip
-    are the chain ref and the child's HEAD, so a join merges what the child committed.
+    are the chain ref and the child's HEAD, so the model can merge the child's commits with git.
     """
     origin = tmp_path / "origin"
     _init_repo(origin)
@@ -130,10 +132,10 @@ def test_import_run_under_model_control_lands_the_hidden_chain_ref(
 
     chain = git_read.chain_ref_for("01MC")
     assert (result.ref, result.tip) == (chain, head)
-    landed = subprocess.run(
+    imported = subprocess.run(
         ["git", "-C", str(origin), "rev-parse", chain], capture_output=True, text=True, check=True
     )
-    assert landed.stdout.strip() == head
+    assert imported.stdout.strip() == head
     assert git_read.branch_tip_sha(origin, "feature") == head
 
 

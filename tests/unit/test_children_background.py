@@ -459,7 +459,7 @@ def test_a_tree_that_cannot_be_committed_merges_nothing_and_keeps_the_branch(
 def test_a_parents_uncommitted_work_is_committed_before_a_child_merges(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Landing is on a clean tree: the parent's edit becomes a checkpoint, then the merge."""
+    """A merge starts from a clean tree: the parent's edit becomes a checkpoint first."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     children = _Children(repo, "root")

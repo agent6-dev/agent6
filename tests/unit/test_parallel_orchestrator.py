@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A child's life under its parent: spawn, wait, import, landing and cleanup (app/children.py).
+"""A child's life under its parent: spawn, wait, import and cleanup (app/children.py).
 
 Driven with a fake spawner that, for each ChildSpec, really clones the origin,
 commits on the child's `agent6/<id>` branch, and fabricates a finished session dir
@@ -762,7 +762,7 @@ def test_child_setup_output_survives_import_and_a_failed_one_reaches_the_operato
     capsys: pytest.CaptureFixture[str],
     exit_code: int,
 ) -> None:
-    """A child's setup output outlives its clone; a failed setup's is printed where it landed."""
+    """A child's setup output outlives its clone; a failed setup's is printed after import."""
     command = f"echo ran >> .setup-count; echo setup-out; echo setup-err >&2; exit {exit_code}"
     cfg = Config.model_validate(
         {
@@ -999,7 +999,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
     }
 
 
-def test_landed_children_remove_their_emptied_worktree_levels(
+def test_imported_children_remove_their_emptied_worktree_levels(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime
 ) -> None:
     """A group's clones sit at `<base>/<repo>/<group>/child-N`.
@@ -1104,7 +1104,7 @@ def test_a_child_with_no_commit_does_not_claim_a_branch_was_imported(
     assert "no branch (the run made no commit)" in shown
 
 
-def test_a_stamp_that_cannot_be_written_is_noted_and_the_others_still_land(
+def test_stamp_failures_are_reported_for_every_child_and_parent(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1163,7 +1163,7 @@ def test_await_waits_for_worker_pid_to_clear(
     monkeypatch: pytest.MonkeyPatch,
     runtime: app_children.ChildRuntime,
 ) -> None:
-    """session.stop lands in logs.jsonl BEFORE the child's teardown clears worker.pid.
+    """session.stop is written in logs.jsonl before the child's teardown clears worker.pid.
 
     The await gate must keep waiting through that window (terminal = non-running status AND pid
     cleared/dead); importing inside it would misread the child as still running and cleanup would
@@ -1306,10 +1306,10 @@ def test_run_child_to_completion_imports_and_stamps(
 
 
 @pytest.mark.parametrize("shape", ["committed", "record_only", "branch_at_base"])
-def test_run_child_to_completion_records_what_the_import_landed(
+def test_run_child_to_completion_records_what_the_import_retained(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime, shape: str
 ) -> None:
-    """The result says what landed: the ref, its tip and whether it holds commits past the base.
+    """The result names the imported ref, its tip and whether it holds commits past the base.
 
     A child that committed nothing (no branch, or a branch still at the base) is a success with
     `has_commits` False, so the parent joins it as `no_changes` and merges nothing.
@@ -2147,7 +2147,7 @@ def test_child_sampling_notes_survive_import_and_reach_both_reports(
         runtime=dataclasses.replace(runtime, spawn=child),
     )
     assert result.ok, result.error
-    landed = app_children.finish_import(
+    completed = app_children.finish_import(
         result,
         parallel_results.import_child(result, origin, None),
         cfg=cfg,
@@ -2155,7 +2155,7 @@ def test_child_sampling_notes_survive_import_and_reach_both_reports(
         group="notes",
         reporter=reporter.STDIO_REPORTER,
     )
-    assert landed.ok, landed.error
+    assert completed.ok, completed.error
     assert note in "".join(capsys.readouterr())
     imported = paths.state_dir(origin) / "sessions" / "runs" / spec.session_id
     record = sessions_manifest.read_manifest(imported)

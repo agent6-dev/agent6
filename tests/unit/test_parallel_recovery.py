@@ -363,7 +363,7 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
     assert any("joined at" in t and "never started" in t for t in texts)
 
 
-def test_a_merge_landed_before_the_record_is_not_merged_twice(
+def test_a_merge_committed_before_the_record_is_not_merged_twice(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A crash between the merge and the record's write: the resume finds the merge, records it."""
@@ -548,7 +548,7 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
         assert entry.join is not None and entry.join.status == "joined" and entry.reported
         assert entry.join.target_before and entry.join.target_after == entry.join.sha
         assert entry.usage == child_dispatch.UsageRecord(usd=0.5) and entry.settled
-    # The second task landed on the first's merge: in the order written.
+    # The second task merged onto the first's merge: in the order written.
     assert first.children[0].join is not None and second.children[0].join is not None
     assert second.children[0].join.target_before == first.children[0].join.target_after
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
