@@ -39,6 +39,7 @@ from agent6.viewmodel.machine import logs as machine_logs
 # Coalesce delta bursts, heartbeat idle streams so a gone client is noticed, poll at human cadence.
 DELTA_COALESCE_S = 0.15
 HEARTBEAT_S = 15.0
+SESSION_POLL_S = 1.0
 MACHINE_POLL_S = 0.5
 STREAMING_DELTAS = frozenset({"model.text_delta", "model.thinking_delta"})
 
@@ -103,7 +104,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
 
     The first frame folds the log as it stands at connect. A tailer thread then feeds a
     queue from where that read ended; the loop coalesces queued events and delta bursts,
-    and refreshes disk-backed state on each idle heartbeat, including after an end.
+    and polls disk-backed state on a separate clock.
 
     Args:
         chan: The client's socket writes.
@@ -125,8 +126,6 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
             # The sentinel goes even when the tailer raises, or the loop blocks on heartbeats.
             events.put(None)
 
-    # A session's children change independently of its own log once it dispatched; the idle
-    # heartbeat re-reads the header for every session.
     header = manifest_header(session_dir, repo=repo)
 
     # A frame folded from part of the log reads a finished run as stale: started, no end, no worker.
@@ -189,38 +188,33 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         if not send_frame():
             return
         last_delta_emit = 0.0
+        next_poll = time.monotonic() + SESSION_POLL_S
         while True:
+            last_type = ""
             try:
-                ev: dict[str, Any] | None = events.get(
-                    timeout=1.0 if header.get("children") else HEARTBEAT_S
-                )
+                ev = events.get(timeout=max(0, next_poll - time.monotonic()))
             except queue.Empty:
                 if not chan.ping():
                     return
-                # A run dead without session.stop would pin this worker; parked is excluded.
+            else:
+                # Send one frame per queued batch. Delta bursts share a frame across polls.
+                last_type, ended = drain(ev)
+                wait = DELTA_COALESCE_S - (time.monotonic() - last_delta_emit)
+                if last_type in STREAMING_DELTAS and wait > 0:
+                    time.sleep(wait)
+                    with contextlib.suppress(queue.Empty):
+                        last_type, ended = drain(events.get_nowait())
+                if ended:
+                    send_frame()
+                    return
+            # Child activity need not write a parent event or leave its queue empty.
+            if time.monotonic() >= next_poll or last_type == "session.stop":
                 word = summarize_session_dir(session_dir).status
+                header = manifest_header(session_dir, repo=repo, status=word)
                 if word != "parked" and died_without_end(word):
                     send_frame(dead=True)
                     return
-                # Children, merges and shell cleanup change on disk without a log event.
-                header = manifest_header(session_dir, repo=repo, status=word)
-                if not send_frame():
-                    return
-                continue
-            # One frame per queued batch: a frame per replayed event is quadratic (13 MB at 502).
-            last_type, ended = drain(ev)
-            if last_type == "session.stop":
-                # The end is when the unmerged mark first applies; later merges ride the heartbeat.
-                header = manifest_header(session_dir, repo=repo)
-            # A delta burst is one frame per window; the wait catches the burst's tail.
-            wait = DELTA_COALESCE_S - (time.monotonic() - last_delta_emit)
-            if last_type in STREAMING_DELTAS and wait > 0:
-                time.sleep(wait)
-                with contextlib.suppress(queue.Empty):
-                    _, ended = drain(events.get_nowait())
-            if ended:
-                send_frame()
-                return
+                next_poll = time.monotonic() + SESSION_POLL_S
             if not send_frame():
                 return
             last_delta_emit = time.monotonic()

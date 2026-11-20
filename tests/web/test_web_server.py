@@ -1313,7 +1313,7 @@ def test_sse_run_dead_worker_frame_is_terminal(
     """
     from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "SESSION_POLL_S", 0.2)
     _make_run(
         tmp_path,
         "dead-worker",
@@ -1348,7 +1348,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     """
     from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "SESSION_POLL_S", 0.2)
     _make_run(
         tmp_path,
         "pidless-stale",
@@ -1400,7 +1400,7 @@ def test_sse_run_created_frame_is_terminal(
     """
     from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "SESSION_POLL_S", 0.2)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "created-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
@@ -1443,7 +1443,7 @@ def test_sse_run_parked_keeps_streaming(
     """A parked run's stream stays open: a resumed submission logs into this same stream."""
     from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "SESSION_POLL_S", 0.2)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
@@ -2362,7 +2362,7 @@ def test_idle_session_frames_only_follow_changed_state(
     """Two idle heartbeats send nothing unchanged, or one frame per shell result change."""
     from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.02)
+    monkeypatch.setattr(sse, "SESSION_POLL_S", 0.02)
     sid = "idle-shells"
     _make_run(
         tmp_path,
@@ -2400,56 +2400,45 @@ def test_idle_session_frames_only_follow_changed_state(
         assert frames[-1][1]["shells"] == ["[bg1] exited 2: sleep 60"]
 
 
-def test_an_ordinary_live_parents_first_child_reaches_the_stream_during_silence(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("busy", [False, True], ids=["quiet", "busy"])
+def test_the_stream_discovers_the_first_child_without_waiting_for_parent_log_silence(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path, *, busy: bool
 ) -> None:
-    """A run with no children at open gains one while its log is silent; the next frame shows it."""
-    from agent6.ui.web import sse
+    """A quiet parent waited a heartbeat for its first child. A busy parent never refreshed."""
+    from tests.web import session_logs
 
-    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.05)
-    _make_run(tmp_path, "solo", [{"type": "session.start", "ts": time.time()}])
-    d = paths.state_dir(tmp_path) / "sessions" / "runs" / "solo"
-    (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": "solo", "mode": "run"}), encoding="utf-8"
-    )
-    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    heartbeat = 0
-    frames: list[dict[str, Any]] = []
+    parent = session_logs.write_run(tmp_path, "solo", [], live=True)
+    (parent / "manifest.json").write_text('{"version":3,"session_id":"solo","mode":"run"}')
+    done = threading.Event()
 
-    def send(payload: Any) -> bool:
-        frames.append(cast(dict[str, Any], payload))
-        return True
+    def write_parent_log() -> None:
+        while not done.wait(0.08):
+            with (parent / "logs.jsonl").open("a") as log:
+                log.write('{"type":"model.text_delta","text":"x"}\n')
 
-    def ping() -> bool:
-        nonlocal heartbeat
-        heartbeat += 1
-        if heartbeat == 1:
-            _make_run(
-                tmp_path,
-                "solo-p1-l1",
-                [{"type": "session.start", "ts": time.time(), "user_task": "audit"}],
-            )
-            (d.parent / "solo-p1-l1" / "manifest.json").write_text(
-                json.dumps(
-                    {
-                        "version": 3,
-                        "session_id": "solo-p1-l1",
-                        "mode": "run",
-                        "parallel": {"group": "solo-p1", "number": 1, "parent": "solo"},
-                        "models": {"driver": {"provider": "openai", "model": "child-1"}},
-                    }
-                ),
-                encoding="utf-8",
-            )
-        return heartbeat < 4
-
-    sse.stream_session(sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
-
-    assert "children" not in frames[0]
-    with_child = next(f for f in frames if f.get("children"))
-    assert [row["session_id"] for row in with_child["children"]] == ["solo-p1-l1"]
-    assert with_child["children"][0]["model"] == "openai/child-1"
-    assert with_child["session_actions"]["fork"] is True
+    conn = signin.SignedIn(server[1], timeout=4)
+    try:
+        conn.request("GET", "/api/session/solo/events")
+        response = conn.getresponse()
+        assert "children" not in _read_until(response, lambda _: True)
+        if busy:
+            threading.Thread(target=write_parent_log, daemon=True).start()
+        child = session_logs.write_run(tmp_path, "solo-p1-l1", [], live=True)
+        manifest = {
+            "version": 3,
+            "session_id": child.name,
+            "mode": "run",
+            "models": {"driver": {"provider": "p", "model": "m"}},
+            "parallel": {"parent": parent.name, "group": "solo-p1", "number": 1},
+        }
+        (child / "manifest.json").write_text(json.dumps(manifest))
+        frame = _read_until(response, lambda s: bool(s.get("children")), deadline_s=4)
+        (row,) = cast(list[dict[str, object]], frame["children"])
+        assert (row["session_id"], row["route"], row["status"]) == (child.name, "p/m", "running")
+        assert cast(dict[str, bool], frame["session_actions"])["fork"]
+    finally:
+        done.set()
+        conn.close()
 
 
 def test_shell_cleanup_after_end_reaches_the_open_stream(
@@ -2462,7 +2451,7 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
     from agent6.ui.web import sse
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.05)
+    monkeypatch.setattr(sse, "SESSION_POLL_S", 0.05)
     sid = "shell-cleanup"
     _make_run(
         tmp_path,
@@ -2552,12 +2541,12 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
         pings["n"] += 1
         return pings["n"] < 40  # bounded: without the fix no frame ever closes the stream
 
-    orig = sse.HEARTBEAT_S
-    sse.HEARTBEAT_S = monkeypatch_heartbeat
+    orig = sse.SESSION_POLL_S
+    sse.SESSION_POLL_S = monkeypatch_heartbeat
     try:
         sse.stream_session(sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
     finally:
-        sse.HEARTBEAT_S = orig
+        sse.SESSION_POLL_S = orig
 
     assert any(f.get("merged_into") == "master" for f in frames), (
         "a merge landing after session.stop must reach the open stream"
