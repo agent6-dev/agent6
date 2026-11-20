@@ -282,11 +282,13 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
     tool_effects.note(wf, state, turn, "read_background", outcome, {})
     guards.verify_settled(turn, state, turn_context(tree_sha=lambda: "tree"))
     assert state.settled.idle == (1 if selected_state == "running" else 2)
+    # A read that names a job returns that job's row; the whole roster answers a read with no id.
+    rows = [selected.line()] if selected_state else [selected.line(), sibling.line()]
     assert outcome.to_wire() == {
-        "shells": [selected.line(), sibling.line()],
+        "shells": rows,
         **({"output": "output"} if selected_state else {}),
     }
-    assert outcome.summary() == "2 background"
+    assert outcome.summary() == (selected.line() if selected_state else "2 background")
 
 
 @pytest.mark.parametrize("wait_first", [False, True])
