@@ -274,7 +274,7 @@ def test_parallel_joined_names_child_ids_branches_shas() -> None:
     (item,) = items
     assert item.kind == "marker"
     assert "group p1 complete: 2 children" in item.body
-    assert "merged  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body  # sha clipped to 12
+    assert "joined parent chain  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body
     assert "conflict  co-p1-l2  agent6/co-p1-l2" in item.body
 
 
@@ -1309,6 +1309,6 @@ def test_child_activity_names_the_child_and_the_merge_result() -> None:
         "parent: inspect the diff",
         "finish_session refused: pending children: a, c",
         "child c continued (2)",
-        "child c merged at 123456789012",
+        "child c joined parent chain at 123456789012",
         "child c not merged (agent6/c): merge conflict in a.py",
     ]

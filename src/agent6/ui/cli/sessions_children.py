@@ -58,7 +58,7 @@ class ChildRow:
         if not c.launched and c.status == "failed":
             state += " (never started)"
         if c.outcome == "joined":
-            state = f"merged at {c.join_sha[:12]}" if c.join_sha else "merged"
+            state = c.join_label
         elif c.outcome and c.outcome != state:
             state += f" · {c.outcome.replace('_', ' ')}"
         if c.error and c.error not in state:

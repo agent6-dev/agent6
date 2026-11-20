@@ -216,7 +216,7 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
         if panel and status == "no_changes":
             status = "returned"  # a reviewer has no work to join; its verdict follows in the panel
         elif status == "joined":
-            status = "merged"
+            status = "joined parent chain"
         elif status == "no_changes":
             status = "no changes"
         elif status == "unmerged":  # v12 model-owned dispatch
@@ -241,7 +241,7 @@ def child_merge_body(event: dict[str, Any]) -> str:
     """Return the result of a requested child merge."""
     child = event.get("child", "?")
     if event.get("status") == "joined":
-        return f"child {child} merged at {str(event.get('sha', ''))[:12]}"
+        return f"child {child} joined parent chain at {str(event.get('sha', ''))[:12]}"
     why = event.get("detail") or str(event.get("status", "")).replace("_", " ")
     return f"child {child} not merged ({event.get('ref', '?')}): {why}"
 

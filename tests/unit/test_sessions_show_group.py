@@ -705,7 +705,7 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_joins(
     assert "group:" not in out
     assert "children:      2" in out
     assert "child 1" in out and "co-p1-l1" in out and "openai/child-1" in out
-    assert "merged at bbbbbbbbbbbb" in out
+    assert "joined co's chain at bbbbbbbbbbbb" in out
     assert "child 2" in out and "no changes" in out
 
 
@@ -848,7 +848,7 @@ def test_cli_child_roster_json(
     rows = (obj[0] if surface == "list" else obj)["children"]
     assert len(rows) == 7
     merged, _, live, stopped, held, absent, reviewer = rows
-    assert (merged["status"], merged["outcome"]) == ("merged", "joined")
+    assert (merged["status"], merged["outcome"], merged["joined_to"]) == ("joined", "joined", "co")
     assert tuple(
         live[k]
         for k in (

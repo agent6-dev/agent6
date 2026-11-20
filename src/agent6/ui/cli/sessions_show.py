@@ -36,6 +36,7 @@ from agent6.viewmodel import (
     transcript,
     wire,
 )
+from agent6.viewmodel import children as child_views
 from agent6.viewmodel.session import view as state_view
 
 
@@ -91,7 +92,7 @@ def _print_parallel_compare(
 
 
 def _status_state(
-    row: SessionSummary, scan: LogScan, *, last_age: float | None
+    row: SessionSummary, scan: LogScan, *, last_age: float | None, mark_unmerged: bool
 ) -> tuple[str, str, str]:
     """Return the run's state as `(status, label, detail)`.
 
@@ -101,15 +102,15 @@ def _status_state(
         row: The listing's fold of this run.
         scan: The log scan.
         last_age: Seconds since the last event, when there is one.
+        mark_unmerged: Show the listing's mark unless a checkout line explains the landing.
 
     Returns:
-        The status is the listing's own word and the label its own rendering, so no second
-        rule can disagree with the listing about the mode fold or the unmerged mark. The
-        detail is this surface's diagnostic: what to do, or why the word applies; "" when
-        there is none.
+        The listing's word and label, then what to do or why the word applies.
     """
     word, reason = row.status, row.detail
-    cell = format.listing_status_label(row.mode, row.status, row.detail, unmerged=row.unmerged)
+    cell = format.listing_status_label(
+        row.mode, row.status, row.detail, unmerged=mark_unmerged and row.unmerged
+    )
     if word == "unreadable":
         # The record, not the journal, decides: a newer or corrupt manifest names itself.
         return word, cell, format.dead_run_note(word, reason)[0]
@@ -298,6 +299,8 @@ class StatusJSON(TypedDict):
     base_branch: str | None
     merged_into: str | None
     retained_ref: str | None
+    joined_to: str | None
+    join_sha: str | None
     pins: list[str]
 
 
@@ -350,6 +353,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         base_branch: The base branch, or null when unknown.
         merged_into: The merge destination, or null without a covering merge stamp.
         retained_ref: The retained model-owned ref, or null without one.
+        joined_to: The parent whose chain this child joined, or null without a recorded join.
+        join_sha: The recorded parent-chain join commit, or null.
         pins: The operator's active pinned instructions.
 
         session_id: The session identifier.
@@ -391,10 +396,13 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
     children = sessions_children.read_children(target, tips=tips)
+    join = child_views.parent_join(target, manifest.parallel)
+    chain_join = join is not None or any(c.view.joined_to for c in children)
     status, status_cell, status_detail = _status_state(
         summary,
         scan,
         last_age=last_age,
+        mark_unmerged=not chain_join,
     )
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
@@ -445,6 +453,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "base_branch": manifest.base_branch or None,
             "merged_into": changes.merged_into or None,
             "retained_ref": summary.retained_ref or None,
+            "joined_to": join.parent if join else None,
+            "join_sha": (join.sha or None) if join else None,
             "pins": list(scan.pins),
         }
 
@@ -504,8 +514,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             if item.kind == "verify"
         ),
     )
-    if changes.line:
-        print(f"changes:    {changes.line}")
+    changes.print_landing(join, chain_join=chain_join)
     if mode_display == "plan" and (target / "plan.md").is_file():
         print(f"plan:       agent6 plan show {target.name}")
     for i, pin in enumerate(scan.pins):
@@ -526,6 +535,29 @@ class _Changes:
 
     line: str
     merged_into: str
+
+    def print_landing(self, join: child_views.ParentJoin | None, *, chain_join: bool) -> None:
+        """Print the branch landing separately from the parent's chain join.
+
+        Args:
+            join: This child's join, when the parent recorded one.
+            chain_join: This run received joined children or joined its own parent.
+        """
+        if join:
+            print(f"parent join: {join.label}")
+        if not chain_join:
+            if self.line:
+                print(f"changes:    {self.line}")
+        elif self.merged_into:
+            print(f"checkout:   {self.line}")
+        elif join:
+            print(
+                "checkout:   no direct merge recorded for this tip; "
+                f"see agent6 sessions show {join.parent}"
+            )
+        else:
+            detail = f"; {self.line}" if self.line else ""
+            print(f"checkout:   no merge recorded for this tip{detail}")
 
 
 def _changes(

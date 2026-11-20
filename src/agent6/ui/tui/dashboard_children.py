@@ -37,6 +37,8 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
     """
     status = child.status
     result: list[str] = []
+    if child.outcome == "joined":
+        result.append(child.join_label)
     if child.source == "panel":
         status = f"reviewer: {status}"
     if not child.launched and child.status == "failed":

@@ -49,7 +49,7 @@ When the manifest cannot be read, **Run > Fork this session** is dimmed too, as 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
 The children table refreshes every second and keeps the same child selected when rows move.
 Each row shows the child's number, id, task, model route, status, current tool, turn, tokens, spend and elapsed seconds.
-The result column shows the commit count and ref for stopped or unmerged work.
+The result column names the parent chain a child joined, or the ref and commit count for stopped or retained work.
 It also shows why a launch failed or how a reviewer ranked the attempts.
 
 - `Tab` to the table and use `↑` or `↓` to select a child.

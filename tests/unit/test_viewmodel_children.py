@@ -121,7 +121,8 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
     )
     assert (
         first.launched
-        and first.status == "merged"
+        and first.status == "joined"
+        and first.joined_to == "run-abc"
         and first.outcome == "joined"
         and first.join_sha == "b" * 40
     )
@@ -211,7 +212,7 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
     )
     text = receipt.render(view)
     assert "Children" in text
-    assert "child 1 run-abc-p1-l1 (reviewer): joined at bbbbbbbbbbbb, $0.50" in text
+    assert "child 1 run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $0.50" in text
     assert "child 2 run-abc-p1-l2: failed: never started" in text
     assert "spend includes the children's $0.50" in text
     # A session with no children renders no section and the review fields are untouched.
@@ -235,8 +236,8 @@ def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib
         parent, record.model_copy(update={"children": (unpriced, record.children[1])}), now=1.0
     )
     text = receipt.render(receipt.read_receipt(parent, tmp_path))
-    assert "child 1 run-abc-p1-l1 (reviewer): joined at bbbbbbbbbbbb, $?" in text
-    assert "child 2 run-abc-p1-l2: joined at bbbbbbbbbbbb, $0.20" in text
+    assert "child 1 run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $?" in text
+    assert "child 2 run-abc-p1-l2: joined run-abc's chain at bbbbbbbbbbbb, $0.20" in text
     assert "spend includes the children's ~$0.20" in text
 
 

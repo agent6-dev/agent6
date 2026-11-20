@@ -223,7 +223,9 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         for sid in (one, two):
             assert f"child {sid} started" in rendered
             assert f"child {sid} finished" in rendered
-            assert f"{'merged' if control == 'agent6' else 'retained'}  {sid}" in rendered
+            assert (
+                f"{'joined parent chain' if control == 'agent6' else 'retained'}  {sid}" in rendered
+            )
     assert [row["group"] for row in rows if row["type"] == "parallel.joined"] == [
         f"{session}-p2",
         f"{session}-p1",

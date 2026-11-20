@@ -97,7 +97,7 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
                     )
                 elif number > 1:
                     join = child_dispatch.JoinRecord(
-                        status="stopped" if number == 2 else "unmerged",
+                        status="stopped" if number == 2 else "retained",
                         branch=f"agent6/{sid}",
                         commits=number - 1,
                     )
@@ -153,7 +153,7 @@ def test_dashboard_child_rows(family: pathlib.Path, size: tuple[int, int]) -> No
             assert any(s.endswith("s") and s[:-1].isdigit() and int(s[:-1]) >= 50 for s in live)
             for sid, words in (
                 ("atlas-p1-l2", ("stopped", "1 commit", "agent6/atlas-p1-l2", "12s")),
-                ("atlas-p1-l3", ("unmerged", "2 commits", "agent6/atlas-p1-l3")),
+                ("atlas-p1-l3", ("retained", "2 commits", "agent6/atlas-p1-l3")),
                 ("atlas-p1-l4", ("failed", "not started", "no matching provider", "alternate")),
                 ("atlas-rpanel-l1", ("reviewer", "B > A", "B checks both flags")),
             ):

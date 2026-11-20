@@ -398,7 +398,7 @@ def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
         if child.model:
             label += f" ({child.model})"
         if child.outcome == "joined":
-            what = f"joined at {child.join_sha[:12]}"
+            what = child.join_label
         elif child.outcome == "no_changes":
             what = "no changes"
         elif child.outcome == "retained":

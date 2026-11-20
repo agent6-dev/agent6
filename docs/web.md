@@ -90,10 +90,11 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - on a phone, **Stop now** stays visible and **More** holds the other run actions
     - **Tool calls** rows open to selectable arguments and recorded output
     - **Budget** shows labelled meters for capped usage and plain text for uncapped usage
-    - **Children** folds to one line in Details, such as `children: 3 running, 1 merged`.
+    - **Children** folds to one line in Details, such as `children: 3 running, 1 joined`.
       On a phone, choose **Overview** from **Widgets**.
       Open the card to see each task, its status, and its recorded model, tool, turn, tokens, spend and elapsed time.
-      A stopped child shows the unmerged commits its ref holds.
+      A joined child names the parent's chain and the join commit.
+      A stopped child shows the commits its ref holds; a model-owned child names its retained ref.
       A child that never started shows the reason.
       A reviewer shows its verdict when available.
       Open a row to read the prompt and recent conversation in place.

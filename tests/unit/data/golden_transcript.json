@@ -111,7 +111,7 @@
   },
   {
     "kind": "marker",
-    "body": "group p1 complete: 2 children\nmerged  co-p1-l1  agent6/co-p1-l1  abcdef123456\nconflict  co-p1-l2  agent6/co-p1-l2",
+    "body": "group p1 complete: 2 children\njoined parent chain  co-p1-l1  agent6/co-p1-l1  abcdef123456\nconflict  co-p1-l2  agent6/co-p1-l2",
     "name": "",
     "arg": "",
     "ok": null,

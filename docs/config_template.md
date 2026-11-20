@@ -350,10 +350,12 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 ### `[harness.parallel]`
 
 The most children a run has running at once, for `run --parallel N|selector,...`, the `/parallel` steer and the `parallel` tool.
-Each child is a disposable clone running its own `agent6/<id>` branch; one child's work is merged onto the run's own branch, and several children on one task are ranked, the first-ranked one joining it.
+Each child works in a disposable clone.
+Under agent6-owned git, one child's work joins the parent's chain; with several attempts, the first-ranked one joins.
+Under model-owned git, completed work stays on the imported refs.
 `harness.parallel.judges` names who ranks them: each judge is a reviewer child that reads and runs the attempts and answers with an order, and the lowest sum of ranks wins.
 A judge takes at most `review.max_turns` replies; with no usable order from any judge, the order is verify-pass first, then the cheaper.
-`git.auto_merge = true` then lands the run as it lands any run; without it, `agent6 sessions merge <run id>` does.
+Under agent6-owned git, `git.auto_merge = true` then lands the parent as it lands any run; without it, `agent6 sessions merge <run id>` does.
 `--max-usd` caps the children and the judges together; `--auto-approve` forwards to every child.
 A live run dispatches children the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 `harness.parallel.tool = true` offers a run's model the `parallel` tool, which starts a task's children in the background through the same path, and `steer_child`, which sends a running child an instruction ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.

@@ -142,7 +142,8 @@ The child gets its config, task and remaining budget from its parent; its approv
 Inspect the parent with `agent6 sessions list --children`, `agent6 sessions show <parent>` or `agent6 attach <parent>`.
 The children list gives each child's task, model, status, current tool, turn, tokens, spend and elapsed time.
 The parent reports when a child starts, reads an operator message, stops or finishes.
-A separate line says whether its work merged.
+A join records the commit on the parent's chain, not a merge into the checkout branch.
+`sessions show <child>` names the parent it joined; `sessions show <parent>` shows the parent's recorded checkout merge or how to land its work.
 A failed launch has a row with its reason even when there is no child session to open.
 A stopped child shows the ref and commits it holds.
 A reviewer shows its order and summary when it returns a verdict.

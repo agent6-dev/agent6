@@ -5,7 +5,8 @@ function childFacts(c) {
   const model = [c.model, c.route !== c.model && c.route].filter(Boolean).join(' · ');
   const usage = c.launched || c.settled
     ? (c.usd_partial && !c.spend_usd ? '$?' : `${c.usd_partial ? '~' : ''}$${c.spend_usd}`) : '';
-  const outcome = c.outcome === 'joined' ? 'merged' + (c.join_sha ? ' at ' + c.join_sha.slice(0, 12) : '')
+  const outcome = c.outcome === 'joined'
+    ? `joined ${c.joined_to}'s chain` + (c.join_sha ? ` at ${c.join_sha.slice(0, 12)}` : '')
     : c.outcome.replaceAll('_', ' ');
   return [
     [model, c.current_tool, c.turn != null && `turn ${c.turn}`, c.tokens != null && `${c.tokens.toLocaleString()} tokens`,

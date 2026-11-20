@@ -21,6 +21,19 @@ from agent6.viewmodel.session import status as session_status
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ParentJoin:
+    """A child's recorded join on a parent's chain, not a checkout merge."""
+
+    parent: str
+    sha: str
+
+    @property
+    def label(self) -> str:
+        """Name the parent and its join commit."""
+        return f"joined {self.parent}'s chain" + (f" at {self.sha[:12]}" if self.sha else "")
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ChildView:
     """One child of a session, as the surfaces show it.
 
@@ -32,10 +45,11 @@ class ChildView:
         task: Its task text; "" when unknown.
         model: Its selector, None for the worker's own settings.
         route: The `provider/model` its manifest records; "" when it never started.
-        status: Where the child stands in its task, including a merge or a ranking.
-        outcome: The recorded merge outcome, including `stopped`, `ranked` and `retained`.
+        status: Where the child stands in its task, including a chain join or a ranking.
+        outcome: The recorded dispatch outcome, including `stopped`, `ranked` and `retained`.
             An empty string means the parent has recorded no outcome.
-        join_sha: The merge commit, "" when none.
+        join_sha: The join commit on the parent's chain, "" when none.
+        joined_to: The parent session whose chain received the join, "" without a join.
         imported_ref: The branch the join read, "" when none.
         error: The status detail or the reason a child failed to start or merge.
         spend_usd: The cumulative child spend.
@@ -74,6 +88,12 @@ class ChildView:
     commits: int = 0
     verdict_order: tuple[str, ...] = ()
     verdict_summary: str = ""
+    joined_to: str = ""
+
+    @property
+    def join_label(self) -> str:
+        """Name the recorded chain join without implying a checkout merge."""
+        return ParentJoin(self.joined_to, self.join_sha).label
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -132,6 +152,7 @@ def dispatches_of(session_dir: pathlib.Path) -> tuple[DispatchView, ...]:
                     _recorded_child(
                         record,
                         child,
+                        session_dir.name,
                         layout.bucket_dir(
                             state_dir,
                             layout.EVIDENCE_BUCKET if record.source == "panel" else "runs",
@@ -221,8 +242,38 @@ def _session_child(row: ChildView, child_dir: pathlib.Path) -> ChildView:
     )
 
 
+def parent_join(
+    session_dir: pathlib.Path, lineage: sessions_manifest.ParallelLineage | None
+) -> ParentJoin | None:
+    """Read a child's join from its parent's dispatch, not from the child's merge stamp.
+
+    Args:
+        session_dir: The child's run directory.
+        lineage: Its recorded parent and group.
+
+    Returns:
+        The parent and its join commit; None without a recorded join.
+    """
+    if not lineage or not all(
+        layout.is_safe_session_id(s) for s in (lineage.parent, lineage.group)
+    ):
+        return None
+    parent = session_dir.parent / lineage.parent
+    try:
+        record = child_dispatch.read_record(child_dispatch.record_path(parent, lineage.group))
+        join = record.child(session_dir.name).join
+    except (KeyError, child_dispatch.DispatchRecordError):
+        return None
+    if record.identity == lineage.group and join and join.status == "joined":
+        return ParentJoin(parent.name, join.sha)
+    return None
+
+
 def _recorded_child(
-    record: child_dispatch.DispatchRecord, child: child_dispatch.ChildRecord, bucket: pathlib.Path
+    record: child_dispatch.DispatchRecord,
+    child: child_dispatch.ChildRecord,
+    parent: str,
+    bucket: pathlib.Path,
 ) -> ChildView:
     row = ChildView(
         child.session_id, child.number, record.identity, record.source, child.task, child.model
@@ -261,7 +312,7 @@ def _recorded_child(
     join = child.join
     if join is not None:
         status = {
-            "joined": "merged",
+            "joined": "joined",
             "conflict": "failed",
             "failed": "failed",
             "stopped": "stopped",
@@ -274,6 +325,7 @@ def _recorded_child(
             outcome=join.status,
             imported_ref=join.branch,
             join_sha=join.sha,
+            joined_to=parent if join.status == "joined" else "",
             commits=join.commits,
             error=join.detail or row.error,
             current_tool="",

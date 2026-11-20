@@ -123,3 +123,32 @@ def test_model_git_completed_task_passes_with_its_retained_ref(
     assert cli_main(["sessions", "show", record.children[0].session_id]) == 0
     child = capsys.readouterr().out
     assert join.branch in child and " · unmerged" not in child
+
+
+def test_show_tells_checkout_from_child_join_even_on_the_child_itself(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A parent join was labelled merged while the child's own page offered to merge it."""
+    parent = _run(tmp_path, monkeypatch, "agent6")
+    (record,) = child_dispatch.read_records(parent)
+    child = record.children[0].session_id
+    assert children_cli._git(pathlib.Path.cwd(), "ls-tree", "--name-only", "HEAD") == "README.md"
+    join = record.children[0].join
+    assert join and children_cli._git(pathlib.Path.cwd(), "show", f"{join.sha}:answer") == "done"
+    capsys.readouterr()
+    pages: list[str] = []
+    for sid in (parent.name, child):
+        assert cli_main(["sessions", "show", sid]) == 0
+        pages.append(capsys.readouterr().out)
+    assert all(f"joined {parent.name}'s chain at {join.sha[:12]}" in page for page in pages)
+    assert (
+        "checkout:   no merge recorded" in pages[0] and f"sessions merge {parent.name}" in pages[0]
+    )
+    assert (
+        "checkout:   no direct merge recorded" in pages[1]
+        and f"sessions show {parent.name}" in pages[1]
+    )
+    assert f"sessions merge {child}" not in pages[1] and " · unmerged" not in pages[1]
+    assert cli_main(["sessions", "show", child, "--json"]) == 0
+    own = json.loads(capsys.readouterr().out)
+    assert (own["joined_to"], own["join_sha"], own["merged_into"]) == (parent.name, join.sha, None)
