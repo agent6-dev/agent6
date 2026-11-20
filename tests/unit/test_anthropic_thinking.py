@@ -84,7 +84,8 @@ def test_thinking_enables_budget_and_drops_temperature(
 
 
 @pytest.mark.parametrize(
-    "model", ["claude-sonnet-5", "claude-opus-5", "claude-opus-4-8", "claude-fable-5"]
+    "model",
+    ["claude-sonnet-5", "claude-opus-5", "claude-opus-4-8", "claude-fable-5", "claude-haiku-5-5"],
 )
 def test_adaptive_models_use_adaptive_effort_and_summary(
     monkeypatch: pytest.MonkeyPatch, model: str

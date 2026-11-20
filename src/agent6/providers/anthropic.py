@@ -59,6 +59,7 @@ _THINKING_BUDGET_TOKENS: dict[str, int] = {
 # `output_config.effort` instead.
 _ADAPTIVE_THINKING_MARKERS = (
     "fable-5",
+    "haiku-5",
     "mythos-5",
     "mythos-preview",
     "opus-4-6",
@@ -71,6 +72,7 @@ _ADAPTIVE_THINKING_MARKERS = (
 # Of those, the models whose thinking display defaults to omitted; a summary streams progress.
 _SUMMARISE_DISPLAY_MARKERS = (
     "fable-5",
+    "haiku-5",
     "mythos-5",
     "mythos-preview",
     "opus-4-7",
