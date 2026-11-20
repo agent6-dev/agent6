@@ -124,10 +124,14 @@ def _hermetic_git(  # pyright: ignore[reportUnusedFunction]
 
     The tests' own git calls read the fixture's global config; agent6's git passes only the
     author and committer variables through, so the identity rides those too. HOME stays the
-    operator's: rustup and the home rows of `check sandbox` read it.
+    operator's: rustup and the home rows of `check sandbox` read it. Maintenance is off: a test
+    process that became a subreaper keeps each detached maintenance run as a zombie, 1,809 in
+    one run of the unit suite.
     """
     cfg = tmp_path_factory.mktemp("git-identity") / "gitconfig"
-    cfg.write_text("[user]\n\tname = t\n\temail = t@t\n", encoding="utf-8")
+    cfg.write_text(
+        "[user]\n\tname = t\n\temail = t@t\n[maintenance]\n\tauto = false\n", encoding="utf-8"
+    )
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
     for role in ("AUTHOR", "COMMITTER"):
