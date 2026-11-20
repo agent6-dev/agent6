@@ -268,7 +268,7 @@ def _rewind_checkout(
 
 
 def _checkout_writer_lock(
-    state: pathlib.Path, checkout: pathlib.Path, undone: sessions_layout.SessionLayout
+    checkout: pathlib.Path, undone: sessions_layout.SessionLayout
 ) -> tuple[int | None, str]:
     """Take the checkout's writer lock for the commit and the rewind.
 
@@ -276,7 +276,6 @@ def _checkout_writer_lock(
     writer lock.
 
     Args:
-        state: The repo's state directory.
         checkout: The checkout to lock.
         undone: The session being undone.
 
@@ -292,9 +291,8 @@ def _checkout_writer_lock(
             " under it. Stop it first:\n"
             f"    agent6 stop {undone.session_id}"
         )
-    lock_fd = lock.acquire_repo_writer(state, checkout, undone.session_id)
+    lock_fd, holder = lock.take_checkout_writer(checkout, undone.session_id)
     if lock_fd is None:
-        holder = lock.repo_writer_holder(state, checkout) or "another run"
         return None, (
             f"run {holder!r} is driving this checkout, and /undo would put the tree back"
             " under it. Stop it first:\n"
@@ -391,7 +389,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     except ConfigError as exc:
         reporter.error(str(exc))
         return None
-    lock_fd, refusal = _checkout_writer_lock(state, checkout, undone)
+    lock_fd, refusal = _checkout_writer_lock(checkout, undone)
     if refusal:
         reporter.refuse(refusal)
         return None

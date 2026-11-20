@@ -15,7 +15,7 @@ import subprocess
 import pytest
 
 from agent6 import errors, paths
-from agent6.app import reporter, undo
+from agent6.app import fork_worktrees, reporter, undo
 from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
@@ -439,6 +439,35 @@ def test_undo_refuses_while_another_live_run_drives_the_checkout(
         assert (repo / "a.txt").read_text(encoding="utf-8") == "three\n"
         assert git_read.chain_tip(repo, git_read.chain_ref_for("run-AAAA11")) == c2
         assert not (state / "lineage.jsonl").exists()
+
+
+def test_undo_contends_for_the_clone_of_a_linked_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, c1, _ = _run_that_moved_on(tmp_path, monkeypatch)
+    linked, clone = tmp_path / "linked", tmp_path / "clone"
+    _git(repo, "worktree", "add", "--detach", str(linked), c1)
+    fork_worktrees.add_session_worktree(linked, clone, c1, "clone")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
+    manifest = json.loads(layout.manifest_path.read_text())
+    manifest["worktree"] = str(clone)
+    layout.manifest_path.write_text(json.dumps(manifest))
+    said: list[str] = []
+    fd = lock.acquire_repo_writer(paths.state_dir(clone), clone, "clone-writer")
+    assert fd is not None
+    try:
+        assert (
+            undo.undo_fork(
+                (),
+                layout.session_id,
+                cwd=linked,
+                reporter=reporter.Reporter(said.append, said.append),
+            )
+            is None
+        )
+    finally:
+        lock.release_single_writer(fd)
+    assert any("'clone-writer' is driving this checkout" in line for line in said), said
 
 
 def test_undo_of_a_live_plan_session_refuses(

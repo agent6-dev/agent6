@@ -130,7 +130,7 @@ def remove_fork_worktree(
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
-    lock_path = lock.checkout_lock_path(paths.state_dir(repo), worktree)
+    lock_path = lock.checkout_lock_path(paths.state_dir(worktree), worktree)
     if is_clone(worktree):
         record = paths.session_clone_record(paths.checkout_root(repo), worktree)
         try:

@@ -130,6 +130,13 @@ def repo_writer_holder(state_dir: pathlib.Path, checkout: pathlib.Path) -> str:
         return ""
 
 
+def take_checkout_writer(checkout: pathlib.Path, session_id: str) -> tuple[int | None, str]:
+    """Return the held checkout lock, or its holder when another writer has it."""
+    state = paths.state_dir(checkout)
+    fd = acquire_repo_writer(state, checkout, session_id)
+    return fd, "" if fd is not None else repo_writer_holder(state, checkout) or "another run"
+
+
 def repo_writer_held(state_dir: pathlib.Path, checkout: pathlib.Path) -> bool:
     """Return whether a live worker holds the checkout lock.
 
