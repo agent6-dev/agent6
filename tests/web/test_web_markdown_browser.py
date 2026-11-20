@@ -288,6 +288,36 @@ def test_tables_and_minor_headings_set_their_own_styles(
     assert not errors
 
 
+def test_code_in_a_quote_reads_at_aa_in_the_light_theme(
+    git_port: int, tmp_path: pathlib.Path, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """Code in a quote kept the quote's muted grey on its tint: 4.41:1 in the light theme."""
+    from playwright.sync_api import expect
+
+    (tmp_path / "quote.md").write_text("> A note with `code` in it.\n", encoding="utf-8")
+    test_git_history._git(tmp_path, "add", "quote.md")
+    test_git_history._git(tmp_path, "commit", "-m", "a quote")
+    page, errors = open_page(git_port)
+    page.add_init_script("localStorage.setItem('a6-theme', 'light')")
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/quote.md")
+    code = page.locator(".md-view blockquote code")
+    expect(code).to_have_text("code")
+    ratio = code.evaluate("""e => {
+      const rgba = c => { const v = c.match(/[\\d.]+/g).map(Number);
+        return c.startsWith('color(') ? v.map((x, i) => i < 3 ? x * 255 : x) : v; };
+      const lum = c => c.slice(0, 3).map(v => v / 255)
+        .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+        .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+      const tint = rgba(getComputedStyle(e).backgroundColor), a = tint[3] ?? 1;
+      const page = rgba(getComputedStyle(document.body).backgroundColor);
+      const bg = lum(page.map((v, i) => i < 3 ? tint[i] * a + v * (1 - a) : v));
+      const fg = lum(rgba(getComputedStyle(e).color));
+      return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+    }""")
+    assert ratio >= 4.5, ratio
+    assert not errors
+
+
 def test_a_missing_image_keeps_its_place_with_the_reason(
     git_port: int, tmp_path: pathlib.Path, open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:

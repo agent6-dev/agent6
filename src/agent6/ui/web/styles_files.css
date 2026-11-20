@@ -62,6 +62,8 @@
 .md-view code { padding: .15em .3em; border-radius: 4px; background: color-mix(in srgb, var(--muted) 18%, transparent); font-size: .9em; }
 .md-view pre { padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: pre; overflow-x: auto; word-break: normal; overflow-wrap: normal; }
 .md-view pre code { padding: 0; background: none; border-radius: 0; }
+/* Code in a quote takes the text colour: the quote's muted grey on the chip's tint misses AA. */
+.md-view blockquote code { color: var(--text); }
 /* Raw HTML shows as its muted source: a block in a dashed box, a tag inline. */
 .md-view .md-raw { color: var(--muted); }
 .md-view pre.md-raw { border-style: dashed; background: none; }
