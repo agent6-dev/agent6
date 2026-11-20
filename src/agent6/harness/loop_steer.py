@@ -184,9 +184,12 @@ def ranked_opening(
         summaries.insert(0, started.message)
     summary = "\n".join(summaries) or started.message
     # A task needs one successful attempt of its own. Model-owned git keeps the ranked ref.
-    accepted = {"joined", "no_changes"} if harness.chain.ref else {"joined", "no_changes", "ranked"}
     statuses = [{join.status for join in group} for group in groups]
-    failed = [group for group in statuses if not group.intersection(accepted)]
+    failed = [
+        status
+        for status, group in zip(statuses, groups, strict=True)
+        if parallel_join.segment_stamp(group)[0] != "passed"
+    ]
     if missing or failed:
         spent = harness.budget is not None and harness.budget.is_exhausted()
         reason: loop_snapshot.SessionEndReason = (

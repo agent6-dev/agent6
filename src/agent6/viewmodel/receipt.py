@@ -401,6 +401,8 @@ def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
             what = f"joined at {child.join_sha[:12]}"
         elif child.outcome == "no_changes":
             what = "no changes"
+        elif child.outcome == "retained":
+            what = f"retained on {child.imported_ref}"
         elif child.outcome:
             what = f"{child.outcome}: {child.error}" if child.error else child.outcome
         else:

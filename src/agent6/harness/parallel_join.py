@@ -119,13 +119,12 @@ def stopped_words(
 
 
 def segment_stamp(
-    children: list[child_records.ChildJoin],
+    children: Sequence[child_records.ChildJoin],
 ) -> tuple[graph_models.NodeStatus, str, str]:
     """Reduce one segment's child joins to its DAG stamp.
 
-    A segment passes when any child joined or finished with no changes, recording the last
-    joined sha (none for no changes); the note names every child. A conflict counts as not
-    joined, and so does a stopped child.
+    A finished result can join, have no changes, or retain its ref under model-owned git.
+    Only a join records a commit on the parent task.
 
     Args:
         children: The segment's joins.
@@ -135,7 +134,7 @@ def segment_stamp(
     """
     joined = [j for j in children if j.status == "joined"]
     note = "; ".join(child_note(j) for j in children)
-    if joined or any(j.status == "no_changes" for j in children):
+    if joined or any(j.status in ("no_changes", "retained") for j in children):
         return "passed", note, joined[-1].sha if joined else ""
     return "failed", note, ""
 
@@ -146,8 +145,9 @@ def join_words(j: child_records.ChildJoin) -> str:
         return f"joined at {j.sha[:12]}"
     if j.status == "ranked":
         return f"ranked {j.detail}; not merged; {j.branch} holds its work"
-    if j.status == "unmerged":
-        return f"not merged; {j.branch} holds {j.commits} commit(s)"
+    if j.status == "retained":
+        rank = f"ranked {j.detail}; " if j.detail else ""
+        return f"{rank}retained on {j.branch} ({j.commits} commit(s))"
     if j.status == "stopped":
         return stopped_words(j.detail, j.branch, j.commits, j.context)
     return "no changes" if j.status == "no_changes" else j.status
@@ -155,7 +155,7 @@ def join_words(j: child_records.ChildJoin) -> str:
 
 def child_note(j: child_records.ChildJoin) -> str:
     """Return one child's outcome as a DAG note line."""
-    if j.status in ("joined", "unmerged"):
+    if j.status in ("joined", "retained"):
         return f"{j.session_id} {join_words(j)}"
     if j.status == "no_changes":
         return f"{j.session_id} made no changes"
@@ -251,7 +251,7 @@ def summary_text(
             # A panel's reviewer the deadline ended did not finish: the line says so.
             ended = j.detail or "finished"
             lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
-        elif j.status == "unmerged":
+        elif j.status == "retained":
             lines.append(
                 f"  - {j.session_id}: {join_words(j)}. git.control = model: merge with git."
             )
@@ -279,7 +279,11 @@ def summary_text(
     elif any(j.status == "joined" for j in children):
         lines.append("Review what merged and continue.")
     else:
-        lines.append("Nothing merged.")
+        lines.append(
+            "Agent6 made no merge."
+            if any(j.status == "retained" for j in children)
+            else "Nothing merged."
+        )
     return "\n".join(lines)
 
 
@@ -293,7 +297,7 @@ def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
         The count line and each child's outcome: joined, changed nothing, its place with the
         branch that holds its work, stopped, or its failure.
     """
-    ranked = sum(1 for j in children if j.status in ("joined", "no_changes", "ranked"))
+    ranked = sum(1 for j in children if j.status in ("joined", "no_changes", "ranked", "retained"))
     lines = [f"{ranked} of {len(children)} child(ren) ranked:"]
     for j in children:
         if j.status == "joined":
@@ -302,6 +306,8 @@ def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
             what = "first; it changed nothing"
         elif j.status == "ranked":
             what = f"{j.detail}; {j.branch} holds its work"
+        elif j.status == "retained":
+            what = join_words(j)
         elif j.status == "conflict":
             what = f"first; its merge conflicted, {j.branch} holds its work"
         elif j.status == "stopped":

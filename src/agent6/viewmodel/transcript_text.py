@@ -219,11 +219,13 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
             status = "merged"
         elif status == "no_changes":
             status = "no changes"
+        elif status == "unmerged":  # v12 model-owned dispatch
+            status = "retained"
         parts = [str(ln.get("session_id", "?"))]
         branch = str(ln.get("branch", "")).strip()
         if branch:
             parts.append(branch)
-        if status in ("stopped", "unmerged") and isinstance(count := ln.get("commits"), int):
+        if status in ("stopped", "retained") and isinstance(count := ln.get("commits"), int):
             parts.append(f"{count} {'commit' if count == 1 else 'commits'}")
         sha = str(ln.get("sha", "")).strip()
         if sha:

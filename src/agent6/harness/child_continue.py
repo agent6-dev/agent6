@@ -44,7 +44,9 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         raise tool_errors.ToolError(f"child {session_id} is not stopped and unmerged")
     if record.state != "complete":
         raise tool_errors.ToolError("the task's other attempts have not ended; nothing continued")
-    if any(c.join and c.join.status in ("joined", "no_changes") for c in record.children):
+    if any(
+        c.join and c.join.status in ("joined", "no_changes", "retained") for c in record.children
+    ):
         raise tool_errors.ToolError("an attempt already completed this task; nothing continued")
     if any(child_merge.pending(c) for c in record.children):
         raise tool_errors.ToolError("the task has a pending merge; nothing continued")

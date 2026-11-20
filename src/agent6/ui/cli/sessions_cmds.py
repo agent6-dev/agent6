@@ -519,7 +519,9 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
     ]
     if children:
         lines.append(f"  children:   {len(children)} go with it")
-    if summary.unmerged:
+    if summary.retained_ref:
+        lines.append(f"  commits: retained ref {summary.retained_ref} goes with the record")
+    elif summary.unmerged:
         branch = git_read.run_branch_for(layout.session_id)
         kept = f"branch {branch} keeps them" if branch in tips else "they go with it"
         lines.append(f"  commits: not merged; {kept}")

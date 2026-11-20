@@ -122,7 +122,7 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     (child,) = record.children
     assert child.continuation is not None and child.continuation.sequence == 1
     assert child.join is not None
-    assert child.join.status == ("joined" if control == "agent6" else "unmerged")
+    assert child.join.status == ("joined" if control == "agent6" else "retained")
     continued = [b for b in seen if "CONTINUE-OWNED" in json.dumps(b["messages"])]
     assert continued
     stopped = json.dumps(parents[3]["messages"])

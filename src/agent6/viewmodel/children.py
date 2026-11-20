@@ -33,7 +33,7 @@ class ChildView:
         model: Its selector, None for the worker's own settings.
         route: The `provider/model` its manifest records; "" when it never started.
         status: Where the child stands in its task, including a merge or a ranking.
-        outcome: The recorded merge outcome, including `stopped`, `ranked` and `unmerged`.
+        outcome: The recorded merge outcome, including `stopped`, `ranked` and `retained`.
             An empty string means the parent has recorded no outcome.
         join_sha: The merge commit, "" when none.
         imported_ref: The branch the join read, "" when none.

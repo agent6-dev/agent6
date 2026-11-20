@@ -11,7 +11,7 @@ function childFacts(c) {
     [model, c.current_tool, c.turn != null && `turn ${c.turn}`, c.tokens != null && `${c.tokens.toLocaleString()} tokens`,
      usage, c.elapsed_s != null && `${c.elapsed_s}s elapsed`],
     [!c.launched && c.status === 'failed' && 'never started', outcome && outcome !== c.status && outcome,
-     c.commits > 0 && `${c.commits} unmerged commit${c.commits === 1 ? '' : 's'}`, c.imported_ref, c.error],
+     c.commits > 0 && `${c.commits} ${c.outcome === 'stopped' ? 'unmerged ' : ''}commit${c.commits === 1 ? '' : 's'}`, c.imported_ref, c.error],
     [c.verdict_order.length && `verdict: ${c.verdict_order.join(', ')}`, c.verdict_summary],
   ].map(line => line.filter(Boolean).join(' · ')).filter(Boolean).join('\n');
 }

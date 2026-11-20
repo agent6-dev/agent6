@@ -297,6 +297,7 @@ class StatusJSON(TypedDict):
     run_branch: str | None
     base_branch: str | None
     merged_into: str | None
+    retained_ref: str | None
     pins: list[str]
 
 
@@ -347,7 +348,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         children: ChildView rows in dispatch order. Lineage-only groups keep their listing fields.
         run_branch: The existing run branch, or null.
         base_branch: The base branch, or null when unknown.
-        merged_into: The merge destination, or null when not merged.
+        merged_into: The merge destination, or null without a covering merge stamp.
+        retained_ref: The retained model-owned ref, or null without one.
         pins: The operator's active pinned instructions.
 
         session_id: The session identifier.
@@ -442,6 +444,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
             "base_branch": manifest.base_branch or None,
             "merged_into": changes.merged_into or None,
+            "retained_ref": summary.retained_ref or None,
             "pins": list(scan.pins),
         }
 

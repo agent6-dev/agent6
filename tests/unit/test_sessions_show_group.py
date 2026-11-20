@@ -721,7 +721,7 @@ def child_roster(ordinary_parent: pathlib.Path) -> pathlib.Path:
     """Record a live child, two retained refs, a launch failure and a reviewer's verdict."""
     state = paths.state_dir(ordinary_parent)
     root = sessions_layout.SessionLayout(state, "co").session_dir
-    for i, outcome in enumerate(("running", "stopped", "unmerged", "failed", "panel"), start=2):
+    for i, outcome in enumerate(("running", "stopped", "retained", "failed", "panel"), start=2):
         group = f"co-p{i}"
         sid = f"{group}-l1"
         task = f"check {outcome} case"
@@ -753,11 +753,11 @@ def child_roster(ordinary_parent: pathlib.Path) -> pathlib.Path:
                     {"type": "tool.call", "turn": 4, "name": "read_file", "call_id": 1},
                 ],
             )
-        elif outcome in ("stopped", "unmerged"):
+        elif outcome in ("stopped", "retained"):
             child = child.model_copy(
                 update={
                     "join": child_dispatch.JoinRecord(
-                        status="stopped" if outcome == "stopped" else "unmerged",
+                        status="stopped" if outcome == "stopped" else "retained",
                         branch=f"refs/heads/{outcome}-work",
                         commits=i,
                     )
@@ -820,8 +820,8 @@ def test_cli_child_roster_text(
         "stopped",
         "refs/heads/stopped-work",
         "3 commits",
-        "unmerged",
-        "refs/heads/unmerged-work",
+        "retained",
+        "refs/heads/retained-work",
         "4 commits",
         "co-p5-l1",
         "never started",
@@ -876,7 +876,7 @@ def test_cli_child_roster_json(
         0.25,
     )
     assert live["elapsed_s"] > 0
-    for row, status, commits in [(stopped, "stopped", 3), (held, "unmerged", 4)]:
+    for row, status, commits in [(stopped, "stopped", 3), (held, "retained", 4)]:
         assert (row["outcome"], row["imported_ref"], row["commits"]) == (
             status,
             f"refs/heads/{status}-work",

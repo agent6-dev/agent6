@@ -133,6 +133,7 @@ class SessionSummary:
             a snapshot, a branch or a commit on it.
         base_sha: The commit the run started from, as the manifest recorded it; "" unknown.
         source_tip: The run's last diff checkpoint commit; "" before one.
+        retained_ref: The imported model-owned ref when present in the tips snapshot.
         open_findings: The open grounded findings by severity, from the journal's review fold.
     """
 
@@ -159,6 +160,7 @@ class SessionSummary:
     branch: str = ""
     base_sha: str = ""
     source_tip: str = ""
+    retained_ref: str = ""
     open_findings: review.SeverityCounts = dataclasses.field(default_factory=review.SeverityCounts)
 
     @property
@@ -365,6 +367,7 @@ class SummaryRow(TypedDict):
     model_from_flag: bool
     id_cell: str
     unmerged: bool
+    retained_ref: str | None
     verification: kinds.Verification | None
     winner: bool
     number: int | None
@@ -432,7 +435,8 @@ def summary_row(
         model: The resolved provider/model route.
         model_from_flag: Whether a model flag selected the route.
         id_cell: The session identifier with winner and worktree marks.
-        unmerged: Whether the run holds unmerged work.
+        unmerged: Whether the run has agent6-owned commits outside its merge stamp.
+        retained_ref: The retained model-owned ref, or null without one.
         verification: The gate verdict, or null without a verdict.
         number: The child number, or null outside a group.
         parent: The session that dispatched this child.
@@ -477,6 +481,7 @@ def summary_row(
         "model_from_flag": s.model_from_flag,
         "id_cell": s.id_cell(winner=winner),
         "unmerged": s.unmerged,
+        "retained_ref": s.retained_ref or None,
         "verification": s.verification,
         "winner": winner,
         "number": s.number,
@@ -686,7 +691,7 @@ def unmerged(
     Returns:
         Whether its chain or branch has a tip beyond the base and outside the stamp.
     """
-    if word == "undone":
+    if word == "undone" or manifest.git_control == "model":
         return False
     tips = _run_tips(manifest, branch_tips)
     # The branch may carry the operator's own commits; a merge stamps whichever tip it merged.
@@ -771,8 +776,12 @@ def summarize_session_dir(
     missing = sessions_manifest.worktree_blocker(manifest.worktree) if manifest else ""
     # Prune removes a merged session's worktree: nothing is missing then.
     pruned = bool(missing) and manifest is not None and manifest.merged is not None
+    held = git_read.chain_ref_for(session_dir.name)
     return SessionSummary(
         session_id=session_dir.name,
+        retained_ref=held
+        if manifest and manifest.git_control == "model" and held in (branch_tips or {})
+        else "",
         mode=mode,
         task_label=label,
         status=word,

@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import child_records, portable
 
-RECORD_VERSION = 12
+RECORD_VERSION = 13
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
 
@@ -49,6 +49,19 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     context: child_records.ChildContext = child_records.ChildContext()
     target_before: str = ""
     target_after: str = ""
+
+    @pydantic.field_validator("status", mode="before")
+    @classmethod
+    def read_status(cls, value: object) -> object:
+        """Read a v12 model-owned ref as retained, regardless of a later manual merge.
+
+        Args:
+            value: The status in the dispatch record.
+
+        Returns:
+            The current spelling for field validation.
+        """
+        return "retained" if value == "unmerged" else value
 
 
 class MergeRequest(pydantic.BaseModel, frozen=True, extra="forbid"):
@@ -250,7 +263,7 @@ def write_record(session_dir: pathlib.Path, record: DispatchRecord, *, now: floa
     """
     path = record_path(session_dir, record.identity)
     path.parent.mkdir(parents=True, exist_ok=True)
-    stamped = record.model_copy(update={"written_at": now})
+    stamped = record.model_copy(update={"version": RECORD_VERSION, "written_at": now})
     portable.atomic_write(path, stamped.model_dump_json(indent=2) + "\n")
 
 

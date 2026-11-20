@@ -12,8 +12,9 @@ import pytest
 
 from agent6 import paths
 from agent6.config import Config, layer
+from agent6.graph import storage
 from agent6.harness.verify import child as child_verify
-from agent6.sessions import child_dispatch
+from agent6.sessions import child_dispatch, layout
 from agent6.ui.cli import cli_main
 from tests import launch_env
 from tests.unit import test_children_cli as children_cli
@@ -99,3 +100,26 @@ def test_parent_names_the_child_that_verified_its_exact_tree(
             )
         )
         assert child_verify.covering_pass(parent, tree, command) is None, changes
+
+
+def test_model_git_completed_task_passes_with_its_retained_ref(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The DAG failed a finished task solely because there was no parent chain."""
+    parent = _run(tmp_path, monkeypatch, "model")
+    (record,) = child_dispatch.read_records(parent)
+    join = record.children[0].join
+    assert join and children_cli._git(pathlib.Path.cwd(), "show", f"{join.branch}:answer") == "done"
+    node = storage.load_graph(layout.layout_of(parent))[record.node_id or ""]
+    assert node.status == "passed"
+    assert cli_main(["sessions", "show", parent.name]) == 0
+    out = capsys.readouterr().out
+    assert "no_child_result" not in out and f"retained on {join.branch}" in out
+    assert not (pathlib.Path.cwd() / "answer").exists()
+    assert cli_main(["sessions", "show", parent.name, "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["stop_reason"] == "children_ranked"
+    assert shown["verification"] == "unverified" and shown["child_verification"] is None
+    assert cli_main(["sessions", "show", record.children[0].session_id]) == 0
+    child = capsys.readouterr().out
+    assert join.branch in child and " · unmerged" not in child

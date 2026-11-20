@@ -77,10 +77,10 @@ class ChildRow:
             f"elapsed {c.elapsed_s}s" if c.elapsed_s is not None else "elapsed ?",
         ]
         lines.append(indent + " · ".join(meter))
-        if c.imported_ref or c.outcome in ("stopped", "unmerged"):
+        if c.imported_ref or c.outcome in ("stopped", "retained"):
             count = (
                 f" · {c.commits} {'commit' if c.commits == 1 else 'commits'}"
-                if c.outcome in ("stopped", "unmerged")
+                if c.outcome in ("stopped", "retained")
                 else ""
             )
             lines.append(f"{indent}ref: {c.imported_ref or '?'}{count}")

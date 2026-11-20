@@ -148,7 +148,8 @@ A stopped child shows the ref and commits it holds.
 A reviewer shows its order and summary when it returns a verdict.
 To act on one running child, use `agent6 steer <child-id> "<message>"` or `agent6 stop <child-id>`.
 With `git.control = "agent6"`, every entry merges a task once: one child's work is merged onto the run's chain, and several children on one task are attempts, of which the first-ranked merges.
-With `git.control = "model"`, agent6 merges nothing; each child's work stays on the ref its notice names for the model to merge with git.
+With `git.control = "model"`, a finished child completes its task without a merge; its row names the retained ref.
+The model can merge that ref with git.
 `run --parallel` waits for its children without a model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child follows this merge policy, and the run ends `finished · children ranked`.
 If a child passed the parent's full verify command on content identical to the parent's final tree, the parent can cite that pass instead of rerunning the gate.
 `sessions show` and `sessions receipt` name the child that verified it.

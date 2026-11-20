@@ -201,7 +201,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
     ] * 2
     a_join, b_join = first.children[0].join, second.children[0].join
     assert a_join is not None and b_join is not None
-    expected = "joined" if control == "agent6" else "unmerged"
+    expected = "joined" if control == "agent6" else "retained"
     assert (a_join.status, b_join.status) == (expected, expected)
     assert _git(repo, "show", f"{a_join.branch}:a.txt") == "CHILD-A"
     assert _git(repo, "show", f"{b_join.branch}:b.txt") == "CHILD-B"
@@ -223,7 +223,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         for sid in (one, two):
             assert f"child {sid} started" in rendered
             assert f"child {sid} finished" in rendered
-            assert f"{'merged' if control == 'agent6' else 'unmerged'}  {sid}" in rendered
+            assert f"{'merged' if control == 'agent6' else 'retained'}  {sid}" in rendered
     assert [row["group"] for row in rows if row["type"] == "parallel.joined"] == [
         f"{session}-p2",
         f"{session}-p1",
@@ -437,8 +437,8 @@ def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
     )
     assert task.ranking.rationale == "the second reads best"
     assert [child.join.status for child in task.children if child.join] == [
-        "ranked",
-        "joined" if control == "agent6" else "ranked",
+        "ranked" if control == "agent6" else "retained",
+        "joined" if control == "agent6" else "retained",
     ]
     assert (repo / "x.txt").exists() is (control == "agent6")
     for child in task.children:

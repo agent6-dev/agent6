@@ -544,7 +544,7 @@ class ParallelDispatcher:
             p
             for p, j in zip(payload, joins, strict=True)
             # A stopped child is no failed join: nothing of it was meant to merge.
-            if j.status not in ("joined", "no_changes", "ranked", "stopped", "unmerged")
+            if j.status not in ("joined", "no_changes", "ranked", "stopped", "retained")
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
@@ -643,7 +643,7 @@ class ParallelDispatcher:
             elif (
                 res is not None
                 and res.ok
-                # Model-owned git has no run chain: every child's ref stays unmerged.
+                # Model-owned git records the imported ref, not its merge status.
                 and (
                     not self.chain.ref or (child.session_id in order and child.session_id != winner)
                 )
@@ -654,11 +654,14 @@ class ParallelDispatcher:
                     if child.session_id in order
                     else ""
                 )
-                held = res.imported_ref or res.branch
                 join = child_records.ChildJoin(
                     child.session_id,
-                    held,
-                    "ranked" if place else "unmerged",
+                    res.imported_ref or (res.branch if self.chain.ref else ""),
+                    "ranked"
+                    if self.chain.ref
+                    else "retained"
+                    if res.imported_ref
+                    else "no_changes",
                     "",
                     place,
                     commits=res.commits,

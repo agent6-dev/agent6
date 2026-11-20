@@ -23,7 +23,7 @@ DispatchSource = Literal["operator", "model", "panel"]
 # best-ranked one alone.
 JoinPolicy = Literal["merge", "record_only", "rank"]
 # How one child's work joined the parent's chain.
-JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "stopped", "unmerged"]
+JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "stopped", "retained"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -333,7 +333,7 @@ class ChildJoin:
             `ranked` (a rank join placed the child and did not join it: another child merged,
             or the run has no chain to join onto; the branch holds this one's work) or
             `stopped` (the child was stopped, so nothing merged; the branch holds its work),
-            or `unmerged` (finished under model-owned git; the ref holds its work).
+            or `retained` (finished under model-owned git; the imported ref holds its work).
         sha: The merge commit, or "".
         detail: The failure's reason; a conflict's files; a ranked child's place (`2 of 3`);
             what stopped a stopped child (`stopped by its parent`); else "".

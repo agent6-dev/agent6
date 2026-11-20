@@ -41,7 +41,7 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
         status = f"reviewer: {status}"
     if not child.launched and child.status == "failed":
         result.append("not started")
-    if child.outcome in ("stopped", "unmerged"):
+    if child.outcome in ("stopped", "retained"):
         if child.outcome != child.status:
             status += f" · {child.outcome}"
         result.append(f"{child.commits} commit{'' if child.commits == 1 else 's'}")

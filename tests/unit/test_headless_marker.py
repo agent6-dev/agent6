@@ -49,5 +49,5 @@ def test_headless_log_names_child_activity_and_merge_results(tmp_path: pathlib.P
         "[agent6] child c2 stopped",
         "[agent6] child c1 continued (1)",
         "[agent6] child c1 merged at abc123",
-        "[agent6] group g complete: 1 child\nunmerged  c2  kept  2 commits",
+        "[agent6] group g complete: 1 child\nretained  c2  kept  2 commits",
     ]
