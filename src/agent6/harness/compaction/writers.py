@@ -117,6 +117,7 @@ def rejection(response: provider_types.ProviderResponse) -> str:
 
 def instruction(
     *,
+    writer: Literal["worker", "helper"],
     task: str,
     open_tasks: list[tuple[str, str]],
     focus: str,
@@ -125,12 +126,15 @@ def instruction(
 ) -> str:
     """Build the summary's goal, task check-off, focus, pins and prior summary.
 
+    The worker also gets the summary prompt, which the helper has as its system text.
+
     Args:
+        writer: Who receives the instruction.
         task: The original goal.
         open_tasks: Open task ids and titles.
         focus: The operator's summary focus.
         pins: Instructions repeated verbatim after restart.
-        messages: Replaced history, including the prior summary for the helper.
+        messages: Replaced history, read for the prior summary a helper cannot see.
 
     Returns:
         The instruction appended to the worker or sent to the helper.
@@ -159,9 +163,9 @@ def instruction(
     if pins:
         pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(pins, start=1))
         pins_req = compaction.PINS_NO_RESTATE_CLAUSE + pin_lines
-    # A helper tail clip must not erase the previous restart summary.
+    # A helper tail clip must not erase the previous restart summary; the worker has it in view.
     prior_req = ""
-    for message in messages:
+    for message in messages if writer == "helper" else ():
         for item in getattr(message, "items", ()):
             if isinstance(item, loop_conversation.Notice) and (
                 prior := compaction.progress_summary_from_notice(item.text)
@@ -172,10 +176,12 @@ def instruction(
                     " happened SINCE. Carry anything still relevant into the new"
                     f" summary:\n{prior}"
                 )
+    body = f"TASK (the goal, verbatim):\n{task}{checkoff_req}{focus_req}{pins_req}{prior_req}"
+    if writer == "helper":
+        return body
     return (
         "Write the summary now. Do not make a tool call; no tool call will be run.\n"
         + compaction.CONTEXT_SUMMARY_SYSTEM_PROMPT
-        + "\nThe conversation remains in view, including its previous summary."
-        f"\n\nTASK (the goal, verbatim):\n{task}"
-        f"{checkoff_req}{focus_req}{pins_req}{prior_req}"
+        + "\nThe conversation remains in view, including its previous summary.\n\n"
+        + body
     )

@@ -245,11 +245,12 @@ def write_summary(
             )
         )
         request = writers.instruction(
+            writer=writer,
             task=context.task,
             open_tasks=open_tasks,
             focus=focus,
             pins=context.pins,
-            messages=messages if writer == "helper" else (),
+            messages=messages,
         )
         try:
             if writer == "worker":

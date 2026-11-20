@@ -179,7 +179,7 @@ def build(
         lambda: False,
     )
     instruction = writers.instruction(
-        task=task, open_tasks=list(open_tasks), pins=pins, focus=focus, messages=()
+        writer="worker", task=task, open_tasks=list(open_tasks), pins=pins, focus=focus, messages=()
     )
     prepared.call_worker(instruction, "summary")
     kwargs = sink.call.call_args.kwargs
