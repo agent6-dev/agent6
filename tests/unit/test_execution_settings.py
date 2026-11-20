@@ -40,6 +40,29 @@ def test_settings_record_origins_without_freeform_secrets(tmp_path: pathlib.Path
     assert "web.metrics_route" not in rows
 
 
+def test_an_explicit_flag_is_the_source_even_when_the_file_value_matches(
+    tmp_path: pathlib.Path,
+) -> None:
+    cfg = paths.repo_config_path(tmp_path)
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.p]\nbackend="openai"\nbase_url="http://localhost:1"\n'
+        '[models.default]\nmodel="p/m"\n[models.worker]\nmodel="p/m"\n'
+        '[budget]\nmax_usd=3\n[sandbox]\nrun_commands="deny"\n'
+    )
+    eff = setup.load_session_config(
+        tmp_path,
+        (),
+        mode="run",
+        model="p/m",
+        budget_overrides=setup.BudgetOverrides(max_usd=3),
+        sandbox_overrides=setup.SandboxOverrides(no_commands=True),
+    )
+    rows = {r.key: r for r in execution_settings.observations(eff.config, eff)}
+    for key in ("budget.max_usd", "models.worker.model", "sandbox.run_commands"):
+        assert rows[key].source == "flag" and rows[key].file is None
+
+
 def test_each_execution_keeps_its_own_settings_in_show_receipt_and_telemetry(
     tmp_path: pathlib.Path,
 ) -> None:

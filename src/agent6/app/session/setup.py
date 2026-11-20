@@ -31,6 +31,7 @@ from agent6.config import (
     ProviderEntry,
     ResponsesProviderEntry,
     child_snapshot,
+    io,
     layer,
     layer_data,
     plan_metered,
@@ -284,25 +285,34 @@ def load_session_config(
     )
     cfg = effective.config
     apply_git_ops_policy(cfg)
+    sources: dict[str, str] = {}
     if budget_overrides is not None:
         cfg = budget_overrides.apply(cfg)
+        sources.update(
+            (f"budget.{key}", "flag")
+            for key, value in dataclasses.asdict(budget_overrides).items()
+            if value is not None
+        )
     if model:
         role = kinds.session_kind(mode).role
         route = cfg.model_route(model) if isinstance(model, str) else model
         cfg = cfg.with_model_route(role, route)
-    flagged = layer_data.config_leaves(cfg)
+        sources[f"models.{role}.model"] = "flag" if isinstance(model, str) else "execution"
     clamped = session_config(cfg, mode)
-    policy = layer_data.config_leaves(clamped)
-    cfg = sandbox_overrides.apply(clamped) if sandbox_overrides else clamped
-    sources: dict[str, str] = {}
-    previous = layer_data.config_leaves(effective.config)
-    for name, updated in (
-        ("flag", flagged),
-        ("mode", policy),
-        ("flag", layer_data.config_leaves(cfg)),
-    ):
-        sources.update((key, name) for key, value in updated.items() if previous.get(key) != value)
-        previous = updated
+    if clamped.sandbox.run_commands != cfg.sandbox.run_commands:
+        sources["sandbox.run_commands"] = "mode"
+    cfg = clamped
+    if sandbox_overrides:
+        cfg = sandbox_overrides.apply(clamped)
+        if sandbox_overrides.disable_sandbox:
+            sources["sandbox.isolation"] = "flag"
+        if sandbox_overrides.no_commands or (
+            sandbox_overrides.auto_approve and clamped.sandbox.run_commands != "deny"
+        ):
+            sources["sandbox.run_commands"] = "flag"
+        if sandbox_overrides.auto_approve:
+            for name in cfg.mcp.servers:
+                sources[io.render_key(("mcp", "servers", name, "approve"))] = "flag"
     cfg.require_runnable(kinds.session_kind(mode).role)
     return dataclasses.replace(effective, config=cfg, applied_sources=sources)
 
