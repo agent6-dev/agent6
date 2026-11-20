@@ -234,7 +234,8 @@ def test_a_fetch_refuses_a_tree_git_would_not_check_out(
         git_fetch.fetch_remote(work, "origin")
 
     assert sorted((work / ".git" / "objects" / "pack").iterdir()) == packs
-    assert "bad" not in _git(work, "for-each-ref", "refs/remotes/origin")
+    names = _git(work, "for-each-ref", "--format=%(refname)", "refs/remotes/origin")
+    assert "refs/remotes/origin/bad" not in names.split()
 
 
 def test_the_scratch_repository_is_out_of_a_jailed_commands_reach(
