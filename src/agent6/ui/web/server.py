@@ -487,6 +487,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     _streaming = False  # the SSE headers went out; an error is a frame now
     _body_length = 0  # this request's Content-Length, parsed once per request
     protocol_version = "HTTP/1.1"
+    # Seconds one socket read or one response write may block; an idle event stream is in neither.
+    timeout = 60.0
     server: WebServer  # type: ignore[assignment]
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -523,7 +525,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         return True
 
     def do_GET(self) -> None:
-        """Route a GET; the method name is the stdlib's dispatch contract."""
+        """Route a GET; the method name is the stdlib's dispatch contract.
+
+        Raises:
+            TimeoutError: The socket stalled past `timeout`; the stdlib handler drops the
+                connection.
+        """
         path = parse.unquote(parse.urlsplit(self.path).path)
         if not self._parse_body_length():
             return
@@ -541,6 +548,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._route(path)
         except (BrokenPipeError, ConnectionResetError):
             pass  # client went away mid-response
+        except TimeoutError:
+            raise
         except Exception as exc:  # one bad request never takes the server down
             if self._streaming:
                 # The status line went out; a second one would land inside the event body.
@@ -549,7 +558,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=500)
 
     def do_POST(self) -> None:
-        """Route a POST; the method name is the stdlib's dispatch contract."""
+        """Route a POST; the method name is the stdlib's dispatch contract.
+
+        Raises:
+            TimeoutError: The socket stalled past `timeout`; the stdlib handler drops the
+                connection.
+        """
         path = parse.unquote(parse.urlsplit(self.path).path)
         # Parsed first: a bad header meets one refusal before anything is read.
         if not self._parse_body_length():
@@ -571,6 +585,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._route_post(path)
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except TimeoutError:
+            raise
         except pydantic.ValidationError as exc:
             # The body was read, so the framing is intact and the connection may stay open.
             self._send_json({"error": _validation_message(exc)}, status=400)

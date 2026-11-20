@@ -538,6 +538,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - No request carries an ambient credential, so no POST needs a cross-site guard: a cross-origin page cannot add the header without a preflight the server never answers.
   DNS rebinding is not covered (that needs a Host allow-list incompatible with the tailnet name): a rebound page holds no token (storage belongs to one origin), so it reaches the public routes and can try secrets at the login; keeping it out is left to the network layer.
 - Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
+  A read or a response write that blocks for 60 seconds closes the connection; an event stream waiting for its next event is in neither.
 - The machine write surface (`POST /api/machine/<name>/{poke,stop,steer,approve,answer}`) uses the same guards.
   `poke` writes the instance's signal file (inert JSON the next `tool` reads) and `stop` its stop marker; `steer`, `approve` and `answer` write only the current agent state's per-state dir.
 - Finding actions use the same authenticated session lookup and body limits.

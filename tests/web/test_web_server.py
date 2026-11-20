@@ -1707,6 +1707,71 @@ def test_chunked_post_body_is_refused(server: tuple[web_server.WebServer, int]) 
     assert "chunked" in str(body["error"])
 
 
+@pytest.mark.parametrize(
+    "sent",
+    [
+        b"",
+        b"GET / HTTP/1.1\r\nHost: x\r\n",
+        b"POST /api/login HTTP/1.1\r\nHost: x\r\nContent-Length: 40\r\n\r\n{",
+    ],
+    ids=["no request", "unfinished headers", "unfinished body"],
+)
+def test_a_stalled_request_is_dropped(
+    server: tuple[web_server.WebServer, int], monkeypatch: pytest.MonkeyPatch, sent: bytes
+) -> None:
+    """A connection that stops sending before its request is complete is closed, unanswered.
+
+    Regression: the handler set no socket timeout, so such a connection held a server thread
+    for as long as the client kept it open.
+    """
+    _srv, port = server
+    assert web_server._Handler.timeout, "the handler sets no socket timeout"  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(web_server._Handler, "timeout", 0.3)  # pyright: ignore[reportPrivateUsage]
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        sock.sendall(sent)
+        assert sock.recv(4096) == b""
+
+
+def test_a_quiet_event_stream_outlives_the_socket_timeout(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An event stream with nothing to send stays open past the handler's socket timeout.
+
+    The timeout bounds one blocked read or write, and a stream waiting for its next event
+    is in neither.
+    """
+    _srv, port = server
+    monkeypatch.setattr(web_server._Handler, "timeout", 0.3)  # pyright: ignore[reportPrivateUsage]
+    _make_run(
+        tmp_path,
+        "quiet-run",
+        [
+            {"type": "session.start", "user_task": "quiet"},
+            {"type": "session.stop", "verification": "passed"},
+        ],
+    )
+    logs = paths.state_dir(tmp_path) / "sessions" / "runs" / "quiet-run" / "logs.jsonl"
+    conn = signin.SignedIn(port, timeout=10)
+    try:
+        conn.request("GET", "/api/session/quiet-run/events")
+        resp = conn.getresponse()
+        _read_until(resp, lambda s: s.get("finished") is True)
+        time.sleep(1.0)  # several timeouts, with no frame and no heartbeat due
+        with logs.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "session.resume", "ts": time.time()}) + "\n")
+            fh.write(
+                json.dumps(
+                    {"type": "model.call", "role": "worker", "model": "m", "ts": time.time()}
+                )
+                + "\n"
+            )
+        _read_until(resp, lambda s: s.get("finished") is False)
+    finally:
+        conn.close()
+
+
 def test_unknown_post_verb_does_not_poison_keepalive(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
