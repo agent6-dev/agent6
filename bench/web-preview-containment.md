@@ -60,22 +60,25 @@ The observed navigation exit is sufficient to reject the policy without relying 
 ## Files preview results
 
 `uv run pytest -q -n 2 tests/web/test_preview_containment_browser.py` opens repository HTML and markdown through the signed-in Files page.
-Chromium and Firefox each opened both files in the frame and each preview address in a separate tab.
+Chromium 156.0.8078.4 and Firefox 157.0 each opened static HTML, HTML with a script grant and markdown in the frame and directly in a tab.
 The fixture uses fixed loopback addresses and a separate TCP listener.
 The listener counts connections even when the browser sends no HTTP request.
 
 | Check | Result in both browsers |
 | --- | --- |
-| Static HTML image, script, stylesheet, font, prefetch and preconnect | No outside connection |
-| Static HTML form, frame link, top link and new-tab link, each clicked | No outside connection or new tab; the Files tab stayed in place |
-| Repository script with fetch, XMLHttpRequest, WebSocket, peer connection creation and a UI API read | Did not execute |
+| HTML image, script, stylesheet, font, prefetch and preconnect, with and without a script grant | No outside connection |
+| HTML POST form, frame link, top link and new-tab link, each clicked with and without a script grant | No outside connection or new tab; the Files tab stayed in place |
+| Repository script without a grant | Did not execute |
+| Repository script with a grant | Ran; the file in its folder returned 200; the read above its folder failed |
+| Granted fetch, XMLHttpRequest and WebSocket | No outside connection |
+| Granted UI API read | Fetch failed; the UI server received no request for the fixture's API address |
 | Markdown with the same raw HTML and a remote image | HTML stayed text; Load appeared; no outside connection |
 | Origin and storage | Frame reported origin `null`; accessing `localStorage` raised `SecurityError` |
 | Preview address in a separate tab | Plain 403 without repository content |
 
-These results concern the default previews.
-They show that repository code does not start a peer connection there.
-They do not measure UDP traffic from an executing script.
+**WebRTC remains open with a script grant.** A separate networked observation found STUN traffic from sandboxed frames in both browsers despite `default-src 'none'`.
+The Files test uses no ICE servers and does not measure that traffic.
+Neither the quiet TCP listener nor the loopback UDP probe establishes WebRTC containment.
 
 ## Boundary
 

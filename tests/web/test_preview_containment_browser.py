@@ -12,6 +12,7 @@ from urllib import parse
 
 import pytest
 
+from agent6.ui.web import server
 from tests.web import test_files_edit, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
@@ -45,18 +46,26 @@ def outside_listener() -> Iterator[tuple[str, threading.Event]]:
             thread.join()
 
 
-@pytest.mark.parametrize("name", ["index.html", "readme.md"])
+@pytest.mark.parametrize(
+    ("name", "granted"), [("index.html", False), ("index.html", True), ("readme.md", False)]
+)
 def test_preview_network_boundary(
     served: tuple[pathlib.Path, int],
     open_page: Callable[[int], tuple[Page, list[str]]],
     outside_listener: tuple[str, threading.Event],
+    monkeypatch: pytest.MonkeyPatch,
     name: str,
+    granted: bool,
 ) -> None:
-    """Opening repository markup must not contact another server or run its scripts."""
+    """A script grant changes folder reads, not outside HTTP or UI API permission."""
     from playwright import sync_api
 
     repo, port = served
     base, connected = outside_listener
+    folder = repo / "guide"
+    folder.mkdir()
+    (folder / "inside.txt").write_text("inside")
+    (repo / "outside.txt").write_text("outside")
     markup = f'''<link rel="prefetch" href="{base}/next">
 <link rel="preconnect" href="{base}">
 <link rel="stylesheet" href="{base}/style.css">
@@ -67,13 +76,19 @@ h1 {{font-family: demo}}</style>
 <script src="{base}/page.js"></script>
 <script>
   document.documentElement.dataset.repositoryScript = "ran";
-  fetch("{base}/fetch");
+  const probe = (id, url) => fetch(url).then(r => r.status, () => "blocked")
+    .then(status => document.documentElement.dataset[id] = status);
+  probe("inside", "inside.txt");
+  probe("outside", "../outside.txt");
+  probe("api", "/api/git/refs?preview-fixture");
+  probe("external", "{base}/fetch");
   const xhr = new XMLHttpRequest(); xhr.open("GET", "{base}/xhr"); xhr.send();
+</script><script>
   new WebSocket("{base.replace("http:", "ws:")}/socket");
+</script><script>
   new RTCPeerConnection({{iceServers: []}}).close();
-  fetch("/api/git/refs?preview-fixture");
 </script>
-<form action="{base}/submit"><button>Submit form</button></form>
+<form method="post" action="{base}/submit"><button>Submit form</button></form>
 <a target="_top" href="{base}/top">Top link</a>
 <a target="_blank" href="{base}/tab">Tab link</a>
 <a href="{base}/self">Frame link</a>
@@ -82,18 +97,18 @@ h1 {{font-family: demo}}</style>
     text = (
         "<!doctype html>" if is_html else f"# Fixture heading\n\n![Remote]({base}/remote.png)\n\n"
     )
-    (repo / name).write_text(text + markup, encoding="utf-8")
+    (folder / name).write_text(text + markup, encoding="utf-8")
     page, _errors = open_page(port)
     api_calls: list[str] = []
-    page.context.on(
-        "request",
-        lambda request: (
-            api_calls.append(request.url)
-            if request.url.endswith("/api/git/refs?preview-fixture")
-            else None
-        ),
-    )
-    ui = f"http://127.0.0.1:{port}/#/files/WORKTREE/{name}"
+    get = server._Handler.do_GET
+
+    def count_api(handler: server._Handler) -> None:
+        if handler.path == "/api/git/refs?preview-fixture":
+            api_calls.append(handler.path)
+        get(handler)
+
+    monkeypatch.setattr(server._Handler, "do_GET", count_api)
+    ui = f"http://127.0.0.1:{port}/#/files/WORKTREE/guide/{name}"
     page.goto(ui)
     if is_html:
         page.get_by_role("button", name="Preview", exact=True).click()
@@ -104,6 +119,18 @@ h1 {{font-family: demo}}</style>
     sync_api.expect(iframe).to_have_attribute(
         "sandbox", "allow-forms" if is_html else "allow-scripts"
     )
+
+    def grant_scripts() -> None:
+        page.get_by_role("button", name="Run scripts", exact=True).click()
+        page.get_by_role("alertdialog").get_by_role("button", name="Run scripts").click()
+        html = frame.locator("html")
+        sync_api.expect(html).to_have_attribute("data-repository-script", "ran")
+        sync_api.expect(html).to_have_attribute("data-inside", "200")
+        for dataset in ("api", "external", "outside"):
+            sync_api.expect(html).to_have_attribute("data-" + dataset, "blocked")
+
+    if granted:
+        grant_scripts()
     assert iframe.evaluate("element => element.contentDocument === null")
     assert frame.locator("html").evaluate("() => window.origin") == "null"
     storage = "() => { try { void localStorage; return 'available' } catch (e) { return e.name } }"
@@ -124,6 +151,8 @@ h1 {{font-family: demo}}</style>
         # A blocked form navigation can replace its frame with a browser error page.
         page.get_by_role("button", name="Source", exact=True).click()
         page.get_by_role("button", name="Preview", exact=True).click()
+        if granted:
+            grant_scripts()
         for label in ("Top link", "Tab link", "Frame link"):
             frame.get_by_role("link", name=label).click()
     else:
