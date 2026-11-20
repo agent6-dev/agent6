@@ -39,7 +39,7 @@ from agent6.config import (
     ConfigError,
 )
 from agent6.harness import loop_snapshot, repo_context
-from agent6.sessions import id, ipc, journal, lock, process
+from agent6.sessions import child_dispatch, id, ipc, journal, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
@@ -438,6 +438,15 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             snapshot = loop_snapshot.load_session_snapshot(snapshot_path)
         except (ValueError, OSError) as exc:
             reporter.error(str(exc))
+            return 1
+        # The loop settles children from these records at every turn boundary.
+        try:
+            child_dispatch.read_records(layout.session_dir)
+        except child_dispatch.DispatchRecordError as exc:
+            reporter.error(
+                f"{session_id} cannot be resumed: a dispatch record is unreadable."
+                f" Start a new run.\n{exc}"
+            )
             return 1
         manifest_preset = manifest.harness.replay_preset
         resume_base_sha = manifest.base_sha

@@ -74,13 +74,7 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
     """
     if dispatcher.session_dir is None:
         return
-    try:
-        records = child_dispatch.read_records(dispatcher.session_dir)
-    except child_dispatch.DispatchRecordError as exc:
-        dispatcher.log(f"PARALLEL: {exc}")
-        conversation.notice(f"[parallel] a dispatch record could not be read: {exc}")
-        return
-    for found in records:
+    for found in child_dispatch.read_records(dispatcher.session_dir):
         record = found
         scan = session_log.scan_session_log(dispatcher.session_dir / "logs.jsonl")
         accounted = scan.budget.session.settled_children

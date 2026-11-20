@@ -1494,3 +1494,79 @@ def test_the_resume_reads_the_journals_questions(tmp_path: pathlib.Path) -> None
     assert [(q.id, q.wait) for q in carried.pending] == [("question-2", False)]
     assert carried.pending[0].questions[0].options == ("x", "y")
     assert [(a.id, a.answers) for a in carried.late_answers] == [("question-1", ("late one",))]
+
+
+def test_an_unreadable_dispatch_record_refuses_the_resume_before_a_model_call(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unreadable dispatch record refuses the resume before a model call.
+
+    Recovery noted the record and went on; the next turn boundary raised on the same record
+    after one paid call.
+    """
+    from unittest import mock
+
+    from agent6.sessions import child_dispatch
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    sid = "old-RECORD1"
+    session_dir = paths.state_dir(repo) / "sessions" / "runs" / sid
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": sid,
+                "mode": "run",
+                "user_task": "t",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": f"agent6/{sid}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": loop_snapshot.SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_turn": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    record = child_dispatch.record_path(session_dir, f"{sid}-p1")
+    record.parent.mkdir()
+    record.write_text(json.dumps({"version": 1, "join_policy": "merge"}), encoding="utf-8")
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(session_runtime, "select_isolation", _unconfined)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)
+    ran = mock.MagicMock(side_effect=_finished_execution)
+    monkeypatch.setattr(execution, "run_execution", ran)
+
+    rc = resume_mod.resume_task(
+        (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer="more"
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert f"{sid} cannot be resumed: a dispatch record is unreadable. Start a new run." in err
+    assert str(record) in err
+    ran.assert_not_called()
