@@ -43,6 +43,8 @@
   The operator loosens; the agent's own sandbox stays where the operator put it.
   Default-deny beats blocklisting; a mitigation that is trivially bypassed is worse than none.
   An automatic setting (`auto`) takes the strongest option available and degrades with a warning when it is absent; an explicit setting the host cannot honor refuses, naming what is unsupported and how to change it; an explicit but discouraged widening (a path holding secrets) runs with a loud warning naming the cost.
+- **Use the platform's guard.** A mechanism the browser, the kernel, git or the standard library provides replaces one of ours: a Content-Security-Policy, not rewritten addresses.
+  A hand-made guard names what the platform lacks in its `Security review note:`.
 - **Ask when the task forks.** A behaviour tradeoff, a maybe-not-worth-it edge case, growing scope, several reasonable designs, a new dependency: a one-line question beats shipping the wrong or over-built thing.
   Take the simplest fix for the actual request and name the edges you skip.
   Act when these principles already decide.
@@ -123,6 +125,7 @@
   The select list in `pyproject.toml` is the rule set: docstrings in the Google shape (a one-line imperative summary, a blank line, short lines; Args, Returns, Yields, Raises with names only, the types in the annotations), everything typed, module-style imports (`from agent6.pkg import module`, `module.name` at the call site), pep8 names.
   `C901` at 20 is the hard bound on a function; the target is smaller: a function reads in one screen, a module in one sitting.
   A comment is one line; a docstring's rationale is one line the reader could not reconstruct.
+- **Web**: new and changed web code uses current web primitives, as [modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance) describes them, within the target `docs/web.md` states; one code path, no polyfills.
 - **Typing**: pydantic v2 at trust boundaries (config, LLM I/O, tool schemas, IPC); everywhere else, `@dataclass(frozen=True, slots=True)`.
 - **Imports**: absolute only (`from agent6.x import y`).
 - **Errors**: fail loudly, through a custom exception class per subsystem; every `except` names what it catches and re-raises what it cannot handle.
