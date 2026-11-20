@@ -73,16 +73,25 @@ _PUBLIC_ARGS: dict[str, dict[str, tuple[pydantic.TypeAdapter[Any], dict[str, Any
     )
 }
 
-# Some counts exist only in the summary. Match the whole outcome, never an error or tail.
-_COUNT_OUTCOMES = {
+# Some dispositions exist only in the summary. Match the whole outcome, never an error or tail.
+_PUBLIC_SUMMARIES = {
+    "ask_user": r"unanswered|queued, no answer yet|[0-9]+/[0-9]+ answered",
     "fetch": r"[1-5][0-9]{2} · [0-9]+ bytes",
     "find_definition": r"[0-9]+ definitions(?: \(truncated\))?",
     "find_references": r"[0-9]+ references(?: \(truncated\))?",
     "list_dir": r"[0-9]+ entries(?:, [0-9]+ hidden)?(?: \(truncated\))?",
     "list_tasks": r"[0-9]+ tasks",
     "outline": r"[0-9]+ symbols(?: \(truncated\))?",
+    "parallel": r"nothing started|started [0-9]+",
     "read_file": r"[0-9]+ bytes(?: \(truncated\))?",
 }
+_COMMAND_STATES = (
+    ("stopped_by_operator", "stopped by operator"),
+    ("exec_failed", "could not start"),
+    ("timed_out", "timed out"),
+)
+_PLAIN_LABEL = re.compile(r"\w[\w .+-]*[!?]?")
+_LOCAL_NAME = re.compile(r"(?!//)[\w./+ -]+")
 _PREVIEW_CHARS = 200
 _MAX_ROW_BYTES = 1 << 20
 _OVERSIZE_NOTE = "(scan incomplete: one or more journal records over 1 MiB omitted)"
@@ -349,13 +358,15 @@ def _command_line(name: str, argv: object) -> str:
     return label
 
 
-def _plain_values(value: object) -> bool:
-    """Return whether projected text fields have no object or array prefixes."""
+def _plain_values(value: object, shape: re.Pattern[str]) -> bool:
+    """Return whether every projected string has the public label or local name shape."""
+    if isinstance(value, str):
+        return shape.fullmatch(value) is not None
     if isinstance(value, list):
-        return all(_plain_values(item) for item in value)
+        return all(_plain_values(item, shape) for item in value)
     if isinstance(value, dict):
-        return all(_plain_values(item) for item in value.values())
-    return not isinstance(value, str) or not value.lstrip().startswith(("[", "{"))
+        return all(_plain_values(item, shape) for item in value.values())
+    return value is None or isinstance(value, int | float)
 
 
 def _program_preview(argv: object) -> str | None:
@@ -395,7 +406,7 @@ def _arg_preview(key: str, value: Any) -> str | None:
             authority += f":{port}"
         text = parse.urlunsplit((parts.scheme, authority, parts.path, "", ""))
     else:
-        if not _plain_values(value):
+        if not _plain_values(value, _PLAIN_LABEL if key == "questions" else _LOCAL_NAME):
             return None
         text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
     return f"{key}={terminal.line_preview(text, limit=_PREVIEW_CHARS)}"
@@ -425,15 +436,17 @@ def _outcome(name: str, event: dict[str, Any]) -> str:
     if ok is False:
         return "refused"
     if name in ("run_command", "run_verify_command", "run_metric_command"):
+        state = next((label for flag, label in _COMMAND_STATES if event.get(flag) is True), "")
         if type(code := event.get("exit_code")) is int:
-            return f"exit {code}"
+            return f"exit {code} ({state})" if state else f"exit {code}"
         job = event.get("background_id")
-        if ok is True and code is None and isinstance(job, str) and job:
-            return "handed off"
+        if not state and ok is True and code is None and isinstance(job, str) and job:
+            state = "handed off"
+        return state or "no recorded exit"
     summary = event.get("summary")
     if (
         ok is True
-        and (pattern := _COUNT_OUTCOMES.get(name)) is not None
+        and (pattern := _PUBLIC_SUMMARIES.get(name)) is not None
         and isinstance(summary, str)
         and len(summary) <= _PREVIEW_CHARS
         and re.fullmatch(pattern, summary)

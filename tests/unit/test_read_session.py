@@ -335,13 +335,14 @@ def test_opaque_tools_disclose_only_name_and_disposition(tmp_path: pathlib.Path,
     assert not sessions.roster(tmp_path, "marker-").briefs
 
 
-def test_only_complete_count_summaries_are_shared_for_builtin_results(
+def test_only_complete_known_summaries_are_shared_for_builtin_results(
     tmp_path: pathlib.Path,
 ) -> None:
     rows = [
         ("read_file", "128 bytes (truncated)"),
         ("fetch", "404 · 21 bytes"),
         ("read_file", "128 bytes (truncated) marker-suffix"),
+        ("ask_user", "unanswered"),
     ]
     read = _reader(
         tmp_path,
@@ -351,6 +352,7 @@ def test_only_complete_count_summaries_are_shared_for_builtin_results(
         "#1 --:-- tool: read_file result: 128 bytes (truncated)",
         "#2 --:-- tool: fetch result: 404 · 21 bytes",
         "#3 --:-- tool: read_file result: ok",
+        "#4 --:-- tool: ask_user result: unanswered",
     ]
 
 
@@ -370,6 +372,35 @@ def test_a_command_handoff_is_not_a_finished_command(tmp_path: pathlib.Path) -> 
     )
     assert read()["conversation"] == "#1 --:-- tool: run_command result: handed off"
     assert not sessions.roster(tmp_path, "marker-job").briefs
+
+
+def test_a_handler_return_does_not_mean_its_work_succeeded(tmp_path: pathlib.Path) -> None:
+    outcomes = [
+        ("parallel", results.StartedResult((), "marker-note")),
+        ("run_command", results.ExecResult(None, "", "", 1.0, False, stopped_by_operator=True)),
+        ("run_command", results.ExecResult(None, "", "marker-error", 0.0, True)),
+        ("run_verify_command", results.ExecResult(124, "", "", 2.0, False, timed_out=True)),
+    ]
+    read = _reader(
+        tmp_path,
+        [
+            {
+                "type": "tool.result",
+                "name": name,
+                "ok": True,
+                "summary": result.summary(),
+                **result_format.tool_result_fields(name, result),
+            }
+            for name, result in outcomes
+        ],
+    )
+    assert read()["conversation"].splitlines() == [
+        "#1 --:-- tool: parallel result: nothing started",
+        "#2 --:-- tool: run_command result: stopped by operator",
+        "#3 --:-- tool: run_command result: could not start",
+        "#4 --:-- tool: run_verify_command result: exit 124 (timed out)",
+    ]
+    assert not sessions.roster(tmp_path, "marker-").briefs
 
 
 def test_clipped_edits_do_not_hide_the_target_and_preview_flag(tmp_path: pathlib.Path) -> None:
@@ -422,6 +453,39 @@ def test_a_malformed_argument_is_omitted_as_a_unit(
 ) -> None:
     read = _reader(tmp_path, [{"type": "tool.call", "name": name, "args_preview": args}])
     assert read()["conversation"] == f"#1 --:-- tool: {name}"
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "public"),
+    [
+        (
+            "ask_user",
+            {
+                "questions": [
+                    {"question": "Which?", "options": [json.dumps(json.dumps({"label": "marker"}))]}
+                ],
+                "wait": False,
+            },
+            "wait=false",
+        ),
+        (
+            "read_file",
+            {"path": "https://example.invalid/?edition=marker#part", "limit": 2},
+            "limit=2",
+        ),
+        (
+            "add_task",
+            {"relevant_paths": ["src", "https://example.invalid/?marker"], "after": "1"},
+            "after=1",
+        ),
+    ],
+)
+def test_only_plain_argument_labels_can_reach_a_page_or_roster_match(
+    tmp_path: pathlib.Path, name: str, args: dict[str, object], public: str
+) -> None:
+    read = _reader(tmp_path, [{"type": "tool.call", "name": name, "args_preview": args}])
+    assert read()["conversation"] == f"#1 --:-- tool: {name} {public}"
+    assert not sessions.roster(tmp_path, "marker").briefs
 
 
 def test_search_does_not_page_through_its_own_calls_and_results(tmp_path: pathlib.Path) -> None:
