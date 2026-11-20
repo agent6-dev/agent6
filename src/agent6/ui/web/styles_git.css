@@ -13,6 +13,8 @@
 .git-bar input.field { width: 12em; }
 .git-bar input[inputmode=numeric] { width: 6em; }
 .git-fetch > .git-counts { min-width: 0; overflow-wrap: anywhere; }
+/* Fetch and Fetch PR hold the width of their busy label, so the row stays still while they wait. */
+.git-fetch button[data-room]::after { content: attr(data-room); display: block; height: 0; visibility: hidden; }
 .git-fetch[hidden] { display: none; }
 /* The commit message sits beside Commit staged while it gets 20em, room for its placeholder.
    In a narrower panel it takes the whole row, and the button drops under it. */

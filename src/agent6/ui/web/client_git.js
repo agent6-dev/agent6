@@ -598,6 +598,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   };
   // A fetch can take a network's time: its two buttons wait, the pressed one saying so. A
   // fetched pull request is left selected, so Review is the next click.
+  fetchBtn.dataset.room = pullBtn.dataset.room = 'Fetching…';
   const gitFetch = async (pull) => {
     const remote = remoteSel.value, button = pull ? pullBtn : fetchBtn, label = button.textContent;
     const had = document.activeElement === button;

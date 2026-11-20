@@ -378,6 +378,28 @@ def test_refresh_fetch_and_load_more_wait_while_their_requests_run(
     assert errors == [], errors
 
 
+def test_fetch_holds_its_width_while_it_runs(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """Fetching… widened Fetch, which pushed the PR field, Fetch PR and the URL 36px right."""
+    from playwright.sync_api import expect
+
+    _git(tmp_path, "remote", "add", "up", str(tmp_path))
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    pull = page.get_by_role("button", name="Fetch PR", exact=True)
+    pull.wait_for()
+    before = pull.bounding_box()
+    held = _held(page, "**/api/git/fetch")
+    page.get_by_role("button", name="Fetch", exact=True).click()
+    fetch = _first(page, held)
+    expect(page.get_by_role("button", name="Fetching…", exact=True)).to_be_disabled()
+    assert pull.bounding_box() == before
+    fetch.fulfill(json={"ok": True, "message": "fetched up"})
+    expect(page.get_by_role("button", name="Fetch", exact=True)).to_be_enabled()
+    assert errors == [], errors
+
+
 def test_typing_in_the_toolbars_fields_keeps_the_toolbar_still(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:
