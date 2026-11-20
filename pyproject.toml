@@ -42,6 +42,7 @@ exclude = ["src/agent6/jail"]
 "AGENTS.md" = "agent6/_docs/AGENTS.md"
 "README.md" = "agent6/_docs/README.md"
 "docs/acp.md" = "agent6/_docs/ACP.md"
+"docs/anthropic.md" = "agent6/_docs/ANTHROPIC.md"
 "docs/architecture.md" = "agent6/_docs/ARCHITECTURE.md"
 "docs/cli.md" = "agent6/_docs/CLI.md"
 "docs/config.md" = "agent6/_docs/CONFIG.md"
@@ -67,6 +68,7 @@ include = [
     "LICENSE",
     "README.md",
     "docs/acp.md",
+    "docs/anthropic.md",
     "docs/architecture.md",
     "docs/cli.md",
     "docs/config.md",

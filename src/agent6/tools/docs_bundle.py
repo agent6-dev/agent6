@@ -15,6 +15,7 @@ AGENT6_DOC_FILES = (
     "CLI.md",
     "INSTALLATION.md",
     "CONFIG.md",
+    "ANTHROPIC.md",
     "FORMATS.md",
     "SECURITY.md",
     "ARCHITECTURE.md",
