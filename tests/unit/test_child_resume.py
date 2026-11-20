@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import threading
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 
-from agent6 import paths
-from agent6.app import child_launch, child_resume
+from agent6 import child_records, paths
+from agent6.app import child_launch, child_resume, child_wait
+from agent6.app import children as app_children
 from agent6.config import Config, layer
-from agent6.sessions import child_dispatch
+from agent6.harness import child_repo
+from agent6.sessions import child_dispatch, event_log, journal, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
 from tests import launch_env
@@ -173,3 +177,86 @@ def test_a_private_launch_cannot_continue_another_child(
         session_id=launch.session_id,
         root=tmp_path,
     )
+
+
+@pytest.mark.parametrize("control", ["agent6", "model"])
+@pytest.mark.parametrize("phase", ["unstarted", "live", "finished"])
+def test_continuation_readiness_distinguishes_executions(
+    tmp_path: pathlib.Path, control: str, phase: str
+) -> None:
+    """A new execution stays recognizable after its worker pid disappears."""
+    repo = tmp_path / "repo"
+    background._init_repo(repo)
+    state = paths.state_dir(repo)
+    spec = child_records.ChildSpec(1, "root-p1-l1", tmp_path / "clone", None)
+    child_repo.clone_worktree(repo, spec.worktree)
+    private = child_launch.launch_dir(state, "root-p1")
+    launch = child_launch.ChildLaunch(
+        worktree=spec.worktree,
+        record_state=state,
+        session_id=spec.session_id,
+        task="work",
+        config=tmp_path / "config.toml",
+        parent="root",
+        group="root-p1",
+        number=1,
+    )
+    child_launch.write(private, launch)
+    directory = child_wait.child_dir(state, spec.session_id, mode=spec.mode)
+    directory.mkdir(parents=True)
+    (directory / "loop_state.json").write_text("{}")
+    sink = event_log.EventSink(directory / "logs.jsonl")
+    sink.emit(journal.SessionStart(user_task="work", mode="run", execution_id="original"))
+    sink.emit(journal.SessionStop(execution_id="original", reason="interrupted", turns=1))
+
+    def spawn(
+        argv: list[str],
+        cwd: pathlib.Path,
+        *,
+        before: set[pathlib.Path],
+        list_dirs: Callable[[], list[pathlib.Path]],
+        env: dict[str, str],
+    ) -> tuple[pathlib.Path | None, int, str]:
+        assert argv == child_launch.bootstrap_argv() and cwd == spec.worktree
+        assert not before and not list_dirs(), "the stopped execution is not a new launch"
+        assert child_launch.read_file(pathlib.Path(env[child_launch.ENV])).continuation == "finish"
+        if phase == "unstarted":
+            return None, 0, "no new execution"
+        process.emit_session_start(
+            sink,
+            directory,
+            journal.SessionResume(
+                session_id=spec.session_id,
+                user_task="work",
+                steer="finish",
+                mode="run",
+                turn=1,
+                messages=2,
+                execution_id="continued",
+            ),
+        )
+        if phase == "finished":
+            sink.emit(
+                journal.SessionStop(execution_id="continued", reason="finish_session", turns=2)
+            )
+            process.clear_worker_pid(directory)
+        try:
+            assert list_dirs() == [directory]
+            return directory, os.getpid(), ""
+        finally:
+            process.clear_worker_pid(directory)
+
+    result = app_children.bridge_spawner(
+        spec,
+        "work",
+        cfg=Config.model_validate({"git": {"control": control}}),
+        explicit_leaves=frozenset(),
+        origin=repo,
+        record_state=state,
+        max_usd=None,
+        group_id="root-p1",
+        parent="root",
+        continuation="finish",
+        runtime=app_children.ChildRuntime(spawn=spawn),
+    )
+    assert result.ok is (phase != "unstarted")

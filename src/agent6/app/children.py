@@ -211,10 +211,18 @@ def bridge_spawner(
     memory.seed_store(paths.state_dir(origin), paths.state_dir(spec.worktree))
     # The child's record lives in the origin's state from its first event.
     child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
+    logs = child_dir / sessions_layout.LOGS_NAME
+    previous = session_log.scan_session_log(logs).execution_id if continuation else None
 
     def list_dirs() -> list[pathlib.Path]:
-        ready = child_dir.is_dir() and (not continuation or process.worker_is_alive(child_dir))
-        return [child_dir] if ready else []
+        if not child_dir.is_dir():
+            return []
+        if continuation and not process.worker_is_alive(child_dir):
+            # A new execution can finish before the first launch poll.
+            current = session_log.scan_session_log(logs).execution_id
+            if current is None or current == previous:
+                return []
+        return [child_dir]
 
     # A child's model cannot dispatch work; only the harness may dispatch reviewers.
     markers = {
