@@ -11,6 +11,7 @@ import pytest
 
 _DOM = r"""
 const assert = require('node:assert/strict');
+let diffWidth = 1000;
 class Element {
   constructor(tag, cls = '', text = '') {
     this.tag = tag; this.cls = new Set((cls || '').split(' ')); this.text = text;
@@ -51,13 +52,15 @@ class Element {
   removeAttribute(k) { delete this[k]; }
   addEventListener(name, fn) { this['on' + name] = fn; }
   removeEventListener(name) { this['on' + name] = null; }
-  getBoundingClientRect() { return {width: this.cls.has('files-body') ? 1000 : 360}; }
+  getBoundingClientRect() {
+    return {width: this.cls.has('git-diff') ? diffWidth : this.cls.has('files-body') ? 1000 : 360};
+  }
   scrollIntoView() { this.scrolled = true; }
   checkVisibility() { return false; }
   querySelectorAll(selector) {
     const matches = n => selector.startsWith('.')
       ? selector.slice(1).split('.').every(c => n.cls.has(c))
-      : selector === '[data-line]' && n.dataset.line;
+      : selector === '[data-line]' ? n.dataset.line : n.tag === selector;
     return this.children.flatMap(c => [
       ...(matches(c) ? [c] : []), ...c.querySelectorAll(selector)
     ]);
@@ -79,6 +82,7 @@ const history = {
 const window = {addEventListener() {}, matchMedia: () => ({matches:false})};
 const getComputedStyle = () => ({fontSize: '16px'});
 const MutationObserver = class { observe() {} };
+const ResizeObserver = class { observe() {} };
 let activeTab = '';
 const setTab = tab => activeTab = tab;
 const closeLive = () => {};
@@ -96,7 +100,8 @@ const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve();
 let chooseRevision;
 const picker = (_, value, choose) => {
   chooseRevision = choose;
-  return {root: el('input'), set() {}};
+  const root = el('div'); root.appendChild(el('input'));
+  return {root, set() {}};
 };
 const pending = [];
 let getJSON = async url => {

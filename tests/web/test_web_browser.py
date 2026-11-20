@@ -1226,7 +1226,8 @@ def test_back_from_a_compare_link_returns_to_the_graph(
     page.goto(base + "#/git/compare/v1..v2")
     page.wait_for_selector(".gcmp-result .gf")
     page.go_back()
-    page.wait_for_selector(".git-side .empty", timeout=3000)
+    page.wait_for_selector(".git-side .empty", state="attached", timeout=3000)
+    assert not page.locator(".git-side").is_visible()
     assert page.evaluate("location.hash") == "#/git"
     assert page.locator(".gcmp-result").count() == 0
     assert errors == [], errors

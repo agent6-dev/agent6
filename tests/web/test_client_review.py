@@ -44,6 +44,7 @@ Element.prototype.querySelectorAll = function(s) {
   return this.children.flatMap(c => [...(match(c) ? [c] : []), ...c.querySelectorAll(s)]);
 };
 Object.defineProperty(Element.prototype, 'parentElement', {get() { return this.parent; }});
+const openDialog = () => { const d = el('dialog'); d.open = true; return view.appendChild(d); };
 const notLive = s => s.finished;
 let confirmations = 0, notices = [], posts = [];
 const confirmDialog = async () => { confirmations++; return true; };
@@ -105,7 +106,7 @@ if (expected.includes('no panel')) assert.ok(!cards.findings.textContent.include
 
 
 def test_receipt_survives_findings_refresh_during_and_after_fetch() -> None:
-    """A streamed review repaint keeps the pending and rendered receipt in the card."""
+    """A streamed review repaint keeps the pending and rendered receipt in its dialog."""
     _run("""
 const cards = {_id: 'run', _base: '/api/session/run', findings: el('div')};
 let resolve;
@@ -115,9 +116,9 @@ const pending = cards.findings.querySelector('button').onclick();
 paintFindings(cards, {finished: true, review: {version: 0}});
 resolve({text: 'Receipt run', verifications: []});
 await pending;
-assert.ok(cards.findings.textContent.includes('Receipt run'));
+assert.ok(view.querySelector('dialog').textContent.includes('Receipt run'));
 paintFindings(cards, {finished: true, review: {version: 1}});
-assert.ok(cards.findings.textContent.includes('Receipt run'));
+assert.ok(view.querySelector('dialog').textContent.includes('Receipt run'));
 """)
 
 
@@ -222,7 +223,7 @@ def test_review_deep_link_reload_opens_diff_then_exact_file(mode: str) -> None:
         + ";"
         + """
 remember(DIFF_MODE_KEY, ['narrow', 'truncated'].includes(mode) ? 'split' : mode);
-window.matchMedia = () => ({matches: mode === 'narrow'});
+diffWidth = mode === 'narrow' ? 360 : 1000;
 const e = entry(mode === 'new' ? 'head' : 'base', 2, mode === 'new' ? 'new.txt' : 'old.txt');
 e.finding.observations = [e.observation];
 const reviewed = {session_id: 'run', panel: e.panel,

@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "96c7a1c8d3e059389ab9fe761b8c0469ed84b604001144e820c30ba4bbf25988"
+PAGE_SHA256 = "a7fc23c4ffea6c8ee397216b125a224ea44d7ced1579078a676df7c2e7070893"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -165,15 +165,15 @@ def test_page_assets_load_non_empty() -> None:
         assert web.joinpath(name).read_text(encoding="utf-8").strip(), f"{name} is empty"
 
 
-def test_the_plan_bar_meters_this_executions_points() -> None:
-    """The run view's plan bar meters this execution's points against the cap it runs under.
+def test_the_plan_meter_reads_this_executions_points() -> None:
+    """The run view's plan meter compares this execution's points against the cap it runs under.
 
     The session's points sum every execution; that sum against the cap a resume re-armed
     would read a resumed run as over it.
     """
     client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const executionPt = run.plan_observed_points || 0;" in client
-    assert "executionPt / planCap" in client
+    assert "budgetRow('plan', executionPt, planCap, planText)" in client
 
 
 def test_the_sessions_card_folds_a_groups_children() -> None:
@@ -247,7 +247,7 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
     composer = client[client.index("function makeComposer") :]
     assert "pickerRow([['continue under preset', preset], ['model', model]])" in composer
     assert "row.appendChild(ta); row.appendChild(sendBtn);" in composer
-    assert "root.appendChild(presetRow); root.appendChild(row);" in composer
+    assert composer.index("root.appendChild(presetRow);") < composer.index("root.appendChild(row);")
 
 
 def test_the_policy_line_breaks_only_between_its_settings() -> None:
@@ -398,9 +398,10 @@ def test_reviewer_controls_post_form_fields_and_position() -> None:
         pytest.skip("node is needed to exercise the web config editor")
     web = resources.files("agent6.ui.web")
     core = web.joinpath("client.js").read_text(encoding="utf-8")
-    source = core[core.index("// --- dialogs") : core.index("// --- sign-in")] + web.joinpath(
-        "client_config.js"
-    ).read_text(encoding="utf-8")
+    source = core[core.index("// --- dialogs") : core.index("// --- sign-in")] + "\n".join(
+        web.joinpath(name).read_text(encoding="utf-8")
+        for name in ("client_layout.js", "client_config.js")
+    )
     setup = r"""
 const assert = require('node:assert/strict');
 function el(tag, cls, text = '') {

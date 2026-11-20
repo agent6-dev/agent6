@@ -331,9 +331,9 @@ def test_the_back_buttons_read_in_sentence_case_with_their_glyphs_unread(
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main?path=b.txt")
     files = page.locator(".git-diff-head").get_by_role("button", name="Files", exact=True)
-    expect(files).to_have_text("\u2039 Files")
+    expect(files).to_have_text("Files")
     files.click()
-    expect(page.get_by_role("button", name="Graph", exact=True)).to_have_text("\u2039 Graph")
+    expect(page.get_by_role("button", name="Graph", exact=True)).to_have_text("Graph")
     assert errors == [], errors
 
 
@@ -581,7 +581,7 @@ def test_the_compare_pickers_reached_option_stays_in_view_and_is_named(
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     page.get_by_role("button", name="Compare", exact=True).click()
-    base = page.get_by_label("base", exact=True)
+    base = page.get_by_label("Base", exact=True)
     base.click()
     page.locator(".gpick-list .ac-item").nth(20).wait_for()
     for _ in range(18):
@@ -603,7 +603,7 @@ def test_a_revision_picker_lists_refs_in_the_refs_filters_order(
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     page.get_by_role("button", name="Compare", exact=True).click()
-    page.get_by_label("base", exact=True).click()
+    page.get_by_label("Base", exact=True).click()
     page.locator("#gpick-base .gref").first.wait_for()
     kinds = page.locator("#gpick-base .gref").evaluate_all(
         "gs => gs.map(g => g.classList[1]).filter((k, i, all) => all.indexOf(k) === i)"
@@ -859,7 +859,7 @@ def test_the_graph_handle_stops_where_the_stylesheet_stops_the_graph(
 
     page, errors = open_page(git_port)
     _default_font(page, 20)
-    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/HEAD")
     graph = page.locator(".git-graph")
     handle = page.get_by_role("separator", name="Graph width", exact=True)
     handle.focus()
@@ -1013,12 +1013,12 @@ def test_the_git_panes_lay_out_by_their_own_width(open_page: OpenPage, git_port:
 
     page, errors = open_page(git_port)
     page.set_viewport_size({"width": 820, "height": 900})
-    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/HEAD")
     page.wait_for_selector(".gc-row")
     expect(page.locator(".gc-author").first).to_be_hidden()
     page.get_by_role("button", name="Compare", exact=True).click()
-    base = page.get_by_label("base", exact=True).bounding_box()
-    head = page.get_by_label("head", exact=True).bounding_box()
+    base = page.get_by_label("Base", exact=True).bounding_box()
+    head = page.get_by_label("Head", exact=True).bounding_box()
     assert base and head and head["y"] >= base["y"] + base["height"]
     assert errors == [], errors
 
@@ -1266,7 +1266,7 @@ def test_a_phone_presses_inline_when_split_has_no_room(open_page: OpenPage, git_
     expect(page.locator(".git-diff .diff")).to_be_visible()
     expect(page.locator(".git-diff .gview [aria-pressed=true]")).to_have_text("inline")
     expect(page.locator(".git-diff .gview button", has_text="split")).to_be_disabled()
-    expect(page.locator(".git-diff")).to_contain_text("split needs a wider screen")
+    expect(page.locator(".git-diff")).to_contain_text("split needs a wider pane")
     assert page.evaluate("localStorage.getItem('a6-diff-mode')") == "split"
     assert errors == [], errors
 
@@ -1389,7 +1389,7 @@ def test_a_long_revision_ends_its_compare_field_with_an_ellipsis(
     _git(tmp_path, "branch", name)
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/main..{name.replace('/', '%2F')}")
-    head = page.get_by_role("combobox", name="head", exact=True)
+    head = page.get_by_role("combobox", name="Head", exact=True)
     expect(head).to_have_value(name)
     cut = "i => [i.scrollWidth > i.clientWidth, getComputedStyle(i).textOverflow]"
     assert head.evaluate(cut) == [True, "ellipsis"]
@@ -1422,7 +1422,7 @@ def test_a_linked_compare_names_the_working_tree_as_the_picker_does(
 
     page, errors = open_page(dirty_git_port)
     page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/compare/HEAD..WORKTREE")
-    expect(page.get_by_role("combobox", name="head", exact=True)).to_have_value("working tree")
+    expect(page.get_by_role("combobox", name="Head", exact=True)).to_have_value("working tree")
     summary = page.locator(".gcmp-sum")
     expect(summary).to_contain_text("→ working tree")
     expect(summary).not_to_contain_text("WORKTREE")
@@ -1452,7 +1452,7 @@ def test_tab_from_a_revision_field_moves_past_its_list(open_page: OpenPage, git_
     page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/v1..main")
     listed = page.get_by_role("button", name="list", exact=True)
     expect(listed).to_be_visible()  # the compare's file list holds the next Tab stop
-    head = page.get_by_role("combobox", name="head", exact=True)
+    head = page.get_by_role("combobox", name="Head", exact=True)
     head.focus()
     expect(page.locator("#gpick-head [role=option]").first).to_be_visible()
     page.keyboard.press("Tab")

@@ -250,6 +250,8 @@ def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
     page.set_viewport_size({"width": width, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/session/bar-AAA111")
     bar = page.locator(".run-app .actions")
+    if width == 390:
+        page.locator(".run-more summary").click()
     delete = bar.get_by_role("button", name="Delete", exact=True)
     live_controls = [
         bar.get_by_role("button", name=name, include_hidden=True)
@@ -264,9 +266,10 @@ def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
         expect(delete).to_be_enabled()
         for button in live_controls:
             expect(button).to_be_hidden()
-    end, room = delete.bounding_box(), bar.bounding_box()
-    assert end is not None and room is not None
-    assert end["x"] + end["width"] == pytest.approx(room["x"] + room["width"], abs=0.5)
+    if width != 390:
+        end, room = delete.bounding_box(), bar.bounding_box()
+        assert end is not None and room is not None
+        assert end["x"] + end["width"] == pytest.approx(room["x"] + room["width"], abs=0.5)
     assert not errors
 
 
@@ -281,7 +284,8 @@ def test_stop_now_is_named_by_its_words_alone(
     page.goto(f"http://127.0.0.1:{port}/#/session/stop-AAA111")
     stop = page.locator(".run-app .actions").get_by_role("button", name="Stop now", exact=True)
     expect(stop).to_be_visible()
-    expect(stop).to_have_text("■\u00a0Stop now")
+    expect(stop).to_have_text("Stop now")
+    expect(stop.locator("svg")).to_have_attribute("aria-hidden", "true")
     assert not errors
 
 

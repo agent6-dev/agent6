@@ -644,7 +644,7 @@ def test_the_files_back_button_leaves_its_glyph_out_of_its_name(
     page, errors = open_page(git_port)
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/b.txt")
-    expect(page.get_by_role("button", name="Files", exact=True)).to_have_text("\u2039 Files")
+    expect(page.get_by_role("button", name="Files", exact=True)).to_have_text("Files")
     assert not errors
 
 
