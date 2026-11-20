@@ -150,6 +150,31 @@ def test_the_blame_card_opens_beside_its_line_near_the_bottom_edge(
     assert not errors
 
 
+def test_a_blame_label_sits_on_its_codes_baseline(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """Blame labels sat 1 to 2px above the code's baseline beside them."""
+    port, _, _ = long_file
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    line = page.locator("[data-line='1']")
+    line.wait_for()
+    height = "e => e.getBoundingClientRect().height"
+    unblamed = line.evaluate(height)
+    page.locator(".files-blame").click()
+    page.wait_for_selector("[data-line='1'] .blame-commit")
+    gap = line.evaluate("""row => {
+      const baseline = e => { const probe = document.createElement('span');
+        probe.style.cssText = 'display: inline-block; width: 0; height: 0'; e.prepend(probe);
+        const y = probe.getBoundingClientRect().bottom; probe.remove(); return y; };
+      const label = row.querySelector('.blame-commit'), code = row.querySelector('.source-code');
+      return baseline(label) - baseline(code);
+    }""")
+    assert gap == pytest.approx(0, abs=0.25), gap
+    assert line.evaluate(height) == unblamed
+    assert not errors
+
+
 def test_blame_loads_on_its_button_and_the_code_holds_still(
     open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
 ) -> None:

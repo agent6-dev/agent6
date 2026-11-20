@@ -98,10 +98,12 @@
    narrow pane) the label is the sha alone. Only a blamed view is a size container: one around
    every line made each resize of a 3,200-line file about three times slower in Firefox. */
 pre:is(.src, .diff):has(.blame-cell) { container: source / inline-size; }
-.blame-cell { flex: none; display: flex; width: 35ch; margin-right: 1ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); font-size: var(--fs-s); font-weight: normal; user-select: none; }
+.blame-cell { flex: none; display: flex; width: 35ch; margin-right: 1ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); font-weight: normal; user-select: none; }
 .blame-start { border-top-left-radius: 3px; }
+/* A zero-width strut in the code's font sets the label's line: its smaller text sits on the code's baseline. */
 .blame-label { display: flex; width: 100%; min-width: 0; gap: 1ch; align-items: baseline; }
-.blame-label > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blame-label::before { content: '\200b'; margin-right: -1ch; }
+.blame-label > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-s); line-height: 1.25; }
 .blame-commit { flex: none; color: inherit; }
 .blame-date { flex: none; }
 .blame-author { flex: 1; max-width: 14ch; }
