@@ -180,12 +180,12 @@ def started_text(children: Sequence[str]) -> str:
     if len(children) == 1:
         return (
             f"[parallel] started child {children[0]}. A notice arrives when it ends and when"
-            " its work merges; read_background reads it and stop_background stops it, by this id."
+            " its task completes; read_background reads it and stop_background stops it, by id."
         )
     return (
         f"[parallel] started {len(children)} attempts at one task: {', '.join(children)}."
-        " A notice arrives as each ends; once all have, they are ranked in the background and"
-        " the first merges. read_background reads one and stop_background stops one, by id."
+        " A notice arrives as each ends and when the task completes after ranking in the"
+        " background. read_background reads one and stop_background stops one, by id."
     )
 
 

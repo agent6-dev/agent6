@@ -782,11 +782,11 @@ def test_finish_session_is_refused_until_every_task_has_merged(tmp_path: pathlib
 
     assert (result.reason, result.turns) == ("finish_session", 4)
     refusal = (
-        "[harness] finish_session refused: 1 child(ren) have not merged:\\n"
+        "[harness] finish_session refused: 1 child(ren) have pending work:\\n"
         f"- {child}: running\\n"
         "read_background with a child's id reads it, read_background with wait_s and no id"
         " waits for the next to end, and stop_background stops one, whose work then does not"
-        " merge. Work merges at the turn boundary after its task's children end, and attempts"
+        " merge. Tasks complete at a turn boundary after their children end, and attempts"
         " once their judges have ranked them."
     )
     assert refusal in provider.seen[2]
@@ -845,7 +845,7 @@ def test_a_prose_only_turn_does_not_end_a_run_whose_children_run(tmp_path: pathl
     result = wf.run("start")
 
     assert (result.reason, result.turns) == ("finish_session", 6)
-    assert "[harness] the run cannot end yet: 1 child(ren) have not merged:" in provider.seen[4]
+    assert "[harness] the run cannot end yet: 1 child(ren) have pending work:" in provider.seen[4]
     assert f"- {child}: running" in provider.seen[4]
     (refused,) = _events(tmp_path / "run", "finish.refused.children")
     assert (refused["turn"], refused["trigger"]) == (4, "silent_finish")
@@ -965,7 +965,7 @@ def test_an_end_is_held_while_attempts_are_ranked_and_a_wait_waits_for_their_jud
     assert "[parallel] group" not in provider.seen[2]
     # The finish in the turn after came back: both attempts were being ranked.
     refusal = provider.seen[3]
-    assert "[harness] finish_session refused: 2 child(ren) have not merged:" in refusal
+    assert "[harness] finish_session refused: 2 child(ren) have pending work:" in refusal
     assert f"- {one}: being ranked" in refusal and f"- {two}: being ranked" in refusal
     assert "and attempts once their judges have ranked them." in refusal
     # The wait for the next to end waited for the judge; its end ranked and merged the task.

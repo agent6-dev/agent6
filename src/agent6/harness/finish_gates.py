@@ -321,16 +321,17 @@ def children_finish(
     refused = "finish_session refused" if ending == "finish_session" else "the run cannot end yet"
     listing = "\n".join(f"- {child}: {standing}" for child, standing in children)
     return advice.Refusal(
-        f"[harness] {refused}: {len(children)} child(ren) have not merged:\n{listing}\n"
+        f"[harness] {refused}: {len(children)} child(ren) have pending work:\n{listing}\n"
         "read_background with a child's id reads it, read_background with wait_s and no id"
         " waits for the next to end, and stop_background stops one, whose work then does not"
-        " merge. Work merges at the turn boundary after its task's children end, and attempts"
+        " merge. Tasks complete at a turn boundary after their children end, and attempts"
         " once their judges have ranked them.",
         event=journal.FinishRefusedChildren(
             turn=turn.number, children=[child for child, _standing in children], trigger=ending
         ),
         log=(
-            f"  {ending} returned: {len(children)} child(ren) have not merged at turn {turn.number}"
+            f"  {ending} returned: {len(children)} child(ren) have pending work"
+            f" at turn {turn.number}"
         ),
     )
 

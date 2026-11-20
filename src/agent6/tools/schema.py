@@ -313,13 +313,15 @@ class ParallelInput(_ToolInput):
         "Start one task in a child session (a subagent) on a fresh clone of the committed"
         " tree, and return at once with the child's id. Call it once per task. `spec` is"
         " empty for one child; a count above one, or a comma-separated list of selectors,"
-        " starts that many attempts at the same task, and once all have ended they are"
-        " ranked and the first merges. A selector that is a role name brings its model, effort"
-        " and temperature; `[provider/]model` runs with the worker's. A notice arrives when a"
-        " child ends, with its summary, and when its task merges: at the turn boundary after its"
-        " children end, merged onto this run's work. `read_background` reads a child or waits"
-        " for the next to end; `steer_child` sends a running child an instruction;"
-        " `stop_background` stops one. `finish_session` is refused until every task has merged."
+        " starts that many attempts at the same task, ranked once all have ended."
+        ' With `git.control = "agent6"` the first merges onto this run at a turn boundary;'
+        ' with `git.control = "model"` each ref stays unmerged for you to merge with git.'
+        " A selector that is a role name brings its model, effort and temperature;"
+        " `[provider/]model` runs with the worker's. A notice arrives when a child ends,"
+        " with its summary, and when its task completes. `read_background` reads a child"
+        " or waits for the next to end; `steer_child` sends an instruction to a running"
+        " child or continues a stopped child; `stop_background` stops one. `finish_session`"
+        " is refused while a child runs or its task awaits completion at a turn boundary."
     )
 
     task: str = pydantic.Field(min_length=1, max_length=20_000)

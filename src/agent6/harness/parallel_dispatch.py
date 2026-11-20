@@ -140,11 +140,11 @@ class ParallelDispatcher:
     ) -> child_records.Started:
         """Start each segment's task in the background and return what started.
 
-        A segment is one task and one dispatch record, written before any launch: one child
-        merges its commits, several are attempts `parallel_rank` orders. Each child starts on a
-        clone of the parent's committed HEAD under the parent's config and what it has left
-        to spend, with no turn cap or deadline of its own, and runs while the parent takes
-        its turns; `settle` merges the work at a turn boundary.
+        A segment is one task and one dispatch record, written before any launch.
+        Several children are attempts `parallel_rank` orders. Each starts on a clone of the
+        parent's committed HEAD under the parent's config and remaining budget, with no
+        turn cap or deadline of its own. `settle` completes the task at a turn boundary;
+        agent6-owned git merges the work, and model-owned git retains its ref.
         Never ends the run: an unavailable spawner, a bad spec, a dirty tree, an unwritable
         record or a spawner fault each come back as the refusal for the caller to deliver.
 
@@ -177,7 +177,7 @@ class ParallelDispatcher:
                 " Ask for fewer, wait for one to end, stop one, or raise"
                 " [harness.parallel].max_children."
             )
-        # Children cut from the chain tip only: commit a changed tree first, or refuse stale work.
+        # Agent6-owned git commits a changed tree first, or refuses stale work.
         if not self.ensure_clean(turn, "/parallel dispatch"):
             return self.refused(
                 "refusing to dispatch: the working tree is not clean and could not be"
@@ -191,7 +191,7 @@ class ParallelDispatcher:
             reason = self.budget.snapshot().exhausted_reason
             return self.refused(f"the budget is exhausted ({reason}); nothing dispatched.")
         parent_id = parallel_join.parallel_parent_id(self.curator, state.root_task_id)
-        base = self.chain.tip() or ""
+        base = self.chain.tip() or self.chain.head_sha()
         prepared: list[tuple[child_dispatch.DispatchRecord, list[child_records.ChildTask]]] = []
         lines: list[str] = []
         for seg, children in zip(segments, tasks, strict=True):

@@ -66,7 +66,7 @@ def test_an_end_is_held_while_a_childs_work_has_not_merged() -> None:
     )
     assert refusal is not None
     assert refusal.text.splitlines()[:3] == [
-        "[harness] finish_session refused: 2 child(ren) have not merged:",
+        "[harness] finish_session refused: 2 child(ren) have pending work:",
         "- run-p1-l1: running",
         "- run-p2-l1: stopping",
     ]

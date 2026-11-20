@@ -127,7 +127,10 @@ def test_steer_child_is_offered_where_parallel_is_and_refused_everywhere_else(
     )
     assert steer.input_schema["required"] == ["id", "text"]
     (parallel,) = [t for t in toolset.tool_definitions(on) if t.name == "parallel"]
-    assert "`steer_child` sends a running child an instruction;" in parallel.description
+    assert (
+        "`steer_child` sends an instruction to a running child or continues a stopped child;"
+        in parallel.description
+    )
     assert "a worker with this run's tools, guards and limits" in parallel.description
 
 

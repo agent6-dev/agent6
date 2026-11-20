@@ -19,7 +19,9 @@ import pytest
 
 from agent6 import paths
 from agent6.config import Config, layer
+from agent6.harness import parallel_join
 from agent6.sessions import child_dispatch
+from agent6.tools import schema
 from agent6.ui.cli import cli_main
 from tests import launch_env
 
@@ -63,13 +65,16 @@ def _started(body: dict[str, Any]) -> list[str]:
     return ids
 
 
-def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_merges_as_it_ends(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("control", ["agent6", "model"])
+def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    control: str,
 ) -> None:
     """Two `parallel` calls in one turn start two real children; the parent takes turns meanwhile.
 
-    The second task's child ends first and is read; its work merges at the next boundary while
-    the first task's child still runs, and the parent finishes after reading both merges.
+    Each task completes at its next boundary, merging only under agent6-owned git.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -96,13 +101,16 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_merges_a
                 [
                     ("parallel", {"task": "CHILD-A: write a.txt"}),
                     ("parallel", {"task": "CHILD-B: write b.txt"}),
+                    ("finish_session", {"summary": "too early"}),
                 ],
                 [("read_background", {"id": second, "wait_s": 120})],
                 [("read_background", {"id": first, "wait_s": 120})],
                 [("read_file", {"path": "README.md"})],
-                [("finish_session", {"summary": "both tasks merged"})],
+                [("finish_session", {"summary": "both tasks completed"})],
             ][min(turn, 4)]
         name = "a.txt" if who == "CHILD-A" else "b.txt"
+        if turn == 1 and control == "model":
+            return _commit()
         if turn > 0:
             return [("finish_session", {"summary": f"wrote {name}"})]
         if who == "CHILD-A":
@@ -115,7 +123,7 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_merges_a
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/m"}},
-                "git": {"worktree": {"base_dir": str(tmp_path / "clones")}},
+                "git": {"control": control, "worktree": {"base_dir": str(tmp_path / "clones")}},
                 "sandbox": {"isolation": "none", "run_commands": "allow"},
                 "harness": {"parallel": {"tool": True}, "verify": {"infer": False}},
                 "review": {"when": "never"},
@@ -167,7 +175,7 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_merges_a
     read_b = json.loads(
         _text(next(m for m in reversed(parent[2]["messages"]) if m["role"] == "tool"))
     )
-    assert read_b["output"].splitlines() == [
+    expected_read = [
         f"[{two}] ended, not merged: CHILD-B: write b.txt",
         "",
         "user: CHILD-B: write b.txt",
@@ -176,17 +184,25 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_merges_a
         "",
         "[tool] finish_session",
     ]
+    if control == "model":
+        expected_read[-2:-2] = ["", "[tool] run_command"]
+    assert read_b["output"].splitlines() == expected_read
     assert read_b["children"][0] == f"[{one}] running: CHILD-A: write a.txt"
-    # Both children's work is in the parent's tree and on its chain, the first on the second.
-    assert (repo / "a.txt").read_text(encoding="utf-8") == "CHILD-A\n"
-    assert (repo / "b.txt").read_text(encoding="utf-8") == "CHILD-B\n"
+    # Agent6-owned git merges; model-owned git retains each ref without changing the checkout.
+    assert (repo / "a.txt").exists() is (control == "agent6")
+    assert (repo / "b.txt").exists() is (control == "agent6")
     first, second = child_dispatch.read_records(session_dir)
     assert [(r.source, r.state, r.delivered) for r in (first, second)] == [
         ("model", "complete", True)
     ] * 2
     a_join, b_join = first.children[0].join, second.children[0].join
     assert a_join is not None and b_join is not None
-    assert (a_join.status, b_join.status) == ("joined", "joined")
+    expected = "joined" if control == "agent6" else "unmerged"
+    assert (a_join.status, b_join.status) == (expected, expected)
+    assert _git(repo, "show", f"{a_join.branch}:a.txt") == "CHILD-A"
+    assert _git(repo, "show", f"{b_join.branch}:b.txt") == "CHILD-B"
+    if control == "model":
+        assert a_join.branch in json.dumps(parent[3]) and b_join.branch in json.dumps(parent[2])
     assert a_join.target_before == b_join.target_after
     assert first.children[0].limits is None, "a child the model starts has no cap of its own"
     rows = [json.loads(line) for line in (session_dir / "logs.jsonl").read_text().splitlines()]
@@ -194,11 +210,16 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_merges_a
         f"{session}-p2",
         f"{session}-p1",
     ]
+    assert any(row["type"] == "finish.refused.children" for row in rows)
     assert [row["reason"] for row in rows if row["type"] == "session.stop"] == ["finish_session"]
 
 
+@pytest.mark.parametrize("control", ["agent6", "model"])
 def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    control: str,
 ) -> None:
     """`steer_child` reaches a real child at its next boundary, marked as from its parent."""
     repo = tmp_path / "repo"
@@ -238,6 +259,8 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
             return [("apply_edit", {"path": "a.txt", "old_string": "", "new_string": "a\n"})]
         if turn == 1 and heading in json.dumps(body["messages"]):
             return [("apply_edit", {"path": "c.txt", "old_string": "", "new_string": "c\n"})]
+        if turn == 2 and control == "model":
+            return _commit()
         return [("finish_session", {"summary": "wrote what was asked"})]
 
     with launch_env.scripted_provider(reply_for=reply) as (base_url, _calls):
@@ -245,7 +268,7 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/m"}},
-                "git": {"worktree": {"base_dir": str(tmp_path / "clones")}},
+                "git": {"control": control, "worktree": {"base_dir": str(tmp_path / "clones")}},
                 "sandbox": {"isolation": "none", "run_commands": "allow"},
                 "harness": {"parallel": {"tool": True}, "verify": {"infer": False}},
                 "review": {"when": "never"},
@@ -275,16 +298,24 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
     told = [_text(m) for m in second["messages"] if m["role"] == "user"]
     assert sum(text.count(f"{heading}\nalso write c.txt") for text in told) == 1
     assert not any("OPERATOR STEERING" in text for text in told)
-    # It did what its parent asked, and the work merged with the rest of its task.
-    assert (repo / "a.txt").exists() and (repo / "c.txt").read_text(encoding="utf-8") == "c\n"
+    # Both settings retain the work the parent asked for.
+    assert (repo / "a.txt").exists() is (control == "agent6")
+    assert (repo / "c.txt").exists() is (control == "agent6")
+    join = child_dispatch.read_records(session_dir)[0].children[0].join
+    assert join is not None
+    assert _git(repo, "show", f"{join.branch}:c.txt") == "c"
     rows = [json.loads(line) for line in (runs / child / "logs.jsonl").read_text().splitlines()]
     (steer,) = [row for row in rows if row["type"] == "steer.parent"]
     assert (steer["text"], steer["chars"]) == ("also write c.txt", 16)
     assert not [row for row in rows if row["type"] == "steer.injected"]
 
 
-def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_merges(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("control", ["agent6", "model"])
+def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    control: str,
 ) -> None:
     """Two real attempts, then a real judge: a reviewer session whose answer is the order.
 
@@ -303,7 +334,7 @@ def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_merges(
     lock = threading.Lock()
     attempts = iter(("first", "second"))
 
-    def reply(body: dict[str, Any]) -> launch_env.Reply:
+    def reply(body: dict[str, Any]) -> launch_env.Reply:  # noqa: PLR0911  # one reply per scripted turn
         task, turn = _first_task(body), _turn(body)
         who = "JUDGE" if "\nATTEMPT " in task else "PARENT" if "PARENT" in task else "CHILD"
         with lock:
@@ -314,17 +345,19 @@ def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_merges(
         if who == "JUDGE":
             return judge_reply(task, turn)
         if who == "CHILD":
+            if turn == 1 and control == "model":
+                return _commit()
             return [("finish_session", {"summary": "wrote x.txt"})]
         if turn == 0:
             return [("parallel", {"task": "CHILD: write x.txt", "spec": "2"})]
         if "[parallel] group" in json.dumps(body["messages"]):
-            return [("finish_session", {"summary": "the ranked attempt merged"})]
+            return [("finish_session", {"summary": "the ranked task completed"})]
         return [("read_background", {"wait_s": 120})]
 
     def judge_reply(task: str, turn: int) -> launch_env.Reply:
         if turn == 0:
             # The clone holds each attempt as a branch: its log is read before ranking.
-            branch = re.findall(r"^branch: (\S+) at ", task, re.MULTILINE)[-1]
+            branch = re.findall(r"^branch: (\S+)", task, re.MULTILINE)[-1]
             return [("run_command", {"argv": ["git", "log", "--format=%s", "-1", branch]})]
         ids = re.findall(r"^ATTEMPT (\S+)$", task, re.MULTILINE)
         return json.dumps({"order": list(reversed(ids)), "summary": "the second reads best"})
@@ -334,7 +367,7 @@ def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_merges(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/m"}},
-                "git": {"worktree": {"base_dir": str(tmp_path / "clones")}},
+                "git": {"control": control, "worktree": {"base_dir": str(tmp_path / "clones")}},
                 "sandbox": {"isolation": "none", "run_commands": "allow"},
                 "harness": {
                     "parallel": {"tool": True, "judges": ["default"]},
@@ -360,13 +393,16 @@ def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_merges(
     # The judge is one reviewer session: its opening lists both attempts, in child order.
     opening = _first_task(judge[0])
     assert re.findall(r"^ATTEMPT (\S+)$", opening, re.MULTILINE) == [one, two]
-    assert f"branch: origin/agent6/{two} at " in opening and "verify: not_applicable" in opening
+    assert "verify: not_applicable" in opening
+    assert "DIFF: none" not in opening
+    assert len(re.findall(r"^branch: ", opening, re.MULTILINE)) == 2
     assert "[harness] reply 1 of 5." in json.dumps(judge[0]["messages"])
     assert "[harness] reply 2 of 5." in json.dumps(judge[1]["messages"])
     ran = json.loads(_text(next(m for m in reversed(judge[1]["messages"]) if m["role"] == "tool")))
-    assert (ran["returncode"], ran["stdout"].strip()) == (0, "agent6 turn 1: update x.txt")
+    subject = "agent6 turn 1: update x.txt" if control == "agent6" else "child work"
+    assert (ran["returncode"], ran["stdout"].strip()) == (0, subject)
     assert (state / "sessions" / "reviewers" / f"{session}-rp1-l1" / "completion.json").is_file()
-    # Its order merged the second attempt; the first keeps its branch.
+    # The second attempt wins; only agent6-owned git merges it.
     task, judges = (
         child_dispatch.read_records(session_dir)[-1],
         child_dispatch.read_records(session_dir)[0],
@@ -379,10 +415,43 @@ def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_merges(
         two,
     )
     assert task.ranking.rationale == "the second reads best"
-    assert [child.join.status for child in task.children if child.join] == ["ranked", "joined"]
-    assert (repo / "x.txt").read_text(encoding="utf-8") == _git(repo, "show", f"agent6/{two}:x.txt")
+    assert [child.join.status for child in task.children if child.join] == [
+        "ranked",
+        "joined" if control == "agent6" else "ranked",
+    ]
+    assert (repo / "x.txt").exists() is (control == "agent6")
+    for child in task.children:
+        assert child.join is not None
+        assert _git(repo, "show", f"{child.join.branch}:x.txt") in ("first", "second")
     parent_last = next(body for who, _t, body in reversed(seen) if who == "PARENT")
     assert "Ranked by the judges: the second reads best" in json.dumps(parent_last["messages"])
     assert (
         "ranked candidates (best first):" in out.out and "judge: the second reads best" in out.out
     )
+
+
+def _commit() -> launch_env.Reply:
+    """Commit a model-owned child's work with an explicit test identity."""
+    return [
+        (
+            "run_command",
+            {
+                "argv": [
+                    "sh",
+                    "-c",
+                    "git add -A && git -c user.name=test -c user.email=test@example.com"
+                    " commit -m 'child work'",
+                ]
+            },
+        )
+    ]
+
+
+def test_child_tool_text_and_notices_state_both_git_policies() -> None:
+    """A model-owned run is never promised an automatic child merge."""
+    text = schema.ParallelInput.TOOL_DESCRIPTION
+    assert 'git.control = "model"' in text and "merge with git" in text
+    for ids in (["one"], ["one", "two"]):
+        notice = parallel_join.started_text(ids)
+        assert "task completes" in notice
+        assert "first merges" not in notice
