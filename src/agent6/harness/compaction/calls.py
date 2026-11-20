@@ -52,16 +52,17 @@ class Calls:
         self.check_stop()
         self.check_budget()
         identity = self.turn_identity or kinds.CallContext(execution_id=self.execution_id)
+        request = self.conversation.complete()
         return self.worker.call(
             system=self.system,
-            messages=[*self.conversation.to_wire(), {"role": "user", "content": instruction}],
+            messages=[*request.to_wire(), {"role": "user", "content": instruction}],
             tools=self.tools,
             max_tokens=self.settings.summary_max_tokens,
             temperature=self.temperature,
             should_abort=self.should_abort,
             should_interrupt=self.should_interrupt,
             context=request_headers.RequestContext.initiated_by(
-                self.conversation.initiator,
+                request.initiator,
                 call_context=dataclasses.replace(identity, model_call_id=call_id),
             ),
         )

@@ -3,18 +3,16 @@
 """The context compaction driver.
 
 Tier 1 elides old tool results (deduped, gisted, the old thinking dropped)
-at `CompactionSettings.drop_at_chars`; tier 2 selects the worker or helper
-writer before tier 1 and restarts the conversation from the task plus
-the summary at `summarise_at_chars`, or on the operator's request. The pure
-rules live in `compaction_rules`; this object does the calls, the DAG check-off
-and the events. The loop calls `compact` once per turn before the provider
-call.
+at `CompactionSettings.drop_at_chars`. Tier 2 checks for a restart before tier 1.
+It restarts from the task and summary at `summarise_at_chars`, during a long wait
+or on the operator's request. The driver owns writer selection and DAG check-off.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import functools
+import time
 import uuid
 
 import pydantic
@@ -35,6 +33,7 @@ from agent6.providers import (
     provider_types,
 )
 from agent6.sessions import journal
+from agent6.tools import waits
 
 
 @dataclasses.dataclass(slots=True)
@@ -43,9 +42,34 @@ class Tiered:
 
     Attributes:
         tier2_floor_chars: Minimum size for the next automatic restart in this execution.
+        cold_notice_execution: The execution that received the cold-cache notice.
     """
 
     tier2_floor_chars: int = 0
+    cold_notice_execution: str | None = None
+
+    def idle(self, context: strategy.Context, request_started: float) -> waits.Deadline | None:
+        """Offer one summary during a wait above the idle and restart floors.
+
+        Args:
+            context: The conversation with the worker's reply.
+            request_started: The monotonic start of the last worker attempt.
+
+        Returns:
+            The turn's deadline, or None when it has no idle compaction due.
+        """
+        idle = context.settings.idle
+        if idle is None or not idle.seconds:
+            return None
+        total = context.prefix_chars + compaction_window.context_chars(context.conversation)
+        if total <= idle.min_chars or total < self.tier2_floor_chars:
+            return None
+        return waits.Deadline(
+            request_started + idle.seconds,
+            lambda: self.summarise_and_restart(
+                context, idle_gap_s=time.monotonic() - request_started
+            ),
+        )
 
     def compact(self, context: strategy.Context) -> bool:
         """Check for a restart before allowing tier 1 to rewrite the request prefix.
@@ -68,7 +92,7 @@ class Tiered:
         # the growth floor.
         over = total > context.settings.summarise_at_chars and total >= self.tier2_floor_chars
         if (forced is not None or over) and len(conversation) > 3:
-            return self.summarise_and_restart(context, focus=forced or "")
+            return self.summarise_and_restart(context, focus=forced)
         if forced is not None:
             # The request was consumed above, so the refusal is said, not silent.
             context.log("LOOP: manual compaction skipped: too little history to summarise")
@@ -122,24 +146,31 @@ class Tiered:
         self,
         context: strategy.Context,
         *,
-        focus: str = "",
+        focus: str | None = None,
+        idle_gap_s: float | None = None,
     ) -> bool:
         """Replace history only after either writer returns an accepted summary.
 
         Args:
             context: The prepared turn.
             focus: The operator's focus for the summary.
+            idle_gap_s: Seconds since the last worker request began for an idle summary.
 
         Returns:
             True if the history was replaced.
         """
         conversation = context.conversation
         messages = conversation.messages
-        tail_start = compaction_window.recent_tail_start(
-            messages, context.settings.keep_recent_chars
-        )
-        if tail_start <= 1:
-            tail_start = len(messages)
+        reason = "size" if focus is None else "requested"
+        if idle_gap_s is not None:
+            reason = "idle"
+            tail_start = len(conversation.complete())
+        else:
+            tail_start = compaction_window.recent_tail_start(
+                messages, context.settings.keep_recent_chars
+            )
+            if tail_start <= 1:
+                tail_start = len(messages)
         open_tasks = (
             advice.open_subtasks(context.curator.nodes()) if context.curator is not None else []
         )
@@ -147,7 +178,7 @@ class Tiered:
             context,
             tail_start=tail_start,
             open_tasks=open_tasks,
-            focus=focus,
+            focus=focus or "",
         )
         if written is None:
             return False
@@ -166,6 +197,8 @@ class Tiered:
         )
         context.emit(
             journal.CompactSummariseDone(
+                reason=reason,
+                gap_s=idle_gap_s,
                 writer=written.writer,
                 fallback_reason=written.fallback_reason,
                 summary_chars=len(summary),
@@ -173,7 +206,48 @@ class Tiered:
                 kept_messages=len(messages) - tail_start,
             )
         )
+        if idle_gap_s is not None and written.writer == "worker":
+            self._report_cold_cache(context, written.usage, idle_gap_s)
         return True
+
+    def _report_cold_cache(
+        self, context: strategy.Context, usage: provider_types.ProviderUsage, gap_s: float
+    ) -> None:
+        """Report the first measured cold idle summary in this execution.
+
+        Args:
+            context: The turn that compacted.
+            usage: The accepted worker summary's measured input.
+            gap_s: Seconds since the last worker request began.
+        """
+        idle = context.settings.idle
+        cached = usage.cache_read_tokens
+        uncached = usage.input_tokens + (usage.cache_write_tokens or 0)
+        if (
+            idle is None
+            or cached is None
+            or cached >= uncached
+            or self.cold_notice_execution == context.execution_id
+        ):
+            return
+        self.cold_notice_execution = context.execution_id
+        setting = f"providers.{idle.provider}.idle_compact_s"
+        message = (
+            f"{setting} = {idle.seconds:g} is longer than the cache lasts. "
+            f"Idle summary {gap_s:.1f}s after the last request began: "
+            f"{uncached:,} uncached, {cached:,} cached input tokens."
+        )
+        context.log(message)
+        context.emit(
+            journal.CompactIdleCacheCold(
+                setting=setting,
+                idle_compact_s=idle.seconds,
+                gap_s=gap_s,
+                uncached_tokens=uncached,
+                cached_tokens=cached,
+                message=message,
+            )
+        )
 
 
 def distill_gists(
@@ -225,7 +299,7 @@ def write_summary(
         ProviderAborted: The operator stopped the run.
         ProviderInterrupted: A steer is pending.
     """
-    messages = context.conversation.messages
+    messages = context.conversation.complete().messages
     writer = context.settings.summariser
     fallback_reason = ""
     if writer == "worker" and context.settings.worker_backend == "claude_code":
@@ -284,7 +358,7 @@ def write_summary(
         fallback_reason = failure
     context.check_stop()
     assert resp is not None
-    return writers.Summary(resp.text.strip(), writer, fallback_reason)
+    return writers.Summary(resp.text.strip(), writer, fallback_reason, resp.usage)
 
 
 def apply_checkoff(context: strategy.Context, summary_text: str, *, valid_ids: set[str]) -> None:

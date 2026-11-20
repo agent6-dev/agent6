@@ -20,6 +20,7 @@ class Summary:
     raw: str
     writer: Literal["worker", "helper"]
     fallback_reason: str
+    usage: provider_types.ProviderUsage
 
 
 def helper_input(

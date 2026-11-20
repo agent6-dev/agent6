@@ -12,7 +12,7 @@ from typing import Any
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import journal
-from agent6.tools import background, policy, result_format, results, schema, tool_errors
+from agent6.tools import background, policy, result_format, results, schema, tool_errors, waits
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -209,12 +209,13 @@ def read_background(
     if not args.id:
         return results.BackgroundResult(shells=_roster(shells))
     try:
-        view, output = shells.read(
-            args.id,
-            tail_lines=args.tail_lines,
-            wait_s=wait_s,
-            interrupted=interrupted,
-        )
+        with waits.during(wait_s):
+            view, output = shells.read(
+                args.id,
+                tail_lines=args.tail_lines,
+                wait_s=wait_s,
+                interrupted=interrupted,
+            )
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
     return results.BackgroundResult(

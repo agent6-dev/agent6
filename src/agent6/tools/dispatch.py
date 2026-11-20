@@ -50,6 +50,7 @@ from agent6.tools import (
     skill_tools,
     target_policy,
     tool_errors,
+    waits,
 )
 from agent6.tools import policy as tools_policy
 from agent6.vcs.git import read as git_read
@@ -903,14 +904,15 @@ class ToolDispatcher:
                 get_background=self._background,
                 access=self._jail_access("run_command"),
             )
-        return command_tools.run_model_command(
-            args.argv,
-            shells=self._shells,
-            checkin=self._config.harness.command_checkin_s,
-            interrupted=self._operator_wants_out_now,
-            emit=self._emit,
-            access=self._jail_access("run_command"),
-        )
+        with waits.during():
+            return command_tools.run_model_command(
+                args.argv,
+                shells=self._shells,
+                checkin=self._config.harness.command_checkin_s,
+                interrupted=self._operator_wants_out_now,
+                emit=self._emit,
+                access=self._jail_access("run_command"),
+            )
 
     def _background_wait_interrupted(self) -> bool:
         """Return whether a pending stop or steer should end a background wait.

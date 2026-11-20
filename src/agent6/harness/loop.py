@@ -85,7 +85,7 @@ from agent6.providers import (
     ToolDefinition,
 )
 from agent6.sessions import budget_events, completion, journal, process
-from agent6.tools import dispatch, operator_prompts, schema, tool_errors
+from agent6.tools import dispatch, operator_prompts, schema, tool_errors, waits
 from agent6.vcs.git import ops as git_ops
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
@@ -562,10 +562,16 @@ class Harness:
             ended = self._contract_turn(state, got, assistant, turn=turn)
             if ended is not None:
                 return ended
-            if not assistant.tool_uses:
-                result = quiet_turns.handle_no_tool_use(
-                    self, got, assistant, conversation, state, ctx
+            if isinstance(self.compactor, strategy.IdleStrategy):
+                state.idle_deadline = self.compactor.idle(
+                    self.compaction_context(conversation, state, tools),
+                    self.caller.counter.request_started,
                 )
+            if not assistant.tool_uses:
+                with waits.bind(state.idle_deadline):
+                    result = quiet_turns.handle_no_tool_use(
+                        self, got, assistant, conversation, state, ctx
+                    )
                 if result is not None:
                     return result
                 # A prose-only turn also reaches the snapshot and the operator boundary.
@@ -579,7 +585,8 @@ class Harness:
             turn_state = loop_state.TurnState(number=turn, resp=got, assistant=assistant)
             # The marker outlives a death mid-dispatch, so a resume never runs these calls again.
             loop_resume.mark_turn(self, turn_state)
-            result = self._turn_dispatch_tools(state, turn_state, ctx)
+            with waits.bind(state.idle_deadline):
+                result = self._turn_dispatch_tools(state, turn_state, ctx)
             if result is not None:
                 return result
             # One graph snapshot per turn, however many mutations the turn made.
@@ -883,6 +890,10 @@ class Harness:
             )
 
         try:
+            deadline, state.idle_deadline = state.idle_deadline, None
+            if deadline is not None and deadline.result():
+                state.focus.surfaced_task_id = None
+                state.plan_injected = ""
             binding = self.contract.review_binding if self.contract is not None else None
             state.call_context = kinds.CallContext(
                 execution_id=self.execution_id,
@@ -1929,6 +1940,7 @@ class Harness:
             self.bridge.should_interrupt,
         )
         return strategy.Context(
+            execution_id=state.execution_id,
             conversation=conversation,
             settings=self.compaction,
             prefix_chars=compaction_window.request_prefix_chars(state.system, tools),

@@ -444,6 +444,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         f"Source tip: {view.source_tip or 'unknown'}",
         environment_summary(view),
         *view.cache_usage.lines(),
+        *view.cache_usage.idle_notices,
         "",
         "Testing (output cap: 2000 characters per stream)",
         f"{word}: {view.end_tree or 'unknown'}",

@@ -20,7 +20,7 @@ from typing import Literal, Protocol
 
 from agent6 import portable, terminal
 from agent6.sessions import ipc, journal, process
-from agent6.tools import schema
+from agent6.tools import schema, waits
 
 # Who answered, as the answer events journal it: the CLI's terminal ("stdin"), a live TUI, web
 # or attach ("frontend"), a park until one attached ("await-frontend"), the detach choice
@@ -272,7 +272,7 @@ class OperatorPrompts:
             self._journal(journal.ApprovalAnswer(id=request.id, approved=True, source="session"))
             return True
         started = time.monotonic()
-        with self.one_at_a_time:
+        with waits.during(), self.one_at_a_time:
             if self._session_dir is not None:
                 ipc.clear_answer(self._session_dir, request.id)
             self._journal(
@@ -339,7 +339,7 @@ class OperatorPrompts:
                 id=request.id,
             )
         started = time.monotonic()
-        with self.one_at_a_time:
+        with waits.during(), self.one_at_a_time:
             self._open(request)
             try:
                 answer = self._questioner(request)

@@ -574,6 +574,7 @@ def _drive_state(
             helper=summariser_provider,
             helper_context_tokens=role_providers.helper_context_window(cfg),
             worker_backend=role_providers.worker_backend(cfg, rm),
+            idle=role_providers.idle_compaction(cfg, rm),
         ),
         bridge=operator_bridge.OperatorBridge(
             steer_requested=bridges.steer_requested,

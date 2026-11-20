@@ -27,6 +27,7 @@ from agent6.harness import (
 )
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.providers import ProviderResponse
+from agent6.tools import waits
 
 
 @dataclasses.dataclass(slots=True)
@@ -107,6 +108,7 @@ class LoopState:
     gates: finish_gates.FinishGates = dataclasses.field(default_factory=finish_gates.FinishGates)
     execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
     call_context: kinds.CallContext | None = None
+    idle_deadline: waits.Deadline | None = None
     review_panels: tuple[review_records.ReviewPanel, ...] = ()
     budget_nudges: guards.BudgetNudges = dataclasses.field(default_factory=guards.BudgetNudges)
 

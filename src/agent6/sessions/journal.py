@@ -303,6 +303,12 @@ class CompactSummariseDone(Event):
     """A summary replaced the conversation history."""
 
     TYPE: ClassVar[str] = "compact.summarise.done"
+    reason: Literal["size", "requested", "idle", ""] = pydantic.Field(
+        default="", description="What triggered the restart, empty when not recorded."
+    )
+    gap_s: float | None = pydantic.Field(
+        default=None, description="Seconds from the worker request start to the idle summary call."
+    )
     writer: Literal["worker", "helper"] = pydantic.Field(
         default="helper", description="The summary writer."
     )
@@ -314,6 +320,18 @@ class CompactSummariseDone(Event):
     kept_messages: int = pydantic.Field(
         description="Number of recent messages kept after the summary.",
     )
+
+
+class CompactIdleCacheCold(Event):
+    """The worker read less than half its idle summary input from cache."""
+
+    TYPE: ClassVar[str] = "compact.idle.cache_cold"
+    setting: str = pydantic.Field(description="The provider's idle limit key.")
+    idle_compact_s: float = pydantic.Field(description="The configured limit in seconds.")
+    gap_s: float = pydantic.Field(description="Seconds since the worker request began.")
+    uncached_tokens: int = pydantic.Field(description="Fresh plus cache-write input tokens.")
+    cached_tokens: int = pydantic.Field(description="Input tokens read from the cache.")
+    message: str = pydantic.Field(description="The notice printed in the log and receipt.")
 
 
 class CompactSummariseFailed(Event):
@@ -1898,6 +1916,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "compact.gist.call": CompactGistCall,
     "compact.gist.done": CompactGistDone,
     "compact.gist.failed": CompactGistFailed,
+    "compact.idle.cache_cold": CompactIdleCacheCold,
     "compact.refused": CompactRefused,
     "compact.requested": CompactRequested,
     "compact.restored": CompactRestored,

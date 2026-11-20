@@ -224,6 +224,19 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `error` | `str` | The failure diagnostic. |
 
+### compact.idle.cache_cold
+
+**Support: public.** The worker read less than half its idle summary input from cache.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `setting` | `str` | The provider's idle limit key. |
+| `idle_compact_s` | `float` | The configured limit in seconds. |
+| `gap_s` | `float` | Seconds since the worker request began. |
+| `uncached_tokens` | `int` | Fresh plus cache-write input tokens. |
+| `cached_tokens` | `int` | Input tokens read from the cache. |
+| `message` | `str` | The notice printed in the log and receipt. |
+
 ### compact.refused
 
 **Support: public.** There was too little history to summarize.
@@ -266,6 +279,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `reason` | `Literal['size', 'requested', 'idle', ''], optional` | What triggered the restart, empty when not recorded. |
+| `gap_s` | `float, optional` | Seconds from the worker request start to the idle summary call. |
 | `writer` | `Literal['worker', 'helper'], optional` | The summary writer. |
 | `fallback_reason` | `str, optional` | Why the worker yielded to the helper. |
 | `summary_chars` | `int` | Length of the summary in characters. |
@@ -2877,6 +2892,7 @@ Source: [`agent6.viewmodel.cache_usage.CacheUsage`](https://github.com/agent6-de
 | `post_compaction_calls` | `int` | Reported worker calls following a history rewrite. |
 | `post_compaction_uncached_tokens` | `int` | Fresh plus cache-write input on those calls. |
 | `summaries` | `tuple[SummaryAttempt, ...]` | Summary attempts in journal order, excluded from ordinary worker usage. |
+| `idle_notices` | `tuple[str, ...]` | Cold idle summary notices in execution order. |
 
 ### SummaryAttempt
 

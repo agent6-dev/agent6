@@ -58,6 +58,7 @@ class CacheUsage:
         post_compaction_calls: Reported worker calls following a history rewrite.
         post_compaction_uncached_tokens: Fresh plus cache-write input on those calls.
         summaries: Summary attempts in journal order, excluded from ordinary worker usage.
+        idle_notices: Cold idle summary notices in execution order.
     """
 
     calls: int = 0
@@ -68,6 +69,7 @@ class CacheUsage:
     post_compaction_calls: int = 0
     post_compaction_uncached_tokens: int = 0
     summaries: tuple[SummaryAttempt, ...] = ()
+    idle_notices: tuple[str, ...] = ()
 
     def lines(self) -> tuple[str, ...]:
         """Render measured cache use, omitting unreported usage.
@@ -115,6 +117,11 @@ class CacheUsageFold:
             self.pending = False
             self.after.clear()
             self.summary_call_id = ""
+        if kind == "compact.idle.cache_cold" and isinstance(message := row.get("message"), str):
+            self.usage = dataclasses.replace(
+                self.usage, idle_notices=(*self.usage.idle_notices, message)
+            )
+            return
         if self._summary(row):
             return
         if (

@@ -24,6 +24,7 @@ from agent6.config import (
     secret_store,
 )
 from agent6.harness import provider_call
+from agent6.harness.compaction import window
 from agent6.harness.review import gate as review_gate
 from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
@@ -110,6 +111,24 @@ def helper_context_window(cfg: Config) -> int | None:
     """
     role = cfg.models.resolve("helper")
     return models_registry.context_window(role.provider, role.model) if role else None
+
+
+def idle_compaction(cfg: Config, rm: RoleModel | None) -> window.IdleCompaction | None:
+    """Read the driving provider's local idle limits.
+
+    Args:
+        cfg: The effective config.
+        rm: The resolved driving role.
+
+    Returns:
+        The limits, or None without an HTTP provider entry.
+    """
+    if rm is None:
+        return None
+    entry = cfg.providers.get(rm.provider)
+    if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
+        return None
+    return window.IdleCompaction(rm.provider, entry.idle_compact_s, entry.idle_compact_min_chars)
 
 
 def worker_backend(cfg: Config, rm: RoleModel | None) -> str:

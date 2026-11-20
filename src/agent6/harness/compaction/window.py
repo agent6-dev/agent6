@@ -131,6 +131,21 @@ KEEP_RECENT_CHARS = 80_000
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class IdleCompaction:
+    """Hold the driving provider's local wait policy.
+
+    Attributes:
+        provider: The provider entry that owns the limits.
+        seconds: The idle limit from the start of the last worker request.
+        min_chars: The character floor for the whole context.
+    """
+
+    provider: str
+    seconds: float
+    min_chars: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class CompactionSettings:
     """Context compaction as the run configures it.
 
@@ -149,6 +164,7 @@ class CompactionSettings:
         helper: The helper role's provider; the worker's when None.
         helper_context_tokens: The helper's known window; None refuses a helper summary.
         worker_backend: The driving provider's backend, for the Claude Code exception.
+        idle: The driving provider's idle settings, or None without an HTTP provider.
     """
 
     drop_at_chars: int = DROP_BLOCKS_AT_CHARS
@@ -162,6 +178,7 @@ class CompactionSettings:
     helper: Provider | None = None
     helper_context_tokens: int | None = None
     worker_backend: str = ""
+    idle: IdleCompaction | None = None
 
 
 def strip_old_thinking(

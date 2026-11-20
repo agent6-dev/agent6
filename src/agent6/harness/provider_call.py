@@ -292,10 +292,12 @@ class CallCounter:
     Attributes:
         attempts: The attempts made, retries and media-free retries included.
         output_tokens: The output tokens of every response returned.
+        request_started: The monotonic start of the last worker attempt.
     """
 
     attempts: int = 0
     output_tokens: int = 0
+    request_started: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -373,6 +375,7 @@ class ProviderCaller:
             context = dataclasses.replace(context, attempt=attempt, attempts=attempts)
             self.counter.attempts += 1
             try:
+                self.counter.request_started = time.monotonic()
                 resp = self.provider.call(
                     system=system,
                     messages=messages,

@@ -18,7 +18,7 @@ from agent6.harness import (
     parallel_recovery,
 )
 from agent6.sessions import child_dispatch, journal
-from agent6.tools import operator_prompts, tool_errors
+from agent6.tools import operator_prompts, tool_errors, waits
 from agent6.vcs.git import ops as git_ops
 
 if TYPE_CHECKING:
@@ -440,7 +440,8 @@ def park_for_steer(
             # A queued question's answer is work too; the model reads it on its next turn.
             harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
-        time.sleep(0.5)
+        with waits.during(0.5):
+            time.sleep(0.5)
 
 
 def steer_outcome(

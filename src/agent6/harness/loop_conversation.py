@@ -186,6 +186,24 @@ class Conversation:
     def __len__(self) -> int:
         return len(self._messages)
 
+    def complete(self) -> Conversation:
+        """Return the history up to the last complete turn, with its cache marks.
+
+        Returns:
+            This conversation, or its prefix without the assistant awaiting tool results.
+        """
+        if (
+            self._messages
+            and isinstance(last := self._messages[-1], AssistantMessage)
+            and last.tool_uses
+        ):
+            prefix = Conversation()
+            prefix._messages = self._messages[:-1]
+            # Only user blocks carry marks.
+            prefix._marks = self._marks.copy()
+            return prefix
+        return self
+
     # ---- appends (each preserves pair safety) ---------------------------
 
     def _require_no_open_call(self, what: str) -> None:

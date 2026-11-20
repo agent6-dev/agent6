@@ -184,3 +184,20 @@ def test_responses_usage_keeps_absent_cache_counts_absent() -> None:
         route="test/test",
     )
     assert role_providers._usage_fields(parsed.usage).get("cache_read_tokens") is None
+
+
+def test_cold_idle_notice_is_part_of_the_receipt(tmp_path: pathlib.Path) -> None:
+    message = (
+        "providers.p.idle_compact_s = 240 is longer than the cache lasts. "
+        "Idle summary 241.0s after the last request began: 600 uncached, 0 cached input tokens."
+    )
+    session = layout.SessionLayout(state_dir=tmp_path, session_id="cold")
+    session.session_dir.mkdir(parents=True)
+    _write(
+        session.session_dir / "logs.jsonl",
+        [{"type": "compact.idle.cache_cold", "message": message}],
+    )
+    assert message in receipt.render(receipt.read_receipt(session.session_dir, tmp_path))
+    lines: list[str] = []
+    finalize.print_session_usage(session, emit=lines.append)
+    assert not any(message in line for line in lines), "the live run already logged the notice"

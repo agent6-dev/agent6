@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable, Sequence
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from agent6.graph import curator as graph_curator
 from agent6.harness import loop_conversation
 from agent6.harness.compaction import window
 from agent6.providers import provider_types
 from agent6.sessions import journal
+from agent6.tools import waits
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -35,6 +36,7 @@ class Context:
         curator: The task graph, if wired.
         root_task_id: The parent for tasks discovered during compaction.
         emit_graph_snapshot: Record a graph change after a check-off.
+        execution_id: The execution that owns this turn.
     """
 
     conversation: loop_conversation.Conversation
@@ -54,6 +56,24 @@ class Context:
     curator: graph_curator.GraphCurator | None
     root_task_id: str | None
     emit_graph_snapshot: Callable[[], None]
+    execution_id: str
+
+
+@runtime_checkable
+class IdleStrategy(Protocol):
+    """Supply a deadline for waits after a worker response."""
+
+    def idle(self, context: Context, request_started: float) -> waits.Deadline | None:
+        """Return the deadline and callback, or None to leave this turn's waits alone.
+
+        Args:
+            context: The turn with the worker reply appended.
+            request_started: The monotonic start of the worker's last provider attempt.
+
+        Returns:
+            One deadline shared by the turn's waits, or None.
+        """
+        ...
 
 
 class Strategy(Protocol):

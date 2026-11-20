@@ -14,7 +14,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import results, schema, sessions
+from agent6.tools import results, schema, sessions, waits
 
 # The characters of a child's transcript a read renders before it keeps the last lines.
 _TRANSCRIPT_CHARS = 20_000
@@ -109,7 +109,8 @@ def read(
     Returns:
         Both rosters; for one child, its line and the tail of its transcript.
     """
-    children.wait(args.id, wait_s, interrupted)
+    with waits.during(wait_s):
+        children.wait(args.id, wait_s, interrupted)
     roster = children.roster()
     lines = tuple(child.line() for child in roster)
     if not args.id:
