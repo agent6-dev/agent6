@@ -1221,13 +1221,10 @@ def test_a_row_the_keyboard_reaches_scrolls_clear_of_the_dock(
     assert not errors
 
 
-def test_a_long_machine_file_name_wraps_inside_its_button(
+def test_a_long_machine_file_name_wraps_inside_its_row(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A machine file name too long for a phone centred its two lines in its Run button.
-
-    Its lines then touched the button's edges, and a name with no break point ran off the card.
-    """
+    """A machine file's name wraps inside its row, leaving the Run button aligned."""
     names = (
         "ci.asm.toml",
         "release-notes-drafter-for-the-quarterly-platform-changelog.asm.toml",
@@ -1249,12 +1246,15 @@ def test_a_long_machine_file_name_wraps_inside_its_button(
         below: box.bottom - Math.max(...lines.map(r => r.bottom)),
         fits: b.scrollWidth <= b.clientWidth };
     }"""
-    one, *long = (page.get_by_role("button", name=name).evaluate(measure) for name in names)
+    one, *long = (
+        page.locator(".machine-files .title").filter(has_text=name).evaluate(measure)
+        for name in names
+    )
     assert one["lines"] == 1, one
-    for button in long:
-        assert button["lines"] > 1 and button["lefts"] == 1 and button["fits"], button
-        assert button["above"] == pytest.approx(one["above"], abs=0.5), button
-        assert button["below"] == pytest.approx(one["below"], abs=0.5), button
+    for title in long:
+        assert title["lines"] > 1 and title["lefts"] == 1 and title["fits"], title
+        assert title["above"] == pytest.approx(one["above"], abs=0.5), title
+        assert title["below"] == pytest.approx(one["below"], abs=0.5), title
     assert not errors
 
 

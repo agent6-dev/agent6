@@ -186,7 +186,7 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 /* An empty list says so, and how to start one, where a row's text would start. */
 .list > .empty { padding: 0.75rem 0.625rem; border-top: 1px solid var(--border); text-align: start; }
 .machine-files .item { flex-wrap: nowrap; cursor: default; }
-.machine-files .title { white-space: normal; overflow-wrap: anywhere; }
+.machine-files .item .title { white-space: normal; overflow-wrap: anywhere; }
 .machine-files button { flex: none; }
 .item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The title is the row's link, in the row's text; its keyboard ring goes round the whole row.

@@ -26,7 +26,7 @@ def test_machine_files_have_names_paths_and_aligned_run_buttons(
     """Machine files read as rows, not a set of differently sized Run buttons."""
     from playwright.sync_api import expect
 
-    for name in ("loop", "a_long_machine_file_name"):
+    for name in ("loop", "nightly_dependency_upgrade_and_security_advisory_sweep_for_all_services"):
         (tmp_path / f"{name}.asm.toml").write_text(test_machine_browser.LOOP, encoding="utf-8")
     page, errors = open_page(port)
     page.set_viewport_size({"width": width, "height": 900})
@@ -43,6 +43,9 @@ def test_machine_files_have_names_paths_and_aligned_run_buttons(
             )
         )
         == 1
+    )
+    assert rows.locator(".title").evaluate_all(
+        "names => names.every(n => n.scrollWidth <= n.clientWidth)"
     )
     captures.save(page, "machine-files-list")
     rows.first.get_by_role("button").click()
