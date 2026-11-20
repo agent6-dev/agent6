@@ -247,7 +247,7 @@ def _usage_line(scan: LogScan) -> str:
     Returns:
         `in` and `out`, the cached side when the journal recorded it, the plan movement a
         percent-metered execution observed against its cap, then the usage as the listing's
-        cell spells it.
+        cell spells it unless it would repeat that movement.
     """
     run = scan.budget.execution
     tokens = f"in={run.input_tokens or 0} out={run.output_tokens or 0}"
@@ -256,6 +256,8 @@ def _usage_line(scan: LogScan) -> str:
         tokens += f" cache_w={run.cache_write_tokens or 0}"
     if run.plan_cap is not None and run.plan_cap > 0:
         tokens += f" plan moved={run.plan_observed_points:g}/{run.plan_cap:g}pt"
+        if scan.executions == 1 and scan.usage_cell == f"{run.plan_observed_points:g}pt":
+            return tokens  # the cell would repeat the points just printed
     execution_s = " (latest execution)" if scan.executions > 1 else ""
     executions_s = f" (all {scan.executions} executions)" if scan.executions > 1 else ""
     return f"{tokens}{execution_s}  usage {scan.usage_cell}{executions_s}"
@@ -472,6 +474,30 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     pid_note = _pid_note(pid, alive=alive, finished=scan.finished)
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
+    print(f"status:     {state}{pid_note}")
+    print(f"turn:       {scan.turn if scan.turn is not None else '-'}")
+    print(
+        f"last event: {scan.last_type or '-'}"
+        f"{f'  ({_fmt_dur(last_age)} ago)' if last_age is not None else ''}"
+    )
+    # First start to last event: the time between executions is in it.
+    spans = f" (wall, {scan.executions} executions)" if scan.executions > 1 else ""
+    print(f"elapsed:    {_fmt_dur(elapsed)}{spans}")
+    print(f"usage:      {_usage_line(scan)}")
+    _print_end_facts(
+        scan,
+        target.name,
+        gated=mode_display == "run",
+        resume=listing.resume_blocker(target) if status in _RESUMABLE else None,
+        attempts=tuple(
+            item.body
+            for item in transcript.fold_transcript(
+                list(tail.tail_events(layout.logs_path, follow=False)), worker_dead=not alive
+            )
+            if item.kind == "verify"
+        ),
+    )
+    changes.print_merge(join, chain_join=chain_join)
     for prefix, task in [
         ("task:       ", summary.task_label.task),
         *(
@@ -498,33 +524,14 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     )
     print(
         terminal.scrub_terminal_controls(
-            "\n".join([receipt.environment_summary(scan), *receipt.settings_lines(scan.settings)])
-        )
-        + f"\nstatus:     {state}{pid_note}"
-    )
-    print(f"turn:       {scan.turn if scan.turn is not None else '-'}")
-    print(
-        f"last event: {scan.last_type or '-'}"
-        f"{f'  ({_fmt_dur(last_age)} ago)' if last_age is not None else ''}"
-    )
-    # First start to last event: the time between executions is in it.
-    spans = f" (wall, {scan.executions} executions)" if scan.executions > 1 else ""
-    print(f"elapsed:    {_fmt_dur(elapsed)}{spans}")
-    print(f"usage:      {_usage_line(scan)}")
-    _print_end_facts(
-        scan,
-        target.name,
-        gated=mode_display == "run",
-        resume=listing.resume_blocker(target) if status in _RESUMABLE else None,
-        attempts=tuple(
-            item.body
-            for item in transcript.fold_transcript(
-                list(tail.tail_events(layout.logs_path, follow=False)), worker_dead=not alive
+            "\n".join(
+                [
+                    receipt.environment_summary(scan, live=alive and not scan.finished),
+                    *receipt.settings_lines(scan.settings),
+                ]
             )
-            if item.kind == "verify"
-        ),
+        )
     )
-    changes.print_merge(join, chain_join=chain_join)
     if mode_display == "plan" and (target / "plan.md").is_file():
         print(f"plan:       agent6 plan show {target.name}")
     for i, pin in enumerate(scan.pins):

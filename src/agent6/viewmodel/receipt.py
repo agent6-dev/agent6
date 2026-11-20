@@ -355,11 +355,12 @@ def environment_dict(view: ReceiptView | session_log.LogScan) -> dict[str, Any]:
     }
 
 
-def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
+def environment_summary(view: ReceiptView | session_log.LogScan, *, live: bool = False) -> str:
     """Render target, setup and lifecycle facts from the shared journal fold.
 
     Args:
         view: The shared session or receipt fold.
+        live: The session's worker is running, so its end has recorded nothing yet.
 
     Returns:
         Stored observations as plain text, with unknown facts named.
@@ -392,7 +393,9 @@ def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
             + (f": {jobs.reason}" if jobs.reason else "")
         )
     if not view.jobs:
-        lines.append("Run job settlement unknown")
+        lines.append(
+            "Run jobs not settled: the run is live" if live else "Run job settlement unknown"
+        )
     for env in view.environments:
         label = {
             "left_running": "Environment left running",
@@ -405,7 +408,11 @@ def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
             + (f": {env.reason}" if env.reason else "")
         )
     if not view.environments:
-        lines.append("Environment lifecycle unknown")
+        lines.append(
+            "Environment lifecycle not recorded: the run is live"
+            if live
+            else "Environment lifecycle unknown"
+        )
     return "\n".join(lines)
 
 

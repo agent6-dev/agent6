@@ -310,7 +310,7 @@ def test_show_usage_and_json_carry_the_plan_points(
     """A plan-metered run shows the points this execution consumed outside the live views.
 
     The usage line and the JSON carry them against [budget].max_plan_points; a dollar-metered run
-    shows none.
+    shows none. One execution printed the same points twice, as `plan moved` and as `usage`.
     """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -333,7 +333,7 @@ def test_show_usage_and_json_carry_the_plan_points(
     )
     assert main(["sessions", "show", "capped"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
-    assert usage.split(None, 1)[1] == "in=18 out=2194 plan moved=2.5/6pt  usage 2.5pt"
+    assert usage.split(None, 1)[1] == "in=18 out=2194 plan moved=2.5/6pt"
     assert main(["sessions", "show", "capped", "--json"]) == 0
     obj = json.loads(capsys.readouterr().out)
     budget_json = obj["budget"]
@@ -346,6 +346,51 @@ def test_show_usage_and_json_carry_the_plan_points(
     assert main(["sessions", "show", "capped"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert "plan" not in usage
+
+
+def test_show_leads_with_the_status_and_the_end_before_the_task(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A sixty-line task printed before `status:`, so the state of a run scrolled off the screen."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "long", {})
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="long")
+    start, stop = layout.logs_path.read_text(encoding="utf-8").splitlines()
+    task = "\n".join(f"line {i}" for i in range(60))
+    layout.logs_path.write_text(
+        json.dumps({**json.loads(start), "user_task": task}) + "\n" + stop + "\n", encoding="utf-8"
+    )
+    assert main(["sessions", "show", "long"]) == 0
+    keys = [ln.split(":")[0] for ln in capsys.readouterr().out.splitlines() if ln[:1].isalpha()]
+    assert keys[:2] == ["session", "status"]
+    assert keys.index("verify") < keys.index("task") < keys.index("model")
+
+
+def test_show_says_a_live_run_has_not_settled_instead_of_unknown(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live run read `Run job settlement unknown`; its end has recorded nothing yet."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "ended", {})
+    _session(repo, "live", {})
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="live")
+    start = layout.logs_path.read_text(encoding="utf-8").splitlines()[0]
+    layout.logs_path.write_text(start + "\n", encoding="utf-8")
+    process.write_worker_pid(layout.session_dir, os.getpid())
+    assert main(["sessions", "show", "live"]) == 0
+    live = capsys.readouterr().out
+    assert "Run jobs not settled: the run is live" in live
+    assert "Environment lifecycle not recorded: the run is live" in live
+    assert "unknown" not in live.replace("Environment: unknown", "")
+    assert main(["sessions", "show", "ended"]) == 0
+    ended = capsys.readouterr().out
+    assert "Run job settlement unknown" in ended and "Environment lifecycle unknown" in ended
 
 
 def test_show_names_the_session_that_seeded_a_run(
