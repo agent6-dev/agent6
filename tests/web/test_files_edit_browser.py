@@ -65,6 +65,48 @@ def test_edit_keeps_the_draft_and_offers_three_conflict_choices(
     assert not errors
 
 
+@pytest.mark.parametrize("width", [390, 1440])
+def test_editor_grows_with_the_viewport_and_keeps_actions_visible(
+    served: tuple[pathlib.Path, int],
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    width: int,
+) -> None:
+    """The editor uses the Source font and leaves its actions visible during conflicts."""
+    from playwright import sync_api
+
+    repo, port = served
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 650})
+    page.goto(f"http://127.0.0.1:{port}/#/files/WORKTREE/plan.md")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Edit plan.md")
+    editor = dialog.get_by_role("textbox", name="File text", exact=True)
+    sync_api.expect(editor).to_have_value("# Plan\n")
+    source_font = page.locator(".files-source .src").evaluate("e => getComputedStyle(e).fontFamily")
+    sync_api.expect(editor).to_have_css("font-family", source_font)
+    small = editor.bounding_box()
+    box = dialog.bounding_box()
+    assert small and box and box["height"] > 650 * 0.85 and small["height"] > 650 * 0.5
+    page.set_viewport_size({"width": width, "height": 900})
+    large = editor.bounding_box()
+    assert large and large["height"] - small["height"] > 200
+    editor.fill("# My plan\n\n- [ ] Review the result\n" + "More details\n" * 80)
+    captures.save(page, "files-edit-tall")
+    (repo / "plan.md").write_text("# Disk version\n")
+    sync_api.expect(dialog.get_by_text("The file changed on disk.", exact=True)).to_be_visible(
+        timeout=8000
+    )
+    page.set_viewport_size({"width": width, "height": 650})
+    for name in ("Save", "Cancel"):
+        sync_api.expect(dialog.get_by_role("button", name=name, exact=True)).to_be_in_viewport(
+            ratio=1
+        )
+    captures.save(page, "files-edit-tall-conflict")
+    assert editor.input_value().startswith("# My plan\n")
+    dialog.get_by_role("button", name="Cancel", exact=True).click()
+    assert not errors
+
+
 def test_overwrite_refuses_a_second_disk_change(
     served: tuple[pathlib.Path, int], open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:
