@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import itertools
 import pathlib
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -282,6 +283,27 @@ def test_load_more_hands_the_focus_to_the_first_row_it_adds(
     assert errors == [], errors
 
 
+def test_a_load_more_that_fails_keeps_the_rows_and_says_so_in_a_toast(
+    open_page: OpenPage, git_port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed later page keeps the rows shown; its toast is the one place the failure shows."""
+    from playwright.sync_api import expect
+
+    monkeypatch.setattr(git_model, "GRAPH_PAGE", 2)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    rows = page.locator(".gc-row")
+    expect(rows).to_have_count(2)
+    page.route(
+        "**/api/git/graph?*", lambda route: route.fulfill(status=500, json={"error": "gone"})
+    )
+    page.get_by_role("button", name="Load more", exact=True).click()
+    expect(page.locator("#toasts .toast")).to_have_text(re.compile("gone"))
+    expect(rows).to_have_count(2)
+    expect(page.locator(".git-graph .err")).to_have_count(0)
+    assert [e for e in errors if "status of 500" not in e] == [], errors
+
+
 def test_closing_a_phones_panel_returns_the_focus_to_the_graph(
     open_page: OpenPage, git_port: int
 ) -> None:
@@ -299,7 +321,7 @@ def test_closing_a_phones_panel_returns_the_focus_to_the_graph(
 
 
 def test_a_graph_that_fails_to_load_reads_as_an_error(open_page: OpenPage, git_port: int) -> None:
-    """A graph request that failed left 'no commits yet' and '0 commits', as an empty repository."""
+    """A failed graph read as an empty repository, then showed its error twice, in a toast too."""
     from playwright.sync_api import expect
 
     page, errors = open_page(git_port)
@@ -309,7 +331,8 @@ def test_a_graph_that_fails_to_load_reads_as_an_error(open_page: OpenPage, git_p
         "**/api/git/graph?*", lambda route: route.fulfill(status=500, json={"error": "it broke"})
     )
     page.get_by_role("button", name="refresh", exact=True).click()
-    expect(page.locator(".git-graph .err")).to_have_text("error: it broke")
+    expect(page.locator(".git-graph [role=alert]")).to_have_text("error: it broke")
+    expect(page.locator("#toasts .toast")).to_have_count(0)  # the error shows once
     expect(page.locator(".git-graph")).not_to_contain_text("no commits yet")
     expect(page.locator(".git-bar .git-counts").first).to_have_text("5 of 7 refs")
     assert [e for e in errors if "status of 500" not in e] == [], errors

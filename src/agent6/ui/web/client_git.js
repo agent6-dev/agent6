@@ -536,7 +536,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       actionable(row, () => showCommit(c.sha), named.map(r => r.name).concat(c.subject, c.author, c.when).join(', '));
       graph.appendChild(row);
     });
-    if (loadError) graph.appendChild(el('div', 'empty err', 'error: ' + loadError));
+    if (loadError) graph.appendChild(el('div', 'empty err', 'error: ' + loadError)).setAttribute('role', 'alert');
     else if (!commits.length) graph.appendChild(el('div', 'empty', refs.length && !selectedRefs().length ? 'no refs selected' : 'no commits yet'));
     if (hasMore) {
       // The next page waits on a disabled button; the focus it held goes to the first row it adds.
@@ -554,7 +554,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     counts.textContent = (loadError ? '' : commits.length + (hasMore ? '+' : '') + ' commits · ') + n + ' of ' + refs.length + ' refs';
   };
   // While a page loads, the graph reads busy and, past a moment, dims. A first page that fails
-  // reads as the error in the graph; a later one keeps the rows it has.
+  // reads as the error in the graph; a later one keeps the rows it has and raises a toast.
   const loadGraph = async (reset) => {
     const n = ++loading;
     if (reset) { commits = []; tips = null; hasMore = false; loadError = ''; }
@@ -563,7 +563,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       const d = await getJSON(graphUrl(commits.length));
       if (n !== loading || !app.isConnected) return;
       commits = commits.concat(d.commits); tips = d.tips; hasMore = d.has_more;
-    } catch (e) { if (n === loading) { toast(e.message, true); if (reset) loadError = e.message; } }
+    } catch (e) { if (n === loading) { if (reset) loadError = e.message; else toast(e.message, true); } }
     if (n === loading) graph.setAttribute('aria-busy', 'false');
     paintGraph();
   };
