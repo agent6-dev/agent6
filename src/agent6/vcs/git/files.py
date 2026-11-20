@@ -194,7 +194,7 @@ class BlameLine:
         line: The one-based displayed line number.
         sha: The attribution commit, empty for uncommitted lines.
         author: The attribution author, or not committed for uncommitted lines.
-        date: The attribution date in UTC ISO 8601, empty for uncommitted lines.
+        date: The author date in ISO 8601 at the author's offset, empty for uncommitted lines.
         filename: The file's historical path in the attribution commit.
         original_line: The one-based historical line number.
     """
@@ -258,10 +258,18 @@ def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path, hide: tuple[str,
     return ""
 
 
-def _author_date(seconds: str) -> str:
-    """Return an ISO author time, or the raw `@seconds` when Python cannot represent it."""
+def _author_date(seconds: str, tz: str) -> str:
+    """Return the author time in ISO 8601 at the author's `+hhmm` offset, as `%aI` prints it.
+
+    An offset Python cannot represent reads as UTC, and a time it cannot represent as `@seconds`.
+    """
     try:
-        return datetime.datetime.fromtimestamp(int(seconds), datetime.UTC).isoformat()
+        offset = datetime.timedelta(hours=int(tz[1:3]), minutes=int(tz[3:5]))
+        zone = datetime.timezone(-offset if tz.startswith("-") else offset)
+    except ValueError:
+        zone = datetime.UTC
+    try:
+        return datetime.datetime.fromtimestamp(int(seconds), zone).isoformat()
     except (OverflowError, OSError, ValueError):
         return f"@{seconds}"
 
@@ -288,7 +296,7 @@ def blame_lines(
         hide: `[sandbox].hide_paths`, refused for ignore-revs inputs.
 
     Returns:
-        Attribution in displayed line order, with UTC dates.
+        Attribution in displayed line order, each date at its author's offset.
 
     Raises:
         GitError: The range is invalid, Git cannot attribute the file, or a
@@ -335,7 +343,7 @@ def blame_lines(
         if line.startswith("\t"):
             meta = metadata[sha]
             committed = bool(sha.strip("0"))
-            date = _author_date(meta["author-time"]) if committed else ""
+            date = _author_date(meta["author-time"], meta["author-tz"]) if committed else ""
             rows.append(
                 BlameLine(
                     number,
@@ -352,7 +360,7 @@ def blame_lines(
             metadata.setdefault(sha, {})
         else:
             key, _, value = line.partition(" ")
-            if key in ("author", "author-time", "filename"):
+            if key in ("author", "author-time", "author-tz", "filename"):
                 metadata[sha][key] = value
     return tuple(rows)
 

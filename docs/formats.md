@@ -2782,7 +2782,7 @@ Source: [`agent6.vcs.git.files.BlameLine`](https://github.com/agent6-dev/agent6/
 | `line` | `int` | The one-based displayed line number. |
 | `sha` | `str` | The attribution commit, empty for uncommitted lines. |
 | `author` | `str` | The attribution author, or not committed for uncommitted lines. |
-| `date` | `str` | The attribution date in UTC ISO 8601, empty for uncommitted lines. |
+| `date` | `str` | The author date in ISO 8601 at the author's offset, empty for uncommitted lines. |
 | `filename` | `str` | The file's historical path in the attribution commit. |
 | `original_line` | `int` | The one-based historical line number. |
 

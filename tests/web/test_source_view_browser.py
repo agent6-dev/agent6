@@ -286,6 +286,24 @@ def test_the_blame_card_keeps_the_page_gutter_on_a_phone(
     assert not errors
 
 
+def test_the_blame_card_dates_its_commit_as_the_commit_panel_does(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """The card printed the raw ISO date in UTC: a day after the date the commit panel shows."""
+    from playwright.sync_api import expect
+
+    (tmp_path / "late.txt").write_text("late\n", encoding="utf-8")
+    _git(tmp_path, "add", "late.txt")
+    _git(tmp_path, "commit", "-q", "-m", "late", "--date", "2026-09-05T21:52:37-04:00")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/late.txt")
+    page.locator(".files-blame").click()
+    expect(page.locator("[data-line='1'] .blame-date")).to_have_text("2026-09-05")
+    page.locator("[data-line='1'] .blame-commit").focus()
+    expect(page.locator(".blame-card:visible")).to_contain_text("2026-09-05 21:52:37 -04:00")
+    assert not errors
+
+
 def test_the_blame_card_text_can_be_selected(
     open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
 ) -> None:

@@ -371,7 +371,7 @@ function renderBlame(rows) {
         };
         g.card.addEventListener('toggle', (e) => document[e.newState === 'open' ? 'addEventListener' : 'removeEventListener']('keydown', escape));
         g.card.appendChild(el('span', 'mono', line.sha));
-        g.card.appendChild(el('span', null, line.author + ' · ' + line.date));
+        const who = el('span', null, line.author + ' · '); who.appendChild(gitDate(line.date)); g.card.appendChild(who);
         if (line.filename !== row.path) g.card.appendChild(el('span', null, line.filename));
         const title = el('a', 'blame-title', 'loading commit…');
         title.href = '#/git/commit/' + encodeURIComponent(line.sha);

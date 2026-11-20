@@ -721,6 +721,18 @@ def test_blame_attributes_lines_and_marks_uncommitted_content(
     assert _get(port, "/api/git/blame?rev=HEAD&path=b.txt")[0] == 413
 
 
+def test_blame_dates_keep_the_authors_offset(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Blame dated each line in UTC, so a line could read a day after the commit it opens."""
+    path, _ = repo
+    (path / "late.txt").write_text("late\n", encoding="utf-8")
+    _git(path, "add", "late.txt")
+    _git(path, "commit", "-q", "-m", "late", "--date", "2026-09-05T21:52:37-04:00")
+    body = _ok(port, "/api/git/blame?rev=HEAD&path=late.txt")
+    assert body["lines"][0]["date"] == "2026-09-05T21:52:37-04:00"
+
+
 def test_blame_preserves_quoted_historical_paths_and_original_lines(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
