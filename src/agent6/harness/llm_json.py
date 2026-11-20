@@ -11,40 +11,39 @@ caller's expected keys.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 _DECODER = json.JSONDecoder()
+# Where a JSON object can start: a brace that opens a key or closes at once. Any other is prose.
+_OBJECT_START = re.compile(r'\{\s*["}]')
 
 
 def extract_json(text: str, *, prefer: tuple[str, ...]) -> dict[str, Any] | None:
     """Return the last JSON object in the text carrying any preferred key.
 
-    Every `{` is tried as an object's start. An object ending inside the text a broken
-    object had read is skipped: a cut-off verdict's findings are not the reply.
-    A broken object that had named a preferred key is the reply's own answer, so nothing
-    is returned: an object quoted inside it must not stand in for it.
+    A brace that opens no key is passed over as prose. An object that opens a key and then
+    breaks is the reply's own JSON gone wrong, so nothing is returned: an object quoted
+    inside it, or cut off with it, must not stand in for the answer.
 
     Args:
         text: The reply to scan.
         prefer: The keys the caller expects.
 
     Returns:
-        That object, else the last object found; None for no object or a broken answer.
+        That object, else the last object found; None for no object or a broken one.
     """
     objs: list[dict[str, Any]] = []
-    read_to = 0  # where the furthest-reading broken object stopped
     at = text.find("{")
     while at != -1:
-        try:
-            obj, end = _DECODER.raw_decode(text, at)
-        except json.JSONDecodeError as exc:
-            if any(f'"{key}"' in text[at : exc.pos] for key in prefer):
-                return None
-            read_to = max(read_to, exc.pos)
+        if _OBJECT_START.match(text, at) is None:
             at = text.find("{", at + 1)
             continue
-        if end > read_to:
-            objs.append(obj)
+        try:
+            obj, end = _DECODER.raw_decode(text, at)
+        except (json.JSONDecodeError, RecursionError):
+            return None  # broken, or nested past the decoder's depth
+        objs.append(obj)
         at = text.find("{", end)
     for obj in reversed(objs):
         if any(key in obj for key in prefer):

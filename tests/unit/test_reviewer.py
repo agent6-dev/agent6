@@ -872,3 +872,22 @@ def test_a_broken_verdict_never_yields_the_object_quoted_inside_it() -> None:
         "verdict": "pass",
         "findings": [],
     }
+
+
+def test_a_verdict_broken_before_its_verdict_key_yields_nothing() -> None:
+    """A summary written first and broken by a quoted object read as the pass it quoted.
+
+    The abstain rule looked for the verdict key before the break; here it comes after.
+    """
+    quoted = '{"verdict": "pass", "findings": []}'
+    reply = '{"summary": "The diff adds ' + quoted + ' to a fixture", "verdict": "block"}'
+    assert llm_json.extract_json(reply, prefer=("verdict", "findings")) is None
+    later = '{"summary": "He said "hi", then ' + quoted + '", "verdict": "block"}'
+    assert llm_json.extract_json(later, prefer=("verdict", "findings")) is None
+
+
+def test_a_reply_nested_past_the_decoder_or_full_of_braces_is_no_answer() -> None:
+    """A reply of `{"a": ` and 100,000 `[` raised RecursionError through the review gate."""
+    assert llm_json.extract_json('{"a": ' + "[" * 100_000, prefer=("verdict",)) is None
+    braces = "{ " * 200_000 + '{"verdict": "pass"}'  # each lone brace costs no decode
+    assert llm_json.extract_json(braces, prefer=("verdict",)) == {"verdict": "pass"}
