@@ -230,7 +230,7 @@ def drive_findings(page: Page, mode: str) -> None:
         label="The receipt: tests, review, risk, how to revert",
         settle=1800,
     )
-    page.wait_for_selector(".card-findings .receipt pre")
+    page.wait_for_selector("dialog .receipt pre")
     page.wait_for_timeout(1500)
 
 
