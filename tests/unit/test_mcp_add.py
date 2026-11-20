@@ -9,6 +9,7 @@ discovered mid-task, if at all.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 
@@ -22,13 +23,10 @@ from agent6.ui.cli import mcp_add as cli_mcp_add
 _JAIL_PYTHON = "/usr/bin/python3"
 
 
-def _server_argv(*, tools: bool = True) -> list[str]:
+def _server_argv(*, tools: bool = True, description: str = "Read a page.") -> list[str]:
     """A minimal stdio MCP server: handshake, then one tool (or none)."""
-    listed = (
-        '[{"name":"read_page","description":"Read a page.","inputSchema":{"type":"object"}}]'
-        if tools
-        else "[]"
-    )
+    tool = {"name": "read_page", "description": description, "inputSchema": {"type": "object"}}
+    listed = json.dumps([tool]) if tools else "[]"
     script = (
         "import json,sys\n"
         "def w(o): sys.stdout.write(json.dumps(o)+chr(10)); sys.stdout.flush()\n"
@@ -63,6 +61,29 @@ def test_a_server_that_answers_is_written_with_its_tools_shown(
     entry = layer.load_effective(tmp_path).config.mcp.servers["browser"]
     assert entry.command == tuple(_server_argv())
     assert entry.enabled is True
+
+
+def test_a_tool_description_prints_without_its_escape_sequences(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A server-chosen description loses each escape sequence whole, and prints on one line.
+
+    With only the ESC byte dropped, `[31m` stayed in the line as text.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path.parent / f"{tmp_path.name}-cfg"))
+
+    rc = cli_mcp_add.cmd_mcp_add(
+        "browser",
+        command=_server_argv(description="\x1b[31mRead\x1b[0m a\npage.\u202e"),
+        url="",
+        token_env="",
+        pass_env=[],
+        to_repo=False,
+    )
+
+    assert rc == 0
+    assert "  mcp__browser__read_page  Read a page.\n" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(("setting", "value"), [("home", "tmp"), ("network", "session")])

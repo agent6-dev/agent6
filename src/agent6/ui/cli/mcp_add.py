@@ -19,7 +19,7 @@ import sys
 
 import pydantic
 
-from agent6 import kinds, paths
+from agent6 import kinds, paths, terminal
 from agent6.app import confine
 from agent6.app.session import setup as session_setup
 from agent6.config import (
@@ -297,8 +297,9 @@ def _prove(
         return 1
     print(f"\n{name}: {mcp_client.tool_count(len(tools))}")
     for tool in tools:
-        # Server-chosen text: no forged extra line, no ESC sequence repainting the terminal.
-        summary = "".join(c for c in " ".join(tool.description.split()) if c.isprintable())[:80]
+        # Server-chosen text: no forged extra line, no escape sequence, no invisible character.
+        line = " ".join(terminal.scrub_terminal_controls(tool.description).split())
+        summary = "".join(c for c in line if c.isprintable())[:80]
         print(f"  mcp__{name}__{tool.tool_name}{'  ' + summary if summary else ''}")
     return None
 
