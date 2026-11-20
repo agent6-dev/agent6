@@ -66,11 +66,13 @@ def test_other_streams_keep_failed_usage_on_the_result(
     provider: Provider
     sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     creation = 0
+    # Only the Anthropic wire reports cache writes; the others leave the count unreported.
+    written: int | None = None
     if api_format == "anthropic":
         provider = AnthropicProvider(
             api_key="k", model="m", provider_name=api_format, budget=tracker, transcript_sink=sink
         )
-        creation = 7
+        creation = written = 7
         usage = {
             "input_tokens": 100,
             "output_tokens": 10,
@@ -142,7 +144,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
             "input_tokens": 100,
             "output_tokens": 10,
             "cache_read_tokens": 25,
-            "cache_write_tokens": creation,
+            "cache_write_tokens": written,
             "cost_usd": None,
         }
         if reported_usage
@@ -175,8 +177,8 @@ def test_other_streams_keep_failed_usage_on_the_result(
         result["input_tokens"],
         result["output_tokens"],
         result["cache_read_tokens"],
-        result["cache_write_tokens"],
-    ) == (100, 10, 25, creation)
+        result.get("cache_write_tokens"),
+    ) == (100, 10, 25, written)
     assert result["ok"] is False
     assert "cost_usd" not in result
     fold = telemetry.TelemetryFold("failed-stream")
