@@ -39,7 +39,7 @@ def test_group_children_refresh_and_link(
     block = page.locator(".card-children")
     expect(block).to_be_visible()
     summary = block.locator(":scope > summary")
-    expect(summary).to_have_text("children: 2 finished")
+    expect(summary).to_have_text("children: 2 passed")
     summary.focus()
     summary.press("Enter")
     expect(block.locator("details")).to_have_count(2)
@@ -115,7 +115,7 @@ def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
     block = page.locator(".card-children")
     expect(block).to_be_visible()
     summary = block.locator(":scope > summary")
-    expect(summary).to_have_text("children: 1 merged, 1 finished")
+    expect(summary).to_have_text("children: 2 passed")
     summary.click()
     expect(block).to_contain_text("merged into co's chain at bbbbbbbbbbbb")
     expect(block).to_contain_text("no changes")
@@ -133,7 +133,7 @@ def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
         message="no model route",
     )
     child_dispatch.write_record(parent.session_dir, record, now=2.0)
-    expect(summary).to_have_text("children: 1 merged, 1 finished, 1 failed")
+    expect(summary).to_have_text("children: 2 passed, 1 failed")
     last = block.locator("details").last
     last.locator("summary").click()
     expect(last).to_contain_text("never started")
