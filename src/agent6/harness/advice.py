@@ -104,6 +104,8 @@ class TurnContext:
     standing_absorb: Callable[[str, int], str | None]
     # HEAD of the checkout: under model git control the model's own commits move it.
     head_sha: Callable[[], str] = lambda: ""
+    # The children whose task has not landed, each with where it stands.
+    unlanded_children: Callable[[], Sequence[tuple[str, str]]] = lambda: ()
 
 
 # An advisor: one heuristic over the turn, answering with a nudge, a stop or nothing.

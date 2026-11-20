@@ -407,6 +407,17 @@ class ExecutionTarget(Event):
     )
 
 
+class FinishRefusedChildren(Event):
+    """An end declared while a child's work had not landed was returned to the model."""
+
+    TYPE: ClassVar[str] = "finish.refused.children"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    children: Sequence[Any] = pydantic.Field(
+        description="The session ids of the children whose task had not landed.",
+    )
+    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
+
+
 class FinishRefusedContract(Event):
     """The finish payload did not satisfy the machine's result contract."""
 
@@ -1846,6 +1857,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "execution.environment": ExecutionEnvironment,
     "execution.jobs": ExecutionJobs,
     "execution.target": ExecutionTarget,
+    "finish.refused.children": FinishRefusedChildren,
     "finish.refused.contract": FinishRefusedContract,
     "finish.refused.metric": FinishRefusedMetric,
     "finish.refused.review": FinishRefusedReview,

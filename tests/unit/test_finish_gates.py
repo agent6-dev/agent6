@@ -31,6 +31,7 @@ def test_the_gates_run_in_precedence_order() -> None:
     """One precedence for every end: the declared-end path has no copy of the gates."""
     assert [gate.__name__ for gate in finish_gates.FINISH_GATES] == [
         "finish_contract",
+        "children_finish",
         "verify_finish",
         "review_finish",
         "metric_early_finish",
@@ -38,16 +39,39 @@ def test_the_gates_run_in_precedence_order() -> None:
         "standing_finish",
     ]
     assert [gate.__name__ for gate in finish_gates.END_GATES] == [
+        "children_finish",
         "verify_finish",
         "review_finish",
         "open_tasks_finish",
     ]
     assert [gate.__name__ for gate in finish_gates.SILENT_END_GATES] == [
+        "children_finish",
         "verify_finish",
         "review_finish",
         "metric_early_finish",
         "open_tasks_finish",
     ]
+
+
+def test_an_end_is_held_while_a_childs_work_has_not_landed() -> None:
+    """The children's gate names each child and where it stands; with none it lets the end go."""
+    turn, state = _finishing(), _state()
+    assert finish_gates.children_finish(turn, state, turn_context()) is None
+    refusal = finish_gates.children_finish(
+        turn,
+        state,
+        turn_context(
+            unlanded_children=lambda: (("run-p1-l1", "running"), ("run-p2-l1", "stopping"))
+        ),
+    )
+    assert refusal is not None
+    assert refusal.text.splitlines()[:3] == [
+        "[harness] finish_session refused: 2 child(ren) have not landed:",
+        "- run-p1-l1: running",
+        "- run-p2-l1: stopping",
+    ]
+    assert isinstance(refusal.event, journal.FinishRefusedChildren)
+    assert refusal.event.children == ["run-p1-l1", "run-p2-l1"]
 
 
 def test_the_panels_rejection_revokes_the_finish_without_a_text() -> None:

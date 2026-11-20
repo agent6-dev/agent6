@@ -554,3 +554,103 @@ def test_wait_for_returns_when_the_child_ends_the_wait_runs_out_or_a_stop_cuts_i
     ]
     dispatcher.stop("root-p1-l1")
     assert children.stopped == [], "an ended child is left as it is"
+
+
+def _say(text: str) -> ProviderResponse:
+    """A model turn of prose, with no tool call."""
+    return ProviderResponse(
+        text=text,
+        tool_uses=(),
+        stop_reason="end_turn",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+        raw={"content": [{"type": "text", "text": text}]},
+    )
+
+
+def test_finish_session_is_refused_until_every_task_has_landed(tmp_path: pathlib.Path) -> None:
+    """A finish while a child runs comes back naming the child and what to do with it."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    child = "run-p1-l1"
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a"}))),
+        (None, _calls(("finish_session", {"summary": "done"}))),
+        (lambda: children.end(child, path="a.txt"), _calls(("read_background", {"wait_s": 30}))),
+        (None, _calls(("finish_session", {"summary": "done, with a.txt"}))),
+    )
+    wf = _harness(repo, tmp_path / "run", provider, children, max_turns=6)
+
+    result = wf.run("start")
+
+    assert (result.reason, result.turns) == ("finish_session", 4)
+    refusal = (
+        "[harness] finish_session refused: 1 child(ren) have not landed:\\n"
+        f"- {child}: running\\n"
+        "read_background with a child's id reads it, read_background with wait_s and no id"
+        " waits for the next to end, and stop_background stops one. Work lands at the turn"
+        " boundary after its task's children end."
+    )
+    assert refusal in provider.seen[2]
+    assert "[parallel] group run-p1 complete" in provider.seen[3]
+    assert (repo / "a.txt").exists() and children.stopped == []
+    (refused,) = _events(tmp_path / "run", "finish.refused.children")
+    assert (refused["turn"], refused["children"], refused["trigger"]) == (
+        2,
+        [child],
+        "finish_session",
+    )
+    assert result.summary == "done, with a.txt"
+
+
+def test_a_finish_in_the_turn_a_child_ended_waits_for_its_work_to_land(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An ended child's work lands at the boundary: the finish before it comes back once."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    child = "run-p1-l1"
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a"}))),
+        (
+            lambda: children.end(child, path="a.txt"),
+            _calls(("read_background", {"id": child}), ("finish_session", {"summary": "early"})),
+        ),
+        (None, _calls(("finish_session", {"summary": "after the landing"}))),
+    )
+    wf = _harness(repo, tmp_path / "run", provider, children, max_turns=5)
+
+    result = wf.run("start")
+
+    assert (result.reason, result.summary) == ("finish_session", "after the landing")
+    assert f"- {child}: ended, not landed" in provider.seen[2]
+    assert "[parallel] group run-p1 complete" in provider.seen[2]
+
+
+def test_a_prose_only_turn_does_not_end_a_run_whose_children_run(tmp_path: pathlib.Path) -> None:
+    """A turn with no tool call is an end too: it is held like `finish_session`."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    child = "run-p1-l1"
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a"}))),
+        (None, _calls(READ)),
+        (None, _calls(READ)),
+        (None, _say("Waiting for the child to finish.")),
+        (lambda: children.end(child, path="a.txt"), _calls(("read_background", {"wait_s": 30}))),
+        (None, _calls(("finish_session", {"summary": "done"}))),
+    )
+    wf = _harness(repo, tmp_path / "run", provider, children, max_turns=8)
+
+    result = wf.run("start")
+
+    assert (result.reason, result.turns) == ("finish_session", 6)
+    assert "[harness] the run cannot end yet: 1 child(ren) have not landed:" in provider.seen[4]
+    assert f"- {child}: running" in provider.seen[4]
+    (refused,) = _events(tmp_path / "run", "finish.refused.children")
+    assert (refused["turn"], refused["trigger"]) == (4, "silent_finish")

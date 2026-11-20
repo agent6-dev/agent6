@@ -529,6 +529,21 @@ class ParallelDispatcher:
                     started.stop()
                     self.stopping.add(child)
 
+    def unlanded(self) -> tuple[tuple[str, str], ...]:
+        """Return each child whose task has not landed, with where it stands, oldest first."""
+        return tuple(
+            (
+                started.session_id,
+                "ended, not landed"
+                if started.result.done()
+                else "stopping"
+                if started.session_id in self.stopping
+                else "running",
+            )
+            for task in self.open.values()
+            for started in task.children
+        )
+
     def roster(self) -> tuple[child_tools.ChildLine, ...]:
         """Return every child this run's tasks started and where it stands, oldest first."""
         if self.session_dir is None:
@@ -537,24 +552,17 @@ class ParallelDispatcher:
             records = child_dispatch.read_records(self.session_dir)
         except child_dispatch.DispatchRecordError:
             return ()
-        running = {
-            started.session_id
-            for task in self.open.values()
-            for started in task.children
-            if not started.result.done()
-        }
+        open_now = dict(self.unlanded())
         lines: list[child_tools.ChildLine] = []
         for record in records:
             for child in record.children if record.source != "panel" else ():
                 sid = child.session_id
+                state = open_now.get(sid, "ended, not landed")
                 if child.join is not None:
                     state = parallel_join.join_words(parallel_join.join_of(child))
-                elif sid in running:
-                    state = "stopping" if sid in self.stopping else "running"
-                else:
-                    state = "ended, not landed"
                 title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
-                lines.append(child_tools.ChildLine(sid, state, title[:80], sid in running))
+                running = state in ("running", "stopping")
+                lines.append(child_tools.ChildLine(sid, state, title[:80], running))
         return tuple(lines)
 
     def settle(self, conversation: loop_conversation.Conversation, turn: int) -> bool:

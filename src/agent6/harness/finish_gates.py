@@ -6,6 +6,7 @@ The loop runs a gate list in order over the turn that declared an end and
 applies the first `Refusal`: `FINISH_GATES` over a finish_session,
 `END_GATES` over an end the harness declares (settled, a plateau),
 `SILENT_END_GATES` over a silent finish. `turn.ending` names the end judged.
+Every list holds an end back while a child's work has not landed.
 """
 
 from __future__ import annotations
@@ -297,6 +298,41 @@ def finish_contract(
     )
 
 
+def children_finish(
+    turn: loop_state.TurnState, state: loop_state.LoopState, ctx: advice.TurnContext
+) -> advice.Refusal | None:
+    """Hold an end until every child has ended and its task has landed.
+
+    Uncapped: a child the model no longer wants is stopped, and a stopped child ends.
+
+    Args:
+        turn: The turn that declared the end.
+        state: The run's loop state.
+        ctx: The turn's facts.
+
+    Returns:
+        The refusal naming the children and what to do with them, or None.
+    """
+    children = ctx.unlanded_children()
+    if not children:
+        return None
+    ending = turn.ending or "finish_session"
+    refused = "finish_session refused" if ending == "finish_session" else "the run cannot end yet"
+    listing = "\n".join(f"- {child}: {standing}" for child, standing in children)
+    return advice.Refusal(
+        f"[harness] {refused}: {len(children)} child(ren) have not landed:\n{listing}\n"
+        "read_background with a child's id reads it, read_background with wait_s and no id"
+        " waits for the next to end, and stop_background stops one. Work lands at the turn"
+        " boundary after its task's children end.",
+        event=journal.FinishRefusedChildren(
+            turn=turn.number, children=[child for child, _standing in children], trigger=ending
+        ),
+        log=(
+            f"  {ending} returned: {len(children)} child(ren) have not landed at turn {turn.number}"
+        ),
+    )
+
+
 def review_finish(
     turn: loop_state.TurnState, state: loop_state.LoopState, ctx: advice.TurnContext
 ) -> advice.Refusal | None:
@@ -418,9 +454,11 @@ def standing_finish(
     return None if nudge is None else advice.Refusal(nudge)
 
 
-# One precedence for every end: a red tree returns the end before the panel sits.
+# One precedence for every end: children's work lands before the tree is judged, and a red
+# tree returns the end before the panel sits.
 FINISH_GATES: tuple[advice.Gate, ...] = (
     finish_contract,
+    children_finish,
     verify_finish,
     review_finish,
     metric_rules.metric_early_finish,
@@ -428,9 +466,15 @@ FINISH_GATES: tuple[advice.Gate, ...] = (
     standing_finish,
 )
 # A harness-declared end has no payload; its standing rule sits at the stop.
-END_GATES: tuple[advice.Gate, ...] = (verify_finish, review_finish, open_tasks_finish)
+END_GATES: tuple[advice.Gate, ...] = (
+    children_finish,
+    verify_finish,
+    review_finish,
+    open_tasks_finish,
+)
 # A silent finish is a finish the model wrote in prose: the metric rule applies.
 SILENT_END_GATES: tuple[advice.Gate, ...] = (
+    children_finish,
     verify_finish,
     review_finish,
     metric_rules.metric_early_finish,

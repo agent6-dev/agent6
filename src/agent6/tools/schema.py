@@ -318,7 +318,8 @@ class ParallelInput(_ToolInput):
         " and temperature; `[provider/]model` runs with the worker's. A notice arrives when a"
         " child ends, with its summary, and when its task lands: at a turn boundary, tasks in"
         " the order started, merged onto this run's work. `read_background` reads a child or"
-        " waits for the next to end; `stop_background` stops one."
+        " waits for the next to end; `stop_background` stops one. `finish_session` is refused"
+        " until every task has landed."
     )
 
     task: str = pydantic.Field(min_length=1, max_length=20_000)

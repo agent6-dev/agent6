@@ -1367,6 +1367,7 @@ class Harness:
             budget_remaining=self._budget_fraction_remaining,
             operator_wait_s=lambda: self.dispatcher.operator_wait_s,
             open_subtasks=self.open_subtasks,
+            unlanded_children=lambda: self.children.unlanded() if self.children is not None else (),
         )
 
     def _budget_fraction_remaining(self) -> float | None:
