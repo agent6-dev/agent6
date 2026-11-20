@@ -399,8 +399,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     model = format.format_model_route(manifest.models.driver) or "?"
     model_from_flag = manifest.models.driver_from_flag
     changes = _changes(target.name, manifest, undone=scan.finished and scan.stop_reason == "undone")
-    tips = git_read.run_ref_tips(pathlib.Path.cwd())
-    summary = summarize_session_dir(target, branch_tips=tips)
+    repo = pathlib.Path.cwd()
+    tips = git_read.run_ref_tips(repo)
+    summary = summarize_session_dir(target, branch_tips=tips, repo=repo)
     children = sessions_children.read_children(target, tips=tips)
     status, status_cell, status_detail = _status_state(summary, scan, last_age=last_age)
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
@@ -560,7 +561,7 @@ class _Changes:
                 print(f"changes:    {self.line}")
         elif self.merged_into_checkout:
             print(f"checkout:   {self.line}")
-        elif parent:
+        elif parent and not merge.unmerged:
             print(
                 "checkout:   no direct merge recorded for this tip; "
                 f"see agent6 sessions show {parent}"

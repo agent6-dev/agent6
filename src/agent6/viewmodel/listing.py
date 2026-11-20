@@ -115,7 +115,7 @@ class SessionSummary:
         cost_usd: The cumulative spend across executions.
         usd_partial: `cost_usd` is a lower bound: some execution had unpriced spend.
         last_activity: The last-activity time as epoch seconds.
-        merge: The parent-chain merge or the unmerged mark from the run refs.
+        merge: The parent-chain merge and the unmerged mark from the run refs.
         verification: The gate verdict from the gate facts, not the status word: the
             compare table and the judge read it.
         parent: The session that dispatched this child, the row it nests under.
@@ -271,7 +271,7 @@ def same_path_runs(
         s
         for d in session_dirs(paths.state_dir(cwd), layout.SESSION_BUCKETS)
         if d.name != session_id
-        and (s := summarize_session_dir(d, branch_tips=tips)).unmerged
+        and (s := summarize_session_dir(d, branch_tips=tips, repo=cwd)).unmerged
         and s.status in format.ENDED_WORDS
         and s.base_sha
         and s.source_tip
@@ -299,7 +299,7 @@ def rows_for(
     tips = git_read.run_ref_tips(cwd)
     dirs = session_dirs(paths.state_dir(cwd), buckets)
     winners = {d.name for d in dirs if comparison.is_winner(d)}
-    rows = nested_rows(summarize_session_dir(d, branch_tips=tips) for d in dirs)
+    rows = nested_rows(summarize_session_dir(d, branch_tips=tips, repo=cwd) for d in dirs)
     return rows, winners
 
 
@@ -702,6 +702,7 @@ def summarize_session_dir(
     session_dir: pathlib.Path,
     *,
     branch_tips: Mapping[str, str] | None = None,
+    repo: pathlib.Path | None = None,
 ) -> SessionSummary:
     """Fold a session dir's journal and manifest into one listing row.
 
@@ -710,6 +711,7 @@ def summarize_session_dir(
 
     Args:
         session_dir: The session's state dir.
+        repo: The repository for checking a parent merge against current child refs.
         branch_tips: The caller's `git_read.run_ref_tips` snapshot; with it the row says
             whether the chain or branch still holds commits no merge stamped, without
             it `unmerged` stays False (no mark, never a wrong one).
@@ -746,7 +748,7 @@ def summarize_session_dir(
         status=word,
         detail=reason,
         stop_reason=scan.stop_reason if scan.finished else "",
-        merge=merges.read_merge_state(session_dir, manifest, word, branch_tips),
+        merge=merges.read_merge_state(session_dir, manifest, word, branch_tips, repo),
         cost_usd=scan.budget.usd_so_far,
         usd_partial=scan.budget.session.usd_partial,
         last_activity=scan.last_ep if scan.last_ep is not None else session_mtime(session_dir),

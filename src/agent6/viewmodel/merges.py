@@ -15,7 +15,7 @@ from agent6.viewmodel import format
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MergeState:
-    """The unmerged mark or the child's recorded merge into its parent's chain."""
+    """The current unmerged mark and the child's recorded merge into its parent's chain."""
 
     unmerged: bool = False
     merged_into_parent: str | None = None
@@ -33,6 +33,7 @@ def read_merge_state(
     record: manifest.SessionManifest | None,
     word: str,
     branch_tips: Mapping[str, str] | None,
+    repo: pathlib.Path | None,
 ) -> MergeState:
     """Read the merge facts for a session.
 
@@ -41,12 +42,24 @@ def read_merge_state(
         record: Its manifest, or None when unreadable.
         word: Its status word. An undone run's child holds its work.
         branch_tips: The repository's run refs, or None without a snapshot.
+        repo: The repository for ancestry checks, or None without a checkout.
 
     Returns:
-        The recorded parent-chain merge, or whether a run tip lacks a checkout merge.
+        The parent-chain merge and whether the run still holds unmerged commits.
     """
     if record is None or record.git_control == "model" or word == "undone":
         return MergeState()
+    refs = branch_tips or {}
+    tips = {
+        refs[ref]
+        for ref in (git_read.chain_ref_for(record.session_id), record.run_branch or "")
+        if refs.get(ref)
+    }
+    stamp = record.merged
+    work = tips - {record.base_sha}
+    unmerged = bool(work) and not (
+        stamp and stamp.into and git_read.stamp_covers_tips(stamp.tip, tips)
+    )
     lineage = record.parallel
     if lineage and all(layout.is_safe_session_id(s) for s in (lineage.parent, lineage.group)):
         parent = session_dir.parent / lineage.parent
@@ -57,18 +70,19 @@ def read_merge_state(
             pass
         else:
             if dispatch.identity == lineage.group and merge and merge.status == "merged":
-                return MergeState(
-                    merged_into_parent=parent.name, parent_merge_sha=merge.sha or None
+                # A non-fast-forward merge covers the child's tip as an ancestor.
+                outside = (
+                    unmerged
+                    and repo is not None
+                    and bool(merge.sha)
+                    and any(
+                        tip != merge.sha and not git_read.is_ancestor(repo, tip, merge.sha)
+                        for tip in work
+                    )
                 )
-    if not branch_tips:
-        return MergeState()
-    tips = {
-        branch_tips[ref]
-        for ref in (git_read.chain_ref_for(record.session_id), record.run_branch or "")
-        if branch_tips.get(ref)
-    }
-    # A checkout merge stamps the tip it merged, which can be on the run branch or the chain.
-    return MergeState(
-        unmerged=bool(tips - {record.base_sha})
-        and (record.merged is None or record.merged.tip not in tips)
-    )
+                return MergeState(
+                    unmerged=outside,
+                    merged_into_parent=parent.name,
+                    parent_merge_sha=merge.sha or None,
+                )
+    return MergeState(unmerged=unmerged)

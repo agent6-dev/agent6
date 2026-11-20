@@ -187,6 +187,28 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
     assert cli_main(["sessions", "merge", parent.name]) == 0
     assert "unmerged runs that changed" not in capsys.readouterr().out
 
+    # A legacy checkout stamp can name the destination without recording a tip.
+    manifest_path = parent / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["merged"].pop("tip")
+    manifest_path.write_text(json.dumps(manifest))
+    assert cli_main(["attach", parent.name, "--json"]) == 0
+    legacy = json.loads(capsys.readouterr().out)
+    assert legacy["merged_into_checkout"] == "main" and legacy["unmerged"] is False
+
+    # A commit on the imported branch is not part of the earlier parent merge.
+    repo = pathlib.Path.cwd()
+    git = children_cli._git
+    git(repo, "switch", merge.branch)
+    git(repo, "commit", "--allow-empty", "-qm", "Extend answer")
+    git(repo, "switch", "main")
+    assert cli_main(["attach", child, "--json"]) == 0
+    advanced = json.loads(capsys.readouterr().out)
+    assert advanced["unmerged"] is True and advanced["status_label"] == "passed · unmerged"
+    assert advanced["parent_merge_sha"] == merge.sha
+    assert cli_main(["sessions", "show", child]) == 0
+    assert f"merge with: agent6 sessions merge {child}" in capsys.readouterr().out
+
 
 def test_show_keeps_the_parent_chain_and_checkout_destinations_for_one_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

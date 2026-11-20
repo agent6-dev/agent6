@@ -265,7 +265,8 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - the page and its PWA assets, served without the token (they hold no state): `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
 
 Session snapshots and streams use the hub's status label, including the mode and the merge state on ended runs.
-A child merged into its parent names the parent's chain.
+A child's status names the parent's chain when the parent merge covers its work.
+A child with later unmerged commits reads `unmerged`.
 A session stream's first frame folds the whole log as it stands at connect.
 Idle session streams refresh disk-backed state (shell results, the merge mark) on each heartbeat and send a frame when it changed.
 Heartbeats run every 15 seconds, including after the run ends.

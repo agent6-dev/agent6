@@ -392,11 +392,13 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                     self.fallback_continued = manifest.continued_task
                     self._dirty = True
                 if self.state.finished:
+                    repo = pathlib.Path.cwd()
                     merge = merges.read_merge_state(
                         self.session_dir,
                         manifest,
                         status[0],
-                        git_read.run_ref_tips(pathlib.Path.cwd()),
+                        git_read.run_ref_tips(repo),
+                        repo,
                     )
         seen = (self.dir_status, self._merge, self.unreadable, self.manifest_resume_blocker)
         if (status, merge, unreadable, blocker) != seen:

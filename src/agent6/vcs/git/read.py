@@ -461,6 +461,11 @@ def branch_tip_sha(path: pathlib.Path, branch: str) -> str | None:
     return sha or None
 
 
+def stamp_covers_tips(merged_tip: str, tips: Collection[str]) -> bool:
+    """Return whether a checkout stamp covers the run refs, including a stamp without a tip."""
+    return not merged_tip or not tips or merged_tip in tips
+
+
 def merge_stamp_holds(
     path: pathlib.Path, session_id: str, run_branch: str, merged_tip: str
 ) -> bool:
@@ -486,7 +491,7 @@ def merge_stamp_holds(
         chain = chain_tip(path, chain_ref_for(session_id)) if session_id else None
         branch = branch_tip_sha(path, run_branch) if run_branch else None
         tips = {t for t in (chain, branch) if t}
-    return not tips or merged_tip in tips
+    return stamp_covers_tips(merged_tip, tips)
 
 
 CHAIN_NS = "refs/agent6"

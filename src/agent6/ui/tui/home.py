@@ -272,7 +272,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         tips = git_read.run_ref_tips(self.repo_cwd)
         dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
         listing = viewmodel_listing.nested_rows(
-            summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()
+            summarize_session_dir(rd, branch_tips=tips, repo=self.repo_cwd) for rd in dirs.values()
         )
         self._groups = {row.summary.session_id: row for row in listing if row.children}
 

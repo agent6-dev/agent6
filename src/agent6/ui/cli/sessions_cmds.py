@@ -505,7 +505,7 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
         branch keeps them.
     """
     tips = git_read.run_ref_tips(cwd)
-    summary = summarize_session_dir(layout.session_dir, branch_tips=tips)
+    summary = summarize_session_dir(layout.session_dir, branch_tips=tips, repo=cwd)
     task = summary.task_label.line(100).replace("\n", "\n" + " " * 11)
     lines = [
         f"sessions remove will delete {layout.session_id}",

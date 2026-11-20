@@ -192,7 +192,7 @@ def manifest_header(
         scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
         status, _reason = session_status.status_for_session_dir(session_dir, scan.status_facts())
     merge = merges.read_merge_state(
-        session_dir, m, status, git_read.run_ref_tips(repo) if repo else None
+        session_dir, m, status, git_read.run_ref_tips(repo) if repo else None, repo
     )
     if repo is not None:
         header["unmerged"] = merge.unmerged

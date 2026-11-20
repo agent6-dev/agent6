@@ -463,10 +463,10 @@ def listing_status_label(
     if mode not in ("run", "?", "") and _MODE_IMPLIED.get(status) != mode:
         label = f"{mode} · {label}"
     if status in ENDED_WORDS:
-        if merged_into_parent:
-            return f"{label} · {parent_merge_label(merged_into_parent)}"
         if unmerged:
             return f"{label} · unmerged"
+        if merged_into_parent:
+            return f"{label} · {parent_merge_label(merged_into_parent)}"
     return label
 
 
