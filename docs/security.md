@@ -653,6 +653,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `.git/hooks/*` run only under `git.run_repo_hooks = true` (default false); `core.hooksPath` points away, so a hook cannot fire on agent6's auto-commit.
 - Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_drivers`), neutralized per name
     - the clean filter runs on the auto-commit's `git add`, the merge driver on the chain merge's `merge-tree`: a cloned poisoned repo fires one without any model action
+    - each override names its driver's key whole (`--config-env`), so a name that holds `=` is switched off too; it reads its empty value from `AGENT6_GIT_BLANK`, which every agent6 git call carries
     - `true` honors them (the Git-LFS opt-in)
 
 **A nested repository's own config**
