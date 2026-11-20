@@ -4,9 +4,32 @@
 
 from __future__ import annotations
 
+import functools
+import math
+from typing import Any, get_args
+
+import pydantic
+import pydantic_core
+
 from agent6.config import Config, io, layer_data
 from agent6.sessions import journal
 from agent6.viewmodel import config_view
+
+_Value = str | float | int | bool | None
+_SOURCES = frozenset((*get_args(layer_data.LayerName), "execution", "mode"))
+
+
+def _disclosed_value(
+    schema: config_view.FieldSchema, value: object, *, local_name: bool = False
+) -> _Value:
+    if not schema.mask_value and (
+        value is None
+        or isinstance(value, int)
+        or (isinstance(value, float) and math.isfinite(value))
+        or (isinstance(value, str) and (local_name or value in (schema.choices or ())))
+    ):
+        return value
+    return "***"
 
 
 def observations(
@@ -42,19 +65,77 @@ def observations(
             source, file = "execution", None
         if key not in defaults and source == "default" and key not in original:
             source = "execution"
-        shown: str | float | int | bool | None = "***"
-        if not schema.mask_value and (
-            value is None
-            or isinstance(value, (bool, float, int))
-            or (
-                isinstance(value, str)
-                and (
-                    value in (schema.choices or ())
-                    or parts[0] == "models"
-                    or key == "agent6.preset"
-                )
-            )
-        ):
-            shown = value
+        local_name = key == "agent6.preset" or (parts[0] == "models" and parts[-1] == "model")
+        shown = _disclosed_value(schema, value, local_name=local_name)
         rows.append(journal.SettingObservation(key=key, value=shown, source=source, file=file))
     return tuple(rows)
+
+
+@functools.cache
+def _fixed_fields(model: type[pydantic.BaseModel]) -> dict[str, pydantic_core.SchemaValidator]:
+    """Index fields with schema-defined names. Mapping entry names can contain secrets.
+
+    Args:
+        model: The config section.
+
+    Returns:
+        Field validators by canonical dotted key, without descending into mappings.
+    """
+    # The compiled field schema includes @field_validator rules that the annotation omits.
+    section: Any = model.__pydantic_core_schema__
+    definitions = section.get("definitions", [])
+    while section["type"] != "model-fields":
+        section = section["schema"]
+    fields: dict[str, pydantic_core.SchemaValidator] = {}
+    for name, field in model.model_fields.items():
+        if field.exclude:
+            continue
+        annotation = field.annotation
+        members = get_args(annotation)
+        if len(members) == 2 and type(None) in members:
+            annotation = next(member for member in members if member is not type(None))
+        if isinstance(annotation, type) and issubclass(annotation, pydantic.BaseModel):
+            fields.update(
+                {f"{name}.{key}": leaf for key, leaf in _fixed_fields(annotation).items()}
+            )
+        else:
+            leaf = section["fields"][name]["schema"]
+            if definitions:
+                leaf = pydantic_core.core_schema.definitions_schema(leaf, definitions)
+            fields[name] = pydantic_core.SchemaValidator(leaf, {"allow_inf_nan": False})
+    return fields
+
+
+def export_settings(rows: list[object]) -> list[dict[str, _Value]]:
+    """Project stored observations onto the settings log without trusting journal text.
+
+    Args:
+        rows: The untrusted settings list from a journal event.
+
+    Returns:
+        Fixed config keys, their disclosed scalar values and source categories.
+    """
+    fields = _fixed_fields(Config)
+    result: list[dict[str, _Value]] = []
+    for item in rows:
+        try:
+            row = journal.SettingObservation.model_validate(item, strict=True)
+        except pydantic.ValidationError:
+            continue
+        source = "preset" if row.source.startswith("preset ") else row.source
+        if source not in _SOURCES or row.key not in fields:
+            continue
+        schema = config_view.field_schema(Config, row.key.split("."))
+        if schema is None:
+            continue
+        value = _disclosed_value(schema, row.value)
+        if value != "***":
+            try:
+                checked = fields[row.key].validate_python(value, strict=True)
+            except pydantic.ValidationError:
+                value = "***"
+            else:
+                # Strict float fields accept integers, even when conversion rounds them.
+                value = checked if checked == value else "***"
+        result.append({"key": row.key, "source": source, "value": value})
+    return result

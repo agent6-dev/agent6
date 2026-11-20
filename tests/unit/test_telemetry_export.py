@@ -195,6 +195,80 @@ def test_an_export_posts_every_signal_and_a_rerun_resends_only_the_metrics(
     assert start_again["sum"]["dataPoints"][0]["startTimeUnixNano"] == str(first_ns)
 
 
+@pytest.mark.parametrize("capture", ["metadata", "content"])
+def test_export_remasks_stored_settings_before_posting(repo: pathlib.Path, capture: str) -> None:
+    """A malformed neighbor cannot leak through a settings log or hide a valid observation."""
+
+    def row(key: str, value: object, source: str = "repo", **extra: object) -> dict[str, object]:
+        return {"key": key, "value": value, "source": source, **extra}
+
+    marker = "private-marker"
+    settings = [
+        row("budget.max_usd", 2, "flag"),
+        row("web.metrics_route", True, "machine"),
+        row("harness.max_turns", 7, "state"),
+        row("models.worker.temperature", None, "execution"),
+        row("models.worker.effort", "high", f"preset {marker}", file=f"/{marker}.toml"),
+        row("models.worker.model", f"provider/{marker}", "mode"),
+        row("agent6.preset", marker),
+        row("harness.verify.command", marker),
+        row("sandbox.network", marker),
+        row("telemetry.headers", 123456),
+        row("web.port", 123456),
+        row("harness.max_turns", True),
+        row("harness.max_turns", 0),
+        row("budget.max_usd", -2.5),
+        row("budget.max_usd", 2**53 + 1),
+        row("telemetry.logs", "otlp", "global"),
+        row("providers.p.extra_headers.X-Example", marker),
+        row(f"providers.{marker}.backend", "openai"),
+        row(f'skills.state."{marker}.skill"', "always"),
+        row("models.unknown.effort", "high"),
+        row(f'"{marker}', 1),
+        row("budget.max_usd", 99, f"flag ({marker})"),
+        row("budget.max_usd", 98, unknown=marker),
+        row("web.port", {"nested": marker}),
+        marker,
+    ]
+    _write_session(
+        repo,
+        "settings",
+        [
+            {"type": "session.start", "execution_id": "e", "mode": "run"},
+            {"type": "execution.settings", "execution_id": "e", "settings": settings},
+        ],
+    )
+    collector = _Collector()
+    report = export.export(repo, _config(capture=capture), post=collector.post)
+    assert report.logs == 1 and not report.notes
+    assert marker not in json.dumps(collector.requests)
+    (body,) = [body for url, _, body in collector.requests if url.endswith("/v1/logs")]
+    (record,) = body["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+    (value,) = [
+        a["value"]["stringValue"] for a in record["attributes"] if a["key"] == "agent6.settings"
+    ]
+    observed = json.loads(value)
+    assert observed == [
+        row("budget.max_usd", 2.0, "flag"),
+        row("web.metrics_route", True, "machine"),
+        row("harness.max_turns", 7, "state"),
+        row("models.worker.temperature", None, "execution"),
+        row("models.worker.effort", "high", "preset"),
+        row("models.worker.model", "***", "mode"),
+        row("agent6.preset", "***"),
+        row("harness.verify.command", "***"),
+        row("sandbox.network", "***"),
+        row("telemetry.headers", "***"),
+        row("web.port", "***"),
+        row("harness.max_turns", "***"),
+        row("harness.max_turns", "***"),
+        row("budget.max_usd", "***"),
+        row("budget.max_usd", "***"),
+        row("telemetry.logs", "otlp", "global"),
+    ]
+    assert isinstance(observed[0]["value"], float)
+
+
 def test_a_signal_enabled_later_still_gets_the_history(repo: pathlib.Path) -> None:
     """A metrics-only run moves no span or log cursor, so traces turned on afterwards backfill."""
     _write_session(repo, "run-a", fold_tests._journal())  # pyright: ignore[reportPrivateUsage]

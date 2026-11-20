@@ -16,7 +16,13 @@ from typing import Any, ClassVar, Literal
 
 from agent6 import evidence
 from agent6.viewmodel import events as viewmodel_events
-from agent6.viewmodel import review, telemetry_machine, telemetry_metrics, telemetry_records
+from agent6.viewmodel import (
+    execution_settings,
+    review,
+    telemetry_machine,
+    telemetry_metrics,
+    telemetry_records,
+)
 
 Capture = Literal["metadata", "content"]
 _TOKEN_TYPES = (
@@ -641,7 +647,7 @@ class TelemetryFold:
                     step.now,
                     "INFO",
                     "Execution settings",
-                    {"agent6.settings": json.dumps(rows)},
+                    {"agent6.settings": json.dumps(execution_settings.export_settings(rows))},
                     step.execution.span.span_id,
                 )
             )

@@ -468,6 +468,9 @@ Model listings, key probes and ChatGPT plan readings use the capped provider req
 
 `agent6 telemetry export` is host egress too: it dials `[telemetry].endpoint` from the agent6 process with the header values `secrets.toml` holds, outside `sandbox.network`, and only when the operator selected a signal.
 The default capture carries outcomes, counts, timings and the journal's ids; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)), which can hold anything a run saw.
+In either capture mode, the execution settings log exports only fixed config keys and their source categories, such as `flag` or `preset`.
+It shows numbers, booleans, nulls and fixed choices that match the field, and masks other values, including model and preset names.
+It skips malformed observations, unknown sources and keys containing user-defined names, and sends no config file paths.
 The export dials the endpoint directly: no proxy is taken from the environment, so a plaintext loopback endpoint stays on loopback.
 A plaintext endpoint is accepted on loopback only; the Prometheus textfile is written atomically to the operator's path.
 
