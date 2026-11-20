@@ -139,7 +139,14 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 `/parallel [SPEC --] TASK` runs a task in isolated children, including as the first prompt to `agent6 run`, through the same dispatch as `run --parallel SPEC TASK`.
 A child belongs to the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
 The child gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
-Its record is in the repository's state from its first event, so `sessions list --children`, `attach` and the hubs read a child while it runs.
+Inspect the parent with `agent6 sessions list --children`, `agent6 sessions show <parent>` or `agent6 attach <parent>`.
+The children list gives each child's task, model, status, current tool, turn, tokens, spend and elapsed time.
+The parent reports when a child starts, reads an operator message, stops or finishes.
+A separate line says whether its work merged.
+A failed launch has a row with its reason even when there is no child session to open.
+A stopped child shows the ref and commits it holds.
+A reviewer shows its order and summary when it returns a verdict.
+To act on one running child, use `agent6 steer <child-id> "<message>"` or `agent6 stop <child-id>`.
 With `git.control = "agent6"`, every entry merges a task once: one child's work is merged onto the run's chain, and several children on one task are attempts, of which the first-ranked merges.
 With `git.control = "model"`, agent6 merges nothing; each child's work stays on the ref its notice names for the model to merge with git.
 `run --parallel` is a run that makes no model call of its own and waits for its children: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child follows this merge policy, the run's own gate judges the result, and the run ends `finished · children ranked`.
