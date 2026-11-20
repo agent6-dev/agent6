@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import threading
 
 import pytest
 
@@ -90,6 +91,31 @@ def test_durable_events_have_unique_ids(tmp_path: pathlib.Path) -> None:
     rows = _read_lines(sink.path)
     assert all(row.get("event_id") for row in rows)
     assert rows[0]["event_id"] != rows[1]["event_id"]
+
+
+def test_child_threads_deliver_facts_to_listeners_in_journal_order(tmp_path: pathlib.Path) -> None:
+    """A second child cannot overtake the first child inside a live subscriber."""
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    first, second = threading.Event(), threading.Event()
+    seen: list[str] = []
+
+    def listen(row: dict[str, object]) -> None:
+        if row["child"] == "one":
+            first.set()
+            second.wait(0.25)
+        else:
+            second.set()
+        seen.append(str(row["child"]))
+
+    sink.subscribe(listen)
+    worker = threading.Thread(
+        target=sink.emit, args=(journal.ParallelChildActivity(child="one", activity="started"),)
+    )
+    worker.start()
+    assert first.wait(5)
+    sink.emit(journal.ParallelChildActivity(child="two", activity="started"))
+    worker.join(5)
+    assert seen == [r["child"] for r in _read_lines(sink.path)] == ["one", "two"]
 
 
 def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:

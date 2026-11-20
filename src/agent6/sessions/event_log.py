@@ -12,6 +12,7 @@ and stay best-effort; the transcripts keep the lossless copy.
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import dataclasses
 import datetime
@@ -58,11 +59,15 @@ class EventSink:
     path: pathlib.Path
     _lock: threading.RLock
     _listeners: list[Callable[[dict[str, Any]], None]]
+    _pending: collections.deque[dict[str, Any]]
+    _delivering: bool
 
     def __init__(self, path: pathlib.Path) -> None:
         self.path = path
         self._lock = threading.RLock()
         self._listeners = []
+        self._pending = collections.deque()
+        self._delivering = False
 
     def subscribe(self, listener: Callable[[dict[str, Any]], None]) -> None:
         """Hand each emitted event to an in-process consumer too, after it lands."""
@@ -104,8 +109,8 @@ class EventSink:
         # A lone surrogate from model output would fail a text-mode write; replacing keeps the
         # file valid UTF-8 for every reader.
         data = (line + "\n").encode("utf-8", "replace")
-        try:
-            with self._lock:
+        with self._lock:
+            try:
                 # Only when missing: on every event the handback would walk the dir under sudo.
                 if not self.path.parent.is_dir():
                     paths.mkdir_for_real_user(self.path.parent)
@@ -115,12 +120,35 @@ class EventSink:
                     fh.flush()
                     if not ephemeral:
                         os.fsync(fh.fileno())
-        except OSError as exc:
-            if not ephemeral:
-                raise EventWriteError(f"event journal unwritable at {self.path}: {exc}") from exc
-        for listener in self._listeners:
-            with contextlib.suppress(Exception):  # a UI consumer must never break the run
-                listener(payload)
+            except OSError as exc:
+                if not ephemeral:
+                    raise EventWriteError(
+                        f"event journal unwritable at {self.path}: {exc}"
+                    ) from exc
+            if not self._listeners:
+                return
+            self._pending.append(payload)
+            if self._delivering:
+                return
+            self._delivering = True
+        self._deliver_pending()
+
+    def _deliver_pending(self) -> None:
+        """Notify listeners in journal order without holding the write lock."""
+        try:
+            while True:
+                with self._lock:
+                    if not self._pending:
+                        self._delivering = False
+                        return
+                    row = self._pending.popleft()
+                for listener in self._listeners:
+                    with contextlib.suppress(Exception):  # a UI consumer must never break the run
+                        listener(row)
+        except BaseException:
+            with self._lock:
+                self._delivering = False
+            raise
 
 
 def _json_default(value: Any) -> Any:
