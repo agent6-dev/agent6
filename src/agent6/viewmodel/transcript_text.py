@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import difflib
+import re
 import shlex
 from collections.abc import Callable
 from typing import Any
@@ -142,21 +143,30 @@ def parallel_dispatched_body(event: dict[str, Any]) -> str:
         names the tasks alone.
     """
     tasks_raw = event.get("tasks")
-    tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
+    tasks = [str(t) for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
     if event.get("source") == "panel":
         head = f"dispatched {n} reviewer{'' if n == 1 else 's'} ({parallel_group_label(event)})"
-        return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t)])
+        return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t.strip())])
     children = event.get("children")
     if isinstance(children, int) and not isinstance(children, bool):
-        what = format.child_count(children) + (f" for {n} tasks" if n > 1 else "")
+        what = format.child_count(children)
+        # A <parent>-pN work group has one task; bare pN groups can hold tasks with equal previews.
+        if (
+            n == children
+            and re.fullmatch(r".+-p[1-9][0-9]*", str(event.get("group", "")))
+            and len(set(tasks)) == 1
+        ):
+            tasks = tasks[:1]
+        elif n > 1:
+            what += f" for {n} tasks"
     else:
         what = f"{n} parallel task{'' if n == 1 else 's'}"
     head = (
         f"dispatched {what} ({parallel_group_label(event)});"
         " children run detached, listed under this session"
     )
-    return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t)])
+    return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t.strip())])
 
 
 def parallel_compared_body(event: dict[str, Any]) -> str:

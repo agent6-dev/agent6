@@ -1020,10 +1020,10 @@ class ParallelDispatched(Event):
 
     TYPE: ClassVar[str] = "parallel.dispatched"
     group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    children: int = pydantic.Field(
-        description="Child count for dispatch, or child results for completion.",
+    children: int = pydantic.Field(description="Number of children in the group.")
+    tasks: Sequence[Any] = pydantic.Field(
+        description="Task previews (up to 200 characters each): one per work group or reviewer.",
     )
-    tasks: Sequence[Any] = pydantic.Field(description="Task texts sent to the children.")
     source: str = pydantic.Field(
         default="operator",
         description="Who dispatched: operator (a steer), model (the tool) or panel.",

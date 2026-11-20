@@ -32,6 +32,7 @@ from agent6.sessions import child_dispatch, completion, event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import transcript
 
 ONE, TWO, THREE = "root-p1-l1", "root-p1-l2", "root-p1-l3"
 JUDGE = "root-rp1-l1"
@@ -448,6 +449,34 @@ def _start(
 def _records(run: _Run) -> dict[str, child_dispatch.DispatchRecord]:
     session_dir = sessions_layout.bucket_dir(run.state_dir, "runs") / "root"
     return {r.identity: r for r in child_dispatch.read_records(session_dir)}
+
+
+def test_dispatch_journals_the_work_task_once_but_lists_each_reviewer(
+    repo: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
+    """Two attempts share a task; two reviewers with the same brief each get a line."""
+    run = _Run(repo, tmp_path / "state")
+    dispatcher = _dispatcher(repo, run, [], judges=(_judge(), _judge()))
+    assert dispatcher.session_dir is not None
+    sink = event_log.EventSink(dispatcher.session_dir / "logs.jsonl")
+    dispatcher.emit = sink.emit
+    conversation = _start(dispatcher, "2")
+    dispatcher.settle(conversation, 2)
+
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    work, panel = [row for row in rows if row["type"] == "parallel.dispatched"]
+    assert (work["children"], work["tasks"]) == (2, ["rewrite a.txt"])
+    assert (panel["children"], panel["tasks"]) == (2, ["Rank 2 attempts", "Rank 2 attempts"])
+    dispatched, reviewers = transcript.fold_transcript([work, panel])
+    assert dispatched.body.splitlines() == [
+        "dispatched 2 children (group root-p1); children run detached, listed under this session",
+        "• rewrite a.txt",
+    ]
+    assert reviewers.body.splitlines() == [
+        "dispatched 2 reviewers (group root-rp1)",
+        "• Rank 2 attempts",
+        "• Rank 2 attempts",
+    ]
 
 
 def test_attempts_are_ranked_by_a_reviewer_in_the_background_and_merge_after_it_ends(

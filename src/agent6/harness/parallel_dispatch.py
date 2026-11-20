@@ -306,13 +306,16 @@ class ParallelDispatcher:
         Returns:
             The record in the `running` state.
         """
-        what = "reviewer(s)" if record.source == "panel" else "child(ren)"
+        if record.source == "panel":
+            what, tasks = "reviewer(s)", children
+        else:
+            what, tasks = "child(ren)", children[:1]
         self.log(f"PARALLEL: dispatching group {record.identity} ({len(children)} {what})")
         self.emit(
             journal.ParallelDispatched(
                 group=record.identity,
                 children=len(children),
-                tasks=[child.task[:200] for child in children],
+                tasks=[child.task[:200] for child in tasks],
                 source=record.source,
             )
         )

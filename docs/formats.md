@@ -900,8 +900,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | Parallel dispatch group identifier. |
-| `children` | `int` | Child count for dispatch, or child results for completion. |
-| `tasks` | `list` | Task texts sent to the children. |
+| `children` | `int` | Number of children in the group. |
+| `tasks` | `list` | Task previews (up to 200 characters each): one per work group or reviewer. |
 | `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
 
 ### parallel.failed
