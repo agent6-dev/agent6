@@ -18,7 +18,7 @@ import functools
 import pathlib
 from collections.abc import Callable
 
-from agent6 import budget, directive
+from agent6 import directive
 from agent6.config import layer
 from agent6.graph import order
 from agent6.sessions import ipc, layout, manifest, shells
@@ -37,6 +37,7 @@ from agent6.viewmodel import (
     status_for_session_dir,
     tail_events,
 )
+from agent6.viewmodel.session import status as session_status
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
@@ -139,7 +140,13 @@ def _print_status(session_dir: pathlib.Path) -> None:
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     call = s.last_model_call
     model = f"{call.role}/{call.model}" if call else "—"
-    cost = budget.format_usd(s.budget.usd_so_far, partial=s.budget.session.usd_partial)
+    b = s.budget
+    cost = session_status.usage_cell(
+        b.usd_so_far,
+        partial=b.session.usd_partial,
+        plan_observed_points=b.session.plan_observed_points,
+        plan_used_percent=b.account.used_percent if b.account else 0.0,
+    )
     ctx = ""
     if call is not None and call.context_tokens > 0:
         fill = context_fill(s)

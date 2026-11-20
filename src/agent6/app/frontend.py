@@ -30,16 +30,14 @@ class SessionFacts:
     Read inside a signal handler, so every field is already in memory.
 
     Attributes:
-        spend_usd: The run's spend so far.
-        spend_partial: The spend is a lower bound (a model with no price data contributed).
+        spend: The run's spend so far as the listings spell it: points, dollars or both.
         model: The model in use.
         run_commands: The run-commands policy word.
         isolation: The isolation level word.
         network: The network the run's commands join.
     """
 
-    spend_usd: float
-    spend_partial: bool
+    spend: str
     model: str
     run_commands: str
     isolation: str

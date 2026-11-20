@@ -324,6 +324,50 @@ def test_pause_menu_status_shows_ctx_and_profile(
     assert "elided" not in printed  # no compaction yet: no elision suffix
 
 
+def test_pause_menu_status_spells_a_plan_runs_points(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A plan run's /status read `cost $0`, against the `2pt` its listing row shows."""
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "session.start", "user_task": "polish", "mode": "run"},
+                {
+                    "type": "budget.update",
+                    "usd_total": 0.0,
+                    "plan_consumed": 2.0,
+                    "plan_used_percent": 57.0,
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
+    assert " · cost 2pt" in capsys.readouterr().out
+
+
+def test_the_pause_banner_spells_a_plan_runs_points() -> None:
+    """A plan run's pause banner and Ctrl-Z line led with `$0`, a spend of nothing."""
+    from agent6 import budget, kinds
+    from agent6.app.session import runtime
+    from agent6.ui.cli import steer_tty
+
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    route = kinds.ModelRoute("chatgpt", "gpt-6-astra")
+    for used in (55.0, 57.0):
+        tracker.record(
+            route=route,
+            input_tokens=10,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            plan_usage=budget.PlanUsage.single(used, 10080, 0.0),
+        )
+    facts = runtime.session_facts_provider(tracker, "gpt-6-astra", "ask", "full", "session")()
+    assert steer_tty.format_session_facts(facts).startswith("2pt · gpt-6-astra · ")
+
+
 def test_pause_menu_status_shows_compaction_truth(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -541,8 +585,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
 
     facts = frontend.SessionFacts(
-        spend_usd=1.42,
-        spend_partial=False,
+        spend="$1.42",
         model="claude-sonnet-4-6",
         run_commands="ask",
         isolation="full",

@@ -40,6 +40,7 @@ from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import command_tools, dispatch, mcp_client, operator_prompts, target_policy
 from agent6.tools import policy as tools_policy
+from agent6.viewmodel.session import status as session_status
 
 
 def resolve_isolation_or_refuse(
@@ -674,10 +675,16 @@ def session_facts_provider(
     """Return the live-facts thunk the pause banner reads; spend reads live, the rest binds."""
 
     def facts() -> frontend.SessionFacts:
-        spend, partial = budget.estimate_usd()
+        usd, partial = budget.estimate_usd()
+        snap = budget.snapshot()
+        plan = snap.plan_latest
         return frontend.SessionFacts(
-            spend_usd=spend,
-            spend_partial=partial,
+            spend=session_status.usage_cell(
+                usd,
+                partial=partial,
+                plan_observed_points=snap.plan_observed_points,
+                plan_used_percent=plan.used_percent if plan else 0.0,
+            ),
             model=model,
             run_commands=run_commands,
             isolation=isolation,

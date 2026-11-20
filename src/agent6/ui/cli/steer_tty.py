@@ -14,7 +14,7 @@ import termios
 from collections.abc import Callable, Generator
 from typing import Any
 
-from agent6 import budget, portable, terminal
+from agent6 import portable, terminal
 from agent6.app import frontend
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.ui import keymap, steer
@@ -140,8 +140,7 @@ def tty_prompt(
 def format_session_facts(facts: frontend.SessionFacts) -> str:
     """Return the one-line status the pause banner and Ctrl-Z print, spend first."""
     return (
-        f"{budget.format_usd(facts.spend_usd, partial=facts.spend_partial)}"
-        f" · {facts.model}"
+        f"{facts.spend} · {facts.model}"
         f" · {policy.short_form(facts.isolation, facts.network, facts.run_commands)}"
     )
 
