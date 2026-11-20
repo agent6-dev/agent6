@@ -115,6 +115,44 @@ def test_markdown_open_refuses_a_changed_source_snapshot(served: tuple[pathlib.P
     )
 
 
+@pytest.mark.parametrize(
+    ("suffix", "destination", "content_type"),
+    [
+        ("mp4", "video", "video/mp4"),
+        ("webm", "video", "video/webm"),
+        ("mp3", "audio", "audio/mpeg"),
+        ("wav", "audio", "audio/wav"),
+        ("ogg", "audio", "audio/ogg"),
+    ],
+)
+def test_media_reads_keep_the_preview_revision_and_visibility(
+    served: tuple[pathlib.Path, int], suffix: str, destination: str, content_type: str
+) -> None:
+    """Players read the selected revision, not newer disk bytes or hidden files."""
+    repo, port = served
+    source = f"![Clip](clip.{suffix})\n"
+    (repo / "plan.md").write_text(source)
+    clip = repo / f"clip.{suffix}"
+    clip.write_bytes(b"committed media")
+    test_git_history._git(repo, "add", ".")
+    test_git_history._git(repo, "commit", "-qm", "media")
+    status, opened = api(
+        port, rev="HEAD", path="plan.md", digest=hashlib.sha256(source.encode()).hexdigest()
+    )
+    assert status == 200, opened
+    clip.write_bytes(b"changed media")
+    _, headers, _ = get(port, opened["url"], "iframe")
+    assert "media-src http://127.0.0.1:" in headers["Content-Security-Policy"]
+    prefix = opened["url"].removesuffix("plan.md")
+    status, headers, data = get(port, prefix + clip.name, destination)
+    assert status == 200 and data == b"committed media"
+    assert headers["Content-Type"] == content_type
+    assert get(port, prefix + clip.name, "script")[0] == 403
+    assert get(port, prefix + f".hidden.{suffix}", destination)[0] == 422
+    assert api(port, "/close", key=opened["key"])[0] == 200
+    assert get(port, prefix + clip.name, destination)[0] == 403
+
+
 def test_preview_is_static_confined_and_revoked_on_close(served: tuple[pathlib.Path, int]) -> None:
     """A preview key serves only confined resources, never standalone executable documents."""
     repo, port = served

@@ -34,6 +34,8 @@ body { height: auto; padding: 1rem; }
 .md-view th, .md-view td { border: 1px solid var(--border); padding: 0.375rem 0.75rem; text-align: start; vertical-align: top; }
 .md-view th, .md-view tr:nth-child(even) { background: var(--surface2); }
 .md-view img { max-width: 100%; height: auto; }
+.md-view :is(video, audio) { display: block; width: 100%; max-width: 40rem; }
+.md-view video { max-height: 70dvh; }
 /* An image the page cannot show keeps its place as a dashed box: its alt text, then why. */
 .md-view .md-missing { display: inline-flex; flex-direction: column; max-width: 100%; padding: 0.5rem 0.75rem; border: 1px dashed var(--border-strong); border-radius: 6px; font-size: var(--fs-s); line-height: 1.5; overflow-wrap: anywhere; vertical-align: top; }
 .md-view hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }

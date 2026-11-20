@@ -14,6 +14,14 @@ import markdown_it
 from markdown_it import token
 from markdown_it.common import normalize_url, utils
 
+MEDIA_TYPES = {
+    "mp3": ("audio", "audio/mpeg"),
+    "mp4": ("video", "video/mp4"),
+    "ogg": ("audio", "audio/ogg"),
+    "wav": ("audio", "audio/wav"),
+    "webm": ("video", "video/webm"),
+}
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Rendered:
@@ -51,6 +59,17 @@ def _raw_inline(_renderer: object, tokens: Sequence[token.Token], idx: int, *_: 
     return f'<code class="md-raw">{utils.escapeHtml(tokens[idx].content)}</code>'
 
 
+def _media(_renderer: object, tokens: Sequence[token.Token], idx: int, *_: object) -> str:
+    item = tokens[idx]
+    label = utils.escapeHtml(item.content)
+    source = utils.escapeHtml(str(item.attrs["src"]))
+    inline = " playsinline" if item.tag == "video" else ""
+    return (
+        f'<{item.tag} src="{source}" controls preload="metadata" aria-label="{label}"{inline}>'
+        f"{label}</{item.tag}>"
+    )
+
+
 def _rewrite_link(item: token.Token, rev: str, path: str, prefix: str) -> str | None:
     image = item.type == "image"
     attribute = "src" if image else "href"
@@ -78,6 +97,9 @@ def _rewrite_link(item: token.Token, rev: str, path: str, prefix: str) -> str | 
         return None
     if image:
         href = prefix + parse.quote(target, safe="/")
+        media = MEDIA_TYPES.get(target.rsplit(".", 1)[-1].lower())
+        if media:
+            item.type, item.tag = "media", media[0]
     else:
         href = f"#/files/{parse.quote(rev, safe='')}/{parse.quote(target, safe='/')}"
         if fragment:
@@ -98,13 +120,14 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
         prefix: The preview capability's repository resource path.
 
     Returns:
-        HTML with heading ids, Files links, confined image paths and remote image addresses.
+        HTML with heading ids, Files links, confined media paths and remote image addresses.
     """
     parser = markdown_it.MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
     parser.validateLink = _valid_link
     # The parser finds raw HTML so these rules can show it as escaped source.
     parser.add_render_rule("html_block", _raw_block)
     parser.add_render_rule("html_inline", _raw_inline)
+    parser.add_render_rule("media", _media)
     tokens = parser.parse(text)
     ids: dict[str, int] = {}
     images: set[str] = set()

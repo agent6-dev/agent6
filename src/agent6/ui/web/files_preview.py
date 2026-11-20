@@ -23,6 +23,7 @@ DENY_CSP = (
 REFUSAL = "Previews open inside the Files page. Previews need https or localhost."
 LEASE_SECONDS = 30
 _RESOURCE_TYPES = {
+    **markdown.MEDIA_TYPES,
     "css": ("style", "text/css; charset=utf-8"),
     "otf": ("font", "font/otf"),
     "ttf": ("font", "font/ttf"),
@@ -215,7 +216,7 @@ class Store:
                 "sandbox allow-scripts; default-src 'none'; frame-ancestors 'self'; "
                 "form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; "
                 f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
-                f"img-src {allowed} {remote}; connect-src {allowed}"
+                f"img-src {allowed} {remote}; connect-src {allowed}; media-src {allowed}"
             )
             return Response(
                 markdown.document(page.rendered, nonce, images_allowed=page.images_allowed),

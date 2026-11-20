@@ -5,6 +5,27 @@ import pytest
 from agent6.ui.web import markdown
 
 
+@pytest.mark.parametrize(
+    ("suffix", "tag"),
+    [("mp4", "video"), ("webm", "video"), ("mp3", "audio"), ("wav", "audio"), ("ogg", "audio")],
+)
+def test_repository_media_uses_native_controls(suffix: str, tag: str) -> None:
+    """Image syntax for repository media becomes a labelled player, never autoplay."""
+    rendered = markdown.render(
+        f'![A & B "clip"](media/a%20b.{suffix.upper()})',
+        rev="abc123",
+        path="docs/guide.md",
+        prefix="/preview/key/",
+    )
+    assert f'<{tag} src="/preview/key/docs/media/a%20b.{suffix.upper()}"' in rendered.html
+    assert 'controls preload="metadata"' in rendered.html
+    assert 'aria-label="A &amp; B &quot;clip&quot;"' in rendered.html
+    assert ("playsinline" in rendered.html) == (tag == "video")
+    assert f"</{tag}>" in rendered.html
+    assert "autoplay" not in rendered.html and "<img" not in rendered.html
+    assert rendered.images == ()
+
+
 def test_raw_html_is_text_and_markdown_extensions_render() -> None:
     """Repository HTML cannot create elements; tables, strikes and fences still render."""
     rendered = markdown.render(

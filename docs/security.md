@@ -578,7 +578,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   The preview response permits CORS reads only from the sandbox's opaque `null` origin; API routes grant no CORS permission.
 - Markdown requires the displayed source digest and keeps one rendered snapshot per capability.
   Its CSP adds `sandbox allow-scripts` and permits only the owned nonce-authorized script and styles; raw HTML stays escaped.
-  Repository images and error reads use the confined preview path.
+  Repository images, native video and audio, and error reads use the confined preview path.
+  Markdown media sources are restricted to that path by `media-src`.
   Remote images have no fetching attribute before consent, and `img-src` also blocks their origins.
 - The UI accepts markdown messages only from the frame it created (`event.source`).
   A Load message requests a signed-in confirmation; its contents cannot supply hosts or markup.
