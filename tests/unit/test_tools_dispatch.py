@@ -1112,6 +1112,38 @@ def test_list_dir_escapes_a_name_that_is_not_utf8(tmp_path: pathlib.Path) -> Non
     json.dumps(out, ensure_ascii=False).encode("utf-8")
 
 
+@pytest.mark.parametrize(
+    ("output", "pattern"), [("1e309", None), ("-1e309", None), ("NaN", "(NaN)")]
+)
+def test_unrepresentable_metric_is_no_score(output: str, pattern: str | None) -> None:
+    from agent6.tools import result_format
+
+    assert result_format.parse_metric_score(output, "", pattern=pattern) is None
+
+
+_OMITTED = "\n[agent6-jail] output over the retained cap; 543 bytes omitted here\n"
+
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "score"),
+    [
+        ("before" + _OMITTED + "after", "", None),
+        ("score 88" + _OMITTED + "no further score", "", None),
+        ("score 88", _OMITTED + "end", None),
+        (_OMITTED + "retry: 2 score: 9", "", 9.0),
+        (_OMITTED + "end", "score: 7", 7.0),
+        ("score 88", "[agent6-jail] output capture failed: error 28", None),
+        ("score 88", "[agent6-jail] output capture ended early: an open pipe", None),
+    ],
+)
+def test_default_score_must_follow_any_capture_gap(
+    stdout: str, stderr: str, score: float | None
+) -> None:
+    from agent6.tools import result_format
+
+    assert result_format.parse_metric_score(stdout, stderr, pattern=None) == score
+
+
 def test_parse_metric_score_optional_group_is_no_score() -> None:
     """A numeric capture group that did not participate reads as "no score this turn".
 

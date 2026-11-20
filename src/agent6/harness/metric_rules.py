@@ -147,6 +147,7 @@ def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str | None) 
     m = result_format.metric_match(text, pattern)
     if m is None:
         return False
+    text = m.string
     start = text.rfind("\n", 0, m.start()) + 1
     end = text.find("\n", m.end())
     scan = text[start:] if end == -1 else text[start:end]

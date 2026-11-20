@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from typing import Any
@@ -22,17 +23,34 @@ def passthrough_env() -> dict[str, str]:
 _NUMBER = re.compile(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)")
 
 
+_CAPTURE_GAP = re.compile(
+    r"^\[agent6-jail] output over the retained cap; \d+ bytes omitted here(?:\n|$)", re.MULTILINE
+)
+_CAPTURE_INCOMPLETE = re.compile(
+    r"^\[agent6-jail] output capture (?:ended early|failed):", re.MULTILINE
+)
+
+
 def metric_match(text: str, pattern: str | None) -> re.Match[str] | None:
     """Return the score capture, or the last number when the operator gave no pattern."""
-    if pattern is None:
-        last = None
-        for match in _NUMBER.finditer(text):
-            last = match
-        return last
-    try:
-        return re.search(pattern, text)
-    except re.error:
+    if pattern is not None:
+        try:
+            return re.search(pattern, text)
+        except re.error:
+            return None
+    text = terminal.scrub_terminal_escapes(text).removesuffix("\n[agent6-jail] timeout")
+    if _CAPTURE_INCOMPLETE.search(text):
         return None
+    # Only output after the last unknown bytes can establish a last printed number.
+    start = 0
+    for gap in _CAPTURE_GAP.finditer(text):
+        start = gap.end()
+    last = None
+    for match in _NUMBER.finditer(text, start):
+        last = match
+    if start and last and text[start : last.start()] in ("", "e", "E"):
+        return None  # the retained tail may start inside a number or its exponent
+    return last
 
 
 def parse_metric_score(stdout: str, stderr: str, *, pattern: str | None) -> float | None:
@@ -49,14 +67,12 @@ def parse_metric_score(stdout: str, stderr: str, *, pattern: str | None) -> floa
         The score, or None when the regex does not compile, does not match, or captures a
         non-number; the caller treats that as no score this turn.
     """
-    text = f"{stdout}\n{stderr}"
-    if pattern is None:
-        text = terminal.scrub_terminal_escapes(text)
-    m = metric_match(text, pattern)
+    m = metric_match(f"{stdout}\n{stderr}", pattern)
     if m is None:
         return None
     try:
-        return float(m.group(1))
+        value = float(m.group(1))
+        return value if math.isfinite(value) else None
     except (ValueError, IndexError, TypeError):
         # TypeError: a capture group that did not take part in the match yields None.
         return None
