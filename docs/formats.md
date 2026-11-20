@@ -2761,7 +2761,7 @@ Source: [`agent6.sessions.completion.CompletionRecord`](https://github.com/agent
 | `output_tokens` | `int` | The output tokens of every attempt. |
 | `calls` | `int` | The provider attempts made, retries included. |
 | `diagnostics` | `tuple[str, ...]` | What the ceiling or the contract cut, one line each; empty when nothing was. |
-| `session_id` | `str` | The producing read-only session, empty in legacy records. |
+| `session_id` | `str` | The reviewer session, empty in legacy records. |
 | `review_binding` | `ReviewBinding \| None` | The parent-assigned panel, reviewer and target, or null outside a panel. |
 | `response_stop_reason` | `str` | The last provider response's stop reason. |
 | `response_output_tokens` | `int` | The last response's output tokens. |

@@ -141,7 +141,7 @@ def test_resolve_group_prefix(tmp_path: pathlib.Path) -> None:
 
 
 def test_resolve_a_reviewed_session_prefix_despite_its_reviewers(tmp_path: pathlib.Path) -> None:
-    """A reviewed ask's prefix read as ambiguous with its own reviewers' read-only records."""
+    """A reviewed ask's prefix read as ambiguous with its own reviewers' records."""
     parent = "green-canyon-NYACDZ"
     reviewers = [f"{parent}-rc81e8ace-l{n}" for n in (1, 2)]
     _bucket(tmp_path, parent, bucket="asks")

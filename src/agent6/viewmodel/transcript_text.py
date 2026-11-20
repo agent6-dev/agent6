@@ -145,10 +145,7 @@ def parallel_dispatched_body(event: dict[str, Any]) -> str:
     tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
     if event.get("source") == "panel":
-        head = (
-            f"dispatched {n} reviewer{'' if n == 1 else 's'} ({parallel_group_label(event)});"
-            " each runs as a read-only session"
-        )
+        head = f"dispatched {n} reviewer{'' if n == 1 else 's'} ({parallel_group_label(event)})"
         return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t)])
     children = event.get("children")
     if isinstance(children, int) and not isinstance(children, bool):

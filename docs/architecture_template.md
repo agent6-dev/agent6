@@ -811,7 +811,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
 Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.
-Panel reviewers have distinct read-only session directories and provider transcripts, including duplicate-focus reviewers.
+Panel reviewers have distinct session directories and provider transcripts, including duplicate-focus reviewers.
 Their completion artifacts carry the parent-owned `(panel_id, reviewer_index, target)` binding; the parent links verdicts to those sessions.
 
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.

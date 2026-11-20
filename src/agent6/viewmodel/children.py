@@ -164,7 +164,7 @@ def dispatches_of(session_dir: pathlib.Path) -> tuple[DispatchView, ...]:
                 turn=record.turn,
                 base=record.base,
                 message=record.message,
-                # A panel's children are read-only conversations, in that kind's bucket.
+                # Panel children are recorded in the reviewer bucket.
                 children=tuple(
                     _recorded_child(
                         record,

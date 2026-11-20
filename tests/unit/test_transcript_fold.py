@@ -305,9 +305,7 @@ def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
             },
         ]
     )
-    assert dispatched.body.startswith(
-        "dispatched 2 reviewers (group rpanel); each runs as a read-only session"
-    )
+    assert dispatched.body.splitlines()[0] == "dispatched 2 reviewers (group rpanel)"
     assert "child" not in dispatched.body and "• Review: tests" in dispatched.body
     assert joined.body.splitlines() == [
         "reviewers returned (group run-rpanel): 2",
