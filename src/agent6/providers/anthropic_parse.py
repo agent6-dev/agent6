@@ -83,6 +83,26 @@ def response_string(value: Any, field_name: str, *, empty: bool = True) -> str:
     return value
 
 
+def _objects(value: Any, field: str) -> list[dict[str, Any]]:
+    """Read an optional list of objects from a reply.
+
+    Args:
+        value: The decoded field.
+        field: Its wire name.
+
+    Returns:
+        The objects, or an empty list when the field is absent.
+
+    Raises:
+        ProviderError: The field is not a list of objects.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise provider_types.ProviderError(f"Anthropic response {field} was not a list of objects")
+    return value
+
+
 def billed_usage(value: Any) -> Mapping[str, Any]:
     """Read the billed input and output counts.
 
@@ -93,10 +113,8 @@ def billed_usage(value: Any) -> Mapping[str, Any]:
         The compaction iterations' counts or the ordinary message usage.
     """
     usage = usage_mapping(value)
-    iterations = usage.get("iterations") or []
-    parts = [
-        part for part in iterations if isinstance(part, dict) and part.get("type") == "compaction"
-    ]
+    iterations = _objects(usage.get("iterations"), "usage.iterations")
+    parts = [part for part in iterations if part.get("type") == "compaction"]
     if not parts:
         return usage
     return {
@@ -205,8 +223,13 @@ def parse_response(data: dict[str, Any]) -> provider_types.ProviderResponse:
         elif block_type == "redacted_thinking":
             response_string(block.get("data", ""), "content redacted_thinking data", empty=False)
     usage = billed_usage(data.get("usage"))
-    transformations = data.get("input_transformations") or []
-    edits = (data.get("context_management") or {}).get("applied_edits", [])
+    transformations = _objects(data.get("input_transformations"), "input_transformations")
+    management = data.get("context_management")
+    if management is not None and not isinstance(management, dict):
+        raise provider_types.ProviderError(
+            "Anthropic response context_management was not an object"
+        )
+    edits = _objects((management or {}).get("applied_edits"), "context_management.applied_edits")
     return provider_types.ProviderResponse(
         text="\n\n".join(text_parts),
         tool_uses=tuple(tool_uses),

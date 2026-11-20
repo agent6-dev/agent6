@@ -160,3 +160,17 @@ def test_stream_reports_the_same_history_and_cost(
     assert reply.usage == parsed.usage and reply.summary_block == parsed.summary_block
     assert reply.thinking_blocks_dropped == parsed.thinking_blocks_dropped
     assert reply.tool_results_cleared == parsed.tool_results_cleared
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"input_transformations": [None]},
+        {"context_management": "invalid"},
+        {"context_management": {"applied_edits": ["invalid"]}},
+        {"usage": {"iterations": 1}},
+    ],
+)
+def test_malformed_history_fields_raise_a_provider_error(fields: dict[str, Any]) -> None:
+    with pytest.raises(provider_types.ProviderError):
+        anthropic_parse.parse_response({**SAMPLES["compact"]["response"], **fields})
