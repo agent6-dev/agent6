@@ -115,7 +115,7 @@ pre:is(.src, .diff):has(.blame-cell) { container: source / inline-size; }
 .blame-card {
   position-anchor: --blame; position-area: block-end span-inline-end;
   position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-  inset: auto; margin: 2px 0; width: max-content; max-width: min(27.5rem, calc(100vw - 1rem));
+  inset: auto; margin: 2px 0; width: max-content; max-width: min(27.5rem, calc(100vw - 2rem)); /* the page's gutter on each side */
   display: flex; flex-direction: column; gap: 0.375rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px;
   background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: var(--fs-s)/1.5 system-ui, sans-serif;
   user-select: text; /* the cell under it is unselectable; the sha and subject are for copying */

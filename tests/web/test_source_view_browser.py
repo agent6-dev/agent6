@@ -216,6 +216,31 @@ def test_escape_closes_the_blame_card_until_the_pointer_or_the_focus_moves(
     assert not errors
 
 
+def test_the_blame_card_keeps_the_page_gutter_on_a_phone(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """On a phone a wide blame card ran to the screen's right edge, with no gutter."""
+    from playwright.sync_api import expect
+
+    subject = "a subject long enough to fill the whole card on a phone " * 2
+    (tmp_path / "note.txt").write_text("one line\n", encoding="utf-8")
+    _git(tmp_path, "add", "note.txt")
+    _git(tmp_path, "commit", "-m", subject.strip())
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/note.txt")
+    page.locator(".files-blame").click()
+    page.locator("[data-line='1'] .blame-commit").focus()
+    card = page.locator(".blame-card:visible")
+    expect(card.locator(".blame-title")).to_have_text(subject.strip())
+    box = card.bounding_box()
+    assert box
+    pane = page.locator(".files-text")
+    gutter = pane.evaluate("e => parseFloat(getComputedStyle(e).paddingLeft)")
+    assert box["x"] >= gutter - 0.5 and 390 - (box["x"] + box["width"]) >= gutter - 0.5, box
+    assert not errors
+
+
 def test_the_blame_card_text_can_be_selected(
     open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
 ) -> None:
