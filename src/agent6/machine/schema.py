@@ -508,6 +508,8 @@ def protected_overlay_error(config: dict[str, Any], *, state: str = "") -> str |
             except ValueError as exc:
                 return str(exc)
     for key in _table_keys(config):
+        if state and key == "harness.metric":
+            return f"[states.{state}.config] {key}: {validation.REMOVED_METRIC}"
         if state and key in STATE_OVERLAY_KEYS:
             return (
                 f"[states.{state}.config] must not set {key}.*: it is read once for the"

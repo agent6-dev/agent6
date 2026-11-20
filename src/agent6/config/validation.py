@@ -99,6 +99,8 @@ def _argv_elements(v: tuple[str, ...]) -> tuple[str, ...]:
 
 
 # Command argv fields: an empty element is a typo; an empty tuple means "unset".
+REMOVED_METRIC = "removed config table; set a session metric with run --metric or /metric"
+
 Argv = Annotated[StrTuple, pydantic.AfterValidator(_argv_elements)]
 
 

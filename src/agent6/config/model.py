@@ -687,6 +687,7 @@ _REPLACED_KEYS = {
     "context": "rename the context table to [compaction]; keep its keys and values",
     "git.commit.checkpoint": "moved config key; use git.commit.checkpoint_message",
     "git.commit.squash": "moved config key; use git.commit.squash_message",
+    "harness.metric": validation.REMOVED_METRIC,
     "harness.parallel.max_lanes": "renamed config key; use harness.parallel.max_children",
     "harness.verify_at_start": "moved config key; use harness.verify.at_start",
     "harness.verify_command": "moved config key; use harness.verify.command",

@@ -269,6 +269,7 @@ def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path)
 @pytest.mark.parametrize(
     ("table", "needle"),
     [
+        ('[states.judge.config.harness.metric]\ncommand = ["score"]\n', "--metric"),
         ('[states.judge.config.providers.x]\nbackend = "openai"\n', "providers"),
         ("[states.judge.config.mcp]\nenabled = true\n", "mcp"),
         ('[states.judge.config.machine]\npass_env = ["X"]\n', "machine"),

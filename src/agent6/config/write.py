@@ -237,6 +237,8 @@ def unknown_key_error(
         The message; the pool falls back to the schema defaults when the merged config no
         longer loads.
     """
+    if key == "harness.metric" or key.startswith("harness.metric."):
+        return f"unknown config key {key!r}: {validation.REMOVED_METRIC}"
     try:
         pool = layer.leaf_keys(
             eff if eff is not None else layer.load_effective(repo_root, (), allow_pack=allow_pack)
@@ -461,7 +463,7 @@ def _whole_table_hint(
 ) -> str:
     """Return the line naming the one write that sets a table's required fields together.
 
-    A table with required fields (`harness.metric`) cannot be built one leaf at a time: each
+    A table with required fields cannot be built one leaf at a time: each
     write alone fails validation.
 
     Args:
@@ -1188,7 +1190,7 @@ def unset_config_table(
     if not target.is_file():
         return UnsetResult(removed=False)
     with writing_config(target):
-        text = io.remove_table_text(editable_text(target), table)
+        text = io.remove_leaf_text(editable_text(target), table, path=target)
         if text is None:
             return UnsetResult(removed=False)
         return UnsetResult(removed=True, error=write_validated(repo_root, target, text))

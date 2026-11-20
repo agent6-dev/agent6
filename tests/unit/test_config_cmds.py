@@ -9,6 +9,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
+from agent6.config import ConfigError
 from agent6.config import layer as config_layer
 from agent6.models import choices
 from agent6.ui.cli import config_cmds as cc
@@ -305,26 +306,37 @@ def test_config_get_distinguishes_a_section_from_an_unknown_key(
     assert "unknown config key 'sandbox.nope'" in capsys.readouterr().err
 
 
-def test_config_get_calls_a_set_table_a_section(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    "table",
+    [
+        '[harness.metric]\ncommand = ["true"]\npattern = "(0)"\ngoal = "minimize"\n',
+        '[harness]\nmetric = { command = ["true"], pattern = "(0)", goal = "minimize" }\n',
+    ],
+)
+def test_config_refuses_and_fix_drops_the_metric_table(
+    table: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A configured metric table read as unknown while its hint named the table's leaves."""
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "get", "harness.metric"]) == 0
-    assert "harness.metric = (unset)  [default]" in capsys.readouterr().out
     repo_cfg = paths.repo_config_path(tmp_path)
     repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     repo_cfg.write_text(
-        '[harness.metric]\ncommand = ["true"]\npattern = "score: ([0-9.]+)"\ngoal = "minimize"\n',
+        table + '[harness.verify]\ncommand = ["check"]\n',
         encoding="utf-8",
     )
+    with pytest.raises(ConfigError, match="--metric"):
+        config_layer.load_effective(tmp_path)
 
-    assert main(["config", "get", "harness.metric"]) == 2
-    err = capsys.readouterr().err
-    assert "'harness.metric' is not a config leaf" in err
-    assert "unknown config key" not in err
+    assert main(["config", "fix"]) == 0
+    assert "metric" not in repo_cfg.read_text(encoding="utf-8")
+    assert config_layer.load_effective(tmp_path).config.harness.verify.command == ("check",)
+    for key in ("harness.metric", "harness.metric.command"):
+        assert main(["config", "set", key, '["true"]']) == 2
+        assert "--metric" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("key", ["harness", "review", "budget"])
@@ -342,71 +354,6 @@ def test_config_get_calls_a_section_with_no_resolved_leaf_a_section(
     err = capsys.readouterr().err
     assert f"{key!r} is not a config leaf" in err
     assert "unknown config key" not in err
-
-
-def test_config_set_a_partial_table_hint_keeps_every_field_written(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The whole-table hint lists every field the write carried, then the missing ones."""
-    from agent6.ui.cli import main
-
-    monkeypatch.chdir(tmp_path)
-    table = '{ command = ["true"], pattern = "score: ([0-9.]+)" }'
-    assert main(["config", "set", "harness.metric", table]) == 2
-    err = capsys.readouterr().err
-    hint = next(line for line in err.splitlines() if "in one write" in line)
-    assert "harness.metric '{ command = ..., pattern = ..., goal = ... }'" in hint
-
-
-@pytest.mark.parametrize("repo", [False, True])
-@pytest.mark.parametrize(
-    ("key", "value"),
-    [("command", '["true"]'), ("pattern", '"score: ([0-9.]+)"'), ("goal", "minimize")],
-)
-def test_config_set_one_metric_field_names_the_inline_table(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    repo: bool,
-    key: str,
-    value: str,
-) -> None:
-    """A partial metric write rolled back with missing fields but no whole-table command."""
-    from agent6.ui.cli import main
-
-    monkeypatch.chdir(tmp_path)
-    target = paths.repo_config_path(tmp_path) if repo else paths.global_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    before = "[budget]\nmax_usd = 5.0\n"
-    target.write_text(before, encoding="utf-8")
-    flags = ["--repo"] if repo else []
-
-    assert main(["config", "set", *flags, f"harness.metric.{key}", value]) == 2
-    err = capsys.readouterr().err
-    assert "Field required" in err
-    flag = " --repo" if repo else ""
-    hint = next(line for line in err.splitlines() if "in one write" in line)
-    assert f"`agent6 config set{flag} harness.metric '{{ {key} = ..., " in hint
-    assert all(f"{name} = ..." in hint for name in ("command", "pattern", "goal"))
-    assert target.read_text(encoding="utf-8") == before
-
-    assert (
-        main(
-            [
-                "config",
-                "set",
-                *flags,
-                "harness.metric",
-                '{ command = ["true"], pattern = "score: ([0-9.]+)", goal = "minimize" }',
-            ]
-        )
-        == 0
-    )
-    metric = config_layer.load_effective(tmp_path).config.harness.metric
-    assert metric is not None
-    assert metric.command == ("true",)
-    assert metric.pattern == "score: ([0-9.]+)"
-    assert metric.goal == "minimize"
 
 
 def test_config_set_help_names_inline_tables(capsys: pytest.CaptureFixture[str]) -> None:

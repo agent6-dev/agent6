@@ -1019,7 +1019,7 @@ def test_a_refused_edit_without_the_lock_writes_nothing(
 
 
 def test_an_optional_section_is_written_leaf_by_leaf(repo: pathlib.Path) -> None:
-    """An optional `[table]` section (`models.worker`, `harness.metric`) is written leaf by leaf."""
+    """An optional `[table]` section (`models.worker`) is written leaf by leaf."""
     rcfg = paths_mod.repo_config_path(repo)
     rcfg.write_text(
         '[models.worker]\nmodel = "anthropic/claude-sonnet-4-5"\neffort = "high"\n',

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-behaviour models.
 
-`[harness]` with its metric, parallel, prompt and verify tables, `[review]`, `[compaction]`
+`[harness]` with its parallel, prompt and verify tables, `[review]`, `[compaction]`
 and `[budget]`.
 """
 
@@ -157,44 +157,6 @@ class ReviewerConfig(pydantic.BaseModel):
             temperature=route.temperature if self.temperature is None else self.temperature,
             effort=route.effort if self.effort is None else self.effort,
         )
-
-
-class MetricConfig(pydantic.BaseModel):
-    """The `[harness.metric]` table: a continuous score beside the pass/fail gate.
-
-    `run_metric_command` runs `command` in the jail with `harness.verify.command`'s environment and
-    parses `pattern`'s first capture group as a base-10 number; no match in the combined
-    stdout and stderr reads as a missing metric.
-    """
-
-    model_config = validation.MODEL_CONFIG
-
-    command: validation.Argv = pydantic.Field(
-        min_length=1,
-        description=(
-            "score-printing command as argv, no shell; run after every committed edit and on "
-            "the model's `run_metric_command` call"
-        ),
-    )
-    pattern: str = pydantic.Field(
-        min_length=1,
-        description=(
-            "A regular expression over the command's output; its first capture group is the "
-            'number, e.g. `"score: ([0-9.]+)"`.'
-        ),
-    )
-    goal: Literal["minimize", "maximize"] = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "minimize": "Smaller scores are better",
-                "maximize": "Larger scores are better",
-            }
-        },
-        description=(
-            "Score direction; trajectory is reported; finish is allowed once a verified edit "
-            "only ties the best."
-        ),
-    )
 
 
 class ParallelConfig(pydantic.BaseModel):
@@ -363,7 +325,7 @@ class VerifyConfig(pydantic.BaseModel):
         gt=0.0,
         default=600.0,
         description=(
-            "seconds per `harness.verify.command` or `harness.metric.command` call before kill "
+            "seconds per `harness.verify.command` or the session metric call before kill "
             "and failure; run ending over a gate killed here: `finished · gate timed out`; "
             "pathless pytest gate over budget (harness call or model's `run_verify_command`): "
             "retry on test files nearest the run's diff, harness gates scoped until a full gate "
@@ -517,14 +479,6 @@ class HarnessConfig(pydantic.BaseModel):
             "end on the first fruitless round; `harness.standing_patience = N`: escalating "
             "nudges for N fruitless re-entries, then soft ends honoured; streak reset by a "
             "round landing work"
-        ),
-    )
-    metric: MetricConfig | None = pydantic.Field(
-        default=None,
-        description=(
-            "optional score beside the pass/fail gate (benchmark, size or count); run after "
-            "every committed edit, trend shown to the model; unset: `run_metric_command` still "
-            "listed, calls refused with `harness.metric` named"
         ),
     )
     parallel: ParallelConfig = pydantic.Field(default_factory=ParallelConfig)

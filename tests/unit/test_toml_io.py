@@ -453,19 +453,19 @@ def test_upsert_end_scan_skips_a_multiline_value_with_a_bracket_line(
     """
     p = tmp_path / "c.toml"
     p.write_text(
-        '[harness.metric]\npattern = """\n[0-9]+ ms\n"""\ngoal = "minimize"\n',
+        '[example.bench]\npattern = """\n[0-9]+ ms\n"""\ngoal = "minimize"\n',
         encoding="utf-8",
     )
-    _upsert(p, "harness.metric.goal", "maximize")
+    _upsert(p, "example.bench.goal", "maximize")
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
-    assert parsed["harness"]["metric"]["goal"] == "maximize", "the real leaf must be rewritten"
-    assert parsed["harness"]["metric"]["pattern"] == "[0-9]+ ms\n", "the string was corrupted"
+    assert parsed["example"]["bench"]["goal"] == "maximize", "the real leaf must be rewritten"
+    assert parsed["example"]["bench"]["pattern"] == "[0-9]+ ms\n", "the string was corrupted"
 
     # The unset twin: it must FIND (and remove) the real leaf, not report absent.
-    assert _remove_leaf(p, "harness.metric.goal") is True
+    assert _remove_leaf(p, "example.bench.goal") is True
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
-    assert "goal" not in parsed["harness"]["metric"]
-    assert parsed["harness"]["metric"]["pattern"] == "[0-9]+ ms\n"
+    assert "goal" not in parsed["example"]["bench"]
+    assert parsed["example"]["bench"]["pattern"] == "[0-9]+ ms\n"
 
 
 def test_drop_top_region_key_skips_a_multiline_value_bracket_line(tmp_path: pathlib.Path) -> None:

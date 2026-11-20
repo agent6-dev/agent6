@@ -552,32 +552,6 @@ def test_multiple_openai_providers_load(tmp_path: pathlib.Path) -> None:
     assert cfg.models.reviewer.provider == "openrouter"
 
 
-def test_metric_block_loads(tmp_path: pathlib.Path) -> None:
-    body = _VALID_TOML + (
-        "\n[harness.metric]\n"
-        'command = ["/usr/bin/python3", "bench.py"]\n'
-        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
-        'goal = "minimize"\n'
-    )
-    cfg = load_config(_write(tmp_path, body))
-    assert cfg.harness.metric is not None
-    assert cfg.harness.metric.command == ("/usr/bin/python3", "bench.py")
-    assert cfg.harness.metric.goal == "minimize"
-
-
-def test_metric_block_absent_is_none(tmp_path: pathlib.Path) -> None:
-    cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.harness.metric is None
-
-
-def test_metric_goal_invalid(tmp_path: pathlib.Path) -> None:
-    body = _VALID_TOML + (
-        '\n[harness.metric]\ncommand = ["true"]\npattern = "x"\ngoal = "sideways"\n'
-    )
-    with pytest.raises(ConfigError):
-        load_config(_write(tmp_path, body))
-
-
 def test_operational_fields_have_defaults(tmp_path: pathlib.Path) -> None:
     """Every field has a default, security fields the safe one, so a minimal TOML loads.
 

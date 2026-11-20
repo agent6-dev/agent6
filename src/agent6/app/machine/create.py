@@ -273,7 +273,6 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         "run_commands": "deny",
         "fetch_approved_hosts": [],
     }
-    overlay["harness"] = {**overlay.get("harness", {}), "metric": None}
     # Resolved on the host: the confined execution cannot read ~/.gitconfig.
     try:
         name, email = git_read.verify_git_identity(

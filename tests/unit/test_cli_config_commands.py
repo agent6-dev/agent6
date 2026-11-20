@@ -1015,12 +1015,10 @@ def test_mapping_writes_name_only_the_overridden_entries(
     assert "note:" not in capsys.readouterr().out
 
 
-_METRIC = '{ command = ["true"], pattern = "x", goal = "maximize" }'
 _MACHINE = (
     'machine = "m"\nversion = 1\ninitial = "s"\n'
     "[budget]\nmax_usd = 1.0\nmax_transitions = 10\n"
     '[states.s]\nkind = "terminal"\nstatus = "ok"\nreason = "done"\n'
-    '[config.harness.metric]\ncommand = ["true"]\npattern = "x"\ngoal = "maximize"\n'
 )
 
 
@@ -1046,12 +1044,12 @@ def _backdated(*roots: pathlib.Path) -> dict[pathlib.Path, tuple[int, bytes]]:
             ["set", "--repo", "sandbox.run_commands", "bogus"],
         ),
         ([], ["set", "--machine-file", "m.asm.toml", "sandbox.run_commands", "bogus"]),
-        (["set", "harness.metric", _METRIC], ["unset", "harness.metric.pattern"]),
+        ([], ["set", "harness.metric.command", '["true"]']),
         (
-            ["set", "--repo", "harness.metric", _METRIC],
-            ["unset", "--repo", "harness.metric.pattern"],
+            [],
+            ["set", "--repo", "harness.metric", '{ command = ["true"] }'],
         ),
-        ([], ["unset", "--machine-file", "m.asm.toml", "harness.metric.pattern"]),
+        ([], ["set", "--machine-file", "m.asm.toml", "harness.metric.goal", "minimize"]),
         (
             ["set", "sandbox.fetch_approved_hosts", '["ok.example"]'],
             ["add", "sandbox.fetch_approved_hosts", "5"],
@@ -1083,3 +1081,11 @@ def test_a_refused_config_fix_writes_nothing(iso: pathlib.Path) -> None:
     before = _backdated(iso)
     assert _refuse(["config", "fix"]) == 2
     assert _files(iso) == before
+
+
+def test_fix_removes_the_metric_from_a_machine_overlay(iso: pathlib.Path) -> None:
+    machine = _machine_file(iso)
+    with machine.open("a", encoding="utf-8") as out:
+        out.write('\n[config.harness.metric]\ncommand = ["true"]\n')
+    assert _run(["config", "fix", "--machine-file", str(machine)]) == 0
+    assert "harness.metric" not in machine.read_text()
