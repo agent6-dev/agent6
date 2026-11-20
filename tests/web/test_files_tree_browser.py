@@ -119,6 +119,25 @@ def test_the_tree_is_one_tab_stop_that_the_arrow_keys_walk(
     assert not errors
 
 
+def test_tab_reaches_the_tree_when_its_open_file_is_folded_away(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """A repaint left the folded-away open file the only Tab stop, so Tab skipped the tree."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/{LEAF}")
+    page.wait_for_selector("[data-line='1']")
+    page.locator(_row("deep")).click()
+    expect(page.locator(_row("deep"))).to_have_attribute("aria-expanded", "false")
+    page.locator(".files-bar input.filter").click()
+    page.keyboard.type("x")
+    page.keyboard.press("Backspace")
+    page.keyboard.press("Tab")
+    expect(page.locator(":focus")).to_have_attribute("data-path", "deep")
+    assert not errors
+
+
 def test_a_narrow_tree_keeps_each_name_on_one_line(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
