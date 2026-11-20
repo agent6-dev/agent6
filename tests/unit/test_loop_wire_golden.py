@@ -42,6 +42,10 @@ class _StubDispatcher:
         """A stub offers the model no `parallel` tool."""
         return False
 
+    def merge_child_available(self) -> bool:
+        """The scenario has no child work to merge."""
+        return False
+
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
 
     dag_available = True

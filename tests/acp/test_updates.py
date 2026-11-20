@@ -111,6 +111,7 @@ def test_known_tools_carry_their_acp_kinds() -> None:
         "read_file": "read",
         "apply_edit": "edit",
         "find_references": "search",
+        "merge_child": "execute",
         "run_command": "execute",
         "fetch": "fetch",
     }

@@ -74,6 +74,15 @@
     }
   },
   {
+    "name": "merge_child",
+    "required": [
+      "id"
+    ],
+    "properties": {
+      "id": "string"
+    }
+  },
+  {
     "name": "parallel",
     "required": [
       "task"
