@@ -622,19 +622,24 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
 
 
 def test_an_advising_panel_that_returns_block_is_not_logged_as_approval() -> None:
-    """Pin the log: an advising panel that returned block read "review approved"."""
+    """Pin the log: a panel that returned block, or reviewed nothing, read "review approved"."""
     lines: list[str] = []
     wf = _wf(review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]))
     wf.mode = "run"
-    for blocking, said in ((1, "1 of 1 reviewers returned block"), (0, "review approved")):
-        panel = _PanelScript(
-            [review_gate.CritiqueResult(text="* a fault", satisfied=True, blocking=blocking)]
-        )
+    unread = "review inconclusive: all 1 reviewers abstained; nothing was reviewed"
+    cases = (
+        (review_gate.CritiqueResult("* a fault", True, blocking=1), "1 of 1 reviewers returned"),
+        (review_gate.CritiqueResult("* none", True), "review approved"),
+        (review_gate.CritiqueResult(unread, True, inconclusive=True), "nothing was reviewed"),
+    )
+    for result, said in cases:
+        panel = _PanelScript([result])
         gate = dataclasses.replace(wf.review_gate, log=lines.append)
         with mock.patch.object(review_gate.ReviewGate, "critique", panel):
             assert not gate.end_rejected(_settled_state(), _idle_turn(), ending="finish_session")
         assert said in lines[-1], lines
     assert 'review.block_on = "none", the end stands' in lines[0] and "approved" not in lines[0]
+    assert lines[2].endswith("finish_session stands") and "approved" not in lines[2]
 
 
 def test_a_settled_end_is_certified_by_the_harness_gate() -> None:

@@ -35,12 +35,14 @@ class CritiqueResult:
         capped: The panel blocked but the run's rejected finishes reached the cap, so the end
             stands with the findings.
         blocking: The reviewers that returned the verdict block.
+        inconclusive: Every reviewer abstained or failed, so nothing was reviewed.
     """
 
     text: str
     satisfied: bool
     capped: bool = False
     blocking: int = 0
+    inconclusive: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -417,6 +419,8 @@ class ReviewGate:
                 "The review panel flagged issues but the rejection cap was"
                 " reached; the end stands. Findings:\n\n" + critique.text
             )
+        elif critique.inconclusive:
+            self.log(f"  {critique.text}; {ending} stands")
         elif critique.blocking:
             # An advising panel never rejects: the log says what it returned.
             self.log(
@@ -708,4 +712,5 @@ class ReviewGate:
             satisfied=not effective_blocked,
             capped=result.blocked and disarmed and trigger == "finish",
             blocking=result.n_block,
+            inconclusive=inconclusive,
         )
