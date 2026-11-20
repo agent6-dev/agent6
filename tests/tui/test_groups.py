@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 
+import pytest
 from textual import widgets
 
 from agent6 import paths
@@ -43,22 +44,22 @@ ordinary_parent = test_sessions_show_group.ordinary_parent
 
 
 def test_dashboard_shows_a_child_that_appears_after_the_view_opens(
-    tmp_path: pathlib.Path, monkeypatch: object
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    asyncio.run(_ordinary_scenario(tmp_path))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(repo)
+    asyncio.run(_ordinary_scenario(repo))
 
 
-async def _ordinary_scenario(tmp_path: pathlib.Path) -> None:
+async def _ordinary_scenario(repo: pathlib.Path) -> None:
     """An ordinary live run has no children at mount; its first child appears while it waits."""
     import json
     import os
 
     from agent6.sessions import process
 
-    repo = tmp_path / "repo"
-    repo.mkdir(parents=True, exist_ok=True)
-    os.environ["XDG_STATE_HOME"] = str(tmp_path / "state")
-    os.chdir(repo)
     state = paths.state_dir(repo)
     parent = layout.SessionLayout(state_dir=state, session_id="solo")
     parent.ensure()
