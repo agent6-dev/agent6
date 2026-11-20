@@ -561,6 +561,9 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - Review comparison and file routes read Git objects by recorded tree ID.
   Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
   Finding text and resolution reasons enter the browser as text, not HTML.
+- Files shows repository HTML as source, without executing its scripts.
+  There is no HTML preview route: a CSP sandbox isolates the document's origin but does not stop its own navigation when opened directly in a tab ([containment probe](../bench/web-preview-containment.md)).
+  Markdown remote images load without a consent step and can disclose their full addresses to the remote server; `sandbox.network` does not constrain the browser.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   Telemetry requires an operator-started export or the opt-in scrape route ([Telemetry export](cli.md#telemetry-export)); no auto-update, no remote control plane.
 
