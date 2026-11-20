@@ -69,7 +69,7 @@ async function renderMachine(name, gen) {
     try { await postJSON(base + '/poke', { message: din.value }); toast('message sent'); din.value = ''; } catch (e) { toast(e.message, true); }
   };
   din.onkeydown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !composing(e)) {
+    if (enterSends(e)) {
       e.preventDefault();
       if (!steerBtn.disabled) steerBtn.click();
       else if (!msgBtn.disabled) msgBtn.click();
@@ -78,7 +78,8 @@ async function renderMachine(name, gen) {
   drow.append(din, steerBtn, msgBtn);
   // Why a dimmed verb is refused, on every screen: a hover title never reaches a phone.
   const refusal = el('div', 'refusal');
-  const hint = el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · Enter sends, Shift+Enter newline');
+  const hint = el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · ');
+  hint.append(...enterHint('Enter sends, Shift+Enter newline', 'Enter newline'));
   dock.append(drow, refusal, hint);
   app.appendChild(dock);
   view.appendChild(app);

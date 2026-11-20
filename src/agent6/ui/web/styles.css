@@ -245,6 +245,9 @@ button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 .composer .refusal:empty { display: none; }
 /* A session composer's button shows its word; a phone shows its icon instead (below). */
 .composer button.send > .ic { display: none; }
+/* A hint names what Enter does with the page's pointer (enterHint): on a touch screen it types a new line. */
+.hint > .on-touch { display: none; }
+@media (pointer: coarse) { .hint > .on-keys { display: none; } .hint > .on-touch { display: inline; } }
 /* Picker rows (pickerRow above a composer, the Latest commit card's picker row):
    compact dropdowns sized to their value, each beside its label; on a narrow
    screen the pairs wrap whole. */
@@ -556,7 +559,7 @@ aside.rail, #rail-show { display: none; }
   /* Sideways a card wraps a long word and clips what is still wider (a clip makes no
      scroller), so nothing in a card widens the page. */
   .card.scroll { overflow-x: clip; overflow-wrap: break-word; }
-  .composer .hint { display: none; } /* the keyboard's enter key says it; space is tight */
+  .composer .hint { display: none; } /* the dock's buttons say what sends; space is tight */
   /* A suggestion's help wraps under it; the history search's rows keep one line each. */
   .ac-pop .ac-item { white-space: normal; }
 }

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The docked composers driven in a browser: a session's send button."""
+"""The docked composers driven in a browser: a session's send button, and Enter on each device."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.web import session_logs, signin, test_web_browser
+from tests.web import session_logs, signin, test_machine_browser, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page
+    from playwright.sync_api import Browser, BrowserContext, FloatRect, Locator, Page, Route
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -26,6 +26,13 @@ TouchPage = Callable[[int, int, int, bool], "Page"]
 # The agent finished the run, so a resume needs an instruction; a run out of turns resumes bare.
 STOP = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
 OUT_OF_TURNS = {"type": "session.stop", "reason": "max_turns", "verification": "failed"}
+# Each docked composer's page and the request its Enter sends from a keyboard.
+COMPOSERS = {
+    "session": ("#/session/live-AAA111", "/api/session/live-AAA111/steer"),
+    "new work": ("#/", "/api/new"),
+    "create machine": ("#/machines", "/api/machine/create"),
+    "machine": ("#/machine/working", "/api/machine/working/steer"),
+}
 
 
 def _box(locator: Locator) -> FloatRect:
@@ -151,6 +158,56 @@ def test_a_sessions_button_waits_for_something_to_send(
         else:
             expect(button).to_be_disabled()
     assert not errors
+
+
+@pytest.mark.parametrize("touch", [False, True], ids=["keyboard", "touch"])
+@pytest.mark.parametrize("composer", list(COMPOSERS))
+def test_enter_sends_from_a_keyboard_and_types_a_new_line_on_a_touch_screen(
+    touch_page: TouchPage,
+    port: int,
+    tmp_path: pathlib.Path,
+    composer: str,
+    touch: bool,
+) -> None:
+    """A touch screen's Enter sent the composer's text, and its keyboard has no Shift+Enter.
+
+    Each composer's hint names what Enter does there.
+    """
+    from playwright.sync_api import expect
+
+    machine = test_machine_browser
+    session_logs.write_run(tmp_path, "live-AAA111", [], live=True)
+    machine._machine(tmp_path, "working", machine.LOOP, [], machine._talk(2), alive=True)
+    where, endpoint = COMPOSERS[composer]
+    page = touch_page(port, 820, 1180, touch)
+    sent: list[str] = []
+
+    def record(route: Route) -> None:
+        if route.request.method == "GET":
+            route.continue_()
+        else:
+            sent.append(route.request.url.split(f":{port}", 1)[1])
+            route.fulfill(json={})
+
+    page.route("**/api/**", record)
+    page.goto(f"http://127.0.0.1:{port}/{where}")
+    assert page.evaluate("matchMedia('(pointer: coarse)').matches") is touch
+    entry = page.locator(".composer.dock textarea")
+    hint = page.locator(".composer.dock .hint")
+    entry.fill("check")
+    if touch:
+        entry.press("Enter")
+        entry.press_sequentially("the tests")
+        expect(entry).to_have_value("check\nthe tests")
+        expect(hint).to_contain_text("Enter newline", use_inner_text=True)
+        expect(hint).not_to_contain_text("Shift+Enter", use_inner_text=True)
+        page.wait_for_timeout(300)
+        assert sent == []
+    else:
+        with page.expect_request(f"**{endpoint}"):
+            entry.press("Enter")
+        expect(hint).to_contain_text("Shift+Enter newline", use_inner_text=True)
+        assert sent == [endpoint]
 
 
 @pytest.mark.parametrize("font", [16, 20])

@@ -712,8 +712,7 @@ const pickedModel = (select) => { const m = pickedName(select).split('/').pop();
 
 // The new-work composer, docked at the bottom of the Sessions page: the mode,
 // worktree, preset and model row, whose advanced fold opens a row with the plan
-// to run from and a spend cap, above task text + Start (Enter starts,
-// Shift+Enter newline).
+// to run from and a spend cap, above task text + Start.
 // `presets` and `presetDefault` are the hub payload's list and the label of
 // its first option, which keeps the config's own preset; `sessions` are the
 // hub's rows, whose finished plans the fold offers. The model box lists every
@@ -825,7 +824,7 @@ function newWorkDock(presets, presetDefault, sessions) {
     if (composing(e)) return;
     if (commands.onKeyDown(e)) return;
     if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go.click(); }
+    if (enterSends(e)) { e.preventDefault(); go.click(); }
   };
   row.appendChild(task); row.appendChild(go);
   const picks = pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]]);
@@ -840,8 +839,10 @@ function newWorkDock(presets, presetDefault, sessions) {
   root.appendChild(picks);
   root.appendChild(more);
   root.appendChild(row);
-  root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline · '
-    + '/parallel [SPEC --] TASK dispatches children (SPEC: count or models; repeat to queue more) · Ctrl+K switches sessions'));
+  const hint = root.appendChild(el('div', 'hint'));
+  hint.append(...enterHint('Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline',
+    'Start begins the run / plan / ask (a run from a plan needs no task) · Enter newline'),
+    ' · /parallel [SPEC --] TASK dispatches children (SPEC: count or models; repeat to queue more) · Ctrl+K switches sessions');
   return root;
 }
 
@@ -856,10 +857,11 @@ function createMachineDock() {
     catch (e) { toast(e.message, true); }
   }, () => !!ct.value.trim());
   ct.oninput = cbtn.sync;
-  ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); cbtn.click(); } };
+  ct.onkeydown = (e) => { if (enterSends(e)) { e.preventDefault(); cbtn.click(); } };
   row.appendChild(ct); row.appendChild(cbtn);
   root.appendChild(row);
-  root.appendChild(el('div', 'hint', 'Enter creates a machine draft from the description · Shift+Enter newline'));
+  root.appendChild(el('div', 'hint')).append(...enterHint('Enter creates a machine draft from the description · Shift+Enter newline',
+    'Create machine drafts a machine from the description · Enter newline'));
   return root;
 }
 
@@ -1774,6 +1776,10 @@ function openPalette(initial = '') {
 // typing, not a send; keyCode 229 covers engines that report the composition only that way.
 function composing(e) { return e.isComposing || e.keyCode === 229; }
 function inField(e) { const t = e.target; return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
+// A touch screen's keyboard has no Shift+Enter, so there Enter types a new line and only a composer's buttons send.
+function enterSends(e) { return e.key === 'Enter' && !e.shiftKey && !composing(e) && !matchMedia('(pointer: coarse)').matches; }
+// A composer hint's words on Enter for a keyboard and for a touch screen; the stylesheet shows the pointer's.
+function enterHint(keys, touch) { return [el('span', 'on-keys', keys), el('span', 'on-touch', touch)]; }
 const KEYS = [
   { label: 'Ctrl+K', where: 'Anywhere', does: 'switch session (> for commands)', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
   { label: '?', where: 'Outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
@@ -1918,15 +1924,19 @@ function makeComposer(id) {
     if (finished && !rowShown) relabel();
     rowShown = !!finished;
     if (busy) { hint.textContent = 'resuming…'; return; }
+    const keys = ' · Ctrl+R past messages · Ctrl+K switch session · ? keys';
     if (finished && needsWork) {
       ta.placeholder = 'what should it do next…';
-      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl+R past messages · Ctrl+K switch session · ? keys';
+      hint.replaceChildren(...enterHint('Enter resumes it with your instruction · Shift+Enter newline',
+        'Resume continues it with your instruction · Enter newline'), keys);
     } else if (finished) {
       ta.placeholder = 'continue this session…';
-      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl+R past messages · Ctrl+K switch session · ? keys';
+      hint.replaceChildren(...enterHint('Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline',
+        'Resume continues this session with the instruction (empty = just resume) · Enter newline'), keys);
     } else {
       ta.placeholder = 'steer this session… (type / for directives)';
-      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl+R past messages · Ctrl+K switch session · ? keys';
+      hint.replaceChildren(...enterHint('Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline',
+        'Send injects the instruction at the session’s next safe boundary · Enter newline'), keys);
     }
   };
   const resume = async (text) => {
@@ -1964,7 +1974,7 @@ function makeComposer(id) {
       if (!busy) openHistorySearch(id, (text) => fillAsEdit(ta, text));
       return;
     }
-    if (e.key !== 'Enter' || e.shiftKey) return;
+    if (!enterSends(e)) return;
     e.preventDefault();
     send(e.ctrlKey);
   };

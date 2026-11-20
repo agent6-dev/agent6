@@ -84,8 +84,7 @@ def test_the_machine_composer_hint_names_enter() -> None:
     """Every docked entry's hint says what Enter does, the machine composer's included."""
     start = page.CLIENT_JS.index("async function renderMachine")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("function paintMachine(", start)]
-    hint = next(line for line in body.splitlines() if "el('div', 'hint'" in line)
-    assert "Enter sends" in hint and "Shift+Enter" in hint
+    assert "hint.append(...enterHint('Enter sends, Shift+Enter newline', 'Enter newline'));" in body
 
 
 def test_the_machine_snapshot_gates_controls_before_the_stream_arrives() -> None:
@@ -113,8 +112,8 @@ def test_enter_submits_the_available_machine_composer_verb() -> None:
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("function machineNotify(", start)]
     handler_start = body.index("din.onkeydown")
     key_handler = body[handler_start : body.index("\n  };", handler_start)]
-    assert "e.key === 'Enter'" in key_handler
-    assert "!e.shiftKey" in key_handler
+    assert "if (enterSends(e))" in key_handler
+    assert "function enterSends(e) { return e.key === 'Enter' && !e.shiftKey" in page.CLIENT_JS
     assert "e.preventDefault()" in key_handler
     assert "!steerBtn.disabled" in key_handler and "steerBtn.click()" in key_handler
     assert "!msgBtn.disabled" in key_handler and "msgBtn.click()" in key_handler
