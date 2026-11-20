@@ -96,7 +96,9 @@ When the server stops answering, the Sessions and State machines lists, a sessio
       A stopped child shows the unmerged commits its ref holds.
       A child that never started shows the reason.
       A reviewer shows its verdict when available.
-      Open a row to read the whole prompt and recent conversation in place.
+      Open a row to read the prompt and recent conversation in place.
+      A long prompt shows its first lines.
+      Open **Full prompt** to read the rest.
       **Send** messages the live child.
       **Stop** asks before stopping that child and its live descendants.
       These controls also work on a live reviewer.

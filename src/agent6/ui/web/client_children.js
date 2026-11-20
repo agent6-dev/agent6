@@ -25,13 +25,11 @@ function childRow(sid, card, readOnly) {
   const body = row.appendChild(el('div', 'child-body'));
   const link = el('a', null, sid);
   link.href = '#/session/' + encodeURIComponent(sid);
-  const prompt = el('pre', 'child-prompt');
   const recent = el('pre', 'plan');
   const conversation = el('div');
   conversation.append(el('strong', 'sub', 'Recent conversation'), recent);
   const identity = el('span', 'sub', sid);
   const task = el('div');
-  task.append(el('strong', 'sub', 'Prompt'), prompt);
   body.append(link, identity, task, conversation);
 
   const controls = el('div');
@@ -58,13 +56,22 @@ function childRow(sid, card, readOnly) {
 
   let child, busy = false, live = false, seenStatus = null;
   row.paint = c => {
+    if (child?.task !== c.task) {
+      const preview = c.task.slice(0, 120).split('\n', 3).join('\n');
+      task.replaceChildren(el('strong', 'sub', 'Prompt'));
+      if (preview === c.task) task.append(el('pre', 'child-prompt', c.task));
+      else {
+        const full = el('details');
+        full.append(el('summary', 'chevron', 'Full prompt'), el('pre', 'child-prompt', c.task));
+        task.append(el('pre', 'child-prompt', preview.trimEnd() + '…'), full);
+      }
+    }
     child = c;
     const role = c.source === 'panel' ? 'reviewer' : 'child';
     const title = `${role} ${c.number} · ${c.status} · ${firstLine(c.task, 60) || sid}`;
     if (headline.textContent !== title) headline.textContent = title;
     const meta = childFacts(c);
     if (facts.textContent !== meta) facts.textContent = meta;
-    if (prompt.textContent !== c.task) prompt.textContent = c.task;
     if (!c.launched) { live = false; seenStatus = null; controls.remove(); }
     link.hidden = conversation.hidden = !c.launched;
     identity.hidden = c.launched;

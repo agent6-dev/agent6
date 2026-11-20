@@ -40,11 +40,12 @@ def append(session: pathlib.Path, *events: dict[str, Any]) -> None:
         log.writelines(json.dumps(event) + "\n" for event in events)
 
 
-def seed_family(repo: pathlib.Path) -> pathlib.Path:
+def seed_family(repo: pathlib.Path, prompt: str) -> pathlib.Path:
     """Write a parent, a linked child and the records of a stopped child and a reviewer.
 
     Args:
         repo: A throwaway Git repository.
+        prompt: The live child's task.
 
     Returns:
         The live child's session directory in its clone.
@@ -72,7 +73,7 @@ def seed_family(repo: pathlib.Path) -> pathlib.Path:
     review = layout.bucket_dir(paths.state_dir(repo), layout.EVIDENCE_BUCKET) / reviewer
     review.mkdir(parents=True)
     groups = [
-        (live, "csv-reader-p1", "run", PROMPT),
+        (live, "csv-reader-p1", "run", prompt),
         (stopped, "csv-reader-p2", "run", "Check line endings"),
         (review, "csv-reader-r1", "reviewer", "Review the CSV attempts"),
     ]
@@ -151,15 +152,59 @@ def seed_family(repo: pathlib.Path) -> pathlib.Path:
 
 @pytest.fixture
 def family(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> Iterator[tuple[int, pathlib.Path]]:
     """Serve the family from its own checkout with the suite's throwaway XDG homes."""
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     monkeypatch.chdir(repo)
-    child = seed_family(repo)
+    child = seed_family(repo, getattr(request, "param", PROMPT))
     for port in test_web_browser._serve(repo):
         yield port, child
+
+
+_LONG_PROMPT = ("Check the quoted commas in the CSV file.\n" * 50)[:2000]
+
+
+@pytest.mark.parametrize("family", [_LONG_PROMPT], indirect=True, ids=["long-prompt"])
+@pytest.mark.parametrize("width, height", [(390, 844), (1440, 900)], ids=["phone", "desktop"])
+def test_a_long_prompt_leaves_the_conversation_and_controls_in_view(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    family: tuple[int, pathlib.Path],
+    width: int,
+    height: int,
+) -> None:
+    """An opened row keeps a long prompt behind its own disclosure."""
+    from playwright import sync_api
+
+    port, _ = family
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"http://127.0.0.1:{port}/#/session/{PARENT}")
+    if width == 390:
+        page.get_by_role("button", name="Widgets").click()
+        page.get_by_role("button", name="Overview", exact=True).click()
+    card = page.locator(".drawer .card-children")
+    card.locator(":scope > summary").click()
+    row = card.locator(".child-row").filter(
+        has=page.get_by_role("link", name=CHILD, include_hidden=True)
+    )
+    row.locator(":scope > summary").click()
+    for element in (
+        row.get_by_text("The quoted comma stays in one field.", exact=False),
+        row.get_by_role("textbox", name="Message"),
+        row.get_by_role("button", name="Stop", exact=True),
+    ):
+        sync_api.expect(element).to_be_in_viewport(ratio=1)
+    disclosure = row.locator("details")
+    assert not disclosure.evaluate("e => e.open")
+    sync_api.expect(row.get_by_text(_LONG_PROMPT, exact=True)).to_be_hidden()
+    preview = row.locator(".child-body pre:visible").first
+    assert (preview.text_content() or "").startswith("\n".join(_LONG_PROMPT.splitlines()[:2]))
+    sync_api.expect(preview).to_be_in_viewport(ratio=1)
+    disclosure.locator("summary").press("Enter")
+    sync_api.expect(disclosure.get_by_text(_LONG_PROMPT, exact=True)).to_be_visible()
+    assert not errors
 
 
 @pytest.mark.parametrize("width", [390, 1440], ids=["phone", "desktop"])
