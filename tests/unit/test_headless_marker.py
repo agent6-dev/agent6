@@ -31,6 +31,7 @@ def test_headless_log_names_child_activity_and_merge_results(tmp_path: pathlib.P
     lines: list[str] = []
     sink.subscribe(functools.partial(execution.headless_marker, log=lines.append))
     sink.emit(journal.ParallelChildActivity(child="c1", activity="stopped", detail="stop request"))
+    sink.emit(journal.ParallelChildActivity(child="c2", activity="stopped", detail="stopped"))
     sink.emit(journal.ParallelChildContinued(group="g", child="c1", sequence=1))
     sink.emit(
         journal.ParallelChildMerged(
@@ -45,6 +46,7 @@ def test_headless_log_names_child_activity_and_merge_results(tmp_path: pathlib.P
     )
     assert lines == [
         "[agent6] child c1 stopped: stop request",
+        "[agent6] child c2 stopped",
         "[agent6] child c1 continued (1)",
         "[agent6] child c1 merged at abc123",
         "[agent6] group g complete: 1 child\nunmerged  c2  kept  2 commits",

@@ -230,7 +230,7 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
         if sha:
             parts.append(sha[:12])
         detail = str(ln.get("detail", "")).strip()
-        if detail:
+        if detail and detail != status:
             parts.append(detail)
         rows.append(f"{status}  {'  '.join(parts)}")
     return "\n".join([head, *rows])
@@ -342,7 +342,7 @@ MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     ),
     "parallel.child_activity": lambda e: (
         f"child {e.get('child', '?')} {e.get('activity', '?')}"
-        + (f": {e['detail']}" if e.get("detail") else "")
+        + (f": {e['detail']}" if e.get("detail") and e["detail"] != e.get("activity") else "")
     ),
     "parallel.child_merged": child_merge_body,
     "parallel.child_continued": lambda e: (
