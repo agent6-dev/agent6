@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests import browser_env
 from tests.web import signin, test_hub_browser, test_web_browser
 
 if TYPE_CHECKING:
@@ -50,10 +51,7 @@ def browser(pw: Playwright) -> Iterator[Browser]:
 @pytest.fixture(scope="module")
 def firefox(pw: Playwright) -> Iterator[Browser]:
     """One Firefox for the module, where the page behind a dialog scrolled."""
-    if not pathlib.Path(pw.firefox.executable_path).exists():
-        pytest.skip(
-            "Playwright's Firefox is not installed: run `uv run playwright install firefox`"
-        )
+    browser_env.require_installed(pw.firefox)
     engine = pw.firefox.launch()
     try:
         yield engine

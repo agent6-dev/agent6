@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests import browser_env
 from tests.unit import test_git_history
 from tests.web import captures, test_files_edit, test_files_preview, test_web_browser
 
@@ -24,7 +25,9 @@ def browser(request: pytest.FixtureRequest) -> Iterator[Browser]:
     from playwright import sync_api
 
     with sync_api.sync_playwright() as pw:
-        instance = getattr(pw, request.param).launch()
+        engine = getattr(pw, request.param)
+        browser_env.require_installed(engine)
+        instance = engine.launch()
         try:
             yield instance
         finally:
