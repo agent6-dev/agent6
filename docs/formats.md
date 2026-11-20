@@ -1278,6 +1278,15 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `chars` | `int` | Text length in characters. |
 | `text` | `str` | The event's text. |
 
+### steer.parent
+
+**Support: public.** An instruction the session's parent sent with `steer_child` was injected into context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `chars` | `int` | Text length in characters. |
+| `text` | `str` | The parent's instruction. |
+
 ### steer.requested
 
 **Support: public.** The loop reached an operator steer request.
@@ -2626,7 +2635,7 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `parent_node` | `str \| None` | The DAG node the task was dispatched under; None without a graph and for a panel. |
 | `node_id` | `str \| None` | The task's DAG node, added when its work lands or its dispatch fails; None until then, without a graph and for a panel. |
 | `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
-| `state` | `Literal['prepared', 'running', 'settling', 'joining', 'complete']` | How far the dispatch got. |
+| `state` | `Literal['prepared', 'running', 'settling', 'ranking', 'joining', 'complete']` | How far the dispatch got; `ranking` while a task's judges run. |
 | `message` | `str` | The notice of what landed, "" until complete. |
 | `delivered` | `bool` | Whether that notice reached the conversation. |
 | `written_at` | `float` | When this version of the record was written, as epoch seconds. |
@@ -3133,7 +3142,7 @@ Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `system` | `str` | The system prompt, in place of the worker's assembled one. |
 | `opening` | `str` | The first user message, in place of the task block. |
-| `max_turns` | `int` | The turns allowed; a last turn that still asks for tools ends the conversation `max_turns` with its text kept and those tools not run. |
+| `max_turns` | `int` | The turns allowed, each told which it is; a last turn that still asks for tools ends the conversation `max_turns` with its text kept and those tools not run. |
 | `temperature` | `float \| None` | The sampling temperature; None keeps the worker's. |
 | `review_binding` | `ReviewBinding \| None` | Parent-owned review provenance, or None for other conversations. |
 | `allowed_tools` | `tuple[str, ...]` | The tools the parent hands down: the ones its own model is offered now, within the `reviewer` mode's surface. |
@@ -3162,6 +3171,7 @@ Source: [`agent6.sessions.child_dispatch.RankRecord`](https://github.com/agent6-
 | `ranked_by` | `Literal['judge', 'mechanical']` | `judge` or `mechanical`. |
 | `rationale` | `str` | The judges' words; "" for the mechanical order. |
 | `winner` | `str` | The one child the join lands; "" when the order crowns none. |
+| `fallback` | `str` | Why the mechanical order ranked; "" when judges did. |
 
 ### ChildRecord
 
@@ -3727,9 +3737,10 @@ Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `branch` | `str` | The child's branch. |
-| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked']` | The join's outcome. |
+| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
-| `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a child whose work still joined; "" when none. |
+| `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a stopped child; "" when none. |
+| `commits` | `int` | The commits a stopped child's branch holds beyond its base; 0 otherwise. |
 | `target_before` | `str` | The chain tip before the join. |
 | `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
 

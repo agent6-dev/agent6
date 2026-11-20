@@ -461,19 +461,20 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 The most children a run has running at once, for `run --parallel N|selector,...`, the `/parallel` steer and the `parallel` tool.
 Each child is a disposable clone running its own `agent6/<id>` branch; one child's work is merged onto the run's own branch, and several children on one task are ranked, the first-ranked one joining it.
-`harness.parallel.judges` names who ranks them: each judge ranks once, and the lowest sum of ranks wins.
+`harness.parallel.judges` names who ranks them: each judge is a reviewer child that reads and runs the attempts and answers with an order, and the lowest sum of ranks wins.
+A judge takes at most `review.max_turns` replies; with no usable order from any judge, the order is verify-pass first, then the cheaper.
 `git.auto_merge = true` then lands the run as it lands any run; without it, `agent6 sessions merge <run id>` does.
 `--max-usd` caps the children and the judges together; `--auto-approve` forwards to every child.
 A live run dispatches children the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
-`harness.parallel.tool = true` offers a run's model the `parallel` tool, which starts a task's children in the background through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
+`harness.parallel.tool = true` offers a run's model the `parallel` tool, which starts a task's children in the background through the same path, and `steer_child`, which sends a running child an instruction ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
 A child's model or steer cannot dispatch work; its configured harness panel may still run its reviewers.
 Headless surfaces without a dispatcher answer "not available".
 
 | Field | Default | Meaning |
 |---|---|---|
-| `tool` | `false` | offer a run's model the `parallel` tool, which starts one task in isolated children (fresh clones of the committed tree, each an ordinary run that may edit) and lands their work at the run's turn boundaries; a child runs under the run's own config and its remaining budget, which the children share; `harness.parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
+| `tool` | `false` | offer a run's model the `parallel` tool, which starts one task in isolated children (fresh clones of the committed tree, each an ordinary run that may edit) and lands their work at the run's turn boundaries, and `steer_child`, which sends a running child an instruction; a child runs under the run's own config and its remaining budget, which the children share; `harness.parallel.tool = false`: no run is offered either; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
 | `max_children` | `4` | The most children a run has running at once, `1` to `1024`; a dispatch asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no reviewer dropped. |
-| `judges` | `["reviewer"]` | who ranks the candidates of a `run --parallel` group and of `sessions compare`: selectors as `--parallel` takes them, a role name or `[provider/]model`; each judges once and the lowest sum of ranks wins, a tie going to the mechanical order (a passed gate first, then the lower cost); a role with no model route judges nothing; `[]`: the mechanical order alone |
+| `judges` | `["reviewer"]` | who ranks the attempts at one task and the candidates of `sessions compare`: selectors as `--parallel` takes them, a role name or `[provider/]model`; each is a reviewer child that reads and runs the attempts under `review.max_turns` and answers with an order; the lowest sum of ranks wins, a tie going to the mechanical order (a passed gate first, then the lower cost); a role with no model route judges nothing; `[]`, or no usable order: the mechanical order alone |
 
 ### `[harness.prompt]`
 
@@ -505,7 +506,7 @@ Headless surfaces without a dispatcher answer "not available".
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
 | `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` reviewer unless `review.when = "never"` |
 | `concurrency` | `1` | simultaneous reviewers, at most `harness.parallel.max_children`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
-| `max_turns` | `20` | turns a reviewer may take, turns that ask for tools included; no verdict within the limit: abstention, reported by the panel |
+| `max_turns` | `20` | turns a reviewer may take, turns that ask for tools included; each turn tells the reviewer which reply it is, and a tool call in the last is not run; no verdict within the limit: abstention, reported by the panel |
 
 The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
 Each edit writes the whole list to the global or repo config, including `[]` after the last removal.
