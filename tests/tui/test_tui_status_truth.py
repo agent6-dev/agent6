@@ -419,6 +419,25 @@ def test_a_run_whose_manifest_cannot_be_read_says_why_in_its_composer(
     asyncio.run(scenario())
 
 
+def test_the_palette_leaves_out_an_action_the_menu_dims(tmp_path: pathlib.Path) -> None:
+    """Ctrl+P offered Run > Resume this session, dimmed on a record whose resume refuses."""
+    from tests.unit import test_viewmodel_listing
+
+    d = tmp_path / "stuck-run"
+    test_viewmodel_listing.unreadable_record(d, "torn")
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            assert app._conv.check_action("resume", ()) is None
+            offered = [label for label, _, _ in app._conv.palette_commands()]
+            assert "Resume this session" not in offered
+            assert "Delete this session…" in offered
+
+    asyncio.run(scenario())
+
+
 def test_a_resume_from_the_composer_carries_the_picked_preset(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:

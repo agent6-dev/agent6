@@ -25,19 +25,22 @@ def menu_palette_commands(
     """Yield the Ctrl+P palette commands for a screen's menus.
 
     The same registry as the menu bar and the key bindings, so the surfaces never
-    drift. The handler is the screen's, else the app's; the palette opener and
-    Quit are textual's own.
+    drift: an action the screen's `check_action` disables or hides is left out, as
+    the bar dims it. The handler is the screen's, else the app's; the palette
+    opener and Quit are textual's own.
 
     Args:
         screen: The screen whose actions the handlers resolve on.
         menus: The screen's menus.
 
     Yields:
-        A label, runnable and help text per menu action.
+        A label, runnable and help text per offered menu action.
     """
     for menu in menus:
         for item in menu.items:
             if item.action in ("command_palette", "quit"):
+                continue
+            if not screen.check_action(item.action, ()):
                 continue
             handler = getattr(screen, f"action_{item.action}", None) or getattr(
                 screen.app, f"action_{item.action}", None
