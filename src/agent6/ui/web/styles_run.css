@@ -144,6 +144,8 @@
     overflow: auto; border-right: 1px solid var(--border); flex: none;
   }
   .run-app .drawer.closed { display: none; }
+  /* The drawer's key-value blocks share one key column: 5.5rem holds the longest key, "forked from", up to a 15px minimum font size. */
+  .run-app .drawer .kv { grid-template-columns: minmax(5.5rem, auto) 1fr; }
   /* One scroll surface: the drawer itself; its cards lose their own caps
      (except the event log, which keeps a follow-the-tail window). */
   .run-app .drawer .card.scroll { max-height: none; overflow: visible; }

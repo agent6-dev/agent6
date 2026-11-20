@@ -24,6 +24,59 @@ port = test_web_browser.port
 evidence = test_review_evidence.evidence
 
 
+def test_the_drawers_key_value_blocks_share_one_value_column(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Each key-value block sized its key column to its own keys, so their values stood apart.
+
+    The run card's values stood 7px right of the Findings card's, and a fork's "forked from" key
+    pushed them 33px right.
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    session = session_logs.write_run(tmp_path, "fork-AAA111", [stop])
+    fork = {"session_id": session.name, "mode": "run", "parent_session_id": "base-AAA111"}
+    (session / "manifest.json").write_text(json.dumps({**fork, "forked_from_turn": 3}))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/fork-AAA111")
+    expect(page.locator(".card-head .kv .k").filter(has_text="forked from")).to_be_visible()
+    expect(page.locator(".card-findings .kv .k")).to_have_text(["review", "merge"])
+    starts = page.locator(".drawer .kv > .v").evaluate_all(
+        "vs => vs.map(v => v.getBoundingClientRect().left)"
+    )
+    assert len(set(starts)) == 1, starts
+    assert not errors
+
+
+def test_a_phones_overview_card_sizes_its_key_column_to_its_own_keys(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A phone's Overview card took the drawer's shared key column, wider than its keys.
+
+    A phone shows one card at a time, so its values have no other card's to line up with.
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    session_logs.write_run(tmp_path, "own-AAA111", [stop])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/own-AAA111")
+    page.get_by_role("button", name="Widgets", exact=True).click()
+    page.locator(".wmenu").get_by_role("button", name="Overview", exact=True).click()
+    kv = page.locator(".card-head .kv")
+    expect(kv).to_be_visible()
+    column, widest = kv.evaluate(
+        """kv => { const range = document.createRange();
+        const keys = [...kv.querySelectorAll('.k')].map(k => {
+          range.selectNodeContents(k); return range.getBoundingClientRect().width; });
+        return [parseFloat(getComputedStyle(kv).gridTemplateColumns), Math.max(...keys)]; }"""
+    )
+    assert abs(column - widest) < 1, (column, widest)
+    assert not errors
+
+
 def test_a_live_frame_leaves_the_cards_a_reader_is_using(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
