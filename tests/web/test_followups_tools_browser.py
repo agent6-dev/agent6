@@ -38,7 +38,7 @@ def test_tool_rows_open_to_selectable_arguments(
                 "ok": True,
                 "summary": "first\nlast",
                 "exit_code": 3,
-                "duration_s": 0.75,
+                "duration_s": 0.7501234567,
             },
         ],
     )
