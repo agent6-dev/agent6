@@ -151,7 +151,7 @@ class WebConfig(pydantic.BaseModel):
     metrics_route: bool = pydantic.Field(
         default=False,
         description=(
-            "Serve `/metrics` on the web listener. Scrapes require the web secret "
+            "Serve `/metrics` on the web listener; scrapes require the web secret "
             "as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token."
         ),
     )

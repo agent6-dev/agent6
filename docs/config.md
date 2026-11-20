@@ -639,7 +639,7 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 | `host` | `"127.0.0.1"` | Address `agent6 web` binds; a non-loopback address also needs `allow_non_loopback = true`. |
 | `port` | `7658` | Port `agent6 web` listens on. |
 | `allow_non_loopback` | `false` | Allow `host` to be a non-loopback address, so a typo can never silently expose the write surface (approvals, steers, config writes) beyond this machine. |
-| `metrics_route` | `false` | Serve `/metrics` on the web listener. Scrapes require the web secret as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token. |
+| `metrics_route` | `false` | Serve `/metrics` on the web listener; scrapes require the web secret as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token. |
 
 ## `[telemetry]`
 
