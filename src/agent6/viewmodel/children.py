@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Every session's children: its children by lineage and what its dispatch records say of them.
 
-The listing, the session header and the receipt read children from here. A `/parallel`
-dispatch leaves a record under the parent's session dir; `run --parallel` and older
-sessions leave children whose manifests name their parent, and nothing else.
+The dispatch record names the children even when one never started. Older runs without
+a dispatch record find their children by the parent named in each child's manifest.
 """
 
 from __future__ import annotations
@@ -34,11 +33,11 @@ class ChildView:
         model: Its selector, None for the worker's own settings.
         route: The `provider/model` its manifest records; "" when it never started.
         status: Where the child stands in its task, including a merge or a ranking.
-        outcome: How it joined: `joined`, `no_changes`, `conflict`, `failed` or `ranked`; "" when
-            no join is recorded, as for a group's children.
+        outcome: The recorded merge outcome, including `stopped`, `ranked` and `unmerged`.
+            An empty string means the parent has recorded no outcome.
         join_sha: The merge commit, "" when none.
         imported_ref: The branch the join read, "" when none.
-        error: The join's detail, "" when none.
+        error: The status detail or the reason a child failed to start or merge.
         spend_usd: The cumulative child spend.
         usd_partial: Whether unpriced calls make the spend a lower bound.
         settled: Whether the parent charged its usage; False while it is unknown.

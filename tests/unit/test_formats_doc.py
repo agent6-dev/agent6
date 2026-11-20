@@ -98,6 +98,14 @@ def test_type_text_spells_a_private_module_by_its_public_name() -> None:
     assert _generator()._type_text("pathlib._local.Path | None") == "pathlib.Path \\| None"
 
 
+def test_child_activity_lists_its_allowed_words() -> None:
+    """The journal reference names every child activity an event can carry."""
+    section = (
+        _generator()._journal().split("### parallel.child_activity\n", 1)[1].split("\n##", 1)[0]
+    )
+    assert "Literal['started', 'finished', 'failed', 'stopped', 'steered']" in section
+
+
 def test_event_meanings_come_from_the_records(monkeypatch: pytest.MonkeyPatch) -> None:
     """Event field meanings and optionality survive generation."""
     from typing import ClassVar

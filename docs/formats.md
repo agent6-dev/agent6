@@ -806,6 +806,39 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `renamed` | `str, optional` | Its new path; null when it was left where it is. |
 | `warning` | `str` | The warning the operator was given. |
 
+### parallel.child_activity
+
+**Support: public.** A child started, ended or received a steer.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `child` | `str` | The child's session id. |
+| `activity` | `Literal['started', 'finished', 'failed', 'stopped', 'steered']` | What happened to the child. |
+| `detail` | `str, optional` | The steer, summary or failure reason. |
+
+### parallel.child_continued
+
+**Support: public.** A parent started another execution of its stopped child.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group` | `str` | The child's dispatch group. |
+| `child` | `str` | The continued child's session id. |
+| `sequence` | `int` | The child's continuation number, starting at 1. |
+
+### parallel.child_merged
+
+**Support: public.** An explicit request to merge a stopped child completed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group` | `str` | The child's dispatch group. |
+| `child` | `str` | The stopped child's session id. |
+| `status` | `str` | The requested merge's outcome. |
+| `ref` | `str` | The ref that holds the child's work. |
+| `sha` | `str` | The merge commit, or empty when nothing merged. |
+| `detail` | `str` | The conflict files or failure reason, if any. |
+
 ### parallel.compared
 
 **Support: public.** Parallel candidates were ranked.
@@ -1781,7 +1814,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `git_control` | `JSON` | The launch git-control policy. |
 | `base_sha` | `JSON` | The run chain's base commit. |
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
-| `children` | `JSON` | The session's children by lineage, from the same listing as `sessions show`, for every session that has any. |
+| `children` | `JSON` | ChildView rows in dispatch order, including launch failures and reviewers. |
 | `dispatches` | `JSON` | The session's dispatch records, each with its children's outcomes. |
 | `manifest_resume_blocker` | `JSON` | Why the manifest refuses every resume (a child's record, a worktree that is gone), naming the `agent6 fork` command when one continues the run; absent when it refuses none. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
@@ -2854,15 +2887,22 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `task` | `str` | Its task text; "" when unknown. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
-| `status` | `str` | Its own status word; "" when it never started. |
-| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict`, `failed` or `ranked`; "" when no join is recorded, as for a group's children. |
+| `status` | `str` | Where the child stands in its task, including a merge or a ranking. |
+| `outcome` | `str` | The recorded merge outcome, including `stopped`, `ranked` and `unmerged`. An empty string means the parent has recorded no outcome. |
 | `join_sha` | `str` | The merge commit, "" when none. |
 | `imported_ref` | `str` | The branch the join read, "" when none. |
-| `error` | `str` | The join's detail, "" when none. |
-| `spend_usd` | `float` | What its parent settled for it; the child's own cost when no record says. |
+| `error` | `str` | The status detail or the reason a child failed to start or merge. |
+| `spend_usd` | `float` | The cumulative child spend. |
 | `usd_partial` | `bool` | Whether unpriced calls make the spend a lower bound. |
 | `settled` | `bool` | Whether the parent charged its usage; False while it is unknown. |
-| `launched` | `bool` | Whether a session dir of its own exists. |
+| `launched` | `bool` | Whether the child has a session record or a live worker. |
+| `current_tool` | `str` | The tool running now, or an empty string. |
+| `turn` | `int \| None` | Its latest recorded turn, or None before one. |
+| `tokens` | `int \| None` | Input, cache and output tokens in its current execution, or None if unreported. |
+| `elapsed_s` | `int \| None` | Seconds since the child started, frozen at its last event when it ends. |
+| `commits` | `int` | The commits its imported ref holds beyond the task's base, when recorded. |
+| `verdict_order` | `tuple[str, ...]` | A reviewer's order of attempts, best first. |
+| `verdict_summary` | `str` | The summary from the reviewer's verdict. |
 
 ### DispatchView
 
