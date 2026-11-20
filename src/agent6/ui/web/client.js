@@ -102,7 +102,7 @@ function osNotify(title, body) {
 // A session that starts waiting on an answer, or ends, is announced once as a toast on the hub and on its own page.
 // Only the hub (`notify`) raises it as an OS notification (when granted): the session's page in another tab adds no second.
 // The first paint seeds silently, as the machine view does, so opening a page replays nothing.
-const LIVE_WORDS = ['running', 'starting', 'waiting'];
+const LIVE_WORDS = ['in review', 'running', 'starting', 'waiting'];
 function seedStatuses(rows) { const m = {}; for (const r of rows || []) m[r.session_id] = r.status; return m; }
 function announceSessions(prev, rows, notify = true) {
   for (const r of rows || []) {
@@ -787,7 +787,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   const seed = el('select', 'field');
   seed.title = 'seed the run with a plan: its text becomes the task when you type none (run --from)';
   const noSeed = el('option', null, 'none'); noSeed.value = ''; seed.appendChild(noSeed);
-  const live = new Set(['running', 'starting', 'waiting']);
+  const live = new Set(LIVE_WORDS);
   for (const r of (sessions || []).filter(r => r.mode === 'plan' && !live.has(r.status))) {
     const o = el('option', null, r.session_id + ' · ' + firstLine(r.task_line, 41));
     o.value = r.session_id; seed.appendChild(o);

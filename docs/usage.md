@@ -186,6 +186,7 @@ A live run starts the children and goes on: its model keeps taking turns while t
 When a child ends, the model reads a notice with the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
 A task completes at the run's next turn boundary once its children have ended; a task still running holds no other.
 Attempts are ranked first: their judges start when the last attempt ends and run in the background while the run takes its turns, the roster shows the attempts as `being ranked`, and the task completes at the boundary after the judges end.
+While a child's own reviewers are working, the child is `in review` and still holds the parent's finish.
 Under agent6-owned git, tasks that finish before the same boundary merge in the order written, so when two touch the same lines the later one to merge gets the conflict.
 Before an automatic merge, the run's uncommitted work is committed first.
 One notice per task names each child's outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `ranked 2 of 3` (an attempt that did not merge), `CONFLICT` with the files (nothing merges, and the child's branch holds its work for the operator) or `FAILED` with the reason.

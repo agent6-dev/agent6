@@ -188,6 +188,7 @@ class LogScan:
             unattended_questions=self.unattended_questions,
             pending_questions=self.pending_questions,
             stranded=self.stranded,
+            in_review=self.review.in_review(self.execution_id),
         )
 
 

@@ -19,6 +19,7 @@ from agent6.harness import child_continue, child_merge, operator_bridge, paralle
 from agent6.sessions import child_dispatch, ipc, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
+from agent6.viewmodel.session import log as session_log
 
 if TYPE_CHECKING:
     from agent6.harness import loop, parallel_dispatch
@@ -37,11 +38,18 @@ def standing(
         started: The child.
 
     Returns:
-        `running`, `stopping`, `ended, not merged`, `being ranked` while its task's judges
+        `running`, `in review`, `stopping`, `ended, not merged`, `being ranked` while its task's judges
         run, or a stopped child's words.
     """
     if not started.result.done():
-        return "stopping" if started.session_id in dispatcher.stopping else "running"
+        if started.session_id in dispatcher.stopping:
+            return "stopping"
+        if dispatcher.session_dir is not None:
+            directory = dispatcher.session_dir.with_name(started.session_id)
+            scan = session_log.scan_session_log(directory / sessions_layout.LOGS_NAME)
+            if not scan.finished and scan.review.in_review(scan.execution_id):
+                return "in review"
+        return "running"
     res = dispatcher.result_of(task.record, started)
     if res.ok and res.stopped_by:
         return parallel_join.join_words(parallel_join.stopped_join(res))
@@ -57,7 +65,7 @@ def unmerged(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[st
         dispatcher: The run's dispatcher.
 
     Returns:
-        Each child's session id with `running`, `ended, not merged` or `being ranked`.
+        Each child's session id and the state holding the parent's finish.
     """
     requested = tuple(
         (child.session_id, "merge requested")
@@ -72,7 +80,7 @@ def unmerged(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[st
         for task in dispatcher.open.values()
         for started in task.children
         if (state := standing(dispatcher, task, started))
-        in ("running", "ended, not merged", "being ranked")
+        in ("running", "in review", "ended, not merged", "being ranked")
     )
 
 
@@ -106,7 +114,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
                 state = parallel_join.join_words(parallel_join.join_of(child))
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
             # A wait has something to wait for: the child itself, or the judges ranking it.
-            running = state in ("running", "stopping", "being ranked")
+            running = state in ("running", "in review", "stopping", "being ranked")
             mergeable = child.join is not None and child.join.status == "stopped"
             if child_merge.pending(child):
                 state = "merge requested"

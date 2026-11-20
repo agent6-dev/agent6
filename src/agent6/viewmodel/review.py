@@ -194,6 +194,14 @@ class ReviewView:
     comparison: review_records.ReviewTarget | None = None
     event_ids: tuple[str, ...] = ()
 
+    def in_review(self, execution_id: str | None) -> bool:
+        """Return whether this execution's latest panel is still running."""
+        return (
+            self.completion == "running"
+            and bool(self.panels)
+            and self.panels[-1].execution_id == execution_id
+        )
+
     @property
     def summary(self) -> str:
         """Return the review state without mistaking absent panels for unreadable evidence."""

@@ -102,6 +102,7 @@ def status_facts(state: state_types.SessionState) -> session_status.StatusFacts:
         unattended_questions=state.unattended_questions,
         pending_questions=sum(1 for q in state.questions if not q.answered and not q.from_harness),
         stranded=state.stranded,
+        in_review=state.review.in_review(state.execution_id),
     )
 
 

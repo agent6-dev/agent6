@@ -273,6 +273,7 @@ class StatusFacts:
             was attached.
         pending_questions: Questions nobody has answered, across every execution.
         stranded: This execution finished with its edits uncommitted and no commit landed.
+        in_review: This execution's latest review panel is running.
     """
 
     started: bool = False
@@ -288,6 +289,7 @@ class StatusFacts:
     unattended_questions: int = 0
     pending_questions: int = 0
     stranded: bool = False
+    in_review: bool = False
 
 
 def _waiting_reason(facts: StatusFacts) -> str:
@@ -341,7 +343,8 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
     elif not live:
         return "stale", _with_pending("", facts.pending_questions, session_dir, " for the resume")
     else:
-        word, reason = "running", _with_pending("", facts.pending_questions, session_dir, "")
+        word = "in review" if facts.in_review else "running"
+        reason = _with_pending("", facts.pending_questions, session_dir, "")
     if (
         word in LIVE_STATUS_WORDS
         and ipc.stop_request_pending(session_dir)
@@ -441,4 +444,4 @@ def produced_result(status: str) -> bool:
 
 
 # A run in any other state reads no steer or answer marker: a surface offers resume instead.
-LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
+LIVE_STATUS_WORDS = frozenset({"in review", "running", "starting", "waiting"})

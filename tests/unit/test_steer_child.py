@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import os
 import pathlib
 import subprocess
 from typing import Any
@@ -23,10 +24,11 @@ from agent6.harness import (
     run_chain,
     toolset,
 )
-from agent6.sessions import ipc, journal
+from agent6.sessions import ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, dispatch, schema, sessions, tool_errors
 from agent6.tools import results as tools_results
+from agent6.viewmodel import children as vm_children
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -208,6 +210,51 @@ def _dispatcher(tmp_path: pathlib.Path, children: _Running) -> parallel_dispatch
         session_id="root",
         execution_id="exec-1",
         session_dir=session_dir,
+    )
+
+
+def test_finish_review_holds_the_child_on_both_parent_rosters(tmp_path: pathlib.Path) -> None:
+    """An open finish panel looked like another worker turn until its reviewers returned."""
+    dispatcher = _dispatcher(tmp_path, _Running())
+    started = dispatcher.dispatch(
+        loop_conversation.Conversation(),
+        1,
+        loop_state.LoopState(original_task="t", execution_id="exec-1", tool_calls=0),
+        [directive.Segment(spec="", task="write a")],
+    )
+    (sid,) = started.children
+    parent = dispatcher.session_dir
+    assert parent is not None
+    child = parent.with_name(sid)
+    child.mkdir()
+    process.write_worker_pid(child, os.getpid())
+    (child / "manifest.json").write_text(json.dumps({"mode": "run", "session_id": sid}))
+    panel = {"panel_id": "p", "execution_id": "work", "turn": 2, "trigger": "finish"}
+    target = {
+        "base_commit": None,
+        "base_tree": "a" * 40,
+        "head_commit": None,
+        "head_tree": "b" * 40,
+        "snapshot_commit": "c" * 40,
+        "paths": [],
+        "source": "worktree",
+    }
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "t", "execution_id": "work"},
+        {"type": "review.start", **panel, "target": target, "reviewers": []},
+    ]
+    log = child / "logs.jsonl"
+    log.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    assert vm_children.children_of(parent)[0].status == "in review"
+    (line,) = child_work.roster(dispatcher)
+    assert line.state == "in review" and line.running
+    assert child_work.unmerged(dispatcher) == ((sid, "in review"),)
+    with log.open("a") as out:
+        out.write(json.dumps({"type": "review.skipped", **panel, "reason": "budget"}) + "\n")
+    assert (
+        vm_children.children_of(parent)[0].status
+        == child_work.roster(dispatcher)[0].state
+        == "running"
     )
 
 
