@@ -15,7 +15,7 @@ import pytest
 
 from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import schema, sessions
+from agent6.tools import result_format, results, schema, sessions
 
 
 def _session(
@@ -354,6 +354,56 @@ def test_only_complete_count_summaries_are_shared_for_builtin_results(
     ]
 
 
+def test_a_command_handoff_is_not_a_finished_command(tmp_path: pathlib.Path) -> None:
+    result = results.ExecResult(None, "", "", 1.0, False, background_id="marker-job")
+    read = _reader(
+        tmp_path,
+        [
+            {
+                "type": "tool.result",
+                "name": "run_command",
+                "ok": True,
+                "summary": result.summary(),
+                **result_format.tool_result_fields("run_command", result),
+            }
+        ],
+    )
+    assert read()["conversation"] == "#1 --:-- tool: run_command result: handed off"
+    assert not sessions.roster(tmp_path, "marker-job").briefs
+
+
+def test_clipped_edits_do_not_hide_the_target_and_preview_flag(tmp_path: pathlib.Path) -> None:
+    args = result_format.truncate_args(
+        {
+            "path": "sample.txt",
+            "edits": [
+                {"old_string": f"before {i}", "new_string": "marker-edit"} for i in range(11)
+            ],
+            "preview": True,
+        }
+    )
+    read = _reader(tmp_path, [{"type": "tool.call", "name": "apply_edit", "args_preview": args}])
+    assert read()["conversation"] == "#1 --:-- tool: apply_edit path=sample.txt preview=true"
+
+
+def test_commands_share_the_program_without_opaque_operands(tmp_path: pathlib.Path) -> None:
+    argv = ["/usr/bin/demo", "https://example.invalid/?label=marker-url", '--data={"a":"marker"}']
+    read = _reader(
+        tmp_path,
+        [
+            {"type": "tool.call", "name": "run_command", "args_preview": {"argv": argv}},
+            {"type": "verify.start", "call_id": 3, "command": argv},
+            {"type": "metric.start", "command": argv},
+        ],
+    )
+    assert read()["conversation"].splitlines() == [
+        "#1 --:-- tool: run_command program=demo",
+        "#2 --:-- tool: run_verify_command program=demo",
+        "#3 --:-- tool: run_metric_command program=demo",
+    ]
+    assert not sessions.roster(tmp_path, "marker").briefs
+
+
 @pytest.mark.parametrize(
     ("name", "args"),
     [
@@ -520,6 +570,30 @@ def test_a_query_reads_journals_without_holding_them_in_memory(tmp_path: pathlib
     peak = _peak_bytes_reading(lambda: sessions.roster(tmp_path, "needle"))
     assert [b.id for b in sessions.roster(tmp_path, "needle").briefs] == ["big-AAAAAA"]
     assert peak < size // 4, f"held {peak} bytes of a {size}-byte journal"
+
+
+def test_a_skipped_instruction_marks_the_scan_incomplete_even_without_a_match(
+    tmp_path: pathlib.Path,
+) -> None:
+    read = _reader(
+        tmp_path,
+        [
+            {"type": "model.result", "text": "x" * 411},
+            {"type": "model.result", "text": "second " + "z" * 30},
+            {"type": "session.start", "user_task": "marker-opening " + "y" * (1 << 20)},
+            {"type": "model.result", "text": "last"},
+        ],
+    )
+    page = read(max_chars=500)
+    assert "omitted" in page["conversation"] and "#1 --:-- model:" in page["conversation"]
+    assert len(page["conversation"]) <= 500 and page["next_start"] == 2
+    assert "second" not in page["conversation"]
+    rest = read(start=2)["conversation"]
+    assert "#2 --:-- model: second" in rest and "#3 --:-- model: last" in rest
+    miss = read(query="marker-opening", kinds=["operator"])["conversation"]
+    assert "omitted" in miss and "1 MiB" in miss and "marker-opening" not in miss
+    roster = sessions.roster(tmp_path, "marker-opening")
+    assert not roster.briefs and any("omitted" in line for line in roster.lines())
 
 
 def _peak_bytes_reading(fn: Callable[[], object]) -> int:

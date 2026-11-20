@@ -38,14 +38,21 @@ _SPEAKER = {
     "steer.parent": ("parent", "text"),
 }
 
-# The input model checks shape; this allowlist, not the input model, grants disclosure.
-_PUBLIC_ARGS: dict[str, tuple[type[pydantic.BaseModel], set[str] | dict[str, Any]]] = {
-    cls.TOOL_NAME: (cls, fields)
+# Check each preview field on its own: the journal can clip a list but keep its siblings.
+# The input schema checks shape; only this projection grants disclosure.
+_PUBLIC_ARGS: dict[str, dict[str, tuple[pydantic.TypeAdapter[Any], dict[str, Any] | None]]] = {
+    cls.TOOL_NAME: {
+        key: (
+            pydantic.TypeAdapter(cls.model_fields[key].rebuild_annotation()),
+            fields[key] if isinstance(fields, dict) else None,
+        )
+        for key in fields
+    }
     for cls, fields in (
         (schema.Agent6DocsInput, {"name"}),
-        (schema.ApplyEditInput, {"path": True, "preview": True, "edits": {"__all__": {"kind"}}}),
+        (schema.ApplyEditInput, {"path": None, "preview": None, "edits": {"__all__": {"kind"}}}),
         (schema.ApplyPatchInput, {"path", "preview"}),
-        (schema.AskUserInput, {"questions": {"__all__": {"question", "options"}}, "wait": True}),
+        (schema.AskUserInput, {"questions": {"__all__": {"question", "options"}}, "wait": None}),
         (schema.DagAddTaskInput, {"parent_id", "after", "depends_on", "relevant_paths"}),
         (schema.DagListTasksInput, {"status"}),
         (schema.DagUpdateTaskInput, {"id", "status", "depends_on"}),
@@ -78,6 +85,7 @@ _COUNT_OUTCOMES = {
 }
 _PREVIEW_CHARS = 200
 _MAX_ROW_BYTES = 1 << 20
+_OVERSIZE_NOTE = "(scan incomplete: one or more journal records over 1 MiB omitted)"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -89,17 +97,19 @@ class Roster:
     Attributes:
         briefs: The sessions shown.
         more: Whether older sessions were left out; `query` reaches them.
+        incomplete: A skipped record could have matched the query.
     """
 
     briefs: tuple[SessionBrief, ...]
     more: bool
+    incomplete: bool = False
 
     def lines(self) -> tuple[str, ...]:
         """Return one line per brief, plus a note when the roster was cut."""
         shown = tuple(b.line() for b in self.briefs)
-        if not self.more:
-            return shown
-        return (*shown, f"(only the {len(shown)} newest are shown; narrow with `query`)")
+        if self.more:
+            shown += (f"(only the {len(shown)} newest are shown; narrow with `query`)",)
+        return (*shown, _OVERSIZE_NOTE) if self.incomplete else shown
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -203,8 +213,8 @@ def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
     return [brief for _mtime, brief in sorted(found, key=lambda pair: -pair[0])]
 
 
-def _journal(layout: sessions_layout.SessionLayout) -> Iterator[dict[str, Any]]:
-    """Yield journal objects in append order without following a link out of state."""
+def _journal(layout: sessions_layout.SessionLayout) -> Iterator[dict[str, Any] | None]:
+    """Yield journal objects in append order, or None for a record too large to inspect."""
     with (
         _state_fd(layout.state_dir, layout.logs_path) as fd,
         os.fdopen(fd, "rb", closefd=False) as rows,
@@ -214,6 +224,7 @@ def _journal(layout: sessions_layout.SessionLayout) -> Iterator[dict[str, Any]]:
                 # Skip the whole row. Its prefix is not a record the reader can project.
                 while row and not row.endswith(b"\n"):
                     row = rows.readline(_MAX_ROW_BYTES)
+                yield None
                 continue
             try:
                 event = json.loads(row.decode("utf-8", errors="replace"))
@@ -252,8 +263,12 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
     lines: list[str] = []
     commands: dict[tuple[str, str, int | None], int] = {}
     mode = kinds.bucket_mode(layout.subdir)
+    incomplete = False
     try:
         for event in _journal(layout):
+            if event is None:
+                incomplete = True
+                continue
             etype = str(event.get("type", ""))
             if etype in journal.SESSION_START_EVENTS:
                 commands.clear()
@@ -263,6 +278,8 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
                 _tool_line(event, lines, commands, layout.session_dir)
     except (OSError, path_safety.ContainmentError) as exc:
         return f"(no readable journal: {exc})"
+    if incomplete:
+        lines.append(_OVERSIZE_NOTE)
     text = "\n\n".join(lines)
     if len(text) > max_chars:
         # The header counts against the cap.
@@ -341,15 +358,23 @@ def _plain_values(value: object) -> bool:
     return not isinstance(value, str) or not value.lstrip().startswith(("[", "{"))
 
 
+def _program_preview(argv: object) -> str | None:
+    """Return the executable's label without its directories, options or operands."""
+    if not isinstance(argv, list) or not argv or not all(isinstance(v, str) for v in argv):
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_./+-]+", argv[0]):
+        return None
+    name = argv[0].rsplit("/", 1)[-1]
+    if name in ("", ".", ".."):
+        return None
+    return f"program={terminal.line_preview(name, limit=_PREVIEW_CHARS)}"
+
+
 def _arg_preview(key: str, value: Any) -> str | None:
-    """Return a projected field, or None when its shape is ambiguous."""
-    if key == "argv" and not (isinstance(value, list) and all(isinstance(v, str) for v in value)):
-        return None
-    if not _plain_values(value):
-        return None
+    """Return a labeled field, or None when its shape is ambiguous."""
     if key == "argv":
-        text = shlex.join(value)
-    elif key == "url":
+        return _program_preview(value)
+    if key == "url":
         # A clipped authority can end before the @. Never echo an unparseable prefix.
         if (
             not isinstance(value, str)
@@ -370,8 +395,10 @@ def _arg_preview(key: str, value: Any) -> str | None:
             authority += f":{port}"
         text = parse.urlunsplit((parts.scheme, authority, parts.path, "", ""))
     else:
+        if not _plain_values(value):
+            return None
         text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-    return terminal.line_preview(text, limit=_PREVIEW_CHARS)
+    return f"{key}={terminal.line_preview(text, limit=_PREVIEW_CHARS)}"
 
 
 def _call_arguments(name: str, args: object) -> Iterator[str]:
@@ -379,15 +406,17 @@ def _call_arguments(name: str, args: object) -> Iterator[str]:
     projection = _PUBLIC_ARGS.get(name)
     if projection is None or not isinstance(args, dict):
         return
-    cls, fields = projection
-    try:
-        declared = {k: v for k, v in args.items() if k in cls.model_fields}
-        call = cls.model_validate(declared, extra="ignore")
-    except pydantic.ValidationError:
-        return
-    for key, value in call.model_dump(mode="json", include=fields, exclude_unset=True).items():
-        if key in args and (shown := _arg_preview(key, value)) is not None:
-            yield f"{key}={shown}"
+    for key, value in args.items():
+        if (field := projection.get(key)) is None:
+            continue
+        adapter, include = field
+        try:
+            checked = adapter.validate_python(value, extra="ignore")
+        except pydantic.ValidationError:
+            continue
+        public = adapter.dump_python(checked, mode="json", include=include, exclude_unset=True)
+        if (shown := _arg_preview(key, public)) is not None:
+            yield shown
 
 
 def _outcome(name: str, event: dict[str, Any]) -> str:
@@ -395,11 +424,12 @@ def _outcome(name: str, event: dict[str, Any]) -> str:
     ok = event.get("ok")
     if ok is False:
         return "refused"
-    if (
-        name in ("run_command", "run_verify_command", "run_metric_command")
-        and type(code := event.get("exit_code")) is int
-    ):
-        return f"exit {code}"
+    if name in ("run_command", "run_verify_command", "run_metric_command"):
+        if type(code := event.get("exit_code")) is int:
+            return f"exit {code}"
+        job = event.get("background_id")
+        if ok is True and code is None and isinstance(job, str) and job:
+            return "handed off"
     summary = event.get("summary")
     if (
         ok is True
@@ -424,8 +454,8 @@ def _entry(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
     etype = event.get("type")
     if etype == "metric.start" or (etype == "verify.start" and type(event.get("call_id")) is int):
         name = "run_metric_command" if etype == "metric.start" else "run_verify_command"
-        argv = _arg_preview("argv", event.get("command"))
-        return "tool", f"{name} argv={argv}" if argv is not None else name
+        program = _program_preview(event.get("command"))
+        return "tool", f"{name} {program}" if program is not None else name
     name = event.get("name")
     # The lookup is journaled before it runs. Its own traffic is never a lookup target.
     if not isinstance(name, str) or name == "read_session":
@@ -452,14 +482,18 @@ def read_entries(
     Returns:
         The page, plus the first omitted match's number when there is another page.
     """
-    lines: list[str] = []
-    remaining = args.max_chars
+    matches: list[tuple[int, str]] = []
+    used = 0
+    incomplete = False
     next_start = None
     number = 0
     mode = kinds.bucket_mode(layout.subdir)
     needle = args.query.casefold()
     try:
         for event in _journal(layout):
+            if event is None:
+                incomplete = True
+                continue
             if not (entry := _entry(event, mode)):
                 continue
             number += 1
@@ -473,16 +507,27 @@ def read_entries(
             line = f"#{number} {when} {kind}: {body}"
             if needle and needle not in line.casefold():
                 continue
-            if len(lines) == args.limit or (lines and len(line) > remaining):
+            cost = len(line) + bool(matches)
+            if len(matches) == args.limit or (matches and used + cost > args.max_chars):
                 next_start = number
                 break
-            if len(line) > remaining:
-                line = line[: remaining - 1] + "…"
-            lines.append(line)
-            remaining -= len(line) + 1
+            matches.append((number, line))
+            used += cost
     except (OSError, path_safety.ContainmentError) as exc:
         return results.SessionEntriesResult(f"(no readable journal: {exc})"[: args.max_chars])
-    return results.SessionEntriesResult("\n".join(lines) or "(no matching entries)", next_start)
+    if not matches:
+        return results.SessionEntriesResult(
+            _OVERSIZE_NOTE if incomplete else "(no matching entries)"
+        )
+    prefix = _OVERSIZE_NOTE + "\n" if incomplete else ""
+    # A late notice may displace matches. Put whole entries on the next page when possible.
+    while len(matches) > 1 and used + len(prefix) > args.max_chars:
+        next_start, last = matches.pop()
+        used -= len(last) + 1
+    text = prefix + "\n".join(line for _, line in matches)
+    if len(text) > args.max_chars:
+        text = text[: args.max_chars - 1] + "…"
+    return results.SessionEntriesResult(text, next_start)
 
 
 def roster(state_dir: pathlib.Path, query: str) -> Roster:
@@ -502,23 +547,29 @@ def roster(state_dir: pathlib.Path, query: str) -> Roster:
         )
     needle = query.casefold()
     hits: list[SessionBrief] = []
+    incomplete = False
     for brief in briefs:
         if len(hits) > schema.ROSTER_MAX:
             break  # one past the cap: enough to know there are more
         layout = sessions_layout.SessionLayout(state_dir, brief.id, brief.bucket)
-        if needle in brief.task.casefold() or _journal_contains(layout, needle):
+        found = needle in brief.task.casefold() or _journal_contains(layout, needle)
+        if found:
             hits.append(brief)
-    return Roster(briefs=tuple(hits[: schema.ROSTER_MAX]), more=len(hits) > schema.ROSTER_MAX)
+        elif found is None:
+            incomplete = True
+    return Roster(tuple(hits[: schema.ROSTER_MAX]), len(hits) > schema.ROSTER_MAX, incomplete)
 
 
-def _journal_contains(layout: sessions_layout.SessionLayout, needle: str) -> bool:
-    """Return whether a visible entry matches. A roster hit discloses the match."""
+def _journal_contains(layout: sessions_layout.SessionLayout, needle: str) -> bool | None:
+    """Return whether a visible entry matches, or None if a skipped record could have matched."""
     mode = kinds.bucket_mode(layout.subdir)
+    miss: bool | None = False
     try:
-        return any(
-            needle in entry[1].casefold()
-            for event in _journal(layout)
-            if (entry := _entry(event, mode))
-        )
+        for event in _journal(layout):
+            if event is None:
+                miss = None
+            elif (entry := _entry(event, mode)) and needle in entry[1].casefold():
+                return True
     except (OSError, path_safety.ContainmentError):
         return False
+    return miss
