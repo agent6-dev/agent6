@@ -1,7 +1,8 @@
 /* The machine view: actions on top, the States and Path cards, the newest agent state's
    conversation under them, its prompts at its end, and the composer docked at the foot. */
 .machine-app { display: flex; flex-direction: column; flex: 1 0 auto; }
-.machine-app > .actions { margin-bottom: 0.625rem; }
+/* The action bar keeps the run view's gaps over and under it. */
+.machine-app > .actions { margin-block: var(--page-top); }
 /* A long name or reason wraps: in the summary line and in the States and Path lists. */
 .machine-grid :is(.sub, .tree) { overflow-wrap: anywhere; }
 /* Every name and transition shows whole: a long one wraps, and a wrapped line continues under the
@@ -31,8 +32,9 @@
      the grid's zero basis keeps its content out of that minimum. */
   .machine-app { flex: 1 1 0; }
   .machine-app > * { flex: none; }
+  /* A rule under the action bar, as over the run view's panes. */
   .machine-grid {
-    flex: 1 1 0; min-height: 23.75rem;
+    flex: 1 1 0; min-height: 23.75rem; border-top: 1px solid var(--border);
     grid-template-rows: fit-content(max(20%, 7.5rem)) fit-content(max(20%, 7.5rem)) minmax(0, 1fr);
   }
   .machine-grid > .card { display: flex; flex-direction: column; min-height: 0; }

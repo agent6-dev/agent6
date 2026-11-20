@@ -15,7 +15,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import process
-from tests.web import test_web_browser
+from tests.web import session_logs, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -230,6 +230,31 @@ def test_a_short_screen_scrolls_rather_than_fold_the_cards(
     )
     assert min(shape["heights"]) >= 120 and shape["pillShown"], shape
     assert shape["scrolls"] and shape["docked"], shape
+    assert not errors
+
+
+@pytest.mark.parametrize("width", [1440, 390])
+def test_the_cards_stand_under_the_action_bar_as_the_run_views_panes_do(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path, width: int
+) -> None:
+    """The cards stood 10px under the action bar with no rule, the States and Path line in mid-air.
+
+    The run view rules its panes off its bar, 14px under it, from 781px; a phone draws no rule.
+    """
+    _ended(tmp_path)
+    session_logs.write_run(tmp_path, "ended-AAA111", [{"type": "session.stop"}])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 900})
+    under = """([bar, body]) => { const b = document.querySelector(bar).getBoundingClientRect();
+      const p = document.querySelector(body);
+      return [p.getBoundingClientRect().top - b.bottom, getComputedStyle(p).borderTopWidth]; }"""
+    page.goto(f"http://127.0.0.1:{port}/#/session/ended-AAA111")
+    page.locator(".card-conv").wait_for()
+    run = page.evaluate(under, [".run-app > .actions", ".run-body"])
+    page.goto(f"http://127.0.0.1:{port}/#/machine/ended")
+    page.locator(".tree .node").first.wait_for()
+    machine = page.evaluate(under, [".machine-app > .actions", ".machine-grid"])
+    assert machine == run == [14, "1px" if width > 780 else "0px"]
     assert not errors
 
 
