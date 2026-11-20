@@ -9,11 +9,12 @@ The models with signed compaction are Claude Fable 5.1 and 5.2, Mythos 5.1 and 5
 An unsupported model or `server_compaction = false` uses [agent6's own compaction](architecture.md#a-run).
 
 **Clearing.** Above `compaction.drop_at_chars`, agent6 asks the endpoint to clear old tool results.
-It keeps sending the full history.
-The edit protects operator answers from `ask_user` and keeps the newest tool use.
-Clearing can cause a cache miss from the first cleared result onward.
-With `prompt_caching = true`, the system prompt and last tool stay cache marked.
-The harness does not move cache marks through a signed history.
+It keeps sending the full history, and each request names how many of the newest tool uses stay whole.
+The oldest results are cleared until the rest fit in half of `compaction.drop_at_chars`.
+The same results are cleared on every later request, until the rest pass the threshold again.
+The newest two results, every result the model has yet to read, and operator answers from `ask_user` are never cleared.
+A step causes one cache miss from the first newly cleared result onward.
+With `prompt_caching = true`, the cache marks move through the messages as they do under agent6's own compaction: the API does not count a moved mark as a change to the history.
 
 **Summary.** At `compaction.summarise_at_chars`, on `/compact [focus]` or during an eligible wait, agent6 asks the endpoint to summarise the request it already received.
 The summary request has the same messages, system text and tools.
@@ -25,4 +26,8 @@ If the endpoint returns no block, the journal records the reason and the helper 
 
 **Thinking.** On these models with thinking enabled, direct and Vertex requests ask the API to drop a thinking block whose prefix fails verification instead of refusing the request.
 This also applies when agent6 compacts by itself.
-`agent6 sessions receipt ID` reports how many thinking blocks the endpoint dropped and how many tool results it cleared.
+An operator's own `extra_body.thinking.block_binding` is sent as written.
+`agent6 sessions receipt ID` reports the most thinking blocks the endpoint dropped and the most tool results it cleared on one request.
+The endpoint repeats both on every request, since each request carries the full history.
+
+**Another route.** A session resumed on a model or backend without signed compaction carries the summary as a text notice in place of the block.

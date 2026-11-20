@@ -264,7 +264,8 @@ The harness selects `Endpoint` or `Tiered` once from those facts.
 Both strategies use the same size, manual and idle triggers and the same growth floor.
 
 `Endpoint` leaves earlier messages intact.
-On ordinary requests over the drop threshold it asks for clearing without removing any local results.
+On ordinary requests over the drop threshold it asks the endpoint to clear the oldest results, in steps down to half the threshold, without removing any local results.
+A route that does not write summaries reads an adopted block as a text notice.
 For a summary it replays the worker request without clearing.
 It adopts the signed block as the first message and keeps the worker reply after it.
 The restart notice follows that reply and its tool results.
