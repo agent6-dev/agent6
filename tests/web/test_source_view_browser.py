@@ -470,8 +470,10 @@ def test_split_old_and_new_mark_a_changed_line_beside_its_number(
       const token = v => { probe.style.color = v; return getComputedStyle(probe).color; };
       const mark = s => { const code = document.querySelector(s + ' > .source-code');
         const before = getComputedStyle(code, '::before');
-        return {content: before.content, color: before.color,
-          code: code.getBoundingClientRect().left}; };
+        const left = code.getBoundingClientRect().left;
+        return {content: before.content, color: before.color, code: left,
+          marker: left + parseFloat(before.left),
+          number: document.querySelector(s + ' > .g').getBoundingClientRect().right}; };
       return lines.map(([kind, line, same]) => ({kind, line: mark(line), same: mark(same),
         colour: token(kind === 'added' ? 'var(--ok)' : 'var(--err)')}));
     }""",
@@ -481,6 +483,7 @@ def test_split_old_and_new_mark_a_changed_line_beside_its_number(
     for mark in marks:
         assert mark["line"]["content"] == words[mark["kind"]], marks
         assert mark["line"]["color"] == mark["colour"], marks
+        assert mark["line"]["marker"] >= mark["line"]["number"], marks  # clear of its number
         assert mark["same"]["content"] == "none", marks
         assert mark["same"]["code"] == mark["line"]["code"], marks  # every line keeps the slot
     row = _NEW if mode == "split" else ".sl[data-line='{}']"
