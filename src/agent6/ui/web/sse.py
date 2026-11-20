@@ -35,6 +35,8 @@ from agent6.viewmodel import (
     tail_events,
 )
 from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.session import status as session_status
+from agent6.viewmodel.session import view as session_view
 
 # Coalesce delta bursts, heartbeat idle streams so a gone client is noticed, poll at human cadence.
 DELTA_COALESCE_S = 0.15
@@ -209,9 +211,16 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
                     return
             # Child activity need not write a parent event or leave its queue empty.
             if time.monotonic() >= next_poll or last_type == "session.stop":
-                word = summarize_session_dir(session_dir).status
+                word, _ = session_status.status_for_session_dir(
+                    session_dir, session_view.status_facts(state)
+                )
                 header = manifest_header(session_dir, repo=repo, status=word)
-                if word != "parked" and died_without_end(word):
+                # A stop or resume on disk can still be waiting for the tailer.
+                if (
+                    word != "parked"
+                    and died_without_end(word)
+                    and summarize_session_dir(session_dir).status == word
+                ):
                     send_frame(dead=True)
                     return
                 next_poll = time.monotonic() + SESSION_POLL_S
