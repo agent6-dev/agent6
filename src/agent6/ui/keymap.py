@@ -168,6 +168,8 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
     "dashboard": {
         "to_hub": "escape,ctrl+k",
         "quit_hub": "ctrl+q",
+        "stop_child": "x",
+        "message_child": "m",
         "history_search": "ctrl+r",
         "view_findings": "ctrl+f",
         "focus_next_pane": "tab",

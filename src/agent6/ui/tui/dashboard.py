@@ -124,7 +124,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         "Pickers: ↑↓ highlight · Space selects",
     )
 
-    # The composer holds the focus, so the keys are modified keys and Esc, as priority bindings.
+    # Plain child keys are not priority bindings so the composer can take the same letters.
     MENUS: ClassVar = (
         menubar.Menu(
             "File",
@@ -133,7 +133,14 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                 menubar.MenuItem("Quit", "quit_hub", priority=True),
             ),
         ),
-        composer.RUN_MENU,
+        menubar.Menu(
+            "Run",
+            (
+                menubar.MenuItem("Message child…", "message_child"),
+                menubar.MenuItem("Stop child…", "stop_child"),
+                *composer.RUN_MENU.items,
+            ),
+        ),
         menubar.Menu(
             "View",
             (
@@ -157,8 +164,9 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             ),
         ),
     )
-    # The same footer, in the same order, as the conversation view.
     FOOTER: ClassVar = (
+        ("message_child", "Message child"),
+        ("stop_child", "Stop child"),
         ("toggle_dashboard", "Conversation"),
         ("copy", "Copy"),
         ("history_search", "History"),
@@ -199,16 +207,21 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         return at, f" · as of turn {at.commits[-1].turn}"
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Use the run's policy for the shared Compact, Fork and Resume actions.
+        """Enable child actions for a live row and use the run's policy for shared actions.
 
         Args:
             action: The menu or binding action.
             parameters: Arguments passed to the action.
 
         Returns:
-            False to hide group-only exclusions, None for a disabled fork or a refused resume,
-            else the default.
+            True for an available action, None to dim it or False to hide it.
         """
+        if action in ("message_child", "stop_child"):
+            table = self.query_one_optional(dashboard_children.ChildTable)
+            child = table.selected_child if table is not None else None
+            if child is None:
+                return False
+            return True if dashboard_children.takes_action(child) else None
         if action in ("compact", "fork", "resume"):
             return cast("tui_app.Agent6TUI", self.app).check_action(action, parameters)
         return super().check_action(action, parameters)
@@ -414,6 +427,14 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         self.app.push_screen(
             review.FindingsScreen(self._tui.session_dir, pathlib.Path.cwd(), self._tui.config_paths)
         )
+
+    def action_stop_child(self) -> None:
+        """Confirm a stop for the highlighted child."""
+        self.query_one(dashboard_children.ChildTable).prompt_child("stop_child")
+
+    def action_message_child(self) -> None:
+        """Prompt for a message to the highlighted child."""
+        self.query_one(dashboard_children.ChildTable).prompt_child("message_child")
 
     def action_view_logs(self) -> None:
         """Open the whole log; the inline pane is a sliding window."""
