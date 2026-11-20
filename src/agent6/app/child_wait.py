@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Watch started children until they land, and say what they wait on.
+"""Watch started children until they end, and say what they wait on.
 
 The single-child await and drain behind `run_child_to_completion`, and where a child's record
 lives.
@@ -34,7 +34,7 @@ def child_terminal(
 ) -> bool:
     """Return whether an awaited child is terminal: the fold left "running" and the worker is gone.
 
-    `session.stop` lands before the teardown clears `worker.pid`, so status alone races it. A
+    `session.stop` is written before the teardown clears `worker.pid`, so status alone races it. A
     child that dies without a `session.stop` cannot hang the gate: the fold reads it "stale".
 
     Args:
@@ -137,7 +137,7 @@ def _reap(pid: int) -> None:
 def drain_child(
     res: child_records.ChildResult, *, poll_interval_s: float, hard_stop: threading.Event | None
 ) -> bool:
-    """Wait a bounded grace after a stop for the child to land, so its work still imports.
+    """Wait a bounded grace after a stop for the child to end, so its work still imports.
 
     Args:
         res: The stopped child.
@@ -145,7 +145,7 @@ def drain_child(
         hard_stop: A process teardown, which skips the wait.
 
     Returns:
-        True when the child landed in time, False to leave it running un-imported.
+        True when the child ended in time, False to leave it running un-imported.
     """
     deadline = time.monotonic() + STOP_GRACE_S
     while time.monotonic() < deadline:

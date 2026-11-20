@@ -817,18 +817,18 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - ancestor settlement keeps the allowance held until cumulative `budget.update` rows confirm every panel child's charge through `settled_children`; importing descendant records does not charge that inclusive spend again
     - child evidence binds only the child's retained review target, never the top-level checkout after a merge or later edit
 - The model's `parallel` tool is off by default (`[harness.parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a child and with the loop's children installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel
-    - a child the model starts is an ordinary run that may edit its clone, under its parent's config and the parent's remaining budget, which its children share, with no turn cap or deadline of its own; at most `harness.parallel.max_children` run at once, and its commits join the parent's chain when its task lands
+    - a child the model starts is an ordinary run that may edit its clone, under its parent's config and the parent's remaining budget, which its children share, with no turn cap or deadline of its own; at most `harness.parallel.max_children` run at once, and agent6 merges its finished commits only under `git.control = "agent6"`
     - `read_background` and `stop_background` reach a child only by a session id the run's own dispatch records name, so the model reads or stops through them no session it did not start; under `run_commands = "deny"` a run with the `parallel` tool keeps `stop_background`, which then stops children only
     - `merge_child` accepts only a stopped child from the parent's own dispatch records, never a supplied git ref; it is offered only under `git.control = "agent6"`, records the request before answering, and merges at a clean turn boundary with the ordinary chain merge; model-owned git never runs this merge
     - `steer_child` rides the same knob and the same two gates, and reaches only a child the run's dispatch records name that runs or has stopped; the text enters that child's conversation as one notice headed as its parent's and is never read as a steer verb (`abort`, `exit`, `/undo`, `detach`), a directive (`/parallel`, `/pin`, `/review`, a skill) or an answer to a question, so it grants the child nothing its config does not; the child journals it as `steer.parent`, and a child is offered neither tool, so depth stays 1
     - continuing a stopped child retains its clone and conversation, binds the private launch to the same child, parent and group, and restarts its watch with the parent's remaining allowance and approval policy; direct child resume is refused, and cumulative usage is charged only beyond the recorded continuation baseline
-    - the parent's model cannot end the run over a child: `finish_session` is refused until every task has landed
+    - the parent's model cannot end the run over a child: `finish_session` is refused until every task has completed and every requested merge has been reported
 - A child's config carries key references, never secret values
     - the parent writes each child's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)
     - the child reads the same `secrets.toml` or provider env var as any other run
 - Child git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; child spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
 - A child starts from committed state only
-    - a dispatch cuts children at the run's chain tip after chain-committing changes, and a landing chain-commits the parent's own changes before it merges a child
+    - a dispatch cuts children at the run's chain tip after chain-committing changes, and a merge first chain-commits the parent's own changes
     - `run --parallel` settles uncommitted tracked changes first, as every run does (`git.dirty_tree`)
 
 ### 11. State machines

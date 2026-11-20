@@ -180,8 +180,8 @@ def print_ranked_candidates(
         committed: Whether a candidate's branch holds a commit, by session id; one named
             False has nothing to merge.
         model_refs: Imported work locations for model-controlled children.
-        joins: The run the first-ranked candidate joins, when a rank join lands it; "" when
-            nothing lands by this ranking.
+        joins: The run the first-ranked candidate joins, when a rank join merges it; "" when
+            nothing merges by this ranking.
         reporter: The output channels.
     """
     if not outcome.ranking:
@@ -195,20 +195,20 @@ def print_ranked_candidates(
         cost = rows[rid].usage_cell
         into = (merged_into or {}).get(rid, "")
         if into:
-            landing = f"merged into {into}"
+            merge_note = f"merged into {into}"
         elif model_refs is not None and rid in model_refs:
-            landing = (
+            merge_note = (
                 f"work is on {model_refs[rid]}"
                 if model_refs[rid]
                 else "no imported work ref (git was model-controlled)"
             )
         elif joins and rnk == 1 and (committed or {}).get(rid, True):
-            landing = f"joins {joins}; merge with: agent6 sessions merge {joins}"
+            merge_note = f"joins {joins}; merge with: agent6 sessions merge {joins}"
         elif (committed or {}).get(rid, True):
-            landing = f"merge with: agent6 sessions merge {rid}"
+            merge_note = f"merge with: agent6 sessions merge {rid}"
         else:
-            landing = "nothing to merge (no commit)"
-        reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {landing}")
+            merge_note = "nothing to merge (no commit)"
+        reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {merge_note}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
         cand_rows = [rows[c.session_id] for c in candidates if c.session_id in rows]

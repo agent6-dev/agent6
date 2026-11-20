@@ -178,7 +178,7 @@ def private_dir(path: pathlib.Path) -> None:
 def write_private(path: pathlib.Path, text: str) -> None:
     """Write a `0600` file under a private dir, never through a symlink at its path.
 
-    The text lands in a sibling created exclusively and then takes the name, so a planted
+    The text is written to a sibling created exclusively and then renamed, so a planted
     link at the path is replaced, not followed.
 
     Args:

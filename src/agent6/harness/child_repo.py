@@ -45,7 +45,7 @@ def import_run(
     model_control: bool = False,
     continuing: bool = False,
 ) -> child_records.Imported:
-    """Land a finished child's branch in the origin; its record is there already.
+    """Import a finished child's branch in the origin; its record is there already.
 
     A model-controlled child imports HEAD on its chain ref and keeps a free branch name.
     A harness-controlled child without a branch imports nothing.

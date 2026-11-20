@@ -19,7 +19,7 @@ from agent6.vcs.git import read as git_read
 
 
 def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
-    """Return the branch a successful import landed, or say the child made no commit.
+    """Return the branch a successful import retained, or say the child made no commit.
 
     Args:
         origin: The repository the child was imported into.
@@ -77,7 +77,7 @@ def stamp_compare_outcomes(
         record_state: The state dir the run's and its children's records live under.
         parent_dir: The manifest owner for the group's ranking and judge spend.
         group: The comparison group id.
-        reporter: Receives a note per stamp failure; the others still land.
+        reporter: Receives a note per stamp failure; the other stamps still write.
     """
     comparison = sessions_manifest.ComparisonStamp(
         group=group,
@@ -158,7 +158,7 @@ def import_child(
     *,
     continuing: bool = False,
 ) -> child_records.Imported:
-    """Land a finished child's work in the origin; its record is there from its first event.
+    """Import a finished child's work in the origin; its record is there from its first event.
 
     Args:
         res: The child's result.
@@ -167,7 +167,7 @@ def import_child(
         continuing: The existing child ref may advance by fast-forward.
 
     Returns:
-        The child's dir and the ref the work landed in.
+        The child's dir and the ref holding its work.
 
     Raises:
         ChildRepoError: The import failed; nothing moved.

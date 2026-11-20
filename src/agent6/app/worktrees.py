@@ -147,7 +147,7 @@ def adopt_orphan_child(
     layout: sessions_layout.SessionLayout,
     manifest: sessions_manifest.SessionManifest,
 ) -> str | None:
-    """Import an orphaned child's branch so an ordinary merge can land it.
+    """Import an orphaned child's branch for a later merge.
 
     A parent death leaves a finished child's branch only in its clone; its record is
     in the origin's state already.
@@ -404,7 +404,7 @@ def cleanup(
     empty, never the dir above it; the group's launch dir goes the same way.
 
     Args:
-        imported: The children whose import landed.
+        imported: The children whose import succeeded.
         origin: The repository that must reach every clone tip.
         record_state: The state dir the children's records live under, which stay.
         note_keep: Receives the kept clone and reason.
