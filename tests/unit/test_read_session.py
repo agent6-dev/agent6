@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import tracemalloc
 from collections.abc import Callable
@@ -12,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agent6.sessions import journal
+from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema, sessions
 
@@ -246,7 +247,7 @@ def test_filtered_entries_keep_their_journal_number_and_time(tmp_path: pathlib.P
     assert "no matching entries" in read(query=".*")["conversation"]
 
 
-def test_tool_entries_show_bounded_arguments_and_only_the_recorded_summary(
+def test_tool_entries_show_bounded_arguments_and_structured_outcomes(
     tmp_path: pathlib.Path,
 ) -> None:
     read = _reader(
@@ -263,7 +264,8 @@ def test_tool_entries_show_bounded_arguments_and_only_the_recorded_summary(
                 "type": "tool.result",
                 "name": "read_file",
                 "ok": True,
-                "summary": "y" * 230,
+                "summary": "private descriptive text",
+                "lines_total": 23,
                 "head_tail": "private file content",
                 "stdout_tail": "private output",
             },
@@ -274,9 +276,123 @@ def test_tool_entries_show_bounded_arguments_and_only_the_recorded_summary(
     (session / "transcripts" / "1.json").write_text('{"text": "private provider request"}')
     assert read(kinds=["tool"])["conversation"].splitlines() == [
         f"#1 --:-- tool: read_file path={'x' * 199}… start_line=8",
-        f"#3 --:-- tool: read_file result: {'y' * 199}…",
+        "#3 --:-- tool: read_file result: 23 lines",
     ]
     assert "no matching entries" in read(query="private")["conversation"]
+    assert not sessions.roster(tmp_path, "private").briefs
+
+
+def test_fetch_previews_share_only_the_host_port_and_path(tmp_path: pathlib.Path) -> None:
+    """A rejected call reaches the journal before URL validation."""
+    from agent6.config import Config
+    from agent6.tools import dispatch, tool_errors
+
+    d = _session(tmp_path, "runs", "calm-owl-AAAAAA", "run", "fetch check", [])
+    dispatcher = dispatch.ToolDispatcher(
+        root=tmp_path,
+        config=Config(),
+        state_dir=tmp_path,
+        events=event_log.EventSink(d / "logs.jsonl"),
+    )
+    for url in (
+        "https://marker-a:marker-b@[2001:db8::1]:8443/guide?label=marker-c#marker-d",
+        "https://example.invalid:marker-port/guide",
+        # The recorded preview ends in the userinfo, before the authority is known.
+        f"https://marker-{'a' * 220}@example.invalid/guide",
+    ):
+        with pytest.raises(tool_errors.ToolError):
+            dispatcher.dispatch("fetch", {"url": url})
+
+    page = dispatcher.dispatch("read_session", {"id": d.name, "kinds": ["tool"]}).to_wire()
+    assert "fetch url=https://[2001:db8::1]:8443/guide" in page["conversation"]
+    assert "marker-" not in page["conversation"]
+    assert page["conversation"].count("url=") == 1
+    assert page["conversation"].count("fetch result: refused") == 3
+    assert not sessions.roster(tmp_path, "marker-").briefs
+
+
+@pytest.mark.parametrize("name", ["mcp__demo__lookup", "unregistered_tool"])
+def test_opaque_tools_disclose_only_name_and_disposition(tmp_path: pathlib.Path, name: str) -> None:
+    read = _reader(
+        tmp_path,
+        [
+            {"type": "tool.call", "name": name, "args_preview": {"path": "marker-input"}},
+            {
+                "type": "tool.result",
+                "name": name,
+                "ok": True,
+                "summary": "marker-text",
+                "exit_code": 7,
+            },
+            {"type": "tool.result", "name": name, "ok": False, "summary": "marker-error"},
+        ],
+    )
+    assert read()["conversation"].splitlines() == [
+        f"#1 --:-- tool: {name}",
+        f"#2 --:-- tool: {name} result: ok",
+        f"#3 --:-- tool: {name} result: refused",
+    ]
+    assert not sessions.roster(tmp_path, "marker-").briefs
+
+
+def test_only_complete_count_summaries_are_shared_for_builtin_results(
+    tmp_path: pathlib.Path,
+) -> None:
+    rows = [
+        ("read_file", "128 bytes (truncated)"),
+        ("fetch", "404 · 21 bytes"),
+        ("read_file", "128 bytes (truncated) marker-suffix"),
+    ]
+    read = _reader(
+        tmp_path,
+        [{"type": "tool.result", "name": n, "ok": True, "summary": s} for n, s in rows],
+    )
+    assert read()["conversation"].splitlines() == [
+        "#1 --:-- tool: read_file result: 128 bytes (truncated)",
+        "#2 --:-- tool: fetch result: 404 · 21 bytes",
+        "#3 --:-- tool: read_file result: ok",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        ("run_command", {"argv": '["marker-arg"]'}),
+        ("run_command", {"argv": ["marker-arg", {"unexpected": "object"}]}),
+        ("read_file", {"path": ["marker-path"]}),
+        ("read_file", {"start_line": '{"field":"marker-number"}'}),
+        ("ask_user", {"questions": "[{'question': 'marker-question'}]"}),
+        ("ask_user", {"questions": [{"question": "marker-question", "options": [["nested"]]}]}),
+        ("ask_user", {"questions": [{"question": "Which?", "options": ['{"field":"marker"}']}]}),
+        ("apply_edit", {"edits": ["{'new_string': 'marker-edit'}"]}),
+    ],
+)
+def test_a_malformed_argument_is_omitted_as_a_unit(
+    tmp_path: pathlib.Path, name: str, args: dict[str, object]
+) -> None:
+    read = _reader(tmp_path, [{"type": "tool.call", "name": name, "args_preview": args}])
+    assert read()["conversation"] == f"#1 --:-- tool: {name}"
+
+
+def test_search_does_not_page_through_its_own_calls_and_results(tmp_path: pathlib.Path) -> None:
+    """Dispatch journals the lookup in the same file before the reader opens it."""
+    from agent6.config import Config
+    from agent6.tools import dispatch
+
+    d = _session(tmp_path, "runs", "calm-owl-AAAAAA", "run", "remember the label", ["label-42"])
+    dispatcher = dispatch.ToolDispatcher(
+        root=tmp_path,
+        config=Config(),
+        state_dir=tmp_path,
+        events=event_log.EventSink(d / "logs.jsonl"),
+    )
+    for _ in range(2):
+        page = dispatcher.dispatch("read_session", {"id": d.name, "query": "label-42", "limit": 1})
+        assert page.to_wire() == {"conversation": "#2 --:-- model: label-42"}
+    for query in ("no-such-label", "1 session", "read_session"):
+        assert dispatcher.dispatch("read_session", {"query": query}).to_wire() == {"sessions": []}
+        page = dispatcher.dispatch("read_session", {"id": d.name, "query": query})
+        assert page.to_wire() == {"conversation": "(no matching entries)"}
 
 
 def test_nested_arguments_keep_declared_fields_without_opaque_data(tmp_path: pathlib.Path) -> None:
@@ -316,6 +432,40 @@ def test_a_journal_symlink_cannot_substitute_a_transcript(tmp_path: pathlib.Path
     (session / "logs.jsonl").symlink_to(transcript)
     text = read()["conversation"]
     assert "no readable journal" in text and "private request" not in text
+    assert not sessions.roster(tmp_path, "private request").briefs
+
+
+def test_a_reader_does_not_need_linux_path_descriptors(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    read = _reader(tmp_path, [{"type": "model.result", "text": "portable lookup"}])
+    monkeypatch.delattr(os, "O_PATH", raising=False)
+    assert read()["conversation"] == "#1 --:-- model: portable lookup"
+    assert [b.id for b in sessions.roster(tmp_path, "portable lookup").briefs] == [
+        "calm-owl-AAAAAA"
+    ]
+
+
+@pytest.mark.parametrize(
+    "component", ["sessions", "sessions/runs", "sessions/runs/calm-owl-AAAAAA"]
+)
+def test_a_parent_directory_link_is_not_a_session_source(
+    tmp_path: pathlib.Path, component: str
+) -> None:
+    read = _reader(tmp_path, [{"type": "model.result", "text": "other tree"}])
+    path = tmp_path / component
+    path.rename(tmp_path / "elsewhere")
+    path.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    assert "no readable journal" in read()["conversation"]
+    assert not sessions.roster(tmp_path, "").briefs
+
+
+def test_a_manifest_link_is_not_a_roster_brief(tmp_path: pathlib.Path) -> None:
+    d = _session(tmp_path, "runs", "calm-owl-AAAAAA", "run", "marker-task", [])
+    path = d / "manifest.json"
+    path.rename(tmp_path / "elsewhere.json")
+    path.symlink_to(tmp_path / "elsewhere.json")
+    assert not sessions.roster(tmp_path, "marker-task").briefs
 
 
 def test_max_chars_keeps_the_entry_header_and_the_next_page(tmp_path: pathlib.Path) -> None:
@@ -358,15 +508,14 @@ def test_a_query_matching_everything_is_capped_too(tmp_path: pathlib.Path) -> No
 
 
 def test_a_query_reads_journals_without_holding_them_in_memory(tmp_path: pathlib.Path) -> None:
-    """Journals reach megabytes; slurping each one to answer a yes/no was ~1 GB per call.
-
-    The needle is planted across a chunk boundary.
-    """
+    """Search reaches a late entry without slurping the journal or a single oversized row."""
     big = _session(tmp_path, "runs", "big-AAAAAA", "run", "t", []) / "logs.jsonl"
     with big.open("w") as fh:
-        fh.write("x" * ((1 << 16) - 4))  # the needle straddles a chunk boundary
-        fh.write("nEeDlE")
-        fh.write("y" * (4 << 20))
+        fh.write(json.dumps({"type": "model.text_delta", "text": "y" * (12 << 20)}) + "\n")
+        row = json.dumps({"type": "model.result", "text": "x" * 4096}) + "\n"
+        for _ in range(1024):
+            fh.write(row)
+        fh.write(json.dumps({"type": "model.result", "text": "nEeDlE"}) + "\n")
     size = big.stat().st_size
     peak = _peak_bytes_reading(lambda: sessions.roster(tmp_path, "needle"))
     assert [b.id for b in sessions.roster(tmp_path, "needle").briefs] == ["big-AAAAAA"]
@@ -395,7 +544,6 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     from agent6 import budget
     from agent6.app import role_providers
     from agent6.providers import provider_types
-    from agent6.sessions import event_log
 
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)

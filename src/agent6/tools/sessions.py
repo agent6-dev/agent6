@@ -10,14 +10,20 @@ filesystem. Entry reads open the journal, not provider transcripts or credential
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime
 import json
 import os
 import pathlib
+import re
 import shlex
-from collections.abc import Iterator
+import stat
+from collections.abc import Generator, Iterator
 from typing import Any
+from urllib import parse
+
+import pydantic
 
 from agent6 import kinds, path_safety, terminal
 from agent6.sessions import journal, manifest, shells
@@ -32,16 +38,46 @@ _SPEAKER = {
     "steer.parent": ("parent", "text"),
 }
 
-# The journal also records rejected calls. Only declared arguments belong in another session.
-_ARG_FIELDS = {
-    cls.TOOL_NAME: cls.model_fields.keys()
-    for cls in (
-        *schema.ALL_TOOLS,
-        *schema.LOOP_EXTRA_TOOLS,
-        *schema.PLAN_EXTRA_TOOLS,
-        *schema.ASK_EXTRA_TOOLS,
+# The input model checks shape; this allowlist, not the input model, grants disclosure.
+_PUBLIC_ARGS: dict[str, tuple[type[pydantic.BaseModel], set[str] | dict[str, Any]]] = {
+    cls.TOOL_NAME: (cls, fields)
+    for cls, fields in (
+        (schema.Agent6DocsInput, {"name"}),
+        (schema.ApplyEditInput, {"path": True, "preview": True, "edits": {"__all__": {"kind"}}}),
+        (schema.ApplyPatchInput, {"path", "preview"}),
+        (schema.AskUserInput, {"questions": {"__all__": {"question", "options"}}, "wait": True}),
+        (schema.DagAddTaskInput, {"parent_id", "after", "depends_on", "relevant_paths"}),
+        (schema.DagListTasksInput, {"status"}),
+        (schema.DagUpdateTaskInput, {"id", "status", "depends_on"}),
+        (schema.FetchInput, {"url"}),
+        (schema.FindDefinitionInput, {"symbol"}),
+        (schema.FindReferencesInput, {"symbol"}),
+        (schema.ListDirInput, {"path"}),
+        (schema.ListFindingsInput, {"all"}),
+        (schema.MergeChildInput, {"id"}),
+        (schema.OutlineInput, {"path"}),
+        (schema.ParallelInput, {"spec"}),
+        (schema.ReadBackgroundInput, {"id", "tail_lines", "wait_s"}),
+        (schema.ReadFileInput, {"path", "start_line", "limit"}),
+        (schema.RunCommandInput, {"argv", "background"}),
+        (schema.SteerChildInput, {"id"}),
+        (schema.StopBackgroundInput, {"id"}),
+        (schema.UseSkillInput, {"name", "file"}),
     )
 }
+
+# Some counts exist only in the summary. Match the whole outcome, never an error or tail.
+_COUNT_OUTCOMES = {
+    "fetch": r"[1-5][0-9]{2} · [0-9]+ bytes",
+    "find_definition": r"[0-9]+ definitions(?: \(truncated\))?",
+    "find_references": r"[0-9]+ references(?: \(truncated\))?",
+    "list_dir": r"[0-9]+ entries(?:, [0-9]+ hidden)?(?: \(truncated\))?",
+    "list_tasks": r"[0-9]+ tasks",
+    "outline": r"[0-9]+ symbols(?: \(truncated\))?",
+    "read_file": r"[0-9]+ bytes(?: \(truncated\))?",
+}
+_PREVIEW_CHARS = 200
+_MAX_ROW_BYTES = 1 << 20
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -90,25 +126,73 @@ class SessionBrief:
         return f"[{self.id}] {self.mode}{when}: {self.task}"
 
 
+@contextlib.contextmanager
+def _state_fd(
+    state_dir: pathlib.Path, path: pathlib.Path, *, directory: bool = False
+) -> Generator[int]:
+    """Pin each component below the project state root without following links.
+
+    Args:
+        state_dir: The project's state root.
+        path: The record or bucket below it.
+        directory: Whether to open a directory instead of a regular file.
+
+    Yields:
+        The descriptor, valid until the context exits.
+
+    Raises:
+        NotRegularFileError: The record is not a regular file.
+    """
+    parts = path_safety.contain(state_dir, path.relative_to(state_dir)).rel_path.parts
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(state_dir, dir_flags)
+    try:
+        for i, part in enumerate(parts):
+            flags = (
+                dir_flags
+                if directory or i < len(parts) - 1
+                else os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
+            )
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        if not directory and not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise path_safety.NotRegularFileError(f"Not a regular file: {path.name}")
+        yield fd
+    finally:
+        os.close(fd)
+
+
 def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
     """Return every session in this project, newest first."""
     found: list[tuple[float, SessionBrief]] = []
     for bucket in sessions_layout.SESSION_BUCKETS:
         root = sessions_layout.bucket_dir(state_dir, bucket)
-        if not root.is_dir():
+        try:
+            with _state_fd(state_dir, root, directory=True) as fd, os.scandir(fd) as entries:
+                dirs = [
+                    (e.name, e.stat(follow_symlinks=False).st_mtime)
+                    for e in entries
+                    if e.is_dir(follow_symlinks=False)
+                ]
+        except (OSError, path_safety.ContainmentError):
             continue
-        for d in root.iterdir():
-            if not d.is_dir():
-                continue
+        for sid, mtime in dirs:
             try:
-                m = manifest.read_manifest(d)
-            except manifest.ManifestError:
+                with (
+                    _state_fd(state_dir, root / sid / manifest.MANIFEST_NAME) as fd,
+                    os.fdopen(fd, "rb", closefd=False) as record,
+                ):
+                    m = manifest.SessionManifest.model_validate_json(record.read())
+            except (OSError, path_safety.ContainmentError, pydantic.ValidationError):
+                continue
+            if m.version > manifest.MANIFEST_VERSION:
                 continue
             found.append(
                 (
-                    d.stat().st_mtime,
+                    mtime,
                     SessionBrief(
-                        id=d.name,
+                        id=sid,
                         mode=m.mode or "?",
                         task=" ".join(m.user_task.split())[:120],
                         started=m.start_ts,
@@ -121,14 +205,20 @@ def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
 
 def _journal(layout: sessions_layout.SessionLayout) -> Iterator[dict[str, Any]]:
     """Yield journal objects in append order without following a link out of state."""
-    path = layout.logs_path
-    location = path_safety.SafePath(layout.state_dir, path.relative_to(layout.state_dir), path)
-    with os.fdopen(path_safety.open_contained(location, os.O_RDONLY), errors="replace") as rows:
-        for row in rows:
+    with (
+        _state_fd(layout.state_dir, layout.logs_path) as fd,
+        os.fdopen(fd, "rb", closefd=False) as rows,
+    ):
+        while row := rows.readline(_MAX_ROW_BYTES + 1):
+            if len(row) > _MAX_ROW_BYTES:
+                # Skip the whole row. Its prefix is not a record the reader can project.
+                while row and not row.endswith(b"\n"):
+                    row = rows.readline(_MAX_ROW_BYTES)
+                continue
             try:
-                event = json.loads(row)
-            except ValueError:
-                continue  # a torn line in a live journal
+                event = json.loads(row.decode("utf-8", errors="replace"))
+            except (ValueError, RecursionError):
+                continue  # a malformed record or a torn line in a live journal
             if isinstance(event, dict):
                 yield event
 
@@ -242,29 +332,86 @@ def _command_line(name: str, argv: object) -> str:
     return label
 
 
-def _declared_value(key: str, value: Any) -> Any:
-    """Return only the declared fields of nested arguments."""
+def _plain_values(value: object) -> bool:
+    """Return whether projected text fields have no object or array prefixes."""
     if isinstance(value, list):
-        return [_declared_value(key, item) for item in value]
+        return all(_plain_values(item) for item in value)
     if isinstance(value, dict):
-        nested = {"edits": schema.EditPair, "questions": schema.UserQuestion}.get(key)
-        if nested is None:
-            return "(object)"
-        return {k: _declared_value(k, v) for k, v in value.items() if k in nested.model_fields}
-    return value
+        return all(_plain_values(item) for item in value.values())
+    return not isinstance(value, str) or not value.lstrip().startswith(("[", "{"))
 
 
-def _arg_preview(key: str, value: Any) -> str:
-    """Return one line of a declared argument, without opaque object fields."""
-    if key == "argv" and isinstance(value, list) and all(isinstance(v, str) for v in value):
+def _arg_preview(key: str, value: Any) -> str | None:
+    """Return a projected field, or None when its shape is ambiguous."""
+    if key == "argv" and not (isinstance(value, list) and all(isinstance(v, str) for v in value)):
+        return None
+    if not _plain_values(value):
+        return None
+    if key == "argv":
         text = shlex.join(value)
-    elif key == "result":
-        # A machine's structured result has its own schema, not a tool argument schema.
-        return "(object)"
+    elif key == "url":
+        # A clipped authority can end before the @. Never echo an unparseable prefix.
+        if (
+            not isinstance(value, str)
+            or "…" in value
+            or "\\" in value
+            or any(c.isspace() or not c.isprintable() for c in value)
+        ):
+            return None
+        try:
+            parts = parse.urlsplit(value)
+            host, port = parts.hostname, parts.port
+        except ValueError:
+            return None
+        if not host or parts.scheme not in ("http", "https"):
+            return None
+        authority = f"[{host}]" if ":" in host else host
+        if port is not None:
+            authority += f":{port}"
+        text = parse.urlunsplit((parts.scheme, authority, parts.path, "", ""))
     else:
-        plain = _declared_value(key, value)
-        text = plain if isinstance(plain, str) else json.dumps(plain, ensure_ascii=False)
-    return terminal.line_preview(text, limit=200)
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return terminal.line_preview(text, limit=_PREVIEW_CHARS)
+
+
+def _call_arguments(name: str, args: object) -> Iterator[str]:
+    """Yield only recorded fields that pass the tool's disclosure projection."""
+    projection = _PUBLIC_ARGS.get(name)
+    if projection is None or not isinstance(args, dict):
+        return
+    cls, fields = projection
+    try:
+        declared = {k: v for k, v in args.items() if k in cls.model_fields}
+        call = cls.model_validate(declared, extra="ignore")
+    except pydantic.ValidationError:
+        return
+    for key, value in call.model_dump(mode="json", include=fields, exclude_unset=True).items():
+        if key in args and (shown := _arg_preview(key, value)) is not None:
+            yield f"{key}={shown}"
+
+
+def _outcome(name: str, event: dict[str, Any]) -> str:
+    """Return the recorded disposition or a known built-in quantity."""
+    ok = event.get("ok")
+    if ok is False:
+        return "refused"
+    if (
+        name in ("run_command", "run_verify_command", "run_metric_command")
+        and type(code := event.get("exit_code")) is int
+    ):
+        return f"exit {code}"
+    summary = event.get("summary")
+    if (
+        ok is True
+        and (pattern := _COUNT_OUTCOMES.get(name)) is not None
+        and isinstance(summary, str)
+        and len(summary) <= _PREVIEW_CHARS
+        and re.fullmatch(pattern, summary)
+    ):
+        return summary
+    if name == "read_file" and type(count := event.get("lines_total")) is int:
+        return f"{count} lines"
+    return "ok" if ok is True else "unknown"
 
 
 def _entry(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
@@ -277,24 +424,19 @@ def _entry(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
     etype = event.get("type")
     if etype == "metric.start" or (etype == "verify.start" and type(event.get("call_id")) is int):
         name = "run_metric_command" if etype == "metric.start" else "run_verify_command"
-        return "tool", f"{name} argv={_arg_preview('argv', event.get('command'))}"
+        argv = _arg_preview("argv", event.get("command"))
+        return "tool", f"{name} argv={argv}" if argv is not None else name
     name = event.get("name")
-    if not isinstance(name, str):
+    # The lookup is journaled before it runs. Its own traffic is never a lookup target.
+    if not isinstance(name, str) or name == "read_session":
         return None
+    label = terminal.line_preview(name, limit=_PREVIEW_CHARS)
     if etype == "tool.call":
-        fields = _ARG_FIELDS.get(name, ())
         args = event.get("args_preview", event.get("args"))
-        pairs = (
-            [f"{k}={_arg_preview(k, v)}" for k, v in args.items() if k in fields]
-            if isinstance(args, dict)
-            else []
-        )
-        return "tool", " ".join((name, *pairs))
+        return "tool", " ".join((label, *_call_arguments(name, args)))
     if etype == "tool.result":
-        summary = event.get("summary")
-        if not isinstance(summary, str):
-            summary = f"exit {event['exit_code']}" if type(event.get("exit_code")) is int else ""
-        return "tool", f"{name} result: {terminal.line_preview(summary, limit=200)}".rstrip()
+        shown = terminal.line_preview(_outcome(name, event), limit=_PREVIEW_CHARS)
+        return "tool", f"{label} result: {shown}"
     return None
 
 
@@ -358,42 +500,25 @@ def roster(state_dir: pathlib.Path, query: str) -> Roster:
         return Roster(
             briefs=tuple(briefs[: schema.ROSTER_MAX]), more=len(briefs) > schema.ROSTER_MAX
         )
-    needle = query.lower()
+    needle = query.casefold()
     hits: list[SessionBrief] = []
     for brief in briefs:
         if len(hits) > schema.ROSTER_MAX:
             break  # one past the cap: enough to know there are more
-        if needle in brief.task.lower() or _file_contains(
-            sessions_layout.bucket_dir(state_dir, brief.bucket)
-            / brief.id
-            / sessions_layout.LOGS_NAME,
-            needle,
-        ):
+        layout = sessions_layout.SessionLayout(state_dir, brief.id, brief.bucket)
+        if needle in brief.task.casefold() or _journal_contains(layout, needle):
             hits.append(brief)
     return Roster(briefs=tuple(hits[: schema.ROSTER_MAX]), more=len(hits) > schema.ROSTER_MAX)
 
 
-def _file_contains(path: pathlib.Path, needle: str) -> bool:
-    """Return whether the file contains the needle, reading in chunks.
-
-    A journal reaches megabytes; reading whole ones costs about 1 GB per query over a few
-    hundred sessions.
-
-    Args:
-        path: A session's journal.
-        needle: The lowercase text to find; the file's case is ignored.
-
-    Returns:
-        Whether the needle occurs; False when the file cannot be read.
-    """
-    overlap = len(needle)
+def _journal_contains(layout: sessions_layout.SessionLayout, needle: str) -> bool:
+    """Return whether a visible entry matches. A roster hit discloses the match."""
+    mode = kinds.bucket_mode(layout.subdir)
     try:
-        with path.open("r", errors="replace") as fh:
-            tail = ""
-            while chunk := fh.read(1 << 16):
-                if needle in (tail + chunk).lower():
-                    return True
-                tail = chunk[-overlap:] if overlap else ""
-    except OSError:
+        return any(
+            needle in entry[1].casefold()
+            for event in _journal(layout)
+            if (entry := _entry(event, mode))
+        )
+    except (OSError, path_safety.ContainmentError):
         return False
-    return False
