@@ -135,6 +135,7 @@
 .run-app { display: flex; flex-direction: column; flex: 1 0 auto; }
 /* The details cards set their text in the dense size, so no card mixes it with body text. */
 .run-app .drawer .card { font-size: var(--fs-m); }
+.card-head .v { overflow-wrap: anywhere; }
 @media (width > 48.75em) {
   .run-app { flex: 1 1 0; min-height: 0; }
   /* controls / status keep their natural height; only the body pane
