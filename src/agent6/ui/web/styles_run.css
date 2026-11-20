@@ -38,6 +38,8 @@
 /* A fan-out's children, one row each at the run card's text size, under muted column names. */
 .card-children table { border-collapse: collapse; font-size: var(--fs-m); }
 .card-children th, .card-children td { text-align: left; padding: 0.25rem 1.5rem 0.25rem 0; border-bottom: 1px solid var(--border); }
+/* A table wider than its card, as on a phone, scrolls sideways inside the card. */
+.run-app > .card-children > .card-body { overflow: auto; }
 
 /* conversation: the folded transcript, the same items (and semantic span
    styles) the CLI stream and the TUI conversation view render. */
@@ -131,7 +133,7 @@
   .run-app > * { flex: none; }
   /* The children stop at 30% of the view and scroll under their names: the conversation keeps its share. */
   .run-app > .card-children { display: flex; flex-direction: column; max-height: 30vh; }
-  .run-app > .card-children > .card-body { min-height: 0; overflow: auto; }
+  .run-app > .card-children > .card-body { min-height: 0; }
   /* A collapsed table's borders stay behind when a cell sticks; the shadow is the names' rule. */
   .card-children th { position: sticky; top: 0; background: var(--bg); box-shadow: inset 0 -1px var(--border); }
   .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }

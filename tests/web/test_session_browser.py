@@ -649,6 +649,40 @@ def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
     assert not errors
 
 
+def test_a_phones_children_table_wider_than_its_card_scrolls_inside_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """On a phone with a 20px text size a Children table wider than its card was cut at its edge.
+
+    It scrolls sideways inside its card, and the page does not.
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "verification": "passed", "reason": "finish_session"}
+    fan, model = "brisk-fjord-GRP001", "moonshotai/kimi-k2.7-code-20260612"
+    for number in range(4):
+        session = session_logs.write_run(tmp_path, f"{fan}-l{number}" if number else fan, [stop])
+        manifest: dict[str, Any] = {"version": 3, "session_id": session.name, "mode": "run"}
+        if number:
+            manifest["parallel"] = {"group": fan, "number": number, "parent": fan}
+            manifest["models"] = {"driver": {"provider": "openrouter", "model": model}}
+        (session / "manifest.json").write_text(json.dumps(manifest))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.context.new_cdp_session(page).send("Page.setFontSizes", {"fontSizes": {"standard": 20}})
+    page.goto(f"http://127.0.0.1:{port}/#/session/{fan}")
+    body = page.locator(".card-children .card-body")
+    expect(body.locator("tr")).to_have_count(4)
+    reach = body.evaluate(
+        """b => { b.scrollLeft = b.scrollWidth;
+        const table = b.querySelector('table').getBoundingClientRect();
+        return [b.scrollWidth > b.clientWidth, table.right <= b.getBoundingClientRect().right]; }"""
+    )
+    assert reach == [True, True]
+    assert page.evaluate("document.scrollingElement.scrollWidth") == 390
+    assert not errors
+
+
 def test_a_directive_the_composer_runs_closes_its_popup(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
