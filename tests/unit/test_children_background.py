@@ -9,6 +9,7 @@ script says, so the order of ends, notices and merges is the test's own.
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import json
 import pathlib
 import subprocess
@@ -405,6 +406,34 @@ def _start(
         1,
         state or loop_state.LoopState(original_task="t", execution_id="exec-1", tool_calls=0),
         [directive.Segment(spec=spec, task=task) for spec, task in segments],
+    )
+
+
+@pytest.mark.parametrize("source", ["model", "operator"])
+def test_dirty_model_git_dispatch_names_the_caller_and_leaves_the_tree_alone(
+    tmp_path: pathlib.Path, source: child_records.DispatchSource
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "root")
+    d = _dispatcher(repo, children)
+    d.chain = dataclasses.replace(d.chain, ref=None)
+    (repo / "wip").write_text("uncommitted")
+    answer = d.dispatch(
+        loop_conversation.Conversation(),
+        1,
+        loop_state.LoopState(original_task="t", execution_id="exec", tool_calls=0),
+        [directive.Segment(spec="", task="work")],
+        source=source,
+    )
+    assert not answer.children and not children.results
+    assert d.chain.head_sha() == children.base and d.chain.is_dirty()
+    assert 'git.control = "model"' in answer.message and "Commit" in answer.message
+    assert "auto-commit" not in answer.message
+    assert (
+        "/parallel" not in answer.message and "parallel tool" in answer.message
+        if source == "model"
+        else "/parallel" in answer.message
     )
 
 

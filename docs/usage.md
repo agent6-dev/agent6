@@ -199,7 +199,8 @@ Under agent6-owned git, `agent6 sessions merge <child> --into <branch>` merges a
 
 With `harness.parallel.tool = true` ([parallel](config.md#harnessparallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default child).
 One call is one task.
-The call starts its children through the `/parallel` path (a checkpoint, fresh clones of the committed tree, each child under the run's remaining budget, which the children share) and returns at once with each child's session id.
+The call starts its children in fresh clones of the committed tree, under the run's shared remaining budget, and returns at once with each child's session id.
+With `git.control = "model"`, the model must commit its changes before calling `parallel`; agent6 does not checkpoint a dirty tree for it.
 Each child is an ordinary run with the same tools as the parent and may edit its clone.
 Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.

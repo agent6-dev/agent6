@@ -178,10 +178,21 @@ class ParallelDispatcher:
                 " [harness.parallel].max_children."
             )
         # Agent6-owned git commits a changed tree first, or refuses stale work.
-        if not self.ensure_clean(turn, "/parallel dispatch"):
+        entry = "the parallel tool" if source == "model" else "/parallel"
+        if not self.ensure_clean(turn, f"{entry} dispatch"):
+            if self.chain.ref is None:
+                return self.refused(
+                    f'git.control = "model": children start from committed HEAD. '
+                    f"Commit the working tree, then retry {entry}. Nothing dispatched."
+                )
+            if not self.chain.per_turn:
+                return self.refused(
+                    "the working tree is not clean and git.commit_per_turn = false."
+                    f" Commit or discard your changes, then retry {entry}. Nothing dispatched."
+                )
             return self.refused(
                 "refusing to dispatch: the working tree is not clean and could not be"
-                " auto-committed. Commit or discard your changes, then retry /parallel."
+                f" auto-committed. Commit or discard your changes, then retry {entry}."
             )
         if self.session_dir is None:
             return self.refused(
