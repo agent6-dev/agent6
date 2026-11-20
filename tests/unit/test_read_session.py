@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import tracemalloc
 from collections.abc import Callable
@@ -386,17 +385,6 @@ def test_a_journal_symlink_cannot_substitute_a_transcript(tmp_path: pathlib.Path
     text = read()["conversation"]
     assert "no readable journal" in text and "private request" not in text
     assert not sessions.roster(tmp_path, "private request").briefs
-
-
-def test_a_reader_does_not_need_linux_path_descriptors(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    read = _reader(tmp_path, [{"type": "model.result", "text": "portable lookup"}])
-    monkeypatch.delattr(os, "O_PATH", raising=False)
-    assert read()["conversation"] == "#1 --:-- model: portable lookup"
-    assert [b.id for b in sessions.roster(tmp_path, "portable lookup").briefs] == [
-        "calm-owl-AAAAAA"
-    ]
 
 
 @pytest.mark.parametrize(

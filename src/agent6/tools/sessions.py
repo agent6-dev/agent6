@@ -16,7 +16,6 @@ import datetime
 import json
 import os
 import pathlib
-import stat
 from collections.abc import Generator, Iterator
 from typing import Any
 
@@ -92,7 +91,7 @@ class SessionBrief:
 def _state_fd(
     state_dir: pathlib.Path, path: pathlib.Path, *, directory: bool = False
 ) -> Generator[int]:
-    """Pin each component below the project state root without following links.
+    """Open a record or bucket below the project state root without following links.
 
     Args:
         state_dir: The project's state root.
@@ -101,25 +100,12 @@ def _state_fd(
 
     Yields:
         The descriptor, valid until the context exits.
-
-    Raises:
-        NotRegularFileError: The record is not a regular file.
     """
-    parts = path_safety.contain(state_dir, path.relative_to(state_dir)).rel_path.parts
-    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    fd = os.open(state_dir, dir_flags)
+    fd = path_safety.open_contained(
+        path_safety.contain(state_dir, path.relative_to(state_dir)),
+        os.O_RDONLY | (os.O_DIRECTORY if directory else 0),
+    )
     try:
-        for i, part in enumerate(parts):
-            flags = (
-                dir_flags
-                if directory or i < len(parts) - 1
-                else os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW
-            )
-            child = os.open(part, flags, dir_fd=fd)
-            os.close(fd)
-            fd = child
-        if not directory and not stat.S_ISREG(os.fstat(fd).st_mode):
-            raise path_safety.NotRegularFileError(f"Not a regular file: {path.name}")
         yield fd
     finally:
         os.close(fd)
