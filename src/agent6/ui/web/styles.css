@@ -429,6 +429,8 @@ dialog .err:empty { display: none; }
   header .crumb > .pill { font-size: var(--fs-m); }
   header .crumb > .pill + span { font-size: var(--fs-s); }
   header .crumb > .pill + span::before { content: none; }
+  /* The logo mark alone leaves the crumb the word's room; the link keeps its name. */
+  header .brand b { display: none; }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 1.5rem); }
   #toasts { left: 0; bottom: calc(var(--dock-h, 0px) + var(--nav-h) + env(safe-area-inset-bottom)); }
   .card.scroll { max-height: 60vh; }

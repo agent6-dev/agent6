@@ -155,29 +155,40 @@ def test_a_sessions_crumb_leads_with_its_state_as_a_status_pill(
 
 
 def test_a_phones_crumb_shows_a_sessions_state_and_id_whole(
-    browser: Browser, port: int, tmp_path: pathlib.Path
+    browser: Browser, git_port: int, tmp_path: pathlib.Path
 ) -> None:
     """A phone's crumb cut the session's id beside the brand: "passed · ready-ro…".
 
     The id goes under the state, in smaller text, and the crumb runs up to the buttons: at 375px
-    an empty spacer before them cut "merry-fountain-B7…".
+    an empty spacer before them cut "merry-fountain-B7…". At 320px the word beside the logo cut
+    "passed · unmerged" and the id, so a phone's header shows the logo mark alone.
     """
     from playwright.sync_api import expect
 
-    stop = {"type": "session.stop", "reason": "max_turns", "verification": "unverified"}
-    session_logs.write_run(tmp_path, "merry-fountain-B7XAJS", [stop])
-    token = json.dumps(signin.token(port))
+    from agent6.sessions import manifest
+    from agent6.vcs.git import read as git_read
+
+    sid = "merry-fountain-B7XAJS"
+    root = test_git_history._git(tmp_path, "rev-parse", "v1^{commit}")
+    merge = test_git_history._git(tmp_path, "rev-parse", "v2")
+    test_git_history._git(tmp_path, "update-ref", git_read.chain_ref_for(sid), merge)
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    session = session_logs.write_run(tmp_path, sid, [stop])
+    record = manifest.SessionManifest(session_id=sid, mode="run", base_sha=root)
+    (session / "manifest.json").write_text(record.model_dump_json(), encoding="utf-8")
+    token = json.dumps(signin.token(git_port))
     with browser.new_context(
-        viewport={"width": 375, "height": 812}, has_touch=True, is_mobile=True
+        viewport={"width": 320, "height": 640}, has_touch=True, is_mobile=True
     ) as context:
         context.add_init_script(f"localStorage.setItem('a6-token', {token})")
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda exc: errors.append(str(exc)))
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
-        page.goto(f"http://127.0.0.1:{port}/#/session/merry-fountain-B7XAJS")
+        page.goto(f"http://127.0.0.1:{git_port}/#/session/{sid}")
         parts = page.locator("#crumb > *")
-        expect(parts).to_have_text(["failed · max turns", "merry-fountain-B7XAJS"])
+        expect(parts).to_have_text(["passed · unmerged", sid])
+        expect(page.get_by_role("link", name="agent6 home", exact=True)).to_be_visible()
         # Unrounded: scrollWidth and clientWidth round, and read 140 = 140 over an ellipsis.
         over = parts.evaluate_all("""ps => ps.map(p => {
           const box = p.getBoundingClientRect().width;
