@@ -90,7 +90,16 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - on a phone, **Stop now** stays visible and **More** holds the other run actions
     - **Tool calls** rows open to selectable arguments and recorded output
     - **Budget** shows labelled meters for capped usage and plain text for uncapped usage
-    - **Children**: every child the session dispatched (a `run --parallel` group's or a run's `/parallel` groups), each a link to its own view, with its status and usage and, when some child has one, its model and how it joined; the card follows children that appear while the run goes on
+    - **Children** folds to one line in Details, such as `children: 3 running, 1 merged`.
+      On a phone, choose **Overview** from **Widgets**.
+      Open the card to see each task, its status, and its recorded model, tool, turn, tokens, spend and elapsed time.
+      A stopped child shows the unmerged commits its ref holds.
+      A child that never started shows the reason.
+      A reviewer shows its verdict when available.
+      Open a row to read the whole prompt and recent conversation in place.
+      **Send** messages the live child.
+      **Stop** asks before stopping that child and its live descendants.
+      Reviewer rows are read-only.
     - the composer steers a live run or resumes an ended one under the preset and model picked above it (on a phone, behind one line that names them), and takes the [steer directives](usage.md#follow-and-steer-a-run); its button, **Send** on a live run and **Resume** on an ended one, does what Enter does, and a phone shows it as a send icon; Ctrl+Enter sends a live steer as `/now`, Ctrl+R searches past messages
     - an ended child, and an ended run whose worktree is gone or whose manifest cannot be read, closes the composer; the line under it says why, as `agent6 sessions show` does, and **Fork** continues a child in a worktree of its own
     - an ended run whose manifest cannot be read also dims **Fork** and **Merge**, whose tooltips say why
@@ -198,7 +207,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
 - `GET /metrics` answers Prometheus text when `web.metrics_route = true` and `telemetry.metrics = "prometheus"`, with the web secret as the bearer, not the sign-in token ([telemetry export](cli.md#telemetry-export))
-- reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,merge,resume_defaults}` (`merge` is what the Merge confirm states), `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>?provider=<name>` (an optional provider filter), `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?commit=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
+- reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,merge,resume_defaults}` (`merge` is what the Merge confirm states), `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>?provider=<name>` (an optional provider filter), `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?commit=<sha>` folds up to that commit) with `/conversation` (`?recent=1` reads the live conversation tail), `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
 - git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name or resolved sha>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
     - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **Refresh** starts from live refs
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
