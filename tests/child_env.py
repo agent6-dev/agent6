@@ -71,12 +71,12 @@ class Completed:
 
     Attributes:
         started: What the dispatch started, or its refusal.
-        children: Each child's recorded join, in the order written.
+        children: Each child's recorded merge, in the order written.
         message: The completion notices, one per task.
     """
 
     started: child_records.Started
-    children: list[child_records.ChildJoin]
+    children: list[child_records.ChildMerge]
     message: str
 
 
@@ -99,7 +99,7 @@ def completed(
     ]
     return Completed(
         started,
-        [join for group in started.groups for join in dispatcher.joins(group)],
+        [merge for group in started.groups for merge in dispatcher.merges(group)],
         "\n".join(record.message for record in records),
     )
 

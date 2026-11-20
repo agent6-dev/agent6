@@ -263,12 +263,12 @@ def test_a_finished_task_merges_at_the_next_boundary_while_an_earlier_one_still_
         ("run-p1", "complete", True, "model"),
         ("run-p2", "complete", True, "model"),
     ]
-    first, second = (record.children[0].join for record in records)
+    first, second = (record.children[0].merge for record in records)
     assert first is not None and second is not None
-    assert (first.status, second.status) == ("joined", "joined")
+    assert (first.status, second.status) == ("merged", "merged")
     # The first task merged onto the tip the second left: it merged a boundary later.
     assert first.target_before == second.target_after == second.sha
-    assert [row["group"] for row in _events(tmp_path / "run", "parallel.joined")] == [
+    assert [row["group"] for row in _events(tmp_path / "run", "parallel.merged")] == [
         "run-p2",
         "run-p1",
     ]
@@ -292,10 +292,10 @@ def test_tasks_that_end_before_one_boundary_merge_in_the_order_written(
 
     assert dispatcher.settle(conversation, 2)
 
-    assert dispatcher.joins(started.groups[0]) == []
-    (second,) = dispatcher.joins(started.groups[1])
-    (third,) = dispatcher.joins(started.groups[2])
-    assert (second.status, third.status) == ("joined", "conflict")
+    assert dispatcher.merges(started.groups[0]) == []
+    (second,) = dispatcher.merges(started.groups[1])
+    (third,) = dispatcher.merges(started.groups[2])
+    assert (second.status, third.status) == ("merged", "conflict")
     assert third.detail == "merge conflict in x.txt"
     assert (repo / "x.txt").read_text(encoding="utf-8") == "second\n"
     assert list(dispatcher.open) == ["root-p1"]
@@ -359,16 +359,16 @@ def test_an_end_stops_the_children_still_running_and_a_resume_merges_nothing_of_
     assert _git(repo, "rev-parse", "--verify", f"agent6/{child}")
     (record,) = child_dispatch.read_records(tmp_path / "run")
     assert (record.state, record.delivered, record.children[0].reported) == ("complete", True, True)
-    join = record.children[0].join
-    assert join is not None
-    assert (join.status, join.detail, join.commits, join.branch, join.sha) == (
+    merge = record.children[0].merge
+    assert merge is not None
+    assert (merge.status, merge.detail, merge.commits, merge.branch, merge.sha) == (
         "stopped",
         "stopped by its parent",
         1,
         f"agent6/{child}",
         "",
     )
-    assert join.target_before == join.target_after
+    assert merge.target_before == merge.target_after
 
 
 def _dispatcher(
@@ -476,9 +476,9 @@ def test_a_tree_that_cannot_be_committed_merges_nothing_and_keeps_the_branch(
 
     assert dispatcher.settle(conversation, 2)
 
-    (join,) = dispatcher.joins(started.groups[0])
-    assert (join.status, join.branch) == ("failed", "agent6/root-p1-l1")
-    assert "uncommitted work that could not be committed" in join.detail
+    (merge,) = dispatcher.merges(started.groups[0])
+    assert (merge.status, merge.branch) == ("failed", "agent6/root-p1-l1")
+    assert "uncommitted work that could not be committed" in merge.detail
     assert not (repo / "a.txt").exists()
     assert _git(repo, "rev-parse", "--verify", "agent6/root-p1-l1")
 
@@ -497,8 +497,8 @@ def test_a_parents_uncommitted_work_is_committed_before_a_child_merges(
 
     assert dispatcher.settle(loop_conversation.Conversation(), 2)
 
-    (join,) = dispatcher.joins(started.groups[0])
-    assert join.status == "joined"
+    (merge,) = dispatcher.merges(started.groups[0])
+    assert merge.status == "merged"
     subjects = _git(repo, "log", "--format=%s", "refs/agent6/root").splitlines()
     assert subjects[:2] == [
         "merge agent6/root-p1-l1",
@@ -519,12 +519,12 @@ def test_attempts_are_told_as_each_ends_and_merge_once_all_have(tmp_path: pathli
 
     assert dispatcher.settle(conversation, 2)
     assert not dispatcher.settle(conversation, 3), "an end is told once"
-    assert dispatcher.joins(started.groups[0]) == []
+    assert dispatcher.merges(started.groups[0]) == []
     children.end("root-p1-l1", path="x.txt", text="first\n")
     assert dispatcher.settle(conversation, 4)
 
-    assert [(j.session_id, j.status) for j in dispatcher.joins(started.groups[0])] == [
-        ("root-p1-l1", "joined"),
+    assert [(j.session_id, j.status) for j in dispatcher.merges(started.groups[0])] == [
+        ("root-p1-l1", "merged"),
         ("root-p1-l2", "ranked"),
     ]
     assert (repo / "x.txt").read_text(encoding="utf-8") == "first\n"
@@ -549,10 +549,10 @@ def test_a_stopped_attempt_is_no_candidate_and_the_others_are_ranked(
 
     assert dispatcher.settle(conversation, 2)
 
-    joins = dispatcher.joins(started.groups[0])
-    assert [(j.session_id, j.status, j.detail) for j in joins] == [
+    merges = dispatcher.merges(started.groups[0])
+    assert [(j.session_id, j.status, j.detail) for j in merges] == [
         ("root-p1-l1", "stopped", "stopped by its parent"),
-        ("root-p1-l2", "joined", ""),
+        ("root-p1-l2", "merged", ""),
         ("root-p1-l3", "ranked", "2 of 2"),
     ]
     assert (repo / "x.txt").read_text(encoding="utf-8") == "second\n"
@@ -580,7 +580,7 @@ def test_a_task_whose_every_child_stopped_merges_nothing_and_says_so(
 
     assert dispatcher.settle(conversation, 2)
 
-    assert [(j.status, j.commits) for j in dispatcher.joins(started.groups[0])] == [
+    assert [(j.status, j.commits) for j in dispatcher.merges(started.groups[0])] == [
         ("stopped", 1),
         ("stopped", 0),
     ]
@@ -628,8 +628,11 @@ def test_a_resume_merges_the_task_of_a_child_that_ended_by_itself(tmp_path: path
     parallel_recovery.reconcile(resumed, state, conversation, turn=3)
 
     first, second = child_dispatch.read_records(repo.parent / "root")
-    assert first.children[0].join is not None and second.children[0].join is not None
-    assert (first.children[0].join.status, second.children[0].join.status) == ("joined", "stopped")
+    assert first.children[0].merge is not None and second.children[0].merge is not None
+    assert (first.children[0].merge.status, second.children[0].merge.status) == (
+        "merged",
+        "stopped",
+    )
     assert (repo / "a.txt").exists() and not (repo / "root-p2-l1.txt").exists()
     assert (first.state, second.state, first.delivered, second.delivered) == (
         "complete",
@@ -725,10 +728,10 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     assert _git(repo, "rev-parse", "--verify", f"agent6/{two}")
     roster = child_work.roster(wf.parallel)
     assert [(line.id, line.running) for line in roster] == [(one, False), (two, False)]
-    assert roster[0].state.startswith("joined at ") and roster[1].state == words
+    assert roster[0].state.startswith("merged into parent chain at ") and roster[1].state == words
     (failed,) = [[], *(_events(tmp_path / "run", "parallel.failed"))][-1:]
-    assert failed == [], "a stopped child is no failed join"
-    rows = _events(tmp_path / "run", "parallel.joined")
+    assert failed == [], "a stopped child is no failed merge"
+    rows = _events(tmp_path / "run", "parallel.merged")
     assert rows[0]["children"][0]["status"] == "stopped" and rows[0]["children"][0]["commits"] == 1
 
 

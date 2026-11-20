@@ -575,12 +575,12 @@ def test_watch_json_checks_the_merged_claim_against_the_repo(
         encoding="utf-8",
     )
     assert main(["attach", "stamped-run", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["merged_into"] == "main"
+    assert json.loads(capsys.readouterr().out)["merged_into_checkout"] == "main"
     subprocess.run([*git, "checkout", "-q", "agent6/stamped-run"], check=True)
     subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "more"], check=True, env=env)
     assert main(["attach", "stamped-run", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert "merged_into" not in out
+    assert "merged_into_checkout" not in out
     assert out["branch_line"] == "agent6/stamped-run → merges into main"
 
 

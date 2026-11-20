@@ -1093,7 +1093,7 @@ def test_status_says_where_the_changes_are(
 
     The branch fact the web header shows and the end-of-run footer said: on the run branch awaiting
     its merge (with the command), merged into the base, or a branch no commit reached. The JSON
-    carries run_branch, base_branch and merged_into.
+    carries run_branch, base_branch and merged_into_checkout.
     """
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=pathlib.Path.cwd(), check=True)
@@ -1145,7 +1145,11 @@ def test_status_says_where_the_changes_are(
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["run_branch"], obj["base_branch"], obj["merged_into"]) == (branch, "main", "main")
+    assert (obj["run_branch"], obj["base_branch"], obj["merged_into_checkout"]) == (
+        branch,
+        "main",
+        "main",
+    )
     _stamp_manifest(d, mode="ask")
     assert "changes:" not in show()
     # The branch deleted (no merge stamp) while the chain ref keeps the

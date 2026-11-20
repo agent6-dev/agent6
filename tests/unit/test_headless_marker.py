@@ -35,11 +35,11 @@ def test_headless_log_names_child_activity_and_merge_results(tmp_path: pathlib.P
     sink.emit(journal.ParallelChildContinued(group="g", child="c1", sequence=1))
     sink.emit(
         journal.ParallelChildMerged(
-            group="g", child="c1", status="joined", ref="kept", sha="abc123", detail=""
+            group="g", child="c1", status="merged", ref="kept", sha="abc123", detail=""
         )
     )
     sink.emit(
-        journal.ParallelJoined(
+        journal.ParallelMerged(
             group="g",
             children=[{"session_id": "c2", "status": "unmerged", "commits": 2, "branch": "kept"}],
         )
@@ -48,6 +48,6 @@ def test_headless_log_names_child_activity_and_merge_results(tmp_path: pathlib.P
         "[agent6] child c1 stopped: stop request",
         "[agent6] child c2 stopped",
         "[agent6] child c1 continued (1)",
-        "[agent6] child c1 joined parent chain at abc123",
+        "[agent6] child c1 merged into parent chain at abc123",
         "[agent6] group g complete: 1 child\nretained  c2  kept  2 commits",
     ]

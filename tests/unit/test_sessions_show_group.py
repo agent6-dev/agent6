@@ -717,8 +717,8 @@ def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
                     session_id="co-p1-l1",
                     number=1,
                     task="audit",
-                    join=child_dispatch.JoinRecord(
-                        branch="agent6/co-p1-l1", status="joined", sha="b" * 40
+                    merge=child_dispatch.MergeRecord(
+                        branch="agent6/co-p1-l1", status="merged", sha="b" * 40
                     ),
                     usage=child_dispatch.UsageRecord(usd=0.5),
                     settled=True,
@@ -727,7 +727,7 @@ def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
                     session_id="co-p1-l2",
                     number=2,
                     task="audit",
-                    join=child_dispatch.JoinRecord(branch="agent6/co-p1-l2", status="no_changes"),
+                    merge=child_dispatch.MergeRecord(branch="agent6/co-p1-l2", status="no_changes"),
                     usage=child_dispatch.UsageRecord(usd=0.25),
                     settled=True,
                 ),
@@ -741,7 +741,7 @@ def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
     return repo
 
 
-def test_show_on_an_ordinary_parent_lists_its_children_with_their_joins(
+def test_show_on_an_ordinary_parent_lists_its_children_with_their_merges(
     ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A `/parallel` run is no group: no group line, its children listed with their outcomes."""
@@ -750,7 +750,7 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_joins(
     assert "group:" not in out
     assert "children:      2" in out
     assert "co-p1 attempt 1" in out and "co-p1-l1" in out and "openai/child-1" in out
-    assert "joined co's chain at bbbbbbbbbbbb" in out
+    assert "merged into co's chain at bbbbbbbbbbbb" in out
     assert "co-p1 attempt 2" in out and "no changes" in out
 
 
@@ -801,7 +801,7 @@ def child_roster(ordinary_parent: pathlib.Path) -> pathlib.Path:
         elif outcome in ("stopped", "retained"):
             child = child.model_copy(
                 update={
-                    "join": child_dispatch.JoinRecord(
+                    "merge": child_dispatch.MergeRecord(
                         status="stopped" if outcome == "stopped" else "retained",
                         branch=f"refs/heads/{outcome}-work",
                         commits=i,
@@ -893,7 +893,11 @@ def test_cli_child_roster_json(
     rows = (obj[0] if surface == "list" else obj)["children"]
     assert len(rows) == 7
     merged, _, live, stopped, held, absent, reviewer = rows
-    assert (merged["status"], merged["outcome"], merged["joined_to"]) == ("joined", "joined", "co")
+    assert (merged["status"], merged["outcome"], merged["merged_into_parent"]) == (
+        "merged",
+        "merged",
+        "co",
+    )
     assert tuple(
         live[k]
         for k in (

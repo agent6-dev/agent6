@@ -54,7 +54,7 @@ def _session(
 
 def _record(
     identity: str,
-    children: list[tuple[str, child_dispatch.JoinRecord | None, float | None]],
+    children: list[tuple[str, child_dispatch.MergeRecord | None, float | None]],
     *,
     turn: int = 2,
 ) -> child_dispatch.DispatchRecord:
@@ -71,11 +71,11 @@ def _record(
                 number=i,
                 task="audit",
                 model="reviewer" if i == 1 else None,
-                join=join,
+                merge=merge,
                 usage=child_dispatch.UsageRecord(usd=usd) if usd is not None else None,
                 settled=usd is not None,
             )
-            for i, (sid, join, usd) in enumerate(children, start=1)
+            for i, (sid, merge, usd) in enumerate(children, start=1)
         ),
         state="complete",
         message=f"[parallel] group {identity} complete",
@@ -83,9 +83,9 @@ def _record(
     )
 
 
-def _joined(sha: str = "b" * 40) -> child_dispatch.JoinRecord:
-    return child_dispatch.JoinRecord(
-        branch="agent6/x", status="joined", sha=sha, target_before="a" * 40, target_after=sha
+def _merged(sha: str = "b" * 40) -> child_dispatch.MergeRecord:
+    return child_dispatch.MergeRecord(
+        branch="agent6/x", status="merged", sha=sha, target_before="a" * 40, target_after=sha
     )
 
 
@@ -97,15 +97,15 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
     parent = _session(state, "run-abc")
     _session(state, "run-abc-p1-l1", parent="run-abc", number=1, group="run-abc-p1", usd=0.5)
     _session(state, "run-abc-p2-l1", parent="run-abc", number=1, group="run-abc-p2", usd=0.25)
-    never = child_dispatch.JoinRecord(
+    never = child_dispatch.MergeRecord(
         branch="agent6/run-abc-p1-l2", status="failed", detail="never started"
     )
     child_dispatch.write_record(
         parent,
-        _record("run-abc-p1", [("run-abc-p1-l1", _joined(), 0.5), ("run-abc-p1-l2", never, None)]),
+        _record("run-abc-p1", [("run-abc-p1-l1", _merged(), 0.5), ("run-abc-p1-l2", never, None)]),
         now=1.0,
     )
-    no_change = child_dispatch.JoinRecord(branch="agent6/run-abc-p2-l1", status="no_changes")
+    no_change = child_dispatch.MergeRecord(branch="agent6/run-abc-p2-l1", status="no_changes")
     child_dispatch.write_record(
         parent, _record("run-abc-p2", [("run-abc-p2-l1", no_change, 0.25)], turn=5), now=2.0
     )
@@ -121,16 +121,18 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
     )
     assert (
         first.launched
-        and first.status == "joined"
-        and first.joined_to == "run-abc"
-        and first.outcome == "joined"
-        and first.join_sha == "b" * 40
+        and first.status == "merged"
+        and first.merged_into_parent == "run-abc"
+        and first.outcome == "merged"
+        and first.parent_merge_sha == "b" * 40
     )
     assert first.imported_ref == "agent6/x" and first.spend_usd == 0.5 and first.settled
     assert first.route == "p/m"
     assert not missing.launched and missing.status == "failed" and missing.outcome == "failed"
     assert missing.error == "never started" and not missing.settled and missing.spend_usd == 0.0
-    assert quiet.outcome == "no_changes" and quiet.join_sha == "" and quiet.spend_usd == 0.25
+    assert (
+        quiet.outcome == "no_changes" and quiet.parent_merge_sha == "" and quiet.spend_usd == 0.25
+    )
     dispatches = vm_children.dispatches_of(parent)
     assert [d.identity for d in dispatches] == ["run-abc-p1", "run-abc-p2"]
     assert dispatches[0].state == "complete" and dispatches[1].turn == 5
@@ -138,7 +140,7 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
 
 
 def test_a_group_without_records_reads_its_children_from_lineage(tmp_path: pathlib.Path) -> None:
-    """A group predating dispatch records still shows its children, with no join to report."""
+    """A group predating dispatch records still shows its children, with no merge to report."""
     state = tmp_path / "state"
     parent = _session(state, "fan")
     _session(state, "fan-l2", parent="fan", number=2, usd=1.0)
@@ -178,7 +180,7 @@ def test_an_unreadable_record_is_reported_not_hidden(tmp_path: pathlib.Path) -> 
     state = tmp_path / "state"
     parent = _session(state, "run-abc")
     child_dispatch.write_record(
-        parent, _record("run-abc-p1", [("run-abc-p1-l1", _joined(), 0.5)]), now=1.0
+        parent, _record("run-abc-p1", [("run-abc-p1-l1", _merged(), 0.5)]), now=1.0
     )
     child_dispatch.record_path(parent, "run-abc-p1").write_text("{broken", encoding="utf-8")
     (view,) = vm_children.dispatches_of(parent)
@@ -194,12 +196,12 @@ def test_the_header_carries_children_and_dispatches_for_an_ordinary_parent(
     parent = _session(state, "run-abc")
     _session(state, "run-abc-p1-l1", parent="run-abc", number=1, group="run-abc-p1", usd=0.5)
     child_dispatch.write_record(
-        parent, _record("run-abc-p1", [("run-abc-p1-l1", _joined(), 0.5)]), now=1.0
+        parent, _record("run-abc-p1", [("run-abc-p1-l1", _merged(), 0.5)]), now=1.0
     )
     header = wire.manifest_header(parent)
     assert [row["session_id"] for row in header["children"]] == ["run-abc-p1-l1"]
     (dispatch,) = header["dispatches"]
-    assert dispatch["identity"] == "run-abc-p1" and dispatch["children"][0]["outcome"] == "joined"
+    assert dispatch["identity"] == "run-abc-p1" and dispatch["children"][0]["outcome"] == "merged"
     assert header["session_actions"]["fork"] is True and header["session_actions"]["merge"] is True
     assert "children" not in wire.manifest_header(_session(state, "alone"))
 
@@ -210,12 +212,12 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
     state = tmp_path / "state"
     parent = _session(state, "run-abc", usd=3.0)
     _session(state, "run-abc-p1-l1", parent="run-abc", number=1, group="run-abc-p1", usd=0.5)
-    never = child_dispatch.JoinRecord(
+    never = child_dispatch.MergeRecord(
         branch="agent6/run-abc-p1-l2", status="failed", detail="never started"
     )
     child_dispatch.write_record(
         parent,
-        _record("run-abc-p1", [("run-abc-p1-l1", _joined(), 0.5), ("run-abc-p1-l2", never, None)]),
+        _record("run-abc-p1", [("run-abc-p1-l1", _merged(), 0.5), ("run-abc-p1-l2", never, None)]),
         now=1.0,
     )
     view = receipt.read_receipt(parent, tmp_path)
@@ -228,7 +230,7 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
     assert "Children" in text.splitlines()
     assert (
         "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): "
-        "joined run-abc's chain at bbbbbbbbbbbb, $0.50" in text
+        "merged into run-abc's chain at bbbbbbbbbbbb, $0.50" in text
     )
     assert "run-abc-p1 attempt 2: run-abc-p1-l2: failed: never started" in text
     assert "spend includes the children's $0.50" in text
@@ -244,7 +246,7 @@ def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib
     _session(state, "run-abc-p1-l1", parent="run-abc", number=1, group="run-abc-p1")
     _session(state, "run-abc-p1-l2", parent="run-abc", number=2, group="run-abc-p1", usd=0.2)
     record = _record(
-        "run-abc-p1", [("run-abc-p1-l1", _joined(), 0.0), ("run-abc-p1-l2", _joined(), 0.2)]
+        "run-abc-p1", [("run-abc-p1-l1", _merged(), 0.0), ("run-abc-p1-l2", _merged(), 0.2)]
     )
     unpriced = record.children[0].model_copy(
         update={"usage": child_dispatch.UsageRecord(usd=0.0, usd_partial=True)}
@@ -254,11 +256,12 @@ def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib
     )
     text = receipt.render(receipt.read_receipt(parent, tmp_path))
     assert (
-        "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $?"
-        in text
+        "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): "
+        "merged into run-abc's chain at bbbbbbbbbbbb, $?" in text
     )
     assert (
-        "run-abc-p1 attempt 2: run-abc-p1-l2: joined run-abc's chain at bbbbbbbbbbbb, $0.20" in text
+        "run-abc-p1 attempt 2: run-abc-p1-l2: merged into run-abc's chain at bbbbbbbbbbbb, $0.20"
+        in text
     )
     assert "spend includes the children's ~$0.20" in text
 
@@ -271,7 +274,7 @@ def test_a_running_panel_does_not_start_its_later_batches(tmp_path: pathlib.Path
     child_dispatch.write_record(
         parent,
         record.model_copy(
-            update={"state": "running", "source": "panel", "join_policy": "record_only"}
+            update={"state": "running", "source": "panel", "merge_policy": "record_only"}
         ),
         now=1.0,
     )
@@ -302,7 +305,7 @@ def test_a_reviewer_has_a_child_row_and_its_verdict(tmp_path: pathlib.Path) -> N
     record = _record("run-abc-rpanel", [(reviewer_id, None, 0.25)])
     child_dispatch.write_record(
         parent,
-        record.model_copy(update={"source": "panel", "join_policy": "record_only"}),
+        record.model_copy(update={"source": "panel", "merge_policy": "record_only"}),
         now=1.0,
     )
     summaries = [listing.summarize_session_dir(d) for d in (parent, reviewer_dir)]
@@ -338,7 +341,7 @@ def test_the_children_section_names_each_group_and_its_ranking_reviewer(
     for group in ("root-p1", "root-p2", "root-rp2"):
         record = _record(group, [(f"{group}-l1", None, 0.25)])
         if group == "root-rp2":
-            record = record.model_copy(update={"source": "panel", "join_policy": "record_only"})
+            record = record.model_copy(update={"source": "panel", "merge_policy": "record_only"})
         child_dispatch.write_record(parent, record, now=1)
     text = receipt.render(receipt.read_receipt(parent, tmp_path))
     roster = text.partition("\nChildren\n")[2].partition("\nHow to revert")[0]
@@ -435,8 +438,8 @@ def test_stopped_and_never_started_children_stay_in_the_header(tmp_path: pathlib
     state = tmp_path / "state"
     parent = _session(state, "root")
     child = _session(state, "root-p1-l1", parent="root")
-    join = child_dispatch.JoinRecord(status="stopped", branch="agent6/child", commits=2)
-    child_dispatch.write_record(parent, _record("root-p1", [(child.name, join, 0.5)]), now=1)
+    merge = child_dispatch.MergeRecord(status="stopped", branch="agent6/child", commits=2)
+    child_dispatch.write_record(parent, _record("root-p1", [(child.name, merge, 0.5)]), now=1)
     refused = _record("root-p2", [("root-p2-l1", None, None)]).advanced(
         "complete", message="dispatch failed: no route"
     )

@@ -122,13 +122,15 @@ def test_model_git_completed_task_passes_with_its_retained_ref(
     """The DAG failed a finished task solely because there was no parent chain."""
     parent = _run(tmp_path, monkeypatch, "model")
     (record,) = child_dispatch.read_records(parent)
-    join = record.children[0].join
-    assert join and children_cli._git(pathlib.Path.cwd(), "show", f"{join.branch}:answer") == "done"
+    merge = record.children[0].merge
+    assert (
+        merge and children_cli._git(pathlib.Path.cwd(), "show", f"{merge.branch}:answer") == "done"
+    )
     node = storage.load_graph(layout.layout_of(parent))[record.node_id or ""]
     assert node.status == "passed"
     assert cli_main(["sessions", "show", parent.name]) == 0
     out = capsys.readouterr().out
-    assert "no_child_result" not in out and f"retained on {join.branch}" in out
+    assert "no_child_result" not in out and f"retained on {merge.branch}" in out
     assert not (pathlib.Path.cwd() / "answer").exists()
     assert cli_main(["sessions", "show", parent.name, "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
@@ -136,28 +138,29 @@ def test_model_git_completed_task_passes_with_its_retained_ref(
     assert shown["verification"] == "unverified" and shown["child_verification"] is None
     assert cli_main(["sessions", "show", record.children[0].session_id]) == 0
     child = capsys.readouterr().out
-    assert join.branch in child and " · unmerged" not in child
+    assert merge.branch in child and " · unmerged" not in child
 
 
-def test_show_tells_checkout_from_child_join_even_on_the_child_itself(
+def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A parent join was labelled merged while the child's own page offered to merge it."""
+    """A merge into the parent chain alone must not read as a merge into the checkout."""
     parent = _run(tmp_path, monkeypatch, "agent6")
     (record,) = child_dispatch.read_records(parent)
     child = record.children[0].session_id
     assert children_cli._git(pathlib.Path.cwd(), "ls-tree", "--name-only", "HEAD") == "README.md"
-    join = record.children[0].join
-    assert join and children_cli._git(pathlib.Path.cwd(), "show", f"{join.sha}:answer") == "done"
+    merge = record.children[0].merge
+    assert merge and children_cli._git(pathlib.Path.cwd(), "show", f"{merge.sha}:answer") == "done"
     capsys.readouterr()
     pages: list[str] = []
     for sid in (parent.name, child):
         assert cli_main(["sessions", "show", sid]) == 0
         pages.append(capsys.readouterr().out)
-    assert all(f"joined {parent.name}'s chain at {join.sha[:12]}" in page for page in pages)
+    assert all(f"merged into {parent.name}'s chain at {merge.sha[:12]}" in page for page in pages)
     assert (
         "checkout:   no merge recorded" in pages[0] and f"sessions merge {parent.name}" in pages[0]
     )
+    assert f"parent merge: merged into {parent.name}'s chain at {merge.sha[:12]}" in pages[1]
     assert (
         "checkout:   no direct merge recorded" in pages[1]
         and f"sessions show {parent.name}" in pages[1]
@@ -165,4 +168,27 @@ def test_show_tells_checkout_from_child_join_even_on_the_child_itself(
     assert f"sessions merge {child}" not in pages[1] and " · unmerged" not in pages[1]
     assert cli_main(["sessions", "show", child, "--json"]) == 0
     own = json.loads(capsys.readouterr().out)
-    assert (own["joined_to"], own["join_sha"], own["merged_into"]) == (parent.name, join.sha, None)
+    assert (own["merged_into_parent"], own["parent_merge_sha"], own["merged_into_checkout"]) == (
+        parent.name,
+        merge.sha,
+        None,
+    )
+
+
+def test_show_keeps_the_parent_chain_and_checkout_destinations_for_one_child(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Merging a child directly into main does not overwrite its parent-chain merge."""
+    parent = _run(tmp_path, monkeypatch, "agent6")
+    (record,) = child_dispatch.read_records(parent)
+    child = record.children[0].session_id
+    repo = pathlib.Path.cwd()
+    parent_tip = children_cli._git(repo, "rev-parse", f"refs/agent6/{parent.name}/head")
+    assert cli_main(["sessions", "merge", child, "--into", "main", "--method", "squash"]) == 0
+    assert children_cli._git(repo, "show", "main:answer") == "done"
+    capsys.readouterr()
+    assert cli_main(["sessions", "show", child, "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["merged_into_parent"] == parent.name
+    assert shown["parent_merge_sha"] == parent_tip
+    assert shown["merged_into_checkout"] == "main"

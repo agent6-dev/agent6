@@ -485,10 +485,10 @@ def test_two_tasks_merge_in_the_order_written_and_stamp_their_nodes(tmp_path: pa
         {"group": "run-abc-p1", "children": 1, "tasks": ["task one"], "source": "operator"},
         {"group": "run-abc-p2", "children": 1, "tasks": ["task two"], "source": "operator"},
     ]
-    joined = events.of("parallel.joined")
-    assert [(row["group"], [ln["status"] for ln in row["children"]]) for row in joined] == [
-        ("run-abc-p1", ["joined"]),
-        ("run-abc-p2", ["joined"]),
+    merged = events.of("parallel.merged")
+    assert [(row["group"], [ln["status"] for ln in row["children"]]) for row in merged] == [
+        ("run-abc-p1", ["merged"]),
+        ("run-abc-p2", ["merged"]),
     ]
     assert not events.of("parallel.failed")
     texts = _user_texts(_final_messages(provider))
@@ -508,7 +508,7 @@ def test_two_tasks_merge_in_the_order_written_and_stamp_their_nodes(tmp_path: pa
         "[parallel] group run-abc-p1 complete (1 child(ren)):",
         "[parallel] group run-abc-p2 complete (1 child(ren)):",
     ]
-    assert all("joined at" in t for t in merges)
+    assert all("merged into parent chain at" in t for t in merges)
 
 
 def test_a_model_list_starts_one_attempt_per_model_and_merges_the_first_ranked(
@@ -539,19 +539,19 @@ def test_a_model_list_starts_one_attempt_per_model_and_merges_the_first_ranked(
         ("refactor the parser", "a/b"),
         ("refactor the parser", "c"),
     ]
-    # One DAG node for the task, passed with a join sha, its note naming both children.
+    # One DAG node for the task, passed with a merge sha, its note naming both children.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1
     assert steering[0].status == "passed" and steering[0].commit_sha
     note = next(
         n for nid, status, n in graph.status_calls if (nid, status) == (steering[0].id, "passed")
     )
-    assert f"{parent_id}-p1-l1 joined at" in note
-    assert f"{parent_id}-p1-l2 ranked 2 of 2; not joined" in note
-    # Both children surface in the joined event: the first ranked joined, the other placed.
-    (joined,) = events.of("parallel.joined")
-    assert [(ln["session_id"], ln["status"]) for ln in joined["children"]] == [
-        (f"{parent_id}-p1-l1", "joined"),
+    assert f"{parent_id}-p1-l1 merged into parent chain at" in note
+    assert f"{parent_id}-p1-l2 ranked 2 of 2; not merged" in note
+    # The event names the winner and the attempt that kept its branch.
+    (merged,) = events.of("parallel.merged")
+    assert [(ln["session_id"], ln["status"]) for ln in merged["children"]] == [
+        (f"{parent_id}-p1-l1", "merged"),
         (f"{parent_id}-p1-l2", "ranked"),
     ]
 
@@ -584,14 +584,14 @@ def test_a_count_above_one_ranks_its_children_and_merges_one(tmp_path: pathlib.P
     assert [(ln.task, ln.model) for ln in children] == [("tidy the imports", None)] * 3
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1  # one node for the task, not three
-    (joined,) = events.of("parallel.joined")
-    assert [ln["status"] for ln in joined["children"]] == ["ranked", "joined", "ranked"]
+    (merged,) = events.of("parallel.merged")
+    assert [ln["status"] for ln in merged["children"]] == ["ranked", "merged", "ranked"]
     files = _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
     assert files == ["README.md", "child2.txt"]
     (record,) = child_dispatch.read_records(tmp_path / parent_id)
-    assert (record.join_policy, record.spec, len(record.children)) == ("rank", "3", 3)
+    assert (record.merge_policy, record.spec, len(record.children)) == ("rank", "3", 3)
     (merge,) = _merges(provider)
-    assert "run-cnt-p1-l1 (agent6/run-cnt-p1-l1): ranked 3 of 3; not joined" in merge
+    assert "run-cnt-p1-l1 (agent6/run-cnt-p1-l1): ranked 3 of 3; not merged" in merge
     (started,) = [t for t in _user_texts(_final_messages(provider)) if "started" in t]
     assert started.startswith("[parallel] started 3 attempts at one task: run-cnt-p1-l1, ")
 
@@ -653,12 +653,12 @@ def test_a_conflict_merges_nothing_and_names_the_files_and_the_branch(
     # The clean child's file reached the worktree; the conflicted merge touched nothing.
     assert (repo / "child1.txt").read_text(encoding="utf-8") == "child 1\n"
     assert (repo / "conflict.txt").read_text(encoding="utf-8") == "main version"
-    joined = events.of("parallel.joined")
-    assert [[ln["status"] for ln in row["children"]] for row in joined] == [
-        ["joined"],
+    merged = events.of("parallel.merged")
+    assert [[ln["status"] for ln in row["children"]] for row in merged] == [
+        ["merged"],
         ["conflict"],
     ]
-    assert joined[1]["children"][0]["detail"] == "merge conflict in conflict.txt"
+    assert merged[1]["children"][0]["detail"] == "merge conflict in conflict.txt"
     (failed,) = events.of("parallel.failed")
     assert [ln["session_id"] for ln in failed["children"]] == [f"{parent_id}-p2-l1"]
     # The conflicting node is marked failed (NodeStatus has no "blocked").
@@ -675,7 +675,7 @@ def test_a_conflict_merges_nothing_and_names_the_files_and_the_branch(
 def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: pathlib.Path) -> None:
     """Children that ended with a result and no commit pass their nodes; nothing merges.
 
-    The chain ref, HEAD and the index stay where they were, the join names `no_changes`, no
+    The chain ref, HEAD and the index stay where they were, the merge names `no_changes`, no
     `parallel.failed` fires and each notice says so.
     """
     repo = tmp_path / "repo"
@@ -701,8 +701,8 @@ def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: path
     assert _head(repo) == head_before
     assert _git(repo, "log", "--merges", "--oneline", "--all") == ""  # no ref gained a merge
     assert _git(repo, "status", "--porcelain") == ""
-    joined = events.of("parallel.joined")
-    assert [[ln["status"] for ln in row["children"]] for row in joined] == [
+    merged = events.of("parallel.merged")
+    assert [[ln["status"] for ln in row["children"]] for row in merged] == [
         ["no_changes"],
         ["no_changes"],
     ]
@@ -711,7 +711,7 @@ def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: path
     assert [n.status for n in steering] == ["passed", "passed"]
     assert all(not n.commit_sha for n in steering)
     merges = _merges(provider)
-    assert [t.count("finished with no changes to join") for t in merges] == [1, 1]
+    assert [t.count("finished with no changes to merge") for t in merges] == [1, 1]
     assert all("FAILED" not in t and "CONFLICT" not in t for t in merges)
     # Each child's finish summary reaches the conversation once, in the notice of its end.
     texts = _user_texts(_final_messages(provider))
@@ -748,9 +748,9 @@ def test_three_tasks_each_stamp_their_own_outcome(tmp_path: pathlib.Path) -> Non
     )
     wf.run("start")
 
-    joined = events.of("parallel.joined")
-    assert [ln["status"] for row in joined for ln in row["children"]] == [
-        "joined",
+    merged = events.of("parallel.merged")
+    assert [ln["status"] for row in merged for ln in row["children"]] == [
+        "merged",
         "no_changes",
         "failed",
     ]
@@ -813,9 +813,9 @@ def test_failed_child_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     result = wf.run("start")
 
     assert result.reason == "max_turns"  # did not crash
-    joined = events.of("parallel.joined")
-    assert [ln["status"] for row in joined for ln in row["children"]] == ["failed", "joined"]
-    assert joined[0]["children"][0]["detail"] == "child boom"
+    merged = events.of("parallel.merged")
+    assert [ln["status"] for row in merged for ln in row["children"]] == ["failed", "merged"]
+    assert merged[0]["children"][0]["detail"] == "child boom"
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
     failed_note = next(note for _id, status, note in graph.status_calls if status == "failed")
@@ -1104,14 +1104,15 @@ def test_a_run_that_opens_with_a_ranked_dispatch_merges_the_winner_and_calls_no_
     assert spawner.tasks() == ["add a child file"] * 3
     files = _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
     assert files == ["README.md", "child2.txt"]
-    (joined,) = events.of("parallel.joined")
-    assert [child["status"] for child in joined["children"]] == ["ranked", "joined", "ranked"]
+    (merged,) = events.of("parallel.merged")
+    assert [child["status"] for child in merged["children"]] == ["ranked", "merged", "ranked"]
     (stop,) = events.of("session.stop")
     assert stop["reason"] == "children_ranked"
     assert stop["summary"].splitlines() == [
         "3 of 3 child(ren) ranked:",
         "  session-p1-l1: 2 of 3; agent6/session-p1-l1 holds its work",
-        "  session-p1-l2: first; joined at " + _git(repo, "rev-parse", "refs/agent6/parent")[:12],
+        "  session-p1-l2: first; merged into parent chain at "
+        + _git(repo, "rev-parse", "refs/agent6/parent")[:12],
         "  session-p1-l3: 3 of 3; agent6/session-p1-l3 holds its work",
     ]
 
@@ -1131,9 +1132,13 @@ def test_a_steer_sent_while_the_opening_ran_is_the_runs_next_work(tmp_path: path
 
     assert provider.call.call_count == 1 and result.reason == "finish_session"
     texts = _user_texts(_final_messages(provider))
-    joined = next(i for i, t in enumerate(texts) if "session-p1-l2" in t and "joined" in t)
+    merged = next(
+        i
+        for i, t in enumerate(texts)
+        if "session-p1-l2" in t and "merged into parent chain at" in t
+    )
     steered = next(i for i, t in enumerate(texts) if "also add a changelog line" in t)
-    assert joined < steered
+    assert merged < steered
     # The model works from the winner's tree.
     assert "child2.txt" in _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
 
@@ -1141,7 +1146,7 @@ def test_a_steer_sent_while_the_opening_ran_is_the_runs_next_work(tmp_path: path
 def test_an_opening_whose_children_all_fail_ends_with_no_child_result(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Nothing is joined and nothing is passed off as a result."""
+    """Nothing is merged and nothing is passed off as a result."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt", fail={1, 2, 3})
@@ -1205,7 +1210,7 @@ def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("steer_abort", False)
     assert [stop["reason"] for stop in events.of("session.stop")] == ["steer_abort"]
-    # Nothing is ranked and nothing joins after the stop: a resume ranks from the record.
+    # Nothing is ranked and nothing merges after the stop: a resume ranks from the record.
     assert git_read.chain_tip(repo, "refs/agent6/parent") is None
     (record,) = child_dispatch.read_records(tmp_path / "session")
     assert (record.state, record.ranking, record.delivered) == ("settling", None, False)
@@ -1214,7 +1219,7 @@ def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
 def test_an_opening_whose_ranking_crowns_no_child_ends_no_child_passed(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Every child is placed, none is joined, and the run does not read as ranked work."""
+    """Every child is placed, none is merged, and the run does not read as ranked work."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
@@ -1226,5 +1231,5 @@ def test_an_opening_whose_ranking_crowns_no_child_ends_no_child_passed(
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("no_child_passed", False)
     assert git_read.chain_tip(repo, "refs/agent6/parent") is None
-    (joined,) = events.of("parallel.joined")
-    assert [child["status"] for child in joined["children"]] == ["ranked", "ranked", "ranked"]
+    (merged,) = events.of("parallel.merged")
+    assert [child["status"] for child in merged["children"]] == ["ranked", "ranked", "ranked"]

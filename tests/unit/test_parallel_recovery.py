@@ -300,7 +300,7 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
 
 
 def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path) -> None:
-    """The child that finished joins once and is settled once; the one that never ran reads so."""
+    """The child that finished merges once and is settled once; the one that never ran reads so."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     session_dir = tmp_path / "run-abc"
@@ -335,12 +335,12 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
     (record,) = _records(session_dir)
     assert record.state == "complete"
     l1, l2 = record.children
-    assert l1.join is not None and l1.join.status == "joined" and l1.settled
-    assert l2.join is not None and l2.join.status == "failed" and not l2.settled
+    assert l1.merge is not None and l1.merge.status == "merged" and l1.settled
+    assert l2.merge is not None and l2.merge.status == "failed" and not l2.settled
     assert budget2.estimate_usd()[0] == pytest.approx(1.5)
     assert budget2.available().usd == pytest.approx(8.5)  # the unknown child holds nothing
     texts = _first_call_texts(provider2)
-    assert any("joined at" in t and "never started" in t for t in texts)
+    assert any("merged into parent chain at" in t and "never started" in t for t in texts)
 
 
 def test_a_merge_committed_before_the_record_is_not_merged_twice(
@@ -371,13 +371,13 @@ def test_a_merge_committed_before_the_record_is_not_merged_twice(
     real_write = child_dispatch.write_record
     writes: list[str] = []
 
-    def crash_after_first_join(session_dir: pathlib.Path, record: Any, *, now: float) -> None:
+    def crash_after_first_merge(session_dir: pathlib.Path, record: Any, *, now: float) -> None:
         writes.append(record.state)
-        if record.state == "joining" and record.children[0].join is not None:
+        if record.state == "merging" and record.children[0].merge is not None:
             raise _Crash  # the merge is on the chain, the record is not
         real_write(session_dir, record, now=now)
 
-    monkeypatch.setattr(child_dispatch, "write_record", crash_after_first_join)
+    monkeypatch.setattr(child_dispatch, "write_record", crash_after_first_merge)
     with pytest.raises(_Crash):
         _build_wf(
             repo,
@@ -404,7 +404,7 @@ def test_a_merge_committed_before_the_record_is_not_merged_twice(
     (record,) = _records(session_dir)
     assert record.state == "complete"
     assert all(
-        c.join is not None and c.join.status == "joined" and c.settled for c in record.children
+        c.merge is not None and c.merge.status == "merged" and c.settled for c in record.children
     )
     # The first execution settled the child; settled usage stays with it.
     assert budget2.estimate_usd()[0] == pytest.approx(0.0)
@@ -447,7 +447,7 @@ def test_a_result_completed_but_undelivered_is_delivered_once(
     _build_wf(
         repo, session_dir, provider2, child_recoverer=_no_children, budget=_tracker()
     ).resume()
-    assert sum("joined at" in t for t in _first_call_texts(provider2)) == 1
+    assert sum("merged into parent chain at" in t for t in _first_call_texts(provider2)) == 1
     (record,) = _records(session_dir)
     assert record.delivered
     assert _git(repo, "log", "--oneline", "refs/agent6/parent").count("run-abc-p1-l1 work") == 1
@@ -489,7 +489,7 @@ def test_child_spend_exhausts_the_parent_before_its_next_call(tmp_path: pathlib.
 
 
 def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None:
-    """An uninterrupted dispatch leaves a complete, delivered record with joins, usage and refs."""
+    """An uninterrupted dispatch leaves a complete, delivered record with merges, usage and refs."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     session_dir = tmp_path / "run-abc"
@@ -525,15 +525,17 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
         assert record.state == "complete" and record.delivered
         assert record.owner and record.source == "operator" and record.base == base
         (entry,) = record.children
-        assert entry.join is not None and entry.join.status == "joined" and entry.reported
-        assert entry.join.target_before and entry.join.target_after == entry.join.sha
+        assert entry.merge is not None and entry.merge.status == "merged" and entry.reported
+        assert entry.merge.target_before and entry.merge.target_after == entry.merge.sha
         assert entry.usage == child_dispatch.UsageRecord(usd=0.5) and entry.settled
     # The second task merged onto the first's merge: in the order written.
-    assert first.children[0].join is not None and second.children[0].join is not None
-    assert second.children[0].join.target_before == first.children[0].join.target_after
+    assert first.children[0].merge is not None and second.children[0].merge is not None
+    assert second.children[0].merge.target_before == first.children[0].merge.target_after
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     assert budget.available().usd == pytest.approx(9.0)
     stored = json.loads(child_dispatch.record_path(session_dir, "run-abc-p1").read_text())
-    assert stored["version"] == child_dispatch.RECORD_VERSION
-    assert (stored["join_policy"], stored["spec"], stored["node_id"]) == ("merge", "", None)
+    assert stored["version"] == 14
+    assert stored["children"][0]["merge"]["status"] == "merged"
+    assert stored["children"][0]["merge"]["sha"] == first.children[0].merge.sha
+    assert (stored["merge_policy"], stored["spec"], stored["node_id"]) == ("merge", "", None)
     assert "segments" not in stored

@@ -94,7 +94,7 @@ def test_continuation_refuses_before_start(
         winner = child.model_copy(
             update={
                 "session_id": "parent-p1-l2",
-                "join": child_dispatch.JoinRecord(status="joined"),
+                "merge": child_dispatch.MergeRecord(status="merged"),
             }
         )
         record = record.model_copy(update={"children": (*record.children, winner)})

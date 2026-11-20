@@ -50,16 +50,15 @@ def test_a_session_without_records_reads_as_none(tmp_path: pathlib.Path) -> None
 
 
 def test_a_retained_ref_keeps_its_recorded_commit_count(tmp_path: pathlib.Path) -> None:
-    """An older dispatch has a join count but no live count file."""
-    join = child_dispatch.JoinRecord.model_validate({"status": "unmerged", "commits": 3})
-    assert join.status == "retained"
-    assert child_dispatch.read_commit_count(tmp_path, join) == 3
+    """A retained ref reports its recorded count without a live count file."""
+    merge = child_dispatch.MergeRecord(status="retained", commits=3)
+    assert child_dispatch.read_commit_count(tmp_path, merge) == 3
 
 
 def test_a_rank_without_a_count_does_not_report_zero(tmp_path: pathlib.Path) -> None:
-    join = child_dispatch.JoinRecord(status="ranked", commits=0)
-    assert child_dispatch.read_commit_count(tmp_path, join, version=10) is None
-    assert child_dispatch.read_commit_count(tmp_path, join, version=12) == 0
+    merge = child_dispatch.MergeRecord(status="ranked", commits=0)
+    assert child_dispatch.read_commit_count(tmp_path, merge, version=10) is None
+    assert child_dispatch.read_commit_count(tmp_path, merge, version=12) == 0
 
 
 def test_records_read_in_dispatch_order(tmp_path: pathlib.Path) -> None:
@@ -100,22 +99,22 @@ def test_a_record_of_the_older_shape_refuses(tmp_path: pathlib.Path) -> None:
 
 def test_advancing_returns_new_records_and_keeps_the_rest(tmp_path: pathlib.Path) -> None:
     record = _record()
-    joined = record.with_child(
+    merged = record.with_child(
         record.child("run-p1-l1").model_copy(
             update={
-                "join": child_dispatch.JoinRecord(
-                    status="joined", sha="b" * 40, target_before="a" * 40, target_after="b" * 40
+                "merge": child_dispatch.MergeRecord(
+                    status="merged", sha="b" * 40, target_before="a" * 40, target_after="b" * 40
                 ),
                 "usage": child_dispatch.UsageRecord(usd=1.25),
                 "settled": True,
             }
         )
     )
-    assert record.child("run-p1-l1").join is None
-    assert joined.child("run-p1-l1").join is not None
-    assert joined.child("run-p1-l2") == record.child("run-p1-l2")
-    done = joined.advanced("complete", message="[parallel] group run-p1 complete")
+    assert record.child("run-p1-l1").merge is None
+    assert merged.child("run-p1-l1").merge is not None
+    assert merged.child("run-p1-l2") == record.child("run-p1-l2")
+    done = merged.advanced("complete", message="[parallel] group run-p1 complete")
     assert (done.state, done.message) == ("complete", "[parallel] group run-p1 complete")
-    assert joined.state == "prepared"
+    assert merged.state == "prepared"
     with pytest.raises(KeyError):
         record.child("nope")

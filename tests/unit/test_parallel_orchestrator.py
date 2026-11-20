@@ -1314,7 +1314,7 @@ def test_run_child_to_completion_records_what_the_import_retained(
     """The result names the imported ref, its tip and whether it holds commits past the base.
 
     A child that committed nothing (no branch, or a branch still at the base) is a success with
-    `has_commits` False, so the parent joins it as `no_changes` and merges nothing.
+    `has_commits` False, so the parent records `no_changes` and merges nothing.
     """
     origin_state = paths.state_dir(origin)
     base = git_read.status(origin).head_sha
@@ -1385,14 +1385,14 @@ def test_run_child_to_completion_failed_spawn_imports_nothing(
     assert not git_read.branch_exists(origin, "agent6/co-p1-l1")
 
 
-def test_a_failed_child_never_joins_the_parent(
+def test_a_failed_child_never_merges_into_the_parent(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime
 ) -> None:
-    """A failed child never joins the parent.
+    """A failed child never merges into the parent.
 
     Candidacy is one question, `produced_result`, the same one the group asks; gating only on
     died-without-end lets a child that ended `provider_error` come back ok=True, merge its half-done
-    branch into the parent's checkout and tell the model "joined at <sha>".
+    branch into the parent's checkout and tell the model "merged into parent chain at <sha>".
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1427,12 +1427,12 @@ def test_a_failed_child_never_joins_the_parent(
     assert git_read.branch_exists(origin, "agent6/co-pf-l1")
 
 
-def test_a_crashed_child_never_joins_the_parent(
+def test_a_crashed_child_never_merges_into_the_parent(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime
 ) -> None:
     """The died-without-end half of the same gate (a child with no session.stop folds "stale").
 
-    Imported, named in the error, never joined.
+    Imported, named in the error, never merged.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1688,7 +1688,7 @@ def test_build_child_spawner_keeps_child_order_when_children_finish_out_of_order
 ) -> None:
     """Child 2 finishes before child 1; the results still come back in child order.
 
-    The parent merges the list in order, so the join order is the dispatch order.
+    The parent merges the list in order, so the merge order is the dispatch order.
     """
     child_two_done = threading.Event()
     finished: list[int] = []

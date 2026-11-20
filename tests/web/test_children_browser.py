@@ -113,13 +113,13 @@ def seed_family(repo: pathlib.Path, prompt: str) -> pathlib.Path:
                 },
             )
         elif session == stopped:
-            join = child_dispatch.JoinRecord(
+            merge = child_dispatch.MergeRecord(
                 status="stopped",
                 branch="agent6/line-endings",
                 commits=2,
                 detail="stopped after the newline check",
             )
-            child = child.model_copy(update={"join": join})
+            child = child.model_copy(update={"merge": merge})
             append(stopped, {"type": "session.stop", "reason": "steer_abort", "ts": start + 10})
         else:
             append(review, {"type": "session.stop", "reason": "answered", "ts": start + 8})

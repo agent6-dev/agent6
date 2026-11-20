@@ -7898,7 +7898,7 @@ def test_dispatch_returns_what_started_and_settle_tells_the_rest(tmp_path: pathl
     assert "[parallel] child run-p1-l1 ended without a result: child failed" in said
     assert "[parallel] group run-p1 complete (1 child(ren))" in said
     assert "FAILED -- child failed" in said
-    assert [j.status for j in wf.parallel.joins("run-p1")] == ["failed"]
+    assert [j.status for j in wf.parallel.merges("run-p1")] == ["failed"]
     assert not wf.parallel.settle(conversation, 4), "a completed task is told once"
     before = len(conversation.messages)
     # A refusal before any child names itself and dispatches nothing.

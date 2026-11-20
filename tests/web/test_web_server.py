@@ -2560,7 +2560,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
                 encoding="utf-8",
             )
             merged.set()
-        if any(f.get("merged_into") == "master" for f in frames):
+        if any(f.get("merged_into_checkout") == "master" for f in frames):
             return False  # the refreshed header arrived
         return len(frames) < 20  # bounded: without the fix, no such frame ever comes
 
@@ -2577,7 +2577,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
     finally:
         sse.SESSION_POLL_S = orig
 
-    assert any(f.get("merged_into") == "master" for f in frames), (
+    assert any(f.get("merged_into_checkout") == "master" for f in frames), (
         "a merge landing after session.stop must reach the open stream"
     )
 

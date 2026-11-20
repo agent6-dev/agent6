@@ -46,9 +46,9 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
         children: list[child_dispatch.ChildRecord] = []
         for number, task in enumerate(tasks, 1):
             sid = f"{group}-l{number}"
-            join = None
+            merge = None
             if number == 4:
-                join = child_dispatch.JoinRecord(status="failed", detail="no matching provider")
+                merge = child_dispatch.MergeRecord(status="failed", detail="no matching provider")
             else:
                 child = layout.SessionLayout(
                     state, sid, layout.EVIDENCE_BUCKET if panel else "runs"
@@ -96,14 +96,14 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
                         ),
                     )
                 elif number > 1:
-                    join = child_dispatch.JoinRecord(
+                    merge = child_dispatch.MergeRecord(
                         status="stopped" if number == 2 else "retained",
                         branch=f"agent6/{sid}",
                         commits=number - 1,
                     )
             children.append(
                 child_dispatch.ChildRecord(
-                    session_id=sid, number=number, task=task, model="alternate", join=join
+                    session_id=sid, number=number, task=task, model="alternate", merge=merge
                 )
             )
         child_dispatch.write_record(
@@ -113,7 +113,7 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
                 source="panel" if panel else "model",
                 owner="exec-1",
                 turn=2,
-                join_policy="record_only" if panel else "rank",
+                merge_policy="record_only" if panel else "rank",
                 base="a" * 40,
                 spec="",
                 children=tuple(children),

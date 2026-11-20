@@ -271,14 +271,14 @@ def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     assert "fix the bug" in item.body and "add tests" in item.body
 
 
-def test_parallel_joined_names_child_ids_branches_shas() -> None:
+def test_parallel_merged_names_child_ids_branches_shas() -> None:
     items = fold_transcript(
         [
             {
-                "type": "parallel.joined",
+                "type": "parallel.merged",
                 "group": "p1",
                 "children": [
-                    {"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined",
+                    {"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "merged",
                      "sha": "abcdef1234567890"},
                     {"session_id": "co-p1-l2", "branch": "agent6/co-p1-l2", "status": "conflict",
                      "sha": ""},
@@ -289,13 +289,13 @@ def test_parallel_joined_names_child_ids_branches_shas() -> None:
     (item,) = items
     assert item.kind == "marker"
     assert "group p1 complete: 2 children" in item.body
-    assert "joined parent chain  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body
+    assert "merged into parent chain  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body
     assert "conflict  co-p1-l2  agent6/co-p1-l2" in item.body
 
 
 def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
-    """A panel's reviewers read as children "listed under this session", joined with no changes."""
-    dispatched, joined = fold_transcript(
+    """A panel lists its reviewers under the session without claiming to merge their work."""
+    dispatched, merged = fold_transcript(
         [
             {
                 "type": "parallel.dispatched",
@@ -305,7 +305,7 @@ def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
                 "source": "panel",
             },
             {
-                "type": "parallel.joined",
+                "type": "parallel.merged",
                 "group": "run-rpanel",
                 "source": "panel",
                 "children": [
@@ -322,16 +322,16 @@ def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
     )
     assert dispatched.body.splitlines()[0] == "dispatched 2 reviewers (group rpanel)"
     assert "child" not in dispatched.body and "• Review: tests" in dispatched.body
-    assert joined.body.splitlines() == [
+    assert merged.body.splitlines() == [
         "reviewers returned (group run-rpanel): 2",
         "returned  run-rpanel-l1",
         "failed  run-rpanel-l2  child deadline exceeded",
     ]
 
 
-def test_parallel_failed_renders_the_dispatch_error_but_not_the_join_subset() -> None:
-    # A dispatch failure (carries `error`) renders; a post-join failure (carries
-    # only `children`, already shown by the joined marker) is not double-rendered.
+def test_parallel_failed_renders_the_dispatch_error_but_not_the_merge_subset() -> None:
+    # A dispatch failure (carries `error`) renders; a post-merge failure (carries
+    # only `children`, already shown by the merged marker) is not double-rendered.
     (item,) = fold_transcript([{"type": "parallel.failed", "group": "p2", "error": "dirty tree"}])
     assert item.kind == "marker" and "group p2 dispatch failed: dirty tree" in item.body
     assert fold_transcript([{"type": "parallel.failed", "group": "p2", "children": [{}]}]) == []
@@ -1168,12 +1168,12 @@ def test_parallel_dispatched_counts_children_when_the_event_carries_them() -> No
     assert "dispatched 3 children for 2 tasks (group p1)" in item.body
 
 
-def test_parallel_joined_renders_a_failed_children_reason() -> None:
+def test_parallel_merged_renders_a_failed_children_reason() -> None:
     """A failed child's event distinguishes a failed start, a crash and no result."""
     (item,) = fold_transcript(
         [
             {
-                "type": "parallel.joined",
+                "type": "parallel.merged",
                 "group": "run-p1",
                 "children": [
                     {
@@ -1319,7 +1319,7 @@ def test_child_activity_names_the_child_and_the_merge_result() -> None:
         {
             "type": "parallel.child_merged",
             "child": "c",
-            "status": "joined",
+            "status": "merged",
             "sha": "123456789012345",
         },
         {
@@ -1335,6 +1335,6 @@ def test_child_activity_names_the_child_and_the_merge_result() -> None:
         "parent: inspect the diff",
         "finish_session refused: pending children: a, c",
         "child c continued (2)",
-        "child c joined parent chain at 123456789012",
+        "child c merged into parent chain at 123456789012",
         "child c not merged (agent6/c): merge conflict in a.py",
     ]

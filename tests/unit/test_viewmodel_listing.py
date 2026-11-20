@@ -313,10 +313,10 @@ def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: pa
     subprocess.run([*git, "checkout", "-q", "agent6/x"], check=True)
     subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "more"], check=True, env=env)
     got = manifest_branches(d, repo=repo)
-    assert "merged_into" not in got
+    assert "merged_into_checkout" not in got
     assert got["branch_line"] == "agent6/x → merges into main"
     # Without the repo the manifest fact stands as recorded.
-    assert manifest_branches(d)["merged_into"] == "main"
+    assert manifest_branches(d)["merged_into_checkout"] == "main"
 
 
 def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.Path) -> None:

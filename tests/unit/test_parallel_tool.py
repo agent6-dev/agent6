@@ -510,7 +510,7 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
         max_turns=2,
     )
     wf.run("start")
-    # The second call's messages carry the first call's tool result: the handles, no joins.
+    # The second call's messages carry the first call's tool result: the handles, no merges.
     second = provider.call.call_args_list[1]
     messages = second.kwargs.get("messages") or second.args[1]
     (answer,) = [
@@ -528,8 +528,8 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
     # The fake's children had ended, so the first boundary told their ends and merged the task.
     wire = json.dumps(messages)
     assert wire.count("[parallel] child run-abc-p1-l") == 2
-    assert "run-abc-p1-l1 (agent6/run-abc-p1-l1): joined at" in wire
-    assert "run-abc-p1-l2 (agent6/run-abc-p1-l2): ranked 2 of 2; not joined" in wire
+    assert "run-abc-p1-l1 (agent6/run-abc-p1-l1): merged into parent chain at" in wire
+    assert "run-abc-p1-l2 (agent6/run-abc-p1-l2): ranked 2 of 2; not merged" in wire
     assert [child.model for child in seen] == ["reviewer", "default"]
     # A child the model starts runs under its parent's config: no cap of its own.
     assert [child.limits for child in seen] == [None, None]
@@ -538,7 +538,7 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
     )
     (record,) = child_dispatch.read_records(session_dir)
     assert record.source == "model" and record.state == "complete" and record.delivered
-    assert (record.join_policy, record.spec) == ("rank", "reviewer,default")
+    assert (record.merge_policy, record.spec) == ("rank", "reviewer,default")
     assert [c.limits for c in record.children] == [None, None]
     assert graph.rationales[-1] == "dispatched through /parallel by the model"
     assert budget.estimate_usd()[0] == pytest.approx(1.0)

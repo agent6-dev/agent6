@@ -124,8 +124,8 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     (record,) = child_dispatch.read_records(parent)
     (child,) = record.children
     assert child.continuation is not None and child.continuation.sequence == 1
-    assert child.join is not None
-    assert child.join.status == ("joined" if control == "agent6" else "retained")
+    assert child.merge is not None
+    assert child.merge.status == ("merged" if control == "agent6" else "retained")
     continued = [b for b in seen if "CONTINUE-OWNED" in json.dumps(b["messages"])]
     assert continued
     stopped = json.dumps(parents[3]["messages"])
@@ -134,7 +134,7 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     assert children_cli._turn(continued[0]) > 0
     assert "original work" in json.dumps(continued[-1])
     assert (repo / "continued.txt").exists() is (control == "agent6")
-    assert "continued" in background._git(repo, "show", f"{child.join.branch}:continued.txt")
+    assert "continued" in background._git(repo, "show", f"{child.merge.branch}:continued.txt")
     assert "parallel.child_continued" in (parent / "logs.jsonl").read_text()
     assert cli_main(["--config", str(config), "resume", child.session_id]) == 2
     output = capsys.readouterr()

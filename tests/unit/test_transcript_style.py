@@ -20,15 +20,15 @@ def test_failed_tool_detail_is_a_neutral_span_not_the_fail_colour() -> None:
 
 
 def test_multiline_marker_renders_a_headline_plus_indented_detail() -> None:
-    # A parallel dispatch/join marker carries detail lines under the divider
+    # A parallel dispatch/merge marker carries detail lines under the divider
     # headline; the renderer keeps the first line as the ── … ── divider and
     # indents the rest (one place, so cli/tui/web all show it the same).
     item = transcript_items.TranscriptItem(
-        "marker", body="joined group p1: 2 child(ren)\njoined  l1\nconflict  l2"
+        "marker", body="merged group p1: 2 child(ren)\nmerged  l1\nconflict  l2"
     )
     lines = transcript_style.item_lines(item, detail="collapsed")
-    assert lines[0] == [("── joined group p1: 2 child(ren) ──", "marker")]
-    assert lines[1] == [("   joined  l1", "marker")]
+    assert lines[0] == [("── merged group p1: 2 child(ren) ──", "marker")]
+    assert lines[1] == [("   merged  l1", "marker")]
     assert lines[2] == [("   conflict  l2", "marker")]
 
 

@@ -108,7 +108,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         assert result.dispatched and len(result.children) == 1, result.message
         assert result.children[0].status == "no_changes"
         record = child_dispatch.read_records(worker_dir)[0]
-        assert record.source == "panel" and record.join_policy == "record_only"
+        assert record.source == "panel" and record.merge_policy == "record_only"
         assert record.version == child_dispatch.RECORD_VERSION
         child = record.children[0]
         assert child.limits is not None and launch.limits is not None
@@ -172,7 +172,7 @@ class _Crash(BaseException):
         "accounting",
         "accounting_failed",
         "settling",
-        "joining",
+        "merging",
         "complete",
     ],
 )
@@ -273,9 +273,9 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         assert ancestor.snapshot().unmetered_tokens == 2 * len(calls)
         assert ancestor.snapshot().settled_children == frozenset({worker_dir.name})
         record = child_dispatch.read_records(worker_dir)[0]
-        assert record.state == "complete" and record.join_policy == "record_only"
+        assert record.state == "complete" and record.merge_policy == "record_only"
         assert record.delivered and all(child.settled for child in record.children)
-        assert all(child.join is None or child.join.sha == "" for child in record.children)
+        assert all(child.merge is None or child.merge.sha == "" for child in record.children)
         assert child_env.git(clone, "rev-parse", "HEAD") == child_env.git(repo, "rev-parse", "HEAD")
 
 
@@ -486,7 +486,7 @@ def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
     record = child_dispatch.DispatchRecord(
         identity=worker.name + "-r1",
         source="panel",
-        join_policy="record_only",
+        merge_policy="record_only",
         owner="w",
         turn=1,
         base="",

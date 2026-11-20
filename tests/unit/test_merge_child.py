@@ -76,17 +76,17 @@ def test_a_requested_merge_survives_resume(tmp_path: pathlib.Path, conflict: boo
     resumed = background._harness(repo, tmp_path / "parent", None, children, max_turns=10)
     parallel_recovery.reconcile(resumed.parallel, state, conversation, turn=3)
     record = child_dispatch.read_records(tmp_path / "parent")[0]
-    join = record.child(sid).join
-    assert join is not None
+    merge = record.child(sid).merge
+    assert merge is not None
     if conflict:
         assert resumed.parallel.chain.tip() == before
         assert (repo / "README.md").read_text() == "parent\n"
         assert "README.md" in str(conversation.to_wire())
         assert f"agent6/{sid}" in str(conversation.to_wire())
-        assert join.status == "stopped"
+        assert merge.status == "stopped"
     else:
         assert (repo / "README.md").read_text() == "child\n"
-        assert join.status == "joined"
+        assert merge.status == "merged"
 
 
 def test_merge_child_is_refused_without_stopped_work(tmp_path: pathlib.Path) -> None:

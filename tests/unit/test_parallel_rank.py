@@ -507,9 +507,9 @@ def test_attempts_are_ranked_by_a_reviewer_in_the_background_and_merge_after_it_
     run.judge_ends(JUDGE, json.dumps({"order": [TWO, THREE, ONE], "summary": "two is tidier"}))
     assert dispatcher.settle(conversation, 4)
 
-    assert [(j.session_id, j.status, j.detail) for j in dispatcher.joins("root-p1")] == [
+    assert [(j.session_id, j.status, j.detail) for j in dispatcher.merges("root-p1")] == [
         (ONE, "ranked", "3 of 3"),
-        (TWO, "joined", ""),
+        (TWO, "merged", ""),
         (THREE, "ranked", "2 of 3"),
     ]
     assert (repo / "a.txt").read_text(encoding="utf-8") == "child 2\n"
@@ -650,21 +650,21 @@ def test_a_task_with_one_child_merges_without_a_ranking(
     assert dispatcher.settle(conversation, 2)
 
     record = _records(run)["root-p1"]
-    assert (record.join_policy, record.ranking, record.state) == ("merge", None, "complete")
+    assert (record.merge_policy, record.ranking, record.state) == ("merge", None, "complete")
     assert "Ranked by" not in json.dumps(conversation.to_wire())
 
 
 def test_a_ranked_child_reads_as_its_place_in_the_task_graph_note() -> None:
     """The DAG note says where the child placed, not that it failed."""
-    join = child_records.ChildJoin(ONE, f"agent6/{ONE}", "ranked", "", "3 of 3")
-    assert parallel_merge.child_note(join) == f"{ONE} ranked 3 of 3; not joined"
+    merge = child_records.ChildMerge(ONE, f"agent6/{ONE}", "ranked", "", "3 of 3")
+    assert parallel_merge.child_note(merge) == f"{ONE} ranked 3 of 3; not merged"
 
 
 def test_the_rank_summary_states_a_failed_childs_reason_once() -> None:
     """A failed child's line read `no result: no result (...)`."""
     reason = "no result (failed · crashed); no branch (the run made no commit)"
     text = parallel_merge.rank_summary(
-        [child_records.ChildJoin(ONE, f"agent6/{ONE}", "failed", "", reason)]
+        [child_records.ChildMerge(ONE, f"agent6/{ONE}", "failed", "", reason)]
     )
     assert text.splitlines() == ["0 of 1 child(ren) ranked:", f"  {ONE}: {reason}"]
 

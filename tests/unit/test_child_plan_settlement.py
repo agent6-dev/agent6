@@ -60,7 +60,7 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
         child_dispatch.DispatchRecord(
             identity="panel",
             source="panel",
-            join_policy="record_only",
+            merge_policy="record_only",
             owner="worker",
             turn=1,
             base="",

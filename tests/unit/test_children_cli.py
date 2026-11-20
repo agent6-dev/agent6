@@ -205,15 +205,15 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
     assert [(r.source, r.state, r.delivered) for r in (first, second)] == [
         ("model", "complete", True)
     ] * 2
-    a_join, b_join = first.children[0].join, second.children[0].join
-    assert a_join is not None and b_join is not None
-    expected = "joined" if control == "agent6" else "retained"
-    assert (a_join.status, b_join.status) == (expected, expected)
-    assert _git(repo, "show", f"{a_join.branch}:a.txt") == "CHILD-A"
-    assert _git(repo, "show", f"{b_join.branch}:b.txt") == "CHILD-B"
+    a_merge, b_merge = first.children[0].merge, second.children[0].merge
+    assert a_merge is not None and b_merge is not None
+    expected = "merged" if control == "agent6" else "retained"
+    assert (a_merge.status, b_merge.status) == (expected, expected)
+    assert _git(repo, "show", f"{a_merge.branch}:a.txt") == "CHILD-A"
+    assert _git(repo, "show", f"{b_merge.branch}:b.txt") == "CHILD-B"
     if control == "model":
-        assert a_join.branch in json.dumps(parent[3]) and b_join.branch in json.dumps(parent[2])
-    assert a_join.target_before == b_join.target_after
+        assert a_merge.branch in json.dumps(parent[3]) and b_merge.branch in json.dumps(parent[2])
+    assert a_merge.target_before == b_merge.target_after
     assert first.children[0].limits is None, "a child the model starts has no cap of its own"
     rows = [json.loads(line) for line in (session_dir / "logs.jsonl").read_text().splitlines()]
     for sid in (one, two):
@@ -230,9 +230,10 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
             assert f"child {sid} started" in rendered
             assert f"child {sid} finished" in rendered
             assert (
-                f"{'joined parent chain' if control == 'agent6' else 'retained'}  {sid}" in rendered
+                f"{'merged into parent chain' if control == 'agent6' else 'retained'}  {sid}"
+                in rendered
             )
-    assert [row["group"] for row in rows if row["type"] == "parallel.joined"] == [
+    assert [row["group"] for row in rows if row["type"] == "parallel.merged"] == [
         f"{session}-p2",
         f"{session}-p1",
     ]
@@ -327,9 +328,9 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
     # Both settings retain the work the parent asked for.
     assert (repo / "a.txt").exists() is (control == "agent6")
     assert (repo / "c.txt").exists() is (control == "agent6")
-    join = child_dispatch.read_records(session_dir)[0].children[0].join
-    assert join is not None
-    assert _git(repo, "show", f"{join.branch}:c.txt") == "c"
+    merge = child_dispatch.read_records(session_dir)[0].children[0].merge
+    assert merge is not None
+    assert _git(repo, "show", f"{merge.branch}:c.txt") == "c"
     rows = [json.loads(line) for line in (runs / child / "logs.jsonl").read_text().splitlines()]
     (steer,) = [row for row in rows if row["type"] == "steer.parent"]
     assert (steer["text"], steer["chars"]) == ("also write c.txt", 16)
@@ -455,14 +456,14 @@ def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
         two,
     )
     assert task.ranking.rationale == "the second reads best"
-    assert [child.join.status for child in task.children if child.join] == [
+    assert [child.merge.status for child in task.children if child.merge] == [
         "ranked" if control == "agent6" else "retained",
-        "joined" if control == "agent6" else "retained",
+        "merged" if control == "agent6" else "retained",
     ]
     assert (repo / "x.txt").exists() is (control == "agent6")
     for child in task.children:
-        assert child.join is not None
-        assert _git(repo, "show", f"{child.join.branch}:x.txt") in ("first", "second")
+        assert child.merge is not None
+        assert _git(repo, "show", f"{child.merge.branch}:x.txt") in ("first", "second")
     parent_last = next(body for who, _t, body in reversed(seen) if who == "PARENT")
     assert "Ranked by the judges: the second reads best" in json.dumps(parent_last["messages"])
     assert (

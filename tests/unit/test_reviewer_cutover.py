@@ -282,7 +282,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
             loop_state.LoopState(original_task="parent", tool_calls=0),
             [directive.Segment(task="Change README and finish", spec="1")],
         )
-    assert result.children[0].status == "joined", result.message
+    assert result.children[0].status == "merged", result.message
     worker = directory.parent / result.children[0].session_id
     panels = receipt.read_receipt(worker, repo).review.panels
     assert len(panels) == 1 and panels[0].completion == "complete"

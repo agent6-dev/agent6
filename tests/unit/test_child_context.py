@@ -52,9 +52,9 @@ def test_stopped_context_survives_completion_and_resume(
     assert expected in json.dumps(conversation.to_wire())
     assert expected in child_work.roster(dispatcher)[0].state
     (record,) = child_dispatch.read_records(tmp_path / "parent")
-    join = record.child(sid).join
-    assert join is not None
-    assert join.context == result.context
+    merge = record.child(sid).merge
+    assert merge is not None
+    assert merge.context == result.context
     assert not (repo / f"{sid}.txt").exists()
     monkeypatch.setattr(parallel_merge.time, "time", lambda: 1600)
     resumed = loop_conversation.Conversation()
@@ -68,8 +68,8 @@ def test_stopped_context_survives_completion_and_resume(
 
 def test_missing_context_is_not_reported_as_zero() -> None:
     """Old or incomplete child records retain their ref and name unknown measurements."""
-    words = parallel_merge.join_words(
-        child_records.ChildJoin("child", "agent6/child", "stopped", "", "stopped")
+    words = parallel_merge.merge_words(
+        child_records.ChildMerge("child", "agent6/child", "stopped", "", "stopped")
     )
     assert "agent6/child holds 0 commit(s)" in words
     assert "conversation at last call: unknown; last ran: unknown" in words
