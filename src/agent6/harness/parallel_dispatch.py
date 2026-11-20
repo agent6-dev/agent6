@@ -357,6 +357,7 @@ class ParallelDispatcher:
         )
         record = record.advanced("running")
         self.write(record)
+        started: list[child_records.StartedChild] = []
         try:
             width = batch_width or len(children)
             results: list[child_records.ChildResult] = []
@@ -368,7 +369,8 @@ class ParallelDispatcher:
                     for child in children[offset : offset + width]
                 ]
                 batch_group = group if len(children) <= width else f"{group}-b{offset // width + 1}"
-                results.extend(self.child_spawner(batch, batch_group, at=record.base or None))
+                started = self.child_spawner(batch, batch_group, at=record.base or None)
+                results.extend(child.result.result() for child in started)
             if len(results) != len(children):
                 raise child_repo.ChildRepoError(
                     f"group spawner returned {len(results)} result(s)"
@@ -376,6 +378,8 @@ class ParallelDispatcher:
                 )
         except Exception as exc:
             # The front-end callback may fail after launching: the children's usage is unknown.
+            for child in started:
+                child.stop()
             self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
             self.fail_nodes(record, f"dispatch failed: {exc}")
             self.emit(journal.ParallelFailed(group=identity, error=str(exc)))

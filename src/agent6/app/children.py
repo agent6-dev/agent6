@@ -273,7 +273,7 @@ def run_child_to_completion(
 ) -> child_records.ChildResult:
     """Run one child to its end and import it into the origin.
 
-    The parent runs a group of these on a thread pool, so each is
+    The parent runs each of a group's children on its own thread, so each is
     self-contained. A child that failed to start, was still running at teardown or its
     deadline, refused its import, or ended without a result comes back `ok=False`; an
     imported branch is safe in the origin either way, and a clone that was not imported
@@ -832,6 +832,38 @@ def build_child_ranker(
     return rank
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class GroupSpawner:
+    """Start groups of children in the background, and end what still runs at teardown.
+
+    Attributes:
+        start: Starts one group and returns its children at once.
+        teardown: Set to end every child's watch now, without the stop's grace.
+    """
+
+    start: child_records.GroupChildSpawner
+    teardown: threading.Event
+
+    def __call__(
+        self, children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.StartedChild]:
+        """Start the children as one group.
+
+        Args:
+            children: The children, in child order.
+            group: The group id, `p<seq>`.
+            at: The commit each clone is detached at.
+
+        Returns:
+            The started children, at once.
+        """
+        return self.start(children, group, at=at)
+
+    def close(self) -> None:
+        """End every child still running: its watch stops it by signal and imports nothing."""
+        self.teardown.set()
+
+
 def build_child_spawner(
     cfg: Config,
     origin: pathlib.Path,
@@ -846,12 +878,12 @@ def build_child_spawner(
     child_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     watch: Callable[[pathlib.Path, str, str], bool] | None = None,
-) -> child_records.GroupChildSpawner:
+) -> GroupSpawner:
     """Build the group dispatcher the loop calls at a `/parallel` boundary.
 
-    One call runs every child on its own thread, imports each under a shared lock
-    and returns the results in dispatch order. Child ids are
-    `<parent>-<group>-l<i>`.
+    One call starts every child on a watch thread of its own and returns at once; each
+    watch clones, spawns and awaits its child, imports it under a lock the execution's
+    children share, and resolves the child's result. Child ids are `<parent>-<group>-l<i>`.
 
     Args:
         cfg: The parent's config.
@@ -873,10 +905,13 @@ def build_child_spawner(
     """
     if watch is not None:
         child_away = "wait"
+    # One fetch into the repository at a time, across every group this execution starts.
+    import_lock = threading.Lock()
+    hard_stop = threading.Event()
 
     def dispatch(
         children: list[child_records.ChildTask], group: str, *, at: str | None = None
-    ) -> list[child_records.ChildResult]:
+    ) -> list[child_records.StartedChild]:
         # The child cap binds before any clone; the refusal reaches the parent as feedback.
         if len(children) > cfg.harness.parallel.max_children:
             raise ParallelError(
@@ -914,27 +949,10 @@ def build_child_spawner(
             for i, (chosen, child) in enumerate(zip(settings, children, strict=True), start=1)
         ]
         paths.mkdir_for_real_user(sessions_layout.bucket_dir(record_state, "runs"))
-        import_lock = threading.Lock()
         parent_dir = (
             sessions_layout.bucket_dir(record_state, kinds.session_bucket(parent_mode))
             / parent_session_id
         )
-        hard_stop = threading.Event()
-
-        def should_stop() -> bool:
-            # Both stop channels interrupt the wait; the loop consumes their markers after.
-            return (
-                hard_stop.is_set()
-                or ipc.steer_answer_is_abort(parent_dir)
-                or ipc.stop_request_pending(parent_dir)
-            )
-
-        def stop_is_now() -> bool:
-            return (
-                hard_stop.is_set()
-                or ipc.steer_answer_is_abort(parent_dir)
-                or ipc.stop_request_is_now(parent_dir)
-            )
 
         # The parent's manifest pins the gate the children's config carries.
         gate_source = ""
@@ -945,9 +963,25 @@ def build_child_spawner(
                 gate_source = ""
 
         def one(
-            pair: tuple[child_records.ChildSpec, child_records.ChildTask],
+            spec: child_records.ChildSpec, child: child_records.ChildTask, asked: threading.Event
         ) -> child_records.ChildResult:
-            spec, child = pair
+            def should_stop() -> bool:
+                # Both stop channels interrupt the wait; the loop consumes their markers after.
+                return (
+                    hard_stop.is_set()
+                    or asked.is_set()
+                    or ipc.steer_answer_is_abort(parent_dir)
+                    or ipc.stop_request_pending(parent_dir)
+                )
+
+            def stop_is_now() -> bool:
+                return (
+                    hard_stop.is_set()
+                    or asked.is_set()
+                    or ipc.steer_answer_is_abort(parent_dir)
+                    or ipc.stop_request_is_now(parent_dir)
+                )
+
             return run_child_to_completion(
                 spec,
                 child.task,
@@ -975,31 +1009,37 @@ def build_child_spawner(
                 watch=watch,
             )
 
-        pairs = list(zip(specs, children, strict=True))
-        if len(pairs) > 1:
-            # Not a with-block: its exit would join every child await on an interrupt.
-            pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(pairs))
+        def watched(
+            spec: child_records.ChildSpec,
+            child: child_records.ChildTask,
+            asked: threading.Event,
+            result: concurrent.futures.Future[child_records.ChildResult],
+        ) -> None:
             try:
-                futures = [pool.submit(one, p) for p in pairs]
-                # A child thread that raises (a bug, not a child failure) aborts the group now.
-                done, _ = concurrent.futures.wait(
-                    futures, return_when=concurrent.futures.FIRST_EXCEPTION
-                )
-                for f in done:
-                    exc = f.exception()
-                    if exc is not None:
-                        raise exc
-                results = [f.result() for f in futures]  # submit order = child order
-            except BaseException:
-                # The child threads request a stop and exit; the children keep running detached.
-                hard_stop.set()
-                pool.shutdown(wait=False, cancel_futures=True)
-                raise
-            pool.shutdown(wait=True)
-            return results
-        return [one(p) for p in pairs]
+                result.set_result(one(spec, child, asked))
+            except BaseException as exc:
+                # A watch that raises is a bug, not a child failure: whoever reads the result
+                # hears it, and the child dies with this thread.
+                result.set_exception(exc)
 
-    return dispatch
+        started: list[child_records.StartedChild] = []
+        for spec, child in zip(specs, children, strict=True):
+            asked = threading.Event()
+            result: concurrent.futures.Future[child_records.ChildResult] = (
+                concurrent.futures.Future()
+            )
+            # The watch spawns its child: the kernel ties a child to the thread that forked
+            # it, so the thread outlives the child. A daemon, so no exit waits on a child.
+            threading.Thread(
+                target=watched,
+                args=(spec, child, asked, result),
+                name=f"agent6-child-{spec.session_id}",
+                daemon=True,
+            ).start()
+            started.append(child_records.StartedChild(spec.session_id, result, asked.set))
+        return started
+
+    return GroupSpawner(dispatch, hard_stop)
 
 
 def build_parent_spawner(
@@ -1016,7 +1056,7 @@ def build_parent_spawner(
     child_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     watch: Callable[[pathlib.Path, str, str], bool] | None = None,
-) -> child_records.GroupChildSpawner | None:
+) -> GroupSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.
 
     A child worker retains the executor only for its configured harness panels.

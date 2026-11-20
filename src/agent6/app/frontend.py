@@ -15,8 +15,8 @@ import pathlib
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import budget, child_records, kinds, portable
-from agent6.app import compare
+from agent6 import budget, kinds, portable
+from agent6.app import children, compare
 from agent6.config import Config
 from agent6.harness import loop, loop_snapshot
 from agent6.sessions import event_log, ipc, layout
@@ -201,7 +201,7 @@ class SessionFrontend:
             bool,
             Callable[[pathlib.Path, str, str], bool],
         ],
-        child_records.GroupChildSpawner | None,
+        children.GroupSpawner | None,
     ]
     build_judge_provider: compare.BuildProvider | None
     judging_status: compare.JudgingStatus

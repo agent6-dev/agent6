@@ -198,8 +198,8 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
 
         def crash_after_import(
             children: list[child_records.ChildTask], group: str, *, at: str | None = None
-        ) -> list[child_records.ChildResult]:
-            spawner(children, group, at=at)
+        ) -> list[child_records.StartedChild]:
+            child_env.results_of(spawner(children, group, at=at))
             raise _Crash
 
         if boundary == "imported":

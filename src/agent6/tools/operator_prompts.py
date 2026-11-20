@@ -14,6 +14,7 @@ import dataclasses
 import itertools
 import pathlib
 import sys
+import threading
 import time
 from typing import Literal, Protocol
 
@@ -239,6 +240,8 @@ class OperatorPrompts:
         # Seconds spent blocked on the operator, a relayed child's prompts included; the loop
         # subtracts them from its wall clock.
         self.waited_s = 0.0
+        # A child's watch relays its prompts while the loop asks its own: one at a time.
+        self.one_at_a_time = threading.RLock()
 
     def approve(self, prompt: str, *, scope: str | None = None, call_id: int | None = None) -> bool:
         """Ask, unless a standing grant for the scope already answers.
@@ -268,25 +271,28 @@ class OperatorPrompts:
         ):
             self._journal(journal.ApprovalAnswer(id=request.id, approved=True, source="session"))
             return True
-        if self._session_dir is not None:
-            ipc.clear_answer(self._session_dir, request.id)
-        self._journal(
-            journal.ApprovalPrompt(
-                id=request.id,
-                prompt=prompt,
-                standing=bool(scope),
-                scope=scope,
-                call_id=call_id,
-            )
-        )
         started = time.monotonic()
-        try:
-            answer = self._approver(request)
-        finally:
-            self.waited_s += time.monotonic() - started
-        self._journal(
-            journal.ApprovalAnswer(id=request.id, approved=answer.approved, source=answer.source)
-        )
+        with self.one_at_a_time:
+            if self._session_dir is not None:
+                ipc.clear_answer(self._session_dir, request.id)
+            self._journal(
+                journal.ApprovalPrompt(
+                    id=request.id,
+                    prompt=prompt,
+                    standing=bool(scope),
+                    scope=scope,
+                    call_id=call_id,
+                )
+            )
+            try:
+                answer = self._approver(request)
+            finally:
+                self.waited_s += time.monotonic() - started
+            self._journal(
+                journal.ApprovalAnswer(
+                    id=request.id, approved=answer.approved, source=answer.source
+                )
+            )
         return answer.approved
 
     def ask(
@@ -316,17 +322,8 @@ class OperatorPrompts:
         request = QuestionRequest(
             id=f"question-{next(self._questions)}", questions=questions, call_id=call_id, wait=wait
         )
-        if self._session_dir is not None:
-            ipc.clear_question_answers(self._session_dir, request.id)
-        self._journal(
-            journal.QuestionPrompt(
-                id=request.id,
-                questions=[{"question": q.question, "options": list(q.options)} for q in questions],
-                call_id=call_id,
-                wait=wait,
-            )
-        )
         if not wait:
+            self._open(request)
             self._pending[request.id] = request
             presence = (
                 presence_note(self._session_dir)
@@ -342,10 +339,12 @@ class OperatorPrompts:
                 id=request.id,
             )
         started = time.monotonic()
-        try:
-            answer = self._questioner(request)
-        finally:
-            self.waited_s += time.monotonic() - started
+        with self.one_at_a_time:
+            self._open(request)
+            try:
+                answer = self._questioner(request)
+            finally:
+                self.waited_s += time.monotonic() - started
         if len(answer.answers) > len(questions):
             raise ValueError(
                 f"{answer.source} answered {len(questions)} questions"
@@ -361,6 +360,21 @@ class OperatorPrompts:
             )
         )
         return dataclasses.replace(answer, answers=answers, id=request.id)
+
+    def _open(self, request: QuestionRequest) -> None:
+        """Clear the question's answer slot, then journal its prompt."""
+        if self._session_dir is not None:
+            ipc.clear_question_answers(self._session_dir, request.id)
+        self._journal(
+            journal.QuestionPrompt(
+                id=request.id,
+                questions=[
+                    {"question": q.question, "options": list(q.options)} for q in request.questions
+                ],
+                call_id=request.call_id,
+                wait=request.wait,
+            )
+        )
 
     def pending(self) -> tuple[QuestionRequest, ...]:
         """Return the queued questions nobody has answered yet, oldest first."""

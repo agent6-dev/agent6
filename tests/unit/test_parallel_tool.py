@@ -22,6 +22,7 @@ from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import dispatch, tool_errors
 from agent6.tools import results as tools_results
+from tests import child_env
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -245,6 +246,7 @@ def test_the_model_dispatches_children_and_reads_the_result_as_the_tools_answer(
     session_dir.mkdir()
     seen: list[child_records.ChildTask] = []
 
+    @child_env.blocking
     def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         seen.extend(children)
         out = []

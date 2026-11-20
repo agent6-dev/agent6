@@ -102,6 +102,7 @@ def run_panel(
         )
         cfg = Config.model_validate({"sandbox": {"isolation": "none", "protect_git": "off"}})
 
+        @child_env.blocking
         def spawn(
             children: list[child_records.ChildTask], group: str, *, at: str | None = None
         ) -> list[child_records.ChildResult]:

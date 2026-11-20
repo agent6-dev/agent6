@@ -9,9 +9,10 @@ code that clones, spawns and merges lives in `harness.child_repo`, `app.children
 
 from __future__ import annotations
 
+import concurrent.futures
 import dataclasses
 import pathlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Literal, Protocol
 
 from agent6 import budget, kinds
@@ -174,19 +175,39 @@ class ChildSpawner(Protocol):
         ...
 
 
-class GroupChildSpawner(Protocol):
-    """Run a group of sibling children to their end and import each into the parent's repo.
+def _no_stop() -> None:
+    """Stop nothing: the hook of a child that has already ended."""
 
-    One call clones, spawns, awaits and imports every child; `app.children` owns that machinery
-    and the parent supplies the tasks and the group id (`p<seq>`). A child that failed to
-    start, outlived the teardown or was refused at import has `ok` False and leaves the
-    parent's repo untouched.
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class StartedChild:
+    """One child started in the background, watched until it has ended and been imported.
+
+    Attributes:
+        session_id: The child's session id.
+        result: Resolves once: with the child's result after its import, or with why it
+            never ran.
+        stop: Asks the child to stop now; its result still resolves, with its work imported.
+    """
+
+    session_id: str
+    result: concurrent.futures.Future[ChildResult]
+    stop: Callable[[], None] = _no_stop
+
+
+class GroupChildSpawner(Protocol):
+    """Start a group of sibling children, each imported into the parent's repo at its end.
+
+    One call returns at once; `app.children` clones, spawns, awaits and imports every child
+    behind it, and the parent supplies the tasks and the group id (`p<seq>`). A child that
+    failed to start, outlived the teardown or was refused at import has `ok` False and
+    leaves the parent's repo untouched.
     """
 
     def __call__(
         self, children: list[ChildTask], group: str, *, at: str | None = None
-    ) -> list[ChildResult]:
-        """Run the children as one group, from the commit `at` when given, in dispatch order."""
+    ) -> list[StartedChild]:
+        """Start the children as one group, from the commit `at` when given, in dispatch order."""
         ...
 
 

@@ -24,6 +24,7 @@ from agent6.harness import loop, operator_bridge, parallel_dispatch, provider_ca
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import results as tools_results
+from tests import child_env
 
 
 class _Crash(BaseException):
@@ -231,6 +232,7 @@ def test_a_failed_record_write_launches_nothing(
     _init_repo(repo)
     calls: list[str] = []
 
+    @child_env.blocking
     def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         calls.append(group)
         return []
@@ -275,6 +277,7 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
     _init_repo(repo)
     session_dir = tmp_path / "run-abc"
 
+    @child_env.blocking
     def crashing(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         raise _Crash
 
@@ -324,6 +327,7 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
     base = _head(repo)
     tip = _make_branch(repo, "agent6/run-abc-p1-l1", base, "child1.txt", tmp_path / "wt1")
 
+    @child_env.blocking
     def crashing(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         raise _Crash
 
@@ -369,6 +373,7 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
     base = _head(repo)
     tips: dict[str, str] = {}
 
+    @child_env.blocking
     def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         out = []
         for i in range(1, len(children) + 1):
@@ -434,6 +439,7 @@ def test_a_result_completed_but_undelivered_is_delivered_once(
     session_dir = tmp_path / "run-abc"
     base = _head(repo)
 
+    @child_env.blocking
     def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         sid = f"run-abc-{group}-l1"
         tip = _make_branch(repo, f"agent6/{sid}", base, "child1.txt", tmp_path / "wt1")
@@ -475,6 +481,7 @@ def test_child_spend_exhausts_the_parent_before_its_next_call(tmp_path: pathlib.
     base = _head(repo)
     tip = _make_branch(repo, "agent6/run-abc-p1-l1", base, "child1.txt", tmp_path / "wt1")
 
+    @child_env.blocking
     def crashing(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         raise _Crash
 
@@ -510,6 +517,7 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
 
     ceilings: list[float] = []
 
+    @child_env.blocking
     def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         out = []
         ceilings.extend(child.allowance.usd for child in children)

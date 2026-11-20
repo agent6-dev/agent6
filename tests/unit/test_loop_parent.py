@@ -32,6 +32,7 @@ from agent6.ui.cli import parallel as cli_parallel
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import transcript as viewmodel_transcript
+from tests import child_env
 
 
 def _silent(_msg: str) -> None:
@@ -203,7 +204,7 @@ class _FakeGroupSpawner:
 
     def __call__(
         self, children: list[child_records.ChildTask], group: str, *, at: str | None = None
-    ) -> list[child_records.ChildResult]:
+    ) -> list[child_records.StartedChild]:
         self.calls.append((list(children), group))
         results: list[child_records.ChildResult] = []
         for i in range(1, len(children) + 1):
@@ -270,7 +271,7 @@ class _FakeGroupSpawner:
                     has_commits=True,
                 )
             )
-        return results
+        return child_env.ended(results)
 
 
 def _build_wf(
@@ -798,6 +799,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
 
     calls: list[str] = []
 
+    @child_env.blocking
     def exploding_spawner(
         children: list[child_records.ChildTask], group: str, *, at: str | None = None
     ) -> list[child_records.ChildResult]:

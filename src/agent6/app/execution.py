@@ -424,6 +424,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     escape_handled = False
     undo_outcome: list[tuple[str, str]] = []
     dispatcher: dispatch.ToolDispatcher | None = None
+    spawner: app_children.GroupSpawner | None = None
     mcp_manager = None
     try:
         reporter.note(f"{'resume ' if inputs.resuming else ''}session id: {inputs.session_id}")
@@ -531,6 +532,21 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             ipc.promote_queued_steer(layout.session_dir)
             return steer_state.requested()
 
+        # Child workers retain only harness-panel authority. Every child's record goes where
+        # this session's does: the root repository's state.
+        spawner = frontend.build_parent_spawner(
+            cfg,
+            inputs.explicit_leaves,
+            cwd,
+            layout.state_dir,
+            mode,
+            inputs.session_id,
+            inputs.budget_overrides.max_usd if inputs.budget_overrides is not None else None,
+            inputs.sandbox_overrides.auto_approve
+            if inputs.sandbox_overrides is not None
+            else False,
+            child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
+        )
         wf = loop.Harness(
             media_input=role_providers.input_capabilities(cfg, session.rm_role),
             chain=run_chain.RunChain(
@@ -587,23 +603,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 child_authority=child_launch.dispatch_authority(
                     cfg, mode=mode, session_id=inputs.session_id, root=cwd
                 ),
-                # Child workers retain only harness-panel authority. Every child's
-                # record goes where this session's does: the root repository's state.
-                child_spawner=frontend.build_parent_spawner(
-                    cfg,
-                    inputs.explicit_leaves,
-                    cwd,
-                    layout.state_dir,
-                    mode,
-                    inputs.session_id,
-                    inputs.budget_overrides.max_usd
-                    if inputs.budget_overrides is not None
-                    else None,
-                    inputs.sandbox_overrides.auto_approve
-                    if inputs.sandbox_overrides is not None
-                    else False,
-                    child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
-                ),
+                child_spawner=spawner,
                 child_recoverer=app_children.build_child_recoverer(
                     cfg, cwd, layout.state_dir, mode=mode, reporter=reporter
                 ),
@@ -745,6 +745,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     cleanup.callback(process.clear_session_netns_pid, layout.session_dir)
                     cleanup.callback(session_net.close)
                 cleanup.callback(_close_mcp)
+                if spawner is not None:
+                    # A child the loop's end did not stop (an escape) ends here, by signal.
+                    cleanup.callback(spawner.close)
                 if dispatcher is not None:
                     cleanup.callback(dispatcher.close)
                 else:

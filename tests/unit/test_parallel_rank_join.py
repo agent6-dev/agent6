@@ -32,6 +32,7 @@ from agent6.sessions import child_dispatch, event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
+from tests import child_env
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -77,9 +78,9 @@ class _Children:
 
     def spawn(
         self, children: list[child_records.ChildTask], group: str, *, at: str | None = None
-    ) -> list[child_records.ChildResult]:
+    ) -> list[child_records.StartedChild]:
         self.results = [self.result(i) for i in range(1, len(children) + 1)]
-        return self.results
+        return child_env.ended(self.results)
 
     def result(self, child: int, *, has_commits: bool = True) -> child_records.ChildResult:
         branch = f"agent6/root-p1-l{child}"

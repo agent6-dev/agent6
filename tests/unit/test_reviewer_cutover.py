@@ -55,6 +55,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     observed: list[tuple[int, float]] = []
     deadlines: list[float | None] = []
 
+    @child_env.blocking
     def spawn(
         children: list[child_records.ChildTask], group: str, *, at: str | None = None
     ) -> list[child_records.ChildResult]:
@@ -158,6 +159,7 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
     assert target is not None
     target = executor.chain.retain_review_target(target, "parent")
 
+    @child_env.blocking
     def spawn(
         children: list[child_records.ChildTask], group: str, *, at: str | None = None
     ) -> list[child_records.ChildResult]:

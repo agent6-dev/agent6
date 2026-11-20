@@ -49,6 +49,7 @@ from agent6.tools import mcp_client, operator_prompts
 from agent6.tools import results as tools_results
 from agent6.tools import schema as tools_schema
 from agent6.viewmodel.session import status as session_status
+from tests import child_env
 from tests.unit.turn_context import turn_context
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
@@ -7713,6 +7714,7 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
     snap = tmp_path / "loop_state.json"
     at_spawn: dict[str, Any] = {}
 
+    @child_env.blocking
     def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         at_spawn["group"] = group
         at_spawn["persisted"] = json.loads(snap.read_text(encoding="utf-8"))[
@@ -7763,6 +7765,7 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
     """
     from agent6 import directive
 
+    @child_env.blocking
     def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         return [
             child_records.ChildResult(

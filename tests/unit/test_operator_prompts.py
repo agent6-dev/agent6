@@ -461,3 +461,42 @@ def test_conversation_text_keeps_its_format_characters() -> None:
     assert terminal.escape_unprintable(family) == (
         "\U0001f468\\u200d\U0001f469\\u200d\U0001f467 \\u200f\u05e9\u05dc\u05d5\u05dd"
     )
+
+
+def test_a_second_prompt_waits_until_the_first_is_answered(tmp_path: pathlib.Path) -> None:
+    """A child's relayed approval and the loop's own never sit open together.
+
+    A child's watch asks from its own thread while the loop takes turns; two prompts open at
+    once showed a front-end only the later one.
+    """
+    session_dir = tmp_path / "run"
+    events = _sink(session_dir)
+    first_open, release = threading.Event(), threading.Event()
+    open_now: list[int] = []
+    most_open: list[int] = []
+
+    def approver(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        open_now.append(1)
+        most_open.append(len(open_now))
+        first_open.set()
+        assert release.wait(5.0)
+        open_now.pop()
+        return operator_prompts.ApprovalAnswer(True, "stdin")
+
+    prompts = _prompts(session_dir, events, approver=approver)
+    with futures.ThreadPoolExecutor(max_workers=2) as pool:
+        relayed = pool.submit(prompts.approve, "[child 1 run-p1-l1] Allow run_command: make")
+        assert first_open.wait(5.0)
+        own = pool.submit(prompts.approve, "Allow run_command: pytest")
+        # Long enough for an unguarded second prompt to open beside the first.
+        assert not release.wait(0.3)
+        assert len(_of(session_dir, "approval.prompt")) == 1 and most_open == [1]
+        release.set()
+        assert relayed.result(5.0) and own.result(5.0)
+    assert most_open == [1, 1]
+    assert [e["type"] for e in _journal(session_dir) if e["type"].startswith("approval.")] == [
+        "approval.prompt",
+        "approval.answer",
+        "approval.prompt",
+        "approval.answer",
+    ]

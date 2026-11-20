@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import pathlib
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import pytest
@@ -29,6 +31,34 @@ from agent6.sessions import (
 )
 from agent6.ui.cli import parallel
 from agent6.vcs.git import read as git_read
+
+
+def ended(results: Sequence[child_records.ChildResult]) -> list[child_records.StartedChild]:
+    """Return children that have already ended with these results, as a fake spawner starts them."""
+    started: list[child_records.StartedChild] = []
+    for result in results:
+        future: concurrent.futures.Future[child_records.ChildResult] = concurrent.futures.Future()
+        future.set_result(result)
+        started.append(child_records.StartedChild(result.spec.session_id, future))
+    return started
+
+
+def blocking(
+    run: Callable[..., Sequence[child_records.ChildResult]],
+) -> child_records.GroupChildSpawner:
+    """Adapt a fake that runs its group to the end into a spawner whose children have ended."""
+
+    def start(
+        children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.StartedChild]:
+        return ended(run(children, group, at=at))
+
+    return start
+
+
+def results_of(started: Sequence[child_records.StartedChild]) -> list[child_records.ChildResult]:
+    """Wait for started children and return their results, in child order."""
+    return [child.result.result(timeout=120) for child in started]
 
 
 def git(repo: pathlib.Path, *args: str) -> str:

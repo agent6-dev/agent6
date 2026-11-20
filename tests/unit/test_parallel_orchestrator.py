@@ -49,6 +49,7 @@ from agent6.ui.cli import parallel as parallel_cmd
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
+from tests import child_env
 
 
 def _launch_of(env: dict[str, str]) -> child_launch.ChildLaunch:
@@ -473,22 +474,21 @@ def test_parent_dispatch_wait_honors_a_stop_request(
         parent_session_id="parent",
         runtime=runtime,
     )
-    dispatch([child_records.ChildTask(task="a", model=None)], "p1")
+    child_env.results_of(dispatch([child_records.ChildTask(task="a", model=None)], "p1"))
 
     assert observed == [True]
 
 
-def test_parent_dispatch_aborts_promptly_on_a_child_thread_raise(
+def test_a_watch_that_raises_fails_its_own_child_and_close_ends_the_rest(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     runtime: app_children.ChildRuntime,
 ) -> None:
-    """A child thread that raises aborts the group at once.
+    """A watch that raises resolves its own child's result with the fault, at once.
 
-    A raise is a bug, not a child failure (those return ok=False); awaiting futures in submission
-    order leaves the raise unobserved, and hard_stop unset, until each earlier child finishes on its
-    own.
+    A raise is a bug, not a child failure (those return ok=False). Its sibling keeps running
+    in the background until the spawner's `close` ends it.
     """
     origin_state = tmp_path / "ostate"
     origin_state.mkdir()
@@ -520,22 +520,20 @@ def test_parent_dispatch_aborts_promptly_on_a_child_thread_raise(
         runtime=runtime,
     )
     start = time.monotonic()
+    one, two = dispatch(
+        [
+            child_records.ChildTask(task="a", model=None),
+            child_records.ChildTask(task="b", model=None),
+        ],
+        "p1",
+    )
     with pytest.raises(RuntimeError, match="child thread blew up"):
-        dispatch(
-            [
-                child_records.ChildTask(task="a", model=None),
-                child_records.ChildTask(task="b", model=None),
-            ],
-            "p1",
-        )
+        two.result.result(timeout=4.0)
     assert time.monotonic() - start < 4.0  # not after child 1's own sweet time
-    # The dispatcher re-raises without joining still-running child threads
-    # (deliberate: teardown must not block on children), so give child 1's thread
-    # a bounded moment to record that hard_stop released it.
-    deadline = time.monotonic() + 2.0
-    while "child1_released_by_stop" not in seen and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert seen.get("child1_released_by_stop") is True  # hard_stop actually fired
+    assert not one.result.done()
+    dispatch.close()
+    assert one.result.result(timeout=4.0).ok
+    assert seen.get("child1_released_by_stop") is True  # the teardown released it
 
 
 def test_bridge_spawner_keeps_the_task_out_of_the_argv(
@@ -1658,7 +1656,7 @@ def test_build_child_spawner_builds_specs_and_preserves_order(
         child_records.ChildTask(task="task a", model="kimi"),
         child_records.ChildTask(task="task b", model=None),
     ]
-    results = dispatch(children, "p2")
+    results = child_env.results_of(dispatch(children, "p2"))
 
     assert [r.spec.session_id for r in results] == ["co-p2-l1", "co-p2-l2"]
     assert [r.spec.settings.route if r.spec.settings else None for r in results] == [
@@ -1712,8 +1710,8 @@ def test_build_child_spawner_keeps_child_order_when_children_finish_out_of_order
         parent_session_id="co",
         runtime=runtime,
     )
-    results = dispatch(
-        [child_records.ChildTask("a", None), child_records.ChildTask("b", None)], "p3"
+    results = child_env.results_of(
+        dispatch([child_records.ChildTask("a", None), child_records.ChildTask("b", None)], "p3")
     )
     assert finished == [2, 1]
     assert [r.spec.session_id for r in results] == ["co-p3-l1", "co-p3-l2"]
@@ -1747,7 +1745,7 @@ def test_build_child_spawner_forwards_auto_approve(
         runtime=runtime,
         auto_approve=True,
     )
-    dispatch([child_records.ChildTask(task="task a", model=None)], "p3")
+    child_env.results_of(dispatch([child_records.ChildTask(task="task a", model=None)], "p3"))
 
     assert seen == [True]
 
@@ -2674,3 +2672,50 @@ def test_cleanup_keeps_unreachable_model_head(
     )
     assert spec.worktree.is_dir()
     assert notes and "cannot reach" in notes[0]
+
+
+def test_the_spawner_returns_while_its_children_run_and_stops_one_by_its_handle(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: app_children.ChildRuntime,
+) -> None:
+    """A group starts in the background: the call returns at once, and `stop` ends one child."""
+    origin_state = tmp_path / "ostate"
+    origin_state.mkdir()
+
+    def fake_child(
+        spec: child_records.ChildSpec, task: str, **kwargs: object
+    ) -> child_records.ChildResult:
+        should_stop = kwargs["should_stop"]
+        assert callable(should_stop)
+        deadline = time.monotonic() + 8.0
+        while not should_stop() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return child_records.ChildResult(
+            spec, spec.worktree, f"agent6/{spec.session_id}", bool(should_stop()), ""
+        )
+
+    monkeypatch.setattr(app_children, "run_child_to_completion", fake_child)
+    dispatch = app_children.build_child_spawner(
+        _provider_cfg(),
+        origin,
+        origin_state,
+        explicit_leaves=frozenset(),
+        parent_session_id="parent",
+        runtime=runtime,
+    )
+    one, two = dispatch(
+        [
+            child_records.ChildTask(task="a", model=None),
+            child_records.ChildTask(task="b", model=None),
+        ],
+        "p1",
+    )
+    assert (one.session_id, two.session_id) == ("parent-p1-l1", "parent-p1-l2")
+    assert not one.result.done() and not two.result.done()
+    two.stop()
+    assert two.result.result(timeout=4.0).ok
+    assert not one.result.done()
+    dispatch.close()
+    assert one.result.result(timeout=4.0).ok
