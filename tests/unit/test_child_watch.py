@@ -15,7 +15,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import child_records
 from agent6.app import child_wait, child_watch
-from agent6.sessions import ipc, journal
+from agent6.sessions import event_log, ipc, journal
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import interact
 from agent6.viewmodel import listing
@@ -225,35 +225,20 @@ def test_a_relay_writes_only_to_the_same_open_slot(tmp_path: pathlib.Path, chang
     assert _answer(child) == ("no" if change == "answered" else None)
 
 
-@pytest.mark.parametrize("startup", [False, True], ids=["waiting", "startup"])
-def test_regrowth_cannot_hide_a_consumed_answer(tmp_path: pathlib.Path, startup: bool) -> None:
-    """The same inode can outgrow the cursor with an answer already behind it."""
-    child = _child(tmp_path)
+def test_repairing_a_torn_tail_preserves_the_open_slot(tmp_path: pathlib.Path) -> None:
+    child = _child(tmp_path, _prompt())
     log = child / "logs.jsonl"
-    prefix = log.read_bytes()
-    status = child_watch.ChildStartup(os.getpid(), len(prefix)) if startup else "waiting"
-    prompt = json.dumps(_prompt()).encode() + b"\n"
-    note = b'{"type":"loop.note","text":"unrelated"}\n'
-    log.write_bytes(prefix + prompt + note * 12)
-    offers = 0
+    with log.open("ab") as fh:
+        fh.write(b"{" + b" " * 4096)
 
     def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
-        nonlocal offers
-        offers += 1
+        event_log.EventSink(log).emit(journal.LoopNote(text="still waiting"))
         assert not request.interrupted()
-        assert ipc.write_answer(child, "approval-1", "no")
-        assert ipc.read_answer(child, "approval-1", timeout_s=0) == "no"
-        answer = b'{"type":"approval.answer","id":"approval-1","approved":false}\n'
-        # Even the original prompt row and the last note match at the retained offsets.
-        log.write_bytes(prefix + prompt + answer.ljust(len(note) * 3 - 1) + b"\n" + note * 15)
-        request.interrupted()  # poll the new suffix before the final check
         return operator_prompts.ApprovalAnswer(True, "frontend")
 
     watch = child_watch.ChildWatch(operator_prompts.OperatorPrompts(approver=approve), tmp_path)
-    watch(child, "child", status)
-    assert _answer(child) is None
-    watch(child, "child", status)  # the next poll no longer offers the closed prompt
-    assert offers == 1
+    watch(child, "child", "waiting")
+    assert _answer(child) == "yes"
 
 
 def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) -> None:
@@ -282,27 +267,15 @@ def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) 
     assert len(refusing.asked) == 1, "a standing deny answers without asking"
 
 
-@pytest.mark.parametrize("startup", [False, True], ids=["waiting", "startup"])
-def test_regrowth_cannot_hide_a_new_blocking_question(
-    tmp_path: pathlib.Path, startup: bool
-) -> None:
-    child = _child(tmp_path)
-    log = child / "logs.jsonl"
-    prefix = log.read_bytes()
-    status = child_watch.ChildStartup(os.getpid(), len(prefix)) if startup else "waiting"
-    note = b'{"type":"loop.note","text":"padding"}\n'
-    log.write_bytes(prefix + note * 20)
-    parent = _Parent(
-        tmp_path, answers=operator_prompts.QuestionAnswer(("8080", "here"), "frontend")
-    )
+def test_a_worker_keeps_its_launch_boundary_after_startup(tmp_path: pathlib.Path) -> None:
+    child = _child(tmp_path, _prompt())
+    parent = _Parent(tmp_path)
     watch = parent.watch()
-    watch(child, "child", status)
-    assert not parent.questions
-    question = json.dumps(_question()).encode()
-    log.write_bytes(prefix + question.ljust(len(note) * 8 - 1) + b"\n" + note * 16)
-    for _ in range(3):
-        watch(child, "child", status)
-    assert len(parent.questions) == 1 and _reply(child) == ipc.QuestionReply(("8080", "here"))
+    watch(
+        child, "child", child_watch.ChildStartup(os.getpid(), (child / "logs.jsonl").stat().st_size)
+    )
+    watch(child, "child", "waiting")
+    assert not parent.asked and _answer(child) is None
 
 
 def test_a_prompt_with_no_scope_is_asked_every_time(tmp_path: pathlib.Path) -> None:

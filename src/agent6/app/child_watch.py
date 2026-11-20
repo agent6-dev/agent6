@@ -15,14 +15,12 @@ so far, its own running children included, and the parent's tracker bounds the s
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import json
 import os
 import pathlib
 import threading
 import time
 from collections.abc import Callable
-from typing import BinaryIO
 
 from agent6 import budget as agent6_budget
 from agent6.sessions import budget_events, ipc, journal, layout, process
@@ -43,27 +41,6 @@ class ChildStartup:
     start_at: int
 
 
-class _PrefixCheck:
-    """Check an earlier fold in bounded reads, even when it found no open slot."""
-
-    def __init__(self, start: int, end: int, expected: bytes, size: int) -> None:
-        self.position, self.end, self.expected, self.size = start, end, expected, size
-        self.digest = hashlib.sha256()
-
-    def matches(self, fh: BinaryIO, *, finish: bool) -> bool | None:
-        """Return whether the prefix matches, or None to continue on the next tick."""
-        fh.seek(self.position)
-        while self.position < self.end:
-            block = fh.read(min(self.end - self.position, 256 * 1024))
-            if not block:
-                return False
-            self.digest.update(block)
-            self.position += len(block)
-            if not finish and self.position < self.end:
-                return None
-        return self.digest.digest() == self.expected
-
-
 class _PromptJournal:
     """Fold complete rows for one worker, starting at the launch boundary."""
 
@@ -75,24 +52,17 @@ class _PromptJournal:
         self.position = start_at
         self.seen: os.stat_result | None = None
         self.state = session_fold.initial_state()
-        self.digest = hashlib.sha256()
-        self.check: _PrefixCheck | None = None
-        self.checked_size = 0
-        self.check_after = 0.0
 
-    def pending(
-        self, *, confirm: bool = False
-    ) -> state_types.ApprovalPrompt | state_types.QuestionPrompt | None:
+    def pending(self) -> state_types.ApprovalPrompt | state_types.QuestionPrompt | None:
         """Return the same prompt object only while its journal slot stays open."""
         directory, _, start_at = self.binding
         try:
             with self.log.open("rb") as fh:
-                # An unreadable or replaced file cannot confirm a cached slot. Stamp the open fd.
                 stamp = os.fstat(fh.fileno())
-                if self._rewritten(fh, stamp, confirm=confirm):
+                if (self.seen is not None and not os.path.samestat(self.seen, stamp)) or (
+                    stamp.st_size < self.position
+                ):
                     self.position, self.state = start_at, session_fold.initial_state()
-                    self.digest = hashlib.sha256()
-                    self.check, self.checked_size, self.check_after = None, stamp.st_size, 0.0
                 self.seen = stamp
                 fh.seek(self.position)
                 while self.position < stamp.st_size:
@@ -100,23 +70,13 @@ class _PromptJournal:
                     if not line.endswith(b"\n"):
                         break
                     self.position += len(line)
-                    self.digest.update(line)
                     try:
                         event = json.loads(line.decode("utf-8"))
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         continue
                     if isinstance(event, dict):
                         self.state = session_fold.apply_event(self.state, event)
-                if confirm:
-                    current = self.log.stat()
-                    if not os.path.samestat(current, stamp) or (
-                        current.st_size,
-                        current.st_ctime_ns,
-                    ) != (stamp.st_size, stamp.st_ctime_ns):
-                        self.seen = None
-                        return None
         except OSError:
-            self.seen = None
             return None
         if self.state.finished:
             return None
@@ -127,27 +87,6 @@ class _PromptJournal:
         if question is not None and not ipc.question_answers_written(directory, question.id):
             return question
         return None
-
-    def _rewritten(self, fh: BinaryIO, stamp: os.stat_result, *, confirm: bool) -> bool:
-        """Return whether a rewrite invalidated the cursor; growth can conceal a new prompt."""
-        old = self.seen
-        if old is None or not os.path.samestat(stamp, old) or stamp.st_size < old.st_size:
-            return True
-        if stamp.st_size == old.st_size and stamp.st_ctime_ns != old.st_ctime_ns:
-            return True
-        if stamp.st_size == self.checked_size:
-            return False
-        if confirm or self.check is None:
-            if not confirm and time.monotonic() < self.check_after:
-                return False
-            _, _, start = self.binding
-            self.check = _PrefixCheck(start, self.position, self.digest.digest(), stamp.st_size)
-        match = self.check.matches(fh, finish=confirm)
-        if match is not None:
-            self.checked_size = self.check.size
-            self.check = None
-            self.check_after = time.monotonic() + 1.0
-        return match is False
 
 
 class _WatchThread(threading.local):
@@ -218,9 +157,9 @@ class ChildWatch:
         if not self._prompts.one_at_a_time.acquire(blocking=False):
             return False
         try:
-            start_at = startup.start_at if startup is not None else 0
             reader = self._thread.journal
-            if reader is None or reader.binding != (child_dir, worker, start_at):
+            if reader is None or reader.binding[:2] != (child_dir, worker):
+                start_at = startup.start_at if startup is not None else 0
                 reader = self._thread.journal = _PromptJournal(child_dir, worker, start_at)
             self._relay(reader, label, interrupted)
         finally:
@@ -253,11 +192,11 @@ class ChildWatch:
             return
         ended = False
 
-        def cancelled(*, confirm: bool = False) -> bool:
+        def cancelled() -> bool:
             nonlocal ended
             ended = (
                 ended
-                or reader.pending(confirm=confirm) is not prompt
+                or reader.pending() is not prompt
                 or process.read_live_worker_identity(child_dir) != worker
                 or interrupted()
                 or ipc.stop_request_pending(child_dir)
@@ -269,7 +208,7 @@ class ChildWatch:
             return
         if isinstance(prompt, state_types.ApprovalPrompt):
             verdict = self._verdict(label, prompt, cancelled)
-            if not cancelled(confirm=True):
+            if not cancelled():
                 ipc.write_answer(child_dir, prompt.id, verdict)
         else:
             asked = tuple(
@@ -277,7 +216,7 @@ class ChildWatch:
                 for q in prompt.questions
             )
             reply = self._prompts.ask(asked, interrupted=cancelled)
-            if cancelled(confirm=True):
+            if cancelled():
                 return
             if reply.status == "answered":
                 ipc.write_question_answers(child_dir, prompt.id, reply.answers)
