@@ -57,8 +57,10 @@ def tool_definitions(
             and not dispatcher.skills_available()
         ):
             continue  # no skills: the tool could only error
-        if cls in CHILD_TOOLS and not dispatcher.parallel_available():
-            continue  # off by config, a child or no child dispatcher
+        if (cls in CHILD_TOOLS and not dispatcher.parallel_available()) or (
+            cls is tools_schema.MergeChildInput and not dispatcher.merge_child_available()
+        ):
+            continue
         description = cls.TOOL_DESCRIPTION
         if cls is tools_schema.ListFindingsInput and dispatcher.session_id:
             description = description.replace("<session_id>", dispatcher.session_id)

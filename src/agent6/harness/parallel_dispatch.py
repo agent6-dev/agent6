@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, errors
 from agent6.graph import curator as graph_curator
-from agent6.harness import child_repo, parallel_join, parallel_rank, run_chain
+from agent6.harness import child_merge, child_repo, parallel_join, parallel_rank, run_chain
 from agent6.sessions import budget_events, child_dispatch, journal
 from agent6.vcs.git import read as git_read
 
@@ -382,7 +382,7 @@ class ParallelDispatcher:
             self.deliver(conversation, result)
             del self.open[identity]
             told = True
-        return told
+        return child_merge.settle(self, conversation, turn) or told
 
     def reported(
         self,

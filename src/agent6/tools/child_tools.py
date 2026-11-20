@@ -30,12 +30,14 @@ class ChildLine:
             joined, or for a stopped child that it did not merge and what holds its work.
         task: The first line of its task.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
+        mergeable: Whether it is stopped with unmerged work.
     """
 
     id: str
     state: str
     task: str
     running: bool
+    mergeable: bool = False
 
     def line(self) -> str:
         """Return the roster line."""
@@ -63,6 +65,10 @@ class Children(Protocol):
 
     def steer(self, child: str, text: str) -> str:
         """Send a running child an instruction and say when it reads it; a refusal raises."""
+        ...
+
+    def merge(self, child: str) -> str:
+        """Request a stopped child's merge at the next boundary; a refusal raises."""
         ...
 
 

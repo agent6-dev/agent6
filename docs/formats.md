@@ -3215,6 +3215,7 @@ Source: [`agent6.sessions.child_dispatch.ChildRecord`](https://github.com/agent6
 | `reported` | `bool` | Whether its parent's conversation holds the notice of its end. |
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
 | `settled` | `bool` | Whether its usage was charged; False while it is unknown. |
+| `merge_request` | `MergeRequest \| None` | The explicit request to merge stopped work; None before one. |
 
 ### ModelsBrief
 
@@ -3779,6 +3780,17 @@ Source: [`agent6.sessions.child_dispatch.UsageRecord`](https://github.com/agent6
 | `usd` | `float` | The child's metered spend. |
 | `usd_partial` | `bool` | Whether unpriced calls make it a lower bound. |
 | `tokens` | `int` | Its fallback-ledger tokens. |
+
+### MergeRequest
+
+**Support: public.** A stopped child's requested merge and its delivery state.
+
+Source: [`agent6.sessions.child_dispatch.MergeRequest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `result` | `JoinRecord \| None` | The merge outcome; None while the request awaits a turn boundary. |
+| `delivered` | `bool` | Whether the parent's conversation holds the outcome. |
 
 ### ModelBrief
 

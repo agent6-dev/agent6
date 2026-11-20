@@ -190,7 +190,12 @@ It is refused, with what to do instead, for an id that is no child of the run, a
 `stop_background` with a child's id stops the child; its work does not merge, and its branch holds what it committed.
 The two tools' descriptions mention children only in a run that has the `parallel` tool.
 `finish_session` is refused until every task has merged, and the refusal names the children that hold it: one still running, one that ended and has not merged, or one being ranked.
-A stopped child holds no end.
+A stopped child holds no end unless its parent requests a merge.
+`merge_child(id)` requests a stopped child's merge at the next turn boundary and holds the end until its outcome is reported.
+It is offered only while the run has stopped, unmerged work and `git.control = "agent6"`, including children started by `/parallel` when the parallel tool is off.
+The task must have completed without another attempt merged; a pending merge of another attempt also refuses the call.
+A conflict merges nothing, names the files and the ref holding the work, and permits another request.
+A requested merge survives a parent resume.
 The run counts its children's spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
 The two tools are offered only in run mode, never inside a child and never in a front-end without a child dispatcher; a call that slips past the list is refused with the reason.

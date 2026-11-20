@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import child_records, portable
 
-RECORD_VERSION = 8
+RECORD_VERSION = 9
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
 
@@ -47,6 +47,18 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     commits: int = 0
     target_before: str = ""
     target_after: str = ""
+
+
+class MergeRequest(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """A stopped child's requested merge and its delivery state.
+
+    Attributes:
+        result: The merge outcome; None while the request awaits a turn boundary.
+        delivered: Whether the parent's conversation holds the outcome.
+    """
+
+    result: JoinRecord | None = None
+    delivered: bool = False
 
 
 class UsageRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
@@ -96,6 +108,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         reported: Whether its parent's conversation holds the notice of its end.
         usage: What it used, None until settled with known usage.
         settled: Whether its usage was charged; False while it is unknown.
+        merge_request: The explicit request to merge stopped work; None before one.
     """
 
     session_id: str
@@ -108,6 +121,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     reported: bool = False
     usage: UsageRecord | None = None
     settled: bool = False
+    merge_request: MergeRequest | None = None
 
 
 class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):

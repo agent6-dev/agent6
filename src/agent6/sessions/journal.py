@@ -974,6 +974,18 @@ class ParallelFailed(Event):
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
 
 
+class ParallelChildMerged(Event):
+    """An explicit request to merge a stopped child completed."""
+
+    TYPE: ClassVar[str] = "parallel.child_merged"
+    group: str = pydantic.Field(description="The child's dispatch group.")
+    child: str = pydantic.Field(description="The stopped child's session id.")
+    status: str = pydantic.Field(description="The requested merge's outcome.")
+    ref: str = pydantic.Field(description="The ref that holds the child's work.")
+    sha: str = pydantic.Field(description="The merge commit, or empty when nothing merged.")
+    detail: str = pydantic.Field(description="The conflict files or failure reason, if any.")
+
+
 class ParallelJoined(Event):
     """Parallel child results returned."""
 

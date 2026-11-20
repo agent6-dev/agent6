@@ -333,6 +333,20 @@ class ParallelInput(_ToolInput):
         return value
 
 
+class MergeChildInput(_ToolInput):
+    """The `merge_child` tool's arguments."""
+
+    TOOL_NAME: ClassVar[str] = "merge_child"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Merge a stopped child's commits into this run's work at the next turn boundary,"
+        " by the id `parallel` returned. The task must have completed without another attempt"
+        " merged. A notice reports the result; a conflict merges nothing and names the files"
+        " and the ref that holds the work. Available only when agent6 manages git."
+    )
+
+    id: str = pydantic.Field(min_length=1)
+
+
 class SteerChildInput(_ToolInput):
     """The `steer_child` tool's arguments."""
 
@@ -684,6 +698,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     # Offered only under `[harness.parallel].tool` in a run whose loop holds children.
     ParallelInput,
     SteerChildInput,
+    MergeChildInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,

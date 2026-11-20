@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
-from agent6.harness import operator_bridge, parallel_join
+from agent6.harness import child_merge, operator_bridge, parallel_join
 from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
@@ -59,7 +59,15 @@ def unmerged(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[st
     Returns:
         Each child's session id with `running`, `ended, not merged` or `being ranked`.
     """
-    return tuple(
+    requested = tuple(
+        (child.session_id, "merge requested")
+        for record in (
+            child_dispatch.read_records(dispatcher.session_dir) if dispatcher.session_dir else ()
+        )
+        for child in record.children
+        if child_merge.pending(child)
+    )
+    return requested + tuple(
         (started.session_id, state)
         for task in dispatcher.open.values()
         for started in task.children
@@ -99,7 +107,10 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
             # A wait has something to wait for: the child itself, or the judges ranking it.
             running = state in ("running", "stopping", "being ranked")
-            lines.append(child_tools.ChildLine(sid, state, title[:80], running))
+            mergeable = child.join is not None and child.join.status == "stopped"
+            if child_merge.pending(child):
+                state = "merge requested"
+            lines.append(child_tools.ChildLine(sid, state, title[:80], running, mergeable))
     return tuple(lines)
 
 
@@ -261,3 +272,19 @@ class ChildWork:
                 " children."
             )
         return steer(dispatcher, child, text)
+
+    def merge(self, child: str) -> str:
+        """Request a stopped child's merge at the next boundary.
+
+        Args:
+            child: The child's session id.
+
+        Returns:
+            The line saying when the merge runs.
+
+        Raises:
+            ToolError: No dispatcher owns the child, or the request is refused.
+        """
+        if (dispatcher := self.harness.children) is None:
+            raise tool_errors.ToolError(f"no child {child} in this run")
+        return child_merge.request(dispatcher, child)

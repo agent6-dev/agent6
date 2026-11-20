@@ -223,6 +223,7 @@ class ToolDispatcher:
             schema.ListFindingsInput.TOOL_NAME: self._list_findings,
             schema.ParallelInput.TOOL_NAME: self._parallel,
             schema.SteerChildInput.TOOL_NAME: self._steer_child,
+            schema.MergeChildInput.TOOL_NAME: self._merge_child,
             schema.DagAddTaskInput.TOOL_NAME: lambda raw: dag_tools.add_task(
                 self._curator, self._run_root_node_id, raw
             ),
@@ -312,6 +313,16 @@ class ToolDispatcher:
         """Return whether the model is offered the `parallel` tool: both gates open, run mode."""
         return self._mode == "run" and self._tool_refusal(schema.ParallelInput.TOOL_NAME) is None
 
+    def merge_child_available(self) -> bool:
+        """Return whether this parent has stopped work agent6 may merge."""
+        return (
+            self._mode == "run"
+            and not os.environ.get("AGENT6_CHILD")
+            and self._config.git.control == "agent6"
+            and self.children is not None
+            and any(child.mergeable for child in self.children.roster())
+        )
+
     def _parallel_refusal(self) -> str | None:
         """Return why the tools that start and steer children are withheld.
 
@@ -326,8 +337,10 @@ class ToolDispatcher:
             return "not available (no child dispatcher in this front-end)"
         return None
 
-    def _tool_refusal(self, name: str) -> str | None:
+    def _tool_refusal(self, name: str) -> str | None:  # noqa: PLR0911  # one return per refusal
         """Return why a built-in tool is withheld right now, or None when it is offered."""
+        if name == schema.MergeChildInput.TOOL_NAME and not self.merge_child_available():
+            return "not available (requires stopped unmerged work and git.control = agent6)"
         if name in _CHILD_TOOLS and (why := self._parallel_refusal()):
             return why
         if self.tool_is_withheld(name):
@@ -1100,6 +1113,20 @@ class ToolDispatcher:
         if self.children is None:
             raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
         return self.children.start(request.task, request.spec)
+
+    def _merge_child(self, raw: dict[str, Any]) -> results.RawResult:
+        """Request a stopped child's merge through the loop.
+
+        Args:
+            raw: The model's arguments.
+
+        Returns:
+            The child id and when the merge runs.
+        """
+        request = schema.MergeChildInput.model_validate(raw)
+        assert self.children is not None
+        message = self.children.merge(request.id)
+        return results.RawResult({"merge_requested": request.id, "message": message})
 
     def _steer_child(self, raw: dict[str, Any]) -> results.SteeredResult:
         """Send a running child an instruction through the loop.
