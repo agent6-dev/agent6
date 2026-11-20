@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import dataclasses
 import hashlib
+import hmac
 import json
 import math
 import secrets
@@ -114,7 +115,10 @@ def parse_callback(pasted: str, *, state: str, redirect_uri: str = "") -> str:
     # The state is checked first, so a callback this sign-in did not start gets nothing reflected.
     if len(states) > 1:
         raise ValueError("the callback must carry exactly one state")
-    if not states or states[0] != state:
+    # Compared as bytes: `compare_digest` takes ASCII text only, and a pasted state is any text.
+    if not states or not hmac.compare_digest(
+        states[0].encode("utf-8", "surrogatepass"), state.encode("utf-8", "surrogatepass")
+    ):
         raise ValueError("state mismatch: this callback is not from the sign-in agent6 started")
     if codes and errors:
         raise ValueError("the callback carries both a code and an error; it must carry one of them")

@@ -42,6 +42,18 @@ def test_a_callback_takes_exactly_one_state_and_one_code(query: str, word: str) 
         oauth_protocol.parse_callback(query, state="S")
 
 
+@pytest.mark.parametrize("state", ["T", "s", "", "S%C3%A9", "S\u00e9", "\udc80"])
+def test_a_callback_with_another_state_is_a_mismatch(state: str) -> None:
+    """Any other state is a mismatch, whatever text was pasted.
+
+    `hmac.compare_digest` raises TypeError on non-ASCII text, so the states compare as bytes.
+    """
+    with pytest.raises(ValueError, match="state mismatch"):
+        oauth_protocol.parse_callback(f"state={state}&code=C", state="S")
+    with pytest.raises(ValueError, match="state mismatch"):
+        oauth_protocol.parse_callback("code=C", state="")
+
+
 def test_a_pasted_full_url_must_match_the_redirect() -> None:
     """A URL from another origin or path is not this sign-in's callback, whatever its query."""
     assert (
