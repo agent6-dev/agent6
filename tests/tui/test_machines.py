@@ -781,6 +781,49 @@ def test_watch_header_reads_a_corrupt_wait_as_waiting(tmp_path: pathlib.Path) ->
     asyncio.run(scenario())
 
 
+def test_watch_header_names_the_reason_and_when_a_parked_machine_wakes(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The header read "waiting · route" where the list read "waiting · no worker".
+
+    Nothing said when the parked machine wakes; the header's second line says it, as `machine
+    status` and the web page do.
+    """
+    from agent6.machine import journal as machine_journal
+    from agent6.machine import load_machine
+
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    journal = machine_journal.MachineJournal(instance)
+    journal.begin(machine="tiny", version=1)
+    wait = machine_journal.PendingWait(state="route", wake_epoch=4102444800.0)
+    journal.write_pending_wait(wait)
+    (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dead
+
+    class _WaitHost(textual_app.App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(machmod.MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WaitHost()
+        async with app.run_test(size=(160, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(3):
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, machmod.MachineWatchScreen)
+            head = screen.query_one("#mw-head", widgets.Static)
+            first, second = str(head.render()).splitlines()
+            assert "waiting · no worker   current: route" in first
+            assert second.startswith("parked in 'route' with no worker running (due at 2100-01-01")
+            assert head.size.height == 2
+
+    asyncio.run(scenario())
+
+
 def test_watch_footer_steer_key_follows_liveness(tmp_path: pathlib.Path) -> None:
     """The footer's Steer key follows steerability, refreshing when it flips.
 

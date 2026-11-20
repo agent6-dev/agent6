@@ -282,26 +282,21 @@ def _cmd_machine_status(machine_id: str) -> int:
     ms = fold_machine(spec, events)
     pending, pending_note = _armed_wait_tolerant(root, ms)
 
-    alive = process.worker_is_alive(root)
+    # The probes own running/waiting/stopped and its reason for every surface; parked beats alive.
+    probes = machine_state.probe_instance(root, ms)
+    alive = probes.alive
     spend, inflight_state = machine_logs.machine_spend(events, root, alive=alive)
-    # machine_word_for_dir owns running/waiting/stopped for every surface; parked beats alive.
-    word = machine_word_for_dir(ms, root)
+    word = probes.status_word(ms)
 
     print(f"machine: {spec.machine} (v{spec.version})")
     if alive and word == "running":
         running_in = f", running {inflight_state!r}" if inflight_state else ""
         print(f"  status: running (worker pid {process.read_worker_pid(root)} alive){running_in}")
     else:
-        # A live worker blocked on an operator prompt: "waiting", naming the state to answer in.
-        print(
-            f"  status: {word}"
-            + (
-                f" (an approval open in {blocked_in}: answer it in the TUI machine view"
-                " or the web page)"
-                if alive and (blocked_in := machine_logs.newest_agent_execution(root).blocked_in)
-                else ""
-            )
-        )
+        # The list's label; a live worker held on a prompt also says where to answer it.
+        where = " (answer it in the TUI machine view or the web page)"
+        held = where if probes.execution.blocked_in else ""
+        print(f"  status: {format.status_label(word, probes.reason(ms))}{held}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     cached = (

@@ -157,7 +157,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         theme.PALETTE_CSS
         + """
     MachineWatchScreen { layers: base; }
-    #mw-head { height: 3; border: round $primary; padding: 0 1; }
+    #mw-head { height: auto; border: round $primary; padding: 0 1; }
     #mw-states { width: 32%; border: round $primary; }
     #mw-log { width: 1fr; border: round $primary; padding: 0 1; }
     """
@@ -383,18 +383,26 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         if ms.ended is not None:
             status = f"ended: {ms.ended.status} ({ms.ended.reason})"
         else:
-            status = f"{probes.status_word(ms)} · {ms.current}"
+            label = format.status_label(probes.status_word(ms), probes.reason(ms))
+            status = f"{label}   current: {ms.current}"
         # A machine runs unattended against the USD ceiling, so the header carries its spend.
         spend, _in_flight = machine_logs.machine_spend(
             events, self._root, alive=process.worker_is_alive(self._root)
         )
         cost = budget.format_usd(spend.usd, partial=spend.partial)
-        self.query_one("#mw-head", textual_widgets.Static).update(
-            rich_text.Text(
-                f"machine: {ms.machine}   {status}"
-                f"   transitions: {len(ms.transitions)}   spend: {cost}"
-            )
+        head = (
+            f"machine: {ms.machine}   {status}   transitions: {len(ms.transitions)}   spend: {cost}"
         )
+        if probes.wait is not None:
+            # This screen's Message key pokes, so the line leaves out the poke command.
+            head += "\n" + machine_state.wait_line(
+                self._root.name,
+                probes.wait.state,
+                probes.wait.wake_at,
+                alive=probes.alive,
+                include_poke=False,
+            )
+        self.query_one("#mw-head", textual_widgets.Static).update(rich_text.Text(head))
         table = self.query_one("#mw-states", textual_widgets.DataTable)
         for s in ms.states:
             mark = s.mark

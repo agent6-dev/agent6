@@ -2026,7 +2026,10 @@ def test_list_names_a_corrupt_machine_journal(
 def test_status_and_list_name_a_parked_approval(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A worker holding an unanswered approval reads "waiting" and status names the state."""
+    """A worker holding an unanswered prompt reads "waiting" and names the state, as the list does.
+
+    `machine status` said "an approval open" whichever prompt waited.
+    """
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -2044,8 +2047,7 @@ def test_status_and_list_name_a_parked_approval(
     process.write_worker_pid(execution, os.getpid())
     assert main(["machine", "status", "waiter_delayed"]) == 0
     out = capsys.readouterr().out
-    assert "status: waiting" in out
-    assert "an approval open in 0001-attempt" in out
+    assert "status: waiting · on an answer in 0001-attempt (answer it in the TUI" in out
     assert main(["machine", "list"]) == 0
     row = next(line for line in capsys.readouterr().out.splitlines() if "waiter_delayed" in line)
     assert "waiting" in row and "0001-attempt" in row
