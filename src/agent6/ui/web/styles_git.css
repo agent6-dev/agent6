@@ -124,7 +124,7 @@
 .git-diff-head a.mini:hover { border-color: var(--border-strong); background-color: color-mix(in srgb, var(--text) 6%, var(--surface2)); }
 .git-diff-pos { font-size: var(--fs-s); white-space: nowrap; }
 .git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5rem 1rem; }
-.gcmp-pick { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0 0.25rem; }
+.gcmp-pick { display: flex; gap: 0.5rem; align-items: end; margin: 0.5rem 0 0.25rem; }
 .gcmp-pick button.mini { flex: none; min-height: var(--ctl-h); }
 .gcmp-sum { font-size: var(--fs-s); margin: 0.625rem 0 0.5rem; overflow-wrap: anywhere; }
 .gcmp-status { margin-block: 0.625rem 0.5rem; overflow-wrap: anywhere; } /* a loading or error line, where the summary will stand */

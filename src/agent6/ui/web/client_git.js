@@ -828,6 +828,11 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const listHost = el('div', 'gpick-host');
     const pickBase = gitPicker('base', gitState.compare.base, (v) => { query = new URLSearchParams(); gitState.compare.base = v; run(); }, listHost);
     const pickHead = gitPicker('head', gitState.compare.head, (v) => { query = new URLSearchParams(); gitState.compare.head = v; run(); }, listHost, [GIT_WORKTREE_PICK]);
+    for (const [pick, name] of [[pickBase, 'Base'], [pickHead, 'Head']]) {
+      const input = pick.root.querySelector('input');
+      input.removeAttribute('aria-label');
+      pick.root.prepend(fieldLabel(input, name));
+    }
     const swap = el('button', 'mini', '⇄'); swap.title = 'swap base and head'; swap.setAttribute('aria-label', 'swap base and head');
     swap.onclick = () => { query = new URLSearchParams(); const { base, head: h } = gitState.compare; gitState.compare = { base: h, head: base }; pickBase.set(h); pickHead.set(base); run(); };
     const row = el('div', 'gcmp-pick');
