@@ -1432,19 +1432,16 @@ class SessionStart(Event):
 
 
 class ChildVerification(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """Identify the child's full gate pass covering the parent's final tree.
+    """Identify the child's full gate pass covering the parent's final tree."""
 
-    Attributes:
-        session_id: The child that ran the gate.
-        verify_id: The attempt id in the child's journal.
-        tree: The git tree the child verified.
-        command: The full verify command that passed.
-    """
-
-    session_id: str = pydantic.Field(min_length=1)
-    verify_id: str = pydantic.Field(min_length=1)
-    tree: str = pydantic.Field(min_length=1)
-    command: tuple[str, ...] = pydantic.Field(min_length=1)
+    session_id: str = pydantic.Field(min_length=1, description="The child that ran the gate.")
+    verify_id: str = pydantic.Field(
+        min_length=1, description="The attempt id in the child's journal."
+    )
+    tree: str = pydantic.Field(min_length=1, description="The git tree the child verified.")
+    command: tuple[str, ...] = pydantic.Field(
+        min_length=1, description="The full verify command that passed."
+    )
 
     @property
     def label(self) -> str:

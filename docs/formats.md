@@ -1250,10 +1250,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `scoped` | `bool, optional` | Whether verification ran only the selected nearby tests. |
 | `final_verify_id` | `str, optional` | The session's final verification attempt identifier. |
 | `child_verification` | `object, optional` | The child's full gate pass covering this tree, when used instead. |
-| `child_verification.session_id` | `str` |  |
-| `child_verification.verify_id` | `str` |  |
-| `child_verification.tree` | `str` |  |
-| `child_verification.command` | `list` |  |
+| `child_verification.session_id` | `str` | The child that ran the gate. |
+| `child_verification.verify_id` | `str` | The attempt id in the child's journal. |
+| `child_verification.tree` | `str` | The git tree the child verified. |
+| `child_verification.command` | `list` | The full verify command that passed. |
 | `tree` | `str, optional` | The final working-tree content identifier. |
 | `tool` | `str, optional` | The repeated tool's name. |
 | `streak` | `int, optional` | Number of consecutive matching turns or calls. |
