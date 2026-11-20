@@ -622,6 +622,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_drivers` is set
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
 - `git.control = "agent6"` is enforced where `.git` is read-only to jailed commands; under `sandbox.isolation = "none"` the run warns that a commit the model runs lands on the checkout's branch.
+- Where a jailed command can write `.git` (`partial` `sandbox.isolation`, `sandbox.protect_git = "off"`, `git.control = "model"`), it can make agent6's own git run a program on the host.
+  agent6 lists the repository's content drivers and then runs its git command: a driver written into `.git/config` between the two steps is not blanked.
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
     - a nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file
 
