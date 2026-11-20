@@ -112,6 +112,20 @@ def helper_context_window(cfg: Config) -> int | None:
     return models_registry.context_window(role.provider, role.model) if role else None
 
 
+def worker_backend(cfg: Config, rm: RoleModel | None) -> str:
+    """Name the backend of the provider that drives the run.
+
+    Args:
+        cfg: The effective configuration.
+        rm: The resolved driving role.
+
+    Returns:
+        The backend, or an empty string when no configured provider drives the run.
+    """
+    entry = cfg.providers.get(rm.provider) if rm is not None else None
+    return entry.backend if entry is not None else ""
+
+
 def resolve_decompose(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> Config:

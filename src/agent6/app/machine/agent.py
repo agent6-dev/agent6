@@ -573,7 +573,7 @@ def _drive_state(
             summariser=cfg.compaction.summariser,
             helper=summariser_provider,
             helper_context_tokens=role_providers.helper_context_window(cfg),
-            worker_backend=cfg.providers[rm.provider].backend,
+            worker_backend=role_providers.worker_backend(cfg, rm),
         ),
         bridge=operator_bridge.OperatorBridge(
             steer_requested=bridges.steer_requested,

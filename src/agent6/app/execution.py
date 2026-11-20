@@ -546,8 +546,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             else False,
             child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
         )
-        driving_model = cfg.models.resolve(role)
-        assert driving_model is not None
         wf = loop.Harness(
             media_input=role_providers.input_capabilities(cfg, session.rm_role),
             chain=run_chain.RunChain(
@@ -650,7 +648,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 summariser=cfg.compaction.summariser,
                 helper=session.summariser_provider,
                 helper_context_tokens=role_providers.helper_context_window(cfg),
-                worker_backend=cfg.providers[driving_model.provider].backend,
+                worker_backend=role_providers.worker_backend(cfg, session.rm_role),
             ),
         )
         if inputs.task is not None:
