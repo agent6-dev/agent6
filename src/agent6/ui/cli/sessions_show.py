@@ -543,11 +543,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class _Changes:
-    """Where the run's work lives, as the text row and the merge base.
+    """Where the run's work lives, as the text row and the checkout destination.
 
     Attributes:
-        line: The text row; "" for a session with no run branch.
-        merged_into_checkout: The base the run branch is merged into, else "".
+        line: The text row, or "" when there is nothing to report.
+        merged_into_checkout: The covering merge stamp's destination, else "".
     """
 
     line: str
@@ -582,7 +582,7 @@ def _changes(
 ) -> _Changes:
     """Return where the run's work lives, checked against git as the end-of-run footer does.
 
-    Merged into the base, on the run branch awaiting `sessions merge`, on the hidden chain
+    Merged into the checkout, on the run branch awaiting `sessions merge`, on the hidden chain
     ref alone (the branch deleted, the commits kept), nowhere (no commit was made), or
     taken back by `/undo`.
 
@@ -592,25 +592,21 @@ def _changes(
         undone: `/undo` took the work back, so no merge is offered.
 
     Returns:
-        The text row ("" without a run branch) and the base the work is merged into ("" when none).
+        The text row and the checkout destination, each empty when absent.
     """
     run_branch = manifest.run_branch or ""
-    if manifest.git_control == "model" or not run_branch:
-        ref = (
-            wire.commits_ref(manifest, pathlib.Path.cwd())
-            if manifest.git_control == "model"
-            else ""
-        )
+    cwd = pathlib.Path.cwd()
+    if manifest.git_control == "model":
+        ref = wire.commits_ref(manifest, cwd)
         return _Changes(f"work is on {ref}" if ref else "", "")
     if undone:
-        return _Changes(f"{run_branch} (taken back by /undo)", "")
-    cwd = pathlib.Path.cwd()
+        return _Changes(f"{run_branch} (taken back by /undo)" if run_branch else "", "")
     stamp = resume.covering_stamp(cwd, manifest)
     if stamp is not None:
-        return _Changes(
-            format.format_branch(run_branch, manifest.base_branch, stamp.into), stamp.into
-        )
-    merge_hint = f"merge with: {merge.merge_command(session_id, manifest.base_branch)}"
+        line = format.format_branch(run_branch, manifest.base_branch, stamp.into)
+        return _Changes(line or stamp.description(), stamp.into)
+    if not run_branch:
+        return _Changes("", "")
     chain = git_read.chain_ref_for(session_id)
     branch_kept = git_read.branch_exists(cwd, run_branch)
     tip = (
@@ -619,10 +615,13 @@ def _changes(
     if tip is None or tip == manifest.base_sha:
         # A fork cut before its source's first commit sits on the base with no commit of its own.
         return _Changes("none (the run made no commit)", "")
-    if not branch_kept:
-        return _Changes(f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "")
+    where = (
+        format.format_branch(run_branch, manifest.base_branch, "")
+        if branch_kept
+        else f"{chain} ({run_branch} is gone; the commits are kept)"
+    )
     return _Changes(
-        f"{format.format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", ""
+        f"{where}; merge with: {merge.merge_command(session_id, manifest.base_branch)}", ""
     )
 
 

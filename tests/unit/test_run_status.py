@@ -17,8 +17,9 @@ import pytest
 from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import journal, process
-from agent6.ui.cli import common, sessions_show
+from agent6.ui.cli import cli_main, common, sessions_show
 from agent6.vcs.git import read as git_read
+from tests import child_env
 
 
 def _ts(off_s: float) -> str:
@@ -1163,6 +1164,50 @@ def test_status_says_where_the_changes_are(
     out = show()
     assert "changes:    refs/agent6/winsome-dawn-YWH5ZS/head (" in out
     assert "is gone; the commits are kept); merge with: agent6 sessions merge" in out
+
+
+@pytest.mark.parametrize("advance", [False, True], ids=["covered", "advanced"])
+def test_status_reports_a_checkout_merge_only_while_it_covers_the_hidden_chain(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    advance: bool,
+) -> None:
+    """A hidden chain has a checkout destination even without a run branch, until it advances."""
+    repo = tmp_path / "repo"
+    child_env.init_repo(repo)
+    monkeypatch.chdir(repo)
+    run = child_env.create_record(repo, "chain-only")
+    git = child_env.git
+    _stamp_manifest(
+        run, session_id=run.name, base_branch="main", base_sha=git(repo, "rev-parse", "main")
+    )
+    chain = git_read.chain_ref_for(run.name)
+    git(repo, "switch", "--detach", "main")
+    (repo / "answer").write_text("done\n")
+    git(repo, "add", "answer")
+    git(repo, "commit", "-qm", "answer")
+    git(repo, "update-ref", chain, "HEAD")
+    git(repo, "switch", "-c", "release", "main")
+    assert (
+        cli_main(["sessions", "merge", run.name, "--into", "release", "--method", "ff_only"]) == 0
+    )
+    assert (repo / "answer").read_text() == "done\n"
+    capsys.readouterr()
+    if advance:
+        later = git(repo, "commit-tree", "HEAD^{tree}", "-p", chain, "-m", "next turn")
+        git(repo, "update-ref", chain, later)
+
+    assert sessions_show._cmd_status(run.name) == 0
+    text = capsys.readouterr().out
+    assert sessions_show._cmd_status(run.name, as_json=True) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert (shown["run_branch"], shown["merged_into_checkout"], "merged into release" in text) == (
+        None,
+        None if advance else "release",
+        not advance,
+    )
 
 
 def test_status_of_a_run_cut_from_a_detached_head_offers_merge_into(
