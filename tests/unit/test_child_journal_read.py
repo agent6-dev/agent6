@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 
 import pytest
 
 from agent6 import config, paths
+from agent6.app import child_launch
 from agent6.tools import dispatch, tool_errors
+from tests import child_env, launch_env
 
 
 def test_child_reads_only_its_exact_id_outside_its_clone_state(tmp_path: pathlib.Path) -> None:
@@ -34,3 +37,53 @@ def test_child_reads_only_its_exact_id_outside_its_clone_state(tmp_path: pathlib
         with pytest.raises(tool_errors.ToolError, match="no session"):
             reader.dispatch("read_session", {"id": other})
     assert not reader.dispatch("read_session", {}).to_wire()["sessions"]
+
+
+def test_a_continued_child_looks_up_sessions_in_its_clone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resume appends to the bound journal without granting its containing roster."""
+    repo, clone = tmp_path / "repo", tmp_path / "clone"
+    child_env.init_repo(repo)
+    child_env.create_record(repo, "parent")
+    probes = [
+        ("read_session", args)
+        for args in (
+            {"id": "parent-p1-l1"},
+            {},
+            {"id": "parent-p1-l"},
+            {"id": "parent"},
+            {"id": "local"},
+        )
+    ]
+    replies = iter((launch_env.FINISH, probes))
+    with launch_env.scripted_provider(reply_for=lambda _: next(replies, launch_env.FINISH)) as (
+        url,
+        calls,
+    ):
+        path, launch = child_env.launch_worker(repo, clone, child_env.config(url), monkeypatch)
+        local = child_env.create_record(clone, "local-run")
+        (local / "logs.jsonl").write_text('{"type":"model.result","text":"clone journal"}\n')
+        for steer in ("", "check session scope"):
+            child_launch.write(path.parent, launch.model_copy(update={"continuation": steer}))
+            proc = subprocess.run(
+                child_launch.bootstrap_argv(),
+                cwd=clone,
+                capture_output=True,
+                text=True,
+                timeout=90,
+                check=False,
+            )
+            assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    log = paths.state_dir(repo) / "sessions" / "runs" / launch.session_id / "logs.jsonl"
+    assert [json.loads(row)["type"] for row in log.read_text().splitlines()].count(
+        "session.resume"
+    ) == 1
+    own, roster, partial, parent, local_page = [
+        json.loads(m["content"]) for m in calls[-1]["messages"] if m["role"] == "tool"
+    ][-len(probes) :]
+    assert "worker" in own["conversation"]
+    assert roster["sessions"] == ["[local-run] run: t"]
+    assert "no session" in partial["error"] and "no session" in parent["error"]
+    assert "clone journal" in local_page["conversation"]

@@ -227,17 +227,15 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     """
     repo = cwd if cwd is not None else pathlib.Path.cwd()
     launch = child_launch.read()
-    state = (
-        launch.record_state
-        if launch is not None and launch.continuation
-        else agent6_paths.state_dir(repo)
-    )
+    state = agent6_paths.state_dir(repo)
+    # A continued child writes to its bound record but executes with its clone's state.
+    record = launch.record_state if launch is not None and launch.continuation else state
     if steer.strip() and (problem := directive.steer_problem(steer)) is not None:
         reporter.error(problem)
         return 2
     # One resolver across buckets: a runs/-only fallback would pick a run over an ask.
     try:
-        layout = id.resolve_session(state, session_id)
+        layout = id.resolve_session(record, session_id)
     except id.SessionIdError as exc:
         reporter.error(str(exc))
         return 2
@@ -402,9 +400,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         # One run-mode worker per checkout; a fork's worktree never contends with the repo's.
         if mode == "run":
-            repo_lock_fd = lock.acquire_repo_writer(state, cwd, session_id)
+            repo_lock_fd = lock.acquire_repo_writer(layout.state_dir, cwd, session_id)
             if repo_lock_fd is None:
-                holder = lock.repo_writer_holder(state, cwd) or "another run"
+                holder = lock.repo_writer_holder(layout.state_dir, cwd) or "another run"
                 reporter.refuse(
                     f"run {holder!r} is already driving this checkout; a"
                     " second run-mode worker would interleave auto-commits on the"
