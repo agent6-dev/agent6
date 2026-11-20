@@ -182,9 +182,26 @@ def test_a_working_tree_rows_buttons_sit_beside_its_path_not_inside_a_button(
     row = page.locator(".git-side .gf[data-path='b.txt']")
     row.get_by_role("button", name="Stage", exact=True).wait_for()
     expect(page.locator(".git-side [role=button] button")).to_have_count(0)
-    expect(row.get_by_role("button", name="M b.txt", exact=True)).to_have_count(1)
+    expect(row.get_by_role("button", name="modified b.txt", exact=True)).to_have_count(1)
     row.click(position={"x": 4, "y": 4})  # the row's corner, away from the path
     page.wait_for_selector(".git-diff .diff")
+    assert errors == [], errors
+
+
+def test_the_file_steps_and_rows_are_named_in_words(open_page: OpenPage, git_port: int) -> None:
+    """Previous and next file were named by glyphs, and a file row by a letter read twice."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main")
+    renamed = page.get_by_role("button", name="renamed b.txt from a.txt", exact=True)
+    expect(renamed).to_be_visible()
+    expect(page.get_by_role("button", name="modified img.bin", exact=True)).to_be_visible()
+    hidden = "ms => ms.map(m => m.closest('[aria-hidden=true]') !== null)"
+    assert page.locator(".git-side .gf .gf-st").evaluate_all(hidden) == [True, True]
+    renamed.click()
+    expect(page.get_by_role("button", name="Previous file", exact=True)).to_be_disabled()
+    expect(page.get_by_role("button", name="Next file", exact=True)).to_be_enabled()
     assert errors == [], errors
 
 

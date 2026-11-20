@@ -231,12 +231,13 @@ function fileList(files, truncated, open, actions) {
     row.dataset.path = f.path;
     const status = f.untracked ? 'U' : f.status;
     const index = f.staged ? (f.unstaged ? 'partly staged' : 'staged') : '';
-    const badge = statusBadge(status);
+    // The button's name says the letter's word, so the letter stays out of the accessibility tree.
+    const badge = statusBadge(status); badge.setAttribute('aria-hidden', 'true');
     row.appendChild(badge);
     const path = filePath(f, short);
     if (index) { path.appendChild(document.createTextNode(' ')); path.appendChild(el('span', 'gf-index', index)); }
     const button = el('button', 'gf-open');
-    button.setAttribute('aria-label', status + ' ' + f.path + (index ? ', ' + index : ''));
+    button.setAttribute('aria-label', badge.title + ' ' + f.path + (f.old_path ? ' from ' + f.old_path : '') + (index ? ', ' + index : ''));
     button.title = badge.title + (index ? ', ' + index : '');
     button.onclick = () => open(files.indexOf(f));
     button.appendChild(path);
