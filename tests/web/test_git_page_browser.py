@@ -1450,10 +1450,12 @@ def test_tab_from_a_revision_field_moves_past_its_list(open_page: OpenPage, git_
 
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/v1..main")
+    listed = page.get_by_role("button", name="list", exact=True)
+    expect(listed).to_be_visible()  # the compare's file list holds the next Tab stop
     head = page.get_by_role("combobox", name="head", exact=True)
     head.focus()
     expect(page.locator("#gpick-head [role=option]").first).to_be_visible()
     page.keyboard.press("Tab")
     expect(page.locator("#gpick-head")).to_have_count(0)
-    expect(page.get_by_role("button", name="list", exact=True)).to_be_focused()
+    expect(listed).to_be_focused()
     assert errors == [], errors
