@@ -625,6 +625,46 @@ def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
     assert not errors
 
 
+def test_a_prompt_waiting_behind_another_widget_marks_the_widget_menu(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A prompt that landed behind another widget on a phone showed only as the top bar's state.
+
+    The widget button and the menu's Conversation entry take the status pill's dot in the warning
+    colour, the button's name says a prompt waits, and the page stays on the reader's widget.
+    """
+    from playwright.sync_api import expect
+
+    session = session_logs.write_run(tmp_path, "mark-AAA111", _reads(2), live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/mark-AAA111")
+    menu = page.locator(".wmenu")
+    page.get_by_role("button", name="Widgets", exact=True).click()
+    menu.get_by_role("button", name="Budget", exact=True).click()
+    _append(session, [{"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}])
+    button = page.get_by_role("button", name="Widgets: a prompt waits in Conversation", exact=True)
+    expect(button).to_have_attribute("title", "Widgets: a prompt waits in Conversation")
+    expect(page.locator(".card-budget")).to_be_visible()
+    dot = "e => getComputedStyle(e, '::after').backgroundColor"
+    warn = page.locator("#crumb > .pill.warn").evaluate(
+        "e => getComputedStyle(e, '::before').backgroundColor"
+    )
+    assert button.evaluate(dot) == warn
+    button.click()
+    entries = menu.locator("button:visible")
+    expect(entries.first).to_have_text("Conversation")
+    dots = entries.evaluate_all("bs => bs.map(b => getComputedStyle(b, '::after').content)")
+    assert dots[0] != "none" and set(dots[1:]) == {"none"}, dots
+    assert entries.first.evaluate(dot) == warn
+    entries.first.click()
+    expect(page.get_by_role("button", name="Widgets", exact=True)).to_be_visible()
+    assert page.locator(".wmenu-btn").evaluate("b => getComputedStyle(b, '::after').content") == (
+        "none"
+    )
+    assert not errors
+
+
 def test_the_phone_widget_button_draws_the_theme_buttons_icon_in_its_square(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

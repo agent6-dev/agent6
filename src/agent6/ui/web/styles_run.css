@@ -161,7 +161,12 @@
   .run-app.paged .card[data-w].w-active { display: block; }
   /* the widget menu button rides in the top bar, right of the theme toggle
      (the run view mounts it there), so it shares the theme button's skin */
-  .wmenu-btn { display: inline-flex; }
+  .wmenu-btn { display: inline-flex; position: relative; }
+  /* A prompt waiting in the conversation: the status pill's dot in the warning colour, on the button's corner ringed in its fill. */
+  .wmenu-btn.prompt-waits::after {
+    content: ""; position: absolute; top: 0.3125rem; right: 0.3125rem; width: 0.5rem; height: 0.5rem;
+    border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2px var(--surface2);
+  }
   /* The open menu hangs just under the fixed header, at its right end. */
   .wmenu:popover-open {
     inset: calc(var(--hdr-h) + env(safe-area-inset-top) + 0.25rem) 1rem auto auto; margin: 0; padding: 0;
@@ -171,6 +176,11 @@
   }
   .wmenu button { border: 0; border-radius: 0; text-align: left; background: none; }
   .wmenu button[aria-current] { color: var(--accent); }
+  /* The Conversation entry's dot follows its label. */
+  .wmenu button.prompt-waits::after {
+    content: ""; display: inline-block; width: 0.5rem; height: 0.5rem; margin-left: 0.5rem;
+    border-radius: 50%; background: var(--warn); vertical-align: 1px;
+  }
   .details-btn { display: none; } /* the drawer is a desktop shape */
   /* A read-only view's action bar holds Details alone, so on a phone the bar goes with it. */
   .run-app > .actions:has(> .details-btn:only-child) { display: none; }

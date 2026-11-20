@@ -157,21 +157,30 @@ async function renderRun(id, opts, gen) {
                    ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn');
   wbtn.append(railShow.querySelector('svg').cloneNode(true)); // the menu icon the rail's show button draws
-  wbtn.setAttribute('aria-label', 'Widgets'); wbtn.title = 'Widgets'; // as the theme button beside it
   const wmenu = el('div', 'wmenu');
   wmenu.popover = 'auto';
   wbtn.popoverTargetElement = wmenu;
+  // A prompt waiting in the conversation while another widget shows dots the button and the Conversation entry; the button's name and title say so.
+  const markPrompt = () => {
+    const conv = wmenu.querySelector('[data-w="conv"]');
+    const away = cc.conv.prompts.childElementCount > 0 && !conv.hasAttribute('aria-current');
+    wbtn.classList.toggle('prompt-waits', away); conv.classList.toggle('prompt-waits', away);
+    wbtn.title = away ? 'Widgets: a prompt waits in Conversation' : 'Widgets'; // titled as the theme button beside it
+    wbtn.setAttribute('aria-label', wbtn.title);
+  };
   const setW = (key) => {
     app.querySelectorAll('[data-w]').forEach(c => c.classList.toggle('w-active', c.dataset.w === key));
     wmenu.querySelectorAll('button').forEach(mb => {
       if (mb.dataset.w === key) mb.setAttribute('aria-current', 'true'); else mb.removeAttribute('aria-current');
     });
+    markPrompt();
   };
   for (const [key, label] of entries) {
     const mb = el('button', null, label); mb.dataset.w = key;
     mb.onclick = () => { setW(key); wmenu.hidePopover(); window.scrollTo(0, 0); };
     wmenu.appendChild(mb);
   }
+  new MutationObserver(markPrompt).observe(cc.conv.prompts, { childList: true });
   // The menu offers only the widgets this run has: paintRun hides a card it has nothing for.
   wmenu.addEventListener('beforetoggle', (e) => {
     if (e.newState !== 'open') return;
