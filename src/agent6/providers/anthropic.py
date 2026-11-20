@@ -243,6 +243,11 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
 def _check_budget(body: dict[str, Any], thinking_budget: int | None, level: str | None) -> None:
     """Refuse a configured output cap that leaves no room after thinking.
 
+    Args:
+        body: The request after applying provider tuning.
+        thinking_budget: Tokens reserved for thinking, if fixed.
+        level: The configured effort.
+
     Raises:
         ProviderError: The cap is not an integer above the thinking budget.
     """
