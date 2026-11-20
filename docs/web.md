@@ -195,6 +195,11 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - a blame date is ISO 8601 at the author's own offset, as `git log --format=%aI` prints it; working-tree blame uses checked file bytes against HEAD, with an empty `sha` and `date` and author `not committed` for uncommitted lines
     - blob, text and blame share a working-tree reader that refuses ancestor and leaf symlinks, paths resolving outside the repository, and non-regular files
     - a revision or path starting with `-`, an unknown revision, a graph ref neither listed in `/api/git/refs` nor a verified full sha, or a path in neither tree answers `422`
+- working-tree text: `GET /api/files/text?path=` returns the complete UTF-8 text and its SHA-256 `digest`, with both null when the file is absent
+    - `POST /api/files/text` accepts `{path, text, digest}`; a matching digest saves the text, and null creates only if absent
+    - a mismatch returns 409; no force flag bypasses this check
+    - both routes require the sign-in header and refuse hidden path components, symlinks, hardlinks, special files, binary content and invalid UTF-8; files are limited to 20 MiB
+    - saves preserve CRLF line endings and create no directories; these routes neither stage nor commit
 - writes, small JSON `POST`s: `/api/git/{stage,unstage,discard,commit,branch,switch}` (409 while a session is live in the checkout, 422 for git's own refusal), `/api/git/fetch`, `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,review,stop,compact,rm}`, `/api/session/<id>/findings/<fid>/{fix,resolve,reopen}`, `/api/session/<id>/findings/fix`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - session rows, session snapshots and machine snapshots list their fields, the operator's words and the spend among them, on [Formats](formats.md#cli-json)
 - roster writes use the [typed request bodies](formats.md#reviewerbody) for additions and [removals](formats.md#removereviewerbody)

@@ -2193,6 +2193,18 @@ Source: [`ui.web.model.config_payload`](https://github.com/agent6-dev/agent6/blo
 | `entry.name` | `JSON` | The entry's name. |
 | `entry.source` | `JSON` | The highest config layer holding the entry. |
 
+### `/api/files/text` snapshot
+
+**Support: public.** Return the complete edit snapshot.
+
+Source: [`ui.web.files_edit._snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_edit.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `JSON` | The repository-relative file path. |
+| `text` | `JSON` | The complete text with CRLF normalized to LF, or null if absent. |
+| `digest` | `JSON` | SHA-256 of the exact bytes on disk, or null if absent. |
+
 ### `/api/git/refs` ref row
 
 **Support: public.** Return one Git ref for the picker.
@@ -2567,6 +2579,18 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 `PlacementStamp` links each child to it.
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
+
+### FileTextBody
+
+**Support: public.** A working-tree save, conditional on the bytes the operator loaded.
+
+Source: [`agent6.ui.web.files_edit.FileTextBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_edit.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `str` | The repository-relative file path. |
+| `text` | `str` | Complete UTF-8 text to save, at most 20 MiB after encoding. |
+| `digest` | `str \| None` | SHA-256 of the loaded bytes; null creates a file only if absent. |
 
 ### ChildLaunch
 

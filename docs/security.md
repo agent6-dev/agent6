@@ -538,8 +538,14 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Prune and config-set are fixed agent6 subcommands.
 - No request carries an ambient credential, so no POST needs a cross-site guard: a cross-origin page cannot add the header without a preflight the server never answers.
   DNS rebinding is not covered (that needs a Host allow-list incompatible with the tailnet name): a rebound page holds no token (storage belongs to one origin), so it reaches the public routes and can try secrets at the login; keeping it out is left to the network layer.
-- Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
+- Request framing is bounded: 1 MiB body cap (413), except `/api/files/text` at 120 MiB plus 8 KiB for JSON escaping of at most 20 MiB of text.
+  Chunked bodies are refused (411), and any unread-body refusal closes the connection.
   A read or a response write that blocks for 60 seconds closes the connection; an event stream waiting for its next event is in neither.
+- `GET` and `POST /api/files/text` read and save the signed-in operator's UTF-8 text in the working tree, never a committed revision.
+  Descriptor-relative opens use `O_NOFOLLOW` for every component and keep the leaf descriptor from the digest check through the write.
+  Dot-prefixed components, symlinks, multiple hard links and non-regular files are refused.
+  A SHA-256 digest must match the opened bytes; a null digest requires exclusive creation, with no parent directories created.
+  Web saves serialize, but another process writing the same inode does not share that lock; this is a stale-content check, not a filesystem transaction against arbitrary external writers.
 - The machine write surface (`POST /api/machine/<name>/{poke,stop,steer,approve,answer}`) uses the same guards.
   `poke` writes the instance's signal file (inert JSON the next `tool` reads) and `stop` its stop marker; `steer`, `approve` and `answer` write only the current agent state's per-state dir.
 - Finding actions use the same authenticated session lookup and body limits.

@@ -422,6 +422,7 @@ WEB = (
     Producer("ui.web.model", "_diff_payload", "`/api/session/<id>/diff` payload"),
     Producer("viewmodel.config_view", "_leaf_json", "`/api/config` setting"),
     Producer("ui.web.model", "config_payload", "`/api/config` editing fields", "setting"),
+    Producer("ui.web.files_edit", "_snapshot", "`/api/files/text` snapshot"),
     Producer("ui.web.git_model", "_ref_row", "`/api/git/refs` ref row"),
     Producer("ui.web.git_model", "_file_row", "Git changed-file row"),
     Producer("ui.web.git_model", "_log_row", "`/api/git/graph` commit row"),
@@ -447,6 +448,7 @@ WEB = (
     Producer("viewmodel.receipt", "as_dict", "`/api/session/<id>/receipt` fields", "payload"),
 )
 MODELS = (
+    ("ui.web.files_edit", "FileTextBody"),
     ("app.child_launch", "ChildLaunch"),
     ("sessions.completion", "CompletionRecord"),
     ("sessions.child_dispatch", "DispatchRecord"),

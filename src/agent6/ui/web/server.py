@@ -32,7 +32,7 @@ from agent6.machine import MachineError
 from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.telemetry import export
-from agent6.ui.web import actions, auth, git_model, model, page, review_routes, sse
+from agent6.ui.web import actions, auth, files_edit, git_model, model, page, review_routes, sse
 from agent6.viewmodel import machine_snapshot, wire
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
@@ -574,9 +574,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self.close_connection = True
                 self._send_json({"error": "chunked bodies are not supported"}, status=411)
                 return
-            if self._body_length > _MAX_BODY_BYTES:
+            limit = files_edit.MAX_BODY_BYTES if path == "/api/files/text" else _MAX_BODY_BYTES
+            if self._body_length > limit:
                 self.close_connection = True
-                self._send_json({"error": f"body larger than {_MAX_BODY_BYTES} bytes"}, status=413)
+                self._send_json({"error": f"body larger than {limit} bytes"}, status=413)
                 return
             if path not in PUBLIC_POST and not self._signed_in():
                 self.close_connection = True
@@ -673,6 +674,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         parts = path.strip("/").split("/")
         if path == "/api/login":
             self._login()
+            return
+        if path == "/api/files/text":
+            self._route_file_text(write=True)
             return
         if path.startswith("/api/git/"):
             self._route_git_post(path.removeprefix("/api/git/"))
@@ -1093,6 +1097,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 }
             )
             return
+        if path == "/api/files/text":
+            self._route_file_text(write=False)
+            return
         if path.startswith("/api/git/"):
             self._route_git(path.removeprefix("/api/git/"))
             return
@@ -1121,6 +1128,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._route_draft(parts[2], parts[3] if len(parts) > 3 else "")
             return
         self._send_json({"error": f"not found: {path}"}, status=404)
+
+    def _route_file_text(self, *, write: bool) -> None:
+        """Read or save working-tree text for the signed-in operator."""
+        try:
+            if write:
+                body = files_edit.FileTextBody.model_validate(self._read_body())
+                payload = files_edit.save(self.cwd, body)
+            else:
+                query = parse.parse_qs(parse.urlsplit(self.path).query)
+                payload = files_edit.read(self.cwd, query.get("path", [""])[0])
+        except files_edit.FileEditError as exc:
+            self._send_json({"error": str(exc)}, status=exc.status)
+            return
+        self._send_json(payload)
 
     def _route_git(self, sub: str) -> None:
         """Dispatch `/api/git/<sub>`; a malformed or unknown rev, ref or path answers 422."""

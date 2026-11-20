@@ -438,6 +438,7 @@ depends_on = [
   # config-editor value suggestions: the one owner every editor and TAB
   # completion read
   "agent6.models.choices",
+  "agent6.path_safety",
   "agent6.paths",
   "agent6.review_records",
   "agent6.sessions.ipc",
