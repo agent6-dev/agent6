@@ -156,7 +156,7 @@ Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
 - **Read by:** app/{child_launch, children, compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{children, comparison, format, listing, policy, receipt, wire}, viewmodel/session/{status, view}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (49 test files exercise it)
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (50 test files exercise it)
 
 ## SessionSnapshot
 
@@ -265,7 +265,7 @@ Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpe
 
 - **Written by:** machine/{engine, journal}
 - **Read by:** app/machine/{crash_spend, run}, machine/{__init__, contracts, dryrun, execution, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/wire, viewmodel/machine/{logs, state}
-- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (13 test files exercise it)
+- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (14 test files exercise it)
 
 ## TaskNode
 
