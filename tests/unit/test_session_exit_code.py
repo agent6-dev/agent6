@@ -10,6 +10,7 @@ is an unverified finish when the harness runs no gate of its own.
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 from typing import get_args
 
@@ -18,6 +19,7 @@ import pytest
 from agent6 import kinds
 from agent6.app import finalize
 from agent6.harness import loop_snapshot
+from agent6.sessions import journal
 from agent6.viewmodel.session import status as session_status
 
 
@@ -165,6 +167,14 @@ def test_exit_code_unverified_finish_is_four() -> None:
         )
         == 4
     )
+
+
+def test_a_child_pass_does_not_authorize_a_checkout_merge() -> None:
+    result = _result(completed=True, reason="children_ranked", verification="passed")
+    proof = journal.ChildVerification(
+        session_id="child", tree="tree", verify_id="v", command=("gate",)
+    )
+    assert not finalize.auto_merge_eligible(dataclasses.replace(result, child_verification=proof))
 
 
 def test_auto_merge_needs_a_model_finish_and_a_vouched_for_tree() -> None:

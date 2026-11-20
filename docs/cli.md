@@ -193,7 +193,8 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 
 `passed` means the model called `finish_session` and the gate was green; it does not certify the task.
 Exit `0` also covers harness-declared and gateless ends, including a run that changed nothing.
-[`git.auto_merge`](config.md#git) lands a run only when the model ended it with `finish_session`; an exit `0` from any other end stays on its branch.
+[`git.auto_merge`](config.md#git) can merge a completed `finish_session` or `children_ranked` run into the checkout when the run passed its own gate or had no gate.
+A child's gate pass is evidence about the tree, not permission to merge it into the checkout.
 
 Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `sessions list --json`), and each reason one row:
 

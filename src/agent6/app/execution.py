@@ -780,12 +780,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         f"the run's commits could not be copied into {inputs.mirror_into}: {exc};"
                         f" they are in its worktree {cwd}"
                     )
-            # A child's base branch is its throwaway clone's: its dispatcher lands the work.
-            lands_itself = cfg.git.auto_merge and mode == "run" and not child_launch.is_child()
-            if not interrupted and result is not None and lands_itself:
+            # A child's base branch belongs to its throwaway clone. Its parent owns the merge.
+            auto_merge = cfg.git.auto_merge and mode == "run" and not child_launch.is_child()
+            if not interrupted and result is not None and auto_merge:
                 if finalize.auto_merge_eligible(result):
                     finalize.finalize_auto_merge(
-                        # A clone has a base branch of its own; the run lands on the repository's.
+                        # The merge target is the repository's branch, not the clone's.
                         inputs.mirror_into or cwd,
                         layout=layout,
                         cfg=cfg,
@@ -795,11 +795,15 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         worker_lock_fd=inputs.worker_lock_fd,
                     )
                 else:
-                    reason = (
-                        f"the run ended on {result.reason}, not finish_session"
-                        if result.reason not in finalize.LANDING_ENDS
-                        else f"the gate on the final tree is {result.verification}"
-                    )
+                    if result.reason not in finalize.AUTO_MERGE_ENDS:
+                        reason = (
+                            f"the run ended on {result.reason}, not finish_session or children_ranked"
+                        )
+                    elif result.child_verification:
+                        child_id = result.child_verification.session_id
+                        reason = f"only child {child_id} verified the final tree"
+                    else:
+                        reason = f"the gate on the final tree is {result.verification}"
                     reporter.note(f"auto_merge skipped: {reason}")
         finally:
             # Never leave root-owned run state in the user's repo (the sudo case).
