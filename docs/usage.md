@@ -126,6 +126,7 @@ The flag and the live `/metric` directive take the same spec: `maximize|minimize
 Quote the whole spec on the command line so the shell passes one argument.
 The command is an argument list, not a shell script.
 With a pattern, the first capture group supplies the score; without one, agent6 takes the last printed number from stdout followed by stderr.
+A non-finite result or an incomplete capture with no identifiable last number gives no score.
 The command uses the run's command jail and approval policy, including for automatic readings after committed edits.
 The next turn sees the score and trend; a plateau can end a metric run.
 
