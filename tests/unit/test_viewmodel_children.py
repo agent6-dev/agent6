@@ -138,7 +138,7 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
 
 
 def test_a_group_without_records_reads_its_children_from_lineage(tmp_path: pathlib.Path) -> None:
-    """`run --parallel` writes no record: its children still show, with no join to report."""
+    """A group predating dispatch records still shows its children, with no join to report."""
     state = tmp_path / "state"
     parent = _session(state, "fan")
     _session(state, "fan-l2", parent="fan", number=2, usd=1.0)
@@ -150,6 +150,20 @@ def test_a_group_without_records_reads_its_children_from_lineage(tmp_path: pathl
     )
     assert [c.spend_usd for c in children] == [2.0, 1.0]
     assert vm_children.dispatches_of(parent) == ()
+
+
+def test_a_receipt_without_dispatch_records_lists_reviewers_from_lineage(
+    tmp_path: pathlib.Path,
+) -> None:
+    parent = _session(tmp_path, "root")
+    child = _session(tmp_path, "old-reviewer", parent="root", number=1, group="old-panel")
+    reviewers = parent.parent.parent / "reviewers"
+    reviewers.mkdir()
+    manifest = child / "manifest.json"
+    manifest.write_text(json.dumps({**json.loads(manifest.read_text()), "mode": "reviewer"}))
+    child.rename(reviewers / child.name)
+    text = receipt.render(receipt.read_receipt(parent, tmp_path))
+    assert "old-panel reviewer 1: old-reviewer" in text
 
 
 def test_a_session_with_neither_records_nor_children_has_no_children(

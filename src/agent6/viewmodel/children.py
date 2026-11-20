@@ -13,7 +13,7 @@ import pathlib
 import time
 
 from agent6 import child_records, llm_json
-from agent6.sessions import child_dispatch, completion, layout
+from agent6.sessions import child_dispatch, completion, layout, lineage
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format, listing
 from agent6.viewmodel.session import log as session_log
@@ -198,22 +198,11 @@ def children_of(
     recorded = tuple(child for view in records for child in view.children)
     if recorded:
         return recorded
-    state_dir = layout.layout_of(session_dir).state_dir
-    runs = layout.bucket_dir(state_dir, "runs")
-    return tuple(
-        _session_child(
-            ChildView(
-                summary.session_id,
-                summary.number or 0,
-                summary.parent,
-                "",
-                summary.task_label.task,
-                None,
-            ),
-            runs / summary.session_id,
-        )
-        for summary in listing.children_of(state_dir, session_dir.name)
+    children = (
+        _session_child(ChildView(directory.name, 0, session_dir.name, "", "", None), directory)
+        for directory in lineage.children_of(session_dir)
     )
+    return tuple(sorted(children, key=lambda child: (child.group, child.number, child.session_id)))
 
 
 def _session_child(
@@ -237,14 +226,18 @@ def _session_child(
         manifest = sessions_manifest.read_manifest(child_dir)
     except sessions_manifest.ManifestError:
         manifest = None
-    group = row.group
     if not row.source and manifest is not None and manifest.parallel is not None:
-        group = manifest.parallel.group or group
+        row = dataclasses.replace(
+            row,
+            group=manifest.parallel.group or row.group,
+            number=manifest.parallel.number,
+            source="panel" if child_dir.parent.name == layout.EVIDENCE_BUCKET else "",
+            task=scan.task_label.task or manifest.user_task,
+        )
     return dataclasses.replace(
         row,
         launched=True,
         commits=commits,
-        group=group,
         route=format.format_model_route(manifest.models.driver) if manifest is not None else "",
         status="finished"
         if scan.finished and status in ("passed", "answered", "planned")
