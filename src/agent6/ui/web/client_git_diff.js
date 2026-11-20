@@ -94,11 +94,14 @@ function gitDiffViewer(body) {
       }
       tools.appendChild(modes);
     }
-    if (!f.binary && (mode === 'inline' || mode === 'split')) {
+    // Every text mode shows the same tools, so they keep their places as the mode changes.
+    if (!f.binary) {
       const context = el('button', 'mini diff-context', 'Show full context');
       context.setAttribute('aria-pressed', String(fullContext));
-      context.disabled = !!ctx.panel;
+      const sided = mode === 'old' || mode === 'new';
+      context.disabled = !!ctx.panel || sided;
       if (ctx.panel) context.title = 'Full context is unavailable for recorded review comparisons';
+      else if (sided) context.title = 'old and new show the whole file';
       context.onclick = () => showDiff(ctx, i, whole, !fullContext);
       tools.appendChild(context);
     }

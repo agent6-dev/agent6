@@ -518,6 +518,32 @@ def test_a_binary_files_diff_offers_no_text_controls(
     assert errors == [], errors
 
 
+def test_the_diff_tools_keep_their_places_in_every_text_mode(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Old and new dropped Show full context, so the tools jumped sideways under the pointer."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main?path=b.txt")
+    tools = page.locator(".git-diff-tools > *")
+    lefts = "es => es.map(e => Math.round(e.getBoundingClientRect().left))"
+    context = page.get_by_role("button", name="Show full context", exact=True)
+    places = []
+    for name in ("inline", "old", "new"):
+        page.get_by_role("button", name=name, exact=True).click()
+        button = page.get_by_role("button", name=name, exact=True)
+        expect(button).to_have_attribute("aria-pressed", "true")
+        places.append(tools.evaluate_all(lefts))
+        if name == "inline":
+            expect(context).to_be_enabled()
+        else:
+            expect(context).to_be_disabled()
+    assert places[0] == places[1] == places[2], places
+    expect(context).to_have_attribute("title", "old and new show the whole file")
+    assert errors == [], errors
+
+
 def test_open_in_files_wears_the_mini_buttons_skin(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:
