@@ -134,7 +134,7 @@ def test_arrow_keys_move_between_graph_rows_and_tab_stops_at_one(
     expect(page.locator(".git-graph [tabindex='0']")).to_have_count(1)
     # HEAD is the merge, where main, origin/main and v2 point.
     name = rows.first.get_attribute("aria-label") or ""
-    assert name.startswith("main, v2, origin/main, merge feature, "), name
+    assert name.startswith("main, origin/main, v2, merge feature, "), name
     assert rows.first.locator("svg").get_attribute("aria-hidden") == "true"
     assert errors == [], errors
 
