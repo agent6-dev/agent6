@@ -595,7 +595,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - refuse when the children asked for and the children still running pass `harness.parallel.max_children`
     - chain-commit the worktree (children cut from the chain tip)
     - write each record, then start each task's children (`GroupChildSpawner`), each on a watch thread that clones, spawns, awaits and imports it
-- the loop takes its turns meanwhile; at each turn boundary `loop_steer.operator_boundary` calls `ParallelDispatcher.settle`:
+- the loop takes its turns meanwhile; at each turn boundary `loop_steer.operator_boundary` calls `ParallelDispatcher.settle`, and saves the resume snapshot when it told the model anything:
     - each child that ended is told to the model once (`parallel_join.end_notice`, with its finish summary)
     - each finished task lands, in the order written: a task waits for every task written before it
     - landing chain-commits the parent's uncommitted work, then merges one child (`chain_merge` syncs merged files into the worktree) or ranks several and merges the first; where `git.commit_per_turn` is off and the tree holds uncommitted work, nothing merges and the branch holds the child's work

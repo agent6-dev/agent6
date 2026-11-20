@@ -703,3 +703,32 @@ def test_a_dispatched_task_joins_the_task_graph_when_its_work_lands(tmp_path: pa
     records = child_dispatch.read_records(layout.session_dir)
     assert [record.node_id for record in records] == [tasks["write a"].id, tasks["write b"].id]
     assert [record.parent_node for record in records] == [root.id, root.id]
+
+
+def test_a_landing_at_the_runs_last_boundary_is_in_the_snapshot_a_resume_reads(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A notice told at a boundary is in the resume snapshot, as its record says.
+
+    The record said delivered while the snapshot predated the notice: a run that ended at
+    that boundary resumed with a model that never heard its child's work had landed.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    child = "run-p1-l1"
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a"}))),
+        (lambda: children.end(child, path="a.txt", report="wrote a"), _calls(READ)),
+    )
+    wf = _harness(repo, tmp_path / "run", provider, children, max_turns=2)
+
+    result = wf.run("start")
+
+    assert result.reason == "max_turns"
+    (record,) = child_dispatch.read_records(tmp_path / "run")
+    assert (record.state, record.delivered, record.children[0].reported) == ("complete", True, True)
+    resumed = _Script((None, _calls(("finish_session", {"summary": "done"}))))
+    _harness(repo, tmp_path / "run", resumed, _Children(repo, "run"), max_turns=2).resume()
+    assert f"[parallel] child {child} finished.\\nsummary: wrote a" in resumed.seen[0]
+    assert resumed.seen[0].count("[parallel] group run-p1 complete") == 1
