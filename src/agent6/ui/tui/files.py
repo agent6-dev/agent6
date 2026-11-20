@@ -45,7 +45,14 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
 
     MENUS: ClassVar = (
         menubar.Menu("File", (menubar.MenuItem("Back", "close"),)),
-        menubar.Menu("View", (menubar.MenuItem("Markdown / source", "toggle_source"),)),
+        menubar.Menu(
+            "View",
+            (
+                menubar.MenuItem("Show / hide tree", "toggle_tree"),
+                menubar.MenuItem("Show / hide outline", "toggle_outline"),
+                menubar.MenuItem("Markdown / source", "toggle_source"),
+            ),
+        ),
         menubar.Menu(
             "Help",
             (
@@ -54,7 +61,13 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             ),
         ),
     )
-    FOOTER: ClassVar = (("toggle_source", "Source"), ("help", "Help"), ("close", "Back"))
+    FOOTER: ClassVar = (
+        ("toggle_tree", "Tree"),
+        ("toggle_outline", "Outline"),
+        ("toggle_source", "Source"),
+        ("help", "Help"),
+        ("close", "Back"),
+    )
     BINDINGS: ClassVar = menubar.menu_bindings("files", MENUS, footer=FOOTER)
     COMMANDS: ClassVar = screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     CSS = """
@@ -79,7 +92,9 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                 yield widgets.Static("", id="files-note", markup=False)
                 with widgets.ContentSwitcher(initial="files-message"):
                     yield widgets.Static("Select a file.", id="files-message", markup=False)
-                    yield PreviewMarkdown(id="files-markdown", open_links=False)
+                    yield PreviewMarkdown(
+                        id="files-markdown", open_links=False, show_table_of_contents=False
+                    )
                     yield widgets.RichLog(id="files-source", auto_scroll=False, min_width=0)
         yield widgets.Footer()
 
@@ -159,10 +174,34 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self.refresh_bindings()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Return None to grey out the source toggle unless the preview is Markdown."""
+        """Return None to grey out Markdown controls that do not apply to the preview."""
         if action == "toggle_source":
             return True if self._is_markdown else None
+        if action == "toggle_outline":
+            return True if self._is_markdown and not self._show_source else None
         return True
+
+    def action_toggle_tree(self) -> None:
+        """Fold or restore the tree, focusing the file or the tree respectively."""
+        tree = self.query_one(widgets.DirectoryTree)
+        tree.display = not tree.display
+        if tree.display:
+            tree.focus()
+            return
+        preview = self.query_one(widgets.ContentSwitcher).visible_content
+        if isinstance(preview, widgets.MarkdownViewer):
+            preview = preview.document
+        if preview is not None:
+            preview.focus(scroll_visible=False)
+
+    def action_toggle_outline(self) -> None:
+        """Show or hide the rendered Markdown file's outline."""
+        if not self._is_markdown or self._show_source:
+            return
+        viewer = self.query_one(widgets.MarkdownViewer)
+        if viewer.table_of_contents.has_focus_within:
+            viewer.document.focus(scroll_visible=False)
+        viewer.show_table_of_contents = not viewer.show_table_of_contents
 
     def action_toggle_source(self) -> None:
         """Switch the selected Markdown file between its rendered view and source."""
@@ -176,6 +215,7 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         else:
             switcher.current = "files-markdown"
             self.query_one(widgets.MarkdownViewer).document.focus()
+        self.refresh_bindings()
 
     def action_close(self) -> None:
         """Close a menu first, otherwise return to the hub."""

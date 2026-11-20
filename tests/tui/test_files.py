@@ -83,7 +83,7 @@ def test_files_shortcut_is_in_the_hub_footer_and_help(repo: pathlib.Path) -> Non
 
 @pytest.mark.parametrize("suffix", [".md", ".markdown"])
 def test_markdown_renders_a_heading_and_toggles_source(repo: pathlib.Path, suffix: str) -> None:
-    """Markdown opens rendered with a TOC; s switches to literal source and back."""
+    """Markdown opens without an outline; s switches to literal source and back."""
     name = f"README{suffix}"
     body = "# Workspace guide\n\nRead **this** plan.\n"
     (repo / name).write_text(body, encoding="utf-8")
@@ -96,7 +96,9 @@ def test_markdown_renders_a_heading_and_toggles_source(repo: pathlib.Path, suffi
             assert app.screen.query(widgets.MarkdownViewer)
             viewer = app.screen.query_one(widgets.MarkdownViewer)
             assert viewer.is_on_screen
-            assert viewer.show_table_of_contents
+            assert not viewer.show_table_of_contents
+            assert not viewer.table_of_contents.is_on_screen
+            assert viewer.document.region.x == viewer.region.x
             headings = viewer.document.query("MarkdownH1")
             assert headings
             heading = headings.first()
@@ -406,5 +408,144 @@ def test_markdown_choice_survives_file_selection(repo: pathlib.Path) -> None:
             assert switcher.current == "files-markdown"
             await _select(pilot, "two.md")
             assert switcher.current == "files-markdown"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("size", [(80, 24), (140, 40)])
+@pytest.mark.parametrize("name", ["README.md", "example.py"])
+def test_tree_toggle_gives_the_file_full_width_and_restores_selection(
+    repo: pathlib.Path, size: tuple[int, int], name: str
+) -> None:
+    """Folding the tree focuses the full-width file without losing selection or scroll."""
+    (repo / name).write_text("# File contents\n\n" + "Read this file.\n\n" * 100, encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=size) as pilot:
+            await pilot.press("F")
+            await _select(pilot, name)
+            tree = app.screen.query_one(widgets.DirectoryTree)
+            selected = tree.cursor_node
+            preview = app.screen.query_one("#files-preview")
+            initial_width = preview.size.width
+            assert 0 < initial_width < size[0]
+            reader = (
+                app.screen.query_one(widgets.MarkdownViewer)
+                if name.endswith(".md")
+                else app.screen.query_one(widgets.RichLog)
+            )
+            focus = reader.document if isinstance(reader, widgets.MarkdownViewer) else reader
+            await pilot.press("t")
+            await pilot.pause()
+            assert not tree.display
+            assert preview.region.x == 0 and preview.size.width == size[0]
+            assert reader.region.x == 0 and reader.size.width == size[0]
+            assert focus.region.x == 0
+            assert app.focused is focus
+            await pilot.press("pagedown")
+            await pilot.pause()
+            assert reader.scroll_y > 0
+            offset = reader.scroll_y
+            await pilot.press("t")
+            await pilot.pause()
+            assert tree.display and app.focused is tree
+            assert tree.cursor_node is selected
+            assert preview.size.width == initial_width
+            await pilot.press("t")
+            await pilot.pause()
+            assert app.focused is focus
+            assert reader.scroll_y == offset
+            assert preview.size.width == size[0]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("name", [None, "image.png"])
+def test_tree_toggle_works_without_a_text_preview(repo: pathlib.Path, name: str | None) -> None:
+    """An empty or image preview can fold the tree and restore keyboard navigation."""
+    (repo / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.press("F")
+            if name is not None:
+                await _select(pilot, name)
+            message = app.screen.query_one("#files-message", widgets.Static)
+            content = str(message.content)
+            await pilot.press("t")
+            await pilot.pause()
+            tree = app.screen.query_one(widgets.DirectoryTree)
+            assert not tree.display
+            assert message.is_on_screen and str(message.content) == content
+            assert message.region.x == 0 and message.size.width == 80
+            await pilot.press("t")
+            await pilot.pause()
+            assert tree.display and app.focused is tree
+
+    asyncio.run(scenario())
+
+
+def test_outline_is_optional_and_keeps_its_choice_across_files(repo: pathlib.Path) -> None:
+    """The outline toggles only on rendered Markdown and keeps its choice across previews."""
+    for name in ("one.md", "two.md", "plain.txt"):
+        (repo / name).write_text("# First\n\n" + "Text\n\n" * 40 + "## Last\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "one.md")
+            viewer = app.screen.query_one(widgets.MarkdownViewer)
+            await pilot.press("o")
+            await pilot.pause()
+            assert viewer.table_of_contents.is_on_screen
+            outline = viewer.table_of_contents.query_one(widgets.Tree)
+            outline.focus()
+            await pilot.press("end", "enter")
+            await pilot.pause()
+            assert viewer.scroll_y > 0
+            await pilot.press("o")
+            await pilot.pause()
+            assert not viewer.show_table_of_contents
+            assert not viewer.table_of_contents.is_on_screen
+            assert app.focused is viewer.document
+            await pilot.press("o", "s")
+            await pilot.pause()
+            assert not app.screen.active_bindings["o"].enabled
+            await pilot.press("o", "s")
+            await pilot.pause()
+            assert viewer.table_of_contents.is_on_screen
+            for name in ("plain.txt", "two.md"):
+                await _select(pilot, name)
+                assert app.screen.active_bindings["o"].enabled == name.endswith(".md")
+                if name.endswith(".txt"):
+                    await pilot.press("o")
+            assert viewer.table_of_contents.is_on_screen
+            await pilot.press("o")
+            await _select(pilot, "one.md")
+            assert not viewer.table_of_contents.is_on_screen
+
+    asyncio.run(scenario())
+
+
+def test_files_sidebar_keys_are_in_the_footer_and_help(repo: pathlib.Path) -> None:
+    """Both sidebar keys remain discoverable at 80 columns through the menu registry."""
+    (repo / "README.md").write_text("# Guide\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "README.md")
+            footer = app.screen._compositor.render_strips()[-1].text
+            assert "t Tree" in footer and "o Outline" in footer
+            await pilot.press("question_mark")
+            await pilot.pause()
+            assert isinstance(app.screen, menubar.HelpScreen)
+            rows = [str(widget.content) for widget in app.screen.query(widgets.Static)]
+            assert any("Show / hide tree" in row and row.endswith("t") for row in rows)
+            assert any("Show / hide outline" in row and row.endswith("o") for row in rows)
 
     asyncio.run(scenario())

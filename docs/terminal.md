@@ -21,8 +21,12 @@ A session that starts waiting on an answer or ends is announced with a toast and
 
 ## Files
 
-The Files screen opens from the hub and shows the working tree's files.
-A Markdown file opens rendered, and `s` shows its source.
+The Files screen opens from the hub with `F` and shows the working tree's files.
+The tree sits beside the file; `t` folds it away for a full-width preview or restores it.
+A Markdown file opens rendered with its outline hidden; `o` shows or hides the outline.
+`s` switches between rendered Markdown and source.
+The tree and outline choices last until Files closes.
+The footer and `?` help list these keys.
 
 ## Conversation
 

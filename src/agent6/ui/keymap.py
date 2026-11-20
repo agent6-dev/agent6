@@ -194,6 +194,8 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
     },
     "files": {
         "close": "escape,q",
+        "toggle_tree": "t",
+        "toggle_outline": "o",
         "toggle_source": "s",
         "help": "question_mark",
         "command_palette": "ctrl+p",
