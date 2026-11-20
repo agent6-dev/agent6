@@ -22,6 +22,8 @@ DOCS = [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]
 # Other tools' flags named in prose: git's, uv's, Docker's, and Claude Code's on its argv.
 _NOT_OURS = {
     "--link-mode",
+    "--allow-empty",
+    "--ignore-submodules",
     "--no-ext-diff",
     "--no-textconv",
     "--no-ff",

@@ -239,6 +239,9 @@ def _reject_machine_protected(key: str, machine: pathlib.Path | None) -> str | N
 def _check_machine(text: str) -> None:
     """Load the text as a machine spec.
 
+    Args:
+        text: The machine file's text.
+
     Raises:
         MachineError: The spec is incomplete or invalid.
     """
