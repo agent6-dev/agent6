@@ -237,9 +237,12 @@ def parallel_merged_body(event: dict[str, Any]) -> str:
 def child_merge_body(event: dict[str, Any]) -> str:
     """Return the result of a requested child merge."""
     child = event.get("child", "?")
-    if event.get("status") == "merged":
+    status = str(event.get("status", ""))
+    if status == "merged":
         return f"child {child} merged into parent chain at {str(event.get('sha', ''))[:12]}"
-    why = event.get("detail") or str(event.get("status", "")).replace("_", " ")
+    if status not in ("conflict", "failed", "no_changes"):
+        return f"child {child}: unsupported merge outcome {status!r}"
+    why = event.get("detail") or status.replace("_", " ")
     return f"child {child} not merged ({event.get('ref', '?')}): {why}"
 
 

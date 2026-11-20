@@ -1338,3 +1338,11 @@ def test_child_activity_names_the_child_and_the_merge_result() -> None:
         "child c merged into parent chain at 123456789012",
         "child c not merged (agent6/c): merge conflict in a.py",
     ]
+
+
+def test_an_unknown_child_merge_outcome_is_not_reported_as_a_failure() -> None:
+    """An unsupported result does not establish whether the child merged."""
+    (item,) = fold_transcript(
+        [{"type": "parallel.child_merged", "child": "c", "status": "other", "sha": "abc"}]
+    )
+    assert item.body == "child c: unsupported merge outcome 'other'"
