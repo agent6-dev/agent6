@@ -89,7 +89,8 @@ def test_a_backgrounded_command_dies_with_the_session(
     marker = tmp_path / "command.pid"
     session.start_background(("/bin/sh", "-c", f"echo $$ > {marker}; exec sleep 60"))
     deadline = time.monotonic() + 5
-    while not marker.exists() and time.monotonic() < deadline:
+    # The shell creates the file, then writes the pid: wait for the pid.
+    while not (marker.exists() and marker.read_text().strip()) and time.monotonic() < deadline:
         time.sleep(0.02)
     pid = int(marker.read_text())
     assert _running(pid)
