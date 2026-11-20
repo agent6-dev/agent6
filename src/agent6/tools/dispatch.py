@@ -1090,6 +1090,10 @@ class ToolDispatcher:
             raise tool_errors.ToolError("read_session needs the project state dir; none was wired")
         if not args.id:
             return results.SessionsResult(sessions.roster(self._state_dir, args.query).lines())
+        if self._session_dir is not None and args.id == self.session_id:
+            bound = sessions_layout.layout_of(self._session_dir)
+            if bound.session_dir == self._session_dir:
+                return sessions.read_entries(bound, args)
         layout = sessions_layout.session_layout(self._state_dir, args.id)
         if layout is None:
             raise tool_errors.ToolError(f"no session {args.id!r} in this project")
