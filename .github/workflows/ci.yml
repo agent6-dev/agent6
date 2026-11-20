@@ -3,6 +3,8 @@ name: ci
 # Lints and type-checks once, then tests the wheels produced by build.yml
 # (agent6-jail bundled inside) on Python 3.13 to 3.15 on amd64 and arm64.
 # This catches version- and architecture-specific failures.
+# The `browser` tests drive the page's script and styles, the same on every
+# Python and architecture: they run once, in their own job.
 
 on:
   push:
@@ -60,15 +62,6 @@ jobs:
       - name: Sync dev environment
         run: uv sync --all-extras --dev
 
-      - name: Cache Playwright's Chromium (the `browser` tests)
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock') }}
-
-      - name: Install Playwright's Chromium
-        run: uv run playwright install --with-deps chromium
-
       - name: Download the built wheel for this arch
         uses: actions/download-artifact@v8
         with:
@@ -101,7 +94,55 @@ jobs:
           assert 'site-packages' in agent6.__file__, agent6.__file__
           print('testing', agent6.__file__)"
 
-      - run: uv run --no-sync pytest -ra --override-ini=pythonpath=
+      - run: uv run --no-sync pytest -ra --override-ini=pythonpath= -m "not browser"
+
+  browser:
+    name: pytest browser tests (amd64, py3.15)
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv + Python 3.15
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+          python-version: "3.15"
+
+      - name: Sync dev environment
+        run: uv sync --all-extras --dev
+
+      - name: Cache Playwright's Chromium
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock') }}
+
+      - name: Install Playwright's Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Download the built wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: agent6-dist-amd64
+          path: dist/
+
+      - name: Install the built wheel into the env
+        run: |
+          wheel=$(ls dist/agent6-*.whl)
+          uv pip install --reinstall "$wheel"
+
+      - name: Allow unprivileged user namespaces (Ubuntu 24.04 AppArmor)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: The suite imports the installed wheel, not the checkout
+        run: |
+          uv run --no-sync python -c "
+          import agent6
+          assert 'site-packages' in agent6.__file__, agent6.__file__
+          print('testing', agent6.__file__)"
+
+      - run: uv run --no-sync pytest -ra --override-ini=pythonpath= -m browser
 
   sandbox-smoke:
     name: agent6 check sandbox (${{ matrix.platform.arch }})
