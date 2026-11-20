@@ -48,7 +48,6 @@ mkdir -p "$BENCH_ROOT"
 # --- shared agent6.toml --------------------------------------------------------
 emit_toml() {
   local verify_cmd_json="$1"
-  local metric_block="${2:-}"
   cat <<EOF
 [agent6]
 config_version = 1
@@ -72,7 +71,6 @@ verify.command = $verify_cmd_json
 # premature-finish task variants. Default: "never".
 when = "${AGENT6_REALWORLD_CRITIC:-never}"
 
-${metric_block}
 
 [budget]
 max_usd = $PER_TASK_BUDGET_USD
@@ -232,28 +230,16 @@ for task_json in "$REPO"/bench/realworld/tasks/*.json; do
   fi
   desc=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['description'])" "$task_json")
   verify_cmd_json=$(python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))['verify_command']))" "$task_json")
-  # Optional metric block. Task JSON may declare a `metric` object
-  # with {command: argv, pattern: regex, goal: 'minimize' | 'maximize'}.
-  # When present we emit a [harness.metric] block so the agent's
-  # `run_metric_command` tool is wired up, AND we run the metric ourselves
-  # post-run as an independent score (so the harness number isn't subject
-  # to whatever the agent did or didn't measure).
-  metric_block=$(python3 - "$task_json" <<'PY'
-import json, sys
-t = json.load(open(sys.argv[1]))
-m = t.get("metric")
-if not m:
-    print("")
-    raise SystemExit(0)
-cmd_toml = "[" + ", ".join(json.dumps(a) for a in m["command"]) + "]"
-print(
-    "\n[harness.metric]\n"
-    f"command = {cmd_toml}\n"
-    f"pattern = {json.dumps(m['pattern'])}\n"
-    f"goal = {json.dumps(m['goal'])}\n"
+  # Give only this run the benchmark's metric; the independent post-run scorer stays separate.
+  metric_args=()
+  metric_spec=$(python3 - "$task_json" <<'PYTHON'
+import json, shlex, sys
+metric = json.load(open(sys.argv[1])).get("metric")
+if metric:
+    print(shlex.join([metric["goal"], metric["pattern"], "--", *metric["command"]]))
+PYTHON
 )
-PY
-)
+  if [ -n "$metric_spec" ]; then metric_args=(--metric "$metric_spec"); fi
   metric_cmd_json=$(python3 -c "import json,sys; t=json.load(open(sys.argv[1])); m=t.get('metric'); print(json.dumps(m['command']) if m else '')" "$task_json")
   metric_pattern=$(python3 -c "import json,sys; t=json.load(open(sys.argv[1])); m=t.get('metric'); print(m['pattern'] if m else '')" "$task_json")
   metric_goal=$(python3 -c "import json,sys; t=json.load(open(sys.argv[1])); m=t.get('metric'); print(m['goal'] if m else '')" "$task_json")
@@ -294,7 +280,7 @@ EOF
     echo "  agent_exit=-  verify=UNSCORED (setup failed, exit $setup_exit)  metric=-  wall=0s  cost=\$0"
     continue
   fi
-  emit_toml "$verify_cmd_json" "$metric_block" > "$dir/agent6.toml"
+  emit_toml "$verify_cmd_json" > "$dir/agent6.toml"
   # Fail on an invalid config before any provider call:
   # `config show` loads the same merged layers the run will.
   ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
@@ -317,7 +303,7 @@ EOF
   start_ns=$(date +%s%N)
   set +e
   ( cd "$dir" && timeout --kill-after=30 "$TASK_TIMEOUT_S" \
-      "$AGENT6_BIN" --config agent6.toml run ${model_args[@]+"${model_args[@]}"} "$task_text" ) \
+      "$AGENT6_BIN" --config agent6.toml run ${metric_args[@]+"${metric_args[@]}"} ${model_args[@]+"${model_args[@]}"} "$task_text" ) \
     > "$logdir/agent6.stdout" 2> "$logdir/agent6.stderr"
   ag_exit=$?
   set -e

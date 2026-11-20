@@ -96,7 +96,7 @@ The configured `verify_command` is
 `pytest tests/submission_tests.py::CorrectnessTests` - only correctness
 is checked, not speed tiers.
 
-This run has `[harness.metric]` configured: after every passing step,
+This run has a cycles metric: after every passing step,
 the harness runs the cycles command, parses `CYCLES:` and feeds the
 trajectory back to you as a `[harness metric]` block on the next step.
 Keep verified edits only when that block shows a new best; if it is
@@ -161,11 +161,6 @@ verify.command = [
 ]
 verify.timeout_s = 30.0
 
-[harness.metric]
-command = ["/usr/bin/python3", "tests/submission_tests.py"]
-pattern = 'CYCLES:\s*(\d+)'
-goal = "minimize"
-
 [budget]
 max_usd = $MAX_USD
 max_tokens_fallback = $MAX_TOKENS_FALLBACK
@@ -198,7 +193,7 @@ set +e
 # that streams cheap reasoning without acting (observed: glm-5.2 emitted ~99k
 # thinking deltas, 0 edits, evading the budget cap) would otherwise spin for
 # hours. Kill at AGENT6_PERF_WALL_S (default 90 min) so the run always ends.
-( cd "$WORKDIR" && timeout "${AGENT6_PERF_WALL_S:-5400}" "$AGENT6_BIN" --config agent6.toml run "$task_text" ) \
+( cd "$WORKDIR" && timeout "${AGENT6_PERF_WALL_S:-5400}" "$AGENT6_BIN" --config agent6.toml run --metric "minimize 'CYCLES:\s*(\d+)' -- /usr/bin/python3 tests/submission_tests.py" "$task_text" ) \
   > "$LOGDIR/agent6.stdout" 2> "$LOGDIR/agent6.stderr"
 ag_exit=$?
 set -e

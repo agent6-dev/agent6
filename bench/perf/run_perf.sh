@@ -92,7 +92,7 @@ after a single failing step. With correctness-only verify, every
 commit that preserves behaviour is accepted and the planner can
 chain many cycle-reducing edits.
 
-**This run also has `[harness.metric]` configured**: after every
+**This run also has a cycles metric**: after every
 passing step, the harness automatically runs
 `/usr/bin/python3 tests/submission_tests.py`, parses out the
 `CYCLES:` number, and feeds the trajectory (baseline, current, best,
@@ -194,18 +194,6 @@ verify.command = [
 # ~10 min per failed step and 30+ min per step that exhausted retries.
 verify.timeout_s = 30.0
 
-# Continuous-score metric: after every passing step, agent6 runs this
-# command in the jail, parses the captured group out of stdout+stderr
-# with \`\`pattern\`\`, and feeds the trajectory back to the worker on the
-# NEXT step. When the initial plan finishes, the outer loop re-plans
-# while the metric is still improving. This is the dial that lets us
-# spend the full budget on continuous optimization rather than stopping
-# after the planner's first 5-10 steps.
-[harness.metric]
-command = ["/usr/bin/python3", "tests/submission_tests.py"]
-pattern = 'CYCLES:\s*(\d+)'
-goal = "minimize"
-
 [budget]
 max_usd = $MAX_USD
 max_tokens_fallback = $MAX_TOKENS_FALLBACK
@@ -233,7 +221,7 @@ task_text=$(cat "$WORKDIR/TASK.md")
 
 start_ns=$(date +%s%N)
 set +e
-( cd "$WORKDIR" && "$AGENT6_BIN" --config agent6.toml run "$task_text" ) \
+( cd "$WORKDIR" && "$AGENT6_BIN" --config agent6.toml run --metric "minimize 'CYCLES:\s*(\d+)' -- /usr/bin/python3 tests/submission_tests.py" "$task_text" ) \
   > "$LOGDIR/agent6.stdout" 2> "$LOGDIR/agent6.stderr"
 ag_exit=$?
 set -e

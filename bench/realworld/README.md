@@ -31,7 +31,7 @@ bench/realworld/
 | `break` | optional list of `{path, find, replace}` text substitutions |
 | `task_md` | the prompt written to `TASK.md` |
 | `harness.verify.command` | argv list for `[harness] verify_command` |
-| `metric` | optional `{command: argv, pattern: regex, goal: "minimize" or "maximize"}` for `[harness.metric]` and independent scoring |
+| `metric` | optional `{command: argv, pattern: regex, goal: "minimize" or "maximize"}` for `run --metric` and independent scoring |
 | `description` | short label printed before the task runs |
 
 ## Running
