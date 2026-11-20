@@ -226,11 +226,14 @@ class ComposedTask:
 
 
 def _compose_task(
-    task: str, cfg: Config, *, skills: tuple[str, ...], seed_from: str
+    task: str, cfg: Config, *, skills: tuple[str, ...], seed_from: str, context: str = ""
 ) -> ComposedTask:
     """Assemble the prompt the session starts from.
 
-    The skills prefix, then another session's context when `--from` seeds this one.
+    In order: another session's context when `--from` seeds this one, the skills prefix, the
+    caller's context, then the typed task with its `@path` files inlined. Only the typed task
+    is searched for `@path`: a reference in text the operator did not type would read a file
+    they did not name.
     `--from` starts a new session and leaves the source untouched; `fork` keeps a session's
     mode, while this takes the mode from the command the operator typed.
 
@@ -239,6 +242,8 @@ def _compose_task(
         cfg: The effective config.
         skills: The `--skill` names.
         seed_from: The `--from` session, or "".
+        context: Text the caller read for the task to follow: a plan to run, a seeded
+            session, `--file` contents.
 
     Returns:
         The composed task.
@@ -246,6 +251,8 @@ def _compose_task(
     Raises:
         OperatorError: A skill or the seed cannot be resolved.
     """
+    task = task_refs.expand_task_file_refs(task, pathlib.Path.cwd(), cfg.sandbox.hide_paths)
+    task = "\n\n".join(part for part in (context, task) if part)
     if skills:
         prefix, skills_err = _skills_task_prefix(cfg, skills)
         if skills_err:
@@ -264,6 +271,7 @@ def _cmd_run(
     task: str,
     *,
     session_id: str = "",
+    context: str = "",
     operator_task: str | None = None,
     interactive: bool = False,
     tui: bool = False,
@@ -291,7 +299,9 @@ def _cmd_run(
         config_paths: The `--config` files in command-line order, if any.
         task: The task as typed.
         session_id: A session id to use; "" allocates one.
-        operator_task: The words before composition; None means `task` is uncomposed.
+        context: Text the caller read for the task to follow: a plan to run, a seeded
+            session, `--file` contents.
+        operator_task: The words before composition; None means the task.
         interactive: Stay attached for a conversation.
         tui: Open the dashboard.
         decompose: Plan first, overriding config.
@@ -329,15 +339,12 @@ def _cmd_run(
     if decompose:
         cfg = cfg.with_decompose("on")
     try:
-        composed = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
+        composed = _compose_task(task, cfg, skills=skills, seed_from=seed_from, context=context)
     except errors.OperatorError as exc:
         common.error(f"{exc}")
         return 2
     task = composed.text
     source_session_id = composed.source_session_id or source_session_id
-
-    # `@path` references inline the files verbatim before the harness sees the task.
-    task = task_refs.expand_task_file_refs(task, pathlib.Path.cwd())
     if (problem := common.steer_problem(task)) is not None:
         common.error(problem)
         return 2

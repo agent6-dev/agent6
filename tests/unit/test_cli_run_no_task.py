@@ -137,7 +137,7 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
     ran: list[str] = []
 
     def fake_run(config: object, task: str, **kwargs: object) -> int:
-        ran.append(task)
+        ran.append(str(kwargs["context"]))
         return 0
 
     monkeypatch.setattr(run_mod, "_cmd_run", fake_run)

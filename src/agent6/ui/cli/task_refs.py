@@ -4,8 +4,12 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
+from collections.abc import Iterable
+
+from agent6 import path_safety
 
 _TASK_FILE_REF_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9_./\-]+)")
 
@@ -13,45 +17,40 @@ _TASK_FILE_REF_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9_./\-]+)")
 TASK_FILE_REF_MAX_BYTES = 64 * 1024  # per file; a bigger read needs an explicit tool call
 
 
-def expand_task_file_refs(task: str, root: pathlib.Path) -> str:
-    """Inline the `@path` references in the task that resolve to files under the root.
+def expand_task_file_refs(task: str, root: pathlib.Path, hide: Iterable[str] = ()) -> str:
+    """Inline the `@path` references in the task that name readable workspace files.
 
     A match starts at a word boundary that excludes `@` and `/`, so `user@example.com`
-    is untouched. The path must resolve to a regular file inside the root; a symlink
-    that escapes is left as is, like every unresolved reference. Contents are cut at
-    `TASK_FILE_REF_MAX_BYTES` and decoded lossily. Never raises.
+    is untouched. A path resolves inside the host-side read boundary
+    (`path_safety.host_workspace`): a regular file inside the root, outside `.git` and the
+    hidden set, read through a descriptor walked from the root. Any other reference is left as
+    typed. At most `TASK_FILE_REF_MAX_BYTES` are read, and decoded lossily. Never raises.
 
     Args:
-        task: The task text.
-        root: The tree the references resolve under.
+        task: The words the operator typed; text a model or a repository file wrote is never
+            passed, since a reference in it would read a file the operator did not name.
+        root: The workspace root.
+        hide: `[sandbox].hide_paths`; agent6's private dirs are hidden without it.
 
     Returns:
         The task with a `<file>` block after each resolved reference, which stays as typed.
     """
-    root_resolved = root.resolve()
+    workspace = path_safety.host_workspace(root, hide)
 
     def _replace(match: re.Match[str]) -> str:
         rel = match.group(1)
         try:
-            candidate = (root / rel).resolve()
-        except (OSError, RuntimeError):
+            fd = path_safety.open_contained(workspace.resolve_read(rel), os.O_RDONLY)
+            with os.fdopen(fd, "rb") as handle:
+                raw = handle.read(TASK_FILE_REF_MAX_BYTES)
+                omitted = os.fstat(fd).st_size - len(raw)
+        except (OSError, path_safety.ContainmentError):
             return match.group(0)
-        try:
-            candidate.relative_to(root_resolved)
-        except ValueError:
-            return match.group(0)
-        if not candidate.is_file():
-            return match.group(0)
-        try:
-            raw = candidate.read_bytes()
-        except OSError:
-            return match.group(0)
-        truncated = raw[:TASK_FILE_REF_MAX_BYTES]
-        text = truncated.decode("utf-8", errors="replace")
+        text = raw.decode("utf-8", errors="replace")
         suffix = ""
-        if len(raw) > TASK_FILE_REF_MAX_BYTES:
+        if omitted > 0:
             suffix = (
-                f"\n... (truncated, {len(raw) - TASK_FILE_REF_MAX_BYTES} bytes omitted; "
+                f"\n... (truncated, {omitted} bytes omitted; "
                 "use read_file with an explicit range for the rest)"
             )
         return f'{match.group(0)}\n<file path="{rel}">\n{text}{suffix}\n</file>\n'

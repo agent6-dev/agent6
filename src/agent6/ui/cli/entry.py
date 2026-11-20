@@ -233,7 +233,7 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
             "--parallel cannot combine with --standing (the children take no standing goal)."
         )
         return 2
-    seed_from, source_session_id = getattr(args, "seed_from", ""), ""
+    seed_from, source_session_id, plan_task = getattr(args, "seed_from", ""), "", ""
     if not args.task and seed_from:
         # A plan id alone runs that plan; seeding the same text again would double it.
         from agent6.sessions import id
@@ -252,8 +252,8 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         if plan_md is None:
             return 2
         _warn_unanswered_questions(plan_md, layout.session_id)
-        task, source_session_id = _from_plan_task(plan_md, layout.session_id), layout.session_id
-        seed_from = ""
+        plan_task = _from_plan_task(plan_md, layout.session_id)
+        seed_from, source_session_id = "", layout.session_id
     elif not args.task:
         # No task: the most recent plan, confirmed at a TTY, refused in a script.
         last_plan = plan_watch._most_recent_plan_session_id(common._plans_dir(pathlib.Path.cwd()))
@@ -281,15 +281,14 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         if ans is None or ans.lower() in ("n", "no"):
             print(f"Aborted. Run it later: agent6 run --from {last_plan}")
             return 0
-        task, source_session_id = _from_plan_task(plan_md, last_plan), last_plan
-    else:
-        task = args.task
+        plan_task, source_session_id = _from_plan_task(plan_md, last_plan), last_plan
     session_id = _minted_session_id(args.session_id, "run")
     rc = run._cmd_run(
         args.config,
-        task,
+        args.task,
         session_id=session_id,
-        operator_task=args.task or task.split("\n", 1)[0],
+        context=plan_task,
+        operator_task=args.task or plan_task.split("\n", 1)[0],
         interactive=args.interactive,
         tui=args.tui,
         decompose=args.decompose,
@@ -463,7 +462,6 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
             "'ask' needs a question (in quotes), or -i for the REPL on a foreground terminal."
         )
         return 2
-    question = args.task
     prefix: list[str] = []
     source_session_id = ""
     if args.ask_session_latest or args.ask_session:
@@ -478,12 +476,11 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         seeds = ask.seed_files(pathlib.Path.cwd(), args.ask_files)
         if seeds:
             prefix.append(seeds)
-    if prefix:
-        question = "\n\n".join([*prefix, question]) if question else "\n\n".join(prefix)
     return run._cmd_run(
         args.config,
-        question,
+        args.task,
         mode="ask",
+        context="\n\n".join(prefix),
         operator_task=args.task,
         interactive=repl,
         source_session_id=source_session_id,

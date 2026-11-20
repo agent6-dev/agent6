@@ -4,9 +4,13 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 
-from agent6 import task_text
+import pytest
+
+from agent6 import paths, task_text
+from agent6.config import Config, layer_data
 from agent6.ui.cli import task_refs
 
 
@@ -83,3 +87,119 @@ def test_empty_task_is_passthrough(tmp_path: pathlib.Path) -> None:
 
 def test_no_refs_is_passthrough(tmp_path: pathlib.Path) -> None:
     assert task_refs.expand_task_file_refs("just a task", tmp_path) == "just a task"
+
+
+def _task_the_run_received(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], cfg: Config | None = None
+) -> str:
+    """Run the CLI with the lifecycle stubbed and return the task `run_task` was handed."""
+    from agent6.app import preflight
+    from agent6.app import run as app_run
+    from agent6.app.session import setup as session_setup
+    from agent6.ui.cli import entry
+
+    seen: list[str] = []
+
+    def loaded(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
+        return layer_data.EffectiveConfig(config=cfg or Config(), sources={}, layers=())
+
+    def run_task(_cfg: object, task: str, **_kw: object) -> int:
+        seen.append(task)
+        return 0
+
+    def in_a_repo(_cwd: object) -> bool:
+        return True
+
+    def no_prompt(_args: object, rc: int, _session_id: str) -> int:
+        return rc
+
+    monkeypatch.setattr(session_setup, "load_session_config", loaded)
+    monkeypatch.setattr(app_run, "run_task", run_task)
+    monkeypatch.setattr(preflight, "require_git_repo", in_a_repo)
+    monkeypatch.setattr(entry, "_prompt_for_the_next_input", no_prompt)
+    assert entry.main(argv) == 0
+    return seen[0]
+
+
+def _seed_plan(root: pathlib.Path, session_id: str, plan_md: str) -> None:
+    plan_dir = paths.state_dir(root) / "sessions" / "plans" / session_id
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "plan.md").write_text(plan_md, encoding="utf-8")
+    (plan_dir / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "plan", "user_task": "plan the notes"}),
+        encoding="utf-8",
+    )
+    (plan_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.stop", "reason": "planned", "turns": 1}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_a_plan_run_as_the_task_is_not_searched_for_refs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run --from PLAN` inlined every `@path` the plan's model wrote into the first message."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.md").write_text("NOTE BODY\n", encoding="utf-8")
+    _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: tidy\n\n1. See @notes.md first.\n")
+
+    task = _task_the_run_received(monkeypatch, ["run", "--from", "happy-tree-abcd"])
+
+    assert "See @notes.md first." in task
+    assert "NOTE BODY" not in task
+
+
+def test_a_seeded_session_is_not_searched_for_refs_and_the_typed_task_is(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run --from ID TASK` inlined the `@path` in the seeded session's plan with the typed ones."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.md").write_text("NOTE BODY\n", encoding="utf-8")
+    (tmp_path / "typed.md").write_text("TYPED BODY\n", encoding="utf-8")
+    _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: tidy\n\n1. See @notes.md first.\n")
+
+    task = _task_the_run_received(
+        monkeypatch, ["run", "--from", "happy-tree-abcd", "start from @typed.md"]
+    )
+
+    assert "TYPED BODY" in task and task.rstrip().endswith("</file>")
+    assert "See @notes.md first." in task
+    assert "NOTE BODY" not in task
+
+
+def test_an_ask_file_seed_is_not_searched_for_refs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ask --file F` inlined the `@path` references the file's own text held."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.md").write_text("NOTE BODY\n", encoding="utf-8")
+    (tmp_path / "readme.md").write_text("Read @notes.md too.\n", encoding="utf-8")
+
+    task = _task_the_run_received(
+        monkeypatch, ["ask", "query", "--file", "readme.md", "what does it say"]
+    )
+
+    assert "Read @notes.md too." in task and task.endswith("what does it say")
+    assert "NOTE BODY" not in task
+
+
+def test_a_typed_ref_to_a_hidden_path_is_left_as_typed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A typed `@path` under `sandbox.hide_paths` was inlined: only the root was checked."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("TOKEN=hunter2\n", encoding="utf-8")
+    (tmp_path / "notes.md").write_text("NOTE BODY\n", encoding="utf-8")
+    cfg = Config.model_validate({"sandbox": {"hide_paths": [str(tmp_path / ".env")]}})
+
+    task = _task_the_run_received(monkeypatch, ["run", "use @.env and @notes.md"], cfg)
+
+    assert "hunter2" not in task and "use @.env and" in task
+    assert "NOTE BODY" in task
+
+
+def test_a_ref_into_the_git_dir_is_left_as_typed(tmp_path: pathlib.Path) -> None:
+    """`@.git/config` is outside what a host-side read takes, like a hidden path."""
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("[remote]\n", encoding="utf-8")
+    assert task_refs.expand_task_file_refs("see @.git/config", tmp_path) == "see @.git/config"

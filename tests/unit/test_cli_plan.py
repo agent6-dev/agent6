@@ -213,7 +213,8 @@ def test_run_from_a_plan_with_no_task_runs_that_plan(
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _fake_run)
     monkeypatch.setattr(entry, "_prompt_for_the_next_input", _no_prompt)
     assert main(["run", "--from", "happy-tree-abcd"]) == 0
-    assert "do it" in str(seen["task"]) and "1. step" in str(seen["task"])
+    assert "do it" in str(seen["context"]) and "1. step" in str(seen["context"])
+    assert seen["task"] == ""
     assert seen["seed_from"] == ""
 
 
@@ -266,7 +267,7 @@ def test_run_from_a_plan_with_unanswered_questions_warns_and_runs(
     One line names each blank question and how to answer first; the plan still runs.
     """
     seen = _run_from_plan(tmp_path, monkeypatch, _PLAN_WITH_QUESTIONS)
-    assert "improve the cache" in str(seen["task"])
+    assert "improve the cache" in str(seen["context"])
     warnings = [ln for ln in capsys.readouterr().err.splitlines() if "WARNING" in ln]
     assert len(warnings) == 1, warnings
     assert "plan happy-tree-abcd has 1 unanswered open question:" in warnings[0]
