@@ -562,4 +562,3 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
 }
 window.addEventListener('pagehide', closeFilePreview);
 window.addEventListener('pageshow', e => { if (e.persisted) route(); });
-boot();

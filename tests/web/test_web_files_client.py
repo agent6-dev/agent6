@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import pathlib
 import shutil
 import subprocess
-from importlib import resources
 
 import pytest
+
+from agent6.ui.web import page
+from tests.web import client_assets
 
 _DOM = r"""
 const assert = require('node:assert/strict');
@@ -96,7 +97,6 @@ const toast = message => { throw new Error(message); };
 const view = el('main');
 const setCrumb = () => {};
 const crumb = el('h1');
-const boot = () => {};
 const esc = x => x;
 const actionable = (node, fn) => node.onclick = fn;
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
@@ -122,27 +122,11 @@ def _run(scenario: str) -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to exercise the Files client")
-    web = resources.files("agent6.ui.web")
-    client = web.joinpath("client.js").read_text(encoding="utf-8")
-    router = client[client.index("// --- router") : client.index("// --- hub")]
-    source = (
-        router
-        + "\n"
-        + "\n".join(
-            web.joinpath(name).read_text(encoding="utf-8")
-            for name in (
-                "client_layout.js",
-                "client_source.js",
-                "client_review.js",
-                "client_git_diff.js",
-                "client_git.js",
-                "client_files.js",
-            )
-        )
-    )
     script = (
         _DOM
-        + source
+        + client_assets.script(
+            "controls", "router", "layout", "source", "review", "git_diff", "git", "files"
+        )
         + "\ngitPicker = picker; routeGen = 1;\nlet finished = false;\n(async () => {\n"
         + scenario
         + "\ncloseFilePreview(); finished = true;\n"
@@ -669,16 +653,10 @@ def test_client_javascript_parses() -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to parse the client")
-    web = resources.files("agent6.ui.web")
-    for asset in web.iterdir():
-        if asset.name.endswith(".js"):
-            result = subprocess.run(
-                [node, "--check", str(pathlib.Path(str(asset)))],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            assert result.returncode == 0, result.stderr
+    result = subprocess.run(
+        [node, "--check", "-"], input=page.CLIENT_JS, check=False, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_a_scenario_that_never_finishes_fails() -> None:

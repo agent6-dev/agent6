@@ -364,7 +364,9 @@ def test_the_page_meets_a_401_in_one_place() -> None:
     A call past serverFetch would paint an error instead, and a stream the browser gave up on
     would stay frozen on its last frame.
     """
-    js = page.CLIENT_JS
+    js = "\n".join(
+        line for line in page.CLIENT_JS.splitlines() if not line.lstrip().startswith("//")
+    )
     assert js.count("fetch(") == 1, "one fetch, in serverFetch, which hands a 401 to the form"
     assert js.count("await serverFetch(") == 4  # getResponse, postJSON, openStream, editFileText
     assert js.count("headers: authHeaders(") == 1, "every fetch carries the token"

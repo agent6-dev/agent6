@@ -5,12 +5,11 @@ import pathlib
 import shutil
 import subprocess
 import threading
-from importlib import resources
 
 import pytest
 
 from agent6.ui.web import server
-from tests.web import signin
+from tests.web import client_assets, signin
 
 
 def test_entry_forms_and_removal_use_the_live_registry(tmp_path: pathlib.Path) -> None:
@@ -18,13 +17,7 @@ def test_entry_forms_and_removal_use_the_live_registry(tmp_path: pathlib.Path) -
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to exercise the web config forms")
-    web = resources.files("agent6.ui.web")
-    core = web.joinpath("client.js").read_text(encoding="utf-8")
-    dialogs = core[core.index("// --- dialogs") : core.index("// --- sign-in")]
-    client = "\n".join(
-        web.joinpath(name).read_text(encoding="utf-8")
-        for name in ("client_layout.js", "client_config.js")
-    )
+    client = client_assets.script("dialogs", "layout", "config")
     scenario = r"""
 const assert = require('node:assert/strict');
 class Element {
@@ -344,7 +337,7 @@ run().catch(error => { console.error(error); process.exitCode = 1; });
         )
         result = subprocess.run(
             [node, "-"],
-            input=setup + dialogs + client + scenario,
+            input=setup + client + scenario,
             check=False,
             capture_output=True,
             text=True,

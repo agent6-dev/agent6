@@ -5,18 +5,16 @@
 from __future__ import annotations
 
 from agent6.ui.web import page
+from tests.web import client_assets
 
 
 def test_the_hub_poll_announces_transitions_and_keeps_watching_when_it_may_notify() -> None:
-    js = page.CLIENT_JS
+    js = client_assets.script("hub")
     assert "announceSessions(statuses, next.sessions);" in js
     assert "statuses = seedStatuses(next.sessions);" in js
     # A hidden tab polls on only when the operator granted OS notifications.
     assert "if (document.hidden && !osNotifyOn()) return;" in js
-    assert (
-        "if (document.hidden) return;"
-        not in js.split("async function renderHub")[1].split("// --- conversation")[0]
-    )
+    assert "if (document.hidden) return;" not in js
 
 
 def test_one_live_word_list_and_a_bell_on_both_hubs() -> None:

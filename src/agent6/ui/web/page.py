@@ -13,10 +13,21 @@ from __future__ import annotations
 from importlib import resources
 
 _ASSETS = resources.files(__package__)
-# One script block, concatenated in declaration order: core and hub, layout, run, machine, config,
-# the source views the Git and Files tabs share, git, files.
+# A single classic script shares these declarations; start routing after the last one.
 _CLIENT_FILES = (
-    "client.js",
+    "client_shell.js",
+    "client_auth.js",
+    "client_controls.js",
+    "client_dialogs.js",
+    "client_notifications.js",
+    "client_live.js",
+    "client_router.js",
+    "client_suggestions.js",
+    "client_docks.js",
+    "client_hub.js",
+    "client_conversation.js",
+    "client_keyboard.js",
+    "client_composer.js",
     "client_layout.js",
     "client_children.js",
     "client_run.js",
@@ -28,7 +39,10 @@ _CLIENT_FILES = (
     "client_git.js",
     "client_files.js",
 )
-CLIENT_JS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
+CLIENT_JS = (
+    "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
+    + "boot();\n"
+)
 # One style block, concatenated in declaration order: the shared base (tokens, shell, controls,
 # composers), then each page's own rules, which may override the base.
 _STYLE_FILES = (
@@ -101,7 +115,7 @@ _NAV_LINKS = "\n".join(
     f"{_icon(drawing)}<span>{label}</span></a>"
     for tab, href, label, drawing in _NAV_ITEMS
 )
-# A circle half filled; client.js names each button by the theme it switches to.
+# A circle half filled; the client names each button by the theme it switches to.
 _THEME_ICON = _icon(
     '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>'
 )

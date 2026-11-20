@@ -42,7 +42,7 @@ _NON_CONFIG = {
     ("telemetry/otlp.py", "agent6.telemetry"),
     ("tui/__main__.py", "python -m agent6.ui.tui"),
     ("tui/machines.py", "machine.asm.toml"),
-    ("web/client.js", "/api/config/suggest/parallel.models"),
+    ("web/client_suggestions.js", "/api/config/suggest/parallel.models"),
 }
 
 

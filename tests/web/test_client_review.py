@@ -4,12 +4,12 @@ import json
 import pathlib
 import shutil
 import subprocess
-from importlib import resources
 
 import pytest
 
 from agent6.viewmodel import review
 from agent6.viewmodel.session import log as session_log
+from tests.web import client_assets
 from tests.web.test_web_files_client import _DOM
 
 
@@ -17,17 +17,9 @@ def _run(scenario: str) -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to exercise findings")
-    web = resources.files("agent6.ui.web")
-    review = web.joinpath("client_review.js")
-    client = web.joinpath("client.js").read_text()
-    scripts = client[client.index("// --- router") : client.index("// --- hub")]
-    picker = client.index("function pickerRow(")  # the findings filters' row
-    scripts += client[picker : client.index("\n}\n", picker) + 3]
-    scripts += web.joinpath("client_source.js").read_text()
-    if review.is_file():
-        scripts += review.read_text()
-    for name in ("client_layout.js", "client_git_diff.js", "client_git.js", "client_files.js"):
-        scripts += web.joinpath(name).read_text()
+    scripts = client_assets.script(
+        "controls", "router", "layout", "source", "review", "git_diff", "git", "files"
+    )
     dom = (
         _DOM.replace(
             "const toast = message => { throw new Error(message); };",

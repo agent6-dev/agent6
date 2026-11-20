@@ -92,10 +92,10 @@ def test_an_unrecognised_answer_denies_and_persists_nothing() -> None:
 def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
     """Tab completes a directive only where the whole line is one `/`-word, in every completer."""
     import inspect
-    from importlib import resources
 
     from agent6.ui.cli import menu_input  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.tui import composer
+    from agent6.ui.web import page
 
     assert [c for c, _ in composer.steer_suggestion_rows("/t", mode="steer")] == ["/task"]
     for line in ("fix it /t", "please /ta", "/task already typed "):
@@ -106,8 +106,7 @@ def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
     assert '" " in self.line' in guard and 'startswith("/")' in guard
 
     # The web asks the same of the textarea's whole value.
-    js = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    assert "v.startsWith('/') && !/\\s/.test(v)" in js
+    assert "v.startsWith('/') && !/\\s/.test(v)" in page.CLIENT_JS
 
 
 def test_one_key_never_means_two_things_on_one_screen() -> None:

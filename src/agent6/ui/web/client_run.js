@@ -250,12 +250,22 @@ async function postPrompt(box, url, body) {
   catch (error) { setPromptBusy(box, false); throw error; }
 }
 
-// Numbers the question and command lines that name a prompt's fields and groups.
+function highlightCmd(text) {
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const re = /("(?:[^"\\]|\\.)*"|'[^']*')|(\s--?[A-Za-z][\w-]*)|(\|\||&&|\||;|>>|2>|>|<)/g;
+  let out = '', last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    out += esc(text.slice(last, m.index));
+    if (m[1]) out += '<span class="tok-str">' + esc(m[1]) + '</span>';
+    else if (m[2]) out += '<span class="tok-flag">' + esc(m[2]) + '</span>';
+    else out += '<span class="tok-op">' + esc(m[3]) + '</span>';
+    last = m.index + m[0].length;
+  }
+  return out + esc(text.slice(last));
+}
+
 let promptLines = 0;
-// Render the run's unanswered approval / ask_user prompts as actionable boxes.
-// Reconcile by id: keep existing boxes so a repaint (any SSE frame) never wipes a
-// half-typed free-text answer or drops focus; only add new prompts and remove
-// resolved ones.
+// Reconcile by prompt id so a stream frame cannot replace a half-typed answer.
 function paintPrompts(cards, s) {
   const host = cards._conv.prompts;
   // base is the POST prefix: sessions use /api/session/<id>, machines /api/machine/<name>.

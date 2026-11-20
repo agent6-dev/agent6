@@ -46,7 +46,7 @@ def served(tmp_path: pathlib.Path) -> Iterator[int]:
 
 
 def _client_api_paths() -> set[str]:
-    """The `/api/...` paths client.js builds, with interpolation collapsed."""
+    """The `/api/...` paths the inline client builds, with interpolation collapsed."""
     source = page.CLIENT_JS
     found: set[str] = set()
     for raw in re.findall(r"'(/api/[^']*)'", source):

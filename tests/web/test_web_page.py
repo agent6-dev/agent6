@@ -20,9 +20,10 @@ from xml.etree import ElementTree
 import pytest
 
 from agent6.ui.web import page
+from tests.web import client_assets
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "bde1194e25e02ccccd17acfbd613194ba43cdeeaaad7bec4e0d89ccb4ba10524"
+PAGE_SHA256 = "84c2316ca26d25b9c733b5b301e4e6bd6b10fd7e97d20afab2fce90847827589"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -78,7 +79,7 @@ def _markup() -> str:
 
 
 def test_the_markup_carries_no_inline_handlers() -> None:
-    """client.js sets every listener; the theme and collapse buttons had inline onclick."""
+    """The inline client sets every listener; the theme and collapse buttons had inline onclick."""
     assert not re.search(r"\son\w+\s*=", _markup())
 
 
@@ -132,10 +133,10 @@ const document = {
 const navigator = {}, window = {};
 const matchMedia = () => ({matches: true, addEventListener() {}});  // the system is dark
 let logins = 0;
-function showLogin() { logins++; }
 """
     )
     scenario = r"""
+showLogin = () => logins++;
 assert.equal(recall('width', 'default'), 'default');
 remember('width', '400px');
 toggleTheme(); cycleRail();
@@ -150,7 +151,7 @@ setTimeout(() => {
   assert.equal(authHeaders().Authorization, undefined);
 });
 """
-    client = page.CLIENT_JS[: page.CLIENT_JS.index("// --- sign-in")]
+    client = client_assets.script("shell", "auth")
     result = subprocess.run(
         [node, "-"], input=setup + client + scenario, check=False, capture_output=True, text=True
     )
@@ -161,8 +162,16 @@ def test_page_assets_load_non_empty() -> None:
     # An asset missing from the wheel would otherwise surface only at the release build.
 
     web = resources.files("agent6.ui.web")
+    subjects = sorted(
+        f.name for f in web.iterdir() if f.name.startswith("client") and f.name.endswith(".js")
+    )
+    assert sorted(page._CLIENT_FILES) == subjects
     for name in (*page._CLIENT_FILES, *page._STYLE_FILES):
         assert web.joinpath(name).read_text(encoding="utf-8").strip(), f"{name} is empty"
+    body = page.PAGE_HTML.split("<body>", 1)[1]
+    assert re.findall(r"<script\b.*?</script>", body, re.DOTALL) == [
+        f"<script>\n{page.CLIENT_JS}</script>"
+    ]
 
 
 def test_the_plan_meter_reads_this_executions_points() -> None:
@@ -178,45 +187,44 @@ def test_the_plan_meter_reads_this_executions_points() -> None:
 
 def test_the_sessions_card_folds_a_groups_children() -> None:
     """The hub folds a group's child rows behind a `children: N` line."""
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    client = client_assets.script("hub")
     assert "const children = r.children || [];" in client
     assert "children: ${children.length}" in client and "expandedGroups" in client
 
 
 def test_a_session_row_shows_its_mode() -> None:
     """The Sessions page lists each session's mode, as docs/web.md promises."""
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    client = client_assets.script("hub")
     paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
     assert "esc(r.mode)" in paint
 
 
 def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> None:
     """Ctrl+K lists the hub's rows with checkout and ref; a composer draft survives a switch."""
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    switcher = client[client.index("function openSwitcher") : client.index("function makeComposer")]
+    switcher = client_assets.script("keyboard")
     assert "getJSON('/api/hub')" in switcher
     assert "'worktree ' + r.worktree : 'this checkout'" in switcher
     assert "'ref ' + r.branch" in switcher
     assert "toNewWork({ task: '/review ' + r.branch })" in switcher
     assert "if (!await confirmMerge(r)) return;" in switcher and "await postMerge(r);" in switcher
     assert "e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)" in switcher
-    composer = client[client.index("function makeComposer") :]
+    composer = client_assets.script("composer")
     assert "const draftKey = 'a6-draft-' + id;" in composer
     assert "ta.value = recall(draftKey, '');" in composer
     assert composer.count("ta.value = '';") == 1  # inside clearDraft: every clear forgets too
-    dock = client[client.index("function newWorkDock") : client.index("// The create-machine")]
+    dock = client_assets.script("docks")
     assert "recall('a6-draft-new', '{}')" in dock and "forget('a6-draft-new')" in dock
 
 
 def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:
     """A row shows the worktree and branch; Review fills the composer, Merge confirms and posts."""
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    client = client_assets.script("hub")
     paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
     assert "'worktree ' + r.worktree" in paint and "'branch ' + r.branch" in paint
     assert "fillAsEdit(view.querySelector('.dock textarea'), '/review ' + r.branch)" in paint
     assert "if (r.branch && !live)" in paint and "if (r.unmerged)" in paint
     assert "if (!await confirmMerge(r)) return;" in paint and "await postMerge(r)" in paint
-    steps = client[client.index("async function confirmMerge") : client.index("function toast")]
+    steps = client[client.index("async function confirmMerge") : client.index("const focusables")]
     # The confirm reads the run's merge preview; the POST to the same path lands it.
     assert "getJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge')" in steps
     assert "(same ? '\\n\\n' + same : '')" in steps
@@ -225,8 +233,7 @@ def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:
 
 def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
     """A pending route request cannot submit the previous pair's model or override a newer one."""
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    refresh = client[client.index("function newWorkDock") : client.index("// The create-machine")]
+    refresh = client_assets.script("docks")
     request = refresh.index("const request = ++routeRequest;")
     cleared = refresh.index("model.value = '';")
     awaited = refresh.index("await getJSON('/api/routes")
@@ -237,14 +244,13 @@ def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
 
 def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
     """New work and resume put their dropdowns in one labelled row above the text."""
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    dock = client[client.index("function newWorkDock") : client.index("// The create-machine")]
+    dock = client_assets.script("docks")
     assert "row.appendChild(task); row.appendChild(go);" in dock
     picks = dock.index(
         "pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]])"
     )
     assert picks < dock.index("root.appendChild(row);")
-    composer = client[client.index("function makeComposer") :]
+    composer = client_assets.script("composer")
     assert "pickerRow([['continue under preset', preset], ['model', model]])" in composer
     assert "row.appendChild(ta); row.appendChild(sendBtn);" in composer
     assert composer.index("root.appendChild(presetRow);") < composer.index("root.appendChild(row);")
@@ -324,8 +330,7 @@ def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:
 
     Asked when the row appears and on a preset pick; a late answer never replaces a newer one.
     """
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    composer = client[client.index("function makeComposer") :]
+    composer = client_assets.script("composer")
     assert "'/resume_defaults?preset=' + encodeURIComponent(preset.value)" in composer
     assert "if (request !== labelRequest) return;" in composer
     assert "preset.onchange = relabel;" in composer
@@ -337,8 +342,7 @@ def test_parallel_model_completion_handles_each_whole_fragment() -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to exercise the web composer")
-    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    suggest = client[client.index("let suggestLists") : client.index("// The new-work composer")]
+    suggest = client_assets.script("suggestions")
     scenario = r"""
 const assert = require('node:assert/strict');
 const getJSON = async () => ({values: ['o/alpha', 'o/beta']});
@@ -397,12 +401,7 @@ def test_reviewer_controls_post_form_fields_and_position() -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to exercise the web config editor")
-    web = resources.files("agent6.ui.web")
-    core = web.joinpath("client.js").read_text(encoding="utf-8")
-    source = core[core.index("// --- dialogs") : core.index("// --- sign-in")] + "\n".join(
-        web.joinpath(name).read_text(encoding="utf-8")
-        for name in ("client_layout.js", "client_config.js")
-    )
+    source = client_assets.script("dialogs", "layout", "config")
     setup = r"""
 const assert = require('node:assert/strict');
 function el(tag, cls, text = '') {

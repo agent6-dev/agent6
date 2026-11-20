@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The web client shows lines the server renders; it keeps no copy of a Python rendering decision.
 
-client.js carried a `fmtUsd` twin of `format_usd`, a task-glyph map, a `format_compare` mirror and a
+JS carried a `fmtUsd` twin of `format_usd`, a task-glyph map, a `format_compare` mirror and a
 `format_transition` mirror, each with a "keep in sync" comment and no pin. The cost twin had
 drifted: Python's `%.4f` rounds half to even on the binary value and JS `toFixed` rounds half away,
 so 0.15625 printed `$0.1562` on the CLI and `$0.1563` on the web.
