@@ -9,8 +9,10 @@ virtualenv or installed-package tree, and the operator's `extra_protect_paths`.
 
 from __future__ import annotations
 
+import os
 import pathlib
-from typing import Any
+import stat
+from typing import Any, Literal
 
 from agent6 import media, path_safety, terminal
 from agent6.config import Config
@@ -59,6 +61,42 @@ def agent6_docs(raw: dict[str, Any]) -> results.ToolResult:
     )
 
 
+def resolve_read_path(
+    ws: path_safety.Workspace, path: str, kind: Literal["file", "directory"]
+) -> path_safety.SafePath:
+    """Resolve a tool's path and check its kind after containment.
+
+    Args:
+        ws: The workspace to read from.
+        path: The requested path, kept as given in errors.
+        kind: The kind the tool accepts.
+
+    Returns:
+        The contained path.
+
+    Raises:
+        ToolError: The path is missing, cannot be inspected or has the wrong kind.
+    """
+    sp = ws.resolve_read(path)
+    parent = path_safety.contain(sp.base, sp.rel_path.parent)
+    try:
+        fd = path_safety.open_contained(parent, os.O_PATH | os.O_DIRECTORY)
+        try:
+            mode = os.lstat(sp.rel_path.name or ".", dir_fd=fd).st_mode
+        finally:
+            os.close(fd)
+    except (FileNotFoundError, NotADirectoryError, path_safety.NotDirectoryError) as exc:
+        raise tool_errors.ToolError(f"No such {kind}: {path}") from exc
+    except OSError as exc:
+        raise tool_errors.ToolError(f"{path}: {exc.strerror}") from exc
+    if stat.S_ISLNK(mode):
+        raise tool_errors.ToolError(f"Path became a symlink while it was being used: {path}")
+    matches = stat.S_ISREG(mode) if kind == "file" else stat.S_ISDIR(mode)
+    if not matches:
+        raise tool_errors.ToolError(f"Not a {kind}: {path}")
+    return sp
+
+
 def read_file(
     ws: path_safety.Workspace, raw: dict[str, Any]
 ) -> results.ReadFileResult | results.ReadMediaResult:
@@ -75,9 +113,7 @@ def read_file(
         ToolError: The path is not a file, or its content or range is unsupported.
     """
     args = schema.ReadFileInput.model_validate(raw)
-    sp = ws.resolve_read(args.path)
-    if not sp.abs_path.is_file():
-        raise tool_errors.ToolError(f"Not a file: {args.path}")
+    sp = resolve_read_path(ws, args.path, "file")
     data = path_safety.read_bytes_contained(sp, limit_bytes=media.DOCUMENT_MAX_BYTES + 1)
     if data.startswith((b"%PDF-", b"\x89PNG\r\n\x1a\n", b"\xff\xd8", b"GIF87a", b"GIF89a")) or (
         data.startswith(b"RIFF") and data[8:12] == b"WEBP"
@@ -135,9 +171,7 @@ def list_dir(ws: path_safety.Workspace, raw: dict[str, Any]) -> results.ListDirR
         ToolError: The path is not a directory.
     """
     args = schema.ListDirInput.model_validate(raw)
-    sp = ws.resolve_read(args.path)
-    if not sp.abs_path.is_dir():
-        raise tool_errors.ToolError(f"Not a directory: {args.path}")
+    sp = resolve_read_path(ws, args.path, "directory")
     listing = sorted(path_safety.list_contained(sp), key=lambda e: e.name)
     # A hidden entry is dropped from the names but counted, so the listing stays true.
     visible = [e for e in listing if not ws.is_denied(sp.abs_path / e.name)]

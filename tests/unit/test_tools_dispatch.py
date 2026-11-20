@@ -1247,12 +1247,40 @@ def test_nav_tools_report_one_based_lines(tmp_path: pathlib.Path) -> None:
     assert sorted(r["line"] for r in refs) == [1, 5]  # definition + call
 
 
-def test_outline_rejects_directory(tmp_path: pathlib.Path) -> None:
-    cfg = _config(tmp_path)
-    (tmp_path / "sub").mkdir()
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(tool_errors.ToolError, match="Not a file"):
-        d.dispatch("outline", {"path": "sub"})
+@pytest.mark.parametrize(
+    ("tool", "path", "error"),
+    [
+        ("read_file", "missing", "No such file: missing"),
+        ("read_file", "source.py/leaf", "No such file: source.py/leaf"),
+        ("read_file", "folder", "Not a file: folder"),
+        ("list_dir", "missing", "No such directory: missing"),
+        ("list_dir", "source.py", "Not a directory: source.py"),
+        ("outline", "missing", "No such file: missing"),
+        ("outline", "folder", "Not a file: folder"),
+    ],
+)
+def test_read_tools_distinguish_missing_paths_from_wrong_kind(
+    tmp_path: pathlib.Path, tool: str, path: str, error: str
+) -> None:
+    (tmp_path / "folder").mkdir()
+    (tmp_path / "source.py").touch()
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(tool_errors.ToolError) as exc:
+        d.dispatch(tool, {"path": path})
+    assert str(exc.value) == error
+
+
+def test_missing_path_error_does_not_stat_the_full_path(tmp_path: pathlib.Path) -> None:
+    """A tool's diagnostic must stay inside the same boundary as the read."""
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    (tmp_path / "folder").mkdir()
+    target = tmp_path / "folder" / "missing"
+    with (
+        mock.patch.object(os, "stat", wraps=os.stat) as calls,
+        pytest.raises(tool_errors.ToolError, match=r"^No such file: folder/missing$"),
+    ):
+        d.dispatch("read_file", {"path": "folder/missing"})
+    assert all(call.args[0] not in (target, str(target)) for call in calls.call_args_list)
 
 
 def test_outline_rejects_escape(tmp_path: pathlib.Path) -> None:

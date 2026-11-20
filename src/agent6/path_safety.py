@@ -31,6 +31,10 @@ class NotRegularFileError(ContainmentError):
     """
 
 
+class NotDirectoryError(ContainmentError):
+    """A directory lookup reached a non-directory entry, not a symlink."""
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class SafePath:
     """A path that passed containment.
@@ -320,8 +324,8 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         A descriptor the caller owns.
 
     Raises:
-        ContainmentError: The path is not relative, contains `..`, or a component became a
-            symlink or is not a directory.
+        ContainmentError: The path is not relative, contains `..`, or a component became a symlink.
+        NotDirectoryError: A component to open as a directory is not a directory.
         NotRegularFileError: The leaf is not a regular file.
         OSError: The open failed for any other reason.
     """
@@ -357,7 +361,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
                 raise ContainmentError(
                     f"Path became a symlink while it was being used: {rel_path}"
                 ) from exc
-        raise ContainmentError(f"Path component is not a directory: {rel_path}") from exc
+        raise NotDirectoryError(f"Path component is not a directory: {rel_path}") from exc
     except OSError as exc:
         if exc.errno == errno.ELOOP:
             raise ContainmentError(

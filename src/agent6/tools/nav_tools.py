@@ -13,8 +13,8 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import path_safety
+from agent6.tools import fs_tools, results, schema, tool_errors
 from agent6.tools import index as tools_index
-from agent6.tools import results, schema, tool_errors
 
 INDEX_RESULT_CAP = 500
 
@@ -38,9 +38,7 @@ def outline(
         ToolError: The path is not a file, has no parser, or lies outside the indexed workspace.
     """
     args = schema.OutlineInput.model_validate(raw)
-    sp = ws.resolve_read(args.path)
-    if not sp.abs_path.is_file():
-        raise tool_errors.ToolError(f"Not a file: {args.path}")
+    sp = fs_tools.resolve_read_path(ws, args.path, "file")
     index = ensure_index()
     # An empty outline over a file full of symbols misleads the model: name the cause instead.
     if index.language_of(sp.abs_path) is None:
