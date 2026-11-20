@@ -1009,6 +1009,36 @@ def test_a_wrapped_file_path_breaks_after_a_slash(open_page: OpenPage, port: int
     assert errors == [], errors
 
 
+def test_a_file_name_wraps_whole_after_its_folder(open_page: OpenPage, port: int) -> None:
+    """'docs/acp.md → docs/acp-protocol.md' broke at the hyphen, where a break after 'docs/' fit."""
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/")
+    page.wait_for_selector("#view")
+    lines = page.evaluate(
+        """() => {
+          const box = el('div'); box.style.width = '25ch'; document.body.appendChild(box);
+          const p = filePath({path: 'docs/acp-protocol.md', old_path: 'docs/acp.md'}, false);
+          box.appendChild(p);
+          box.style.fontFamily = getComputedStyle(p).fontFamily;
+          box.style.fontSize = getComputedStyle(p).fontSize;
+          const lines = [''];
+          let top = null;
+          const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            for (let i = 0; i < n.length; i++) {
+              const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1);
+              const y = r.getBoundingClientRect().top;
+              if (top !== null && y > top + 2) lines.push('');
+              top = y; lines[lines.length - 1] += n.data[i];
+            }
+          }
+          return lines;
+        }"""
+    )
+    assert lines == ["docs/acp.md → docs/", "acp-protocol.md"], lines
+    assert errors == [], errors
+
+
 def test_a_long_ref_name_shows_whole_in_the_refs_filter(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:

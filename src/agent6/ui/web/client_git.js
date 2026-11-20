@@ -272,11 +272,10 @@ function fileList(files, truncated, open, actions) {
 function filePath(f, short) {
   const p = el('span', 'gf-path');
   const dir = (s) => s.slice(0, s.lastIndexOf('/') + 1), base = (s) => s.slice(s.lastIndexOf('/') + 1);
+  // Each folder with its slash, and the name, is a box that breaks inside only when wider than the line.
   const wrapping = (host, text) => {
-    text.split('/').forEach((part, i) => {
-      if (i) { host.appendChild(document.createTextNode('/')); host.appendChild(el('wbr')); }
-      host.appendChild(document.createTextNode(part));
-    });
+    const parts = text.split('/');
+    parts.forEach((part, i) => host.appendChild(el('span', 'gf-seg', i < parts.length - 1 ? part + '/' : part)));
     return host;
   };
   if (f.old_path) {
