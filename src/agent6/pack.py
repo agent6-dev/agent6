@@ -342,6 +342,11 @@ def pack(
     directory = root / ".agent6"
     pack_manifest.check_path(directory)
     own = [directory / name for name in ("pack.json", *pack_manifest.AREAS)]
+    if not os.path.lexists(own[0]) and (stray := [p.name for p in own if os.path.lexists(p)]):
+        raise errors.PackError(
+            f"{directory}: holds {_listed([f'`{name}/`' for name in stray])} and no pack.json;"
+            " delete what is named, then run agent6 pack again"
+        )
     if any(path.exists() for path in own) and not pack_manifest.is_own(
         pack_manifest.read(root).origin, paths.effective_user().home
     ):

@@ -128,6 +128,8 @@ def read(root: pathlib.Path) -> Manifest:
         PackError: The manifest is missing, unreadable or invalid.
     """
     file = root / ".agent6" / "pack.json"
+    if not os.path.lexists(file):
+        raise errors.PackError(f"{file.parent}: no pack here; agent6 pack writes one")
     check_path(file, regular=True)
     try:
         return Manifest.model_validate_json(file.read_bytes())

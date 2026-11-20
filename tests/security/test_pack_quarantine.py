@@ -75,7 +75,7 @@ def test_a_pack_json_left_behind_moves_to_the_next_free_name(tmp_path: pathlib.P
     moved = tmp_path / ".agent6/pack.invalid/pack.json.invalid"
     assert moved.read_text(encoding="utf-8") == _MANIFEST
     pack_manifest.check_origin(tmp_path)  # the next start is not refused
-    with pytest.raises(errors.PackError, match="expected a regular file"):
+    with pytest.raises(errors.PackError, match="no pack here; agent6 pack writes one"):
         pack.unpack(tmp_path)
     (warning,) = said
     assert str(forged) in warning and "`pack.invalid/pack.json.invalid`." in warning
@@ -89,6 +89,13 @@ def test_a_pack_json_left_behind_moves_to_the_next_free_name(tmp_path: pathlib.P
         assert moved.read_text(encoding="utf-8") == _MANIFEST
         assert f"`{taken}/pack.json.invalid`" in said[-1]
     assert _names(tmp_path / ".agent6") == ["pack.invalid", "pack.invalid.1", "pack.invalid.2"]
+
+
+def test_pack_names_the_areas_left_without_a_manifest(tmp_path: pathlib.Path) -> None:
+    """`agent6 pack` answered a `config/` with no manifest with "expected a regular file"."""
+    (tmp_path / ".agent6/config").mkdir(parents=True)
+    with pytest.raises(errors.PackError, match=r"holds `config/` and no pack\.json; delete"):
+        pack.pack(tmp_path)
 
 
 def test_the_forged_files_move_with_the_manifest_and_a_real_pack_follows(
