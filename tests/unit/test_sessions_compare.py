@@ -257,34 +257,32 @@ def test_compare_row_of_a_run_without_a_commit_offers_no_merge(
     )
 
 
-def test_compare_row_of_a_merged_run_says_so(
+def test_compare_marks_a_run_merged_only_until_its_next_commit(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A candidate already merged is not offered `sessions merge` again; its row names the base."""
+    """A resumed run's new commit needs a merge even when its earlier work was merged."""
     base = _init_repo(repo)
-    _setup_run(
-        repo,
-        "run-MMMM55",
-        base_sha=base,
-        commits=[("m.txt", "m\n", "add m")],
-        status="passed",
-        cost=0.01,
-        manifest_extra={"merged": {"into": "main", "sha": "abc", "tip": "abc"}},
-    )
-    _setup_run(
-        repo,
-        "run-NNNN66",
-        base_sha=base,
-        commits=[("n.txt", "n\n", "add n")],
-        status="passed",
-        cost=0.02,
-    )
-    assert main(["sessions", "compare", "run-MMMM55", "run-NNNN66"]) == 0
+    _setup_run(repo, "run-MMMM55", base_sha=base, commits=[("m.txt", "m\n", "add m")])
+    _setup_run(repo, "run-NNNN66", base_sha=base, commits=[("n.txt", "n\n", "add n")])
+    assert main(["sessions", "merge", "run-MMMM55"]) == 0
+    capsys.readouterr()
+    compare = ["sessions", "compare", "run-MMMM55", "run-NNNN66"]
+    assert main(compare) == 0
     out = capsys.readouterr().out
     merged_row = next(line for line in out.splitlines() if "run-MMMM55" in line)
     assert merged_row.endswith("merged into main")
     other_row = next(line for line in out.splitlines() if "run-NNNN66" in line)
     assert other_row.endswith("merge with: agent6 sessions merge run-NNNN66")
+
+    _git(repo, "switch", "agent6/run-MMMM55")
+    (repo / "m.txt").write_text("more\n", encoding="utf-8")
+    _git(repo, "commit", "-qm", "extend m", "--", "m.txt")
+    _git(repo, "update-ref", "refs/agent6/run-MMMM55/head", "HEAD")
+    _git(repo, "switch", "main")
+    assert main(compare) == 0
+    out = capsys.readouterr().out
+    resumed_row = next(line for line in out.splitlines() if "run-MMMM55" in line)
+    assert resumed_row.endswith("merge with: agent6 sessions merge run-MMMM55")
 
 
 def test_compare_rows_and_total_format_cost_the_same_way(

@@ -11,7 +11,7 @@ import contextlib
 import pathlib
 
 from agent6 import child_records, errors
-from agent6.app import compare
+from agent6.app import compare, resume
 from agent6.config import layer
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -234,9 +234,9 @@ def _cmd_compare(
         return 2
 
     merged = {
-        layout.session_id: manifest.merged.into
+        layout.session_id: stamp.into
         for layout, manifest in resolved
-        if manifest.merged is not None and manifest.merged.into
+        if (stamp := resume.covering_stamp(cwd, manifest)) is not None
     }
     # A branch-per-run run's branch appears at its first commit; a chain run's is unknown here.
     committed = {
