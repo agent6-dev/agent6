@@ -23,9 +23,8 @@ from collections.abc import Generator, Iterable
 from typing import Any
 
 from agent6 import paths, portable
+from agent6.config import io
 
-# A TOML bare key; any other header name is written quoted.
-_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 # What a header value may hold on the wire: visible ASCII and spaces.
 _HEADER_VALUE = re.compile(r"[\x20-\x7e]+")
 
@@ -438,11 +437,11 @@ def _render_secrets_toml(data: dict[str, Any]) -> str:
             entry = providers[name]
             if not isinstance(entry, dict):
                 continue
-            lines.append(f"[providers.{name}]")
+            lines.append(f"[providers.{io.toml_key(name)}]")
             for field in sorted(entry):
                 value = entry[field]
                 if isinstance(value, str):
-                    lines.append(f"{field} = {portable.toml_basic_string(value)}")
+                    lines.append(f"{io.toml_key(field)} = {portable.toml_basic_string(value)}")
             lines.append("")
     telemetry = data.get("telemetry")
     headers = telemetry.get("headers") if isinstance(telemetry, dict) else None
@@ -451,7 +450,6 @@ def _render_secrets_toml(data: dict[str, Any]) -> str:
         for name in sorted(headers):
             value = headers[name]
             if isinstance(value, str):
-                key = name if _BARE_KEY.fullmatch(name) else portable.toml_basic_string(name)
-                lines.append(f"{key} = {portable.toml_basic_string(value)}")
+                lines.append(f"{io.toml_key(name)} = {portable.toml_basic_string(value)}")
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"

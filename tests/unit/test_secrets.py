@@ -88,6 +88,26 @@ def test_telemetry_headers_resolve_from_their_table_and_survive_a_provider_save(
         secret_store.telemetry_headers(("Authorization",), secrets=smuggled)
 
 
+def test_a_save_keeps_a_hand_written_quoted_provider_name_and_field(gcfg: pathlib.Path) -> None:
+    """A name or field the operator quoted by hand is written back quoted.
+
+    Written bare, `[providers.corp.proxy]` moved the entry under `corp`, and a field with a
+    space left a file that no longer parsed.
+    """
+    path = secret_store.save_secret("anthropic", "sk-ant-xyz")
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n[providers."corp.proxy"]\napi_key = "k1"\n"odd field" = "v"\n',
+        encoding="utf-8",
+    )
+    secret_store.save_secret("openai", "sk-oai")
+    assert secret_store.load_secrets()["providers"]["corp.proxy"] == {
+        "api_key": "k1",
+        "odd field": "v",
+    }
+    assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-xyz"
+
+
 def test_save_secret_preserves_other_providers(gcfg: pathlib.Path) -> None:
     secret_store.save_secret("anthropic", "sk-ant-1")
     secret_store.save_secret("openrouter", "sk-or-2")

@@ -24,7 +24,7 @@ import tomllib
 
 import httpx2
 
-from agent6 import errors, paths
+from agent6 import errors, paths, portable
 from agent6.config import ConfigError, io, layer, write
 from agent6.context import skills as agent6_skills
 from agent6.context.skills import Skill, resolve_states  # re-export
@@ -73,29 +73,20 @@ def _search_dirs(
     return agent6_skills.skill_search_dirs(cfg.skills.extra_dirs, _installed_dir())
 
 
-def _toml_str(value: str) -> str:
-    """Return the value as a TOML basic string with backslashes and quotes escaped.
-
-    A quote in a source path would otherwise make the hand-built origin unparseable, and
-    `skills update` would lose its source.
-
-    Args:
-        value: An origin field's value.
-
-    Returns:
-        The quoted value.
-    """
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
 def _write_origin(skill_dir: pathlib.Path, *, url: str, kind: str, source_sha: str) -> None:
     """Write the skill's `.origin.toml` provenance file."""
     digest = hashlib.sha256((skill_dir / "SKILL.md").read_bytes()).hexdigest()
     fetched = datetime.datetime.now(tz=datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    body = (
-        f"url = {_toml_str(url)}\nkind = {_toml_str(kind)}\n"
-        f"source_sha = {_toml_str(source_sha)}\n"
-        f"fetched_at = {_toml_str(fetched)}\nsha256 = {_toml_str(digest)}\n"
+    fields = {
+        "url": url,
+        "kind": kind,
+        "source_sha": source_sha,
+        "fetched_at": fetched,
+        "sha256": digest,
+    }
+    # An unescaped value leaves an origin that does not parse, and `skills update` loses its source.
+    body = "".join(
+        f"{key} = {portable.toml_basic_string(value)}\n" for key, value in fields.items()
     )
     (skill_dir / _ORIGIN_FILE).write_text(body, encoding="utf-8")
 

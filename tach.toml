@@ -721,7 +721,7 @@ depends_on = ["agent6.errors"]
 
 [[modules]]
 path = "agent6.config.secret_store"
-depends_on = ["agent6.paths", "agent6.portable"]
+depends_on = ["agent6.config.io", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.io"

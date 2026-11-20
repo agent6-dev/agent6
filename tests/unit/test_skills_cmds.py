@@ -470,12 +470,16 @@ def test_force_reinstall_survives_a_copy_fault(
     assert not list((env / "data" / "agent6" / "skills").glob(".staging-*"))
 
 
-def test_origin_toml_round_trips_a_quoted_source(env: pathlib.Path) -> None:
-    """A quote in a source path is escaped in the recorded origin."""
+@pytest.mark.parametrize("url", ['file:///tmp/we"ird\\path/skill', "file:///tmp/a\tb\x1bc/skill"])
+def test_origin_toml_round_trips_an_awkward_source(env: pathlib.Path, url: str) -> None:
+    """A quote, a backslash or a control character in a source path is escaped in the origin.
+
+    Written raw, a control character left an origin that did not parse, and `skills update`
+    lost its source.
+    """
     skill = env / "data" / "agent6" / "skills" / "quoty"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: quoty\ndescription: d\n---\n", encoding="utf-8")
-    url = 'file:///tmp/we"ird\\path/skill'
     cli_skills_cmds._write_origin(skill, url=url, kind="dir", source_sha="")
     origin = cli_skills_cmds._read_origin(skill)
     assert origin is not None and origin["url"] == url
