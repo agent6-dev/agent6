@@ -656,15 +656,18 @@ class ToolDispatcher:
 
         Raises:
             ToolError: The server is not configured (the scope becomes a filename, and the LLM
-                chooses tool names), or was denied for the session.
+                chooses tool names), the server did not advertise the tool, or consent was denied
+                for the session.
             ToolDeniedError: The operator did not approve.
         """
-        server, _tool = mcp_client.split_tool_name(name)
+        server, tool = mcp_client.split_tool_name(name)
         entry = self._config.mcp.servers.get(server)
         if entry is None:
             raise tool_errors.ToolError(f"unknown MCP server in {name!r}")
         if self.mcp_denied(server):
             raise tool_errors.ToolError(f"not available ({server!r} was denied for this session)")
+        if not any(d.qualified_name == name for d in self.mcp_descriptors()):
+            raise tool_errors.ToolError(f"server {server!r} did not advertise tool {tool!r}")
         if entry.approve == "allow":
             return
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)

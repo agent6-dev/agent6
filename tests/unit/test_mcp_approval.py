@@ -78,6 +78,20 @@ def test_a_tool_call_is_asked_about_before_the_server_sees_it(tmp_path: pathlib.
     assert scope == "mcp.fake"
 
 
+def test_an_unadvertised_tool_has_no_approval_prompt(tmp_path: pathlib.Path) -> None:
+    asked: list[tuple[str, str | None]] = []
+    mgr = _manager()
+    try:
+        dispatcher = dispatch.ToolDispatcher(
+            root=tmp_path, config=_cfg(), mcp_manager=mgr, prompts=_recording(asked)
+        )
+        with pytest.raises(tool_errors.ToolError, match="did not advertise"):
+            dispatcher.dispatch("mcp__fake__other", {"text": "sample"})
+    finally:
+        mgr.close()
+    assert not asked
+
+
 def test_the_prompt_carries_the_arguments_in_full(tmp_path: pathlib.Path) -> None:
     """The consent line carries the arguments whole: they are the only part the model controls."""
     seen: list[str] = []

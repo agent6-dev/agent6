@@ -215,7 +215,7 @@ def test_a_headless_park_names_the_prompt_and_the_attach_command_on_stderr(
 
     err = capsys.readouterr().err.splitlines()
     assert err == [
-        f"[agent6] waiting on approval-1 ([session {tmp_path.name}] run_command: ls);"
+        f"[agent6] waiting on approval-1 ([session {tmp_path.name}] run_command: ls -l);"
         f" answer it with: agent6 attach {tmp_path.name}",
         "[agent6] approval-1 approved (await-frontend)",
     ]
@@ -229,7 +229,7 @@ def test_a_headless_fetch_wait_names_the_requester_and_target(
     capsys: pytest.CaptureFixture[str],
     relayed: bool,
 ) -> None:
-    """A fetch still parks under approve, naming the requester and origin without the path."""
+    """The waiting line shows the fetch payload from the root or relayed approval."""
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
     cfg = Config()
@@ -264,10 +264,15 @@ def test_a_headless_fetch_wait_names_the_requester_and_target(
         requester = f"[session {tmp_path.name}]"
 
     waiting, answer = capsys.readouterr().err.splitlines()
-    assert f"waiting on approval-1 ({requester} fetch: docs.example:8443)" in waiting
-    assert waiting.endswith(f"); answer it with: agent6 attach {tmp_path.name}")
-    assert "/guide/" not in waiting
-    assert "p" * 120 not in waiting and "?" not in waiting and "private" not in waiting
+    preview = (
+        "docs.example:8443 /guide/" + "p" * 94 + "…"
+        if relayed
+        else "docs.example:8443 /guide/index?token=private"
+    )
+    assert waiting == (
+        f"[agent6] waiting on approval-1 ({requester} fetch: {preview});"
+        f" answer it with: agent6 attach {tmp_path.name}"
+    )
     assert answer == "[agent6] approval-1 denied (await-frontend)"
 
 
@@ -290,24 +295,32 @@ def test_a_headless_park_behind_a_live_front_end_prints_too(
 
     err = capsys.readouterr().err.splitlines()
     assert len(err) == 2
-    assert f"waiting on approval-1 ([session {tmp_path.name}] run_command: ls)" in err[0]
+    assert f"waiting on approval-1 ([session {tmp_path.name}] run_command: ls -l)" in err[0]
     assert err[1] == "[agent6] approval-1 denied (frontend)"
 
 
 @pytest.mark.parametrize(
     ("scope", "prompt", "label"),
     [
-        ("mcp.docs", 'Allow mcp__docs__Allow fetch: {"token": "private"}', "mcp.docs"),
-        ("mcp.docs", 'Allow mcp__docs__search: {"token": "private"}', "mcp__docs__search"),
+        (
+            "mcp.docs",
+            'Allow mcp__docs__search: {"term": "blue"}',
+            'mcp__docs__search: {"term": "blue"}',
+        ),
         (
             sessions_ipc.COMMAND_SCOPE,
-            "Allow run_command: 'client https://user:private@example.invalid/?token=private'",
-            "run_command",
+            "Allow run_command: echo logs/check",
+            "run_command: echo logs/check",
+        ),
+        (
+            sessions_ipc.COMMAND_SCOPE,
+            "Allow run_command: echo \x1b[31mred\x1b[0m\nnext",
+            "run_command: echo red…",
         ),
     ],
-    ids=["unadvertised-mcp-name", "mcp-arguments", "url-in-executable"],
+    ids=["mcp-arguments", "command-arguments", "one-line"],
 )
-def test_a_headless_wait_keeps_private_payloads_off_stderr(
+def test_a_headless_wait_previews_the_approval_payload(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -315,7 +328,7 @@ def test_a_headless_wait_keeps_private_payloads_off_stderr(
     prompt: str,
     label: str,
 ) -> None:
-    """Neither an MCP tool name nor a URL in argv[0] can expose private arguments."""
+    """The notice uses the first line of the payload the prompt asks about."""
     _no_terminal(monkeypatch, away="wait")
     request = operator_prompts.ApprovalRequest(
         id="approval-1", prompt=prompt, scope=scope, call_id=1

@@ -7,7 +7,6 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
-import re
 import sys
 from collections.abc import Callable, Sequence
 
@@ -146,21 +145,11 @@ def build_approver(
                 return
             head, payload = approval_parts(request.prompt)
             requester, allow, tool = head.partition("Allow ")
-            requester = requester if allow and requester else f"[session {session_dir.name}] "
-            if request.scope is None and tool == "fetch":
-                # The approval shows the complete path and query. The notice names only the host.
-                if host := re.match(r"([\w.:[\]-]+) /", payload):
-                    tool += f": {host[1]}"
-            elif request.scope == ipc.COMMAND_SCOPE and (
-                executable := re.fullmatch(r"[\w./+-]+", payload.partition(" ")[0], re.ASCII)
-            ):
-                # shlex.join leaves a simple executable path unquoted, even before private args.
-                tool += f": {executable[0]}"
-            elif not re.fullmatch(r"[\w.-]+", tool, re.ASCII):
-                # MCP asks before checking the advertised name. Only its scope is known here.
-                tool = request.scope or "approval"
+            who = requester.strip() if allow and requester else f"[session {session_dir.name}]"
+            what = terminal.line_preview(tool or head)
+            preview = f": {terminal.line_preview(payload)}" if payload else ""
             _note(
-                f"waiting on {request.id} ({requester}{terminal.line_preview(tool)});"
+                f"waiting on {request.id} ({terminal.line_preview(who)} {what}{preview});"
                 f" answer it with: agent6 attach {session_dir.name}"
             )
             parked = True
