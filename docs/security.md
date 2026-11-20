@@ -636,7 +636,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - a fetch between the repository and a session's clone runs in the same scratch repository as the Git page's Fetch and reads no key of the receiving config: no `url.<base>.insteadOf` sends it to another repository, and it takes a local path only (`GIT_ALLOW_PROTOCOL`)
     - git checks the fetched objects before they are copied in (`fetch.fsckObjects`), and refuses a tree that holds a `..` or `.git` entry
     - that fetch downloads no bundle, runs no `core.alternateRefsCommand`, fetches no submodule and no tag
-    - agent6 applies git's two rules for a fetched branch itself: one checked out somewhere is left alone, and an update no `+` forces must fast-forward
+    - agent6 applies git's two rules itself: a fetched branch that is checked out somewhere is left alone, and an update of any ref that no `+` forces must fast-forward
     - a missing object is never fetched from a promisor remote (`GIT_NO_LAZY_FETCH`): in a partial clone, agent6's git fails on an object the clone lacks
 - `core.worktree` does not send agent6's git to another directory: where the repository's own config sets the key, every call names its checkout (`GIT_WORK_TREE`), the directory whose `.git` is the git dir git found.
     - a linked worktree's or a submodule's git dir keeps no other record of its checkout: there, a `core.worktree` that names another directory refuses the call

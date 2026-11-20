@@ -1284,6 +1284,32 @@ def test_fetch_branch_refuses_non_ff_update(tmp_path: pathlib.Path) -> None:
     assert kept == origin_sha  # origin's branch untouched
 
 
+@pytest.mark.parametrize("ref", ["refs/agent6/machine-m1/head", "refs/notes/kept"])
+def test_fetch_branch_refuses_a_non_ff_update_of_any_ref(tmp_path: pathlib.Path, ref: str) -> None:
+    """An unforced fetch moved a diverged ref outside `refs/heads/`: its commits lost their ref."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    git_ops.set_ref(origin, ref, "HEAD")
+    clone = tmp_path / "clone"
+    git_ops.clone_repo(origin, clone)
+    git_ops.fetch_branch(clone, origin, f"{ref}:{ref}")
+    git_ops.set_ref(clone, ref, _commit_file(clone, "theirs.txt", "t\n", "clone work"))
+    ours = _commit_file(origin, "ours.txt", "o\n", "origin work")
+    git_ops.set_ref(origin, ref, ours)
+
+    with pytest.raises(errors.GitError, match="refusing to move it"):
+        git_ops.fetch_branch(origin, clone, f"{ref}:{ref}")
+    assert _rev(origin, ref) == ours
+    # A `+` forces the move, and a ref the fetched commit contains moves without one.
+    git_ops.fetch_branch(origin, clone, f"+{ref}:{ref}")
+    assert _rev(origin, ref) == _rev(clone, ref)
+    ahead = _commit_file(clone, "more.txt", "m\n", "more clone work")
+    git_ops.set_ref(clone, ref, ahead)
+    git_ops.fetch_branch(origin, clone, f"{ref}:{ref}")
+    assert _rev(origin, ref) == ahead
+
+
 def test_fetch_branch_leaves_a_checked_out_branch_alone(tmp_path: pathlib.Path) -> None:
     """A fetch into the branch a checkout is on would leave its index and files behind the ref."""
     origin = tmp_path / "origin"

@@ -860,9 +860,9 @@ def _fetch_local(
     """Fetch from a repository on this machine, reading no key of the receiving config.
 
     The transport runs in `git_fetch.scratch_fetch`'s scratch repository, which has neither
-    the receiving repository's refs nor its checkouts. So git's two rules for a fetched
-    branch are applied here: one checked out somewhere is left alone, and an update that
-    no `+` forces must fast-forward.
+    the receiving repository's refs nor its checkouts. So git's two rules are applied here:
+    a branch checked out somewhere is left alone, and an update of any ref that no `+`
+    forces must fast-forward.
 
     Args:
         path: The repository fetched into.
@@ -871,7 +871,7 @@ def _fetch_local(
         update_head_ok: Move a branch that is checked out.
 
     Raises:
-        GitError: The fetch failed, or a rule refused a branch; no ref moves then.
+        GitError: The fetch failed, or a rule refused a ref; no ref moves then.
     """
     # Absolute, and local only: git refuses every other transport a global URL rewrite yields.
     fetched = git_fetch.scratch_fetch(
@@ -891,11 +891,11 @@ def _fetch_local(
                 raise errors.GitError(
                     f"refusing to fetch into branch {branch!r}, checked out at {checkout}"
                 )
-            if old and not forced and not git_read.is_ancestor(path, old, sha):
-                raise errors.GitError(
-                    f"branch {branch!r} is at {old[:12]}, which {sha[:12]} from {source} does"
-                    " not contain; refusing to move it"
-                )
+        if old and not forced and not git_read.is_ancestor(path, old, sha):
+            raise errors.GitError(
+                f"{ref} is at {old[:12]}, which {sha[:12]} from {source} does not contain;"
+                " refusing to move it"
+            )
         # An unforced update names the value it was checked against: a ref that moved
         # meanwhile fails the whole update.
         expected = "" if forced else f" {old or '0' * len(sha)}"
