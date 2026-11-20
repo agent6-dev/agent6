@@ -6396,11 +6396,12 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
     assert result.reason != "no_progress"
 
 
-def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathlib.Path) -> None:
-    """A repeated identical call with an identical result is served a short stub.
-
-    The call still dispatches; a changed result is served in full.
-    """
+@pytest.mark.parametrize("endpoint", [False, True])
+def test_drive_loop_leaves_result_deduplication_to_its_compactor(
+    tmp_path: pathlib.Path, endpoint: bool
+) -> None:
+    """Keep repeated results whole when the endpoint owns clearing."""
+    from agent6.providers import provider_types
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6450,6 +6451,9 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
+        compaction=compaction_window.CompactionSettings(
+            endpoint=provider_types.EndpointCompaction(endpoint, endpoint)
+        ),
         max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
@@ -6470,9 +6474,11 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
             for b in m["content"]:
                 if isinstance(b, dict) and b.get("type") == "tool_result":
                     served.append(b["content"])
-    # first read served in full (contains the payload); the 2nd/3rd deduped
     full = [c for c in served if big[:200] in c]
     stubs = [c for c in served if "identical" in c.lower() and big[:200] not in c]
+    if endpoint:
+        assert len(full) == 3 and not stubs
+        return
     assert len(full) == 1, f"expected exactly one full payload, got {len(full)}"
     assert len(stubs) >= 1, f"expected the repeats deduped to a stub, got {stubs}"
     assert f"{len(full[0].encode())} bytes elided" in stubs[0]

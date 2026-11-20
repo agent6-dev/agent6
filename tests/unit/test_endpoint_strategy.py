@@ -222,3 +222,60 @@ def test_helper_restart_after_an_endpoint_block_reads_the_prior_summary() -> Non
     after = turn.conversation.to_wire()
     assert after[0]["content"][0]["text"] == "verbatim task" and "Helper summary." in str(after[1])
     assert "compaction" not in after[0]["content"][0]
+
+
+def test_rejected_sent_image_stays_in_the_prefix() -> None:
+    """Refuse a retry that would replace an image before the last reply."""
+    from unittest import mock
+
+    from agent6 import kinds, media
+    from agent6.harness import provider_call
+
+    conv = fixtures.history()
+    call = conv.assistant(
+        [{"type": "tool_use", "name": "read_file", "id": "image", "input": {}}]
+    ).tool_uses[0]
+    image = kinds.MediaAttachment(b"x", "image/png", "page.png")
+    conv.results([loop_conversation.ToolResultItem(call.id, "image", call, image)])
+    conv.assistant(captured.SAMPLES["adopt-strict"]["messages"][1]["content"])
+    last = conv.messages[-1]
+    assert isinstance(last, loop_conversation.AssistantMessage)
+    tool = last.tool_uses[0]
+    conv.results([loop_conversation.ToolResultItem(tool.id, "ok", tool)])
+    before = conv.to_wire()
+    failure = provider_types.MediaInputError(
+        modality="image", reason="invalid", call_ids=(call.id,)
+    )
+    send = mock.Mock(side_effect=failure)
+    recovery = provider_call.MediaRecovery(media.InputCapabilities(), append_only=True)
+    with pytest.raises(provider_types.MediaInputError):
+        provider_call.call_with_media_recovery(send, conv, recovery, emit=None, changed=None)
+    assert send.call_count == 1 and conv.to_wire() == before
+
+
+def test_summary_retry_keeps_the_call_id_and_worker_clock() -> None:
+    """Keep summary attempts off the worker clock that sets its idle deadline."""
+    from unittest import mock
+
+    from agent6 import kinds
+
+    provider = mock.Mock()
+    response = anthropic_parse.parse_response(captured.SAMPLES["compact"]["response"])
+    provider.call.side_effect = [
+        provider_types.ProviderError("try again", status_code=503),
+        response,
+    ]
+    caller = test_harness._caller(provider, retry_count=1)
+    caller.counter.request_started = 42
+    option = provider_types.Summarise("Keep the task.")
+    assert (
+        caller.call("s", [], [], 4096, call_context=kinds.CallContext("summary"), compaction=option)
+        is response
+    )
+    assert [c.kwargs["context"].attempt for c in provider.call.call_args_list] == [1, 2]
+    assert all(
+        c.kwargs["compaction"] is option
+        and c.kwargs["context"].call_context.model_call_id == "summary"
+        for c in provider.call.call_args_list
+    )
+    assert caller.counter.request_started == 42
