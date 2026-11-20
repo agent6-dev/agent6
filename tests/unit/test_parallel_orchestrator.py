@@ -21,7 +21,7 @@ import pathlib
 import threading
 import time
 import types
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -40,7 +40,7 @@ from agent6.app import (
 from agent6.app import children as app_children
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import child_repo, judge
+from agent6.harness import child_repo
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
@@ -954,7 +954,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
 
     parallel_results.stamp_compare_outcomes(
         [
-            judge.CandidateBrief(
+            child_records.CandidateBrief(
                 session_id=res.spec.session_id,
                 task="t",
                 diff="",
@@ -1057,7 +1057,7 @@ def test_the_ranked_table_spells_a_children_cost_and_outcome_as_the_listing_does
 
     compare.print_ranked_candidates(
         [
-            judge.CandidateBrief(
+            child_records.CandidateBrief(
                 session_id=sid,
                 task="t",
                 diff="",
@@ -1130,7 +1130,7 @@ def test_a_stamp_that_cannot_be_written_is_noted_and_the_others_still_land(
 
     parallel_results.stamp_compare_outcomes(
         [
-            judge.CandidateBrief(
+            child_records.CandidateBrief(
                 session_id=res.spec.session_id,
                 task="t",
                 diff="",
@@ -1939,59 +1939,6 @@ def test_child_config_carries_the_child_route(tmp_path: pathlib.Path) -> None:
     assert written["models"]["worker"]["model"] == "p/other"
 
 
-def test_the_judge_is_capped_like_a_child(tmp_path: pathlib.Path) -> None:
-    """The judge is capped like a child.
-
-    The group advertises "$X/child x N + judge = $Y total"; a judge tracker on the full config
-    budget quietly exceeds the printed ceiling. `rank` caps the judge at the child cap when one is
-    given, with the config budget as the fallback.
-    """
-    import contextlib
-
-    from agent6 import budget as agent6_budget
-    from agent6.harness import judge
-    from agent6.providers import ProviderError
-
-    seen: list[agent6_budget.BudgetTracker] = []
-
-    def build(
-        cfg: Config, sink: object, budget: agent6_budget.BudgetTracker, events: object
-    ) -> object:
-        seen.append(budget)
-        raise ProviderError("captured; fall back to mechanical")
-
-    @contextlib.contextmanager
-    def status() -> Generator[None]:
-        yield
-
-    cfg = Config.model_validate(
-        {
-            "providers": {"p": {"backend": "openai", "api_key_env": "K"}},
-            "models": {
-                "default": {"model": "p/m"},
-                "reviewer": {"model": "p/judge"},
-            },
-            "budget": {"max_usd": 10.0},
-        }
-    )
-    briefs = [
-        judge.CandidateBrief(
-            session_id=f"s{i}", task="t", diff="", verification="passed", cost_usd=0.0
-        )
-        for i in range(2)
-    ]
-    outcome = compare.rank(
-        cfg,
-        briefs,
-        transcript_dir=tmp_path,
-        build_provider=build,  # pyright: ignore[reportArgumentType]
-        judging_status=status,
-        max_usd=0.25,
-    )
-    assert outcome.ranked_by == "mechanical"
-    assert [b.max_usd for b in seen] == [0.25]  # the child cap, not the $10 config budget
-
-
 def test_an_unattended_group_does_not_park_its_children_on_a_question(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime
 ) -> None:
@@ -2536,6 +2483,8 @@ def test_model_parallel_import_keeps_child_commits(
             },
             "harness": {
                 "verify": {"infer": False},
+                # The mechanical order: this test is about what each attempt imports.
+                "parallel": {"judges": []},
             },
             "review": {"when": "never"},
         }
@@ -2598,15 +2547,10 @@ def test_model_parallel_import_keeps_child_commits(
             session = launch.record_state / "sessions" / "runs" / launch.session_id
         return session, 1, ""
 
-    def no_judge(*_a: Any, **_kw: Any) -> Any:
-        from agent6.providers import ProviderError
-
-        raise ProviderError("mechanical ranking for this test")
-
     monkeypatch.setattr(
         parallel_cmd,
         "child_runtime",
-        lambda: dataclasses.replace(runtime, spawn=spawn, build_provider=no_judge),
+        lambda: dataclasses.replace(runtime, spawn=spawn),
     )
     config = tmp_path / "model.toml"
     config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))

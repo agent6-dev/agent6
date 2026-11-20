@@ -37,14 +37,15 @@ def standing(
         started: The child.
 
     Returns:
-        `running`, `stopping`, `ended, not landed`, or a stopped child's words.
+        `running`, `stopping`, `ended, not landed`, `being ranked` while its task's judges
+        run, or a stopped child's words.
     """
     if not started.result.done():
         return "stopping" if started.session_id in dispatcher.stopping else "running"
     res = dispatcher.result_of(task.record, started)
     if res.ok and res.stopped_by:
         return parallel_join.join_words(parallel_join.stopped_join(res))
-    return "ended, not landed"
+    return "being ranked" if task.judging is not None and res.ok else "ended, not landed"
 
 
 def unlanded(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[str, str], ...]:
@@ -56,13 +57,14 @@ def unlanded(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[st
         dispatcher: The run's dispatcher.
 
     Returns:
-        Each child's session id with `running` or `ended, not landed`.
+        Each child's session id with `running`, `ended, not landed` or `being ranked`.
     """
     return tuple(
         (started.session_id, state)
         for task in dispatcher.open.values()
         for started in task.children
-        if (state := standing(dispatcher, task, started)) in ("running", "ended, not landed")
+        if (state := standing(dispatcher, task, started))
+        in ("running", "ended, not landed", "being ranked")
     )
 
 
@@ -95,7 +97,8 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             if child.join is not None:
                 state = parallel_join.join_words(parallel_join.join_of(child))
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
-            running = state in ("running", "stopping")
+            # A wait has something to wait for: the child itself, or the judges ranking it.
+            running = state in ("running", "stopping", "being ranked")
             lines.append(child_tools.ChildLine(sid, state, title[:80], running))
     return tuple(lines)
 
@@ -106,11 +109,11 @@ def wait_for(
     wait_s: float,
     interrupted: Callable[[], bool],
 ) -> None:
-    """Wait for one running child to end, or with "" for the next of them all.
+    """Wait for one running child to end, or with "" for the next child or judge of them all.
 
     Args:
         dispatcher: The run's dispatcher.
-        child: The child's session id; "" for whichever ends next.
+        child: The child's session id; "" for whichever ends next, a task's judge included.
         wait_s: The most seconds to wait.
         interrupted: Cuts the wait short: the operator's stop reaches no turn boundary
             while a tool call waits.
@@ -118,7 +121,7 @@ def wait_for(
     pending = [
         started.result
         for task in dispatcher.open.values()
-        for started in task.children
+        for started in (*task.children, *(task.judging.children if task.judging else ()))
         if not started.result.done() and child in ("", started.session_id)
     ]
     deadline = time.monotonic() + wait_s

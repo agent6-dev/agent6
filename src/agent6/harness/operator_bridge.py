@@ -80,7 +80,8 @@ class OperatorBridge:
             dispatch. `child_authority` controls which entry point may use it.
         child_recoverer: Finds an interrupted dispatch's children on resume: stops what runs,
             imports what finished; None leaves such a dispatch diagnosed from its record.
-        child_ranker: Orders the children of a dispatch joined by rank; None refuses such a join.
+        rank_recorder: Stamps, journals and prints the order a dispatch's attempts were
+            ranked in; None leaves it on the dispatch record alone.
     """
 
     steer_requested: Callable[[], bool] = dataclasses.field(default=lambda: False)
@@ -104,7 +105,7 @@ class OperatorBridge:
     )
     child_spawner: child_records.GroupChildSpawner | None = None
     child_recoverer: child_records.ChildRecoverer | None = None
-    child_ranker: child_records.ChildRanker | None = None
+    rank_recorder: child_records.RankRecorder | None = None
     review_preparer: Callable[[str], tuple[bool, str]] | None = None
 
 

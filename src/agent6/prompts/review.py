@@ -3,8 +3,9 @@
 """The run review's prompt and the reviewers' prompts.
 
 The run review (`sessions review`) reads a finished session's record; each adversarial reviewer
-sees the panel prompt with a `{focus}` placeholder.
-`harness.review.session` and `harness.review.verdict` own the calls.
+sees the panel prompt with a `{focus}` placeholder, and a judge, the reviewer that ranks a
+task's attempts, sees the rank prompt.
+`harness.review.session`, `harness.review.verdict` and `harness.parallel_rank` own the calls.
 """
 
 from __future__ import annotations
@@ -156,3 +157,60 @@ def panel_prompt(focus: str, *, max_turns: int, commands: bool) -> str:
         + REPLY_LIMIT_PROMPT
     )
     return template.format(focus=focus or "general correctness", max_turns=max_turns)
+
+
+# A judge is a reviewer whose verdict is an order: the attempts at one task, best first.
+RANK_SYSTEM_PROMPT = """You are one reviewer ranking attempts at the SAME task. Each attempt was
+made by an independent worker on its own branch of this repository. You are shown
+the task and, for each attempt, its id, its branch and tip commit, whether its
+verify/test command passed, its cost in USD, what it said at its end, and its diff.
+
+Rank the attempts BEST FIRST. An attempt whose verify passed outranks one that
+failed or was not run. Among attempts with the same verify outcome, prefer the
+more correct and targeted change; use cost only as a tie-breaker between changes
+of comparable quality. Read every diff before ranking."""
+
+# What a judge adds when it has tools: it investigates before it ranks.
+RANK_INVESTIGATE_PROMPT = """
+
+You ALSO have tools to INVESTIGATE before ranking. Your checkout is a throwaway
+clone at the commit the attempts started from, and it holds every attempt: by its
+tip commit, and by its branch where one is named."""
+
+# Added when the judge's parent may run commands, so the judge may too.
+RANK_COMMANDS_PROMPT = """
+
+You may run commands to check an attempt: `git diff <base> <tip>` shows its whole
+change, `git checkout <tip>` puts it in your tree, and a test or the verify
+command runs against it. A command proves or clears a doubt; it does not change
+what the attempts are."""
+
+RANK_VERDICT_PROMPT = """
+
+You have at most {max_turns} replies, replies that call tools included, and each
+turn says which reply it is; when done, and by the last reply at the latest, reply
+with ONLY the JSON verdict and no tool calls.
+
+Output STRICT JSON and nothing else (no prose, no markdown fence):
+{{"order": ["<attempt id>", "..."],
+  "summary": "<why this order, terse>"}}
+The "order" array must contain every attempt's id, best first, exactly once each."""
+
+
+def rank_prompt(*, max_turns: int, commands: bool) -> str:
+    """Render a judge's prompt.
+
+    Args:
+        max_turns: The judge's reply cap.
+        commands: Whether the judge is handed `run_command`.
+
+    Returns:
+        The system prompt.
+    """
+    template = (
+        RANK_SYSTEM_PROMPT
+        + RANK_INVESTIGATE_PROMPT
+        + (RANK_COMMANDS_PROMPT if commands else "")
+        + RANK_VERDICT_PROMPT
+    )
+    return template.format(max_turns=max_turns)

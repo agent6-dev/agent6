@@ -17,7 +17,7 @@ from agent6.app import children as app_children
 from agent6.config import Config, ConfigError
 from agent6.models import validate
 from agent6.ui import spawn as ui_spawn
-from agent6.ui.cli import common, compare_ranking
+from agent6.ui.cli import common
 
 
 def child_runtime() -> app_children.ChildRuntime:
@@ -52,11 +52,7 @@ def child_runtime() -> app_children.ChildRuntime:
         """
         return ui_spawn.spawn_child(argv, cwd, before=before, list_dirs=list_dirs, env=env)
 
-    return app_children.ChildRuntime(
-        spawn=spawn,
-        build_provider=compare_ranking._reviewer_provider,
-        judging_status=compare_ranking._judging_status,
-    )
+    return app_children.ChildRuntime(spawn=spawn)
 
 
 def spec_refusal(cfg: Config, spec: str) -> str | None:

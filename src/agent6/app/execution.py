@@ -606,19 +606,14 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 child_recoverer=app_children.build_child_recoverer(
                     cfg, cwd, layout.state_dir, mode=mode, reporter=reporter
                 ),
-                child_ranker=app_children.build_child_ranker(
-                    cfg,
+                rank_recorder=app_children.build_rank_recorder(
                     cwd,
                     layout.state_dir,
                     parent_dir=layout.session_dir,
-                    base_sha=inputs.base_sha,
-                    build_provider=frontend.build_judge_provider,
-                    judging_status=frontend.judging_status,
-                    budget=budget,
                     events=events,
                     reporter=reporter,
                 )
-                if frontend.build_judge_provider is not None and mode == "run"
+                if mode == "run"
                 else None,
             ),
             budget=budget,

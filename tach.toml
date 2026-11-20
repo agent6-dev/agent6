@@ -103,6 +103,7 @@ depends_on = [
   "agent6.app",
   "agent6.budget",
   "agent6.child_env",  # `exec` unsandboxed gets the environment an unsandboxed run command gets
+  "agent6.child_records",  # `sessions compare` briefs each candidate for its judges
   "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",

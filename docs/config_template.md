@@ -349,7 +349,8 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 The most children a run has running at once, for `run --parallel N|selector,...`, the `/parallel` steer and the `parallel` tool.
 Each child is a disposable clone running its own `agent6/<id>` branch; one child's work is merged onto the run's own branch, and several children on one task are ranked, the first-ranked one joining it.
-`harness.parallel.judges` names who ranks them: each judge ranks once, and the lowest sum of ranks wins.
+`harness.parallel.judges` names who ranks them: each judge is a reviewer child that reads and runs the attempts and answers with an order, and the lowest sum of ranks wins.
+A judge takes at most `review.max_turns` replies; with no usable order from any judge, the order is verify-pass first, then the cheaper.
 `git.auto_merge = true` then lands the run as it lands any run; without it, `agent6 sessions merge <run id>` does.
 `--max-usd` caps the children and the judges together; `--auto-approve` forwards to every child.
 A live run dispatches children the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).

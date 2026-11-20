@@ -73,7 +73,7 @@ def _config(*, tool: bool, extra: dict[str, Any] | None = None) -> Config:
                 "default": {"model": "p/base", "effort": "high", "temperature": 0.7},
                 "reviewer": {"model": "q/critic", "effort": "max"},
             },
-            "harness": {"parallel": {"tool": tool}},
+            "harness": {"parallel": {"tool": tool, "judges": []}},
             **(extra or {}),
         }
     )
@@ -416,10 +416,6 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
             )
         return out
 
-    def first_ranked(results: Any, *, group: str, base: str) -> child_records.Ranking:
-        order = tuple(res.spec.session_id for res in results)
-        return child_records.Ranking(order=order, winner=order[0])
-
     provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("parallel", {"task": "consult", "spec": "reviewer,default"}, "t1"),
@@ -442,7 +438,7 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
         curator=graph,  # type: ignore[arg-type]
         budget=budget,
         resume_state_path=session_dir / "loop_state.json",
-        bridge=operator_bridge.OperatorBridge(child_spawner=spawner, child_ranker=first_ranked),
+        bridge=operator_bridge.OperatorBridge(child_spawner=spawner),
         call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=2,
     )

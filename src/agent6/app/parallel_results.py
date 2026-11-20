@@ -7,14 +7,13 @@ from __future__ import annotations
 import contextlib
 import pathlib
 import threading
-from collections.abc import Sequence
 
 from agent6 import child_records
 from agent6.app import child_wait, finalize, stamps
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.context import memory
-from agent6.harness import child_repo, judge
+from agent6.harness import child_repo
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
 
@@ -60,7 +59,7 @@ def stamp(session_dir: pathlib.Path, **updates: object) -> str | None:
 
 
 def stamp_compare_outcomes(
-    candidates: list[judge.CandidateBrief],
+    candidates: list[child_records.CandidateBrief],
     outcome: app_compare.RankOutcome,
     *,
     winner: str,
@@ -74,7 +73,7 @@ def stamp_compare_outcomes(
     Args:
         candidates: The ranked children.
         outcome: The ranking.
-        winner: The child the ranking crowns (`ranked_winner`), or "".
+        winner: The child the ranking crowns (`parallel_rank.winner`), or "".
         record_state: The state dir the run's and its children's records live under.
         parent_dir: The manifest owner for the group's ranking and judge spend.
         group: The comparison group id.
@@ -100,33 +99,6 @@ def stamp_compare_outcomes(
         err = stamp(child_wait.child_dir(record_state, session_id, mode="run"), placement=placement)
         if err is not None:
             reporter.note(f"child [{session_id}]: imported, but the placement stamp failed: {err}")
-
-
-def ranked_winner(
-    candidates: list[judge.CandidateBrief], ranking: Sequence[str], *, harness_gate: bool
-) -> str:
-    """Return the child a ranking crowns, or "" when it crowns none.
-
-    The judge's order is model output: rank 1 wins unless a gate ran red and none passed, and
-    only a verified child wins when any verified. An unverified finish counts as red only under
-    a harness gate, the rule one run's exit code follows.
-
-    Args:
-        candidates: The ranked children.
-        ranking: Their ids, best first.
-        harness_gate: Whether the harness runs the gate (`harness.verify.when` is not `never`).
-
-    Returns:
-        The winner's session id, or "".
-    """
-    if not ranking:
-        return ""
-    first = next(c for c in candidates if c.session_id == ranking[0])
-    verdicts = {c.verification for c in candidates}
-    if "passed" in verdicts:
-        return first.session_id if first.verification == "passed" else ""
-    red = {"failed", "unverified"} if harness_gate else {"failed"}
-    return "" if verdicts & red else first.session_id
 
 
 def carry_back(

@@ -129,14 +129,6 @@ class _Children:
         )
 
 
-def _first_ranked(
-    results: Sequence[child_records.ChildResult], *, group: str, base: str
-) -> child_records.Ranking:
-    del group, base
-    order = tuple(res.spec.session_id for res in results)
-    return child_records.Ranking(order=order, winner=order[0] if order else "")
-
-
 def _calls(*uses: tuple[str, dict[str, Any]]) -> ProviderResponse:
     """A model turn that makes these tool calls, in order."""
     blocks = [
@@ -173,12 +165,15 @@ class _Script:
         return response
 
 
-def _config() -> Config:
+def _config(judges: Sequence[str] = ()) -> Config:
     return Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {"default": {"model": "p/base"}},
-            "harness": {"parallel": {"tool": True}, "verify": {"when": "never"}},
+            "harness": {
+                "parallel": {"tool": True, "judges": list(judges)},
+                "verify": {"when": "never"},
+            },
             "review": {"when": "never"},
         }
     )
@@ -193,9 +188,10 @@ def _harness(
     max_turns: int,
     recoverer: Any = None,
     curator: graph_curator.GraphCurator | None = None,
+    judges: Sequence[str] = (),
 ) -> loop.Harness:
     session_dir.mkdir(exist_ok=True)
-    cfg = _config()
+    cfg = _config(judges)
     events = event_log.EventSink(session_dir / "logs.jsonl")
     return loop.Harness(
         chain=run_chain.RunChain(
@@ -213,9 +209,7 @@ def _harness(
             max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
         ),
         resume_state_path=session_dir / "loop_state.json",
-        bridge=operator_bridge.OperatorBridge(
-            child_spawner=children, child_ranker=_first_ranked, child_recoverer=recoverer
-        ),
+        bridge=operator_bridge.OperatorBridge(child_spawner=children, child_recoverer=recoverer),
         call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=max_turns,
     )
@@ -396,7 +390,6 @@ def _dispatcher(
         session_id="root",
         execution_id="exec-1",
         session_dir=session_dir,
-        ranker=_first_ranked,
     )
 
 
@@ -787,7 +780,8 @@ def test_finish_session_is_refused_until_every_task_has_landed(tmp_path: pathlib
         f"- {child}: running\\n"
         "read_background with a child's id reads it, read_background with wait_s and no id"
         " waits for the next to end, and stop_background stops one, whose work then does not"
-        " land. Work lands at the turn boundary after its task's children end."
+        " land. Work lands at the turn boundary after its task's children end, and attempts"
+        " once their judges have ranked them."
     )
     assert refusal in provider.seen[2]
     assert "[parallel] group run-p1 complete" in provider.seen[3]
@@ -919,3 +913,62 @@ def test_a_landing_at_the_runs_last_boundary_is_in_the_snapshot_a_resume_reads(
     _harness(repo, tmp_path / "run", resumed, _Children(repo, "run"), max_turns=2).resume()
     assert f"[parallel] child {child} finished.\\nsummary: wrote a" in resumed.seen[0]
     assert resumed.seen[0].count("[parallel] group run-p1 complete") == 1
+
+
+def test_an_end_is_held_while_attempts_are_ranked_and_a_wait_waits_for_their_judge(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The judges run while the parent takes turns; the task lands the boundary after they end.
+
+    The parent's turn waited inside the landing for one model call that ranked the attempts.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    one, two, judge = "run-p1-l1", "run-p1-l2", "run-rp1-l1"
+
+    def end_attempts() -> None:
+        children.end(one, path="x.txt", text="one\n")
+        children.end(two, path="x.txt", text="two\n")
+
+    def end_judge_soon() -> None:
+        threading.Timer(0.3, lambda: children.end(judge)).start()
+
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "rewrite it", "spec": "2"}))),
+        (end_attempts, _calls(READ)),
+        (None, _calls(("finish_session", {"summary": "too early"}))),
+        (end_judge_soon, _calls(("read_background", {"wait_s": 30}))),
+        (None, _calls(("finish_session", {"summary": "ranked and landed"}))),
+    )
+    wf = _harness(repo, tmp_path / "run", provider, children, max_turns=6, judges=("default",))
+
+    started = time.monotonic()
+    result = wf.run("start")
+
+    assert (result.reason, result.turns, result.summary) == (
+        "finish_session",
+        5,
+        "ranked and landed",
+    )
+    assert time.monotonic() - started < 20.0, "the wait ended with the judge, not at its 30 seconds"
+    # The judge is a reviewer child the run started once both attempts had ended.
+    assert children.tasks[judge] == "Rank 2 attempts"
+    assert "[parallel] group" not in provider.seen[2]
+    # The finish in the turn after came back: both attempts were being ranked.
+    refusal = provider.seen[3]
+    assert "[harness] finish_session refused: 2 child(ren) have not landed:" in refusal
+    assert f"- {one}: being ranked" in refusal and f"- {two}: being ranked" in refusal
+    assert "and attempts once their judges have ranked them." in refusal
+    # The wait for the next to end waited for the judge; its end ranked and landed the task.
+    last = provider.seen[4]
+    assert "[parallel] group run-p1 complete (2 child(ren))" in last
+    assert (
+        "Ranked by verify result, then cost: no judge gave a usable order (default: it left"
+        " no verdict)." in last
+    )
+    assert (repo / "x.txt").read_text(encoding="utf-8") == "one\n"
+    states = {
+        record.identity: record.state for record in child_dispatch.read_records(tmp_path / "run")
+    }
+    assert states == {"run-p1": "complete", "run-rp1": "complete"}

@@ -152,10 +152,10 @@ def reconcile(
             )
             continue
         if record.source == "panel":
-            dispatcher.deliver(
-                conversation,
-                dispatcher.land(dispatcher.reported(conversation, record, results), results),
-            )
+            landed = dispatcher.land(dispatcher.reported(conversation, record, results), results)
+            # A task's judges are written delivered: their result is the task's own notice.
+            if not record.delivered:
+                dispatcher.deliver(conversation, landed)
             continue
         dispatcher.open[record.identity] = reopened(record, results)
     dispatcher.settle(conversation, turn)

@@ -137,8 +137,9 @@ def ranked_opening(
 ) -> loop_snapshot.SessionResult | None:
     """Run the dispatch a run opens with, joined by rank, and end the run on what landed.
 
-    The run waits for its children, as no turn of its own runs meanwhile. The ranking's
-    winner joins the run's chain; the run's own gate then judges the joined tree. No model
+    The run waits for its children and then for their judges, as no turn of its own runs
+    meanwhile. The ranking's winner joins the run's chain; the run's own gate then judges
+    the joined tree. No model
     call is made unless the operator steered while the children ran: the run then goes on
     with that steer, as a resume with a steer does later.
 
@@ -156,12 +157,20 @@ def ranked_opening(
     """
     assert harness.opening is not None
     started = harness.parallel.dispatch(conversation, turn, state, [harness.opening])
-    harness.parallel.wait()
+    while True:
+        harness.parallel.wait()
+        stopped = operator_stop(harness, turn, state)
+        if stopped is not None:
+            return stopped
+        # The notices enter the conversation either way: only a steer gives them a reader.
+        harness.parallel.settle(conversation, turn)
+        if not harness.parallel.running():
+            # The children have ended and so have the judges a settle started for them.
+            break
+    # A stop that came while the ranking was due holds it: the run reads stopped.
     stopped = operator_stop(harness, turn, state)
     if stopped is not None:
         return stopped
-    # The notices enter the conversation either way: only a steer gives them a reader.
-    harness.parallel.settle(conversation, turn)
     if harness.bridge.steer_requested():
         # A steer sent while the children ran is the run's next work, from what landed.
         size = len(conversation)

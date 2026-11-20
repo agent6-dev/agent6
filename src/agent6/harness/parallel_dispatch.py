@@ -6,7 +6,7 @@
 injected group spawner. A work dispatch starts its children in the background and returns;
 `settle` lands what finished at a turn boundary. `parallel_join` projects child results into
 ordered merges, DAG stamps and notices; `parallel_panel` runs a panel's record-only batches
-through the same executor, and a rank join lands the one child its injected ranker puts first.
+through the same executor, and a rank join lands the one child `parallel_rank` puts first.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, errors
 from agent6.graph import curator as graph_curator
-from agent6.harness import child_repo, parallel_join, run_chain
+from agent6.harness import child_repo, parallel_join, parallel_rank, run_chain
 from agent6.sessions import budget_events, child_dispatch, journal
 from agent6.vcs.git import read as git_read
 
@@ -61,10 +61,12 @@ class OpenDispatch:
     Attributes:
         record: The dispatch's record, as last written.
         children: Its started children, in child order.
+        judging: The judges ranking its attempts, while they run; None otherwise.
     """
 
     record: child_dispatch.DispatchRecord
     children: list[child_records.StartedChild]
+    judging: parallel_rank.Judging | None = None
 
 
 @dataclasses.dataclass(slots=True)
@@ -85,7 +87,14 @@ class ParallelDispatcher:
         budget: The run's meter; None without one.
         session_dir: Where the dispatch records live; None for a harness without a session dir.
         child_recoverer: Finds an interrupted dispatch's children on resume; None when none can.
-        ranker: Orders a rank join's children; None where no dispatch joins by rank.
+        judges: The reviewers that rank a task's attempts, `[harness.parallel].judges`
+            resolved; empty for the mechanical order alone.
+        reviewer_turns: A judge's reply cap, `review.max_turns`.
+        reviewer_tools: The tools the run's own model is offered now, which a judge inherits.
+        harness_gate: Whether the harness runs the verify gate, which decides what an
+            unverified attempt may win.
+        rank_recorder: Stamps and prints a ranking outside the dispatch record; None records
+            it on the dispatch record alone.
         stop_pending: Whether the operator asked the run to stop.
         authority: Work and harness-panel permissions from the application.
         clock: The wall clock.
@@ -107,7 +116,11 @@ class ParallelDispatcher:
     budget: agent6_budget.BudgetTracker | None = None
     session_dir: pathlib.Path | None = None
     child_recoverer: child_records.ChildRecoverer | None = None
-    ranker: child_records.ChildRanker | None = None
+    judges: Sequence[parallel_rank.Judge] = ()
+    reviewer_turns: int = 20
+    reviewer_tools: Callable[[], Sequence[str]] = tuple
+    harness_gate: bool = True
+    rank_recorder: child_records.RankRecorder | None = None
     stop_pending: Callable[[], bool] = lambda: False
     authority: child_records.DispatchAuthority = dataclasses.field(
         default_factory=child_records.DispatchAuthority
@@ -128,7 +141,7 @@ class ParallelDispatcher:
         """Start each segment's task in the background and return what started.
 
         A segment is one task and one dispatch record, written before any launch: one child
-        lands its commits, several are attempts a ranker orders. Each child starts on a
+        lands its commits, several are attempts `parallel_rank` orders. Each child starts on a
         clone of the parent's committed HEAD under the parent's config and what it has left
         to spend, with no turn cap or deadline of its own, and runs while the parent takes
         its turns; `settle` lands the work at a turn boundary.
@@ -163,10 +176,6 @@ class ParallelDispatcher:
                 f" [harness.parallel].max_children = {self.max_children}; nothing dispatched."
                 " Ask for fewer, wait for one to end, stop one, or raise"
                 " [harness.parallel].max_children."
-            )
-        if self.ranker is None and any(len(children) > 1 for children in tasks):
-            return self.refused(
-                "this execution has no ranker for attempts at one task; nothing dispatched."
             )
         # Children cut from the chain tip only: commit a changed tree first, or refuse stale work.
         if not self.ensure_clean(turn, "/parallel dispatch"):
@@ -322,23 +331,30 @@ class ParallelDispatcher:
         self.write(record)
         return record
 
+    def unended(self) -> list[concurrent.futures.Future[child_records.ChildResult]]:
+        """Return the result of every child and judge this execution started that still runs."""
+        return [
+            child.result
+            for task in self.open.values()
+            for child in (*task.children, *(task.judging.children if task.judging else ()))
+            if not child.result.done()
+        ]
+
     def running(self) -> int:
-        """Return how many children this execution started that have not ended."""
-        return sum(
-            1 for task in self.open.values() for child in task.children if not child.result.done()
-        )
+        """Return how many children and judges this execution started have not ended."""
+        return len(self.unended())
 
     def wait(self) -> None:
-        """Block until every started child has ended, for an entry that takes no turn meanwhile."""
-        concurrent.futures.wait(
-            [child.result for task in self.open.values() for child in task.children]
-        )
+        """Block until all that runs has ended, for an entry that takes no turn meanwhile."""
+        concurrent.futures.wait(self.unended())
 
     def settle(self, conversation: loop_conversation.Conversation, turn: int) -> bool:
         """Tell the model which children ended, then land each dispatch whose children all have.
 
         Called at a turn boundary. The finished dispatches land in the order written; one
-        with a child still running lands at a later boundary and holds no other.
+        with a child still running lands at a later boundary and holds no other. Attempts
+        are ranked first: their judges start here and run in the background, and the task
+        lands at the boundary after they end.
 
         Args:
             conversation: The run's conversation, which takes the notices.
@@ -357,14 +373,12 @@ class ParallelDispatcher:
             task.record = record
             if len(results) < len(task.children):
                 continue
+            if record.join_policy == "rank" and record.ranking is None:
+                record = task.record = parallel_rank.rank(self, task, results, turn=turn)
+                if record.ranking is None:
+                    # Its judges run, or a stop holds them: a later boundary or the end settles it.
+                    continue
             result = self.land(record, results, turn=turn)
-            if not result.message:
-                # A stop held the ranking: the execution's end settles what is left.
-                assert self.session_dir is not None
-                task.record = child_dispatch.read_record(
-                    child_dispatch.record_path(self.session_dir, identity)
-                )
-                continue
             self.deliver(conversation, result)
             del self.open[identity]
             told = True
@@ -436,7 +450,8 @@ class ParallelDispatcher:
         """End the execution's children: stop each still running, wait, charge what it used.
 
         Their work stays on their branches and their records stay unlanded. A stopped child
-        never lands; the next execution lands the task of one that had ended by itself.
+        never lands; the next execution lands the task of one that had ended by itself. A
+        task's judges are stopped and charged with it.
 
         Args:
             turn: The turn the execution ended on.
@@ -454,12 +469,20 @@ class ParallelDispatcher:
                     continue
                 child.stop()
                 stopped.append(child.session_id)
+            for judge in task.judging.children if task.judging is not None else ():
+                judge.stop()
         for task in self.open.values():
             self.settled(
                 task.record,
                 {child.session_id: self.result_of(task.record, child) for child in task.children},
                 turn=turn,
             )
+            if (judging := task.judging) is not None:
+                self.settled(
+                    judging.record,
+                    {j.session_id: self.result_of(judging.record, j) for j in judging.children},
+                    turn=turn,
+                )
         self.open.clear()
         return tuple(stopped), tuple(ended)
 
@@ -474,7 +497,7 @@ class ParallelDispatcher:
 
         Work lands on a clean tree: the parent's uncommitted work is committed first. Each
         boundary advances the record first, so a crash in between leaves a resume one step to
-        finish, never one to repeat.
+        finish, never one to repeat. A rank join comes here with its ranking written.
 
         Args:
             record: The dispatch's record.
@@ -482,17 +505,13 @@ class ParallelDispatcher:
             turn: The turn the landing follows; None for the turn of the dispatch.
 
         Returns:
-            The result, its message the record's; "" when a stop held a rank join's ranking.
+            The result, its message the record's.
         """
         by_id = {res.spec.session_id: res for res in results}
         turn = record.turn if turn is None else turn
         record = self.settled(record, by_id, turn=turn)
-        if record.join_policy == "rank" and record.ranking is None and self.stop_pending():
-            # No judge is asked after a stop: the record stays here and a resume ranks from it.
-            self.log(f"PARALLEL: group {record.identity} stopped before its ranking")
-            return child_records.DispatchResult(record.identity, True, (), "", base=record.base)
         clean = record.join_policy == "record_only" or self.ensure_clean(turn, "landing children")
-        record = self.joined(record, by_id, clean=clean, turn=turn)
+        record = self.joined(record, by_id, clean=clean)
         joins = [parallel_join.join_of(child) for child in record.children]
         if record.node_id is None:
             # Its id is on the record before its stamp: a resume never adds a second node.
@@ -522,7 +541,7 @@ class ParallelDispatcher:
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
-        message = parallel_join.summary_text(record.identity, joins)
+        message = parallel_join.summary_text(record.identity, joins, record.ranking)
         record = record.advanced("complete", message=message)
         self.write(record)
         return child_records.DispatchResult(
@@ -581,26 +600,22 @@ class ParallelDispatcher:
         by_id: dict[str, child_records.ChildResult],
         *,
         clean: bool = True,
-        turn: int | None = None,
     ) -> child_dispatch.DispatchRecord:
         """Join each child not yet joined, in child order, recording each join as it lands.
 
-        A rank join ranks first, once, and joins its winner alone; with no winner it joins none.
+        A rank join joins its ranking's winner alone; with no winner it joins none.
         A stopped child never joins: its record names the branch that holds its commits.
 
         Args:
             record: The dispatch's record.
             by_id: The children's results by session id.
             clean: Whether the tree holds only committed work; a merge needs it.
-            turn: The turn the judges' spend is journaled at; None for the turn of the dispatch.
 
         Returns:
             The record in the `joining` state with every child's join recorded.
         """
         record = record.advanced("joining")
         self.write(record)
-        if record.join_policy == "rank" and record.ranking is None:
-            record = self.ranked(record, by_id, turn=record.turn if turn is None else turn)
         order = record.ranking.order if record.ranking is not None else ()
         winner = record.ranking.winner if record.ranking is not None else ""
         for child in record.children:
@@ -658,54 +673,6 @@ class ParallelDispatcher:
                 )
             )
             self.write(record)
-        return record
-
-    def ranked(
-        self,
-        record: child_dispatch.DispatchRecord,
-        by_id: dict[str, child_records.ChildResult],
-        *,
-        turn: int,
-    ) -> child_dispatch.DispatchRecord:
-        """Rank a rank join's children and write the order before any join.
-
-        Args:
-            record: The dispatch's record.
-            by_id: The children's results by session id.
-            turn: The turn the judges' spend is journaled at.
-
-        Returns:
-            The record with its ranking: the children that ended with a result by
-            themselves, best first; a stopped child is no candidate.
-        """
-        assert self.ranker is not None
-        rankable = [
-            res
-            for child in record.children
-            if (res := by_id.get(child.session_id)) is not None and res.ok and not res.stopped_by
-        ]
-        ranking = (
-            self.ranker(rankable, group=record.identity, base=record.base)
-            if rankable
-            else child_records.Ranking(order=())
-        )
-        ids = [res.spec.session_id for res in rankable]
-        # Every rankable child has a place, whatever the ranker returned.
-        order = [rid for rid in dict.fromkeys(ranking.order) if rid in ids]
-        order += [rid for rid in ids if rid not in order]
-        record = record.model_copy(
-            update={
-                "ranking": child_dispatch.RankRecord(
-                    order=tuple(order),
-                    ranked_by=ranking.ranked_by,
-                    rationale=ranking.rationale,
-                    winner=ranking.winner if ranking.winner in order else "",
-                )
-            }
-        )
-        # The judges' spend is on the meter now.
-        self.emit_budget(turn)
-        self.write(record)
         return record
 
     def join_child(

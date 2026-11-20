@@ -136,15 +136,6 @@ def _child_result(
     )
 
 
-def _first_ranked(
-    results: Sequence[child_records.ChildResult], *, group: str, base: str
-) -> child_records.Ranking:
-    """Rank attempts in child order and crown the first."""
-    del group, base
-    order = tuple(res.spec.session_id for res in results)
-    return child_records.Ranking(order=order, winner=order[0] if order else "")
-
-
 def _build_wf(
     repo: pathlib.Path,
     session_dir: pathlib.Path,
@@ -183,7 +174,7 @@ def _build_wf(
                 stagnation_notice_after_s=300.0,
                 verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_children=4),
+                parallel=types.SimpleNamespace(max_children=4, judges=()),
             ),
         ),
         provider=provider,
@@ -195,7 +186,6 @@ def _build_wf(
         bridge=operator_bridge.OperatorBridge(
             child_spawner=child_spawner,
             child_recoverer=child_recoverer,
-            child_ranker=_first_ranked,
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -564,6 +554,6 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     assert budget.available().usd == pytest.approx(9.0)
     stored = json.loads(child_dispatch.record_path(session_dir, "run-abc-p1").read_text())
-    assert stored["version"] == 7
+    assert stored["version"] == 8
     assert (stored["join_policy"], stored["spec"], stored["node_id"]) == ("merge", "", None)
     assert "segments" not in stored

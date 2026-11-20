@@ -15,13 +15,13 @@ import datetime
 import pathlib
 import subprocess
 import types
-from collections.abc import Sequence
 from typing import Any
 from unittest import mock
 
 import pytest
 
-from agent6 import child_records, directive
+from agent6 import budget as agent6_budget
+from agent6 import child_records, directive, kinds
 from agent6.app import children, finalize
 from agent6.config import Config
 from agent6.graph import curator, models
@@ -205,6 +205,9 @@ class _FakeGroupSpawner:
         self.empty = empty or set()
         self.calls: list[tuple[list[child_records.ChildTask], str]] = []
         self.started = 0
+        # What the mechanical order reads: each child's cost by number, and every gate's word.
+        self.costs: dict[int, float] = {}
+        self.verdict: kinds.Verification | None = None
 
     def tasks(self, call: int = 0) -> list[str]:
         return [child.task for child in self.calls[call][0]]
@@ -281,6 +284,12 @@ class _FakeGroupSpawner:
                     imported_ref=branch,
                     imported_tip=_git(self.repo, "rev-parse", branch).strip(),
                     has_commits=True,
+                    verification=self.verdict,
+                    usage=agent6_budget.UsageSettlement(
+                        usd=self.costs[number], usd_partial=False, tokens=0
+                    )
+                    if number in self.costs
+                    else None,
                 )
             )
         return child_env.ended(results)
@@ -331,7 +340,7 @@ def _build_wf(
                     command=verify_command, when=verify_when, at_start=True, retries=2
                 ),
                 prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_children=4),
+                parallel=types.SimpleNamespace(max_children=4, judges=()),
             ),
             # A real int, not a Mock: segment_children compares the child count against this cap.
         ),
@@ -342,7 +351,6 @@ def _build_wf(
         curator=graph,
         bridge=operator_bridge.OperatorBridge(
             child_spawner=child_spawner,
-            child_ranker=_ranker((1, 2, 3, 4)),
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -360,19 +368,13 @@ def _three_reads() -> list[ProviderResponse]:
     return [_resp_tool("read_file", {"path": "README.md"}, f"t{i}") for i in (1, 2, 3)]
 
 
-def _ranker(order: tuple[int, ...], *, crowns: bool = True) -> Any:
-    """Rank a group's children in the given child order, by number; `crowns` off names no winner."""
+def _rank_as(spawner: _FakeGroupSpawner, order: tuple[int, ...], *, crowns: bool = True) -> None:
+    """Make the mechanical order rank a group's children in this order, by number.
 
-    def rank(
-        results: Sequence[child_records.ChildResult], *, group: str, base: str
-    ) -> child_records.Ranking:
-        by_child = {res.spec.number: res.spec.session_id for res in results}
-        ranked = tuple(by_child[n] for n in order if n in by_child)
-        return child_records.Ranking(
-            order=ranked, ranked_by="judge", winner=ranked[0] if ranked and crowns else ""
-        )
-
-    return rank
+    The cheaper child ranks first; with `crowns` off every gate ran red, so none wins.
+    """
+    spawner.costs = {number: place * 1e-6 for place, number in enumerate(order, start=1)}
+    spawner.verdict = None if crowns else "failed"
 
 
 def _user_texts(messages: list[dict[str, Any]]) -> list[str]:
@@ -593,7 +595,7 @@ def test_a_count_above_one_ranks_its_children_and_lands_one(tmp_path: pathlib.Pa
         graph=graph,
         events=events,
     )
-    wf.bridge = dataclasses.replace(wf.bridge, child_ranker=_ranker((2, 3, 1)))
+    _rank_as(spawner, (2, 3, 1))
     wf.run("start")
 
     children = spawner.calls[0][0]
@@ -1093,7 +1095,7 @@ def _opening_wf(
         verify_command=verify_command,
     )
     wf.opening = directive.Segment(task="add a child file", spec="3")
-    wf.bridge = dataclasses.replace(wf.bridge, child_ranker=_ranker(order, crowns=crowns))
+    _rank_as(spawner, order, crowns=crowns)
     return wf, provider
 
 
@@ -1195,23 +1197,13 @@ def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
         wf.bridge, stop_requested=lambda: True, stop_is_now=lambda: True
     )
 
-    asked: list[str] = []
-
-    def rank(
-        results: Sequence[child_records.ChildResult], *, group: str, base: str
-    ) -> child_records.Ranking:
-        asked.append(group)
-        return child_records.Ranking(order=())
-
-    wf.bridge = dataclasses.replace(wf.bridge, child_ranker=rank)
-
     result = wf.run("add a child file")
 
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("steer_abort", False)
     assert [stop["reason"] for stop in events.of("session.stop")] == ["steer_abort"]
-    # No judge is asked and nothing joins after the stop: a resume ranks from the record.
-    assert asked == [] and git_read.chain_tip(repo, "refs/agent6/parent") is None
+    # Nothing is ranked and nothing joins after the stop: a resume ranks from the record.
+    assert git_read.chain_tip(repo, "refs/agent6/parent") is None
     (record,) = child_dispatch.read_records(tmp_path / "session")
     assert (record.state, record.ranking, record.delivered) == ("settling", None, False)
 

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 sessions compare`: the advisory ranked comparison across already-run candidates.
 
-Its own module so `sessions list` does not load the judge.
+Its own module so `sessions list` does not load the ranking.
 """
 
 from __future__ import annotations
@@ -10,10 +10,9 @@ from __future__ import annotations
 import contextlib
 import pathlib
 
-from agent6 import errors, paths
+from agent6 import child_records, errors
 from agent6.app import compare
 from agent6.config import layer
-from agent6.harness import judge
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, compare_ranking, sessions_cmds
@@ -65,7 +64,7 @@ def _candidate_diff(
 def _screen_candidates(
     cwd: pathlib.Path,
     resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]],
-) -> tuple[list[judge.CandidateBrief], dict[str, listing.SessionSummary], list[str]]:
+) -> tuple[list[child_records.CandidateBrief], dict[str, listing.SessionSummary], list[str]]:
     """Return briefs for the comparable runs and a note for each excluded one.
 
     A run without a session end has no verdict and a truncated spend, so ranking it would
@@ -79,7 +78,7 @@ def _screen_candidates(
     Returns:
         The candidates, each one's listing row by session id, and the notes to print.
     """
-    candidates: list[judge.CandidateBrief] = []
+    candidates: list[child_records.CandidateBrief] = []
     rows: dict[str, listing.SessionSummary] = {}
     notes: list[str] = []
     for layout, manifest in resolved:
@@ -103,13 +102,17 @@ def _screen_candidates(
                 " the recorded merge"
             )
         rows[layout.session_id] = summary
+        named = manifest.run_branch or ""
+        branch = named if named and git_read.branch_exists(cwd, named) else ""
         candidates.append(
-            judge.CandidateBrief(
+            child_records.CandidateBrief(
                 session_id=layout.session_id,
                 task=compare.manifest_task(layout.session_dir, fallback=layout.session_id),
                 diff=diff,
                 verification=summary.verification,
                 cost_usd=summary.cost_usd,
+                ref=branch,
+                tip=(git_read.branch_tip_sha(cwd, branch) or "") if branch else "",
             )
         )
     return candidates, rows, notes
@@ -143,7 +146,7 @@ def _group_children(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
 
 def _recorded_outcome(
     resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]],
-    candidates: list[judge.CandidateBrief],
+    candidates: list[child_records.CandidateBrief],
 ) -> compare.RankOutcome | None:
     """Return a group's stamped verdict as a `RankOutcome`, for the ranking table.
 
@@ -180,11 +183,12 @@ def _cmd_compare(
 ) -> int:
     """Print an advisory ranking of two or more already-run candidates.
 
-    The same ranked report `--parallel`'s auto-compare prints (the reviewer model as judge
-    when configured, else the mechanical verify-then-cost ranking), for runs picked by hand,
-    not necessarily from one group or one task. Read-only: no merges, no stamps. A
-    group id prints the verdict it recorded; ids named one by one are judged; `rejudge`
-    judges either way, and can rank differently from the stamp the listings read.
+    The same ranked report a run's rank join prints (each of `[harness.parallel].judges` a
+    reviewer child that ranks the runs, else the mechanical verify-then-cost ranking), for
+    runs picked by hand, not necessarily from one group or one task. No merges, no stamps;
+    the judges' own sessions stay in the reviewers bucket. A group id prints the verdict it
+    recorded; ids named one by one are judged; `rejudge` judges either way, and can rank
+    differently from the stamp the listings read.
 
     Args:
         session_ids: Two or more run ids, or one group id.
@@ -219,7 +223,8 @@ def _cmd_compare(
             return 2
         seen.add(layout.session_id)
         resolved.append((layout, manifest))
-    cfg = layer.load_effective(cwd, config_paths).config
+    effective = layer.load_effective(cwd, config_paths)
+    cfg = effective.config
 
     candidates, rows, notes = _screen_candidates(cwd, resolved)
     for note in notes:
@@ -256,12 +261,12 @@ def _cmd_compare(
             committed=committed,
             model_refs=model_refs,
         )
-        print("\n(recorded when the group ran; `--rejudge` spends a fresh judge call)")
+        print("\n(recorded when the group ran; `--rejudge` runs the judges afresh)")
         return 0
 
     reviewer = cfg.models.resolve("reviewer")
     # Advisory and stateless: only the group's auto-compare stamps a manifest.
-    outcome = compare_ranking.rank(cfg, candidates, transcript_dir=paths.state_dir(cwd) / "compare")
+    outcome = compare_ranking.rank(effective, candidates, cwd=cwd)
     print(f"[agent6] comparing {len(candidates)} runs:")
     compare.print_ranked_candidates(
         candidates,

@@ -17,9 +17,9 @@ import pydantic
 
 from agent6 import child_records, portable
 
-RECORD_VERSION = 7
+RECORD_VERSION = 8
 DIR_NAME = "dispatch"
-DispatchState = Literal["prepared", "running", "settling", "joining", "complete"]
+DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
 
 
 class DispatchRecordError(Exception):
@@ -71,12 +71,14 @@ class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         ranked_by: `judge` or `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
         winner: The one child the join lands; "" when the order crowns none.
+        fallback: Why the mechanical order ranked; "" when judges did.
     """
 
     order: tuple[str, ...]
     ranked_by: Literal["judge", "mechanical"] = "mechanical"
     rationale: str = ""
     winner: str = ""
+    fallback: str = ""
 
 
 class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
@@ -129,7 +131,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         node_id: The task's DAG node, added when its work lands or its dispatch fails; None
             until then, without a graph and for a panel.
         children: The children, in child order.
-        state: How far the dispatch got.
+        state: How far the dispatch got; `ranking` while a task's judges run.
         message: The notice of what landed, "" until complete.
         delivered: Whether that notice reached the conversation.
         written_at: When this version of the record was written, as epoch seconds.

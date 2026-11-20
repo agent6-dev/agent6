@@ -167,8 +167,8 @@ def started_text(children: Sequence[str]) -> str:
         )
     return (
         f"[parallel] started {len(children)} attempts at one task: {', '.join(children)}."
-        " A notice arrives as each ends; once all have, they are ranked and the first lands."
-        " read_background reads one and stop_background stops one, by id."
+        " A notice arrives as each ends; once all have, they are ranked in the background and"
+        " the first lands. read_background reads one and stop_background stops one, by id."
     )
 
 
@@ -194,16 +194,35 @@ def end_notice(res: child_records.ChildResult) -> str:
     return f"{head}\nsummary: " + report.replace("\n", "\n  ") if report else head
 
 
-def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
+def ranked_by(ranking: child_dispatch.RankRecord) -> str:
+    """Return the line that says how a task's attempts were ranked.
+
+    Args:
+        ranking: The task's ranking.
+
+    Returns:
+        The judges' reason, or that the mechanical order ranked and why.
+    """
+    if ranking.ranked_by == "judge":
+        return "Ranked by the judges: " + ranking.rationale.replace("\n", "\n  ")
+    return f"Ranked by verify result, then cost: {ranking.fallback or 'no judge ranked'}."
+
+
+def summary_text(
+    group: str,
+    children: list[child_records.ChildJoin],
+    ranking: child_dispatch.RankRecord | None = None,
+) -> str:
     """Return the one notice that says how each child of a landed dispatch joined.
 
     Args:
         group: The dispatch's group id.
         children: Each child's join, in dispatch order.
+        ranking: How its attempts were ranked; None for a task with one child and for a panel.
 
     Returns:
-        One line per child, then what to do; a dispatch whose every child stopped says
-        nothing landed.
+        One line per child, how the attempts were ranked, then what to do; a dispatch
+        whose every child stopped says nothing landed.
     """
     lines = [f"[parallel] group {group} complete ({len(children)} child(ren)):"]
     for j in children:
@@ -230,6 +249,8 @@ def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
             )
         else:
             lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
+    if ranking is not None and ranking.order:
+        lines.append(ranked_by(ranking))
     if children and all(j.status == "stopped" for j in children):
         lines.append("Every child stopped: nothing landed.")
     else:

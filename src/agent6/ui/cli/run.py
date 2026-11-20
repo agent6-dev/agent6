@@ -200,11 +200,6 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
                 )
             )
         ),
-        # The child runtime owns the judge's two pieces; read at the call, as the spawner is.
-        build_judge_provider=lambda cfg, sink, budget, events: (
-            cli_parallel.child_runtime().build_provider(cfg, sink, budget, events)
-        ),
-        judging_status=lambda: cli_parallel.child_runtime().judging_status(),
         agent6_exe=spawn.agent6_exe,
         spawn_detached_resume=lambda cwd, sid, flags: spawn.spawn_detached_resume(
             cwd, sid, config_paths=config_paths, flags=flags

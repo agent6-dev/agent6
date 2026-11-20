@@ -141,6 +141,10 @@ The child gets its config, task and remaining budget from its parent; its approv
 Its record is in the repository's state from its first event, so `sessions list --children`, `attach` and the hubs read a child while it runs.
 Every entry lands a task once: one child's work is merged onto the run's chain, and several children on one task are attempts, of which the first-ranked lands.
 `run --parallel` is a run that makes no model call of its own and waits for its children: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child joins the run's branch, the run's own gate judges the result, and the run ends `finished · children ranked`.
+A judge is a reviewer child of the run, one per entry: its clone is cut at the commit the attempts started from and holds every attempt, its opening lists each attempt with its verify result, cost, finish summary and diff, and it has the tools a reviewer is handed (the reading tools, and `run_command` and `run_verify_command` where the run may run commands).
+It answers with an order and its reason, within `review.max_turns` replies; the orders are summed, and the lowest sum wins.
+With no judge, with one candidate, or when no judge gives a usable order, the order is verify-pass first, then the cheaper, and the landing notice says which (`Ranked by verify result, then cost: no judge gave a usable order (reviewer: no verdict within 20 replies).`).
+A judge's findings are not kept as a review: only its order and reason are.
 The other children keep their branches, so `agent6 sessions merge <child>` still lands one by hand.
 `SPEC` is a positive child count or a comma-separated list of selectors, the same as `run --parallel`.
 A count above one, or several selectors, means attempts at the one task; a second `/parallel` in the message is a second task.
@@ -163,6 +167,7 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 A live run starts the children and goes on: its model keeps taking turns while they work.
 When a child ends, the model reads a notice with the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
 A task lands at the run's next turn boundary once its children have ended; a task still running holds no other.
+Attempts are ranked first: their judges start when the last attempt ends and run in the background while the run takes its turns, the roster shows the attempts as `being ranked`, and the task lands at the boundary after the judges end.
 Tasks that finish before the same boundary land in the order written, so when two touch the same lines the later one to land gets the conflict.
 The run's uncommitted work is committed first, and one notice per task names each child's outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `ranked 2 of 3` (an attempt that did not land), `CONFLICT` with the files (nothing lands, and the child's branch holds its work for the operator) or `FAILED` with the reason.
 A stopped child never lands by itself, whoever stopped it: its parent, the operator, the run's budget or the end of the execution that started it.
@@ -184,7 +189,7 @@ A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` i
 It is refused, with what to do instead, for an id that is no child of the run, a child that has ended and one that has not started.
 `stop_background` with a child's id stops the child; its work does not land, and its branch holds what it committed.
 The two tools' descriptions mention children only in a run that has the `parallel` tool.
-`finish_session` is refused until every task has landed, and the refusal names the children that hold it: one still running, or one that ended and has not landed.
+`finish_session` is refused until every task has landed, and the refusal names the children that hold it: one still running, one that ended and has not landed, or one being ranked.
 A stopped child holds no end.
 The run counts its children's spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.

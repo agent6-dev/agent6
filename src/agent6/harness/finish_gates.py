@@ -324,7 +324,8 @@ def children_finish(
         f"[harness] {refused}: {len(children)} child(ren) have not landed:\n{listing}\n"
         "read_background with a child's id reads it, read_background with wait_s and no id"
         " waits for the next to end, and stop_background stops one, whose work then does not"
-        " land. Work lands at the turn boundary after its task's children end.",
+        " land. Work lands at the turn boundary after its task's children end, and attempts"
+        " once their judges have ranked them.",
         event=journal.FinishRefusedChildren(
             turn=turn.number, children=[child for child, _standing in children], trigger=ending
         ),

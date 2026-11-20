@@ -144,6 +144,7 @@ class ChildResult:
         imported_tip: That ref's commit; "" when none.
         has_commits: Whether the imported tip holds commits beyond the child's base.
         commits: How many it holds; 0 when none, or when the base is unrecorded.
+        verification: Its own gate's word at its end; None when it never said.
         pid: The child process the spawn started, 0 when none did; a child that never
             reported its session dir is stopped through it.
         usage: What the child used, read from its imported record; None when no record
@@ -165,6 +166,7 @@ class ChildResult:
     imported_tip: str = ""
     has_commits: bool = False
     commits: int = 0
+    verification: kinds.Verification | None = None
     pid: int = 0
     usage: budget.UsageSettlement | None = None
     report: str = ""
@@ -217,28 +219,66 @@ class GroupChildSpawner(Protocol):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class CandidateBrief:
+    """One attempt at a task, as its judges and the mechanical order read it.
+
+    Attributes:
+        session_id: The attempt's session id.
+        task: The task it was given.
+        diff: Its change from the commit it started at.
+        verification: Its own gate's word; None when it never said.
+        cost_usd: What it spent.
+        ref: The branch or ref that holds its work; "" when none does.
+        tip: That ref's commit; "" when none.
+        summary: What it said at its end; "" when it gave none.
+    """
+
+    session_id: str
+    task: str
+    diff: str
+    verification: kinds.Verification | None
+    cost_usd: float
+    ref: str = ""
+    tip: str = ""
+    summary: str = ""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class Ranking:
     """The order a rank join lands by.
 
     Attributes:
         order: The ranked children's session ids, best first.
-        ranked_by: `judge` when a judge's ranking ordered them, else `mechanical`.
+        ranked_by: `judge` when a judge's order ranked them, else `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
         winner: The child the join lands, or "" when the order crowns none: every gate ran
             red, or a child that did not verify was ranked over one that did.
+        fallback: Why the mechanical order ranked; "" when judges did.
+        judge_cost_usd: What the judges spent; 0.0 when none ran.
+        judge_cost_partial: Whether that spend is a lower bound.
     """
 
     order: tuple[str, ...]
     ranked_by: Literal["judge", "mechanical"] = "mechanical"
     rationale: str = ""
     winner: str = ""
+    fallback: str = ""
+    judge_cost_usd: float = 0.0
+    judge_cost_partial: bool = False
 
 
-class ChildRanker(Protocol):
-    """Rank a dispatch's finished children, best first."""
+class RankRecorder(Protocol):
+    """Record the order a dispatch's attempts were ranked in, outside the dispatch record."""
 
-    def __call__(self, results: Sequence[ChildResult], *, group: str, base: str) -> Ranking:
-        """Return the order of a group's children that ended with a result, cut from `base`."""
+    def __call__(
+        self,
+        candidates: Sequence[CandidateBrief],
+        results: Sequence[ChildResult],
+        ranking: Ranking,
+        *,
+        group: str,
+    ) -> None:
+        """Stamp the ranking on the manifests, journal it and print the ranked table."""
         ...
 
 

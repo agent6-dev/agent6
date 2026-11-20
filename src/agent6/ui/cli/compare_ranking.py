@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The CLI's adapter over the ranking core in `agent6.app.compare`.
 
-It supplies the two pieces the headless core cannot: the `judging...` spinner
-and the reviewer-provider builder; the group binds the same two through its
-`ChildRuntime`.
+It supplies the two pieces the headless core cannot: the `judging...` spinner and the
+spawner that starts each judge as a reviewer child of the command.
 """
 
 from __future__ import annotations
@@ -13,15 +12,15 @@ import contextlib
 import pathlib
 import sys
 import threading
+import uuid
 from collections.abc import Generator
 
-from agent6 import budget as agent6_budget
-from agent6.app import compare, role_providers
-from agent6.config import Config
-from agent6.harness import judge
-from agent6.providers import Provider, TranscriptSink
-from agent6.sessions import event_log
+from agent6 import child_records, paths
+from agent6.app import children as app_children
+from agent6.app import compare
+from agent6.config import layer_data
 from agent6.ui.cli import console_render, terminal_guard
+from agent6.ui.cli import parallel as cli_parallel
 from agent6.viewmodel import format
 
 __all__ = ["rank"]
@@ -64,35 +63,34 @@ def _judging_status() -> Generator[None]:
         sys.stdout.flush()
 
 
-def _reviewer_provider(
-    cfg: Config,
-    sink: TranscriptSink,
-    budget: agent6_budget.BudgetTracker,
-    events: event_log.EventSink | None,
-) -> Provider:
-    """Return the configured `reviewer` provider for the judge call."""
-    return role_providers.build_role_provider(
-        cfg, "reviewer", transcript_sink=sink, budget=budget, events=events
-    )
-
-
 def rank(
-    cfg: Config, candidates: list[judge.CandidateBrief], *, transcript_dir: pathlib.Path
+    effective: layer_data.EffectiveConfig,
+    candidates: list[child_records.CandidateBrief],
+    *,
+    cwd: pathlib.Path,
 ) -> compare.RankOutcome:
     """Rank the candidates best first through the core, with the CLI's two pieces bound.
 
+    The judges are reviewer children of no run: they are filed under an id the command
+    mints, `compare-<hex>`, in the repository's reviewers bucket, and a judge that needs an
+    approval gets none.
+
     Args:
-        cfg: The run's config.
-        candidates: The children's briefs.
-        transcript_dir: Where the judge's transcript goes.
+        effective: The command's config, with the leaves its layers set.
+        candidates: The runs' briefs.
+        cwd: The repository.
 
     Returns:
         The core's outcome.
     """
-    return compare.rank(
+    cfg = effective.config
+    spawner = app_children.build_child_spawner(
         cfg,
-        candidates,
-        transcript_dir=transcript_dir,
-        build_provider=_reviewer_provider,
-        judging_status=_judging_status,
+        cwd,
+        paths.state_dir(cwd),
+        explicit_leaves=effective.explicit_leaves,
+        parent_session_id=f"compare-{uuid.uuid4().hex[:8]}",
+        runtime=cli_parallel.child_runtime(),
+        child_away="deny",
     )
+    return compare.rank(cfg, candidates, spawner=spawner, judging_status=_judging_status)

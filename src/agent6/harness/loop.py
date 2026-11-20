@@ -53,6 +53,7 @@ from agent6.harness import (
     operator_bridge,
     operator_tasks,
     parallel_dispatch,
+    parallel_rank,
     prompt_blocks,
     provider_call,
     quiet_turns,
@@ -1959,7 +1960,14 @@ class Harness:
                 self.resume_state_path.parent if self.resume_state_path is not None else None
             ),
             child_recoverer=self.bridge.child_recoverer,
-            ranker=self.bridge.child_ranker,
+            judges=parallel_rank.configured_judges(self.config, log=self.log),
+            reviewer_turns=self.review.max_turns,
+            # A judge inherits the state of the world its parent has now, tools included.
+            reviewer_tools=lambda: tuple(
+                d.name for d in toolset.tool_definitions(self.dispatcher, mode=self.mode)
+            ),
+            harness_gate=self.config.harness.verify.when != "never",
+            rank_recorder=self.bridge.rank_recorder,
             stop_pending=lambda: self.bridge.stop_requested() or self.bridge.should_abort(),
         )
 

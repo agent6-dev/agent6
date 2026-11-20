@@ -231,11 +231,12 @@ class ParallelConfig(pydantic.BaseModel):
     judges: validation.StrTuple = pydantic.Field(
         default=("reviewer",),
         description=(
-            "who ranks the candidates of a `run --parallel` group and of `sessions compare`: "
-            "selectors as `--parallel` takes them, a role name or `[provider/]model`; each "
-            "judges once and the lowest sum of ranks wins, a tie going to the mechanical order "
-            "(a passed gate first, then the lower cost); a role with no model route judges "
-            "nothing; `[]`: the mechanical order alone"
+            "who ranks the attempts at one task and the candidates of `sessions compare`: "
+            "selectors as `--parallel` takes them, a role name or `[provider/]model`; each is "
+            "a reviewer child that reads and runs the attempts under `review.max_turns` and "
+            "answers with an order; the lowest sum of ranks wins, a tie going to the "
+            "mechanical order (a passed gate first, then the lower cost); a role with no "
+            "model route judges nothing; `[]`, or no usable order: the mechanical order alone"
         ),
     )
 

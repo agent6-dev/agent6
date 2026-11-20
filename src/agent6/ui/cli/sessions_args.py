@@ -170,9 +170,9 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "--rejudge",
         action="store_true",
         help=(
-            "Rank again instead of printing a group's saved result. With a reviewer"
-            " model, this spends a new call. The result can differ from listings and is not"
-            " saved."
+            "Rank again instead of printing a group's saved result. With a judge"
+            " configured, each runs again as a reviewer session. The result can differ from"
+            " listings and is not saved."
         ),
     )
     sessions_compare_ids = sessions_compare.add_argument(

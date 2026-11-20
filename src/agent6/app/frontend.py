@@ -16,7 +16,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from agent6 import budget, kinds, portable
-from agent6.app import children, compare
+from agent6.app import children
 from agent6.config import Config
 from agent6.harness import loop, loop_snapshot
 from agent6.sessions import event_log, ipc, layout
@@ -157,9 +157,6 @@ class SessionFrontend:
         build_parent_spawner: Builds the `/parallel` dispatch spawner, or None; its last
             argument is this session's side of a child's wait: it answers the child's prompts
             and counts its spend.
-        build_judge_provider: Builds the reviewer provider a rank join's judge sits in; None
-            where no dispatch joins by rank.
-        judging_status: Shown around a rank join's judge calls.
         agent6_exe: The agent6 executable to spawn.
         spawn_detached_resume: (cwd, session_id, flags) -> spawns the detached execution under
             this invocation's overrides as CLI options (see `session_setup.override_flags`).
@@ -203,7 +200,5 @@ class SessionFrontend:
         ],
         children.GroupSpawner | None,
     ]
-    build_judge_provider: compare.BuildProvider | None
-    judging_status: compare.JudgingStatus
     agent6_exe: Callable[[], str]
     spawn_detached_resume: Callable[[pathlib.Path, str, Sequence[str]], str]

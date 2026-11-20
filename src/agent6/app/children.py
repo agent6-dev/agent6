@@ -23,7 +23,6 @@ from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
 from agent6.harness import child_repo
-from agent6.harness import judge as harness_judge
 from agent6.models import validate
 from agent6.sessions import child_dispatch, event_log, ipc, journal, lineage
 from agent6.sessions import layout as sessions_layout
@@ -81,13 +80,9 @@ class ChildRuntime:
 
     Attributes:
         spawn: Launches a detached agent6 run and locates its session dir.
-        build_provider: Builds the reviewer provider the auto-compare's judge uses.
-        judging_status: Reports the judge's progress.
     """
 
     spawn: SpawnRun
-    build_provider: app_compare.BuildProvider
-    judging_status: app_compare.JudgingStatus
 
 
 def child_settings(
@@ -527,6 +522,7 @@ def recorded_result(
         imported_tip=imported.tip,
         has_commits=child_has_commits(dest, imported),
         commits=child_commits(origin, dest, imported),
+        verification=summary.verification,
         usage=usage,
         report=fold_session(
             tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
@@ -741,73 +737,47 @@ def child_commits(
     return len(git_read.list_run_commits(origin, base, imported.tip)) if base else 0
 
 
-def build_child_ranker(
-    cfg: Config,
+def build_rank_recorder(
     origin: pathlib.Path,
     record_state: pathlib.Path,
     *,
     parent_dir: pathlib.Path,
-    base_sha: str,
-    build_provider: app_compare.BuildProvider,
-    judging_status: app_compare.JudgingStatus,
-    budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> child_records.ChildRanker:
-    """Build the ranker a rank join asks: `[harness.parallel].judges` over the imported children.
+) -> child_records.RankRecorder:
+    """Build what records a ranking the dispatcher made of a task's attempts.
 
-    The judges bill the parent's own budget. Each ranking is stamped on the parent
-    and the children, journaled, and printed as the ranked table.
+    Each ranking is stamped on the parent and the children, journaled, and printed as the
+    ranked table. The judges ran as the parent's reviewer children, so their spend is on its
+    budget already.
 
     Args:
-        cfg: The parent's config.
         origin: The repository.
         record_state: The state dir the run's and its children's records live under.
-        parent_dir: The parent's session dir, which holds the judges' transcripts.
-        base_sha: The commit the children were cut from when the dispatch names none.
-        build_provider: Builds the reviewer provider a judge sits in.
-        judging_status: Shown around the judge calls.
-        budget: The parent's tracker.
+        parent_dir: The parent's session dir.
         events: The parent's journal.
-        reporter: Receives the ranked table and a failed judge's line.
+        reporter: Receives the ranked table and why the mechanical order ranked.
 
     Returns:
-        The ranker.
+        The recorder.
     """
 
-    def rank(
-        results: Sequence[child_records.ChildResult], *, group: str, base: str
-    ) -> child_records.Ranking:
+    def record(
+        candidates: Sequence[child_records.CandidateBrief],
+        results: Sequence[child_records.ChildResult],
+        ranking: child_records.Ranking,
+        *,
+        group: str,
+    ) -> None:
+        briefs = list(candidates)
         rows = {res.spec.session_id: summarize_session_dir(res.session_dir) for res in results}
-        candidates = [
-            harness_judge.CandidateBrief(
-                session_id=res.spec.session_id,
-                task=app_compare.manifest_task(res.session_dir, ""),
-                diff=git_read.diff_range(origin, base or base_sha, res.imported_tip)
-                if res.imported_tip
-                else "",
-                verification=rows[res.spec.session_id].verification,
-                cost_usd=rows[res.spec.session_id].cost_usd,
-            )
-            for res in results
-        ]
-        outcome = app_compare.rank(
-            cfg,
-            candidates,
-            transcript_dir=parent_dir / "judges",
-            build_provider=build_provider,
-            judging_status=judging_status,
-            budget=budget,
-            events=events,
-            reporter=reporter,
-        )
-        winner = parallel_results.ranked_winner(
-            candidates, outcome.ranking, harness_gate=cfg.harness.verify.when != "never"
-        )
+        outcome = app_compare.outcome_of(ranking)
+        if ranking.fallback and len(briefs) > 1:
+            reporter.note(f"ranked by verify result, then cost: {ranking.fallback}")
         parallel_results.stamp_compare_outcomes(
-            candidates,
+            briefs,
             outcome,
-            winner=winner,
+            winner=ranking.winner,
             record_state=record_state,
             parent_dir=parent_dir,
             group=group,
@@ -839,7 +809,7 @@ def build_child_ranker(
                 if manifest.git_control == "model":
                     model_refs[res.spec.session_id] = wire.commits_ref(manifest, origin)
         app_compare.print_ranked_candidates(
-            candidates,
+            briefs,
             outcome,
             rows=rows,
             committed={res.spec.session_id: res.has_commits for res in results},
@@ -847,14 +817,8 @@ def build_child_ranker(
             joins=parent_dir.name,
             reporter=reporter,
         )
-        return child_records.Ranking(
-            order=outcome.ranking,
-            ranked_by=outcome.ranked_by,
-            rationale=outcome.rationale,
-            winner=winner,
-        )
 
-    return rank
+    return record
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
