@@ -14,7 +14,7 @@ import pytest
 from agent6 import kinds
 from agent6.sandbox import jail_jobs, jail_session
 from agent6.sessions import shells as session_shells
-from agent6.tools import background
+from agent6.tools import background, command_tools, schema
 
 
 class _Job:
@@ -151,6 +151,31 @@ def test_read_background_output_is_scrubbed(
         _view, output = shells.read(view.id, tail_lines=1)
         assert output == "... 1 earlier lines ...\nout"
         assert log.read_bytes() == b"old\n\x1b[32mout\x1b[0m\n\x1b]0;hidden\npayload\x07"
+    finally:
+        shells.stop_all()
+
+
+def test_a_one_line_read_keeps_the_exit_and_not_the_shell_script(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _Job()
+    monkeypatch.setattr(jail_jobs, "start_in_jail", lambda *_a, **_kw: job)
+    shells = background.BackgroundShells(tmp_path / "shells")
+    view = shells.start(
+        ("sh", "-c", "cat <<EOF\nHEREDOC BODY\nEOF"),
+        lambda _a, _rw: cast(kinds.JailPolicy, object()),
+    )
+    try:
+        job.running = False
+        out = command_tools.read_background(
+            schema.ReadBackgroundInput(id=view.id, tail_lines=1),
+            get_background=lambda: shells,
+            wait_s=0,
+            interrupted=lambda: False,
+        ).to_wire()
+        (line,) = out["shells"]
+        assert "exit -9" in line and "sh -c" in line and "cat <<EOF" in line
+        assert len(line.splitlines()) == 1 and "…" in line and "HEREDOC BODY" not in line
     finally:
         shells.stop_all()
 

@@ -62,8 +62,8 @@ class ShellView:
     def line(self) -> str:
         """Return the roster line."""
         code = "" if self.returncode is None else f" (exit {self.returncode})"
-        detail = f" -- {self.detail}" if self.detail else ""
-        return f"[{self.id}] {self.state}{code}: {self.command}{detail}"
+        detail = f" -- {terminal.line_preview(self.detail)}" if self.detail else ""
+        return f"[{self.id}] {self.state}{code}: {terminal.line_preview(self.command)}{detail}"
 
 
 @dataclasses.dataclass(slots=True)

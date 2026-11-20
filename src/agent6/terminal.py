@@ -47,6 +47,13 @@ def scrub_terminal_output(text: str) -> str:
     return _TERMINAL_RE.sub(lambda m: m.group("own") or "", text)
 
 
+def line_preview(text: str, *, limit: int = 120) -> str:
+    """Return the start of the first line, marking omitted text with an ellipsis."""
+    lines = text.splitlines()
+    first = scrub_terminal_controls(lines[0]).expandtabs(1) if lines else ""
+    return first[: limit - 1] + "…" if len(first) > limit or len(lines) > 1 else first
+
+
 def escape_unprintable(text: str) -> str:
     r"""Return text an operator judges with each character that does not print shown escaped.
 
