@@ -175,9 +175,10 @@ async function renderRun(id, opts, gen) {
     });
     markPrompt();
   };
+  // Conversation shows at its tail, where its prompts wait; any other widget from its top.
   for (const [key, label] of entries) {
     const mb = el('button', null, label); mb.dataset.w = key;
-    mb.onclick = () => { setW(key); wmenu.hidePopover(); window.scrollTo(0, 0); };
+    mb.onclick = () => { setW(key); wmenu.hidePopover(); if (key === 'conv') cc.conv.toTail(); else window.scrollTo(0, 0); };
     wmenu.appendChild(mb);
   }
   new MutationObserver(markPrompt).observe(cc.conv.prompts, { childList: true });
@@ -208,8 +209,8 @@ async function renderRun(id, opts, gen) {
   }), cc.card);
   paintRun(cards, snap);
   cc.conv.refresh().then(() => {
-    // A phone opens at the conversation's tail, where its prompts wait; a fan-out with none waiting opens on its children.
-    if (matchMedia('(width <= 48.75em)').matches && (cc.conv.prompts.childElementCount || children.parentElement.style.display === 'none')) window.scrollTo(0, document.body.scrollHeight);
+    // The view opens at the conversation's tail, where its prompts wait; a phone's fan-out with none waiting opens on its children.
+    if (cc.conv.prompts.childElementCount || children.parentElement.style.display === 'none') cc.conv.toTail();
   });
 
   // The stream stays open across a finish: a resume from any surface logs into

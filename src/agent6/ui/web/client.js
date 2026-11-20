@@ -1244,6 +1244,8 @@ async function renderHub(focus, gen) {
 const DETAIL_CYCLE = { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' };
 function tailStr(s, n) { return s.length <= n ? s : '…' + s.slice(-n); }
 function firstLine(s, n) { const t = String(s == null ? '' : s).split('\n')[0]; return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+// The phone layout (styles.css): a conversation box flows whole, and the page scrolls it.
+const phoneLayout = matchMedia('(width <= 48.75em)');
 // `box` scrolls and `body` holds the items; `empty` = { live, done } rewords the no-items note.
 function makeConv(url, box, body, empty = {}) {
   const conv = {
@@ -1257,22 +1259,36 @@ function makeConv(url, box, body, empty = {}) {
   liveHost.style.display = 'none';
   conv.prompts = el('div', 'prompts'); // paintPrompts' boxes, after the last line, so new lines land above them
   body.append(itemsHost, liveHost, conv.prompts);
-  // While the reader stays at the tail (.tail), a resize of the box or of what it holds scrolls back to it.
-  box.classList.add('tail');
-  let top = 0; // the offset the box was last read at
+  // While the reader stays at the tail (.tail), a resize of the box or of what it holds scrolls its scroller back to it.
+  const scroller = () => phoneLayout.matches ? document.scrollingElement : box;
+  // A box opens at its tail; a phone's page opens where its view puts it (conv.toTail), at its top by default.
+  if (!phoneLayout.matches) box.classList.add('tail');
+  let from = scroller(), top = 0; // the scroller last read, and its offset then
   const mark = () => {
-    // Only a scroll up leaves the tail: a scroll event fires a frame late, when more lines may have landed.
-    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 40) box.classList.add('tail');
-    else if (box.scrollTop < top) box.classList.remove('tail');
-    top = box.scrollTop;
-    box.classList.toggle('scrolled', top > 0); // a rule marks the top edge while lines pass under it
+    const s = scroller();
+    // A layout switch changes the scroller: its offset starts fresh, and a box opens at its tail.
+    if (s !== from) { from = s; top = s.scrollTop; if (s === box) conv.toTail(); }
+    // A box that fits shows its tail; a page that fits keeps the tail as it is, so its view picks where it opens.
+    if (s === box || s.scrollHeight > s.clientHeight) {
+      // Only a scroll up leaves the tail: a scroll event fires a frame late, when more lines may have landed.
+      if (s.scrollTop + s.clientHeight >= s.scrollHeight - 40) box.classList.add('tail');
+      else if (s.scrollTop < top) box.classList.remove('tail');
+    }
+    top = s.scrollTop;
+    box.classList.toggle('scrolled', box.scrollTop > 0); // a rule marks the top edge while lines pass under it
   };
   box.addEventListener('scroll', mark);
+  const pageScroll = () => box.isConnected ? mark() : removeEventListener('scroll', pageScroll);
+  addEventListener('scroll', pageScroll);
+  const toEnd = () => { const s = scroller(); s.scrollTop = s.scrollHeight; };
   // A resize marks too: it can clamp the offset, and Firefox fires no scroll event as the box stops scrolling.
-  const follow = new ResizeObserver(() => { if (box.classList.contains('tail')) box.scrollTop = box.scrollHeight; mark(); });
+  // A box a phone hides behind another widget follows nothing.
+  const follow = new ResizeObserver(() => { if (box.classList.contains('tail') && box.checkVisibility()) toEnd(); mark(); });
   follow.observe(box); follow.observe(body);
   // A paint can clamp the offset as it drops lines, before it adds more: that drop is no scroll up.
-  new MutationObserver(() => { top = Math.min(top, box.scrollTop); }).observe(body, { childList: true, subtree: true });
+  new MutationObserver(() => { top = Math.min(top, scroller().scrollTop); }).observe(body, { childList: true, subtree: true });
+  // Show the conversation's tail and follow it.
+  conv.toTail = () => { box.classList.add('tail'); toEnd(); };
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
   const emptyNote = () => conv.finished

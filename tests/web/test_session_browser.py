@@ -478,6 +478,104 @@ def test_a_phone_opens_a_run_at_its_tail_where_a_prompt_waits(
     assert not errors
 
 
+# The page's offset two frames on, after a follow; whether it stands at its end.
+FRAMES = (
+    "new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(scrollY))))"
+)
+AT_END = "scrollY > 0 && scrollY + innerHeight >= document.scrollingElement.scrollHeight - 1"
+# Whether a wider screen's conversation box stands at its end.
+BOX_AT_END = """(b => b.scrollTop > 0 && b.scrollTop + b.clientHeight >= b.scrollHeight - 1)(
+  document.querySelector('.card-conv .conv-box'))"""
+
+
+def test_a_phone_follows_its_page_end_while_the_reader_stays_there(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """On a phone at the page's end, a prompt or a line that landed fell below the fold.
+
+    The page follows its end while the reader stays there, as a wider screen's conversation box
+    follows its tail; a reader scrolled up keeps their place.
+    """
+    from playwright.sync_api import expect
+
+    session = session_logs.write_run(tmp_path, "follow-AAA111", _reads(40), live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/follow-AAA111")
+    expect(page.locator(".card-conv .ci").filter(has_text="f39.py")).to_be_attached()
+    page.wait_for_function(AT_END)
+    _append(session, [{"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}])
+    prompt = page.locator(".card-conv .prompt-box")
+    expect(prompt).to_be_visible()
+    _append(session, _reads(6, 40))
+    expect(page.locator(".card-conv .ci").filter(has_text="f45.py")).to_be_attached()
+    page.wait_for_function(AT_END, timeout=5000)
+    box, dock = prompt.bounding_box(), page.locator(".composer.dock").bounding_box()
+    assert box is not None and dock is not None
+    assert box["y"] >= 0 and box["y"] + box["height"] <= dock["y"]
+    page.evaluate("scrollTo(0, 300)")
+    assert page.evaluate(FRAMES) == 300
+    _append(session, _reads(1, 46))
+    expect(page.locator(".card-conv .ci").filter(has_text="f46.py")).to_be_attached()
+    assert page.evaluate(FRAMES) == 300
+    assert not errors
+
+
+def test_a_phones_conversation_widget_shows_its_tail(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Picking Conversation from a phone's widget menu showed its top, far above its prompt.
+
+    It shows the conversation's tail, where its prompts wait; any other widget shows its top.
+    """
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    session_logs.write_run(tmp_path, "tail-AAA111", [*_reads(40), ask], live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/tail-AAA111")
+    prompt = page.locator(".card-conv .prompt-box")
+    expect(prompt).to_be_in_viewport(ratio=1)
+    menu = page.locator(".wmenu")
+    page.get_by_role("button", name="Widgets", exact=True).click()
+    menu.get_by_role("button", name="Budget", exact=True).click()
+    expect(page.locator(".card-budget")).to_be_visible()
+    assert page.evaluate(FRAMES) == 0
+    page.locator(".wmenu-btn").click()
+    menu.get_by_role("button", name="Conversation", exact=True).click()
+    expect(prompt).to_be_in_viewport(ratio=1)
+    box, dock = prompt.bounding_box(), page.locator(".composer.dock").bounding_box()
+    assert box is not None and dock is not None
+    assert box["y"] + box["height"] <= dock["y"]
+    assert not errors
+
+
+def test_a_layout_switch_keeps_the_conversation_at_its_tail(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A layout switch read the new scroller's offset against the old one's, which left the tail.
+
+    A phone turned sideways showed its conversation box at its top, the waiting prompt out of view;
+    turned upright again, its page stopped following its end.
+    """
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    session = session_logs.write_run(tmp_path, "turn-AAA111", [*_reads(40), ask], live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/turn-AAA111")
+    expect(page.locator(".card-conv .prompt-box")).to_be_in_viewport(ratio=1)
+    page.set_viewport_size({"width": 844, "height": 390})
+    page.wait_for_function(BOX_AT_END, timeout=5000)
+    page.set_viewport_size({"width": 390, "height": 844})
+    _append(session, _reads(6, 40))
+    expect(page.locator(".card-conv .ci").filter(has_text="f45.py")).to_be_attached()
+    page.wait_for_function(AT_END, timeout=5000)
+    assert not errors
+
+
 def test_the_run_card_lines_up_the_judge_settings_and_last_call_with_its_rows(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

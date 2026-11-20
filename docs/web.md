@@ -68,7 +68,9 @@ The rail's last button folds it to its icons, then hides it; the menu button at 
 Buttons do what the matching CLI command does, and prompts are answered inline on every page that shows a run.
 A run's approvals and questions wait after its conversation's last line, over the composer, and scroll with the conversation.
 On a phone, a run's or a machine's page opens at the conversation's end while a prompt waits there.
+While you stay at the page's end, it scrolls on as new lines and prompts land.
 A run's page on a phone shows one card at a time, picked from the menu at the top bar's right end.
+The Conversation card opens at its end, every other card at its top.
 While a prompt waits and another card shows, a dot marks the menu button and its Conversation entry.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 A failure, a warning and Prune's undelete commands stay on screen until dismissed, the newest by Esc; any other message fades 4 seconds after it shows or after the pointer leaves it.

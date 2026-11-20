@@ -106,10 +106,10 @@ async function renderMachine(name, gen) {
     let data; try { data = JSON.parse(raw); } catch (_) { return; }
     if (data.type === 'error') { closeLive(); toast('stream error: ' + data.error, true); return; }
     paintMachine(structBody, pathBody, cards, ctx, data);
-    // A phone opens at the conversation's end while the first frame's prompt waits there, else on States.
+    // The view opens at the conversation's end while the first frame's prompt waits there; else a phone opens on States.
     if (!opened) {
       opened = true;
-      fetched.then(() => { if (matchMedia('(width <= 48.75em)').matches && cc.conv.prompts.childElementCount) window.scrollTo(0, document.body.scrollHeight); });
+      fetched.then(() => { if (cc.conv.prompts.childElementCount) cc.conv.toTail(); });
     }
     hbState.spin++;
     // A stopped machine is resumable and its stream stays open; a journaled end closes it.

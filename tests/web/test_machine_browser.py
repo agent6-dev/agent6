@@ -338,6 +338,35 @@ def test_a_poll_that_answers_a_prompt_and_streams_on_leaves_the_conversation_at_
     assert not errors
 
 
+def test_the_next_agent_state_is_followed_after_a_scroll_up_in_the_last(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A box the reader had scrolled up kept its place while the next state's first lines fit it.
+
+    That state's lines then streamed past the box's end, and the box stayed at its top.
+    """
+    from playwright.sync_api import expect
+
+    machine = _machine(tmp_path, "looping", LOOP, [], _talk(40), alive=True)
+    page, errors = _open(open_page, port, "looping")
+    expect(page.locator(".conv .ci").last).to_contain_text("Step 39")
+    box = page.locator(".conv-box")
+    expect(box).to_have_class("conv-box tail scrolled")
+    box.evaluate("b => { b.scrollTop = 0; }")
+    expect(box).to_have_class("conv-box")
+    log = machine / "states" / "0002-work" / "logs.jsonl"
+    log.parent.mkdir(parents=True)
+    talk = _talk(42)
+    log.write_text("".join(json.dumps(e) + "\n" for e in talk[:3]))
+    expect(page.locator(".conv .ci")).to_have_count(3)
+    with log.open("a", encoding="utf-8") as more:
+        more.write("".join(json.dumps(e) + "\n" for e in talk[3:]))
+    expect(page.locator(".conv .ci").last).to_contain_text("Step 41")
+    at_end = "b => b.scrollTop > 0 && b.scrollTop + b.clientHeight >= b.scrollHeight - 1"
+    page.wait_for_function(f"({at_end})(document.querySelector('.conv-box'))", timeout=5000)
+    assert not errors
+
+
 def test_long_states_and_transitions_wrap_under_their_text(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
