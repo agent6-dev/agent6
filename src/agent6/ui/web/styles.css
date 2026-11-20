@@ -194,13 +194,15 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 /* A fold: a muted disclosure (a group's children, the new-work composer's advanced options)
    whose chevron turns down while it is open. */
 button.fold {
-  display: inline-flex; align-items: center; gap: 0.375rem; min-height: var(--ctl-h-sm); min-width: 0;
-  padding: 0 0.25rem 0 0; border: 0; background: none; font-size: var(--fs-s); color: var(--muted);
+  display: inline-flex; align-items: flex-start; gap: 0.375rem; min-height: var(--ctl-h-sm); min-width: 0;
+  padding: 0 0.25rem 0 0; padding-block: calc((var(--ctl-h-sm) - 1lh) / 2);
+  border: 0; background: none; font-size: var(--fs-s); color: var(--muted);
 }
 button.fold:hover { background: none; color: var(--text); }
+/* The text starts at the top, so the chevron keeps to the middle of a wrapped line's first line. */
 button.fold::before {
-  content: ""; width: 0.3125rem; height: 0.3125rem; margin: 0 0.1875rem; border: solid currentColor;
-  border-width: 0 1.5px 1.5px 0; rotate: -45deg; transition: rotate .15s;
+  content: ""; flex: none; width: 0.3125rem; height: 0.3125rem; margin: calc((1lh - 0.3125rem) / 2) 0.1875rem 0;
+  border: solid currentColor; border-width: 0 1.5px 1.5px 0; rotate: -45deg; transition: rotate .15s;
 }
 button.fold[aria-expanded=true]::before { rotate: 45deg; }
 

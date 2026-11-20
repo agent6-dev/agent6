@@ -541,6 +541,48 @@ def test_a_phones_pickers_fold_behind_one_line_that_names_their_picks(
     assert not errors
 
 
+def test_a_folds_chevron_keeps_to_its_first_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A phone's summary line that wrapped shrank its chevron and centred it between the lines."""
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "plan-AAAAAA", "Plan it", STOP, mode="plan")
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    summary = page.locator(".dock .picker-summary")
+    cdp = page.context.new_cdp_session(page)
+
+    def offset() -> float:
+        """How far the chevron's middle sits below the middle of the summary's first line."""
+        root = cdp.send("DOM.getDocument")["root"]["nodeId"]
+        node = cdp.send("DOM.querySelector", {"nodeId": root, "selector": ".dock .picker-summary"})
+        before = cdp.send("DOM.describeNode", node)["node"]["pseudoElements"][0]
+        quad = cdp.send("DOM.getBoxModel", {"backendNodeId": before["backendNodeId"]})
+        ys = quad["model"]["border"][1::2]
+        first = summary.locator("span").evaluate(
+            "e => { const r = document.createRange(); r.selectNodeContents(e);"
+            " const q = r.getClientRects()[0]; return (q.top + q.bottom) / 2; }"
+        )
+        return (min(ys) + max(ys)) / 2 - first
+
+    expect(summary).to_have_text("run · preset: none · no model")
+    assert abs(offset()) <= 2
+    summary.click()
+    page.locator(".dock input[type=checkbox]").check()
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    page.locator(".dock select[title^='seed the run']").select_option("plan-AAAAAA")
+    summary.click()
+    lines = summary.locator("span").evaluate(
+        "e => { const r = document.createRange(); r.selectNodeContents(e);"
+        " return new Set([...r.getClientRects()].map(q => Math.round(q.top))).size; }"
+    )
+    assert lines == 2
+    assert abs(offset()) <= 2
+    assert not errors
+
+
 def test_a_phones_summary_line_says_when_no_model_resolves(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
