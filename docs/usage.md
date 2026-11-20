@@ -299,6 +299,7 @@ Results keep roster order even when reviewers finish in another order.
 A reviewer opens on the task, the rules, the verification and the diff, and investigates a clone of the retained snapshot with the tools its run has: the reading tools, and `run_command` with its background commands, `run_verify_command`, `fetch`, `read_session` and `use_skill` where the run's model is offered them.
 A reviewer edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a reviewer as it does from the run.
 A reviewer takes at most `review.max_turns` turns.
+Each turn tells it which reply it is (`reply 14 of 20`), and the last that it is the last: a tool call in that reply is not run, so the verdict is due then at the latest.
 Each reviewer has a session of its own, named on the receipt and the findings card; no listing counts it among the run's children.
 A reviewer still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
 Failed or unparseable reviewers remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.

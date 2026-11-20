@@ -71,6 +71,7 @@ from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
 from agent6.harness.verify import gate as verify_gate
 from agent6.harness.verify import verdict as verify_verdict
+from agent6.prompts import review as review_prompts
 from agent6.providers import (
     Provider,
     ProviderAborted,
@@ -140,8 +141,8 @@ class Harness:
             and writes `plan_markdown` to `plan_output_path` on finish_planning.
         plan_output_path: Where a plan is written; required when `mode="plan"`.
         contract: The bounded conversation a `reviewer` session drives in place of a
-            worker's: its own system prompt and opening, a call ceiling, no gates, no
-            advisors, no compaction; None for the worker's execution.
+            worker's: its own system prompt and opening, a call ceiling told on every turn,
+            no gates, no advisors; None for the worker's execution.
         opening: The dispatch a fresh run makes in place of its first model call, joined by
             rank: `run --parallel`'s spec and task. The run ends when it lands. None for a
             run that opens with the model.
@@ -699,6 +700,9 @@ class Harness:
             if parked is not None:
                 return parked
             self._turn_before_call(conversation, state, ctx)
+        else:
+            # A reviewer reads which reply this is, and on the last that it decides now.
+            conversation.notice(review_prompts.reply_notice(ctx.turn, self.contract.max_turns))
         for call_id, reason in conversation.limit_attachments():
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
         conversation.roll_cache_marks()

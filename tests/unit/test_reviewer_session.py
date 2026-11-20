@@ -252,10 +252,10 @@ def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path) -> No
     (repo / "big.txt").write_text("line of filler text\n" * 400, encoding="utf-8")
     read = {"id": "t1", "name": "read_file", "input": {"path": "big.txt"}}
     provider = mock.MagicMock()
+    # A restart needs more than three messages: the opening, the reply count, a call, its result.
     provider.call.side_effect = [
         _resp("", (read,)),
-        _resp("", ({**read, "id": "t2"},)),
-        _resp("SUMMARY: read big.txt twice"),
+        _resp("SUMMARY: read big.txt"),
         _resp('{"verdict": "pass"}'),
     ]
     opening = "REVIEW OPENING: the task, the rules and the diff"
@@ -269,12 +269,14 @@ def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path) -> No
     result = wf.run("review")
     assert result.reason == "answered" and result.summary == '{"verdict": "pass"}'
     summarise, final = (
+        provider.call.call_args_list[1].kwargs,
         provider.call.call_args_list[2].kwargs,
-        provider.call.call_args_list[3].kwargs,
     )
     assert summarise["tools"] == [] and "TRANSCRIPT" in json.dumps(summarise["messages"])
     sent = json.dumps(final["messages"])
-    assert "SUMMARY: read big.txt twice" in sent and sent.count(opening) == 1
+    assert "SUMMARY: read big.txt" in sent and sent.count(opening) == 1
+    # The count is said after the restart too: it is told each turn, not kept in the history.
+    assert sent.count("[harness] reply ") == 1 and "[harness] reply 2 of 6." in sent
 
 
 def test_a_retried_call_does_not_use_a_turn(tmp_path: pathlib.Path) -> None:
@@ -441,3 +443,40 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
     assert summary.mode == "reviewer" and summary.stop_reason == "answered"
     with pytest.raises(sessions_manifest.ManifestError, match="not resumable"):
         sessions_manifest.read_manifest(session_dir).session_mode()
+
+
+def test_a_reviewer_reads_its_reply_count_on_every_turn_and_that_the_last_is_the_last(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Each call tells the reviewer which reply this is; the last says a tool call is not run.
+
+    A reviewer learned its limit once, in its system prompt, and could spend its last reply
+    on a tool call that never ran.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    read = {"id": "t1", "name": "read_file", "input": {"path": "README.md"}}
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _resp("", (read,)),
+        _resp("", ({**read, "id": "t2"},)),
+        _resp('{"verdict": "pass", "summary": "fine", "findings": []}'),
+    ]
+    contract = kinds.ConversationContract(
+        system="Review.", opening="DIFF:\n...", max_turns=3, allowed_tools=("read_file",)
+    )
+    wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract)
+
+    result = wf.run("review")
+
+    assert (result.reason, provider.call.call_count) == ("answered", 3)
+    sent = [json.dumps(call.kwargs["messages"]) for call in provider.call.call_args_list]
+    assert [text.count("[harness] reply ") for text in sent] == [1, 2, 3]
+    assert "[harness] reply 1 of 3." in sent[0]
+    assert "[harness] reply 2 of 3." in sent[1]
+    assert (
+        "[harness] reply 3 of 3, the last: reply with your verdict now. A tool call in this"
+        " reply is not run." in sent[2]
+    )
+    # The tool list stays on the wire: a request whose history holds tool calls keeps it.
+    assert [t.name for t in provider.call.call_args_list[2].kwargs["tools"]] == ["read_file"]

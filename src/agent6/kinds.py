@@ -276,8 +276,9 @@ class ConversationContract:
     Attributes:
         system: The system prompt, in place of the worker's assembled one.
         opening: The first user message, in place of the task block.
-        max_turns: The turns allowed; a last turn that still asks for tools ends the
-            conversation `max_turns` with its text kept and those tools not run.
+        max_turns: The turns allowed, each told which it is; a last turn that still asks
+            for tools ends the conversation `max_turns` with its text kept and those tools
+            not run.
         temperature: The sampling temperature; None keeps the worker's.
         review_binding: Parent-owned review provenance, or None for other conversations.
         allowed_tools: The tools the parent hands down: the ones its own model is offered

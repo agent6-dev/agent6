@@ -719,7 +719,8 @@ def test_reviewer_preserves_image_result() -> None:
         max_turns=2,
     )
     assert verdict.error is None
-    reply = provider.call.call_args_list[1].kwargs["messages"][2]["content"][0]
+    # The opening, the reply count, the call, then its result.
+    reply = provider.call.call_args_list[1].kwargs["messages"][3]["content"][0]
     assert reply["tool_use_id"] == "t1"
     assert reply["content"][1]["source"]["data"] == "eHh4" * 30000
 
@@ -755,7 +756,8 @@ def test_reviewer_uses_shared_media_recovery_without_rerunning_tools() -> None:
     )
     assert verdict.error is None
     assert provider.call.call_count == 3 and dispatch.call_count == 1
-    text = provider.call.call_args.kwargs["messages"][-1]["content"][0]["content"]
+    # The last message is the reply count; the result is the one before it.
+    text = provider.call.call_args.kwargs["messages"][-2]["content"][0]["content"]
     assert text == (
         "Cannot deliver image 'page.png' to p/m: image input is unsupported. "
         "Describe the page through its DOM or accessibility tree, or read the test output."
@@ -803,7 +805,7 @@ def test_panel_media_refusals_follow_the_reviewer_not_the_shared_dispatch() -> N
         dispatch=dispatch,
     )
     replies = [
-        p.call.call_args.kwargs["messages"][-1]["content"][0]["content"] for p in role_providers
+        p.call.call_args.kwargs["messages"][-2]["content"][0]["content"] for p in role_providers
     ]
     assert replies[0].startswith("Cannot deliver image 'page.png' to p/text:")
     assert replies[1][1]["type"] == "image"

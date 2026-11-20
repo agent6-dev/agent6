@@ -115,9 +115,27 @@ A command proves or clears a finding; it does not change what the diff is."""
 
 REPLY_LIMIT_PROMPT = """
 
-Investigate first. You have at most {max_turns} replies, replies that call tools included;
-when done, and by the last reply at the latest, reply with ONLY the JSON verdict and no
-tool calls."""
+Investigate first. You have at most {max_turns} replies, replies that call tools included,
+and each turn says which reply it is; when done, and
+by the last reply at the latest, reply with ONLY the JSON verdict and no tool calls."""
+
+
+def reply_notice(reply: int, max_turns: int) -> str:
+    """Return the notice that tells a reviewer which of its replies comes next.
+
+    Args:
+        reply: The reply about to be made, counted from 1.
+        max_turns: The reviewer's reply cap.
+
+    Returns:
+        The count; on the last reply, that it is the last and that its tool calls are not run.
+    """
+    if reply < max_turns:
+        return f"[harness] reply {reply} of {max_turns}."
+    return (
+        f"[harness] reply {reply} of {max_turns}, the last: reply with your verdict now."
+        " A tool call in this reply is not run."
+    )
 
 
 def panel_prompt(focus: str, *, max_turns: int, commands: bool) -> str:

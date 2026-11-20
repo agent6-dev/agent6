@@ -709,8 +709,9 @@ class ReviewConfig(pydantic.BaseModel):
         ge=1,
         default=20,
         description=(
-            "turns a reviewer may take, turns that ask for tools included; no verdict "
-            "within the limit: abstention, reported by the panel"
+            "turns a reviewer may take, turns that ask for tools included; each turn tells "
+            "the reviewer which reply it is, and a tool call in the last is not run; no "
+            "verdict within the limit: abstention, reported by the panel"
         ),
     )
 
