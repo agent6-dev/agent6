@@ -104,7 +104,7 @@ def test_the_action_bar_stands_under_the_top_bar_while_a_prompt_waits(
     tmp_path: pathlib.Path,
     width: int,
 ) -> None:
-    """The action bar stands 10px under the top bar, in the page's gutter, over a waiting prompt.
+    """The action bar stands 14px under the top bar, in the page's gutter, over a waiting prompt.
 
     The prompt boxes stood over the bar and pushed it down. The bar was a scroll container, which
     cut its buttons' focus rings, and on a phone it sat 6px right of the cards.
@@ -125,7 +125,7 @@ def test_the_action_bar_stands_under_the_top_bar_while_a_prompt_waits(
     assert header is not None and bar is not None and first is not None and entry is not None
     gap = bar["y"] - (header["y"] + header["height"])
     overflow = actions.evaluate("e => getComputedStyle(e).overflow")
-    assert (gap, overflow, first["x"]) == (10, "visible", entry["x"])
+    assert (gap, overflow, first["x"]) == (14, "visible", entry["x"])
     assert not errors
 
 

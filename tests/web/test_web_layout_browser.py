@@ -782,3 +782,48 @@ def test_run_drawer_keeps_drag_resize_reload_and_reset(
     expect(drawer).to_be_visible()
     assert _width(drawer) == pytest.approx(before, abs=1)
     assert not errors
+
+
+@pytest.mark.parametrize(
+    ("route", "first", "pane"),
+    [
+        ("#/", ".toolbar", ""),
+        ("#/config", ".cfg-bar", ""),
+        ("#/git", ".git-bar", ".git-body"),
+        ("#/files", ".files-bar", ".files-body"),
+        ("#/session/top-AAAAAA", ".run-app > .actions", ".run-body"),
+    ],
+)
+def test_every_pages_first_row_stands_one_gap_under_the_top_bar(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    git_port: int,
+    tmp_path: pathlib.Path,
+    route: str,
+    first: str,
+    pane: str,
+) -> None:
+    """The first row under the top bar started 10, 12 or 14px down, by page.
+
+    Git's and Files' bars stood 10 and 12px over their panes.
+    """
+    from playwright.sync_api import expect
+
+    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "top-AAAAAA"
+    run.mkdir(parents=True)
+    start = {"type": "session.start", "mode": "run", "user_task": "Top"}
+    (run / "logs.jsonl").write_text(json.dumps(start) + "\n", encoding="utf-8")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/{route}")
+    expect(page.locator(first)).to_be_visible()
+    gaps = page.evaluate(
+        """([first, pane]) => {
+          const top = document.querySelector(first).getBoundingClientRect();
+          const header = document.querySelector('header').getBoundingClientRect();
+          const under = pane && document.querySelector(pane).getBoundingClientRect();
+          return [top.top - header.bottom, under ? under.top - top.bottom : 14];
+        }""",
+        [first, pane],
+    )
+    assert gaps == [14, 14]
+    assert not errors
+

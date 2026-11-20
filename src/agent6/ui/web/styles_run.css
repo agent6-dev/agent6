@@ -96,7 +96,7 @@
 /* Firefox focuses a scroller itself: the drawer, flush with the bars, takes its ring inside. */
 .run-app .drawer:focus-visible { outline-offset: -2px; }
 
-.run-app > .actions { margin-block: 0.625rem; }
+.run-app > .actions { margin-block: var(--page-top); }
 /* Delete stands apart at the bar's far end. */
 .run-app > .actions > .delete-btn { margin-inline-start: auto; }
 /* A run's prompt boxes follow its conversation's last line, 10px under it and 10px apart. */

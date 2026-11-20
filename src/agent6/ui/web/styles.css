@@ -18,6 +18,7 @@
   --r-sm: 4px; --r: 6px; --r-lg: 8px;
   --disabled: .5; /* a disabled control's opacity, its label's with it */
   --nav-h: 3.5rem;
+  --page-top: 0.875rem; /* how far every page's first row stands under the top bar and a bar over its panes; a card's top and bottom padding */
   /* The header's height above any safe-area inset: a 21px line in 10px paddings and the 1px
      border. A phone's header, or one beside a hidden rail, holds a control instead (below). */
   --hdr-h: 2.625rem;
@@ -132,10 +133,10 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 /* Toolbar / prompt rows sit outside the section grid; align them with the
    section padding. */
 .page-pad { margin: 0 1rem; }
-.page-pad.row { margin-top: 0.75rem; }
+.page-pad.row { margin-top: var(--page-top); }
 
 /* --pad: a card's side padding, which a dialog's sticky head reaches across. */
-.card { --pad: 1rem; padding: 0.875rem var(--pad); overflow: hidden; }
+.card { --pad: 1rem; padding: var(--page-top) var(--pad); overflow: hidden; }
 /* A card's or panel's heading, and a group's in the keyboard list, is a label: small muted capitals,
    so it stays apart from the bold line under it (Commit over the commit subject, Findings over its
    counts). */

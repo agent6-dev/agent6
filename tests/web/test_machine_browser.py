@@ -272,7 +272,7 @@ def test_a_machines_prompt_waits_at_its_conversations_end(
     header, stop = page.locator("header").bounding_box(), page.locator(".actions").bounding_box()
     prompt, dock = box.bounding_box(), page.locator(".composer.dock").bounding_box()
     assert header is not None and stop is not None and prompt is not None and dock is not None
-    assert stop["y"] - (header["y"] + header["height"]) == 12
+    assert stop["y"] - (header["y"] + header["height"]) == 14
     assert prompt["y"] + prompt["height"] <= dock["y"]
     assert gap == 10
     assert not errors
