@@ -461,9 +461,13 @@ def _entry(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
     """Return the kind and visible text of one numbered journal entry."""
     if said := _speech(event, mode):
         speaker, body = said
-        if speaker == "parent":
+        kind = "operator" if speaker == "user" else "model"
+        if event.get("type") == "session.start":
+            source = event.get("task_source")
+            kind = source if source in ("operator", "model", "panel") else "task"
+        elif speaker == "parent":
             body = f"parent: {body}"
-        return "operator" if speaker == "user" else "model", body
+        return kind, body
     etype = event.get("type")
     if etype == "metric.start" or (etype == "verify.start" and type(event.get("call_id")) is int):
         name = "run_metric_command" if etype == "metric.start" else "run_verify_command"

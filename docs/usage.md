@@ -106,11 +106,13 @@ Saved sessions retain metadata, not pixels or PDF payloads; resume and fork need
 Attachments can disclose credentials in screenshots or documents.
 See [Media retention](security.md#media-retention) for containment and the upstream boundary.
 
-`read_session` without an id lists the project's sessions; `query` searches their tasks and journals.
+`read_session` without an id lists the project's sessions; `query` searches their visible tasks and entries.
 With an id it returns numbered entries in journal order, such as `#41 12:31 operator: Use the blue label.`
 `query` matches a literal substring regardless of case; `kinds` selects `operator`, `model` or `tool` entries without changing their numbers.
 `start` is the first eligible entry number (default 1); `limit` caps matches and `max_chars` caps their combined text.
 An entry too long to fit on its own ends in `…`; `next_start` gives the first match on the next page, if any.
+A child task names its source when recorded; `task` means the author is unknown.
+The report names any skipped records over 1 MiB.
 After compaction the restart notice names the session id when the model can use `read_session`.
 
 ## Measure a run

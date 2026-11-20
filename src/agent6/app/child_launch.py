@@ -45,6 +45,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
             child's record lives from its first event.
         session_id: The child's session id.
         task: The task text, exactly as the child's manifest records it.
+        task_source: Who supplied the task.
         pins: The parent's pins, out of band of the task.
         max_usd: The parent's forwarded `--max-usd`; None keeps the config's.
         allowance: What the parent had left when the child started, which sets every cap;
@@ -68,6 +69,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     record_state: pathlib.Path
     session_id: str = pydantic.Field(min_length=1)
     task: str = pydantic.Field(min_length=1)
+    task_source: child_records.DispatchSource = "operator"
     pins: tuple[str, ...] = ()
     max_usd: float | None = None
     allowance: budget.BudgetAllowance | None = None

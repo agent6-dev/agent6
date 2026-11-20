@@ -222,7 +222,12 @@ def test_filtered_entries_keep_their_journal_number_and_time(tmp_path: pathlib.P
     read = _reader(
         tmp_path,
         [
-            {"ts": "2026-07-31T12:31:07+00:00", "type": "session.start", "user_task": "Keep [a]."},
+            {
+                "ts": "2026-07-31T12:31:07+00:00",
+                "type": "session.start",
+                "task_source": "operator",
+                "user_task": "Keep [a].",
+            },
             {"type": "model.text_delta", "text": "not a second copy"},
             {"type": "model.result", "role": "summariser", "text": "side call"},
             {"ts": "2026-07-31T12:32:18+00:00", "type": "model.result", "text": "Check [a]."},
@@ -721,3 +726,25 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     text = sessions.conversation(layout, max_chars=10_000)
     assert "use ffmpeg -c:v libx265" in text, "the answer the other session reached is missing"
     assert "how do I convert h264" in text
+
+
+def test_dispatch_task_has_the_author_who_requested_it(tmp_path: pathlib.Path) -> None:
+    """A child task from a model is not an operator instruction."""
+    from agent6 import config, paths
+    from agent6.tools import dispatch
+
+    state = paths.state_dir(tmp_path)
+    child = state / "sessions" / "runs" / "child"
+    child.mkdir(parents=True)
+    rows = [
+        {"type": "session.start", "task_source": source, "user_task": f"{source} task"}
+        for source in ("operator", "model", "panel")
+    ]
+    (child / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    reader = dispatch.ToolDispatcher(root=tmp_path, state_dir=state, config=config.Config())
+    for kind in ("operator", "model"):
+        page = reader.dispatch("read_session", {"id": child.name, "kinds": [kind]}).to_wire()
+        assert f"{kind} task" in page["conversation"]
+        other = "operator" if kind == "model" else "model"
+        assert f"{other} task" not in page["conversation"]
+        assert "panel task" not in page["conversation"]

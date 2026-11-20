@@ -1443,6 +1443,7 @@ class SessionStart(Event):
     """Emitted once when the session is created."""
 
     TYPE: ClassVar[str] = "session.start"
+    task_source: str = pydantic.Field(default="", description="Who supplied the task, when known.")
     session_id: str | None = pydantic.Field(default=None, description="Session identifier.")
     user_task: str = pydantic.Field(description="The displayed task text.")
     mode: str = pydantic.Field(description="The execution mode.")

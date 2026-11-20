@@ -88,6 +88,7 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         )
     task = child_records.ChildTask(
         task=child.task,
+        task_source=record.source,
         model=child.model,
         limits=child_records.ChildLimits(),
         allowance=dispatcher.budget.available() if dispatcher.budget is not None else None,

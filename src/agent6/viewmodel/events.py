@@ -315,6 +315,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
     match raw.get("type", ""):
         case "session.start":
             return journal.SessionStart(
+                task_source=_text(raw, "task_source"),
                 user_task=_text(raw, "user_task"),
                 mode=_text(raw, "mode"),
                 execution_id=_text(raw, "execution_id"),

@@ -264,6 +264,7 @@ def bridge_spawner(
                 record_state=record_state,
                 session_id=spec.session_id,
                 task=task,
+                task_source=spec.task_source,
                 pins=tuple(pins),
                 max_usd=max_usd,
                 auto_approve=auto_approve,
@@ -1112,6 +1113,7 @@ def build_child_spawner(
                 worktree=worktree_root / f"child-{i}",
                 settings=chosen,
                 mode="reviewer" if child.contract is not None else "run",
+                task_source="panel" if child.contract is not None else child.task_source,
             )
             for position, (chosen, child) in enumerate(
                 zip(settings, children, strict=True), start=1

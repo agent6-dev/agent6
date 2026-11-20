@@ -241,7 +241,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     process.emit_session_start(
         events,
         scratch,
-        journal.SessionStart(execution_id=execution_id, user_task=task, mode="machine"),
+        journal.SessionStart(
+            execution_id=execution_id, user_task=task, task_source="operator", mode="machine"
+        ),
         settings=execution_settings.observations(cfg, eff),
     )
     reporter.err(

@@ -268,7 +268,10 @@ class ParallelDispatcher:
         started: list[child_records.StartedChild] = []
         try:
             started = self.child_spawner(
-                [dataclasses.replace(child, allowance=ceiling) for child in children],
+                [
+                    dataclasses.replace(child, allowance=ceiling, task_source=record.source)
+                    for child in children
+                ],
                 group,
                 at=record.base or None,
             )

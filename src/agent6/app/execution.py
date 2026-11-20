@@ -556,7 +556,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             events,
             child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
         )
+        launch = child_launch.read()
         wf = loop.Harness(
+            task_source=launch.task_source if launch is not None else "operator",
             settings=execution_settings.observations(cfg, inputs.effective),
             media_input=role_providers.input_capabilities(cfg, session.rm_role),
             chain=run_chain.RunChain(

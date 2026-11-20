@@ -1242,6 +1242,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `task_source` | `str, optional` | Who supplied the task, when known. |
 | `session_id` | `str, optional` | Session identifier. |
 | `user_task` | `str` | The displayed task text. |
 | `mode` | `str` | The execution mode. |
@@ -2744,6 +2745,7 @@ Source: [`agent6.app.child_launch.ChildLaunch`](https://github.com/agent6-dev/ag
 | `record_state` | `pathlib.Path` | The state dir of the repository that dispatched the child, where the child's record lives from its first event. |
 | `session_id` | `str` | The child's session id. |
 | `task` | `str` | The task text, exactly as the child's manifest records it. |
+| `task_source` | `Literal['operator', 'model', 'panel']` | Who supplied the task. |
 | `pins` | `tuple[str, ...]` | The parent's pins, out of band of the task. |
 | `max_usd` | `float \| None` | The parent's forwarded `--max-usd`; None keeps the config's. |
 | `allowance` | `BudgetAllowance \| None` | What the parent had left when the child started, which sets every cap; None for the config's caps. |
@@ -2964,7 +2966,7 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `spend_usd` | `float` | The cumulative child spend. |
 | `usd_partial` | `bool` | Whether unpriced calls make the spend a lower bound. |
 | `settled` | `bool` | Whether the parent charged its usage; False while it is unknown. |
-| `launched` | `bool` | Whether the child has a session record or a live worker. |
+| `launched` | `bool` | Whether the child has a session to inspect, including a live preflight worker. |
 | `current_tool` | `str` | The tool running now, or an empty string. |
 | `turn` | `int \| None` | Its latest recorded turn, or None before one. |
 | `tokens` | `int \| None` | Input, cache and output tokens in its current execution, or None if unreported. |

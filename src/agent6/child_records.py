@@ -104,6 +104,7 @@ class ChildTask:
         contract: A harness-owned bounded conversation; None for work.
         settings: Resolved panel-reviewer settings; None resolves the model selector.
         continuation: The existing child and its next instruction; None starts a new child.
+        task_source: Who supplied the task.
     """
 
     task: str
@@ -114,6 +115,7 @@ class ChildTask:
     contract: kinds.ConversationContract | None = None
     settings: kinds.ModelSettings | None = None
     continuation: ChildContinuation | None = None
+    task_source: DispatchSource = "operator"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -127,6 +129,7 @@ class ChildSpec:
         settings: The child's route, effort and temperature, resolved from its selector; None
             for the worker's own, which the child's config carries unchanged.
         mode: The child's session mode, which names its bucket under the origin's state.
+        task_source: Who supplied the task.
     """
 
     number: int
@@ -134,6 +137,7 @@ class ChildSpec:
     worktree: pathlib.Path
     settings: kinds.ModelSettings | None
     mode: kinds.LoopMode = "run"
+    task_source: DispatchSource = "operator"
 
     @property
     def number_label(self) -> str:

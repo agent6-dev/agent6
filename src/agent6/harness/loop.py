@@ -24,6 +24,7 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import (
+    child_records,
     directive,
     errors,
     kinds,
@@ -124,6 +125,7 @@ class Harness:
         finish_validator: A machine state's finish contract, returning the problems with a
             finish_session payload; None leaves finishes ungated.
         bridge: What the operator can do to the run, as the front-end injects it.
+        task_source: Who supplied the initial task.
         settings: The non-default settings written at each execution start.
         call: The worker call's knobs: retries, temperature, output caps.
         compactor: The in-process compaction strategy.
@@ -163,6 +165,7 @@ class Harness:
     dispatcher: dispatch.ToolDispatcher
     logger: Callable[[str], None] = dataclasses.field(default=print)
     events: event_log.EventSink | None = None
+    task_source: child_records.DispatchSource = "operator"
     settings: tuple[journal.SettingObservation, ...] = ()
     curator: graph_curator.GraphCurator | None = None
     budget: agent6_budget.BudgetTracker | None = None
@@ -247,6 +250,7 @@ class Harness:
             journal.SessionStart(
                 session_id=self.session_id,
                 user_task=operator_task,
+                task_source=self.task_source,
                 mode=self.mode,
                 execution_id=self.execution_id,
             )
