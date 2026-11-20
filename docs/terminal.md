@@ -47,7 +47,20 @@ When the manifest cannot be read, **Run > Fork this session** is dimmed too, as 
 ## Run dashboard
 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
-A session that dispatched children shows them in a table (id, model, status, usage), refreshed every second while the session lives, a child that appears later included; Enter on a row opens that child.
+The children table refreshes every second and keeps the same child selected when rows move.
+Each row shows the child's number, id, task, model route, status, current tool, turn, tokens, spend and elapsed seconds.
+The result column shows the commit count and ref for stopped or unmerged work.
+It also shows why a launch failed or how a reviewer ranked the attempts.
+
+- `Tab` to the table and use `↑` or `↓` to select a child.
+- Use `←` or `→` to read columns beyond the edge of the screen.
+- `Enter` opens the selected child's session if it has one.
+- `m` opens a message for the selected live child.
+  Press `Enter` to queue the text for its next turn.
+- `x` asks for confirmation before requesting an immediate stop for the selected live child.
+
+Both prompts name the child.
+Neither sends a request if the child ends or its worker changes while the prompt is open.
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
