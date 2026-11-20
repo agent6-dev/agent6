@@ -314,6 +314,7 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
   const query = () => value ? '' : input.value.trim();
   // A combobox: the list is a listbox, and the input names the option the arrow keys reached.
   const list = el('div', 'gpick-list'); list.id = 'gpick-' + name;
+  list.tabIndex = -1; // a scroller is a Tab stop; the field's arrow keys move through the list
   list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', name + ' choices');
   input.setAttribute('role', 'combobox'); input.setAttribute('aria-controls', list.id);
   input.setAttribute('aria-expanded', 'false');

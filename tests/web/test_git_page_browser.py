@@ -1393,3 +1393,18 @@ def test_a_linked_compare_names_the_working_tree_as_the_picker_does(
     expect(summary).to_contain_text("→ working tree")
     expect(summary).not_to_contain_text("WORKTREE")
     assert errors == [], errors
+
+
+def test_tab_from_a_revision_field_moves_past_its_list(open_page: OpenPage, git_port: int) -> None:
+    """Tab from the head field landed in its open list, which closed and dropped the focus."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/v1..main")
+    head = page.get_by_role("combobox", name="head", exact=True)
+    head.focus()
+    expect(page.locator("#gpick-head [role=option]").first).to_be_visible()
+    page.keyboard.press("Tab")
+    expect(page.locator("#gpick-head")).to_have_count(0)
+    expect(page.get_by_role("button", name="list", exact=True)).to_be_focused()
+    assert errors == [], errors
