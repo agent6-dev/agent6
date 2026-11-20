@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "c982847c2ce8c8b96b54ab8eb09aee9d5dbe555d39456b92dfa5de7bd04124c9"
+PAGE_SHA256 = "d42c89cc3224d00a97ff71b62d01d20b9e2862d74c78bd9a475458e95d653776"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -356,6 +356,7 @@ async function check(text, wanted, caret = text.length, replacement = null) {
   const task = {
     value: text, selectionStart: caret,
     addEventListener(name, fn) { listeners[name] = fn; },
+    dispatchEvent(e) { listeners[e.type]?.(e); },
     setSelectionRange(start) { this.selectionStart = start; },
     focus() {}, setAttribute() {}, getAttribute() {}, removeAttribute() {},
   };
