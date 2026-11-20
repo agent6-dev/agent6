@@ -203,6 +203,33 @@ def test_a_heading_link_in_the_open_file_scrolls_in_place(
     assert not errors
 
 
+def test_a_heading_link_leaves_the_page_undimmed(
+    markdown_repo: tuple[int, str], open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """After a heading link, Back or Forward, the whole Files page stayed dimmed and busy."""
+    from playwright.sync_api import expect
+
+    port, _ = markdown_repo
+    page, errors = open_page(port)
+    url = f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md"
+    page.goto(url)
+    expect(page.locator(".md-view h1")).to_have_text("Workspace guide")
+    app = page.locator(".files-app")
+    page.get_by_role("link", name="details", exact=True).click()
+    for step, hash_, heading in (
+        (None, "?anchor=details", "#details"),
+        (page.go_back, "", "h1"),
+        (page.go_forward, "?anchor=details", "#details"),
+    ):
+        if step:
+            step()
+        expect(page).to_have_url(url + hash_)
+        expect(page.locator(".md-view " + heading)).to_be_in_viewport()  # the route has run
+        expect(app).not_to_have_attribute("aria-busy", "true")
+        assert app.evaluate("e => getComputedStyle(e).opacity") == "1"
+    assert not errors
+
+
 @pytest.mark.parametrize("width", [1280, 390])
 def test_table_cells_keep_whole_words(
     git_port: int,

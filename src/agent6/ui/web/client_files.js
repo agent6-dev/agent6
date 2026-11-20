@@ -12,7 +12,10 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   // A hash naming the Markdown file shown moves within it: a link to a heading, and Back and
   // Forward between them, scroll in place.
   const markdown = filesState.markdown;
-  if (markdown?.view.isConnected && markdown.rev === revision && markdown.path === path) return markdown.scroll(query.get('anchor'));
+  if (markdown?.view.isConnected && markdown.rev === revision && markdown.path === path) {
+    markdown.view.closest('.files-app').removeAttribute('aria-busy'); // route() marked the page it expected to replace
+    return markdown.scroll(query.get('anchor'));
+  }
   const refsData = await getJSON('/api/git/refs');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
