@@ -48,6 +48,18 @@ def test_findings_names_an_absent_review_and_an_empty_review(
     assert capsys.readouterr().out == "Review version 1\nno open findings\n"
     assert main([*args, "--all"]) == 0
     assert capsys.readouterr().out == "Review version 1\nno findings\n"
+    skipped = {
+        "type": "review.skipped",
+        "panel_id": "p",
+        "execution_id": "e",
+        "reason": "review rules incomplete",
+    }
+    saved.logs_path.write_text(json.dumps(skipped) + "\n")
+    assert main([*args, "--all"]) == 0
+    assert (
+        capsys.readouterr().out
+        == "Review version 1\nskipped: review rules incomplete\nno findings\n"
+    )
 
 
 def _resolve(request_id: str = "resolve", version: int = 1) -> review_records.FindingAction:

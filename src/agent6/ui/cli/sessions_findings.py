@@ -100,6 +100,8 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
         return 0
     print(f"Review version {view.version}")
     if not payload["findings"] and not view.legacy_notice:
+        if view.completion == "skipped":
+            print(view.summary)
         print("no findings" if all_findings else "no open findings")
     for finding in view.findings:
         if all_findings or finding.status == "open":
