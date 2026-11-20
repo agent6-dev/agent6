@@ -1276,7 +1276,8 @@ def request_stop(session_dir: pathlib.Path, *, now: bool = False) -> bool:
     """
     try:
         paths.mkdir_for_real_user(session_dir)
-        (session_dir / STOP_REQUEST_FILE).write_text("now" if now else "", encoding="utf-8")
+        # A reader between a create and a write would take a `now` stop for a plain one.
+        portable.atomic_write(session_dir / STOP_REQUEST_FILE, "now" if now else "")
     except OSError:
         return False
     return True

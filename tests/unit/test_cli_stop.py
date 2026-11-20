@@ -541,3 +541,20 @@ def test_a_bare_stop_passes_over_a_groups_child(
     finally:
         for proc in workers:
             proc.kill()
+
+
+def test_a_now_stop_arrives_with_its_urgency(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The marker was created empty, then written: a reader between took `now` for a plain stop."""
+    seen: list[bool] = []
+    rename = pathlib.Path.replace
+
+    def replace(src: pathlib.Path, dst: pathlib.Path) -> pathlib.Path:
+        seen.append(ipc.stop_request_pending(tmp_path))
+        return rename(src, dst)
+
+    monkeypatch.setattr(pathlib.Path, "replace", replace)
+    assert ipc.request_stop(tmp_path, now=True)
+    assert seen == [False]  # the marker arrives whole, by one rename
+    assert ipc.stop_request_is_now(tmp_path)
