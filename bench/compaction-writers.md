@@ -98,3 +98,36 @@ Each run made 11 model calls, dropped four results in one step, accepted its fir
 
 **Limits:** n = 1 per setting on a nine-file read task; the last result is 48,000 characters by construction, so the repeated uncached input is at its largest.
 Recall on real work is unmeasured: read `compact.summarise.done.summary` in ordinary runs.
+
+## Idle compaction findings
+
+Two CLI runs used the local scripted OpenAI endpoint and four fresh XDG directories each.
+The worker read a 12,000-character file, then called `run_command` with `sleep 6; echo command-finished`.
+The idle limit was 2 seconds, the floor was 8,000 characters and the check-in was 30 seconds.
+The endpoint supplied the cache counts.
+
+| Receipt: accepted worker summary | Gap from request start | Command result | Cold-cache notice |
+|---|---:|---|---|
+| 100 uncached, 900 cached input tokens | 2.01 s | exit 0, `command-finished` after 6.09 s | none |
+| 1,000 uncached, 0 cached input tokens | 2.00 s | exit 0, `command-finished` after 6.24 s | once in each of the log, journal and receipt |
+
+- Both journals recorded `tool.call`, `compact.summarise.done` with `reason: idle`, then `tool.result`.
+- Each summary request contained the previous request's messages plus the summary instruction and the same tools.
+- Each run made four model calls, including the summary.
+- The cold receipt said: `providers.test.idle_compact_s = 2 is longer than the cache lasts. Idle summary 2.0s after the last request began: 1,000 uncached, 0 cached input tokens.`
+- Neither run measured a live cache lifetime or price.
+
+**Host smoke.** Use a throwaway repo with a configured HTTP provider and its normal command isolation.
+Create a read target with `python -c 'print("observation\n" * 1000)' > notes.txt` and commit it.
+Set `providers.<name>.idle_compact_s = 2` and `providers.<name>.idle_compact_min_chars = 8000` on the worker entry.
+Keep the check-in above 6 seconds.
+
+```sh
+agent6 run --session-id idle-smoke 'Read notes.txt. Run sleep 6 with run_command in the foreground. Finish with its return code.'
+agent6 sessions receipt idle-smoke
+jq -c 'select(.name == "run_command" or (.type | startswith("compact."))) | del(.summary)' \
+    "$(agent6 sessions dir idle-smoke)/logs.jsonl"
+```
+
+Compare the summary attempt's counts with its `gap_s`, not with the command duration.
+If the model takes longer than two seconds to answer, the idle limit is already due when the wait begins.

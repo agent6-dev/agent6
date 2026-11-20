@@ -201,6 +201,15 @@ A child runs under the parent's own config and the run's remaining budget, with 
 Every background wait uses the shorter of `wait_s` and [`harness.command_checkin_s`](config.md#harness); a check-in of 0 disables this cap.
 With an id, an omitted `wait_s` uses the check-in interval; without an id, it returns the roster at once.
 When the check-in ends a wait, the result names the interval and lists the work still running.
+
+**Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
+The timer starts when the worker starts its model request.
+It can compact during a blocking command, a background wait, an approval, a question or an interactive run parked for a message.
+The whole context must exceed `providers.<name>.idle_compact_min_chars` (default `240000`).
+The summary does not end the wait or add a worker turn.
+Set the limit to `0` to turn it off.
+See the [provider defaults](config.md#providers).
+
 `steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction or continues a stopped child and returns at once.
 A stopped child continues the same conversation in its retained clone, under the parent's remaining budget and approval policy, with the text as its next instruction.
 Its finished work follows the same merge policy as a new child's work.
@@ -439,6 +448,8 @@ Calls without input or cache-read counts are excluded, partial coverage is named
 Historical journals that recorded an unreported count as zero cannot distinguish it from a reported zero.
 
 Each `Summary attempt` line names its writer, cached and uncached input, outcome and any fallback reason.
+If the worker reads less than half its idle summary input from cache, the log and receipt name the limit to shorten.
+This notice appears once per execution and only for reported cache counts.
 `unreported` means the provider supplied no count.
 
 - **Testing:** the receipt includes each [recorded verification attempt](formats.md#verificationevidence).

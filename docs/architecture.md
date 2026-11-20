@@ -274,7 +274,15 @@ A resume after a death there runs none of the turn's calls again: the model gets
   The `claude_code` backend uses the helper directly because its worker process owns the session.
   Stop, budget and sign-in failures do not start another attempt.
 - Only a complete text summary without a tool call or refusal replaces the history.
-  The restart keeps the task, pins, decisions, verify fact and recent whole exchanges (`keep_recent_chars`, default 80000).
+  The restart keeps the task, pins, decisions and verify fact.
+  Size and manual restarts also keep recent whole exchanges (`keep_recent_chars`, default 80000).
+- An idle restart uses the driving provider's `idle_compact_s` and `idle_compact_min_chars`.
+  The limit counts from the start of the last worker request, including time spent generating the reply.
+  The floor counts system text, tools and the whole conversation.
+  The worker summary request omits the reply whose tool calls are still open.
+  The restart keeps that reply after the summary, with its signed reasoning and tool call ids intact.
+  A parked interactive run has no open call, so the summary covers the complete turn.
+  A later idle restart must also meet the tier-2 growth floor.
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
@@ -286,6 +294,12 @@ The context supplies the live conversation, settings, task, pins, restart notice
 `call_worker(instruction, call_id)` appends an instruction to the prepared request.
 `call_helper(system, prompt, call_id)` asks the helper without tools.
 Both calls use the run's metering and cancellation signals.
+
+`strategy.IdleStrategy` adds an optional `idle(context, request_started)` method.
+It returns one deadline for the turn's waits, or `None`.
+Only a blocking wait arms the callback.
+The wait joins a callback in progress before delivering its result.
+Neither the deadline nor the callback changes the command check-in.
 
 Keep the original task and complete tool exchanges.
 Keep signed reasoning with its assistant message.
