@@ -443,7 +443,7 @@ def execute_merge(
 
     Ref plumbing only: the checkout is never switched and the worktree is never required
     clean. The existing writer lock serializes review dispositions and this mutation.
-    A `.agent6/pack.json` the landing writes into the repository is renamed (`pack.quarantine`).
+    A pack whose `pack.json` the landing writes into the repository is set aside.
 
     Args:
         cwd: The repository.

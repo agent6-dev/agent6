@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A `.agent6/pack.json` an operation leaves behind is renamed, never offered to `unpack`.
+"""A pack an operation leaves behind is set aside, never offered to `unpack`.
 
 `.agent6/` is an ordinary directory to the model's tools, so a model wrote a manifest there;
 every later start then refused and named `agent6 unpack`, which installed the forged config.
@@ -60,54 +60,115 @@ def _names(directory: pathlib.Path) -> list[str]:
     return sorted(path.name for path in directory.iterdir())
 
 
-def test_a_pack_json_left_behind_is_renamed_to_the_next_free_name(tmp_path: pathlib.Path) -> None:
+def test_a_pack_json_left_behind_moves_to_the_next_free_name(tmp_path: pathlib.Path) -> None:
     """A forged manifest refused every later start with "Run agent6 unpack in that workspace"."""
     said: list[str] = []
     forged = _forge(tmp_path)
     pack.quarantine(tmp_path, warn=said.append)
-    assert _names(tmp_path / ".agent6") == ["pack.json.invalid"]
-    assert (tmp_path / ".agent6/pack.json.invalid").read_text(encoding="utf-8") == _MANIFEST
+    assert _names(tmp_path / ".agent6") == ["pack.invalid"]
+    assert _names(tmp_path / ".agent6/pack.invalid") == ["pack.json.invalid"]
+    moved = tmp_path / ".agent6/pack.invalid/pack.json.invalid"
+    assert moved.read_text(encoding="utf-8") == _MANIFEST
     pack_manifest.check_origin(tmp_path)  # the next start is not refused
     with pytest.raises(errors.PackError, match="expected a regular file"):
         pack.unpack(tmp_path)
     (warning,) = said
-    assert str(forged) in warning and "`pack.json.invalid`" in warning
+    assert str(forged) in warning and "`pack.invalid/pack.json.invalid`." in warning
     assert "No agent6 command starts beside a pack, so this operation created it" in warning
     assert "Do not run `agent6 unpack` on it." in warning
 
-    for taken in ("pack.json.invalid.1", "pack.json.invalid.2"):
+    for taken in ("pack.invalid.1", "pack.invalid.2"):
         _forge(tmp_path)
         pack.quarantine(tmp_path, warn=said.append)
-        assert (tmp_path / ".agent6" / taken).read_text(encoding="utf-8") == _MANIFEST
-        assert f"`{taken}`" in said[-1]
-    assert _names(tmp_path / ".agent6") == [
-        "pack.json.invalid",
-        "pack.json.invalid.1",
-        "pack.json.invalid.2",
+        moved = tmp_path / ".agent6" / taken / "pack.json.invalid"
+        assert moved.read_text(encoding="utf-8") == _MANIFEST
+        assert f"`{taken}/pack.json.invalid`" in said[-1]
+    assert _names(tmp_path / ".agent6") == ["pack.invalid", "pack.invalid.1", "pack.invalid.2"]
+
+
+def test_the_forged_files_move_with_the_manifest_and_a_real_pack_follows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rename left `config/` and `repo/` under the pack's names: `agent6 pack` then refused.
+
+    It read them as a pack without a manifest ("pack.json: expected a regular file"), and a
+    second forged `pack.json` would have made them a pack again.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    forged = _forge(repo)
+    planted = '[notify]\non_event = ["sh", "-c", "echo forged"]\n'
+    for name in ("config/config.toml", "repo/config.toml", "skills/s/SKILL.md"):
+        (repo / ".agent6" / name).parent.mkdir(parents=True)
+        (repo / ".agent6" / name).write_text(planted, encoding="utf-8")
+    (repo / ".agent6/worktrees").mkdir()  # not a pack's name: it stays
+    said: list[str] = []
+
+    pack.quarantine(repo, warn=said.append)
+
+    assert _names(repo / ".agent6") == ["pack.invalid", "worktrees"]
+    aside = repo / ".agent6/pack.invalid"
+    assert _names(aside) == ["config", "pack.json.invalid", "repo", "skills"]
+    assert (aside / "repo/config.toml").read_text(encoding="utf-8") == planted
+    assert said == [
+        f"found {forged}. No agent6 command starts beside a pack, so this operation created it;"
+        " `agent6 pack` did not. agent6 moved it to `pack.invalid/pack.json.invalid`, with"
+        " `config/`, `repo/` and `skills/`. Do not run `agent6 unpack` on it."
     ]
 
+    manifest = pack.pack(repo)  # a real pack starts from none of the forged files
+    assert "repo/config.toml" not in manifest.files and "skills/s/SKILL.md" not in manifest.files
+    assert not (repo / ".agent6/skills/s").exists()
+    assert _names(aside) == ["config", "pack.json.invalid", "repo", "skills"]
 
-def test_a_linked_pack_json_is_renamed_as_the_link(tmp_path: pathlib.Path) -> None:
-    """A link the model plants as `pack.json` moves as a link; its target is never written."""
+
+def test_an_area_that_will_not_move_is_named_for_deletion(tmp_path: pathlib.Path) -> None:
+    """A directory moves only when it is writable, so a model can pin its `repo/` in place."""
+    forged = _forge(tmp_path)
+    pinned = tmp_path / ".agent6/repo"
+    pinned.mkdir()
+    pinned.chmod(0o500)
+    said: list[str] = []
+    try:
+        pack.quarantine(tmp_path, warn=said.append)
+    finally:
+        pinned.chmod(0o700)
+    if os.geteuid() == 0:
+        pytest.skip("root moves a read-only directory")
+    assert _names(tmp_path / ".agent6") == ["pack.invalid", "repo"]
+    (warning,) = said
+    assert f"found {forged}." in warning
+    assert "agent6 moved it to `pack.invalid/pack.json.invalid`." in warning
+    assert "It could not move `repo/` ([Errno 13] Permission denied" in warning
+    assert warning.endswith("delete that. Do not run `agent6 unpack` on it.")
+
+
+def test_a_linked_pack_json_moves_as_the_link(tmp_path: pathlib.Path) -> None:
+    """A link the model plants moves as a link; nothing it points at is written or entered."""
     target = tmp_path / "outside.json"
     target.write_text(_MANIFEST, encoding="utf-8")
     bait = tmp_path / "bait"
-    bait.write_text("kept", encoding="utf-8")
+    bait.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "kept").write_text("kept", encoding="utf-8")
     root = tmp_path / "repo"
     (root / ".agent6").mkdir(parents=True)
     (root / ".agent6/pack.json").symlink_to(target)
+    (root / ".agent6/repo").symlink_to(elsewhere, target_is_directory=True)
     # A link planted on the first quarantine name is not followed and not replaced.
-    (root / ".agent6/pack.json.invalid").symlink_to(bait)
+    (root / ".agent6/pack.invalid").symlink_to(bait, target_is_directory=True)
     said: list[str] = []
     pack.quarantine(root, warn=said.append)
-    moved = root / ".agent6/pack.json.invalid.1"
+    aside = root / ".agent6/pack.invalid.1"
+    moved = aside / "pack.json.invalid"
     assert moved.is_symlink() and moved.readlink() == target
+    assert (aside / "repo").is_symlink() and (aside / "repo").readlink() == elsewhere
     assert not os.path.lexists(root / ".agent6/pack.json")
     assert target.read_text(encoding="utf-8") == _MANIFEST and not target.is_symlink()
-    assert (root / ".agent6/pack.json.invalid").readlink() == bait
-    assert bait.read_text(encoding="utf-8") == "kept"
-    assert _names(tmp_path) == ["bait", "outside.json", "repo"]
-    assert len(said) == 1 and "`pack.json.invalid.1`" in said[0]
+    assert (root / ".agent6/pack.invalid").readlink() == bait
+    assert _names(bait) == [] and _names(elsewhere) == ["kept"]
+    assert _names(tmp_path) == ["bait", "elsewhere", "outside.json", "repo"]
+    assert len(said) == 1 and "`pack.invalid.1/pack.json.invalid`, with `repo/`." in said[0]
     pack_manifest.check_origin(root)
 
 
@@ -156,10 +217,10 @@ def test_a_checkout_without_a_pack_json_gets_no_warning(tmp_path: pathlib.Path) 
     assert _names(tmp_path / ".agent6") == ["worktrees"]
 
 
-def test_a_pack_json_that_cannot_be_renamed_is_named_for_deletion(
+def test_a_pack_json_that_cannot_be_moved_is_named_for_deletion(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refused rename still warns: silent, the next start would name `agent6 unpack`."""
+    """A refused move still warns: silent, the next start would name `agent6 unpack`."""
     forged = _forge(tmp_path)
 
     def refused(*_args: object, **_kwargs: object) -> None:
@@ -169,9 +230,10 @@ def test_a_pack_json_that_cannot_be_renamed_is_named_for_deletion(
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     pack.quarantine(tmp_path, warn=lambda _text: None, events=sink)
     assert forged.read_text(encoding="utf-8") == _MANIFEST
+    assert _names(tmp_path / ".agent6") == ["pack.json"]  # no empty directory is left
     (row,) = [json.loads(line) for line in sink.path.read_text(encoding="utf-8").splitlines()]
     assert row["renamed"] is None
-    assert "agent6 could not rename it ([Errno 13] Permission denied): delete it." in row["warning"]
+    assert "agent6 could not move it ([Errno 13] Permission denied): delete it." in row["warning"]
     assert row["warning"].endswith("Do not run `agent6 unpack` on it.")
 
 
@@ -192,7 +254,7 @@ def test_a_session_says_it_once_through_its_journal(tmp_path: pathlib.Path) -> N
     (row,) = [json.loads(line) for line in sink.path.read_text(encoding="utf-8").splitlines()]
     assert row["type"] == "pack.quarantined"
     assert row["path"] == str(forged)
-    assert row["renamed"] == str(root / ".agent6/pack.json.invalid")
+    assert row["renamed"] == str(root / ".agent6/pack.invalid/pack.json.invalid")
     assert row["warning"].startswith(f"found {forged}.")
     assert said == []
     assert printed == [f"[agent6] WARNING: {row['warning']}"]
@@ -204,7 +266,7 @@ def test_a_session_says_it_once_through_its_journal(tmp_path: pathlib.Path) -> N
     blocker.write_text("a file where the session directory would be", encoding="utf-8")
     _forge(root)
     pack.quarantine(root, warn=said.append, events=event_log.EventSink(blocker / "logs.jsonl"))
-    assert len(said) == 1 and "`pack.json.invalid.1`" in said[0]
+    assert len(said) == 1 and "`pack.invalid.1/pack.json.invalid`" in said[0]
 
 
 # --- a session's end --------------------------------------------------------------------------
@@ -351,16 +413,17 @@ def test_a_session_whose_model_forges_a_pack_ends_with_it_renamed(
     assert cli_main(["run", "--session-id", "pk-ENDS01", "tidy the repo"]) == rc
     out, err = capsys.readouterr()
 
-    assert _names(repo / ".agent6") == ["pack.json.invalid"]
-    assert (repo / ".agent6/pack.json.invalid").read_text(encoding="utf-8") == _MANIFEST
+    assert _names(repo / ".agent6") == ["pack.invalid"]
+    moved = repo / ".agent6/pack.invalid/pack.json.invalid"
+    assert moved.read_text(encoding="utf-8") == _MANIFEST
     said = [line for line in (out + err).splitlines() if "pack.json" in line]
     assert said == [
         f"[agent6] WARNING: found {repo / '.agent6/pack.json'}. No agent6 command starts beside"
-        " a pack, so this operation created it; `agent6 pack` did not. agent6 renamed it to"
-        " `pack.json.invalid`. Do not run `agent6 unpack` on it."
+        " a pack, so this operation created it; `agent6 pack` did not. agent6 moved it to"
+        " `pack.invalid/pack.json.invalid`. Do not run `agent6 unpack` on it."
     ]
     (row,) = _quarantined(_run_dir(repo, "pk-ENDS01"))
-    assert row["renamed"] == str(repo / ".agent6/pack.json.invalid")
+    assert row["renamed"] == str(moved)
     _next_start_is_not_refused(capsys)
 
 
@@ -376,17 +439,18 @@ def test_a_merge_that_lands_a_tracked_pack_json_leaves_it_renamed(
     assert cli_main(["run", "--session-id", "pk-MERG01", "tidy the repo"]) == 0
     tip = git_read.chain_tip(repo, git_read.chain_ref_for("pk-MERG01"))
     assert tip is not None and ".agent6/pack.json" in git_read.tree_paths(repo, tip)
-    assert _names(repo / ".agent6") == ["pack.json.invalid"]
+    assert _names(repo / ".agent6") == ["pack.invalid"]
     capsys.readouterr()
 
     assert cli_main(["sessions", "merge", "pk-MERG01"]) == 0
     out, err = capsys.readouterr()
 
     assert ".agent6/pack.json" in git_read.tree_paths(repo, "main")
-    assert _names(repo / ".agent6") == ["pack.json.invalid", "pack.json.invalid.1"]
-    assert (repo / ".agent6/pack.json.invalid.1").read_text(encoding="utf-8") == _MANIFEST
+    assert _names(repo / ".agent6") == ["pack.invalid", "pack.invalid.1"]
+    landed = repo / ".agent6/pack.invalid.1/pack.json.invalid"
+    assert landed.read_text(encoding="utf-8") == _MANIFEST
     assert f"[agent6] WARNING: found {repo / '.agent6/pack.json'}." in err
-    assert "agent6 renamed it to `pack.json.invalid.1`." in err
+    assert "agent6 moved it to `pack.invalid.1/pack.json.invalid`." in err
     assert _UNPACK_IT not in out + err
     _next_start_is_not_refused(capsys)
 
@@ -407,8 +471,8 @@ def test_an_automatic_merge_from_a_worktree_run_renames_what_it_lands(
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "pk-AUTO01")).worktree
     assert worktree is not None
     assert ".agent6/pack.json" in git_read.tree_paths(repo, "main")
-    assert _names(repo / ".agent6") == ["pack.json.invalid"]
-    assert _names(worktree / ".agent6") == ["pack.json.invalid"]
+    assert _names(repo / ".agent6") == ["pack.invalid"]
+    assert _names(worktree / ".agent6") == ["pack.invalid"]
     assert {row["path"] for row in _quarantined(_run_dir(repo, "pk-AUTO01"))} == {
         str(repo / ".agent6/pack.json"),
         str(worktree / ".agent6/pack.json"),
@@ -505,7 +569,7 @@ def test_a_machine_whose_tool_state_forges_a_pack_ends_with_it_renamed(
 
     assert machine_run.run_machine(mfile, reporter) == 0, said
 
-    assert _names(tmp_path / ".agent6") == ["pack.json.invalid"]
+    assert _names(tmp_path / ".agent6") == ["pack.invalid"]
     (warning,) = [line for line in said if "pack.json" in line]
     assert warning.startswith(f"[agent6] WARNING: found {tmp_path / '.agent6/pack.json'}.")
     pack_manifest.check_origin(tmp_path)
@@ -527,7 +591,7 @@ def test_an_exec_whose_command_forges_a_pack_ends_with_it_renamed(
 
     assert exec_cmds.exec_new(cfg, tmp_path, ("sh", "build.sh")) == 7
 
-    assert _names(tmp_path / ".agent6") == ["pack.json.invalid"]
+    assert _names(tmp_path / ".agent6") == ["pack.invalid"]
     assert f"[agent6] WARNING: found {tmp_path / '.agent6/pack.json'}." in capsys.readouterr().err
     pack_manifest.check_origin(tmp_path)
 

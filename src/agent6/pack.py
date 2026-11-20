@@ -508,18 +508,83 @@ def unpack(root: pathlib.Path) -> ImportResult:
         raise errors.PackError(f"unpack {root / '.agent6'}: {exc}") from exc
 
 
+def _set_aside(directory: pathlib.Path) -> tuple[str, list[str], list[str]]:
+    """Move a pack's names out of `.agent6` into a new `pack.invalid` directory there.
+
+    Every name is relative to a descriptor opened without following a link, so nothing
+    outside `.agent6` is read, written or deleted. A name already taken, by a link too, is
+    left as it is: the first free `pack.invalid.N` is made.
+
+    Args:
+        directory: The `.agent6` directory.
+
+    Returns:
+        The new directory's name, the areas moved with the manifest, and the areas that
+        would not move, each with its error.
+
+    Raises:
+        OSError: `.agent6` is a link, or the manifest is gone or cannot be moved.
+    """
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.lstat("pack.json", dir_fd=fd)
+        taken = 0
+        while True:
+            name = "pack.invalid" + (f".{taken}" if taken else "")
+            try:
+                os.mkdir(name, 0o700, dir_fd=fd)
+                break
+            except FileExistsError:
+                taken += 1
+        aside = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        try:
+            user = paths.effective_user()
+            if user.via_sudo:
+                os.chown(aside, user.uid, user.gid)
+            try:
+                os.rename("pack.json", "pack.json.invalid", src_dir_fd=fd, dst_dir_fd=aside)
+            except OSError:
+                with contextlib.suppress(OSError):
+                    os.rmdir(name, dir_fd=fd)
+                raise
+            moved: list[str] = []
+            stuck: list[str] = []
+            for area in pack_manifest.AREAS:
+                try:
+                    os.rename(area, area, src_dir_fd=fd, dst_dir_fd=aside)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    # A directory moves only when it is writable: its `..` entry changes.
+                    stuck.append(f"`{area}/` ({exc})")
+                else:
+                    moved.append(f"`{area}/`")
+        finally:
+            os.close(aside)
+    finally:
+        os.close(fd)
+    return name, moved, stuck
+
+
+def _listed(names: list[str]) -> str:
+    """Return the names as one phrase: `a`, `a and b`, `a, b and c`."""
+    return " and ".join((", ".join(names[:-1]), names[-1])) if len(names) > 1 else names[0]
+
+
 def quarantine(
     root: pathlib.Path,
     *,
     warn: Callable[[str], None],
     events: event_log.EventSink | None = None,
 ) -> None:
-    """Rename a `.agent6/pack.json` that an ending operation left in a checkout, and say so.
+    """Set aside a pack that an ending operation left in a checkout, and say so.
 
-    For a caller that knows the file is not `agent6 pack`'s: it started beside no pack and
+    For a caller that knows the pack is not `agent6 pack`'s: it started beside no pack and
     holds the checkout's lease, which `pack` takes alone, or it saw none before its landing.
-    The rename stays inside a descriptor on `.agent6` opened without following a link: a link
-    named `pack.json` moves as a link, and a linked `.agent6` is reported and left as it is.
+    The manifest and the `config/`, `repo/` and `skills/` beside it move into one new
+    directory, `.agent6/pack.invalid`: a later `agent6 pack` refuses to write beside those
+    names, and a second `pack.json` would make them a pack again. A link moves as a link,
+    and a linked `.agent6` is reported and left as it is.
 
     Args:
         root: The checkout the operation ran in or landed work in.
@@ -535,22 +600,10 @@ def quarantine(
     premise = "No agent6 command starts beside a pack, so this operation"
     renamed: pathlib.Path | None = None
     try:
-        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            taken = 0
-            while True:
-                name = "pack.json.invalid" + (f".{taken}" if taken else "")
-                try:
-                    os.lstat(name, dir_fd=fd)
-                except FileNotFoundError:
-                    break
-                taken += 1
-            os.rename("pack.json", name, src_dir_fd=fd, dst_dir_fd=fd)
-        finally:
-            os.close(fd)
-    except FileNotFoundError:
-        return  # gone between the stat and the rename
+        name, moved, stuck = _set_aside(directory)
     except OSError as exc:
+        if isinstance(exc, FileNotFoundError) and not os.path.lexists(found):
+            return  # gone between the stat and the move
         if directory.is_symlink():
             warning = (
                 f"{directory} is a symlink that leads to a pack.json. {premise} made the link"
@@ -560,13 +613,15 @@ def quarantine(
         else:
             warning = (
                 f"found {found}. {premise} created it; `agent6 pack` did not. agent6 could"
-                f" not rename it ({exc}): delete it. Do not run `agent6 unpack` on it."
+                f" not move it ({exc}): delete it. Do not run `agent6 unpack` on it."
             )
     else:
-        renamed = directory / name
+        renamed = directory / name / "pack.json.invalid"
+        beside = f", with {_listed(moved)}" if moved else ""
+        left = f" It could not move {_listed(stuck)}: delete that." if stuck else ""
         warning = (
-            f"found {found}. {premise} created it; `agent6 pack` did not. agent6 renamed it"
-            f" to `{name}`. Do not run `agent6 unpack` on it."
+            f"found {found}. {premise} created it; `agent6 pack` did not. agent6 moved it to"
+            f" `{name}/pack.json.invalid`{beside}.{left} Do not run `agent6 unpack` on it."
         )
     if events is not None:
         # Said once: a dead journal leaves the warning to `warn`.

@@ -672,10 +672,11 @@ That refusal is the pack's only protection: `.agent6/` is an ordinary directory 
 
 A model can write a pack of its own there, and `agent6 unpack` would install its config.
 No run, resume, machine or exec starts beside a pack, and `pack` writes only while none of them is live in the checkout.
-A `.agent6/pack.json` found when one of them ends is therefore not `agent6 pack`'s: agent6 renames it to `pack.json.invalid` (`pack.json.invalid.1`, `.2` and so on when the name is taken) and warns against unpacking it.
+A `.agent6/pack.json` found when one of them ends is therefore not `agent6 pack`'s: agent6 moves it to `.agent6/pack.invalid/pack.json.invalid`, with the `config/`, `repo/` and `skills/` beside it, and warns against unpacking it.
+A taken name is left alone: the directory is then `pack.invalid.1`, `.2` and so on.
 A session journals the warning as `pack.quarantined`, which the terminal, the TUI, the web and an ACP editor show.
-A merge renames a `pack.json` that its landing writes into the repository's checkout.
-The rename follows no link: a link named `pack.json` is renamed as a link, and a symlinked `.agent6` is reported and left alone; the start check and `unpack` refuse a pack behind a link.
+A merge sets aside a pack whose `pack.json` its landing writes into the repository's checkout.
+The move follows no link: a link named `pack.json` or `repo` moves as a link, and a symlinked `.agent6` is reported and left alone; the start check and `unpack` refuse a pack behind a link.
 The check runs when the command ends: after a killed run, or when plain `git` or the web Git page checks out a commit that holds the file, the start check still names `agent6 unpack`.
 Delete a pack you did not make.
 
