@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
-import types
 from collections.abc import Sequence
 from typing import Any
 from unittest import mock
@@ -20,6 +19,7 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records
+from agent6.config import Config
 from agent6.harness import loop, operator_bridge, parallel_dispatch, provider_call, run_chain
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
@@ -154,28 +154,8 @@ def _build_wf(
     disp.command_policy.return_value = "allow"
     return loop.Harness(
         chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=_head(repo)),
-        config=mock.MagicMock(
-            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            git=types.SimpleNamespace(
-                control="agent6",
-                commit_per_turn=True,
-                commit=types.SimpleNamespace(
-                    checkpoint_message="agent6",
-                    name="",
-                    email="",
-                    trailer="",
-                ),
-            ),
-            harness=mock.MagicMock(
-                standing_patience=-1,
-                went_quiet_max_nudges=4,
-                loop_guard_kill_threshold=10,
-                settled_stop_after=12,
-                stagnation_notice_after_s=300.0,
-                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
-                prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_children=4, judges=()),
-            ),
+        config=Config.model_validate(
+            {"harness": {"parallel": {"judges": []}, "verify": {"at_start": True}}}
         ),
         provider=provider,
         dispatcher=disp,

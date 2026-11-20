@@ -318,31 +318,13 @@ def _build_wf(
         disp.dispatch.return_value = tools_results.RawResult({"content": "hi\n"})
     return loop.Harness(
         chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=_head(repo)),
-        config=mock.MagicMock(
-            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            git=types.SimpleNamespace(
-                control="agent6",
-                commit_per_turn=True,
-                commit=types.SimpleNamespace(
-                    checkpoint_message="agent6",
-                    name="",
-                    email="",
-                    trailer="",
-                ),
-            ),
-            harness=mock.MagicMock(
-                standing_patience=-1,
-                went_quiet_max_nudges=4,
-                loop_guard_kill_threshold=10,
-                settled_stop_after=12,
-                stagnation_notice_after_s=300.0,
-                verify=mock.MagicMock(
-                    command=verify_command, when=verify_when, at_start=True, retries=2
-                ),
-                prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_children=4, judges=()),
-            ),
-            # A real int, not a Mock: segment_children compares the child count against this cap.
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "parallel": {"judges": []},
+                    "verify": {"command": verify_command, "when": verify_when, "at_start": True},
+                }
+            }
         ),
         provider=provider,
         dispatcher=disp,
