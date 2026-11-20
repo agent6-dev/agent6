@@ -17,12 +17,13 @@ This page is the reference for the command-line surface; the patterns behind the
 - `--model provider/model`: the model for the mode's role, over every config layer; a resume keeps the recorded route unless it sets its own
   The web and TUI resume composers default to that route and offer the config's routes as choices.
   A resume that changes the route prints both the chosen and recorded routes.
-- `--parallel 3` starts three isolated attempts at the task ([parallel](config.md#harnessparallel)).
+- `--parallel 3` starts a parent run with three isolated attempts at the task ([parallel](config.md#harnessparallel)).
   A list such as `reviewer,provider/model-a` selects a role or model per attempt.
   A role supplies its own effort and temperature.
   A model uses the worker's settings.
   `harness.parallel.judges` ranks the attempts.
-  Under agent6-owned git the first-ranked attempt merges into the parent's chain.
+  Under agent6-owned git the table shows which attempt, if any, the parent will try to merge into its chain.
+  A conflict leaves the parent chain unchanged.
   Under model-owned git each attempt keeps its ref.
   `sessions list --children` expands the attempts under the parent.
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[git.worktree].base_dir`

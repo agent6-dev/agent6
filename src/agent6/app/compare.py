@@ -180,7 +180,7 @@ def print_ranked_candidates(
         committed: Whether a candidate's branch holds a commit, by session id; one named
             False has nothing to merge.
         model_refs: Imported work locations for model-controlled children.
-        merge_parents: The parent whose chain receives the winner, keyed by the winner's id.
+        merge_parents: The target parent for a pending merge, keyed by the winner's id.
         reporter: The output channels.
     """
     if not outcome.ranking:
@@ -204,7 +204,7 @@ def print_ranked_candidates(
         elif not (committed or {}).get(rid, True):
             merge_note = "nothing to merge (no commit)"
         elif parent := (merge_parents or {}).get(rid):
-            merge_note = f"merges into {parent}'s chain; merge with: agent6 sessions merge {parent}"
+            merge_note = f"selected for {parent}'s chain (merge pending)"
         else:
             merge_note = f"merge with: agent6 sessions merge {rid}"
         reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {merge_note}")

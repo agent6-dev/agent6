@@ -16,7 +16,6 @@ import pytest
 
 from agent6 import budget, child_records, directive, kinds, paths
 from agent6.app import children as app_children
-from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.harness import (
@@ -342,7 +341,7 @@ class _Run:
         branch = f"agent6/{sid}"
         return child_records.ChildResult(
             spec=child_records.ChildSpec(number, sid, pathlib.Path("/nowhere"), None),
-            session_dir=pathlib.Path("/nowhere"),
+            session_dir=sessions_layout.bucket_dir(self.state_dir, "runs") / sid,
             branch=branch,
             ok=True,
             error="",
@@ -693,17 +692,14 @@ def test_the_apps_recorder_stamps_journals_and_prints_a_ranking_the_harness_made
     monkeypatch: pytest.MonkeyPatch,
     top_gate: kinds.Verification,
 ) -> None:
-    """The recorded order can have no winner. Only a winner's row offers the parent's merge."""
+    """A winner's row reports selection even when its merge conflicts; a ranking can crown none."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
     origin_state = paths.state_dir(repo)
     root = _child_record(repo, "root", "not_applicable")
+    _child_record(repo, ONE, "passed")
+    _child_record(repo, TWO, top_gate)
     run = _Run(repo, origin_state)
-    results = [
-        dataclasses.replace(
-            res, verification=gate, session_dir=_child_record(repo, res.spec.session_id, gate)
-        )
-        for res, gate in ((run.attempt(1), "passed"), (run.attempt(2), top_gate))
-    ]
+    run.gates[2] = top_gate
     said: list[str] = []
     recorder = app_children.build_rank_recorder(
         repo,
@@ -712,20 +708,23 @@ def test_the_apps_recorder_stamps_journals_and_prints_a_ranking_the_harness_made
         events=event_log.EventSink(root / "logs.jsonl"),
         reporter=app_reporter.Reporter(out=said.append, err=said.append),
     )
-    briefs = parallel_rank.candidates(
-        repo, results, base=_git(repo, "rev-parse", "main"), task="rewrite a.txt"
-    )
-    assert "+child 1" in briefs[0].diff and briefs[1].verification == top_gate
-    order = (TWO, ONE)
-    ranking = child_records.Ranking(
-        order=order,
-        ranked_by="judge",
-        rationale="two is tidier",
-        winner=parallel_rank.winner(briefs, order, harness_gate=True),
-        judge_cost_usd=0.1,
-    )
+    dispatcher = _dispatcher(repo, run, [], judges=(_judge(),), recorder=recorder)
+    conversation = _start(dispatcher, "2")
+    assert dispatcher.settle(conversation, 2)
+    (repo / "a.txt").write_text("parent\n", encoding="utf-8")
+    parent_tip = dispatcher.chain.commit("parent edit")
+    run.judge_ends(JUDGE, json.dumps({"order": [TWO, ONE], "summary": "two is tidier"}))
 
-    recorder(briefs, results, ranking, group="root-p1")
+    assert dispatcher.settle(conversation, 3)
+
+    record = _records(run)["root-p1"]
+    merge = record.child(TWO).merge
+    assert merge is not None
+    assert (merge.status, merge.detail) == (
+        ("conflict", "merge conflict in a.txt") if top_gate == "passed" else ("ranked", "1 of 2")
+    )
+    assert dispatcher.chain.tip() == parent_tip
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "parent\n"
 
     placements = {
         sid: sessions_manifest.read_manifest(origin_state / "sessions" / "runs" / sid).placement
@@ -747,11 +746,10 @@ def test_the_apps_recorder_stamps_journals_and_prints_a_ranking_the_harness_made
     assert said[0] == "ranked candidates (best first):"
     assert said[1].startswith(f"  1. {TWO}  ")
     assert said[1].rsplit("   ", 1)[-1] == (
-        "merges into root's chain; merge with: agent6 sessions merge root"
+        "selected for root's chain (merge pending)"
         if top_gate == "passed"
         else f"merge with: agent6 sessions merge {TWO}"
     )
     assert said[2].startswith(f"  2. {ONE}  passed  ")
     assert said[2].endswith(f"   merge with: agent6 sessions merge {ONE}")
     assert said[-1] == "\njudge: two is tidier"
-    assert app_compare.outcome_of(ranking).ranking == (TWO, ONE)
