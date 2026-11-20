@@ -9,11 +9,10 @@ A half-measure reads as a guarantee it cannot keep, so these checks warn or refu
 
 from __future__ import annotations
 
-import os
 import pathlib
 from collections.abc import Callable
 
-from agent6 import errors, kinds, pack_manifest, paths
+from agent6 import errors, kinds, pack, pack_manifest, paths
 from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, MCPServerEntry
@@ -642,30 +641,32 @@ def check_mcp_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> s
     return None
 
 
-def check_workspace_packs(workspace: pathlib.Path) -> str | None:
+def check_workspace_packs(
+    workspace: pathlib.Path, *, warn: Callable[[str], None] = app_reporter.STDIO_REPORTER.warn
+) -> str | None:
     """Refuse packs anywhere in the project tree before constructing a run's boundary.
+
+    A pack that a session of the checkout wrote is set aside first (`pack.check_start`).
 
     Args:
         workspace: The run's workspace.
+        warn: Receives the warning for each pack set aside.
 
     Returns:
-        Every pack refusal or walk error, or None when no pack is present.
+        Every pack refusal or walk error, or None when no pack is left.
     """
     root = paths.project_root(workspace, allow_pack=True)
     if not root.exists():
         return None
     refusals: list[str] = []
-    for directory, children, _files in os.walk(
-        root,
-        followlinks=False,
-        onerror=lambda exc: refusals.append(f"Cannot check workspace packs: {exc}"),
+    for directory in pack_manifest.pack_dirs(
+        root, onerror=lambda exc: refusals.append(f"Cannot check workspace packs: {exc}")
     ):
-        if ".agent6" in children:
-            try:
-                pack_manifest.check_origin(pathlib.Path(directory))
-            except errors.PackError as exc:
-                refusals.append(str(exc))
-        children[:] = sorted(name for name in children if name not in (".git", ".agent6"))
+        try:
+            pack.check_start(directory, warn=warn)
+            pack_manifest.check_origin(directory)
+        except errors.PackError as exc:
+            refusals.append(str(exc))
     return "\n".join(refusals) or None
 
 
@@ -676,6 +677,7 @@ def startup_refusal(
     *,
     worktree_git_dir: pathlib.Path | None = None,
     mcp_network: bool = True,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> str | None:
     """Return the first network or config refusal a run applies before starting.
 
@@ -685,12 +687,18 @@ def startup_refusal(
         workspace: The workspace.
         worktree_git_dir: The linked worktree's git dir, when present.
         mcp_network: Include per-server network checks; MCP diagnostics report them separately.
+        reporter: Receives the warning for a pack the checks set aside.
 
     Returns:
         The refusal, or None when the run may start.
     """
     return check_network_support(cfg, isolation) or config_refusal(
-        cfg, isolation, workspace, worktree_git_dir=worktree_git_dir, mcp_network=mcp_network
+        cfg,
+        isolation,
+        workspace,
+        worktree_git_dir=worktree_git_dir,
+        mcp_network=mcp_network,
+        reporter=reporter,
     )
 
 
@@ -701,6 +709,7 @@ def config_refusal(
     *,
     worktree_git_dir: pathlib.Path | None = None,
     mcp_network: bool = True,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> str | None:
     """Return the first refusal for a config this host cannot honor, else None.
 
@@ -713,6 +722,7 @@ def config_refusal(
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
         mcp_network: Include each MCP server's network refusal; the MCP diagnostics leave
             it out, since they report that one per server.
+        reporter: Receives the warning for a pack the checks set aside.
 
     Returns:
         The refusal, or None when every check passes.
@@ -720,7 +730,7 @@ def config_refusal(
     checks: tuple[Callable[[], str | None], ...] = (
         # The HOME check first: `check_hide_paths_support` builds the policy, which creates HOME.
         lambda: check_jail_home(cfg, isolation, workspace, worktree_git_dir),
-        lambda: check_workspace_packs(workspace),
+        lambda: check_workspace_packs(workspace, warn=reporter.warn),
         lambda: check_mcp_network_support(cfg, isolation) if mcp_network else None,
         # Before `check_hide_paths_support`, so a workspace under an entry gets its own refusal.
         lambda: check_workspace_outside_hidden_paths(cfg, workspace),

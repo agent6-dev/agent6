@@ -119,7 +119,7 @@ def select_isolation(
         raise preflight.SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
     cfg_err = confine.startup_refusal(
-        cfg, selected, cwd, worktree_git_dir=worktree_git_dir
+        cfg, selected, cwd, worktree_git_dir=worktree_git_dir, reporter=reporter
     ) or _container_checkout_refusal(cfg, cwd, worktree_git_dir)
     if cfg_err is not None:
         reporter.refuse(cfg_err)

@@ -224,8 +224,9 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a `sandbox.extra_read_paths` or `extra_write_paths` entry inside a `hide_paths` entry refuses at every jailed level: the launcher binds a grant through the mask above it
     - every run, resume, machine and exec holds the checkout's workspace lease (shared) for its lifetime, and `pack` takes it alone before it writes, so neither starts under the other; a session and a pack of a nested checkout hold the leases of the checkouts above it too, since a worktree under `.agent6/worktrees` sits inside the workspace
     - a present `.agent6/pack.json` refuses startup at every isolation level, including `partial`.
-      Run `agent6 unpack` in that workspace, or delete the pack from that directory: `pack.json`, `config/`, `repo/` and `skills/`
+      Run `agent6 unpack` in that workspace, or delete a pack you did not make from that directory: `pack.json`, `config/`, `repo/` and `skills/`
     - run preflight scans the project tree once for nested packs, without following symlinks or entering `.git`, and refuses with every pack's path.
+      The end of a run, a machine or an exec walks the same tree and sets aside each pack it finds ([Secrets](#8-secrets-and-connect))
       Trees reached through `extra_read_paths` grants are not scanned: unpack or delete a pack before granting the tree that holds it
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a child, a fork, a `run --worktree` run or a machine state works in
@@ -674,10 +675,25 @@ A model can write a pack of its own there, and `agent6 unpack` would install its
 No run, resume, machine or exec starts beside a pack, and `pack` writes only while none of them is live in the checkout.
 A `.agent6/pack.json` found when one of them ends is therefore not `agent6 pack`'s: agent6 moves it to `.agent6/pack.invalid/pack.json.invalid`, with the `config/`, `repo/` and `skills/` beside it, and warns against unpacking it.
 A taken name is left alone: the directory is then `pack.invalid.1`, `.2` and so on.
+The end of a session, a machine or an exec walks the checkout's tree as the run preflight does, so a pack in a subdirectory is set aside too.
 A session journals the warning as `pack.quarantined`, which the terminal, the TUI, the web and an ACP editor show.
 A merge sets aside a pack whose `pack.json` its landing writes into the repository's checkout.
 The move follows no link: a link named `pack.json` or `repo` moves as a link, and a symlinked `.agent6` is reported and left alone; the start check and `unpack` refuse a pack behind a link.
-The check runs when the command ends: after a killed run, or when plain `git` or the web Git page checks out a commit that holds the file, the start check still names `agent6 unpack`.
+
+One rule covers a session that has not reached its end: a pack beside a session of the checkout that is live, or that died without an end, was written by that session.
+Every `agent6` command applies it as it starts, with the same move and warning, and then runs: the CLI, `agent6 web` and `agent6 tui` at launch, a run a hub starts, and a child in its clone.
+A run's preflight applies it to each pack its walk finds.
+
+- A session is live while its `worker.pid` names a running process.
+  It died without an end when that process is gone and its journal shows no `session.stop` for its last execution, as after a kill.
+- A machine counts by its own `worker.pid`.
+  A session that works in a worktree or a clone of its own does not count; a checkout above a nested directory does.
+- A real pack synced in beside such a session is set aside too.
+  Let the live session end, or resume or remove the dead one, then sync the pack again.
+- A hub that is already open applies no rule to its own requests: they refuse beside the pack until a command starts in the checkout or the session ends.
+
+A pack beside no such session stays where it is.
+The start check refuses, quotes the origin and time as what the pack says, and names both remedies: plain `git` or the web Git page can check out a commit that holds a forged `pack.json`.
 Delete a pack you did not make.
 
 The secrets copy is created through a `0600` descriptor in a `0700` directory.

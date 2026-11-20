@@ -276,6 +276,6 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
             return 2
         finally:
             # The command had the checkout: a script a model wrote can write a pack.json there.
-            pack.quarantine(paths.checkout_root(cwd), warn=common.warn)
+            pack.quarantine_tree(paths.checkout_root(cwd), warn=common.warn)
             if session_net is not None:
                 session_net.close()

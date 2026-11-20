@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import socket
+from collections.abc import Callable, Iterator
 from typing import Annotated, Literal
 
 import pydantic
@@ -141,6 +143,9 @@ def is_own(origin: Origin, home: pathlib.Path) -> bool:
 def check_origin(root: pathlib.Path) -> None:
     """Refuse any pack before a command reads this home's state.
 
+    The origin and time are the manifest's own words, which a model can write: the refusal
+    quotes them as what the pack says.
+
     Args:
         root: The resolved project root.
 
@@ -153,7 +158,26 @@ def check_origin(root: pathlib.Path) -> None:
     origin = manifest.origin
     time = manifest.model_dump(mode="json")["packed_at"]
     raise errors.PackError(
-        f"{root / '.agent6'}: pack from {origin.host}:{origin.home}, packed at {time}. "
-        "Run agent6 unpack in that workspace, or delete the pack from that directory:"
+        f"{root / '.agent6'}: a pack is present, and no command starts beside one. The pack"
+        f" says it is from {origin.host!r}:{origin.home!r}, packed at {time}. Run `agent6"
+        " unpack` in that workspace, or delete a pack you did not make from that directory:"
         " pack.json, config/, repo/ and skills/."
     )
+
+
+def pack_dirs(root: pathlib.Path, *, onerror: Callable[[OSError], None]) -> Iterator[pathlib.Path]:
+    """Walk a project tree for the directories that hold an `.agent6`, the root's first.
+
+    The walk follows no link and enters neither `.git` nor `.agent6`.
+
+    Args:
+        root: The project root.
+        onerror: Receives each directory the walk cannot list.
+
+    Yields:
+        Each directory with an `.agent6` directory in it.
+    """
+    for directory, children, _files in os.walk(root, followlinks=False, onerror=onerror):
+        if ".agent6" in children:
+            yield pathlib.Path(directory)
+        children[:] = sorted(name for name in children if name not in (".git", ".agent6"))

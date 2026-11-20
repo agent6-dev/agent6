@@ -12,13 +12,18 @@ import functools
 import json
 import os
 import pathlib
+import signal
 import subprocess
+import sys
+import time
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
+import agent6
 from agent6 import errors, kinds, pack, pack_manifest, paths
-from agent6.app import execution, merge, role_providers
+from agent6.app import confine, execution, merge, role_providers
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import run as machine_run
 from agent6.config import Config, layer
@@ -43,7 +48,7 @@ _MANIFEST = (
     + "\n"
 )
 # The start check's instruction, which no operator may be given for a forged pack.
-_UNPACK_IT = "Run agent6 unpack"
+_UNPACK_IT = "Run `agent6 unpack`"
 
 
 def _forge(root: pathlib.Path) -> pathlib.Path:
@@ -517,6 +522,192 @@ def test_a_landing_leaves_a_pack_that_was_there_before_it(
     assert said == []
     assert (_names(repo / ".agent6"), (repo / ".agent6/pack.json").read_bytes()) == packed
     assert pack_manifest.read(repo).origin.workspace == str(repo)
+
+
+# --- the start check: a session that never reached its end --------------------------------------
+
+# A worker in its own process, so a kill ends it as a real one ends: no `finally` runs.
+_WORKER = """
+import json, os, signal, sys, time
+from agent6.app import role_providers
+from agent6.providers import ProviderResponse
+from agent6.ui.cli import cli_main
+
+session_id, ending, turns = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+
+
+class Scripted:
+    calls = 0
+
+    def call(self, **_kw):
+        if self.calls == len(turns):
+            if ending == "killed":
+                os.kill(os.getpid(), signal.SIGKILL)
+            time.sleep(600)
+        step = tuple(turns[self.calls])
+        self.calls += 1
+        return ProviderResponse(
+            text="", tool_uses=step, stop_reason="tool_use", input_tokens=10, output_tokens=5,
+            cache_read_tokens=0, cache_write_tokens=0, raw={"content": list(step)},
+        )
+
+
+provider = Scripted()
+role_providers.build_role_provider = lambda *a, **k: provider
+sys.exit(cli_main(["run", "--session-id", session_id, "tidy the repo"]))
+"""
+
+
+def _worker(
+    repo: pathlib.Path, session_id: str, ending: str, *turns: _Turn
+) -> subprocess.Popen[str]:
+    """Start a run whose model makes the edits, then is killed or hangs in its next call."""
+    return subprocess.Popen(
+        [sys.executable, "-c", _WORKER, session_id, ending, json.dumps(turns)],
+        cwd=repo,
+        env={**os.environ, "PYTHONPATH": str(pathlib.Path(agent6.__file__).parents[1])},
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+
+
+@pytest.fixture
+def live_worker(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[pathlib.Path, subprocess.Popen[str]]]:
+    """A repo with a live run whose model has forged a pack and waits on its next call."""
+    repo = _repo(tmp_path, monkeypatch)
+    worker = _worker(repo, "pk-LIVE01", "live", _FORGE)
+    try:
+        deadline = time.monotonic() + 60
+        while not (repo / ".agent6/pack.json").exists():
+            assert worker.poll() is None, worker.communicate()[0]
+            assert time.monotonic() < deadline, "the worker never forged the pack"
+            time.sleep(0.05)
+        yield repo, worker
+    finally:
+        os.killpg(worker.pid, signal.SIGKILL)
+        worker.communicate()
+
+
+def test_a_start_after_a_killed_session_sets_its_pack_aside_and_runs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A killed run has no end check: the next command refused and named `agent6 unpack`.
+
+    The run's `worker.pid` names a dead process and its journal has no `session.stop`, so the
+    start check takes the pack as that session's. The pack in a subdirectory waits for the
+    next run, whose preflight walks the tree.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    nested = _create("sub/.agent6/pack.json", _MANIFEST)
+    worker = _worker(repo, "pk-KILL01", "killed", _FORGE, nested)
+    said = worker.communicate(timeout=120)[0]
+    assert worker.returncode == -signal.SIGKILL, said
+    assert _names(repo / ".agent6") == ["pack.json"] and _UNPACK_IT not in said
+    with pytest.raises(errors.PackError, match=_UNPACK_IT):
+        paths.project_root(repo)
+
+    assert cli_main(["config", "show", "sandbox.isolation"]) == 0
+    out, err = capsys.readouterr()
+
+    assert _names(repo / ".agent6") == ["pack.invalid"]
+    assert err.splitlines() == [
+        f"[agent6] WARNING: found {repo / '.agent6/pack.json'}. Session pk-KILL01 died in {repo}"
+        " without an end, so that session created it; `agent6 pack` did not. agent6 moved it to"
+        " `pack.invalid/pack.json.invalid`. Do not run `agent6 unpack` on it."
+    ]
+    assert "sandbox.isolation" in out and _UNPACK_IT not in out + err
+
+    _script(monkeypatch, _FINISH)
+    assert cli_main(["run", "--session-id", "pk-NEXT01", "tidy the repo"]) == 0
+    out, err = capsys.readouterr()
+    assert _names(repo / "sub/.agent6") == ["pack.invalid"]
+    assert (
+        f"[agent6] WARNING: found {repo / 'sub/.agent6/pack.json'}. Session pk-KILL01 died" in err
+    )
+    assert _UNPACK_IT not in out + err
+
+
+def test_a_start_beside_a_live_session_sets_its_pack_aside_and_runs(
+    live_worker: tuple[pathlib.Path, subprocess.Popen[str]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """While the forging run was live, every other command refused and named `agent6 unpack`."""
+    repo, worker = live_worker
+    with pytest.raises(errors.PackError, match=_UNPACK_IT):
+        paths.project_root(repo)
+
+    assert cli_main(["config", "show", "sandbox.isolation"]) == 0
+    out, err = capsys.readouterr()
+
+    assert worker.poll() is None
+    assert _names(repo / ".agent6") == ["pack.invalid"]
+    assert err.splitlines() == [
+        f"[agent6] WARNING: found {repo / '.agent6/pack.json'}. Session pk-LIVE01 is live in"
+        f" {repo}, so that session created it; `agent6 pack` did not. agent6 moved it to"
+        " `pack.invalid/pack.json.invalid`. Do not run `agent6 unpack` on it."
+    ]
+    assert "sandbox.isolation" in out and _UNPACK_IT not in out + err
+
+
+def test_a_pack_beside_no_such_session_is_refused_in_the_checks_own_words(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The refusal stated "pack from laptop:/home/you, packed at ...": the manifest's words.
+
+    A model writes those fields, so the start check quotes them as what the pack says, on
+    one line whatever they hold. A session that reached its end is no evidence: the pack
+    stays and both remedies are named.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _FINISH)
+    assert cli_main(["run", "--session-id", "pk-DONE01", "tidy the repo"]) == 0
+    forged = _forge(repo)
+    said = json.loads(_MANIFEST)
+    said["origin"]["host"] = "laptop\nERROR: nothing is wrong"
+    forged.write_text(json.dumps(said), encoding="utf-8")
+    capsys.readouterr()
+
+    assert cli_main(["config", "show", "sandbox.isolation"]) == 2
+    out, err = capsys.readouterr()
+
+    assert json.loads(forged.read_text(encoding="utf-8")) == said
+    assert out == "" and err.splitlines() == [
+        f"ERROR: {repo / '.agent6'}: a pack is present, and no command starts beside one. The"
+        " pack says it is from 'laptop\\nERROR: nothing is wrong':'/home/you', packed at"
+        " 2026-11-17T00:00:00Z. Run `agent6 unpack` in that workspace, or delete a pack you"
+        " did not make from that directory: pack.json, config/, repo/ and skills/."
+    ]
+
+
+def test_a_session_whose_model_forges_a_nested_pack_ends_with_it_set_aside(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The end check looked at the checkout's own `.agent6` only.
+
+    A pack in a subdirectory then refused the next run, whose preflight named `agent6 unpack`
+    for that directory; beside a planted `.git` the directory is a project of its own there.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _create("sub/dir/.agent6/pack.json", _MANIFEST), _FORGE, _FINISH)
+
+    assert cli_main(["run", "--session-id", "pk-NEST01", "tidy the repo"]) == 0
+    out, err = capsys.readouterr()
+
+    assert _names(repo / ".agent6") == ["pack.invalid"]
+    assert _names(repo / "sub/dir/.agent6") == ["pack.invalid"]
+    moved = repo / "sub/dir/.agent6/pack.invalid/pack.json.invalid"
+    assert moved.read_text(encoding="utf-8") == _MANIFEST
+    assert {row["path"] for row in _quarantined(_run_dir(repo, "pk-NEST01"))} == {
+        str(repo / ".agent6/pack.json"),
+        str(repo / "sub/dir/.agent6/pack.json"),
+    }
+    assert f"[agent6] WARNING: found {repo / 'sub/dir/.agent6/pack.json'}." in out + err
+    assert confine.check_workspace_packs(repo) is None  # the next run's preflight
+    assert _UNPACK_IT not in out + err
 
 
 # --- the other commands that run in the checkout ------------------------------------------------

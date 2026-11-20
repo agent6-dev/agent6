@@ -21,7 +21,11 @@ import pydantic
 
 from agent6 import errors, pack_manifest, paths, portable
 from agent6.config import io, layer, layer_data, write
-from agent6.sessions import event_log, journal, lock
+from agent6.sessions import event_log, journal, layout, lock, process
+from agent6.sessions import manifest as sessions_manifest
+from agent6.viewmodel import listing
+from agent6.viewmodel.machine import state as machine_state
+from agent6.viewmodel.session import status as session_status
 
 Outcome = Literal["move", "keep", "conflict"]
 
@@ -571,33 +575,39 @@ def _listed(names: list[str]) -> str:
     return " and ".join((", ".join(names[:-1]), names[-1])) if len(names) > 1 else names[0]
 
 
+# Why a pack an ending operation finds is its own; `_writer` gives the start check's.
+_ENDING = "No agent6 command starts beside a pack, so this operation"
+
+
 def quarantine(
     root: pathlib.Path,
     *,
     warn: Callable[[str], None],
     events: event_log.EventSink | None = None,
+    premise: str = _ENDING,
 ) -> None:
-    """Set aside a pack that an ending operation left in a checkout, and say so.
+    """Set aside a pack that `agent6 pack` did not write, and say so.
 
-    For a caller that knows the pack is not `agent6 pack`'s: it started beside no pack and
-    holds the checkout's lease, which `pack` takes alone, or it saw none before its landing.
+    For a caller that knows whose the pack is. An ending operation started beside no pack
+    and holds the checkout's lease, which `pack` takes alone, or it saw none before its
+    landing; the start check names the session (`check_start`).
     The manifest and the `config/`, `repo/` and `skills/` beside it move into one new
     directory, `.agent6/pack.invalid`: a later `agent6 pack` refuses to write beside those
     names, and a second `pack.json` would make them a pack again. A link moves as a link,
     and a linked `.agent6` is reported and left as it is.
 
     Args:
-        root: The checkout the operation ran in or landed work in.
+        root: The directory whose `.agent6` holds the pack.
         warn: Receives the operator's warning when no journal takes it.
         events: The session's journal, whose row every view of the session shows; None
             outside a session.
+        premise: Who wrote the pack and why that follows, as the warning's subject.
     """
     directory = root / ".agent6"
     found = directory / "pack.json"
     # The start check's own view, through a linked `.agent6` too; a stat writes nothing there.
     if not os.path.lexists(found):
         return
-    premise = "No agent6 command starts beside a pack, so this operation"
     renamed: pathlib.Path | None = None
     try:
         name, moved, stuck = _set_aside(directory)
@@ -635,3 +645,88 @@ def quarantine(
             )
             return
     warn(warning)
+
+
+def quarantine_tree(
+    root: pathlib.Path,
+    *,
+    warn: Callable[[str], None],
+    events: event_log.EventSink | None = None,
+) -> None:
+    """Set aside every pack in a checkout's tree, for an ending operation that held its lease.
+
+    The run preflight refused each pack its walk found (`pack_manifest.pack_dirs`), a nested
+    directory's too, so one this walk finds appeared under the operation.
+
+    Args:
+        root: The checkout the operation ran in.
+        warn: Receives each warning no journal takes.
+        events: The session's journal; None outside a session.
+    """
+    for directory in pack_manifest.pack_dirs(root, onerror=lambda _exc: None):
+        quarantine(directory, warn=warn, events=events)
+
+
+def _writer(directory: pathlib.Path) -> str | None:
+    """Return the session that wrote a pack in the directory, as a warning's premise.
+
+    The one rule the start check applies: a pack beside a session of the checkout that is
+    live, or that died without an end, was written by that session. No session starts beside
+    a pack, `agent6 pack` writes beside no live one, and a session that reaches its end sets
+    aside what it wrote. A checkout above the directory counts, since the directory sits
+    inside its workspace; a session that works in a worktree or a clone of its own does not.
+
+    Args:
+        directory: The directory whose `.agent6` holds the pack.
+
+    Returns:
+        The premise, or None when no such session exists.
+    """
+    for checkout in lock.checkouts_from(directory):
+        state = paths.state_dir(checkout, allow_pack=True)
+        for session_dir in listing.session_dirs(state, layout.SESSION_BUCKETS):
+            # A session clears its `worker.pid` at its end, after its own check.
+            if process.read_worker_pid(session_dir) is None:
+                continue
+            try:
+                manifest = sessions_manifest.read_manifest(session_dir)
+            except sessions_manifest.ManifestError:
+                manifest = None  # nothing says it works elsewhere
+            works_elsewhere = manifest is not None and (
+                manifest.worktree is not None or manifest.parallel is not None
+            )
+            if works_elsewhere:
+                continue
+            word = listing.summarize_session_dir(session_dir).status
+            if word in session_status.LIVE_STATUS_WORDS:
+                return f"Session {session_dir.name} is live in {checkout}, so that session"
+            if word == "stale":
+                return (
+                    f"Session {session_dir.name} died in {checkout} without an end, so that session"
+                )
+        for machine_dir in machine_state.machine_instance_dirs(state):
+            if process.read_worker_pid(machine_dir) is None:
+                continue
+            how = "is live" if process.worker_is_alive(machine_dir) else "died"
+            end = "" if how == "is live" else " without an end"
+            return f"Machine {machine_dir.name} {how} in {checkout}{end}, so that machine"
+    return None
+
+
+def check_start(directory: pathlib.Path, *, warn: Callable[[str], None]) -> None:
+    """Set aside a pack that a session of the checkout wrote, so the command starts.
+
+    `paths.project_root` refuses every pack. Where a command begins, this first applies the
+    end check's rule, move and warning to a pack a session wrote (`_writer`); a pack beside
+    no such session stays for the refusal, which names `agent6 unpack`.
+
+    Args:
+        directory: The directory whose `.agent6` may hold a pack: a project root, or a
+            directory the run preflight's walk found.
+        warn: Receives the operator's warning.
+    """
+    if not os.path.lexists(directory / ".agent6" / "pack.json"):
+        return
+    premise = _writer(directory)
+    if premise is not None:
+        quarantine(directory, warn=warn, premise=premise)

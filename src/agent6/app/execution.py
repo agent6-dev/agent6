@@ -797,7 +797,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             # Never leave root-owned run state in the user's repo (the sudo case).
             paths.chown_to_real_user(state_dir)
             # On every end, after the run's commands close: a model's tools can write a pack.json.
-            pack.quarantine(paths.checkout_root(cwd), warn=reporter.warn, events=events)
+            pack.quarantine_tree(paths.checkout_root(cwd), warn=reporter.warn, events=events)
 
     finalize.settle_budget(budget, events)
     if interrupted:

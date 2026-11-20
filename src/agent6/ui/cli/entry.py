@@ -152,6 +152,7 @@ def run_guarded(body: Callable[[], int]) -> int:
     with terminal_guard.guarded_terminal():
         try:
             try:
+                _set_aside_a_sessions_pack()
                 return body()
             finally:
                 # A short answer still sits in stdout's buffer: a closed pipe fails it here, in
@@ -190,6 +191,24 @@ def run_guarded(body: Callable[[], int]) -> int:
                 file=sys.stderr,
             )
             return 1
+
+
+def _set_aside_a_sessions_pack() -> None:
+    """Apply the pack rule where `paths.project_root` refuses, before the command meets it.
+
+    A pack that a session of the checkout wrote is set aside and the command starts
+    (`pack.check_start`); any other pack stays, and the command refuses beside it.
+    """
+    try:
+        cwd = pathlib.Path.cwd()
+    except OSError:
+        return  # no working directory: a command that needs one says so
+    try:
+        paths.project_root(cwd)
+    except errors.PackError:
+        from agent6 import pack
+
+        pack.check_start(paths.project_root(cwd, allow_pack=True), warn=common.warn)
 
 
 def _dispatch_run(args: argparse.Namespace) -> int:

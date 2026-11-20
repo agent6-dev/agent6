@@ -496,7 +496,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             return 2
         # The operator's own config refuses here as it would for a plain run; then each state's.
         for label, resolved in state_configs.labelled_configs(configs):
-            refusal = confine.startup_refusal(resolved.config, resolved.isolation, cwd)
+            refusal = confine.startup_refusal(
+                resolved.config, resolved.isolation, cwd, reporter=reporter
+            )
             if refusal is not None:
                 reporter.refuse(f"{label}{refusal}")
                 return 2
@@ -719,7 +721,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 process.clear_worker_pid(root)
                 if agent_states or has_tool_state:
                     # Under the lease: a tool state's command can write a pack.json in the checkout.
-                    pack.quarantine(paths.checkout_root(cwd), warn=reporter.warn)
+                    pack.quarantine_tree(paths.checkout_root(cwd), warn=reporter.warn)
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
         return 1
