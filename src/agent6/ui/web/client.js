@@ -587,6 +587,36 @@ function toNewWork(fields) {
   if (location.hash.replace(/^#\/?/, '')) location.hash = '#/'; else route(); // no hashchange on #/
 }
 
+// Only a draft beginning with the command goes to the parser. POST keeps task text out of URLs.
+function attachParallelPreview(field, root, options) {
+  const box = el('div', 'parallel-preview');
+  box.setAttribute('role', 'status');
+  root.appendChild(box);
+  let timer, generation = 0;
+  const refresh = () => {
+    clearTimeout(timer);
+    const current = ++generation;
+    const text = field.value;
+    const extra = options();
+    box.hidden = true;
+    if (!extra || !/^\s*\/parallel(?:\s|$)/i.test(text)) return;
+    timer = setTimeout(async () => {
+      try {
+        const reply = await postJSON('/api/parallel-preview', {text, ...extra});
+        if (current !== generation) return;
+        box.textContent = reply.preview;
+      } catch (error) {
+        if (current !== generation) return;
+        box.textContent = 'Preview unavailable: ' + error.message;
+      }
+      box.hidden = !box.textContent;
+    }, 100);
+  };
+  field.addEventListener('input', refresh);
+  refresh();
+  return refresh;
+}
+
 // --- hub ---------------------------------------------------------------------
 // The button runs `action` once at a time and only while ready(): busy, it reads disabled but keeps the focus; sync() re-reads ready().
 function runOnce(button, action, ready = () => true, home = null) {
@@ -663,6 +693,7 @@ function attachParallelSuggest(task, root) {
     task.value = v.slice(0, f.fragStart) + model + v.slice(f.fragEnd);
     const pos = f.fragStart + model.length;
     task.setSelectionRange(pos, pos); close(); task.focus();
+    task.dispatchEvent(new Event('input', {bubbles: true}));
   };
   const render = () => {
     const f = frag();
@@ -860,10 +891,12 @@ function newWorkDock(presets, presetDefault, sessions) {
   root.appendChild(more);
   root.appendChild(fieldLabel(task, 'Task or question'));
   root.appendChild(row);
+  const preview = attachParallelPreview(task, root, () => mode.value === 'run' ? {preset: preset.value} : null);
+  mode.addEventListener('change', preview); preset.addEventListener('change', preview);
   const hint = root.appendChild(el('div', 'hint'));
   hint.append(...enterHint('Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline',
     'Start begins the run / plan / ask (a run from a plan needs no task) · Enter newline'),
-    ' · /parallel [SPEC --] TASK dispatches children (SPEC: count or models; repeat to queue more) · Ctrl+K switches sessions');
+    ' · /parallel [SPEC --] TASK previews child attempts (repeat /parallel for another task) · Ctrl+K switches sessions');
   return root;
 }
 
@@ -2068,11 +2101,13 @@ function makeComposer(id) {
   }, () => finished !== null && !busy && !(finished && refused) && (!!ta.value.trim() || (finished && !needsWork)), ta); // text, or a bare resume
   row.appendChild(ta); row.appendChild(sendBtn);
   root.appendChild(summary); root.appendChild(presetRow); root.appendChild(fieldLabel(ta, 'Message to the run')); root.appendChild(row); root.appendChild(refusal); root.appendChild(hint);
+  const preview = attachParallelPreview(ta, root, () => ta.disabled ? null : {preset: finished ? preset.value : '', session_id: id});
+  preset.addEventListener('change', preview);
   // A quoted diff line lands beneath what is typed, for the words that follow it.
   root.quote = (note) => {
     const typed = ta.value.replace(/\s+$/, '');
     ta.value = (typed ? typed + '\n\n' : '') + note;
-    ta.oninput();
+    ta.dispatchEvent(new Event('input'));
     ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
   };
   // `live` is the dir-aware truth (a parked or stale run is not live even

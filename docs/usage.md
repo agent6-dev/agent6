@@ -157,6 +157,9 @@ A judge's findings are not kept as a review: only its order and reason are.
 Under agent6-owned git, the other children keep their branches, so `agent6 sessions merge <child> --into <branch>` merges one by hand.
 `SPEC` is a positive child count or a comma-separated list of selectors, the same as `run --parallel`.
 A count above one, or several selectors, means attempts at the one task; a second `/parallel` in the message is a second task.
+The TUI and web composers preview the number of children and the spec for each task as you type.
+At the `run -i` commit prompt, enter the line to preview it.
+Repeat the same line to send it, or type another command.
 A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `[provider/]model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
 The spec ends at a whitespace-delimited `--` token.
 Without `--`, the whole segment is task text for one default child, even if it starts with a path, a number or a model name.

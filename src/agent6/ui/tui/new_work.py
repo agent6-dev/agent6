@@ -24,7 +24,7 @@ from textual.css import query
 
 from agent6 import directive, kinds
 from agent6.models import choices
-from agent6.ui import spawn
+from agent6.ui import parallel_preview, spawn
 from agent6.ui.tui import composer, forms, menubar, screen_chrome
 from agent6.viewmodel import LIVE_STATUS_WORDS, listing
 
@@ -33,8 +33,8 @@ _INTRO = (
     "Tab reaches the pickers below: mode, checkout, preset and model, then the plan to run"
     " from and a spend cap in USD.\n"
     "A run from a plan needs no task: Enter on an empty line starts it.\n"
-    "/parallel [SPEC --] TASK dispatches isolated children.\n"
-    "SPEC is a count or comma-separated models; repeat /parallel to queue more."
+    "/parallel [SPEC --] TASK previews child attempts.\n"
+    "SPEC is a count or a list of selectors. Repeat /parallel for another task."
 )
 _WORKTREE = "worktree"
 
@@ -255,6 +255,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         preset = str(self.query_one("#draft-preset", widgets.Select).value)
         route = choices.default_route(self.repo_cwd, self.config_paths, mode, preset)
         self.query_one("#draft-model", widgets.Select).set_options(self._model_options(route))
+        self._on_task_changed()
 
     def action_close(self) -> None:
         """Close an open list, else return to the hub."""
@@ -266,11 +267,22 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self.app.exit(None)
 
     @textual.on(widgets.TextArea.Changed, "#draft-input")
-    def _on_task_changed(self, event: widgets.TextArea.Changed) -> None:
-        """Refresh the model suggestions under the caret."""
-        self.query_one("#draft-suggest", composer.SteerSuggest).show_text(
-            model_suggestions(self._routes, event.text_area.text)
-        )
+    def _on_task_changed(self) -> None:
+        """Describe the draft and keep the model matches under the caret."""
+        text = self.query_one("#draft-input", composer.SteerInput).text
+        hint = model_suggestions(self._routes, text)
+        if self.query_one("#draft-mode", widgets.Select).value == "run":
+            preset = str(self.query_one("#draft-preset", widgets.Select).value)
+            preview = parallel_preview.describe(
+                text, self.repo_cwd, self.config_paths, preset=preset, new_work=True
+            )
+            if preview is not None:
+                hint = (
+                    rich_text.Text.assemble(preview.text, "\n", hint)
+                    if hint
+                    else rich_text.Text(preview.text)
+                )
+        self.query_one("#draft-suggest", composer.SteerSuggest).show_text(hint)
 
     def on_steer_input_submitted(self, message: composer.SteerInput.Submitted) -> None:
         """Start the session with the picked mode, checkout, preset, model, plan and cap."""

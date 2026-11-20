@@ -15,8 +15,9 @@ if TYPE_CHECKING:
 
 from agent6 import budget as agent6_budget
 from agent6 import kinds, paths
-from agent6.sessions import id
+from agent6.sessions import id, ipc, layout
 from agent6.tools import mcp_client
+from agent6.ui import parallel_preview
 from agent6.ui import steer as ui_steer
 from agent6.ui.cli import init_wizard, interact, plan_watch, sessions_cmds, steer_tty
 from agent6.viewmodel import events
@@ -24,6 +25,7 @@ from agent6.viewmodel.session import state
 
 REPL_HELP = (
     "  /continue  (empty enter) - let the agent take another turn\n"
+    "  /parallel [SPEC --] TASK - preview child attempts; repeat the line to send it\n"
     "  /cost                    - print the running token + USD summary\n"
     "  /diff                    - git diff: base_sha -> the run branch's tip\n"
     "                              (read-only; `agent6 sessions diff`, no pager)\n"
@@ -50,6 +52,7 @@ def build_repl_hook(
     budget: agent6_budget.BudgetTracker,
     *,
     session_id: str = "",
+    config_paths: tuple[pathlib.Path, ...] = (),
     mcp_manager: mcp_client.MCPManager | None = None,
     console_view: console_render.ConsoleView | None = None,
     steer_cell: Sequence[ui_steer.SteerState | None] = (),
@@ -63,6 +66,7 @@ def build_repl_hook(
         root: The repo root, for `/diff` and `/init`.
         budget: The tracker `/cost` prints.
         session_id: The run, for `/diff` and `/watch`.
+        config_paths: The config files the run reads.
         mcp_manager: The live MCP manager `/mcp` lists.
         console_view: The live view, paused for the prompt.
         steer_cell: Holds the steer state once it exists; a Ctrl-C pause armed during
@@ -80,7 +84,7 @@ def build_repl_hook(
     def _prompt_loop(turn: int, sha: str) -> kinds.AutoCommitDirective:
         print(
             f"\n[agent6] turn {turn} committed {sha[:12]}. "
-            f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit /exit",
+            f"REPL: /continue /parallel /cost /diff /watch /mcp /init /undo /help /quit /exit",
             file=sys.stderr,
         )
         steer = steer_cell[0] if steer_cell else None
@@ -91,7 +95,7 @@ def build_repl_hook(
             )
         while True:
             try:
-                raw = input("agent6> ").strip()
+                raw = _read_command(root, session_id, config_paths)
             except EOFError:
                 print("[agent6] EOF - stopping interactively.", file=sys.stderr)
                 return "stop"
@@ -130,6 +134,37 @@ def build_repl_hook(
             print(f"[agent6] unknown command {raw!r}; try /help", file=sys.stderr)
 
     return hook
+
+
+def _read_command(
+    root: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...]
+) -> str:
+    """Read a command and preview a parallel line until repeated or replaced.
+
+    Args:
+        root: The parent repository.
+        session_id: The run that receives the steer.
+        config_paths: The run's config files.
+
+    Returns:
+        The command to handle. A submitted steer continues the run.
+    """
+    directory = layout.SessionLayout(paths.state_dir(root), session_id).session_dir
+    pending = ""
+    while True:
+        raw = input("agent6> ").strip()
+        draft = parallel_preview.describe(raw, root, config_paths, session_dir=directory)
+        if draft is None:
+            return raw
+        if draft.ready and raw == pending:
+            if session_id and directory.is_dir() and ipc.submit_steer(directory, raw):
+                return "/continue"
+            print("[agent6] Could not queue the steer. Nothing sent.", file=sys.stderr)
+        else:
+            print(draft.text, file=sys.stderr)
+            if draft.ready:
+                print("Repeat the line to send it, or type a different command.", file=sys.stderr)
+        pending = raw if draft.ready else ""
 
 
 def repl_run_diff(session_id: str) -> None:

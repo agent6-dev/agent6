@@ -94,3 +94,29 @@ def test_typing_slash_shows_hints_and_tab_completes(tmp_path: pathlib.Path) -> N
             assert sug.display is False  # a space follows the word: hints gone
 
     asyncio.run(scenario())
+
+
+def test_unsent_parallel_shows_each_task_in_the_conversation(tmp_path: pathlib.Path) -> None:
+    """A spec repeats one task. A second directive starts another task."""
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "logs.jsonl").write_text('{"type":"session.start","mode":"run","user_task":"t"}\n')
+    (run / "worker.pid").write_text(str(os.getpid()))
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(run)
+        async with app.run_test(size=(100, 35)) as pilot:
+            await pilot.pause()
+            bar = app.screen.query_one("#conv-input", composer.SteerInput)
+            bar.load_text("/parallel 2 -- fix parser /parallel p/m -- test CLI")
+            await pilot.pause()
+            hint = app.screen.query_one("#conv-suggest", composer.SteerSuggest)
+            rendered = "\n".join(hint.render_line(y).text for y in range(hint.size.height))
+            assert "3 children for 2 tasks" in rendered, rendered
+            assert "2 attempts (2): fix parser" in rendered
+            assert "1 attempt (p/m): test CLI" in rendered
+            bar.load_text("plain instruction")
+            await pilot.pause()
+            assert not hint.display
+
+    asyncio.run(scenario())

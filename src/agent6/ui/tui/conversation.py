@@ -25,6 +25,7 @@ from textual import app, containers, geometry, screen, timer, widgets
 from textual.css import query
 
 from agent6.sessions import journal
+from agent6.ui import parallel_preview
 from agent6.ui.tui import clipboard, composer, logview, menubar, screen_chrome, settings
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import (
@@ -691,7 +692,17 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             return
         with contextlib.suppress(query.NoMatches):
             self.query_one("#conv-suggest", composer.SteerSuggest).show_for(
-                event.text_area.text, mode="steer" if self._host_live() else "resume"
+                event.text_area.text,
+                mode="steer" if self._host_live() else "resume",
+                preview=parallel_preview.describe(
+                    event.text_area.text,
+                    pathlib.Path.cwd(),
+                    self._host.config_paths,
+                    preset=self._host.resume_preset if not self._host_live() else "",
+                    session_dir=self._logs_path.parent,
+                )
+                if self._host.mode == "run"
+                else None,
             )
 
     def _emit(self, seq: str) -> None:

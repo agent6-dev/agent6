@@ -22,7 +22,7 @@ from textual.css import query
 
 from agent6 import directive
 from agent6.sessions import ipc
-from agent6.ui import keymap
+from agent6.ui import keymap, parallel_preview
 from agent6.ui.tui import forms, menubar, modals
 from agent6.viewmodel import ApprovalPrompt, SessionState, approval_parts, tail, transcript
 from agent6.viewmodel.session import state as viewmodel_state
@@ -117,15 +117,24 @@ def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
 
 
 class SteerSuggest(widgets.Static):
-    """The command hints above a composer: one row per matching directive, else hidden."""
+    """The unsent parallel draft or the matching commands above a composer."""
 
     ALLOW_SELECT = False
     DEFAULT_CSS = """
     SteerSuggest { display: none; height: auto; padding: 0 1; background: $surface; }
     """
 
-    def show_for(self, text: str, *, mode: ComposerMode) -> None:
+    def show_for(
+        self,
+        text: str,
+        *,
+        mode: ComposerMode,
+        preview: parallel_preview.ParallelPreview | None = None,
+    ) -> None:
         """Show the rows matching the composer's text, or hide the line."""
+        if preview is not None:
+            self.show_text(rich_text.Text(preview.text))
+            return
         rows = steer_suggestion_rows(text, mode=mode)
         body: rich_text.Text | None = None
         if rows:

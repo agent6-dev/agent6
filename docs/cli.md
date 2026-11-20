@@ -73,7 +73,7 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
     - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/answer`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
 - `/detach` hands the run to the background after its current turn (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it
 - `/exit` leaves the run resumable; `/stop`, or Ctrl-C at the pause prompt, stops it now, as `agent6 stop ID` does
-- `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
+- `run -i` prompts after every commit: `/continue` (bare Enter), [`/parallel` (preview before sending)](usage.md#parallel-directive), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
 - hub-started runs run detached; `agent6 attach` follows them (conversation by default; `--tui`, `--raw`)
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">

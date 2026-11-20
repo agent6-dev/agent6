@@ -30,7 +30,7 @@ from agent6 import __version__, errors, kinds
 from agent6.config import is_loopback_host, layer, write
 from agent6.machine import MachineError
 from agent6.sessions import process
-from agent6.ui import spawn
+from agent6.ui import parallel_preview, spawn
 from agent6.ui.telemetry import export
 from agent6.ui.web import (
     actions,
@@ -79,6 +79,20 @@ class NewWorkBody(_Body):
     worktree: bool = False
     seed_from: str = ""
     max_usd: float | None = None
+
+
+class ParallelPreviewBody(_Body):
+    """A composer draft to parse without dispatching its tasks.
+
+    Attributes:
+        text: The unsent text.
+        preset: The selected preset override.
+        session_id: The run to steer or resume. An empty id starts new work.
+    """
+
+    text: str
+    preset: str = ""
+    session_id: str = ""
 
 
 class SteerBody(_Body):
@@ -719,6 +733,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         if path.startswith("/api/git/"):
             self._route_git_post(path.removeprefix("/api/git/"))
+            return
+        if path == "/api/parallel-preview":
+            draft = ParallelPreviewBody.model_validate(self._read_body())
+            preview = parallel_preview.describe(
+                draft.text,
+                self.cwd,
+                self.config_paths,
+                preset=draft.preset,
+                new_work=not draft.session_id,
+                session_dir=model.session_dir_for(self.cwd, draft.session_id)
+                if draft.session_id
+                else None,
+            )
+            self._send_json({"preview": preview.text if preview is not None else ""})
             return
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())

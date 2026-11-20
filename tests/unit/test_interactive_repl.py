@@ -523,3 +523,29 @@ def test_diff_ctrl_c_aborts_diff_not_the_run(
         signal.signal(signal.SIGINT, previous)
     assert directive == "continue"
     assert "/diff cancelled." in capsys.readouterr().err
+
+
+def test_parallel_previews_before_the_repeated_line_sends(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A changed draft replaces the preview without sending the old line."""
+    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "r"
+    run.mkdir(parents=True)
+    line = "/parallel 2 -- fix parser /parallel p/m -- test CLI"
+    answers = iter(["/parallel old task", line, line, "/quit"])
+
+    def answer(_prompt: str) -> str:
+        value = next(answers)
+        assert not sessions_ipc.steer_request_pending(run)
+        if value == line:
+            output = capsys.readouterr().err
+            assert "1 child for 1 task" in output or "3 children for 2 tasks" in output, output
+            if "3 children" in output:
+                assert "2 attempts (2): fix parser" in output
+                assert "1 attempt (p/m): test CLI" in output
+        return value
+
+    monkeypatch.setattr("builtins.input", answer)
+    hook = repl.build_repl_hook(tmp_path, _budget(), session_id="r")
+    assert hook(2, "abc") == "continue"
+    assert sessions_ipc.take_steer_answer(run) == line

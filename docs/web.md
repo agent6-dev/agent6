@@ -246,6 +246,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - markdown runs only its nonce-authorized owned script and escapes raw HTML
     - signed-in `POST /api/files/preview/remote` accepts only `{key}` and permits the snapshot's remote image origins in `img-src` and video/audio origins in `media-src` until close; it accepts no host list
     - other resource types gain no remote permission; scheme-relative image addresses use HTTPS
+- composer preview: `POST` `/api/parallel-preview` reads the draft and returns its tasks and attempt counts without starting a run
 - writes, small JSON `POST`s: `/api/git/{stage,unstage,discard,commit,branch,switch}` (409 while a session is live in the checkout, 422 for git's own refusal), `/api/git/fetch`, `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,review,stop,compact,rm}`, `/api/session/<id>/findings/<fid>/{fix,resolve,reopen}`, `/api/session/<id>/findings/fix`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - session rows, session snapshots and machine snapshots list their fields, the operator's words and the spend among them, on [Formats](formats.md#cli-json)
 - roster writes use the [typed request bodies](formats.md#reviewerbody) for additions and [removals](formats.md#removereviewerbody)

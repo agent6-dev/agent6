@@ -247,7 +247,14 @@ def test_the_model_hint_dims_its_label_not_the_model_ids(tmp_path: pathlib.Path)
                 pilot, lambda: any("o/beta" in seg.text for seg in segments()), "the next model"
             )
             await pilot.press(*"o/beta -- ")
-            await waits.wait_for(pilot, lambda: not hint.display, "the task has no model hint")
+            await waits.wait_for(
+                pilot, lambda: "needs a task after --" in str(hint.render()), "the incomplete task"
+            )
+            await pilot.press(*"check parser /parallel check CLI")
+            output = "\n".join(hint.render_line(y).text for y in range(hint.size.height))
+            assert "3 children for 2 tasks" in output, output
+            assert "2 attempts (o/alpha, o/beta): check parser" in output
+            assert "1 attempt (default): check CLI" in output
 
     asyncio.run(scenario())
 

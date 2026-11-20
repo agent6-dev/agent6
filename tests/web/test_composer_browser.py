@@ -311,3 +311,28 @@ def test_a_sessions_button_keeps_its_entrys_line_height_and_bottom_edge(
     assert field["height"] > 2 * key["height"]
     assert key["y"] + key["height"] == pytest.approx(field["y"] + field["height"], abs=0.5)
     assert not errors
+
+
+@pytest.mark.parametrize("view", ["session", "new work"])
+def test_unsent_parallel_shows_each_task(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path, view: str
+) -> None:
+    """Both composers describe the draft before any start or steer request."""
+    from playwright.sync_api import expect
+
+    session_logs.write_run(tmp_path, "live-AAA111", [], live=True)
+    page, errors = open_page(port)
+    route, send = COMPOSERS[view]
+    sent: list[str] = []
+    page.on("request", lambda req: sent.append(req.url) if req.url.endswith(send) else None)
+    page.goto(f"http://127.0.0.1:{port}/{route}")
+    box = page.locator(".composer textarea")
+    box.fill(" /PARALLEL 2 -- fix parser /parallel p/m -- test CLI")
+    preview = page.locator(".composer .parallel-preview")
+    expect(preview).to_contain_text("3 children for 2 tasks")
+    expect(preview).to_contain_text("2 attempts (2): fix parser")
+    expect(preview).to_contain_text("1 attempt (p/m): test CLI")
+    assert preview.is_visible()
+    box.fill("plain instruction")
+    expect(preview).to_be_hidden()
+    assert not sent and not errors
