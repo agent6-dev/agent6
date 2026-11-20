@@ -216,7 +216,16 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - the newest two results, undelivered results and operator answers stay whole; reads of recently-edited files elide last
 - dedup runs in the same tier-1 pass; `keep_thinking_turns` strips old thinking only when that pass rewrites results, avoiding separate cache breaks
 - a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
-- tier 2, `summarise_at_chars`: the elided history is summarised by the `helper` model; the conversation restarts from the task, that summary, the pins and decisions block, the verify fact (the last full verification's command, verdict and tree, and whether the tree changed since), and the last `keep_recent_chars` (default 80000) of history verbatim
+- Tier 2 checks `summarise_at_chars` before tier 1 rewrites any messages.
+- With `summariser = "worker"` (default), the driving model receives its prepared conversation and tools with a final instruction to write the summary.
+  A summary tool call is never run.
+- With `summariser = "helper"`, the helper reads the part being replaced without tool output.
+  When that history exceeds the helper's known window, it reads the newest end with a notice that the beginning is missing.
+- A rejected worker request or unusable reply gives the helper one attempt.
+  The `claude_code` backend uses the helper directly because its worker process owns the session.
+  Stop, budget and sign-in failures do not start another attempt.
+- Only a complete text summary without a tool call or refusal replaces the history.
+  The restart keeps the task, pins, decisions, verify fact and recent whole exchanges (`keep_recent_chars`, default 80000).
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
@@ -818,7 +827,8 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 `VerifyVerdict` and `SessionSnapshot` carry the final verification ID and tested tree across resume.
 A pass covers the final tree only when both observations and the end tree match; commit identity alone does not invalidate unchanged content.
 `viewmodel/receipt.py` derives `ReceiptView` from the journal and manifest, with no second receipt file or duplicate event.
-`viewmodel/cache_usage.py` folds worker cache share and post-compaction input from `model.call`, `model.result` and actual compaction events for both the receipt and run-end token summary.
+`viewmodel/cache_usage.py` matches each summary writer to its `model.result` by `model_call_id` for the receipt and run-end token summary.
+It reports ordinary worker cache use and the first input after a history rewrite separately.
 The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call, verification run or environment probe.
 `VerifyRun` in `harness/review/session.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
 

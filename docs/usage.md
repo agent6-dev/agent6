@@ -52,7 +52,7 @@ For example, `models.planner.effort = "max"` changes only the planner's effort.
 | `worker` | `[models.worker]` | `agent6 run`, `agent6 ask`, their resumes, machine agent states, and model-written squash messages |
 | `planner` | `[models.planner]` | `agent6 plan` and plan resumes |
 | `reviewer` | `[models.reviewer]` | in-loop reviewers without a route, the default judge of `sessions compare` and `--parallel` ([`harness.parallel.judges`](config.md#harnessparallel)), and `sessions review` |
-| `helper` | `[models.helper]` | context summarising, gisting (`compaction.elision_gists`), and verify-command inference |
+| `helper` | `[models.helper]` | helper summaries (`compaction.summariser`), gisting (`compaction.elision_gists`), and verify-command inference |
 
 ```sh
 agent6 model default anthropic/claude-sonnet-5
@@ -420,13 +420,16 @@ Every listing orders sessions by last activity, newest first.
 `agent6 sessions receipt <id> [--json]` reads testing, review, cache use and reversal evidence from the journal and manifest.
 It makes no provider call and reruns no checks.
 
-The receipt and the run-end token summary show session-wide worker cache use, including resumed executions but excluding helpers and children.
+The receipt and the run-end token summary show ordinary worker cache use across the session, including resumed executions but excluding summary attempts, helpers and children.
 `Worker input cache` is cache-read tokens divided by fresh input, cache-read and cache-write tokens together.
 `After compaction` counts the first logical worker call after each history rewrite and its fresh plus cache-write input tokens.
 Several rewrites before one call count once; requested, refused and failed compactions do not count unless they also rewrote history.
 These figures use `model.result`, which records the last attempt's usage, not all retry attempts or a causal estimate of extra cost.
 Calls without input or cache-read counts are excluded, partial coverage is named, and no cache line appears when none report counts.
 Historical journals that recorded an unreported count as zero cannot distinguish it from a reported zero.
+
+Each `Summary attempt` line names its writer, cached and uncached input, outcome and any fallback reason.
+`unreported` means the provider supplied no count.
 
 - **Testing:** the receipt includes each [recorded verification attempt](formats.md#verificationevidence).
   A pass certifies only its unchanged tested tree; a scoped pass covers only the selected tests.

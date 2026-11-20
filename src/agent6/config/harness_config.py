@@ -548,8 +548,9 @@ class CompactionConfig(pydantic.BaseModel):
         default=None,
         gt=0,
         description=(
-            "tier-2 threshold in whole-context characters; above it: elided history summarized, "
-            "conversation restarted on the summary, task DAG preserved; unset: model's window "
+            "tier-2 threshold in whole-context characters; checked before tier 1; "
+            "an accepted summary restarts the conversation and preserves the task DAG; "
+            "unset: model's window "
             "minus a 16k-token reserve; required above `compaction.drop_at_chars`"
         ),
     )

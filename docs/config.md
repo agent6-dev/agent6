@@ -336,7 +336,7 @@ Role routing:
 | Field | Default | Meaning |
 |---|---|---|
 | `default` | none | required route for every model call; set with `agent6 model default PROVIDER/MODEL`; the only fallback for each role's unset model, effort and temperature |
-| `helper` | none | model for the context summariser, gisting (`compaction.elision_gists`), and verify-command inference; unset fields take `models.default` |
+| `helper` | none | model for helper summaries (`compaction.summariser`), gisting (`compaction.elision_gists`), and verify-command inference; unset fields take `models.default` |
 | `worker` | none | model for `agent6 run`, `agent6 ask`, their resumes, machine agent states and the model-written squash message; unset fields take `models.default` |
 | `reviewer` | none | model for in-loop reviewers without a route, the `sessions compare` and `--parallel` judge, and `sessions review`; unset fields take `models.default` |
 | `planner` | none | model for `agent6 plan` and plan resumes; unset fields take `models.default` |
@@ -550,8 +550,9 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 
 | Field | Default | Meaning |
 |---|---|---|
+| `summariser` | `"worker"` | tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history without tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back |
 | `drop_at_chars` | _adaptive_ | tier-1 threshold in accumulated tool-result characters (about 4 per token); above it: oldest results replaced by short, re-fetchable placeholders down to half the threshold where result protections allow; unset: about 45% of the model's context window; explicit thresholds: both `compaction.drop_at_chars` and `compaction.summarise_at_chars` required |
-| `summarise_at_chars` | _adaptive_ | tier-2 threshold in whole-context characters; above it: elided history summarized, conversation restarted on the summary, task DAG preserved; unset: model's window minus a 16k-token reserve; required above `compaction.drop_at_chars` |
+| `summarise_at_chars` | _adaptive_ | tier-2 threshold in whole-context characters; checked before tier 1; an accepted summary restarts the conversation and preserves the task DAG; unset: model's window minus a 16k-token reserve; required above `compaction.drop_at_chars` |
 | `keep_recent_chars` | `80000` | characters of newest history kept verbatim after the summary on a tier-2 restart; `compaction.keep_recent_chars = 0`: none |
 | `keep_thinking_turns` | `-1` | thinking retained when tier 1 rewrites tool results for the newest N assistant turns with `compaction.keep_thinking_turns = N` (`N >= 1`); `compaction.keep_thinking_turns = -1`: all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking block needed by an in-flight tool call; less replay for Anthropic's signed blocks and ChatGPT's reasoning items; no thinking re-sent on the OpenAI wire |
 | `summary_max_tokens` | `2048` | output-token cap for a tier-2 summary or gist distillation; smaller caps overridden by a reasoning model's per-call floor for reasoning tokens; no cap accepted by the chatgpt backend |
