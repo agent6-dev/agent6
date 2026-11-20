@@ -356,6 +356,17 @@ def test_url_previews_keep_paths_without_credentials_queries_or_fragments(
     assert not sessions.roster(tmp_path, "private-").briefs
 
 
+def test_both_readers_mask_a_value_with_joined_urls(tmp_path: pathlib.Path) -> None:
+    """Two URL schemes in one token do not define one safe path."""
+    text = "see https://one.example/a,https://two.example/b"
+    read = _reader(tmp_path, [{"type": "tool.result", "name": "fetch", "summary": text}])
+    detail = "fetch result: see (unreadable URL)"
+    assert read()["conversation"] == f"#1 --:-- tool: {detail}"
+    assert not sessions.roster(tmp_path, "two.example").briefs
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="calm-owl-AAAAAA")
+    assert sessions.conversation(layout, max_chars=1_000) == f"[tool] {detail}"
+
+
 def test_search_does_not_page_through_its_own_calls_and_results(tmp_path: pathlib.Path) -> None:
     """Dispatch journals the lookup in the same file before the reader opens it."""
     from agent6.config import Config

@@ -272,6 +272,8 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
 
 def _url_text(match: re.Match[str]) -> str:
     """Return the URL without userinfo, query or fragment."""
+    if match[0].count("://") != 1:
+        return "(unreadable URL)"
     try:
         parts = parse.urlsplit(match[0])
         # A clipped authority can end inside userinfo before its @.
