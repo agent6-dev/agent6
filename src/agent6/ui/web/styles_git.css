@@ -138,7 +138,7 @@
 .gfilter-group, .gfilter-item { display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; }
 .gfilter-list { max-height: 40vh; overflow-y: auto; margin-top: 0.5rem; }
 .gfilter-item { display: flex; padding: 0.1875rem 0; font-size: var(--fs-m); }
-.gfilter-item.off { opacity: .5; cursor: not-allowed; }
+.gfilter-item.off { opacity: var(--disabled); cursor: not-allowed; }
 .gfilter-item.off input { cursor: inherit; }
 .gfilter-item .gref { margin-right: 0; }
 /* Where a ref's name is the row (the Refs filter, the picker's list, the commit's subject), the

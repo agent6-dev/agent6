@@ -445,7 +445,7 @@ def test_a_button_keeps_the_keyboard_focus_while_its_request_is_in_flight(
             page.wait_for_timeout(50)
         expect(button).to_be_focused()
         expect(button).to_be_disabled()
-        expect(button).to_have_css("opacity", "0.45")
+        expect(button).to_have_css("opacity", "0.5")
         page.keyboard.press("Enter")  # a press meanwhile sends nothing
         page.wait_for_timeout(200)
         assert len(held) == 1

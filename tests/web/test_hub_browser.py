@@ -475,7 +475,10 @@ def test_the_folds_say_whether_they_are_open_and_keep_the_focus(
 def test_a_disabled_picker_reads_disabled_with_its_label(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """A plan greys worktree and from plan: Firefox drew both, and both labels, as enabled."""
+    """A plan greys worktree and from plan: Firefox drew both, and both labels, as enabled.
+
+    A disabled button dimmed to .45 beside a disabled field at .55: every control dims alike.
+    """
     from playwright.sync_api import expect
 
     page, errors = open_page(port)
@@ -486,7 +489,11 @@ def test_a_disabled_picker_reads_disabled_with_its_label(
     opacity = "es => es.map(e => +getComputedStyle(e).opacity)"
     labels = page.locator(".dock .pick", has=page.locator(":disabled")).locator("> span")
     expect(labels).to_have_text(["worktree", "from plan"])
-    assert max(worktree.evaluate_all(opacity) + labels.evaluate_all(opacity)) < 1
+    start = page.get_by_role("button", name="Start", exact=True)
+    expect(start).to_be_disabled()  # nothing typed
+    dimmed = page.locator(".dock :disabled:not(option)").evaluate_all(opacity)
+    dimmed += labels.evaluate_all(opacity)
+    assert len(set(dimmed)) == 1 and dimmed[0] < 1, dimmed
     assert not errors
 
 
