@@ -26,6 +26,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.graph import order
 from agent6.ui import keymap
 from agent6.ui.tui import (
     clipboard,
@@ -68,7 +69,9 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
     CSS = """
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
        the model's live output. */
-    #top { height: auto; max-height: 7; padding: 0 1; }
+    #top { height: auto; max-height: 8; padding: 0 1; border: round $primary; }
+    /* A short terminal keeps the run's lines and drops their frame. */
+    DashboardScreen.-compact #top { border: none; max-height: 3; }
     /* Compact (a short terminal): one pane row at a time, the one holding focus
        (the log and diff otherwise), with a summary line for what is folded. A
        folded row keeps zero height, not display: none, so Tab still reaches its
@@ -109,7 +112,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
     /* One card background everywhere. Tree/DataTable/RichLog default to $surface
        but the Static-based stream/diff panes are transparent (screen background),
        so set it explicitly to keep every card the same. */
-    #plan, #stream, #tools, #log, #diff, #dash-input { background: $surface; }
+    #top, #plan, #stream, #tools, #log, #diff, #dash-input { background: $surface; }
     /* Uniform resting border (matches the home table + config card); the focused
        panel goes $accent. */
     #plan:focus, #stream:focus, #tools:focus, #log:focus, #diff:focus { border: round $accent; }
@@ -260,7 +263,10 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         yield dashboard_children.ChildTable(self._tui.session_dir)
         yield textual_widgets.Static("", id="summary")  # compact only: the folded rows in one line
         with containers.Horizontal(id="head"):
-            yield textual_widgets.Tree("tasks", id="plan")
+            # The border names the pane, so the tree shows its tasks without a root row.
+            tasks = textual_widgets.Tree("tasks", id="plan")
+            tasks.show_root = False
+            yield tasks
             with forms.ScrollPane(id="stream"):
                 yield textual_widgets.Static("", id="stream-body")
         yield textual_widgets.DataTable(id="tools", cursor_type="row")
@@ -492,7 +498,9 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             s, ds, as_of, active=active
         )
         if self.has_class("-compact"):
-            calls = f"{s.tool_count} tool call{'' if s.tool_count == 1 else 's'}"
+            done = sum(t.status in order.DONE_STATUSES for t in ds.tasks)
+            calls = f"tasks: {done}/{len(ds.tasks)} · " if ds.tasks else ""
+            calls += f"{s.tool_count} tool call{'' if s.tool_count == 1 else 's'}"
             if s.tool_calls:
                 last = s.tool_calls[-1]
                 ok = "…" if last.ok is None else ("✓" if last.ok else "✗")
@@ -502,6 +510,10 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             folded.truncate(width or 200, overflow="ellipsis")
             self.query_one("#summary", textual_widgets.Static).update(folded)
 
+        call = s.last_model_call
+        self.query_one("#stream").border_title = (
+            f"{markup.escape(call.role)} output" if call is not None else "output"
+        )
         # Rich Text, so model output is never parsed as markup.
         self.query_one("#stream-body", textual_widgets.Static).update(
             self._stream_story(s, active=active)
@@ -584,7 +596,8 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             self._rendered_tree = (ds.tasks, sel, as_of)
             tree = self.query_one("#plan", textual_widgets.Tree)
             tree.clear()
-            tree.border_title = f"tasks{as_of}" if as_of else ""
+            done = sum(t.status in order.DONE_STATUSES for t in ds.tasks)
+            tree.border_title = (f"tasks: {done}/{len(ds.tasks)}" if ds.tasks else "tasks") + as_of
             for tv in ds.tasks:
                 indent = "  " * tv.depth
                 # The id leads the line: it is what `/retire` takes.
@@ -612,12 +625,12 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                     ok,
                     rich_text.Text(format.clip_cell(tc.result_summary, 40)),
                 )
-            table.border_title = f"tools{filt}" if sel else ""
+            table.border_title = f"tools: {len(tools)}{filt}"
 
         # The diff is on the monotonic log_count: log_tail is a sliding window, so a length diff
         # freezes once it saturates. The bottom is kept only when the operator was there.
         log = self.query_one("#log", textual_widgets.RichLog)
-        log.border_title = f"log{filt}" if sel else ""
+        log.border_title = f"log{filt}"
         if sel != self._log_filter:
             log.clear()
             for ln in s.log_tail:

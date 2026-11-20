@@ -150,9 +150,7 @@ class DiffPane(forms.ScrollPane):
             return
         self._rendered = key
         self.border_title = (
-            "diff · the model owns git"
-            if self.git_control() == "model"
-            else (f"diff{filt}" if sel else "")
+            "diff · the model owns git" if self.git_control() == "model" else f"diff{filt}"
         )
         self.query_one("#diff-body", widgets.Static).update(self._story(s, sel))
 

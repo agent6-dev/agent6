@@ -45,12 +45,14 @@ def test_a_selected_commit_relabels_the_details_as_of_that_turn(
             dash.diff.commit_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
-            assert dash.query_one("#plan", widgets.Tree).border_title == "tasks · as of turn 1"
+            tree = dash.query_one("#plan", widgets.Tree)
+            assert str(tree.border_title).startswith("tasks") and not tree.show_root
+            assert str(tree.border_title).endswith(" · as of turn 1")
             assert "as of turn 1" in str(dash.query_one("#top", widgets.Static).render())
             dash.diff.commit_sel = ""
             dash.render_state()
             await pilot.pause()
-            assert dash.query_one("#plan", widgets.Tree).border_title == ""
+            assert "as of turn" not in str(dash.query_one("#plan", widgets.Tree).border_title)
 
     asyncio.run(scenario())
 
@@ -91,12 +93,13 @@ def test_the_top_line_counts_tasks_as_of_the_selected_commit(
             dash.render_state()
             await pilot.pause()
             live = str(dash.query_one("#top", widgets.Static).render())
-            assert "tasks: 1/2" in live and "as of turn" not in live
+            tree = dash.query_one("#plan", widgets.Tree)
+            assert tree.border_title == "tasks: 1/2" and "as of turn" not in live
             dash.diff.commit_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
             top = str(dash.query_one("#top", widgets.Static).render())
-            assert "tasks: 0/1" in top
+            assert tree.border_title == "tasks: 0/1 · as of turn 1"
             assert top.index("usage:") < top.index("as of turn 1")
 
     asyncio.run(scenario())

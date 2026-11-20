@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The dashboard's header.
+"""The dashboard's run widget.
 
-The status, the task count, the cost, the budget and the context on line one;
-the role and the task on line two; then the manifest's lines as they appear
-(lineage, branch, pins, serving, a child's compare), each cached as long as it
-can hold. Every line ends in an ellipsis rather than wraps, so a long model id
-never pushes the status onto a line of its own.
+The session id on the border; the status, the cost, the budget and the plan on line
+one; the driving role and the task on line two; then the lines a run has (where its
+commands run when not on the local host, lineage, branch, pins, serving, a child's
+compare), each cached as long as it can hold. Every line ends in an ellipsis rather
+than wraps, so a long model id never pushes the status onto a line of its own.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from rich import markup, text
 from textual import widgets
 
 from agent6 import kinds
-from agent6.graph import order
 from agent6.sessions import manifest, process
 from agent6.ui.tui import theme
 from agent6.viewmodel import (
@@ -36,12 +35,36 @@ if TYPE_CHECKING:
     from agent6.ui.tui import app
 
 
+def _elsewhere(ds: SessionState) -> tuple[str, ...]:
+    """Return the lines that say where commands run, for a run not on the plain local host.
+
+    Args:
+        ds: The state the details are as of.
+
+    Returns:
+        The environment and its roots, then a container's line; () on the local host with
+        one root, where the launch block and `sessions show` hold the full record.
+    """
+    current = ds.targets.current
+    container = policy.environment_lines(ds.environment)
+    if current is None:
+        return container
+    target = current.target
+    if target.transport == "local" and target.host_root == target.command_root:
+        return container
+    where = f"environment: {target.transport} · commands {target.command_root}"
+    if target.host_root != target.command_root:
+        where += f" · host {target.host_root}"
+    return (where, *container)
+
+
 class RunHeader(widgets.Static):
     """The `#top` lines, repainted by `refresh_lines`."""
 
     def __init__(self) -> None:
         """Create the header with every cached line empty."""
         super().__init__("", id="top")
+        self.border_title = "run"
         self._compare_line: str | None = None  # a child's compare header, once stamped
         self._branch_line: str | None = None
         self._branch_finished = False  # the run state the branch line was read under
@@ -78,10 +101,7 @@ class RunHeader(widgets.Static):
             spinner = format.spinner_frame(tui.spin)
             beat = f" {spinner} {tui.seconds_since_event()}s"
         role_line = f"{call.role} / {call.model}{beat}" if call else self._start_role()
-        finished = self._end_label()
-        # Tasks and cost are as of the selected commit; ctx is live.
-        done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
-        tasks = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
+        # The cost is as of the selected commit.
         b = ds.budget
         cell = session_status.usage_cell(
             b.usd_so_far,
@@ -89,10 +109,9 @@ class RunHeader(widgets.Static):
             plan_observed_points=b.session.plan_observed_points,
             plan_used_percent=b.account.used_percent if b.account else 0.0,
         )
-        segments = ["[b]agent6[/]"]
-        if finished:
-            segments.append(finished)
-        segments.extend((tasks, f"usage: [b]{cell}[/]"))
+        word, _reason = tui.dir_status
+        status = f"[b {theme.status_style(word)}]{markup.escape(tui.status_label)}[/]"
+        segments = [status, f"usage: [b]{cell}[/]"]
         # This execution's metered spend against its cap; the session figure stays cumulative.
         run = b.execution
         if run.usd_cap is not None and run.usd_cap > 0:
@@ -115,21 +134,16 @@ class RunHeader(widgets.Static):
                 plan += f" (moved {run.plan_observed_points:g}/{run.plan_cap:g}pt this run)"
             segments.append(plan)
         if as_of:
-            segments.append(as_of.strip())
-        pct = tui.context_used_percent()
-        if pct is not None:
-            segments.append(f"ctx: {pct}%")
+            segments.append(as_of.strip().removeprefix("· "))
         lead = f"role: {role_line} · task: "
         task = markup.escape(
             tui.task_label().line(max_chars=120).replace("\n", "\n" + " " * len(lead))
         )
-        launch = policy.session_policy(
-            tui.session_dir, targets=ds.targets, environment=ds.environment
-        )
+        self.border_title = f"run: {markup.escape(tui.session_dir.name)}"
         header = text.Text.from_markup(
             "  ".join(segments) + "\n"
             f"role: {markup.escape(role_line)} · task: {task}"
-            + "".join(f"\n{markup.escape(line)}" for line in (*launch.models, *launch.environment))
+            + "".join(f"\n{markup.escape(line)}" for line in _elsewhere(ds))
             + f"{markup.escape(self._lineage_top())}{markup.escape(self._branch_top())}"
             f"{markup.escape(self._pins_top(s))}{markup.escape(self._serving_top())}"
             f"{markup.escape(self._compare_top())}"
@@ -139,13 +153,6 @@ class RunHeader(widgets.Static):
             for line in lines:
                 line.truncate(width, overflow="ellipsis")
         self.update(text.Text("\n").join(lines))
-
-    def _end_label(self) -> str:
-        """Return the status label in its colour: the hub row's word; "" while running."""
-        word, _reason = self._tui.dir_status
-        if word == "running":
-            return ""
-        return f"[b {theme.status_style(word)}]{markup.escape(self._tui.status_label)}[/]"
 
     def _compare_top(self) -> str:
         """Return a child's compare line, cached once stamped; "" for a non-child run."""

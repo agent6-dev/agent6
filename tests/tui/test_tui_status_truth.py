@@ -170,7 +170,7 @@ def test_end_hold_title_uses_the_listing_label(
 
 
 def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: pathlib.Path) -> None:
-    """The top line's `tasks: N/M` counts a retired task as done, like a skipped one."""
+    """The tasks title's `N/M` counts a retired task as done, like a skipped one."""
     d = tmp_path / "obsolete1"
     d.mkdir()
     evs = [
@@ -195,8 +195,8 @@ def test_the_task_count_credits_an_obsolete_task_as_done(tmp_path: pathlib.Path)
                 if len(app.state.tasks) == 3:
                     break
                 await pilot.pause(0.05)
-            top = str(app._dash.query_one("#top", widgets.Static).render())
-            assert "tasks: 2/3" in top
+            await pilot.pause()
+            assert app._dash.query_one("#plan", widgets.Tree).border_title == "tasks: 2/3"
 
     asyncio.run(scenario())
 

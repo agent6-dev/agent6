@@ -1161,7 +1161,7 @@ def test_stop_after_turn_drops_the_marker(tmp_path: pathlib.Path) -> None:
 def test_context_used_percent_readout_in_top_line_and_bar(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
-    """With the context window known, the top line and the composer subtitle show `ctx: NN%`."""
+    """With the context window known, the composer subtitle shows `ctx NN%`, once on the screen."""
 
     def _window(_provider: str, _model: str) -> int:
         return 100_000
@@ -1189,7 +1189,7 @@ def test_context_used_percent_readout_in_top_line_and_bar(
             await pilot.pause()
             assert app.context_used_percent() == 41
             top = str(app._dash.query_one("#top", widgets.Static).render())
-            assert "ctx: 41%" in top
+            assert "ctx" not in top
             bar = app._dash.query_one("#dash-input", composer.SteerInput)
             assert "ctx 41%" in (bar.border_subtitle or "")
             await pilot.press("ctrl+d")
@@ -1254,11 +1254,13 @@ def test_subscription_header_separates_every_segment(
             top = str(app._dash.query_one("#top", widgets.Static).render()).splitlines()[0]
             # The saved reading's window has reset since it was read; both facts are said.
             assert re.fullmatch(
-                r"agent6  passed  tasks: 1/1  usage: 0pt  budget: 0%"
+                r"passed  usage: 0pt  budget: 0%"
                 r"  plan: 52% · window reset since · read \d+ d \d+ h ago"
-                r" \(moved 0/10pt this run\)" + (r"  ctx: 2%" if context_window else ""),
+                r" \(moved 0/10pt this run\)",
                 top,
             ), top
+            assert app._dash.query_one("#plan", widgets.Tree).border_title == "tasks: 1/1"
+            assert app._dash.query_one("#top").border_title == f"run: {tmp_path.name}"
 
     asyncio.run(scenario())
 
@@ -1949,6 +1951,54 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("transport", ["local", "container"])
+def test_every_dashboard_pane_is_titled_and_the_run_widget_stays_short(
+    tmp_path: pathlib.Path, transport: str
+) -> None:
+    """Pin the titles: the top was loose role and environment lines, and panes had no names."""
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(tmp_path)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _show_dashboard(pilot)
+            target = {
+                "transport": transport,
+                "host_root": "/repo",
+                "command_root": "/repo",
+                "user": "1000:1000",
+                "home": "/home/u",
+                "environment": {"inherit": True, "variable_names": []},
+                "controls": [],
+            }
+            run = {"execution_id": "e1"}
+            app._handle_event(_ev(type="session.start", user_task="t", mode="run", **run))
+            app._handle_event(_ev(type="execution.target", target_id="abc", target=target, **run))
+            app._handle_event(_ev(type="model.call", role="worker", model="m", provider="p"))
+            app._tick()
+            await pilot.pause()
+            assert app.state.targets.current is not None
+            dash = app._dash
+            dash.render_state()
+            await pilot.pause()
+            panes = ("#top", "#plan", "#stream", "#tools", "#log", "#diff")
+            assert {name: str(dash.query_one(name).border_title) for name in panes} == {
+                "#top": f"run: {tmp_path.name}",
+                "#plan": "tasks",
+                "#stream": "worker output",
+                "#tools": "tools: 0",
+                "#log": "log",
+                "#diff": "diff",
+            }
+            assert not dash.query_one("#plan", widgets.Tree).show_root
+            lines = str(dash.query_one("#top", widgets.Static).render()).split("\n")
+            # A run on the local host needs no line for where its commands run.
+            where = "environment: container · commands /repo"
+            assert lines[2:] == ([where] if transport == "container" else [])
+            assert lines[1].startswith("role: worker / m")
+
+    asyncio.run(scenario())
+
+
 def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pathlib.Path) -> None:
     """A long model id pushed "failed · max turns" onto a line of its own, split mid-phrase.
 
@@ -1970,7 +2020,7 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pa
             await pilot.pause()
             top = app._dash.query_one("#top", widgets.Static)
             lines = str(top.render()).split("\n")
-            assert lines[0].startswith("agent6  failed · max turns")
+            assert lines[0].startswith("failed · max turns")
             assert lines[1].startswith("role: worker / moonshotai/kimi")
             assert all(len(line) <= top.content_size.width for line in lines)
             assert lines[1].endswith("…")
