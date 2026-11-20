@@ -148,8 +148,8 @@ class SettledGuard:
             re-measures on its first turn.
         head: The last HEAD seen; a commit the model makes under its own git control
             moves it without touching the tree.
-        idle: Consecutive turns with no edit, no commit, no memory write, an unchanged
-            tree and an unchanged HEAD.
+        idle: Consecutive turns with no edit, no commit, no memory write, no task list
+            change, an unchanged tree and an unchanged HEAD.
         nudged: The one settled nudge went out.
         gateless_ever_edited: An editing step did not end with a green verify. Persisted.
     """
@@ -166,8 +166,8 @@ class SettledGuard:
         Args:
             tree: The tree sha after the turn.
             head: The HEAD sha after the turn.
-            progress: An edit, a commit, a memory write, a tree change or a HEAD move
-                happened.
+            progress: An edit, a commit, a memory write, a task list change, a tree change
+                or a HEAD move happened.
             neutral: A verify ran, or the worker waited on a command of its own still
                 running.
         """
@@ -282,6 +282,7 @@ def verify_settled(
         progress=turn.committed
         or turn.edited
         or turn.wrote_memory
+        or turn.dag_mutated
         or tree != guard.tree
         or head != guard.head,
         neutral=turn.verify_just_passed or turn.verify_just_failed or turn.waited_on_background,

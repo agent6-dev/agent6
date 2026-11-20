@@ -375,6 +375,15 @@ def test_a_memory_store_write_restarts_the_idle_streak() -> None:
     assert state.settled.idle == 0
 
 
+def test_a_task_list_change_restarts_the_idle_streak() -> None:
+    """A run ended as settled four turns after its worker closed its last two tasks."""
+    state = _green_state()
+    state.settled = guards.SettledGuard(tree="tree", idle=nudges.VERIFY_SETTLED_NUDGE_AFTER - 1)
+    ctx = turn_context(tree_sha=lambda: "tree")
+    assert guards.verify_settled(_turn(5, dag_mutated=True), state, ctx) is None
+    assert state.settled.idle == 0
+
+
 def test_a_finish_call_a_metric_run_or_an_unseeded_run_disarms_it() -> None:
     ready = guards.SettledGuard(tree="tree", idle=12)
     state = _green_state()

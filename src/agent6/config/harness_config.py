@@ -431,7 +431,8 @@ class HarnessConfig(pydantic.BaseModel):
     settled_stop_after: validation.NoLimitOrPositive = pydantic.Field(
         default=12,
         description=(
-            "consecutive turns with no edit, commit or memory write and an unchanged tree "
+            "consecutive turns with no edit, commit, memory write or task list change and an "
+            "unchanged tree "
             "before a plain run ends after a green verify or an editing step; verify runs and "
             "waits on a live background command neutral; streak reset by progress or "
             "operator steer; default 12, measured; "
