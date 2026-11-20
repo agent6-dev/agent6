@@ -5,6 +5,7 @@
 Use the cheapest model on the connected plan at its lowest supported effort for both roles.
 Substitute its `provider/model` and effort below.
 Use a model with a known context window for the helper.
+For a supported Anthropic model, set `server_compaction = false` to compare the two local writers.
 `claude_code` exercises the direct helper fallback, not a worker-written summary.
 
 ```sh
@@ -148,3 +149,43 @@ One run used `chatgpt/gpt-5.6-luna` at `low` effort with `providers.chatgpt.idle
 - The cold-cache notice appeared once in the log, the journal and the receipt.
 
 **Limits:** n = 1 on a three-call conversation. This model also missed its cache on one call in each run of the writer comparison above, so one cold summary call does not measure the cache lifetime.
+
+## Signed endpoint compaction findings
+
+Two headless CLI runs used the loopback [Messages stand-in](compaction_messages.py) with `server_compaction = true` and `standin/claude-haiku-5-5` at high effort.
+Each used a fresh git repository and fresh config, state, data and cache directories under `/tmp`.
+The first read returned a 13,201-character file.
+Both runs used `drop_at_chars = 1000`.
+
+| Trigger | Worker request | Summary | First request after adoption |
+| --- | --- | --- | --- |
+| Size, 25,000 characters | 5 messages, clearing requested | Same 5 messages, no clearing | Block, signed reply, read result, task and pin |
+| Idle, 1 second, floor 8,000 characters | 5 messages, clearing requested | Same 5 messages at 1.00 s, no clearing | Block, signed reply, command result, task and pin |
+
+- Both runs finished in four model calls, including one accepted `endpoint` summary.
+- The stand-in checked the system text, tools and messages against the preceding ordinary request.
+- It checked the block and the kept reply for exact equality on adoption.
+- The idle journal orders `tool.call`, `compact.summarise.done` with `kept_messages: 1`, then `tool.result`.
+  The foreground `sleep 4` returned exit 0 after 4.07 seconds under partial isolation.
+- Both receipts reported 60 uncached and 33,050 cached input tokens on the summary, zero thinking blocks dropped and two tool results cleared.
+  These counts come from the captured replies, not a measurement of cache performance or signature verification.
+
+**Host smoke with a live key.** Use the throwaway read targets from the first smoke and an Anthropic direct entry with no custom URL.
+Select a supported model such as `anthropic/claude-haiku-5-5` at `effort = "high"`.
+Use `drop_at_chars = 1000` and `summarise_at_chars = 25000` for size.
+For idle, raise the size limit to `300000` and set `idle_compact_s = 2` and `idle_compact_min_chars = 8000` on the provider entry.
+Run the commands below with the corresponding config files and the host's ordinary command isolation.
+
+```sh
+agent6 run --config "$work/size.toml" --no-commands --session-id signed-size \
+    'Read a.txt, b.txt and z.txt, one file per turn. Report the letters.'
+agent6 run --config "$work/idle.toml" --session-id signed-idle \
+    'Read z.txt. Run sleep 6 in the foreground. Report the return code.'
+for id in signed-size signed-idle; do
+    agent6 sessions receipt "$id"
+    jq -c 'select(.type == "compact.summarise.done" or .type == "model.result") | del(.summary,.text)' \
+        "$(agent6 sessions dir "$id")/logs.jsonl"
+done
+```
+
+Check for `writer: endpoint`, the expected `reason`, and reported transformations on the next worker call.
