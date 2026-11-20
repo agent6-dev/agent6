@@ -26,8 +26,12 @@ def _print_pending(
     """Print each pending question set and the command that answers it."""
     session_id = layout.session_id
     for prompt in prompts:
-        saved = ipc.question_answers_written(layout.session_dir, prompt.id)
-        kind = "answer saved" if saved else prompt.kind()
+        if ipc.question_answers_written(layout.session_dir, prompt.id):
+            kind = "answer saved"
+        elif session_is_live(layout.session_dir):
+            kind = prompt.kind()
+        else:
+            kind = "the run has ended; a resume reads the answer"
         print(f"{session_id} {prompt.id} ({kind}): {len(prompt.questions)} question(s)")
         for i, q in enumerate(prompt.questions, start=1):
             print(f"  {i}. {q.question}")

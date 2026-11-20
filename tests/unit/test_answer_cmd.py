@@ -133,6 +133,22 @@ def test_answer_on_an_ended_run_saves_it_for_the_resume(
     assert "saved" in out and "agent6 resume curious-fox-AAAA11" in out
 
 
+def test_a_listing_on_an_ended_run_says_a_resume_delivers_the_answer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An ended run's question listed as waiting, though nothing waits on it."""
+    layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
+    process.write_worker_pid(layout.session_dir, 999_999_999)
+
+    assert cli_answer_cmd._cmd_answer("curious-fox", ()) == 0
+
+    head = capsys.readouterr().out.splitlines()[0]
+    assert head == (
+        "curious-fox-AAAA11 question-1 (the run has ended; a resume reads the answer):"
+        " 1 question(s)"
+    )
+
+
 def test_answer_refuses_a_question_another_surface_answered(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
