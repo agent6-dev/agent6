@@ -335,7 +335,8 @@ def pack(
         The written manifest.
 
     Raises:
-        PackError: A foreign pack, unsafe path or filesystem error prevents the snapshot.
+        PackError: A foreign pack, a session of the checkout that is live or died without an
+            end, an unsafe path or a filesystem error prevents the snapshot.
     """
     root = root.resolve()
     directory = root / ".agent6"
@@ -347,6 +348,12 @@ def pack(
         raise errors.PackError(f"{directory}: pack belongs to another origin; unpack first")
     held = _exclusive_leases(root)
     try:
+        # The start check takes a pack beside such a session as the session's (`_writer`).
+        if (premise := _writer(root)) is not None:
+            raise errors.PackError(
+                f"{premise} would be taken to have written a pack here. Resume or remove it,"
+                " then pack."
+            )
         base_path = paths.state_dir(root, allow_pack=True) / "pack-base.json"
         pack_manifest.check_path(base_path, regular=base_path.exists())
         bases = pydantic.TypeAdapter(
@@ -561,7 +568,7 @@ def _settings(file: FileFacts) -> tuple[Setting, ...]:
 
 
 def preview(root: pathlib.Path) -> Preview:
-    """Read what an unpack would install, writing nothing.
+    """Read what an unpack would install, moving nothing.
 
     The list is complete by construction: every packed file, and every leaf of each config
     file among those to install. No list of risky keys decides what is shown.
@@ -743,6 +750,7 @@ def quarantine(
     For a caller that knows whose the pack is. An ending operation started beside no pack
     and holds the checkout's lease, which `pack` takes alone, or it saw none before its
     landing; the start check names the session (`check_start`).
+
     The manifest and the `config/`, `repo/` and `skills/` beside it move into one new
     directory, `.agent6/pack.invalid`: a later `agent6 pack` refuses to write beside those
     names, and a second `pack.json` would make them a pack again. A link moves as a link,

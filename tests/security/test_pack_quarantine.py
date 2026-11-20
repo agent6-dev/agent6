@@ -662,6 +662,34 @@ def test_a_start_after_a_killed_session_sets_its_pack_aside_and_runs(
     assert _UNPACK_IT not in out + err
 
 
+def test_pack_refuses_beside_a_session_that_died_without_an_end(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 pack` wrote beside a killed run, and the next command took the pack as the run's.
+
+    The start check's rule holds only while `pack` writes beside no such session, so `pack`
+    refuses there and names the session; with the session removed it packs.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    worker = _worker(repo, "pk-KILL02", "killed", _create("made.txt", "by the run\n"))
+    said = worker.communicate(timeout=120)[0]
+    assert worker.returncode == -signal.SIGKILL, said
+
+    assert cli_main(["pack"]) == 2
+    err = capsys.readouterr().err
+    assert err.splitlines()[-1] == (
+        f"ERROR: Session pk-KILL02 died in {repo} without an end, so that session would be"
+        " taken to have written a pack here. Resume or remove it, then pack."
+    )
+    assert not (repo / ".agent6/pack.json").exists()
+
+    assert cli_main(["sessions", "remove", "pk-KILL02"]) == 0
+    assert cli_main(["pack"]) == 0
+    assert cli_main(["config", "show", "sandbox.isolation"]) == 2  # a real pack is refused, kept
+    assert _UNPACK_IT in capsys.readouterr().err
+    assert pack_manifest.read(repo).origin.workspace == str(repo)
+
+
 def test_a_start_beside_a_live_session_sets_its_pack_aside_and_runs(
     live_worker: tuple[pathlib.Path, subprocess.Popen[str]], capsys: pytest.CaptureFixture[str]
 ) -> None:

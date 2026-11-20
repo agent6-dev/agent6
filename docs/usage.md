@@ -471,6 +471,7 @@ Symlinks and special files refuse rather than following a path outside the snaps
 A command already running in this checkout's sandbox can read the pack.
 `agent6 pack` refuses while a run, an `agent6 exec` or a machine of this checkout is live, and a run refuses to start while `pack` writes: a pack made under a live sandbox would put the secrets within its commands' reach.
 `agent6 unpack` refuses beside them too: a live command could rewrite the pack after the listing.
+`agent6 pack` also refuses beside a session that died without an end, such as a killed run: resume or remove that session first.
 
 <details markdown="1">
 <summary>Pack contents and conflict rules</summary>

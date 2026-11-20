@@ -692,8 +692,10 @@ A run's preflight applies it to each pack its walk finds.
   It died without an end when that process is gone and its journal shows no `session.stop` for its last execution, as after a kill.
 - A machine counts by its own `worker.pid`.
   A session that works in a worktree or a clone of its own does not count; a checkout above a nested directory does.
-- A real pack synced in beside such a session is set aside too.
+- `agent6 pack` refuses beside such a session and names it, so a pack made in this home is never taken for a session's.
+- A pack synced in from another home beside such a session is set aside too.
   Let the live session end, or resume or remove the dead one, then sync the pack again.
+- The start check's warning goes to the stderr of the command that started; a hub does not show the stderr of a run it starts.
 - A hub that is already open applies no rule to its own requests: they refuse beside the pack until a command starts in the checkout or the session ends.
 
 A pack beside no such session stays where it is.
