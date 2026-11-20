@@ -31,6 +31,7 @@
    "7.5 KiB · markdown · 137 lines", from the start, so its language and line count arrive in
    place. */
 .files-head { flex: none; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem var(--files-inset); border-bottom: 1px solid var(--border); }
+.files-head .files-refresh { display: none; }
 .files-head .gf-path { flex: 1 1 auto; min-height: var(--ctl-h-sm); align-content: center; }
 .files-note { margin-left: auto; min-width: 24ch; font-size: var(--fs-s); text-align: end; white-space: nowrap; }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5rem var(--files-inset); }
@@ -95,4 +96,6 @@
   .files-app:has(> .files-body.viewing) > .files-bar, .files-body.viewing > .files-tree { visibility: hidden; }
   .files-back { display: inline-block; }
   .files-head .gf-path { flex-basis: 12.5rem; } /* beside the back button, however long */
+  .files-head .files-refresh { display: inline-flex; }
+  .files-note { min-height: var(--ctl-h-sm); align-content: center; }
 }

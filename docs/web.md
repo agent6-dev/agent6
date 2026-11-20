@@ -109,6 +109,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - a markdown file opens rendered, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - the tree keeps the folders you open and opens the ones holding a linked file; ↑ and ↓ move through it, → and ← open and close a folder
     - Back and Forward move between the files opened, and the tree keeps its filter and folds
+    - **Refresh** rereads the tree and the open file at the selected revision, keeping the filter and folder folds
 
 Start a machine on the State machines page and watch the current state stream, answering its approvals and questions in place:
 

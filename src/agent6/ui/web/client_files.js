@@ -41,7 +41,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     ignoredToggle.setAttribute('aria-pressed', String(showIgnored));
     return relist();
   };
-  bar.appendChild(pick.root); bar.appendChild(filter); bar.appendChild(ignoredToggle);
+  const refresh = el('button', 'files-refresh', 'Refresh');
+  refresh.onclick = () => relist();
+  bar.append(pick.root, refresh, filter, ignoredToggle);
   const body = el('div', 'files-body'); app.appendChild(body);
   const tree = el('div', 'files-tree'); tree.id = 'files-tree'; body.appendChild(tree);
   body.appendChild(resizeHandle(tree, {
@@ -176,6 +178,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const back = el('button', 'mini files-back'); back.append(glyph('‹'), ' Files');
     back.onclick = () => { body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
     head.appendChild(back);
+    const refreshFile = el('button', 'mini files-refresh', 'Refresh');
+    refreshFile.onclick = () => relist();
+    head.appendChild(refreshFile);
     // A long path wraps after a slash, not inside a name.
     const pathText = el('span', 'gf-path'); head.appendChild(pathText);
     pathText.append(...f.path.split('/').flatMap((part, i) => i ? ['/', el('wbr'), part] : [part]));
