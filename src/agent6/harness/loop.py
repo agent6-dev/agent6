@@ -16,7 +16,6 @@ import functools
 import itertools
 import json
 import pathlib
-import time
 import uuid
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
@@ -25,7 +24,6 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import (
-    child_records,
     directive,
     errors,
     kinds,
@@ -41,6 +39,7 @@ from agent6.graph import curator as graph_curator
 from agent6.graph import models, order
 from agent6.harness import (
     advice,
+    child_work,
     dag_focus,
     finish_gates,
     guards,
@@ -82,7 +81,6 @@ from agent6.providers import (
 )
 from agent6.sessions import budget_events, completion, journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
-from agent6.tools import results as tools_results
 from agent6.vcs.git import ops as git_ops
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
@@ -202,13 +200,13 @@ class Harness:
     _contract_response: ProviderResponse | None = dataclasses.field(default=None, init=False)
     _execution_started: bool = dataclasses.field(default=False, init=False)
     # The turn whose tools are running, for the `parallel` tool's dispatch.
-    _tool_turn: tuple[loop_conversation.Conversation, loop_state.LoopState, int] | None = (
+    tool_turn: tuple[loop_conversation.Conversation, loop_state.LoopState, int] | None = (
         dataclasses.field(default=None, init=False)
     )
 
     def __post_init__(self) -> None:
-        """Install the loop-owned tool handlers on the dispatcher."""
-        self.dispatcher.parallel_handler = self._parallel_tool
+        """Hand the dispatcher the run's children, which the loop owns."""
+        self.dispatcher.children = child_work.ChildWork(self)
 
     # ---- run / resume entry --------------------------------------------------
 
@@ -688,7 +686,7 @@ class Harness:
             The wire the model call sends, or the parked end when plan.md cannot be read.
         """
         # The turn the `parallel` tool dispatches for, set before its calls run.
-        self._tool_turn = (conversation, state, ctx.turn)
+        self.tool_turn = (conversation, state, ctx.turn)
         self._emit_budget(ctx.turn)
         # A restart keeps the first message, which is a contract's opening.
         restarted = self.compactor.compact(conversation, state, prefix_chars=prefix_chars)
@@ -1918,50 +1916,6 @@ class Harness:
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
-        )
-
-    def _parallel_tool(
-        self, raw: dict[str, Any], origin: kinds.ToolCallOrigin | None
-    ) -> tools_results.ToolResult:
-        """Start children for the model's `parallel` call through the steer's own path.
-
-        The children run under the model-child ceilings and what the run has left to spend;
-        the dispatch is recorded with the model as its source, and the call returns at once
-        with the children's ids.
-
-        Args:
-            raw: The validated arguments.
-            origin: The model call the tool call answers; None outside a turn.
-
-        Returns:
-            Whether children started, their session ids and the line that says so.
-
-        Raises:
-            ToolError: No turn is in progress.
-        """
-        del origin  # the record's identity is the group id the dispatcher allocates
-        if self._tool_turn is None:
-            raise tool_errors.ToolError("not available: no turn in progress")
-        conversation, state, turn = self._tool_turn
-        request = schema.ParallelInput.model_validate(raw)
-        limits = child_records.ChildLimits(
-            max_turns=parallel_dispatch.MODEL_CHILD_MAX_TURNS,
-            deadline_at=time.time() + parallel_dispatch.MODEL_CHILD_DEADLINE_S,
-        )
-        started = self.parallel.dispatch(
-            conversation,
-            turn,
-            state,
-            [directive.Segment(task=request.task, spec=request.spec)],
-            source="model",
-            limits=limits,
-        )
-        return tools_results.RawResult(
-            {
-                "dispatched": bool(started.children),
-                "children": list(started.children),
-                "message": started.message,
-            }
         )
 
     @property

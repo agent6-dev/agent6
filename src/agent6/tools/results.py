@@ -684,31 +684,62 @@ class RawResult(ToolResult):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class StartedResult(ToolResult):
+    """The `parallel` tool's result: the children one task started, or why it started none.
+
+    Attributes:
+        children: The started children's session ids, the handles the background tools take.
+        message: What started and how to follow it, or the refusal.
+    """
+
+    children: tuple[str, ...]
+    message: str
+
+    def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
+        return {
+            "dispatched": bool(self.children),
+            "children": list(self.children),
+            "message": self.message,
+        }
+
+    def summary(self) -> str:
+        """Return the one-line summary."""
+        return f"started {len(self.children)}" if self.children else "nothing started"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class BackgroundResult(ToolResult):
-    """A background command tool's result.
+    """A background tool's result.
 
     The roster rides on every one, so the model also learns that a command it started has died.
 
     Attributes:
-        shells: The formatted roster.
-        output: The selected command's output, absent for roster-only and stop responses.
+        shells: The formatted command roster.
+        output: The selected command's output or child's transcript, absent for roster-only
+            and stop responses.
         running: The selected job was still running when this read returned; off the wire.
+        children: The formatted roster of the run's children; off the wire when it has none.
     """
 
     shells: tuple[str, ...]
     output: str | None = None
     running: bool = False
+    children: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
         wire: dict[str, Any] = {"shells": list(self.shells)}
+        if self.children:
+            wire["children"] = list(self.children)
         if self.output is not None:
             wire["output"] = self.output
         return wire
 
     def summary(self) -> str:
         """Return the one-line summary."""
-        return self.shells[0] if len(self.shells) == 1 else f"{len(self.shells)} background"
+        lines = (*self.shells, *self.children)
+        return lines[0] if len(lines) == 1 else f"{len(lines)} background"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

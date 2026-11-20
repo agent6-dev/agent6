@@ -97,6 +97,15 @@ def segment_stamp(
     return "failed", note, ""
 
 
+def join_words(j: child_records.ChildJoin) -> str:
+    """Return how a child's work joined, as the background roster states it."""
+    if j.status == "joined":
+        return f"joined at {j.sha[:12]}"
+    if j.status == "ranked":
+        return f"ranked {j.detail}"
+    return "no changes" if j.status == "no_changes" else j.status
+
+
 def child_note(j: child_records.ChildJoin) -> str:
     """Return one child's outcome as a DAG note line."""
     stopped = f" ({j.detail})" if j.detail else ""

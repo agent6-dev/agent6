@@ -82,6 +82,8 @@ def test_selected_background_state_stays_off_the_wire_and_summary(running: bool)
     assert _dumps(result) == '{"shells": ["[bg1] running: sleep 60"], "output": "ready\\n"}'
     assert result.summary() == "[bg1] running: sleep 60"
     assert results.BackgroundResult(shells=(), running=running).to_wire() == {"shells": []}
+    children = results.BackgroundResult(shells=(), children=("[run-p1-l1] running: t",))
+    assert children.to_wire() == {"shells": [], "children": ["[run-p1-l1] running: t"]}
 
 
 # --- content access family ---------------------------------------------------

@@ -172,6 +172,13 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
         ),
         "2 background",
     ),
+    (
+        "background_children",
+        results_mod.BackgroundResult(shells=(), children=("[run-p1-l1] running: write a",)),
+        "[run-p1-l1] running: write a",
+    ),
+    ("parallel_started", results_mod.StartedResult(("run-p1-l1", "run-p1-l2"), "m"), "started 2"),
+    ("parallel_refused", results_mod.StartedResult((), "[parallel] no"), "nothing started"),
     # execution
     (
         "exec",

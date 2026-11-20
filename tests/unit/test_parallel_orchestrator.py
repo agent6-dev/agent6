@@ -2716,6 +2716,8 @@ def test_the_spawner_returns_while_its_children_run_and_stops_one_by_its_handle(
     assert not one.result.done() and not two.result.done()
     two.stop()
     assert two.result.result(timeout=4.0).ok
+    # The stop its parent asked is named on the result, and so on the child's join.
+    assert two.result.result().stopped_by == "stopped by its parent"
     assert not one.result.done()
     dispatch.close()
-    assert one.result.result(timeout=4.0).ok
+    assert one.result.result(timeout=4.0).ok and not one.result.result().stopped_by

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -27,7 +28,7 @@ from agent6.harness import (
 )
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
-from agent6.tools import dispatch, tool_errors
+from agent6.tools import child_tools, dispatch, schema, tool_errors
 from agent6.tools import results as tools_results
 from tests import child_env
 
@@ -78,8 +79,42 @@ def _config(*, tool: bool, extra: dict[str, Any] | None = None) -> Config:
     )
 
 
+class _Work:
+    """The loop's children as the tools reach them: a scripted roster, and what was asked of it."""
+
+    def __init__(self) -> None:
+        self.started: list[tuple[str, str]] = []
+        self.waits: list[tuple[str, float]] = []
+        self.stopped: list[str] = []
+        self.lines: list[child_tools.ChildLine] = []
+
+    def start(self, task: str, spec: str) -> tools_results.StartedResult:
+        self.started.append((task, spec))
+        child = f"run-p{len(self.started)}-l1"
+        self.lines.append(child_tools.ChildLine(child, "running", task, True))
+        return tools_results.StartedResult((child,), f"[parallel] started child {child}.")
+
+    def roster(self) -> tuple[child_tools.ChildLine, ...]:
+        return tuple(self.lines)
+
+    def wait(self, child: str, wait_s: float, interrupted: Any) -> None:
+        self.waits.append((child, wait_s))
+
+    def stop(self, child: str) -> None:
+        self.stopped.append(child)
+        self.lines = [
+            dataclasses.replace(line, state="stopping") if line.id == child else line
+            for line in self.lines
+        ]
+
+
 def _dispatcher(
-    tmp_path: pathlib.Path, cfg: Config, *, mode: str = "run", handler: Any = None
+    tmp_path: pathlib.Path,
+    cfg: Config,
+    *,
+    mode: str = "run",
+    work: Any = None,
+    state_dir: pathlib.Path | None = None,
 ) -> dispatch.ToolDispatcher:
     repo = tmp_path / "repo"
     if not (repo / ".git").exists():
@@ -90,8 +125,9 @@ def _dispatcher(
         isolation="none",
         mode=mode,  # type: ignore[arg-type]
         session_dir=tmp_path / "session",
+        state_dir=state_dir,
     )
-    d.parallel_handler = handler
+    d.children = work
     return d
 
 
@@ -99,30 +135,44 @@ def _names(d: dispatch.ToolDispatcher, mode: str = "run") -> list[str]:
     return [t.name for t in toolset.tool_definitions(d, mode=mode)]  # type: ignore[arg-type]
 
 
-def _handler(raw: dict[str, Any], origin: Any) -> tools_results.ToolResult:
-    return tools_results.RawResult({"message": f"dispatched {raw['task']}"})
+def _description(d: dispatch.ToolDispatcher, name: str) -> str:
+    (definition,) = [t for t in toolset.tool_definitions(d) if t.name == name]
+    return definition.description
 
 
 def test_the_tool_is_off_by_default_for_exposure_and_execution(tmp_path: pathlib.Path) -> None:
     """`harness.parallel.tool = false` offers nothing; a hallucinated call refuses, naming it."""
-    d = _dispatcher(tmp_path, _config(tool=False), handler=_handler)
+    d = _dispatcher(tmp_path, _config(tool=False), work=_Work())
     assert "parallel" not in _names(d)
     with pytest.raises(tool_errors.ToolError, match=r"parallel\.tool"):
         d.dispatch("parallel", {"task": "consult"})
 
 
-def test_enabled_in_run_mode_the_tool_shows_and_dispatches_through_its_handler(
+def test_enabled_in_run_mode_the_tool_shows_and_answers_with_the_childs_id(
     tmp_path: pathlib.Path,
 ) -> None:
-    d = _dispatcher(tmp_path, _config(tool=True), handler=_handler)
+    """The handle is the child's session id: one call, one task, the answer at once."""
+    work = _Work()
+    d = _dispatcher(tmp_path, _config(tool=True), work=work)
     assert "parallel" in _names(d)
-    result = d.dispatch("parallel", {"task": "consult the reviewer"})
-    assert result.to_wire() == {"message": "dispatched consult the reviewer"}
+    result = d.dispatch("parallel", {"task": "consult the reviewer", "spec": "reviewer"})
+    assert result.to_wire() == {
+        "dispatched": True,
+        "children": ["run-p1-l1"],
+        "message": "[parallel] started child run-p1-l1.",
+    }
+    assert work.started == [("consult the reviewer", "reviewer")]
+    refused = tools_results.StartedResult((), "[parallel] nothing dispatched.")
+    assert refused.to_wire() == {
+        "dispatched": False,
+        "children": [],
+        "message": "[parallel] nothing dispatched.",
+    }
 
 
 @pytest.mark.parametrize("mode", ["plan", "ask", "machine"])
 def test_other_modes_never_offer_or_run_the_tool(tmp_path: pathlib.Path, mode: str) -> None:
-    d = _dispatcher(tmp_path, _config(tool=True), mode=mode, handler=_handler)
+    d = _dispatcher(tmp_path, _config(tool=True), mode=mode, work=_Work())
     assert "parallel" not in _names(d, mode)
     with pytest.raises(tool_errors.ToolError, match="not available"):
         d.dispatch("parallel", {"task": "consult"})
@@ -133,46 +183,137 @@ def test_a_child_and_a_front_end_without_a_dispatcher_refuse(
 ) -> None:
     """Depth stays one, and a harness with no child dispatcher cannot pretend otherwise."""
     monkeypatch.setenv("AGENT6_CHILD", "1")
-    inside = _dispatcher(tmp_path, _config(tool=True), handler=_handler)
+    inside = _dispatcher(tmp_path, _config(tool=True), work=_Work())
     assert "parallel" not in _names(inside)
     with pytest.raises(tool_errors.ToolError, match="inside a child"):
         inside.dispatch("parallel", {"task": "consult"})
     monkeypatch.delenv("AGENT6_CHILD")
-    headless = _dispatcher(tmp_path, _config(tool=True), handler=None)
+    headless = _dispatcher(tmp_path, _config(tool=True), work=None)
     assert "parallel" not in _names(headless)
     with pytest.raises(tool_errors.ToolError, match="no child dispatcher"):
         headless.dispatch("parallel", {"task": "consult"})
 
 
 def test_a_blank_task_is_refused_before_any_handler(tmp_path: pathlib.Path) -> None:
-    calls: list[dict[str, Any]] = []
-
-    def handler(raw: dict[str, Any], origin: Any) -> tools_results.ToolResult:
-        calls.append(raw)
-        return tools_results.RawResult({})
-
-    d = _dispatcher(tmp_path, _config(tool=True), handler=handler)
+    work = _Work()
+    d = _dispatcher(tmp_path, _config(tool=True), work=work)
     with pytest.raises(tool_errors.ToolError, match="task"):
         d.dispatch("parallel", {"task": "   "})
-    assert calls == []
+    assert work.started == []
     with pytest.raises(tool_errors.ToolError, match="spec"):
         d.dispatch("parallel", {"task": "t", "spec": "x" * 300})
+
+
+def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathlib.Path) -> None:
+    """The two background tools mention children only in a run that has the `parallel` tool."""
+    plain = _dispatcher(tmp_path, _config(tool=False), work=_Work())
+    assert _description(plain, "read_background") == schema.ReadBackgroundInput.TOOL_DESCRIPTION
+    assert _description(plain, "stop_background") == schema.StopBackgroundInput.TOOL_DESCRIPTION
+    assert "child" not in schema.ReadBackgroundInput.TOOL_DESCRIPTION
+    assert "child" not in schema.StopBackgroundInput.TOOL_DESCRIPTION
+    # A run with no child reads the same result too: no `children` key.
+    assert plain.dispatch("read_background", {}).to_wire() == {"shells": []}
+
+    offered = _dispatcher(tmp_path, _config(tool=True), work=_Work())
+    read, stop = (_description(offered, name) for name in ("read_background", "stop_background"))
+    assert read == (
+        schema.ReadBackgroundInput.TOOL_DESCRIPTION + schema.ReadBackgroundInput.CHILDREN_NOTE
+    )
+    assert "With no `id`, a `wait_s` above 0 waits for the next child to end" in read
+    assert stop.endswith(" A child's id stops that child at once; the commits it made still land.")
+    # The arguments are the same either way: no new field addresses a child.
+    for name in ("read_background", "stop_background"):
+        ((one,), (other,)) = (
+            [t.input_schema for t in toolset.tool_definitions(d) if t.name == name]
+            for d in (plain, offered)
+        )
+        assert one == other
+
+
+def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
+    tmp_path: pathlib.Path,
+) -> None:
+    """One `id` space per kind: a child's session id reads the child, `bg<N>` a command."""
+    state_dir = tmp_path / "state"
+    child_dir = state_dir / "sessions" / "runs" / "run-p1-l1"
+    child_dir.mkdir(parents=True)
+    (child_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": "run-p1-l1", "mode": "run", "user_task": "t"})
+    )
+    rows = [
+        {"type": "session.start", "user_task": "write a"},
+        {"type": "tool.call", "name": "apply_edit"},
+        {"type": "model.result", "text": "a.txt is written"},
+    ]
+    (child_dir / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    work = _Work()
+    d = _dispatcher(tmp_path, _config(tool=True), work=work, state_dir=state_dir)
+    d.dispatch("parallel", {"task": "write a"})
+
+    read = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 3}).to_wire()
+
+    assert work.waits == [("run-p1-l1", 3.0)]
+    assert read["children"] == ["[run-p1-l1] running: write a"]
+    assert read["output"].splitlines() == [
+        "[run-p1-l1] running: write a",
+        "",
+        "user: write a",
+        "",
+        "[tool] apply_edit",
+        "",
+        "assistant: a.txt is written",
+    ]
+    tail = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 0, "tail_lines": 1})
+    assert tail.to_wire()["output"].splitlines()[2:] == [
+        "... 4 earlier lines ...",
+        "assistant: a.txt is written",
+    ]
+    # No id and a wait: the next child to end, whichever it is.
+    waited = d.dispatch("read_background", {"wait_s": 5}).to_wire()
+    assert work.waits[-1] == ("", 5.0)
+    assert waited == {"shells": [], "children": ["[run-p1-l1] running: write a"]}
+    # No id and no wait is the roster at once, as it always was.
+    assert d.dispatch("read_background", {}).to_wire() == waited
+    assert len(work.waits) == 3
+    with pytest.raises(tool_errors.ToolError, match="no background command 'run-p9-l1'"):
+        d.dispatch("read_background", {"id": "run-p9-l1"})
+
+
+def test_stop_background_stops_a_child_even_where_commands_are_denied(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The parent can stop a child it started; `run_commands = "deny"` withholds commands only."""
+    denied = {"sandbox": {"run_commands": "deny"}}
+    work = _Work()
+    d = _dispatcher(tmp_path, _config(tool=True, extra=denied), work=work)
+    assert "stop_background" in _names(d) and "run_command" not in _names(d)
+    d.dispatch("parallel", {"task": "write a"})
+
+    stopped = d.dispatch("stop_background", {"id": "run-p1-l1"}).to_wire()
+
+    assert work.stopped == ["run-p1-l1"]
+    assert stopped == {"shells": [], "children": ["[run-p1-l1] stopping: write a"]}
+    without = _dispatcher(tmp_path, _config(tool=False, extra=denied), work=_Work())
+    assert "stop_background" not in _names(without)
 
 
 def test_the_description_names_every_role_the_providers_and_the_ceilings(
     tmp_path: pathlib.Path,
 ) -> None:
     """The model reads what each selector would run: route, effort, temperature, inheritance."""
-    d = _dispatcher(tmp_path, _config(tool=True), handler=_handler)
-    (definition,) = [t for t in toolset.tool_definitions(d) if t.name == "parallel"]
-    text = definition.description
+    d = _dispatcher(tmp_path, _config(tool=True), work=_Work())
+    text = _description(d, "parallel")
+    assert text.startswith("Start one task in a child session (a subagent) on a fresh clone")
+    assert "return at once with the child's id. Call it once per task." in text
+    assert "starts that many attempts at the same task" in text
+    assert "blocks until" not in text
     assert "default: p/base, effort high, temperature 0.7" in text
     assert "worker: p/base, effort high, temperature 0.7 (as default)" in text
     assert "reviewer: q/critic, effort max, temperature 0.7 (temperature from default)" in text
     assert "Configured providers: p, q" in text
     assert "200 turns" in text and "30 minutes" in text
     assert "edit" in text and "this run's remaining budget, which the children share" in text
-    assert "gives the summary it finished with" in text
+    assert "at most 4 run at once (`harness.parallel.max_children`)" in text
     assert "secret" not in text and "localhost" not in text
 
 

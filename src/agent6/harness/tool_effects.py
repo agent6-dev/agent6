@@ -167,13 +167,17 @@ def note(
         if turn.verify_just_passed:
             turn.metric_plateau_finish = wf.metrics.plateau_finish(state.metric.history)
     turn.waited_on_background |= (
-        name == "run_command"
-        and isinstance(result, results.ExecResult)
-        and bool(result.background_id)
-    ) or (
-        name == "read_background"
-        and isinstance(result, results.BackgroundResult)
-        and result.running
+        (
+            name == "run_command"
+            and isinstance(result, results.ExecResult)
+            and bool(result.background_id)
+        )
+        or (
+            name == "read_background"
+            and isinstance(result, results.BackgroundResult)
+            and result.running
+        )
+        or (isinstance(result, results.StartedResult) and bool(result.children))
     )
     if name in ("apply_edit", "apply_patch") and isinstance(result, results.PreviewResult):
         return  # a dry run writes nothing: no memory write, no tree edit

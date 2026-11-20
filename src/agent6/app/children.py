@@ -982,7 +982,7 @@ def build_child_spawner(
                     or ipc.stop_request_is_now(parent_dir)
                 )
 
-            return run_child_to_completion(
+            res = run_child_to_completion(
                 spec,
                 child.task,
                 pins=child.pins,
@@ -1008,6 +1008,9 @@ def build_child_spawner(
                 contract=child.contract,
                 watch=watch,
             )
+            if asked.is_set() and res.ok and not res.stopped_by:
+                res = dataclasses.replace(res, stopped_by="stopped by its parent")
+            return res
 
         def watched(
             spec: child_records.ChildSpec,

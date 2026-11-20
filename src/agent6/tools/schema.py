@@ -308,12 +308,17 @@ class ParallelInput(_ToolInput):
     """The `parallel` tool's arguments."""
 
     TOOL_NAME: ClassVar[str] = "parallel"
-    # The toolset replaces this with the run's resolved roles and providers.
+    # The toolset adds the run's resolved roles, providers and limits.
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Run a task in isolated child sessions (subagents), each on a fresh clone of the"
-        " committed tree, and join their commits back in order; blocks until they return."
-        " `spec` is a count of children or a comma-separated list of selectors: a role name"
-        " brings its model, effort and temperature, `[provider/]model` runs with the worker's."
+        "Start one task in a child session (a subagent) on a fresh clone of the committed"
+        " tree, and return at once with the child's id. Call it once per task. `spec` is"
+        " empty for one child; a count above one, or a comma-separated list of selectors,"
+        " starts that many attempts at the same task, and once all have ended they are"
+        " ranked and the first lands. A selector that is a role name brings its model, effort"
+        " and temperature; `[provider/]model` runs with the worker's. A notice arrives when a"
+        " child ends, with its summary, and when its task lands: at a turn boundary, tasks in"
+        " the order started, merged onto this run's work. `read_background` reads a child or"
+        " waits for the next to end; `stop_background` stops one."
     )
 
     task: str = pydantic.Field(min_length=1, max_length=20_000)
@@ -357,6 +362,13 @@ class ReadBackgroundInput(_ToolInput):
         " background roster."
     )
 
+    # Appended in a run that has the `parallel` tool; every other run reads the text above.
+    CHILDREN_NOTE: ClassVar[str] = (
+        " A child's id from `parallel` reads that child: its state and the tail of its"
+        " transcript, after waiting up to `wait_s` for it to end. With no `id`, a `wait_s`"
+        " above 0 waits for the next child to end, and `children` lists this run's children."
+    )
+
     id: str = ""
     tail_lines: int = pydantic.Field(default=200, ge=1, le=2000)
     # None: the configured check-in ([harness].command_checkin_s), resolved by the dispatcher.
@@ -370,6 +382,10 @@ class StopBackgroundInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Stop a background command by background_id. Returns the background roster with"
         " it marked stopped and its exit code; read its output first with read_background."
+    )
+    # Appended in a run that has the `parallel` tool; every other run reads the text above.
+    CHILDREN_NOTE: ClassVar[str] = (
+        " A child's id stops that child at once; the commits it made still land."
     )
 
     id: str
@@ -642,7 +658,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     FinishSessionInput,
     AskUserInput,
     ListFindingsInput,
-    # Offered only under `[harness.parallel].tool` in a run that has a child dispatcher.
+    # Offered only under `[harness.parallel].tool` in a run whose loop holds children.
     ParallelInput,
     DagAddTaskInput,
     DagUpdateTaskInput,

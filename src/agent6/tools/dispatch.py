@@ -33,6 +33,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
     arguments,
     background,
+    child_tools,
     command_tools,
     control_tools,
     dag_tools,
@@ -80,10 +81,6 @@ _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
         }
     ),
 }
-
-
-# The loop's child dispatcher as the tool sees it: the validated arguments and the call's origin.
-type ParallelHandler = Callable[[dict[str, Any], kinds.ToolCallOrigin | None], results.ToolResult]
 
 
 def _in_container(target: kinds.ExecutionTarget | None) -> bool:
@@ -183,8 +180,8 @@ class ToolDispatcher:
         )
         self._command_access = command_access
         self._session_dir = session_dir
-        # The loop installs its child dispatcher here; None where no dispatch can happen.
-        self.parallel_handler: ParallelHandler | None = None
+        # The loop installs the run's children here; None where no dispatch can happen.
+        self.children: child_tools.Children | None = None
         if (
             command_access is not None
             and command_access.session.startup_stderr
@@ -291,9 +288,14 @@ class ToolDispatcher:
 
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
+        # Under "deny" a run with the `parallel` tool keeps stop_background: a child can be stopped.
         return (
             (self.allowed_tools is not None and name not in self.allowed_tools)
-            or (name in _COMMAND_TOOLS and self.command_policy() == "deny")
+            or (
+                name in _COMMAND_TOOLS
+                and self.command_policy() == "deny"
+                and not (name == schema.StopBackgroundInput.TOOL_NAME and self.parallel_available())
+            )
             or (name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld)
         )
 
@@ -312,7 +314,7 @@ class ToolDispatcher:
             return "not available (harness.parallel.tool is off)"
         if os.environ.get("AGENT6_CHILD"):
             return "not available inside a child (parallel dispatch is depth 1)"
-        if self.parallel_handler is None:
+        if self.children is None:
             return "not available (no child dispatcher in this front-end)"
         return None
 
@@ -922,29 +924,53 @@ class ToolDispatcher:
     def _read_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
         """Return background output with the run's check-in and stop policy.
 
+        An `id` the run's children hold reads that child; any other is a command's.
+
         Args:
             raw: The tool call's arguments.
 
         Returns:
-            The roster, with the command's output when the call gives an `id`.
+            The rosters, with the command's output or the child's transcript when the call
+            gives an `id`.
         """
-        return command_tools.read_background(
+        args = schema.ReadBackgroundInput.model_validate(raw)
+        roster = self.children.roster() if self.children is not None else ()
+        if self.children is not None and child_tools.addressed(args, roster):
+            return child_tools.read(
+                args,
+                self.children,
+                shells=tuple(view.line() for view in self._background().roster()),
+                checkin=self._config.harness.command_checkin_s,
+                interrupted=self._operator_wants_out,
+                state_dir=self._state_dir,
+            )
+        result = command_tools.read_background(
             raw,
             get_background=self._background,
             checkin=self._config.harness.command_checkin_s,
             interrupted=self._operator_wants_out,
         )
+        return dataclasses.replace(result, children=tuple(child.line() for child in roster))
 
     def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Return the background roster after stopping a command.
+        """Return the background rosters after stopping a command or a child.
 
         Args:
-            raw: The tool call's arguments, naming the command by its `id`.
+            raw: The tool call's arguments, naming the command or the child by its `id`.
 
         Returns:
-            The roster after the stop.
+            The rosters after the stop.
         """
-        return command_tools.stop_background(raw, get_background=self._background)
+        args = schema.StopBackgroundInput.model_validate(raw)
+        if self.children is not None and any(c.id == args.id for c in self.children.roster()):
+            self.children.stop(args.id)
+            result = results.BackgroundResult(
+                shells=tuple(view.line() for view in self._background().roster())
+            )
+        else:
+            result = command_tools.stop_background(raw, get_background=self._background)
+        roster = self.children.roster() if self.children is not None else ()
+        return dataclasses.replace(result, children=tuple(child.line() for child in roster))
 
     def _background(self) -> background.BackgroundShells:
         """Return the background roster.
@@ -1050,23 +1076,22 @@ class ToolDispatcher:
             listed, findings=tuple(f for f in listed.findings if f.status == "open")
         )
 
-    def _parallel(self, raw: dict[str, Any]) -> results.ToolResult:
-        """Dispatch children through the loop's handler, the call's identity beside the request.
+    def _parallel(self, raw: dict[str, Any]) -> results.StartedResult:
+        """Start one task's children through the loop.
 
         Args:
             raw: The model's arguments.
 
         Returns:
-            The handler's result.
+            The children started, or the refusal.
 
         Raises:
-            ToolError: No handler is installed; the gates refused earlier otherwise.
+            ToolError: The loop holds no children; the gates refused earlier otherwise.
         """
         request = schema.ParallelInput.model_validate(raw)
-        if self.parallel_handler is None:
+        if self.children is None:
             raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
-        origin = getattr(self._gating, "origin", None)
-        return self.parallel_handler(request.model_dump(), origin)
+        return self.children.start(request.task, request.spec)
 
     def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:
         """Return the operator's answers to the model's questions."""

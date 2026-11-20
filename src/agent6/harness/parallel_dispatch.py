@@ -23,6 +23,7 @@ from agent6 import child_records, directive, errors
 from agent6.graph import curator as graph_curator
 from agent6.harness import child_repo, parallel_join, run_chain
 from agent6.sessions import budget_events, child_dispatch, journal
+from agent6.tools import child_tools
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
 
@@ -96,6 +97,7 @@ class ParallelDispatcher:
         clock: The wall clock.
         open: The work dispatches this execution started and has not landed, by identity,
             oldest first.
+        stopping: The running children this execution asked to stop.
     """
 
     chain: run_chain.RunChain
@@ -118,6 +120,7 @@ class ParallelDispatcher:
     )
     clock: Callable[[], float] = time.time
     open: dict[str, OpenDispatch] = dataclasses.field(default_factory=dict, init=False)
+    stopping: set[str] = dataclasses.field(default_factory=set, init=False)
 
     def dispatch(  # noqa: PLR0911  # one return per refusal
         self,
@@ -490,6 +493,69 @@ class ParallelDispatcher:
         concurrent.futures.wait(
             [child.result for task in self.open.values() for child in task.children]
         )
+
+    def wait_for(self, child: str, wait_s: float, interrupted: Callable[[], bool]) -> None:
+        """Wait for one running child to end, or with "" for the next of them all.
+
+        Args:
+            child: The child's session id; "" for whichever ends next.
+            wait_s: The most seconds to wait.
+            interrupted: Cuts the wait short: the operator's stop reaches no turn boundary
+                while a tool call waits.
+        """
+        pending = [
+            started.result
+            for task in self.open.values()
+            for started in task.children
+            if not started.result.done() and child in ("", started.session_id)
+        ]
+        deadline = time.monotonic() + wait_s
+        while pending and not interrupted() and (left := deadline - time.monotonic()) > 0:
+            done, _ = concurrent.futures.wait(
+                pending, timeout=min(left, 0.5), return_when=concurrent.futures.FIRST_COMPLETED
+            )
+            if done:
+                return
+
+    def stop(self, child: str) -> None:
+        """Ask a running child to stop now; its end is told and its commits land as any child's.
+
+        Args:
+            child: The child's session id; one that has ended, or is no child, is left alone.
+        """
+        for task in self.open.values():
+            for started in task.children:
+                if started.session_id == child and not started.result.done():
+                    started.stop()
+                    self.stopping.add(child)
+
+    def roster(self) -> tuple[child_tools.ChildLine, ...]:
+        """Return every child this run's tasks started and where it stands, oldest first."""
+        if self.session_dir is None:
+            return ()
+        try:
+            records = child_dispatch.read_records(self.session_dir)
+        except child_dispatch.DispatchRecordError:
+            return ()
+        running = {
+            started.session_id
+            for task in self.open.values()
+            for started in task.children
+            if not started.result.done()
+        }
+        lines: list[child_tools.ChildLine] = []
+        for record in records:
+            for child in record.children if record.source != "panel" else ():
+                sid = child.session_id
+                if child.join is not None:
+                    state = parallel_join.join_words(parallel_join.join_of(child))
+                elif sid in running:
+                    state = "stopping" if sid in self.stopping else "running"
+                else:
+                    state = "ended, not landed"
+                title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
+                lines.append(child_tools.ChildLine(sid, state, title[:80], sid in running))
+        return tuple(lines)
 
     def settle(self, conversation: loop_conversation.Conversation, turn: int) -> bool:
         """Tell the model which children ended, then land each finished dispatch, oldest first.

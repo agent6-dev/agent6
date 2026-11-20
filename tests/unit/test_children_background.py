@@ -12,6 +12,8 @@ import concurrent.futures
 import json
 import pathlib
 import subprocess
+import threading
+import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -471,3 +473,84 @@ def test_close_stops_what_runs_charges_each_child_once_and_forgets_it(
     assert dispatcher.close() == ()
     assert dispatcher.budget.estimate_usd()[0] == pytest.approx(0.5)
     assert [r.state for r in child_dispatch.read_records(repo.parent / "root")] == ["settling"] * 2
+
+
+def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`read_background` and `stop_background` take a child's session id beside a `bg<N>`."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    one, two = "run-p1-l1", "run-p2-l1"
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a\nand test it"}), ("parallel", {"task": "b"}))),
+        (None, _calls(("read_background", {"id": one, "wait_s": 0}))),
+        (None, _calls(("stop_background", {"id": two}))),
+        (
+            lambda: children.end(one, path="a.txt", report="wrote a"),
+            _calls(("read_background", {"wait_s": 30})),
+        ),
+        (None, _calls(READ)),
+    )
+    wf = _harness(repo, tmp_path / "run", provider, children, max_turns=5)
+
+    wf.run("start")
+
+    def answers(seen: str) -> list[dict[str, Any]]:
+        return [
+            json.loads(block["content"])
+            for message in json.loads(seen)
+            for block in message["content"]
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ]
+
+    # The read of a running child: both rosters, its line, and no transcript yet.
+    read = answers(provider.seen[2])[-1]
+    assert read["children"] == [f"[{one}] running: write a", f"[{two}] running: b"]
+    assert read["output"] == f"[{one}] running: write a\n\n(no transcript yet)"
+    # The stop answers at once; the child ends in the background and lands like any other.
+    assert children.stopped == [two]
+    stopped = answers(provider.seen[3])[-1]
+    assert stopped["children"][1] in (f"[{two}] stopping: b", f"[{two}] ended, not landed: b")
+    assert f"[parallel] child {two} finished (stopped by its parent)." in provider.seen[3]
+    # The wait for the next child to end returned with the first task's child ended.
+    waited = answers(provider.seen[4])[-1]
+    assert waited["children"][0] == f"[{one}] ended, not landed: write a"
+    last = provider.seen[4]
+    assert last.index("[parallel] group run-p1 complete") < last.index(
+        "[parallel] group run-p2 complete"
+    )
+    assert f"{two} (agent6/{two}): joined at" in last and "(stopped by its parent)" in last
+    roster = wf.parallel.roster()
+    assert [(line.id, line.running) for line in roster] == [(one, False), (two, False)]
+    assert all(line.state.startswith("joined at ") for line in roster)
+
+
+def test_wait_for_returns_when_the_child_ends_the_wait_runs_out_or_a_stop_cuts_it(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A read's wait ends with the child, at `wait_s`, or when the operator wants out."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "root")
+    dispatcher = _dispatcher(repo, children)
+    _start(dispatcher, ("", "write a"))
+
+    started = time.monotonic()
+    dispatcher.wait_for("root-p1-l1", 0.2, lambda: False)
+    assert 0.15 < time.monotonic() - started < 2.0
+    started = time.monotonic()
+    dispatcher.wait_for("", 30.0, lambda: True)
+    assert time.monotonic() - started < 2.0
+    timer = threading.Timer(0.1, lambda: children.end("root-p1-l1"))
+    timer.start()
+    started = time.monotonic()
+    dispatcher.wait_for("", 30.0, lambda: False)
+    timer.join()
+    assert time.monotonic() - started < 5.0
+    assert [(line.state, line.running) for line in dispatcher.roster()] == [
+        ("ended, not landed", False)
+    ]
+    dispatcher.stop("root-p1-l1")
+    assert children.stopped == [], "an ended child is left as it is"
