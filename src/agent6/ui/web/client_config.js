@@ -38,7 +38,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     }));
   };
   // Preset… opens the `agent6.preset` row's editor; the rows are the config under the selected preset.
-  const presetBtn = el('button', null, 'Preset…');
+  const presetBtn = el('button', null, 'Preset: ' + (selected || 'none'));
   presetBtn.onclick = () => editConfig('agent6.preset', data['agent6.preset'], registry.tables, refresh, data);
   bar.appendChild(presetBtn);
   const addPresetBtn = el('button', null, 'Add preset…');
@@ -207,12 +207,14 @@ function actionRow(dialog, row, primary) {
   };
   return async (button, run) => {
     if (button.disabled) return;
+    const label = button.textContent;
+    if (label === 'Save') button.textContent = 'Saving…';
     button.disabled = true; err.textContent = '';
     try { await run(); } catch (e) {
       if (!dialog.open) { toast(e.message, true); return; }
       err.replaceChildren(withCode(e.message)); button.disabled = false;
       if (document.activeElement === document.body) button.focus(); // disabling it dropped the focus
-    }
+    } finally { button.textContent = label; }
   };
 }
 
@@ -231,7 +233,7 @@ function addEntry(table, refresh) {
   if (!dialog) return;
   dialog.appendChild(el('div', 'sub muted', table.path + '.<name>. A blank field keeps an existing value or uses the default.'));
   const labelled = (text, field) => { const l = el('label', 'muted cfg-label', text); field.name = text; l.appendChild(field); dialog.appendChild(l); return field; };
-  const name = labelled('name', el('input', 'field'));
+  const name = labelled('name (required)', el('input', 'field')); name.required = true;
   const fields = {};
   for (const spec of table.fields) {
     const field = el(spec.choices.length ? 'select' : 'input', 'field cfg-value'); // a value, as in an editor
@@ -285,8 +287,8 @@ function addPreset(onAdded) {
   const dialog = openDialog('Add preset');
   if (!dialog) return;
   dialog.appendChild(el('div', 'sub muted', 'An empty [presets.<name>] table, selected as preset in the chosen layer; edit the rows to fill it.'));
-  const label = el('label', 'muted cfg-label', 'name');
-  const name = el('input', 'field'); name.name = 'name'; label.appendChild(name); dialog.appendChild(label);
+  const label = el('label', 'muted cfg-label', 'name (required)');
+  const name = el('input', 'field'); name.name = 'name'; name.required = true; label.appendChild(name); dialog.appendChild(label);
   const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'muted', 'create in this repo\'s config (not the global config)'));
@@ -309,12 +311,13 @@ async function addReviewer(refresh) {
   dialog.appendChild(el('div', 'sub muted', 'Focus is required. Set model to provider/model, or leave it blank. Blank optional fields inherit the route\'s settings.'));
   const fields = {};
   for (const name of ['focus', 'model', 'effort', 'temperature']) {
-    const label = el('label', 'muted cfg-label', name);
+    const label = el('label', 'muted cfg-label', name === 'focus' ? 'focus (required)' : name);
     const cls = name === 'focus' ? 'field' : 'field cfg-value'; // the rest are values, as in an editor
     // The model suggests from the catalog, as the model editor does.
     const combo = name === 'model' ? configCombobox('', 'models.reviewer.model', cls) : null;
     const field = combo ? combo.field : el(choices[name] ? 'select' : 'input', cls);
     field.id = 'reviewer-' + name; label.htmlFor = field.id;
+    field.required = name === 'focus';
     if (choices[name]) for (const value of ['', ...choices[name]]) {
       const option = el('option', null, value || 'blank = inherit'); option.value = value; field.appendChild(option);
     } else if (name !== 'focus') field.placeholder = 'blank = inherit';

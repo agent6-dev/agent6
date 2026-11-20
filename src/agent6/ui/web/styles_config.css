@@ -1,6 +1,7 @@
 /* The filter takes the bar's first line and the buttons wrap under it, so every button stays on
    the card at any width. */
 .cfg-bar input.filter { flex: 1 1 100%; }
+.cfg-bar { position: sticky; top: calc(var(--hdr-h) + env(safe-area-inset-top)); z-index: 10; background: var(--surface); padding-block: 0.5rem; }
 .cfg-bar button { flex: none; white-space: nowrap; }
 /* Remove preset, which takes a whole table, stands apart at the end of its line. */
 .cfg-bar > .danger { margin-left: auto; }
@@ -41,7 +42,7 @@ textarea.field.cfg-value {
    fixed layout reads them off the header row), so the setting, value and source columns line up
    down the page and stay put while the filter hides rows. Below 700px of card the cells stack:
    the setting over its value, the source at the row's end. */
-.cfg-card { container-type: inline-size; }
+.cfg-card { container-type: inline-size; overflow: clip; }
 .cfg { width: 100%; border-collapse: collapse; font-size: var(--fs-m); }
 /* A row's cells share their first line's baseline, however far a long value wraps. */
 .cfg td, .cfg th {

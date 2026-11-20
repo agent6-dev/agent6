@@ -70,7 +70,7 @@ This keeps the layers' own settings; it does not reset them to defaults.
 An empty string is refused.
 The name `none` is reserved, so `[presets.none]` is refused.
 The TUI and web config pages edit the selected preset in place: with `agent6.preset` set to a name, a save, an unset or an entry change writes `[presets.<name>]` in the chosen layer; with `agent6.preset = "none"`, the global and repo config.
-**Preset…** opens the `agent6.preset` setting, **Add preset…** creates a table and selects it, and **Remove preset** removes the selected table and resets `agent6.preset`.
+**Preset…** in the TUI, or **Preset: name** in the web UI, opens the `agent6.preset` setting, **Add preset…** creates a table and selects it, and **Remove preset** removes the selected table and resets `agent6.preset`.
 
 <!-- presets-table -->
 
