@@ -1395,7 +1395,7 @@ def test_resume_keeps_the_recorded_route_or_reports_its_replacement(
 
     monkeypatch.setattr(execution, "run_execution", execute)
     assert cli_resume._cmd_resume((), session_id, force=False, model=model) == 0
-    assert seen == [model or "claude-recorded"]
+    assert seen == ["claude-y" if model else "claude-recorded"]
     output = capsys.readouterr()
     note = "resuming with anthropic/claude-y (recorded: anthropic/claude-recorded)"
     assert (note in output.out + output.err) == bool(model)
