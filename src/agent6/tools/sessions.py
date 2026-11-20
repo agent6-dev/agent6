@@ -16,11 +16,9 @@ import datetime
 import json
 import os
 import pathlib
-import re
 import stat
 from collections.abc import Generator, Iterator
 from typing import Any
-from urllib import parse
 
 import pydantic
 
@@ -37,7 +35,6 @@ _SPEAKER = {
     "steer.parent": ("parent", "text"),
 }
 
-_URL = re.compile(r"(?<![A-Za-z0-9.+-])[A-Za-z][A-Za-z0-9.+-]*://[^\s<>]*")
 _PREVIEW_CHARS = 200
 _MAX_ROW_BYTES = 1 << 20
 _OVERSIZE_NOTE = "(scan incomplete: one or more journal records over 1 MiB omitted)"
@@ -270,37 +267,10 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
     return text or "(this session recorded no conversation)"
 
 
-def _url_text(match: re.Match[str]) -> str:
-    """Return the URL without userinfo, query or fragment."""
-    if match[0].count("://") != 1:
-        return "(unreadable URL)"
-    try:
-        parts = parse.urlsplit(match[0])
-        # A clipped authority can end inside userinfo before its @.
-        if "…" in parts.netloc or "\\" in parts.netloc:
-            return "(unreadable URL)"
-        host = parts.netloc.rpartition("@")[2]
-        return parse.urlunsplit((parts.scheme, host, parts.path, "", ""))
-    except ValueError:
-        return "(unreadable URL)"
-
-
-def _without_url_secrets(value: Any) -> Any:
-    """Return the recorded value with URL userinfo, queries and fragments removed."""
-    if isinstance(value, str) and "://" in value:
-        return _URL.sub(_url_text, value)
-    if isinstance(value, list):
-        return [_without_url_secrets(item) for item in value]
-    if isinstance(value, dict):
-        return {_without_url_secrets(k): _without_url_secrets(v) for k, v in value.items()}
-    return value
-
-
 def _value_text(value: Any) -> str:
     """Return one bounded line of a recorded argument or summary."""
     try:
-        clean = _without_url_secrets(value)
-        text = clean if isinstance(clean, str) else json.dumps(clean, ensure_ascii=False)
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
     except RecursionError:
         return "(value too deeply nested)"
     return terminal.line_preview(text.replace("\n", r"\n"), limit=_PREVIEW_CHARS)

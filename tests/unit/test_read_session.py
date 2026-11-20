@@ -333,38 +333,25 @@ def test_free_text_is_searchable_for_every_tool(
     )
 
 
-def test_url_previews_keep_paths_without_credentials_queries_or_fragments(
-    tmp_path: pathlib.Path,
-) -> None:
-    url = "https://private-user:private-password@[2001:db8::1]:8443/guide?private-query#private-fragment"
+def test_both_readers_keep_recorded_values_searchable_on_one_line(tmp_path: pathlib.Path) -> None:
+    url = "https://demo@docs.example/guide?page=seven#notes"
     read = _reader(
         tmp_path,
         [
             {"type": "tool.call", "name": "fetch", "args_preview": {"url": url}},
-            {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["read", url]}},
-            {"type": "tool.result", "name": "mcp__demo__get", "summary": f"not found: {url}"},
-            {
-                "type": "tool.call",
-                "name": "fetch",
-                "args_preview": {"url": "https://private-clipped… (302 chars)"},
-            },
+            {"type": "tool.result", "name": "fetch", "summary": f"\x1b[31mfrom {url}\x1b[0m"},
         ],
     )
-    page = read(kinds=["tool"], query="/guide")["conversation"]
-    assert page.count("https://[2001:db8::1]:8443/guide") == 3
-    assert "private-" not in read()["conversation"]
-    assert not sessions.roster(tmp_path, "private-").briefs
-
-
-def test_both_readers_mask_a_value_with_joined_urls(tmp_path: pathlib.Path) -> None:
-    """Two URL schemes in one token do not define one safe path."""
-    text = "see https://one.example/a,https://two.example/b"
-    read = _reader(tmp_path, [{"type": "tool.result", "name": "fetch", "summary": text}])
-    detail = "fetch result: see (unreadable URL)"
-    assert read()["conversation"] == f"#1 --:-- tool: {detail}"
-    assert not sessions.roster(tmp_path, "two.example").briefs
+    lines = (f"fetch url={url}", f"fetch result: from {url}")
+    assert read(query="page=seven#notes")["conversation"].splitlines() == [
+        f"#1 --:-- tool: {lines[0]}",
+        f"#2 --:-- tool: {lines[1]}",
+    ]
+    assert [b.id for b in sessions.roster(tmp_path, "demo@docs").briefs] == ["calm-owl-AAAAAA"]
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="calm-owl-AAAAAA")
-    assert sessions.conversation(layout, max_chars=1_000) == f"[tool] {detail}"
+    assert sessions.conversation(layout, max_chars=1_000) == "\n\n".join(
+        f"[tool] {line}" for line in lines
+    )
 
 
 def test_search_does_not_page_through_its_own_calls_and_results(tmp_path: pathlib.Path) -> None:

@@ -91,8 +91,6 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tool
 `read_session` reads numbered entries from a project journal.
 A child can also read its own journal by its full id, without listing or searching its parent's other sessions.
 Tool entries show the journal's argument preview and result summary, up to 200 characters per value.
-URL values keep their paths but omit userinfo, queries and fragments.
-A token with more than one URL scheme reads `(unreadable URL)`.
 Only visible text is searchable.
 The reader skips its own calls and results.
 Keep credentials out of arguments, summaries and session speech.
