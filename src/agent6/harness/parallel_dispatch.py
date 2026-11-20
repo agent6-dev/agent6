@@ -201,9 +201,7 @@ class ParallelDispatcher:
                 turn=turn,
                 base=base,
                 spec=seg.spec,
-                node_id=parallel_join.add_parallel_node(
-                    self.curator, seg.task, parent_id, source=source, log=self.log
-                ),
+                parent_node=parent_id,
                 children=tuple(
                     child_dispatch.ChildRecord(
                         session_id=f"{identity}-l{i}",
@@ -228,8 +226,6 @@ class ParallelDispatcher:
                 )
                 continue
             prepared.append((record, children))
-        if self.curator is not None:
-            self.emit_graph_snapshot()
         # Persisted before the children start: a crash there would reuse a group's id on resume.
         self.save_snapshot(state, conversation.to_wire(), next_turn=turn + 1)
         started = [self.launch(record, children) for record, children in prepared]
@@ -472,7 +468,7 @@ class ParallelDispatcher:
         """
         identity = record.identity
         self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
-        self.fail_nodes(record, f"dispatch failed: {exc}")
+        record = self.fail_nodes(record, f"dispatch failed: {exc}")
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
         message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was joined."
         record = self.settled(record, {}).advanced("complete", message=message)
@@ -717,6 +713,10 @@ class ParallelDispatcher:
         )
         record = self.joined(record, by_id, clean=clean)
         joins = [parallel_join.join_of(child) for child in record.children]
+        if record.node_id is None:
+            # Its id is on the record before its stamp: a resume never adds a second node.
+            record = self.noded(record)
+            self.write(record)
         parallel_join.stamp_segment_node(self.curator, record.node_id, joins, log=self.log)
         self.emit_graph_snapshot()
         payload = [
@@ -1026,7 +1026,7 @@ class ParallelDispatcher:
                     f"[parallel] group {record.identity}: dispatch interrupted before launch;"
                     " nothing ran."
                 )
-                self.fail_nodes(record, "dispatch interrupted before launch")
+                record = self.fail_nodes(record, "dispatch interrupted before launch")
                 record = record.model_copy(
                     update={
                         "children": tuple(
@@ -1093,12 +1093,48 @@ class ParallelDispatcher:
             raise OSError("no session dir to record the dispatch in")
         child_dispatch.write_record(self.session_dir, record, now=self.clock())
 
-    def fail_nodes(self, record: child_dispatch.DispatchRecord, note: str) -> None:
-        """Stamp the task's DAG node failed with the note."""
+    def noded(self, record: child_dispatch.DispatchRecord) -> child_dispatch.DispatchRecord:
+        """Give a task its DAG node, now that its outcome is known.
+
+        While its children run a task is theirs: an open node in the graph would read as the
+        parent's own next work.
+
+        Args:
+            record: The task's record.
+
+        Returns:
+            The record naming the node; unchanged for a panel, without a graph, or when it
+            already names one.
+        """
+        if record.source == "panel" or record.node_id is not None or not record.children:
+            return record
+        node_id = parallel_join.add_parallel_node(
+            self.curator,
+            record.children[0].task,
+            record.parent_node,
+            source=record.source,
+            log=self.log,
+        )
+        return record.model_copy(update={"node_id": node_id})
+
+    def fail_nodes(
+        self, record: child_dispatch.DispatchRecord, note: str
+    ) -> child_dispatch.DispatchRecord:
+        """Add the task's DAG node and stamp it failed with the note.
+
+        Args:
+            record: The task's record.
+            note: Why the task failed.
+
+        Returns:
+            The record naming the node, for the caller to write.
+        """
+        record = self.noded(record)
         parallel_join.stamp_parallel_node(
             self.curator, record.node_id, status="failed", note=note, log=self.log
         )
         self.emit_graph_snapshot()
+        return record
 
     def emit_budget(self, turn: int) -> None:
         """Journal the meter after a settlement, so the children's charge is on the record."""

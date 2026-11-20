@@ -122,7 +122,10 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         turn: The turn it was dispatched after.
         base: The chain tip the children were cut from.
         spec: The task's child spec as given; "" for one default child and for a panel.
-        node_id: The task's DAG node; None without a graph and for a panel.
+        parent_node: The DAG node the task was dispatched under; None without a graph and
+            for a panel.
+        node_id: The task's DAG node, added when its work lands or its dispatch fails; None
+            until then, without a graph and for a panel.
         children: The children, in child order.
         state: How far the dispatch got.
         message: The notice of what landed, "" until complete.
@@ -139,6 +142,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     turn: int
     base: str
     spec: str = ""
+    parent_node: str | None = None
     node_id: str | None = None
     children: tuple[ChildRecord, ...]
     state: DispatchState = "prepared"

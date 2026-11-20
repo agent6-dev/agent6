@@ -22,6 +22,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive
 from agent6.config import Config
+from agent6.graph import curator as graph_curator
 from agent6.harness import (
     loop,
     loop_conversation,
@@ -33,6 +34,7 @@ from agent6.harness import (
 )
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, event_log
+from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch
 
 
@@ -185,6 +187,7 @@ def _harness(
     *,
     max_turns: int,
     recoverer: Any = None,
+    curator: graph_curator.GraphCurator | None = None,
 ) -> loop.Harness:
     session_dir.mkdir(exist_ok=True)
     cfg = _config()
@@ -200,6 +203,7 @@ def _harness(
         ),
         logger=lambda _m: None,
         events=events,
+        curator=curator,
         budget=agent6_budget.BudgetTracker(
             max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
         ),
@@ -654,3 +658,44 @@ def test_a_prose_only_turn_does_not_end_a_run_whose_children_run(tmp_path: pathl
     assert f"- {child}: running" in provider.seen[4]
     (refused,) = _events(tmp_path / "run", "finish.refused.children")
     assert (refused["turn"], refused["trigger"]) == (4, "silent_finish")
+
+
+def test_a_dispatched_task_joins_the_task_graph_when_its_work_lands(tmp_path: pathlib.Path) -> None:
+    """While a child works a task the graph holds no open node for it.
+
+    An open node read as the parent's own next work: the focus banner named the child's task,
+    and a second task dispatched in the same turn hung under the first.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="run")
+    curator = graph_curator.GraphCurator(layout)
+    children = _Children(repo, "run")
+
+    def end_both() -> None:
+        children.end("run-p1-l1", path="a.txt")
+        children.end("run-p2-l1", path="b.txt")
+
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a"}), ("parallel", {"task": "write b"}))),
+        (None, _calls(READ)),
+        (end_both, _calls(READ)),
+        (None, _calls(("finish_session", {"summary": "done"}))),
+    )
+    wf = _harness(repo, layout.session_dir, provider, children, max_turns=5, curator=curator)
+
+    result = wf.run("start")
+
+    assert result.reason == "finish_session"
+    assert not any("[harness focus] Current task" in seen for seen in provider.seen)
+    nodes = curator.nodes()
+    (root,) = [node for node in nodes.values() if node.parent_id is None]
+    tasks = {node.title: node for node in nodes.values() if node.parent_id is not None}
+    assert sorted(tasks) == ["write a", "write b"]
+    assert all(
+        (node.status, node.parent_id, bool(node.commit_sha)) == ("passed", root.id, True)
+        for node in tasks.values()
+    )
+    records = child_dispatch.read_records(layout.session_dir)
+    assert [record.node_id for record in records] == [tasks["write a"].id, tasks["write b"].id]
+    assert [record.parent_node for record in records] == [root.id, root.id]
