@@ -532,7 +532,7 @@ class JailToolUnreachable(Event):
 
 
 class LoopNote(Event):
-    """A machine-creation progress note."""
+    """A progress note in the session log."""
 
     TYPE: ClassVar[str] = "loop.note"
     text: str = pydantic.Field(description="The event's text.")

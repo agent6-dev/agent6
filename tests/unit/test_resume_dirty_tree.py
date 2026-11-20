@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import role_providers
+from agent6.app import resume_tree, role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc
@@ -30,7 +30,7 @@ from agent6.vcs.git import read as git_read
 _CONFIG = """
 [sandbox]
 isolation = "none"
-run_commands = "deny"
+run_commands = "{run_commands}"
 
 [models.default]
 model = "p/m"
@@ -110,11 +110,19 @@ def _git(repo: pathlib.Path, *args: str) -> str:
     ).stdout
 
 
-def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, git_toml: str) -> pathlib.Path:
+def _setup(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    git_toml: str,
+    *,
+    run_commands: str = "deny",
+) -> pathlib.Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     cfg_home = tmp_path / "cfg"
     (cfg_home / "agent6").mkdir(parents=True)
-    (cfg_home / "agent6" / "config.toml").write_text(_CONFIG + git_toml, encoding="utf-8")
+    (cfg_home / "agent6" / "config.toml").write_text(
+        _CONFIG.format(run_commands=run_commands) + git_toml, encoding="utf-8"
+    )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     monkeypatch.setenv("PROBE_KEY", "sk-probe")
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
@@ -137,19 +145,19 @@ def _session_dir(repo: pathlib.Path, session_id: str) -> pathlib.Path:
 
 
 def _stopped_run(
-    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: str, step: _Step
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: str, *steps: _Step
 ) -> None:
-    """Run one step, then end at the turn boundary on an operator stop."""
+    """Stop at the turn boundary after the scripted steps."""
     session_dir = _session_dir(repo, session_id)
 
-    def _stop_during_the_first_call(call_index: int) -> None:
-        if call_index == 0:
+    def _stop_after_steps(call_index: int) -> None:
+        if call_index == len(steps) - 1:
             ipc.request_stop(session_dir)
 
-    prov = _Scripted([step, _finish()], before_call=_stop_during_the_first_call)
+    prov = _Scripted([*steps, _finish()], before_call=_stop_after_steps)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
     cli_main(["run", "--session-id", session_id, "task"])
-    assert prov.calls == 1  # stopped at the boundary after the step
+    assert prov.calls == len(steps)
 
 
 def _resume(monkeypatch: pytest.MonkeyPatch, session_id: str, script: list[_Step]) -> int:
@@ -561,6 +569,45 @@ def test_resume_asks_about_an_edit_made_outside_the_run(
         assert not (_session_dir(repo, "tree-ASK002") / "worker.pid").exists()
 
 
+def test_model_git_resume_compares_its_uncommitted_edit_to_the_stop_tree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file tracked by the model's commit but ignored at the base vanished from resume's tree."""
+    repo = _setup(tmp_path, monkeypatch, 'control = "model"\n', run_commands="allow")
+    session_id = "tree-MODEL1"
+    (repo / ".gitignore").write_text("*.log\n", encoding="utf-8")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "Ignore logs")
+    move = {
+        "type": "tool_use",
+        "name": "run_command",
+        "id": "move",
+        "input": {"argv": ["sh", "-c", "git mv a.py draft.log && git commit -qm 'Track draft'"]},
+    }
+    _stopped_run(repo, monkeypatch, session_id, ("", (move,)), _edit("draft.log", "unfinished\n"))
+    assert _git(repo, "show", "HEAD:draft.log") == "x = 1\n"
+    draft = repo / "draft.log"
+    assert draft.read_text() == "unfinished\n"
+    capsys.readouterr()
+
+    draft.write_text("operator\n", encoding="utf-8")
+    rc, provider = _resume_recording(monkeypatch, session_id, [_finish()])
+    assert rc == 2 and not provider.calls
+    assert (
+        "1 file changed outside this run since it last ended:\n- draft.log"
+        in capsys.readouterr().err
+    )
+    assert draft.read_text() == "operator\n"
+
+    draft.write_text("unfinished\n", encoding="utf-8")
+    assert _resume(monkeypatch, session_id, [_finish()]) == 0
+    note = "uncommitted from this run's last execution: draft.log"
+    assert note in capsys.readouterr().err
+    log = (_session_dir(repo, session_id) / "logs.jsonl").read_text()
+    assert any(e.get("text") == note for e in map(json.loads, log.splitlines()))
+    assert _git(repo, "status", "--short") == " M draft.log\n"
+
+
 def test_resume_keeps_the_runs_own_uncommitted_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -579,6 +626,20 @@ def test_resume_keeps_the_runs_own_uncommitted_work(
     assert asked == []
     assert _git(repo, "stash", "list") == ""
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5  # the run\n"
+
+
+def test_model_git_resume_leaves_hidden_changes_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hidden file can differ between the stop tree and the commit seeding the resume."""
+    repo = _setup(tmp_path, monkeypatch, 'control = "model"\n')
+    hidden = frozenset({"b.py"})
+    end_tree = git_read.worktree_tree(repo, "HEAD", hidden)
+    (repo / "b.py").write_text("new committed version\n")
+    _git(repo, "commit", "-qm", "Change hidden file", "--", "b.py")
+    (repo / "b.py").write_text("private draft\n")
+
+    assert resume_tree.outside_edits(repo, end_tree, "HEAD", hidden) == []
 
 
 @pytest.mark.parametrize(("policy", "rc"), [("", 2), ('dirty_tree = "include"\n', 0)])
@@ -649,8 +710,6 @@ def test_the_restore_recipe_names_the_file_as_it_is_not_as_it_prints(
     tmp_path: pathlib.Path,
 ) -> None:
     """A newline in a name reached the pathspec in its printed spelling, naming another file."""
-    from agent6.app import resume_tree  # pyright: ignore[reportPrivateUsage]
-
     text = resume_tree._shared_refusal(  # pyright: ignore[reportPrivateUsage]
         tmp_path, ["a\nb.py"], end_tree="abc1234", run_branch=None
     )

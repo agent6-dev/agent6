@@ -39,7 +39,7 @@ from agent6.config import (
     ConfigError,
 )
 from agent6.harness import loop_snapshot, repo_context
-from agent6.sessions import id, ipc, lock, process
+from agent6.sessions import id, ipc, journal, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
@@ -587,8 +587,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             return cfg
 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
-        hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
+        hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths) | {".agent6"}
         outside: list[str] = []
+        carried_edits: frozenset[str] = frozenset()
         end_tree = ""
         seed: str | None = None
         if mode == "run":
@@ -605,7 +606,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             died_in_turn = flight is not None and flight.turn == snapshot.next_turn
             chain_ref = git_read.chain_ref_for(session_id)
             end_tree = scan.end_tree
-            seed = git_read.chain_tip(cwd, chain_ref) or resume_base_sha or None
+            # The model's commits track files even when the run's starting commit ignored them.
+            model_end = manifest.git_control == "model" and bool(end_tree)
+            record_ref = "HEAD" if model_end else chain_ref
+            seed = git_read.chain_tip(cwd, record_ref) or resume_base_sha or None
             written = _paths_the_run_wrote(layout.logs_path)
             if landed is not None:
                 # The run's work is in HEAD, so what differs from HEAD is the operator's.
@@ -614,7 +618,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 arrived = (
                     git_read.untracked_paths(cwd)
                     - untracked_at_start
-                    - git_read.tree_paths(cwd, chain_ref)
+                    - git_read.tree_paths(cwd, record_ref)
                     - (git_read.tree_paths(cwd, end_tree) if end_tree else frozenset())
                     - written
                 )
@@ -636,9 +640,13 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 # Tracked content that changed since the last end is the operator's too; a
                 # file taken as the run's above stays its own.
                 runs_own = written | arrived if died_in_turn else written
-                outside = resume_tree.outside_edits(
-                    cwd, end_tree, seed, untracked_at_start | hidden, written=runs_own
-                )
+                exclude = untracked_at_start | hidden
+                outside = resume_tree.outside_edits(cwd, end_tree, seed, exclude, written=runs_own)
+                if model_end:
+                    committed = seed or git_read.empty_tree(cwd)
+                    carried_edits = frozenset(
+                        resume_tree.visible_changes(cwd, committed, end_tree, exclude)
+                    ).difference(outside)
                 unsettled = resume_tree.refusal(
                     cwd,
                     policy=cfg.git.dirty_tree,
@@ -753,7 +761,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         stamps.stamp_execution(
             layout.session_dir, cfg, mode, isolation, config_sources=effective.sources
         )
-        if mode == "run":
+        if carried_edits:
+            note = f"uncommitted from this run's last execution: {_first_four(carried_edits)}"
+            reporter.note(note)
+            events.emit(journal.LoopNote(text=note))
+        if mode == "run" and cfg.git.control != "model":
             # The next auto-commit takes the previous execution's tail and any operator edit
             # since; the operator's untracked files stay out.
             with contextlib.suppress(errors.GitError, OSError):

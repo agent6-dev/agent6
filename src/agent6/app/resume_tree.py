@@ -29,6 +29,25 @@ from agent6.vcs.git import read as git_read
 _LISTED = 10
 
 
+def visible_changes(
+    cwd: pathlib.Path, before: str, after: str, exclude: Collection[str]
+) -> list[str]:
+    """List changed paths the run can take, even when the trees have different seeds.
+
+    Args:
+        cwd: The checkout.
+        before: The tree or commit compared from.
+        after: The tree compared to.
+        exclude: Paths left at their seed's content in each tree.
+
+    Returns:
+        The differing paths outside the exclusions.
+    """
+    return [
+        p for p in git_read.tree_diff_paths(cwd, before, after) if not git_read.excluded(p, exclude)
+    ]
+
+
 def outside_edits(
     cwd: pathlib.Path,
     end_tree: str,
@@ -43,7 +62,8 @@ def outside_edits(
         cwd: The checkout.
         end_tree: The tree the run left: the one its last end recorded, or HEAD's once its
             work landed there; "" when none was recorded.
-        seed: The commit that tree was staged over: the chain tip, else the run's base.
+        seed: The commit to stage over: HEAD for a model-controlled run with a recorded end,
+            otherwise the chain tip or the run's base.
         exclude: The operator's untracked files and the run's hidden paths, left out of
             both trees.
         written: The paths the run's own tools wrote, which stay its own when no tree was
@@ -55,7 +75,7 @@ def outside_edits(
     """
     tree = git_read.worktree_tree(cwd, seed, exclude)
     if end_tree:
-        return git_read.tree_diff_paths(cwd, end_tree, tree)
+        return visible_changes(cwd, end_tree, tree, exclude)
     if seed is None:
         return []
     return [p for p in git_read.tree_diff_paths(cwd, seed, tree) if p not in written]

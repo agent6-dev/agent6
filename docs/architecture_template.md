@@ -752,6 +752,7 @@ Uncommitted changes to tracked files are asked about over the `ask_user` channel
 An included tree that is exactly an unmerged run's tip is recorded (`includes` in the manifest): when the including run merges and that run is still at the tip, it is stamped merged too (`merged.via`), so its own merge has nothing left to land.
 
 Every end the loop reaches records the tree the run left (`session.stop.tree`), and a resume applies the same policy to the paths that differ from it: those changed outside the run.
+Under `git.control = "model"` the checkout's HEAD seeds the comparison with that tree, so the model's commits decide which files are tracked even when an ignore rule matches them.
 `stash` sets aside those tracked changes, including staged renames and deletions.
 `include` leaves them in place and names them to the model before its first call.
 It refuses when the run also changed one of those paths, since stashing it would take the run's work with the edit.
