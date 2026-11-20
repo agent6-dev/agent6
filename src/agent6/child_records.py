@@ -28,8 +28,8 @@ JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "st
 
 def number_label(number: int, *, reviewer: bool) -> str:
     """Return the child's place within its task or panel, when recorded."""
-    role = "reviewer" if reviewer else "attempt"
-    return f"{role} {number}" if number > 0 else role
+    label = "reviewer" if reviewer else "attempt"
+    return f"{label} {number}" if number > 0 else label
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
