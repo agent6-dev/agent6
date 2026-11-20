@@ -150,7 +150,7 @@ class CacheUsageFold:
             or kind == "compact.summarise.done"
         ):
             self.pending = True
-        elif row.get("role") == "worker":
+        elif row.get("actor") == "worker":
             call_id = str(row.get("model_call_id", ""))
             if kind == "model.call" and self.pending:
                 self.after.add(call_id)

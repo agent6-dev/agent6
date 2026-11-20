@@ -1,11 +1,11 @@
 {"ts": "2026-07-14T10:00:00.000001+00:00", "type": "session.start", "session_id": "golden-run-GLDN01", "user_task": "# Fix the bug\n\nRestore the thing.", "mode": "run"}
 {"ts": "2026-07-14T10:00:00.100000+00:00", "type": "graph.update", "nodes": {"n1": {"title": "root", "status": "in_progress", "parent_id": null, "children": ["n2"]}, "n2": {"title": "child", "status": "pending", "parent_id": "n1", "children": []}}, "cursor": "n1"}
-{"ts": "2026-07-14T10:00:01.000000+00:00", "type": "model.call", "role": "worker", "model": "kimi-k2", "provider": "openrouter"}
-{"ts": "2026-07-14T10:00:01.500000+00:00", "type": "model.thinking_delta", "role": "worker", "text": "Let me read the file."}
-{"ts": "2026-07-14T10:00:01.700000+00:00", "type": "model.text_delta", "role": "worker", "text": "Reading now"}
+{"ts": "2026-07-14T10:00:01.000000+00:00", "type": "model.call", "actor": "worker", "model": "kimi-k2", "provider": "openrouter"}
+{"ts": "2026-07-14T10:00:01.500000+00:00", "type": "model.thinking_delta", "actor": "worker", "text": "Let me read the file."}
+{"ts": "2026-07-14T10:00:01.700000+00:00", "type": "model.text_delta", "actor": "worker", "text": "Reading now"}
 {"ts": "2026-07-14T10:00:02.000000+00:00", "type": "budget.update", "input_total": 5850, "output_total": 82, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.004841036, "usd_partial": false}
 {"ts": "2026-07-14T10:00:02.100000+00:00", "type": "budget.turn", "turn": 1, "input_tokens": 5850, "output_tokens": 82}
-{"ts": "2026-07-14T10:00:02.500000+00:00", "type": "model.result", "role": "worker", "ok": true, "input_tokens": 5850, "output_tokens": 82, "cache_read_tokens": 4864, "cache_write_tokens": 0, "stop_reason": "tool_calls"}
+{"ts": "2026-07-14T10:00:02.500000+00:00", "type": "model.result", "actor": "worker", "ok": true, "input_tokens": 5850, "output_tokens": 82, "cache_read_tokens": 4864, "cache_write_tokens": 0, "stop_reason": "tool_calls"}
 {"ts": "2026-07-14T10:00:03.100000+00:00", "type": "tool.call", "name": "read_file", "args": {"path": "src/x.py"}, "turn": 1}
 {"ts": "2026-07-14T10:00:03.200000+00:00", "type": "tool.result", "name": "read_file", "ok": true, "summary": "4773 bytes"}
 {"ts": "2026-07-14T10:00:04.000000+00:00", "type": "tool.call", "name": "run_command", "args": {"argv": ["ls", "/nope"]}}
@@ -32,8 +32,8 @@
 {"ts": "2026-07-14T10:00:15.000000+00:00", "type": "graph.update", "nodes": null, "cursor": null}
 {"ts": "2026-07-14T10:00:15.200000+00:00", "type": "graph.update", "nodes": {"ok": {"title": "ok", "status": "pending", "parent_id": null, "children": []}, "bad": "not-a-dict"}, "cursor": 123}
 {"ts": "2026-07-14T10:00:16.000000+00:00", "type": "session.resume", "turn": 22, "messages": 44}
-{"ts": "2026-07-14T10:00:16.500000+00:00", "type": "model.call", "role": "worker", "model": "kimi-k2", "provider": "openrouter"}
-{"ts": "2026-07-14T10:00:17.000000+00:00", "type": "model.result", "role": "worker", "ok": false, "error": "boom upstream"}
+{"ts": "2026-07-14T10:00:16.500000+00:00", "type": "model.call", "actor": "worker", "model": "kimi-k2", "provider": "openrouter"}
+{"ts": "2026-07-14T10:00:17.000000+00:00", "type": "model.result", "actor": "worker", "ok": false, "error": "boom upstream"}
 {"ts": "2026-07-14T10:00:18.000000+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "all green"}}
 {"ts": "2026-07-14T10:00:18.200000+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
 {"ts": "2026-07-14T10:00:18.500000+00:00", "type": "session.stop", "reason": "finish_session", "turns": 8, "verification": "passed", "execution_id": "execution"}

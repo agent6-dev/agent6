@@ -236,7 +236,7 @@ class TelemetryFold:
             "gen_ai.provider.name": str(event.get("provider", "")),
             "gen_ai.request.model": model,
             "gen_ai.conversation.id": self.session_id,
-            "agent6.role": str(event.get("role", "")),
+            "agent6.actor": str(event.get("actor", "")),
         }
         if reviewer is not None:
             fields["agent6.reviewer"] = reviewer
@@ -249,7 +249,7 @@ class TelemetryFold:
     def _open_call(
         self, execution: telemetry_records.Execution, event: Mapping[str, Any]
     ) -> telemetry_records.OpenSpan | None:
-        """Return the open model-call span a role row belongs to, or None."""
+        """Return the open model-call span a model event belongs to, or None."""
         key = str(event.get("model_call_id") or "")
         span = execution.calls.get(key)
         if span is None and not key and len(execution.calls) == 1:
@@ -262,7 +262,7 @@ class TelemetryFold:
         """Count the row's tokens on the meters.
 
         Args:
-            event: The role row.
+            event: The model event.
             span: The call's open span, whose labels fill in what the row leaves out.
 
         Returns:

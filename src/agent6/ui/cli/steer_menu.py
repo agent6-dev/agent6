@@ -140,7 +140,7 @@ def _print_status(session_dir: pathlib.Path) -> None:
     done = sum(1 for t in s.tasks if t.status in order.DONE_STATUSES)
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     call = s.last_model_call
-    model = f"{call.role}/{call.model}" if call else "—"
+    model = f"{call.actor}/{call.model}" if call else "—"
     b = s.budget
     cost = session_status.usage_cell(
         b.usd_so_far,

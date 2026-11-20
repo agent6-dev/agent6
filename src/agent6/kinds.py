@@ -192,25 +192,23 @@ SESSION_KINDS: dict[str, SessionKind] = {
 # Only resumable modes start outside the machine supervisor.
 OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() if k.resumable)
 
-# The roles whose output is the session talking; every other role is a side call on the journal.
+# A call from a helper or a more specific actor is a side call.
 DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
 
 
-def is_side_role(role: str, *, mode: str = "") -> bool:
-    """Return whether a `role.*` event's answer is a side call's, not the session's own.
-
-    An unnamed role is not a side call: older events carry none.
+def is_side_actor(actor: str, *, mode: str = "") -> bool:
+    """Return whether the model output belongs to a side call.
 
     Args:
-        role: The event's `role` field.
+        actor: The calling actor.
         mode: The session mode. A reviewer speaks for its own session only.
 
     Returns:
         True for a side call, including a reviewer called within another session.
     """
-    if role == "reviewer":
+    if actor == "reviewer":
         return mode != "reviewer"
-    return bool(role) and role not in DRIVING_ROLES
+    return bool(actor) and actor not in DRIVING_ROLES
 
 
 class UnknownSessionKindError(ValueError):

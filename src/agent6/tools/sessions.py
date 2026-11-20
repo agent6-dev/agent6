@@ -202,7 +202,7 @@ def _speech(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
     etype = str(event.get("type", ""))
     if said := _SPEAKER.get(etype):
         speaker, field = said
-        if etype == "model.result" and kinds.is_side_role(str(event.get("role", "")), mode=mode):
+        if etype == "model.result" and kinds.is_side_actor(str(event.get("actor", "")), mode=mode):
             return None
         body = event.get(field)
         if isinstance(body, str) and body.strip():

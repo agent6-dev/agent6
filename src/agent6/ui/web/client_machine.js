@@ -282,7 +282,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     // operator_blocked still quiets a running state blocked on an
     // approval/question (the run pane's rule).
     active: agentLive && !!r.last_model_call && !streaming && !r.operator_blocked,
-    role: (r.last_model_call && r.last_model_call.role) || 'agent',
+    actor: (r.last_model_call && r.last_model_call.actor) || 'agent',
     // Server-computed age, as the run pane uses: anchoring to this frame's
     // arrival would show a state wedged for forty minutes as "working… 3s".
     last: Date.now() - 1000 * (r.last_event_age_s || 0),

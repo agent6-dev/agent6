@@ -89,7 +89,7 @@ def configured_judges(cfg: Config, *, log: Callable[[str], None]) -> tuple[Judge
         log: Told of a selector that names nothing.
 
     Returns:
-        One judge per requested seat with a model route; a role with none judges nothing.
+        The requested judges with a model route, in order.
     """
     unrouted = {role for role in kinds.MODEL_ROLES if cfg.models.resolve(role) is None}
     judges: list[Judge] = []

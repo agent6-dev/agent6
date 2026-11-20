@@ -379,14 +379,14 @@ def write_child_config(
     if spec.mode == "reviewer" and cfg.review.reviewers and spec.settings is not None:
         # A reviewer's selection must not change the routes counted toward its parent's quorum.
         reviewer = cfg.models.resolve("reviewer")
-        seats = tuple(
-            entry.model_copy(update={"model": f"{seat.provider}/{seat.model}"})
-            if (seat := entry.resolve(reviewer)) is not None
+        reviewers = tuple(
+            entry.model_copy(update={"model": f"{settings.provider}/{settings.model}"})
+            if (settings := entry.resolve(reviewer)) is not None
             else entry
             for entry in cfg.review.reviewers
         )
         child_cfg = child_cfg.model_copy(
-            update={"review": cfg.review.model_copy(update={"reviewers": seats})}
+            update={"review": cfg.review.model_copy(update={"reviewers": reviewers})}
         )
     # The import fetches the child's branch, so branch_per_run stays on.
     child_cfg = child_cfg.model_copy(

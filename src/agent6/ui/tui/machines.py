@@ -85,13 +85,13 @@ def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> ri
             since a replayed finished turn would otherwise read as live.
 
     Returns:
-        The line for a role call, a tool call or a tool result; None for any other event.
+        The line for a model call, a tool call or a tool result; None for any other event.
     """
     t = evt.get("type")
     if t == "model.call":
         mark = " thinking…" if in_flight else ""
         return rich_text.Text(
-            f"  → {evt.get('role', '')}/{evt.get('model', '')}{mark}", style="cyan"
+            f"  → {evt.get('actor', '')}/{evt.get('model', '')}{mark}", style="cyan"
         )
     if t == "tool.call":
         args = json.dumps(viewmodel_events.call_args(evt), default=str)

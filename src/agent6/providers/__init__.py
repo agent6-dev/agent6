@@ -20,11 +20,11 @@ from agent6.providers.claude_code import ClaudeCodeProvider  # re-export
 from agent6.providers.claude_code_wire import CLAUDE_CODE_PERSIST_BYTES, result_text  # re-export
 from agent6.providers.openai import OpenAIProvider  # re-export
 from agent6.providers.provider_types import (  # re-export
+    ActorTranscriptSink,
     ProviderAborted,
     ProviderError,
     ProviderInterrupted,
     ProviderResponse,
-    RoleTranscriptSink,
     ToolDefinition,
     TranscriptRecorder,
     TranscriptSink,
@@ -117,6 +117,7 @@ def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int
 
 __all__ = [
     "CLAUDE_CODE_PERSIST_BYTES",
+    "ActorTranscriptSink",
     "AnthropicProvider",
     "ChatGPTProvider",
     "ClaudeCodeProvider",
@@ -128,7 +129,6 @@ __all__ = [
     "ProviderInterrupted",
     "ProviderResponse",
     "ResponsesProvider",
-    "RoleTranscriptSink",
     "ToolDefinition",
     "TranscriptRecorder",
     "TranscriptSink",

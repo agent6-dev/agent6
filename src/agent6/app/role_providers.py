@@ -210,7 +210,7 @@ def build_role_provider(
     *,
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
-    seat: str = "",
+    actor: str = "",
     events: event_log.EventSink | None = None,
 ) -> Provider:
     """Construct the configured provider for a role.
@@ -222,8 +222,7 @@ def build_role_provider(
         role: The role whose route to build.
         transcript_sink: The recorder the provider's round-trips go to.
         budget: The tracker the provider bills.
-        seat: The transcript seat stamp for an actor sharing the role's route; the role
-            itself when empty.
+        actor: The actor to record. An empty value takes the role name.
         events: The run's journal sink; None emits no authentication events.
 
     Returns:
@@ -248,8 +247,7 @@ def build_role_provider(
         entry,
         model,
         rm.effort,
-        # The conversation fold keeps the worker's seat and skips the side-calls' seats.
-        transcript_sink=transcript_sink.for_seat(seat or role),
+        transcript_sink=transcript_sink.for_actor(actor or role),
         budget=budget,
         events=events,
     )
@@ -439,7 +437,7 @@ class InstrumentedProvider:
 
     Attributes:
         inner: The wrapped provider, unchanged.
-        role: The role name the events carry.
+        actor: The actor recorded on each model call.
         model: The model id the events carry.
         provider_name: The provider entry name the events carry.
         events: The sink the events go to; None emits nothing.
@@ -452,7 +450,7 @@ class InstrumentedProvider:
     """
 
     inner: Provider
-    role: str
+    actor: str
     model: str
     provider_name: str
     events: event_log.EventSink | None
@@ -479,7 +477,7 @@ class InstrumentedProvider:
         compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
     ) -> ProviderResponse:
-        """Call the inner provider and emit the role and budget events around it.
+        """Call the inner provider and emit the model and budget events around it.
 
         Args:
             system: The system prompt.
@@ -519,7 +517,7 @@ class InstrumentedProvider:
         if context is None or not context.conversation_id:
             initiator = context.initiator if context is not None else "agent"
             context = self.conversations.context(
-                self.role, self.provider_name, initiator=initiator, call_context=call_context
+                self.actor, self.provider_name, initiator=initiator, call_context=call_context
             )
         context = dataclasses.replace(
             context,
@@ -533,19 +531,19 @@ class InstrumentedProvider:
         if self.events is not None and context.attempt == 1:
             self.events.emit(journal.ModelCall(**self._identity(call_context)))
         # Every live view subscribes to the delta events; a caller callback chains through.
-        role_for_event = self.role
+        actor = self.actor
         events = self.events
         identity = call_context.event_fields()
 
         def _on_text(piece: str) -> None:
             if events is not None:
-                events.emit(journal.ModelTextDelta(role=role_for_event, text=piece, **identity))
+                events.emit(journal.ModelTextDelta(actor=actor, text=piece, **identity))
             if text_delta_callback is not None:
                 text_delta_callback(piece)
 
         def _on_thinking(piece: str) -> None:
             if events is not None:
-                events.emit(journal.ModelThinkingDelta(role=role_for_event, text=piece, **identity))
+                events.emit(journal.ModelThinkingDelta(actor=actor, text=piece, **identity))
             if thinking_delta_callback is not None:
                 thinking_delta_callback(piece)
 
@@ -588,7 +586,7 @@ class InstrumentedProvider:
             )
             self._emit_budget()
             raise
-        self.conversations.completed(self.role, self.provider_name, call_context=call_context)
+        self.conversations.completed(self.actor, self.provider_name, call_context=call_context)
         self._record_attempt(
             call_context,
             context,
@@ -646,7 +644,7 @@ class InstrumentedProvider:
     def _identity(self, call_context: kinds.CallContext) -> dict[str, Any]:
         """Return the fields that pair a `model.call` with its `model.result`."""
         return {
-            "role": self.role,
+            "actor": self.actor,
             "model": self.model,
             "provider": self.provider_name,
             **call_context.event_fields(),
@@ -659,7 +657,7 @@ class InstrumentedProvider:
             self.events.emit(
                 journal.ProviderRequest(
                     **facts.context.call_context.event_fields(),
-                    role=self.role,
+                    actor=self.actor,
                     provider=self.provider_name,
                     model=facts.model,
                     request_id=facts.request_id,
@@ -684,36 +682,36 @@ class InstrumentedProvider:
             )
 
 
-def helper_seat_provider(
+def helper_actor_provider(
     cfg: Config,
-    seat: str,
+    actor: str,
     *,
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None,
     conversations: conversation_state.Conversations | None = None,
 ) -> Provider:
-    """Build the helper route under a seat's label, instrumented.
+    """Build the instrumented provider for a helper actor.
 
     Args:
         cfg: The run's config.
-        seat: The seat stamp: the summariser.
+        actor: The actor to record.
         transcript_sink: The recorder the provider's round-trips go to.
         budget: The tracker the provider bills.
-        events: The sink the role and budget events go to.
-        conversations: The session's conversation state; None holds one for this seat.
+        events: The sink for model and budget events.
+        conversations: The session's conversation state; None holds one for this actor.
 
     Returns:
         The instrumented provider.
     """
     inner = build_role_provider(
-        cfg, "helper", transcript_sink=transcript_sink, budget=budget, seat=seat, events=events
+        cfg, "helper", transcript_sink=transcript_sink, budget=budget, actor=actor, events=events
     )
     rm = cfg.models.resolve("helper")
     assert rm is not None
     return InstrumentedProvider(
         inner=inner,
-        role=seat,
+        actor=actor,
         model=rm.model,
         provider_name=rm.provider,
         events=events,

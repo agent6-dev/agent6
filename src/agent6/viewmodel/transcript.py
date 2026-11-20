@@ -56,7 +56,7 @@ def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
     """
     seen: dict[str, None] = {}
     for event in events:
-        if event.get("type") == "model.call" and event.get("role") == "worker":
+        if event.get("type") == "model.call" and event.get("actor") == "worker":
             model = str(event.get("model", "")).strip()
             if model:
                 seen.setdefault(model, None)
@@ -245,13 +245,13 @@ class TranscriptFold:
             self._text.clear()
             self._spoke = False
             return []
-        # Side streams belong to the live pane, not the driving role's settled speech.
+        # Side streams belong to the live pane, not the driving actor's settled speech.
         if etype in ("model.thinking_delta", "model.text_delta") and not self._is_side_call(event):
             buffer = self._thinking if etype == "model.thinking_delta" else self._text
             buffer.append(str(event.get("text", "")))
             return []
         if etype == "model.result":
-            # Only the driving role speaks: a side call's answer would read as the agent's.
+            # Only the driving actor speaks: a side call's answer would read as the agent's.
             # A marker inside the stream already flushed the speech this result repeats.
             unspoken = not (self._is_side_call(event) or self._spoke)
             return self._flush_message(settled=str(event.get("text", "")) if unspoken else "")
@@ -338,7 +338,7 @@ class TranscriptFold:
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
         """Return whether the result is a side call's."""
-        return kinds.is_side_role(str(event.get("role", "")), mode=self._mode)
+        return kinds.is_side_actor(str(event.get("actor", "")), mode=self._mode)
 
     def _flush_message(self, *, settled: str = "") -> list[transcript_items.TranscriptItem]:
         """Emit the buffered thinking and text as items.

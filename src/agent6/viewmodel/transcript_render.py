@@ -64,7 +64,7 @@ def transcript_seq(t: dict[str, Any]) -> int:
 
 
 def load_transcripts(transcripts_dir: pathlib.Path) -> list[dict[str, Any]]:
-    """Load every transcript under a session's transcripts dir, in seq order, all seats.
+    """Load every transcript under a session's transcripts dir, in seq order, all actors.
 
     Args:
         transcripts_dir: The session's transcripts dir.
@@ -87,8 +87,8 @@ def load_transcripts(transcripts_dir: pathlib.Path) -> list[dict[str, Any]]:
 
 
 def drives_conversation(t: dict[str, Any], *, mode: str = "") -> bool:
-    """Return whether the transcript is a driving seat's; one with no seat is the driver's."""
-    return not kinds.is_side_role(str(t.get("seat") or ""), mode=mode)
+    """Return whether the transcript belongs to a driving actor."""
+    return not kinds.is_side_actor(str(t.get("actor") or ""), mode=mode)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -413,10 +413,10 @@ def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
 def _conversation_calls(
     transcripts: list[dict[str, Any]], messages: list[Message], *, mode: str
 ) -> Iterator[dict[str, Any]]:
-    """Mark each attempt that did not complete and yield the driving seats' calls.
+    """Mark each attempt that did not complete and yield the driving actors' calls.
 
     Args:
-        transcripts: Every seat's records, in seq order.
+        transcripts: Every actor's records, in seq order.
         messages: The conversation receiving the markers.
         mode: The session mode.
 
@@ -428,7 +428,7 @@ def _conversation_calls(
         if outcome and outcome != "completed":
             notice = f"call {transcript_seq(t)}: {outcome}"
             if not drives_conversation(t, mode=mode):
-                notice += f" ({t.get('seat')})"
+                notice += f" ({t.get('actor')})"
             messages.append(Message(role="marker", text=notice, seq=transcript_seq(t)))
         if drives_conversation(t, mode=mode):
             yield t
@@ -440,7 +440,7 @@ def fold_conversation(transcripts: list[dict[str, Any]], *, mode: str = "") -> l
     Each request is reconciled against the prior one rather than predicted: a
     recorded response reappears as the next request's message only when the history
     grew, since an error transcript or an empty-response retry re-sends the identical
-    list. Only the driving seats fold; any seat's attempt that did not complete leaves a marker.
+    list. Only the driving actors fold; any actor's attempt that did not complete leaves a marker.
 
     Args:
         transcripts: The transcripts, in seq order.

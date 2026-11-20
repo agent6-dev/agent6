@@ -175,15 +175,15 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
             if snippet:
                 salient = f"{salient.rstrip()} | {snippet}"
         case "model.call":
-            salient = f"{event.get('role', '')}/{event.get('model', '')}"
+            salient = f"{event.get('actor', '')}/{event.get('model', '')}"
         case "model.result":
-            role = event.get("role", "")
+            actor = event.get("actor", "")
             if event.get("error"):
-                salient = f"{role} error: {_cut(str(event.get('error')), 160)}"
+                salient = f"{actor} error: {_cut(str(event.get('error')), 160)}"
             else:
                 tin = event.get("input_tokens")
                 tout = event.get("output_tokens")
-                salient = f"{role} in={tin} out={tout}"
+                salient = f"{actor} in={tin} out={tout}"
         case "provider.retry":
             salient = f"attempt {event.get('attempt')}: {_cut(str(event.get('error', '')), 160)}"
         case "pin.added":

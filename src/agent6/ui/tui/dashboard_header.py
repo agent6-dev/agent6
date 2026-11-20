@@ -3,7 +3,7 @@
 """The dashboard's run widget.
 
 The session id on the border; the status, the cost, the budget and the plan on line
-one; the driving role and the task on line two; then the lines a run has (where its
+one; the actor and the task on line two; then the lines a run has (where its
 commands run when not on the local host, lineage, branch, pins, serving, a child's
 compare), each cached as long as it can hold. Every line ends in an ellipsis rather
 than wraps, so a long model id never pushes the status onto a line of its own.
@@ -70,7 +70,7 @@ class RunHeader(widgets.Static):
         self._branch_finished = False  # the run state the branch line was read under
         self._branch_recheck_at = 0.0  # a finished run re-reads every few seconds
         self._lineage_line: str | None = None  # the fork lineage, which never changes
-        self._start_role_line: str | None = None  # the manifest's driver, before any call
+        self._start_actor_line: str | None = None  # the manifest's driver, before any call
 
     @property
     def _tui(self) -> app.Agent6TUI:
@@ -100,7 +100,7 @@ class RunHeader(widgets.Static):
         if active and call is not None:
             spinner = format.spinner_frame(tui.spin)
             beat = f" {spinner} {tui.seconds_since_event()}s"
-        role_line = f"{call.role} / {call.model}{beat}" if call else self._start_role()
+        actor_line = f"{call.actor} / {call.model}{beat}" if call else self._start_actor()
         # The cost is as of the selected commit.
         b = ds.budget
         cell = session_status.usage_cell(
@@ -135,14 +135,14 @@ class RunHeader(widgets.Static):
             segments.append(plan)
         if as_of:
             segments.append(as_of.strip().removeprefix("· "))
-        lead = f"role: {role_line} · task: "
+        lead = f"actor: {actor_line} · task: "
         task = markup.escape(
             tui.task_label().line(max_chars=120).replace("\n", "\n" + " " * len(lead))
         )
         self.border_title = f"run: {markup.escape(tui.session_dir.name)}"
         header = text.Text.from_markup(
             "  ".join(segments) + "\n"
-            f"role: {markup.escape(role_line)} · task: {task}"
+            f"actor: {markup.escape(actor_line)} · task: {task}"
             + "".join(f"\n{markup.escape(line)}" for line in _elsewhere(ds))
             + f"{markup.escape(self._lineage_top())}{markup.escape(self._branch_top())}"
             f"{markup.escape(self._pins_top(s))}{markup.escape(self._serving_top())}"
@@ -169,25 +169,25 @@ class RunHeader(widgets.Static):
         self._compare_line = f"\ncompare: {headline}{rat}"
         return self._compare_line
 
-    def _start_role(self) -> str:
-        """Return the role line before the first model call, from the manifest's driver.
+    def _start_actor(self) -> str:
+        """Return the actor line before the first model call, from the manifest's driver.
 
         A launching run has no manifest for a moment, so nothing is cached until it exists.
 
         Returns:
-            The line as `role / model`, or "(unknown)" without a manifest or a driver.
+            The line as `actor / model`, or "(unknown)" without a manifest or a driver.
         """
-        if self._start_role_line is None:
+        if self._start_actor_line is None:
             try:
                 m = manifest.read_manifest(self._tui.session_dir)
             except manifest.ManifestError:
                 return "(unknown)"
             driver = m.models.driver
             if driver is None or m.mode not in kinds.SESSION_KINDS:
-                self._start_role_line = "(unknown)"
+                self._start_actor_line = "(unknown)"
             else:
-                self._start_role_line = f"{kinds.SESSION_KINDS[m.mode].role} / {driver.model}"
-        return self._start_role_line
+                self._start_actor_line = f"{kinds.SESSION_KINDS[m.mode].role} / {driver.model}"
+        return self._start_actor_line
 
     def _lineage_top(self) -> str:
         """Return the fork lineage line, read once; the web header and `sessions show` share it."""

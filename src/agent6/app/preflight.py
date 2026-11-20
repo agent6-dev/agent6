@@ -664,13 +664,13 @@ def infer_verify_if_unset(
             "helper",
             transcript_sink=transcript_sink,
             budget=budget,
-            seat="verify_inferer",
+            actor="helper:verify_inferer",
             events=events,
         )
         rm = cfg.models.resolve("helper")
         provider = role_providers.InstrumentedProvider(
             inner=inner,
-            role="verify_inferer",
+            actor="helper:verify_inferer",
             model=rm.model if rm else "",
             provider_name=rm.provider if rm else "",
             events=events,

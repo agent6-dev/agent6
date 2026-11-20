@@ -281,7 +281,7 @@ class ComparisonStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 13
+MANIFEST_VERSION = 14
 MANIFEST_NAME = "manifest.json"
 
 

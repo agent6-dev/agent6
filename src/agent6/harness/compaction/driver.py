@@ -328,7 +328,7 @@ def distill_gists(
 ) -> dict[str, str]:
     """Distill about-to-be-elided file reads into one-line gists.
 
-    The summariser seat does the call. A provider error returns {} and every
+    The summariser makes the call. A provider error returns {} and every
     victim gets the bare placeholder, so gisting never breaks a drop.
 
     Args:

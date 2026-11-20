@@ -348,7 +348,7 @@ class ModelCallView:
     """The last model call and what it streamed.
 
     Attributes:
-        role: The role that called.
+        actor: Who made the model call.
         model: The model called.
         in_flight: The call has not returned.
         provider: The provider that dialled the model; pairs with `model` for the
@@ -360,7 +360,7 @@ class ModelCallView:
         streamed_thinking: The live reasoning, with the same lifecycle.
     """
 
-    role: str
+    actor: str
     model: str
     in_flight: bool
     provider: str = ""

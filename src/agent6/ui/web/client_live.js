@@ -1,6 +1,6 @@
 let live = null;
 // The heartbeat keeps ticking between server frames, including silent turns.
-let hbState = { active: false, role: 'worker', last: 0, spin: 0 };
+let hbState = { active: false, actor: 'worker', last: 0, spin: 0 };
 // A dead worker can leave an unfinished journal.
 function notLive(s) { return typeof s.live === 'boolean' ? !s.live : !!s.finished; }
 let hbTimer = null;
@@ -13,7 +13,7 @@ function hbTick() {
   if (!line || !hbState.active) return;
   const secs = Math.floor((Date.now() - hbState.last) / 1000);
   const glyph = HB_FRAMES[hbState.spin % HB_FRAMES.length];
-  line.textContent = `${glyph} ${hbState.role} working… ${secs}s`;
+  line.textContent = `${glyph} ${hbState.actor} working… ${secs}s`;
 }
 
 // Keep the last good paint during a disconnect.

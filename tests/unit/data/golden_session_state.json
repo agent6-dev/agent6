@@ -18,7 +18,7 @@
   ],
   "cursor_task_id": null,
   "last_model_call": {
-    "role": "worker",
+    "actor": "worker",
     "model": "kimi-k2",
     "in_flight": false,
     "provider": "openrouter",

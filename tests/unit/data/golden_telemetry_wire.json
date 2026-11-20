@@ -816,7 +816,7 @@
                       }
                     },
                     {
-                      "key": "agent6.role",
+                      "key": "agent6.actor",
                       "value": {
                         "stringValue": ""
                       }
@@ -1483,7 +1483,7 @@
                     }
                   },
                   {
-                    "key": "agent6.role",
+                    "key": "agent6.actor",
                     "value": {
                       "stringValue": "worker"
                     }

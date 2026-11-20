@@ -162,7 +162,7 @@ def _strings(value: Any) -> tuple[str, ...]:
 
 
 def _reviewer_index(raw: dict[str, Any]) -> int | None:
-    """Return the reviewer index a role event carries, None outside a panel."""
+    """Return the reviewer index a model event carries, None outside a panel."""
     value = raw.get("reviewer_index")
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
@@ -350,7 +350,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "model.call":
             return journal.ModelCall(
-                role=_text(raw, "role"),
+                actor=_text(raw, "actor"),
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
@@ -359,7 +359,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "model.attempt":
             return journal.ModelAttempt(
-                role=_text(raw, "role"),
+                actor=_text(raw, "actor"),
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
@@ -375,7 +375,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "model.result":
             return journal.ModelResult(
-                role=_text(raw, "role"),
+                actor=_text(raw, "actor"),
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
@@ -390,11 +390,11 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "model.text_delta":
             return journal.ModelTextDelta(
-                role=_text(raw, "role"), text=_text(raw, "text"), **_call_identity(raw)
+                actor=_text(raw, "actor"), text=_text(raw, "text"), **_call_identity(raw)
             )
         case "model.thinking_delta":
             return journal.ModelThinkingDelta(
-                role=_text(raw, "role"), text=_text(raw, "text"), **_call_identity(raw)
+                actor=_text(raw, "actor"), text=_text(raw, "text"), **_call_identity(raw)
             )
         case "tool.call":
             # The call happened even with garbled args, and the preview is display-only downstream.
@@ -475,7 +475,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             return journal.EnvironmentAcquired(
                 execution_id=raw.get("execution_id"),
                 lifecycle_ref=_text(raw, "lifecycle_ref"),
-                role=_text(raw, "role"),
+                actor=_text(raw, "actor"),
                 reason=_text(raw, "reason"),
                 started=bool(raw.get("started", False)),
                 start_s=_cap(raw.get("start_s")),

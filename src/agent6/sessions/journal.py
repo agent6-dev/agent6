@@ -670,7 +670,9 @@ class ModelAttempt(Event):
         description="The execution the call ran in; null for a call outside one.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    role: str = pydantic.Field(description="The calling model role.")
+    actor: str = pydantic.Field(
+        description="The calling role, optionally followed by a colon and detail."
+    )
     model: str = pydantic.Field(description="Model identifier.")
     provider: str = pydantic.Field(description="Configured provider name.")
     model_call_id: str = pydantic.Field(
@@ -714,7 +716,7 @@ class ModelAttempt(Event):
 
 
 class ModelCall(Event):
-    """A model call started for a role."""
+    """An actor started a model call."""
 
     TYPE: ClassVar[str] = "model.call"
     execution_id: str | None = pydantic.Field(
@@ -722,7 +724,9 @@ class ModelCall(Event):
         description="The execution the call ran in; null for a call outside one.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    role: str = pydantic.Field(description="The calling model role.")
+    actor: str = pydantic.Field(
+        description="The calling role, optionally followed by a colon and detail."
+    )
     model: str = pydantic.Field(description="Model identifier.")
     provider: str = pydantic.Field(description="Configured provider name.")
     model_call_id: str = pydantic.Field(
@@ -762,7 +766,9 @@ class ModelResult(Event):
         description="The execution the call ran in; null for a call outside one.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    role: str = pydantic.Field(description="The calling model role.")
+    actor: str = pydantic.Field(
+        description="The calling role, optionally followed by a colon and detail."
+    )
     model: str = pydantic.Field(description="Model identifier.")
     provider: str = pydantic.Field(description="Configured provider name.")
     model_call_id: str = pydantic.Field(
@@ -805,7 +811,9 @@ class ModelTextDelta(Event):
     """A piece of assistant text streamed."""
 
     TYPE: ClassVar[str] = "model.text_delta"
-    role: str = pydantic.Field(description="The calling model role.")
+    actor: str = pydantic.Field(
+        description="The calling role, optionally followed by a colon and detail."
+    )
     text: str = pydantic.Field(description="The event's text.")
     execution_id: str | None = pydantic.Field(
         default=None,
@@ -826,7 +834,9 @@ class ModelThinkingDelta(Event):
     """A piece of assistant reasoning streamed."""
 
     TYPE: ClassVar[str] = "model.thinking_delta"
-    role: str = pydantic.Field(description="The calling model role.")
+    actor: str = pydantic.Field(
+        description="The calling role, optionally followed by a colon and detail."
+    )
     text: str = pydantic.Field(description="The event's text.")
     execution_id: str | None = pydantic.Field(
         default=None,
@@ -1171,7 +1181,9 @@ class ProviderRequest(Event):
         default=None,
         description="The execution the call ran in; null for a call outside one.",
     )
-    role: str = pydantic.Field(description="The calling model role.")
+    actor: str = pydantic.Field(
+        description="The calling role, optionally followed by a colon and detail."
+    )
     provider: str = pydantic.Field(description="Configured provider name.")
     model: str = pydantic.Field(description="Model identifier.")
     model_call_id: str = pydantic.Field(

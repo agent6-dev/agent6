@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Hold conversation ids and the completed-call counts that decide `is_first_turn`.
 
-Each role's calls to one provider form a conversation; reviewers use panel id and reviewer index.
+Each actor's calls to one provider form a conversation; reviewers use panel id and reviewer index.
 Its id is minted here, never derived from a path, a name or a host.
 The ids and counts persist in `conversations.json` beside the session.
 A resume continues the same conversations; a fork starts new ones.
@@ -32,20 +32,20 @@ class _Route:
     completed: int = 0
 
 
-def _route_key(role: str, provider: str, call_context: kinds.CallContext | None) -> str:
-    """Return a reviewer key or a role and provider key."""
+def _route_key(actor: str, provider: str, call_context: kinds.CallContext | None) -> str:
+    """Return the panel reviewer key or the actor and provider key."""
     if (
         call_context is not None
         and call_context.panel_id is not None
         and call_context.reviewer_index is not None
     ):
         return f"review:{call_context.panel_id}:{call_context.reviewer_index}"
-    return f"{role}@{provider}"
+    return f"{actor}@{provider}"
 
 
 @dataclasses.dataclass(slots=True)
 class Conversations:
-    """A session's conversations, one per role and provider or reviewer.
+    """A session's conversations, one per actor and provider or reviewer.
 
     Attributes:
         path: Where the state persists; None keeps it in memory for one process.
@@ -75,7 +75,7 @@ class Conversations:
 
     def context(
         self,
-        role: str,
+        actor: str,
         provider: str,
         *,
         initiator: str,
@@ -85,7 +85,7 @@ class Conversations:
         """Return the context of one model call, minting the conversation on first use.
 
         Args:
-            role: The calling role.
+            actor: The calling actor.
             provider: The provider entry's name.
             initiator: `user` or `agent`.
             observe: Receives each HTTP attempt's facts; None observes nothing.
@@ -95,7 +95,7 @@ class Conversations:
             The context.
         """
         with self._lock:
-            key = _route_key(role, provider, call_context)
+            key = _route_key(actor, provider, call_context)
             route = self._routes.get(key)
             if route is None:
                 route = _Route(uuid.uuid4().hex)
@@ -111,17 +111,17 @@ class Conversations:
             )
 
     def completed(
-        self, role: str, provider: str, *, call_context: kinds.CallContext | None = None
+        self, actor: str, provider: str, *, call_context: kinds.CallContext | None = None
     ) -> None:
         """Record one answered call of a conversation.
 
         Args:
-            role: The calling role.
+            actor: The calling actor.
             provider: The provider entry's name.
             call_context: The answered call's identity.
         """
         with self._lock:
-            route = self._routes.get(_route_key(role, provider, call_context))
+            route = self._routes.get(_route_key(actor, provider, call_context))
             if route is not None:
                 route.completed += 1
                 self._persist()

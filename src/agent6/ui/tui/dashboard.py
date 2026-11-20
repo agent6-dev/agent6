@@ -512,7 +512,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
 
         call = s.last_model_call
         self.query_one("#stream").border_title = (
-            f"{markup.escape(call.role)} output" if call is not None else "output"
+            f"{markup.escape(call.actor)} output" if call is not None else "output"
         )
         # Rich Text, so model output is never parsed as markup.
         self.query_one("#stream-body", textual_widgets.Static).update(
@@ -566,7 +566,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         elif active and call is not None:
             spinner = format.spinner_frame(tui.spin)
             secs = tui.seconds_since_event()
-            st.append(f"{spinner} {call.role} working… {secs}s", style="dim italic")
+            st.append(f"{spinner} {call.actor} working… {secs}s", style="dim italic")
         elif tui.dir_status[0] == "starting":
             st.append("starting", style=f"bold {theme.status_style('starting')}")
         elif (dead := format.dead_run_note(*tui.dir_status))[0]:

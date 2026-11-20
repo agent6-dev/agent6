@@ -228,7 +228,7 @@ class ParallelConfig(pydantic.BaseModel):
         """Count all requested judges before validation or scheduling resolves their routes.
 
         Returns:
-            Each entry's selector and number of seats, in order.
+            Each entry's selector and judge count, in order.
 
         Raises:
             ConfigError: A count is invalid or the roster exceeds `max_children`.

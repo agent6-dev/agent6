@@ -121,6 +121,7 @@ def model_squash_message(
         provider = role_providers.build_role_provider(
             cfg,
             "worker",
+            actor="worker:squash",
             transcript_sink=TranscriptSink(
                 transcript_dir, objects_dir=transcript_dir.parent / "objects"
             ),
@@ -131,7 +132,7 @@ def model_squash_message(
             rm = cfg.models.resolve("worker")
             provider = role_providers.InstrumentedProvider(
                 inner=provider,
-                role="squash",
+                actor="worker:squash",
                 model=rm.model if rm is not None else "",
                 provider_name=rm.provider if rm is not None else "",
                 events=events,

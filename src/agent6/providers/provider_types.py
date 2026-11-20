@@ -245,7 +245,7 @@ class TranscriptAttempt:
     seq: int = 0
     model_call_id: str | None = None
     request_id: str = ""
-    seat: str = ""
+    actor: str = "worker"
     url: str = ""
     request_headers: dict[str, str] = dataclasses.field(default_factory=dict)
     request_body: dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -263,7 +263,7 @@ class TranscriptAttempt:
             seq: The run-global sequence, starting at 1 and continuing across resumes.
             model_call_id: The logical call id from `model.call`; null without a call context.
             request_id: The HTTP attempt id from `provider.request`; empty for a local process.
-            seat: The role or review focus label, not a unique seat identity.
+            actor: The calling role, optionally followed by a colon and detail.
             outcome: `incomplete`, `completed`, `failed`, `interrupted` or `aborted`.
             request: The request formed for the provider.
             request.url: The URL dialled.
@@ -286,7 +286,7 @@ class TranscriptAttempt:
             "seq": self.seq,
             "model_call_id": self.model_call_id,
             "request_id": self.request_id,
-            "seat": self.seat,
+            "actor": self.actor,
             "outcome": outcome,
             "request": {
                 "url": self.url,
@@ -342,7 +342,7 @@ class TranscriptAttempt:
 
 
 class TranscriptRecorder(Protocol):
-    """The shared transcript sink or a seat's view."""
+    """The shared transcript sink or an actor's view."""
 
     def open(
         self,
@@ -372,11 +372,11 @@ class TranscriptRecorder(Protocol):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class RoleTranscriptSink:
-    """Stamp a seat on records while sharing the run-global sequence."""
+class ActorTranscriptSink:
+    """Stamp an actor on records while sharing the run-global sequence."""
 
     inner: TranscriptSink
-    seat: str
+    actor: str
 
     def open(
         self,
@@ -387,7 +387,7 @@ class RoleTranscriptSink:
         request_headers: dict[str, str],
         request_body: dict[str, Any],
     ) -> TranscriptAttempt:
-        """Open an attempt through the shared sink with the seat stamped.
+        """Open an attempt through the shared sink with the actor stamped.
 
         Args:
             url: The URL dialled.
@@ -405,7 +405,7 @@ class RoleTranscriptSink:
             request_id=request_id,
             request_headers=request_headers,
             request_body=request_body,
-            seat=self.seat,
+            actor=self.actor,
         )
 
     def record(
@@ -419,7 +419,7 @@ class RoleTranscriptSink:
         response_status: int,
         response_body: dict[str, Any] | str,
     ) -> pathlib.Path:
-        """Record a settled local-process round-trip with the seat stamped.
+        """Record a settled local-process round-trip with the actor stamped.
 
         Args:
             url: The URL dialled.
@@ -441,7 +441,7 @@ class RoleTranscriptSink:
             request_body=request_body,
             response_status=response_status,
             response_body=response_body,
-            seat=self.seat,
+            actor=self.actor,
         )
 
 
@@ -462,9 +462,9 @@ class TranscriptSink:
         self._lock = threading.Lock()
         self._seq = retention.last_sequence(transcripts_dir)
 
-    def for_seat(self, seat: str) -> RoleTranscriptSink:
-        """Return a view of this sink that stamps the seat on everything it records."""
-        return RoleTranscriptSink(self, seat)
+    def for_actor(self, actor: str) -> ActorTranscriptSink:
+        """Return a view of this sink that stamps the actor on everything it records."""
+        return ActorTranscriptSink(self, actor)
 
     def open(
         self,
@@ -474,7 +474,7 @@ class TranscriptSink:
         request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
-        seat: str = "",
+        actor: str = "worker",
     ) -> TranscriptAttempt:
         """Write the attempt's redacted request before the send.
 
@@ -484,7 +484,7 @@ class TranscriptSink:
             request_id: The HTTP attempt id; empty for a local process.
             request_headers: The request headers; secrets are redacted on write.
             request_body: The request body, copied: a retry may adapt the original in place.
-            seat: The seat that made the call; "" for the worker.
+            actor: The actor that made the call.
 
         Returns:
             The open attempt, on disk with outcome incomplete.
@@ -500,7 +500,7 @@ class TranscriptSink:
             seq=seq,
             model_call_id=call_context.model_call_id if call_context is not None else None,
             request_id=request_id,
-            seat=seat,
+            actor=actor,
             url=url,
             request_headers=dict(request_headers),
             request_body=copy.deepcopy(request_body),
@@ -518,7 +518,7 @@ class TranscriptSink:
         request_body: dict[str, Any],
         response_status: int,
         response_body: dict[str, Any] | str,
-        seat: str = "",
+        actor: str = "worker",
     ) -> pathlib.Path:
         """Record a settled local-process round-trip.
 
@@ -530,7 +530,7 @@ class TranscriptSink:
             request_body: The request body.
             response_status: The HTTP status.
             response_body: The response body, parsed or raw.
-            seat: The seat that made the call; "" for the worker.
+            actor: The actor that made the call.
 
         Returns:
             The transcript file written.
@@ -541,7 +541,7 @@ class TranscriptSink:
             request_id=request_id,
             request_headers=request_headers,
             request_body=request_body,
-            seat=seat,
+            actor=actor,
         )
         attempt.response_status = response_status
         attempt.response_body = response_body

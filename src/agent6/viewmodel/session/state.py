@@ -142,12 +142,12 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 recent_diffs=_push_bounded(state.recent_diffs, entry, _MAX_DIFF_HISTORY),
             )
 
-        case journal.ModelCall(role=role, model=model, provider=provider):
+        case journal.ModelCall(actor=actor, model=model, provider=provider):
             prior = state.last_model_call
             return dataclasses.replace(
                 state,
                 last_model_call=state_types.ModelCallView(
-                    role=role,
+                    actor=actor,
                     model=model,
                     in_flight=True,
                     provider=provider,

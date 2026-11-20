@@ -607,7 +607,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `role` | `str` | The calling model role. |
+| `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the attempt with its model call. |
@@ -625,13 +625,13 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### model.call
 
-**Support: public.** A model call started for a role.
+**Support: public.** An actor started a model call.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `role` | `str` | The calling model role. |
+| `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the model call with its result. |
@@ -658,7 +658,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `tool_results_cleared` | `int, optional` | Tool results the endpoint cleared. |
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `role` | `str` | The calling model role. |
+| `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the model call with its result. |
@@ -679,7 +679,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `role` | `str` | The calling model role. |
+| `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `text` | `str` | The event's text. |
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
@@ -692,7 +692,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `role` | `str` | The calling model role. |
+| `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `text` | `str` | The event's text. |
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
@@ -1023,7 +1023,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
-| `role` | `str` | The calling model role. |
+| `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `provider` | `str` | Configured provider name. |
 | `model` | `str` | Model identifier. |
 | `model_call_id` | `str` | The logical model call that made this request. |
@@ -1647,7 +1647,7 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 | `seq` | `JSON` | The run-global sequence, starting at 1 and continuing across resumes. |
 | `model_call_id` | `JSON` | The logical call id from `model.call`; null without a call context. |
 | `request_id` | `JSON` | The HTTP attempt id from `provider.request`; empty for a local process. |
-| `seat` | `JSON` | The role or review focus label, not a unique seat identity. |
+| `actor` | `JSON` | The calling role, optionally followed by a colon and detail. |
 | `outcome` | `JSON` | `incomplete`, `completed`, `failed`, `interrupted` or `aborted`. |
 | `request` | `JSON` | The request formed for the provider. |
 | `request.url` | `JSON` | The URL dialled. |
@@ -3643,7 +3643,7 @@ Source: [`agent6.viewmodel.session.records.ModelCallView`](https://github.com/ag
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `role` | `str` | The role that called. |
+| `actor` | `str` | Who made the model call. |
 | `model` | `str` | The model called. |
 | `in_flight` | `bool` | The call has not returned. |
 | `provider` | `str` | The provider that dialled the model; pairs with `model` for the registry's context-window lookup. |

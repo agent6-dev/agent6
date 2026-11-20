@@ -554,7 +554,7 @@ function paintRun(cards, s) {
     // model.call with no model.result, so it would stay on beside "stale".
     const r = s.last_model_call;
     const inFlight = r.in_flight && s.live;
-    add('last call', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`);
+    add('actor', `${esc(r.actor)} / ${esc(r.model)}${inFlight ? ' …' : ''}`);
   }
   if (cardChanged(cards, 'head', kv.innerHTML)) cards.head.replaceChildren(kv);
 
@@ -571,7 +571,7 @@ function paintRun(cards, s) {
     // a "waiting" run is live but blocked on the operator, not working: the
     // conversation shows its own waiting line, so the heartbeat must go quiet.
     active: !notLive(s) && !!s.last_model_call && !streaming && s.status !== 'waiting',
-    role: (s.last_model_call && s.last_model_call.role) || 'worker',
+    actor: (s.last_model_call && s.last_model_call.actor) || 'worker',
     // Server-computed age: replayed history must not read as fresh activity
     // (an arrival anchor would show a 40-minute-wedged run as "working… 3s").
     last: Date.now() - 1000 * (s.last_event_age_s || 0),

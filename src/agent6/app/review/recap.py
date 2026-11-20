@@ -115,7 +115,7 @@ def recap(
     transcript_sink = TranscriptSink(reviews_dir, objects_dir=reviews_dir / "objects")
     try:
         reviewer = role_providers.build_role_provider(
-            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="review:run"
+            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, actor="reviewer:recap"
         )
     except ProviderError as exc:
         reporter.error(f"provider init failed: {exc}")

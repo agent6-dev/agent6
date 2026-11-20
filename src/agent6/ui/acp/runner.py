@@ -669,7 +669,7 @@ class RunBridge:
                 if event_type == "model.call":
                     streamed.clear()
                 is_delta = event_type in ("model.thinking_delta", "model.text_delta")
-                side_delta = is_delta and kinds.is_side_role(str(event.get("role", "")))
+                side_delta = is_delta and kinds.is_side_actor(str(event.get("actor", "")))
                 items = [] if side_delta else fold.feed(event)
                 if is_delta and not side_delta:
                     kind = "thinking" if event_type == "model.thinking_delta" else "text"

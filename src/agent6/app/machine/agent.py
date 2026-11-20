@@ -378,15 +378,15 @@ def _build_agent_providers(
         attach_console(events_sink)
     provider = role_providers.InstrumentedProvider(
         inner=inner_provider,
-        role="worker",
+        actor="worker",
         model=rm.model if rm is not None else "",
         provider_name=rm.provider if rm is not None else "",
         events=events_sink,
         budget=budget,
         stream_text=True,
     )
-    summariser_provider = role_providers.helper_seat_provider(
-        cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events_sink
+    summariser_provider = role_providers.helper_actor_provider(
+        cfg, "helper:summariser", transcript_sink=transcript_sink, budget=budget, events=events_sink
     )
     return provider, summariser_provider, events_sink
 

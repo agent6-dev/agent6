@@ -200,7 +200,7 @@ class SessionProviders:
         budget: The run's tracker.
         rm_role: The driving role's resolved model.
         provider: The driving role's instrumented provider.
-        summariser_provider: The summariser seat, when one is configured.
+        summariser_provider: The summariser provider, when one is configured.
         reviewers: The in-loop review panel.
     """
 
@@ -251,7 +251,7 @@ def build_session_providers(
     preflight.warn_if_prompt_override_incomplete(cfg, reporter=reporter)
     provider: Provider = role_providers.InstrumentedProvider(
         inner=inner,
-        role=role,
+        actor=role,
         model=rm_role.model,
         provider_name=rm_role.provider,
         events=events,
@@ -259,9 +259,9 @@ def build_session_providers(
         stream_text=stream_text,
         conversations=conversations,
     )
-    summariser_provider = role_providers.helper_seat_provider(
+    summariser_provider = role_providers.helper_actor_provider(
         cfg,
-        "summariser",
+        "helper:summariser",
         transcript_sink=transcript_sink,
         budget=budget,
         events=events,
