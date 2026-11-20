@@ -503,13 +503,13 @@ class MCPServerEntry(pydantic.BaseModel):
             The model unchanged.
 
         Raises:
-            ValueError: `command` and `url` both set or both empty, a non-http(s) `url`, or a
-                `url`-only field on a spawned server and the reverse.
+            ValueError: `command` and `url` both set or both empty, a `url` that fails
+                `validate_base_url`, or a `url`-only field on a spawned server and the reverse.
         """
         if bool(self.command) == bool(self.url):
             raise ValueError("set exactly one of `command` (spawn) or `url` (connect)")
-        if self.url and not self.url.startswith(("http://", "https://")):
-            raise ValueError(f"url must be http(s), got {self.url!r}")
+        if self.url:
+            validate_base_url(self.url, "url")
         if self.token_env and not self.url:
             raise ValueError("token_env is for `url` servers; a spawned one uses pass_env")
         if self.sandbox is not None and self.url:
@@ -535,6 +535,36 @@ class MCPServerEntry(pydantic.BaseModel):
     def jailed(self) -> bool:
         """Whether agent6 spawns this server in its jail: never a `url` or `unconfined` one."""
         return not self.url and not (self.sandbox is not None and self.sandbox.unconfined)
+
+
+def validate_base_url(url: str, field: str = "base_url") -> None:
+    """Refuse a provider or MCP server URL that is not http(s) with a host and a valid port.
+
+    The usual paste error is an API key or a bare host in the field, which would otherwise
+    fail much later as an opaque HTTP error.
+
+    Args:
+        url: The configured URL.
+        field: The field name for the message.
+
+    Raises:
+        ValueError: No http(s) scheme, no host, userinfo, a fragment, or an out-of-range port.
+    """
+    try:
+        parts = parse.urlsplit(url)
+        port = parts.port  # raises ValueError on an out-of-range port
+    except ValueError as exc:
+        raise ValueError(f"invalid {field} {url!r}: {exc}") from exc
+    if parts.scheme not in ("http", "https"):
+        raise ValueError(f"{field} {url!r} must start with http:// or https://")
+    if not parts.hostname:
+        raise ValueError(f"{field} {url!r} has no host")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError(f"{field} {url!r} carries userinfo; credentials never ride a URL")
+    if parts.fragment:
+        raise ValueError(f"{field} {url!r} carries a fragment, which no request can send")
+    if port is not None and not (1 <= port <= 65535):
+        raise ValueError(f"{field} {url!r} has an invalid port")
 
 
 def is_cleartext_url(url: str) -> bool:

@@ -343,6 +343,30 @@ def test_a_server_names_one_transport(entry: dict[str, Any], message: str) -> No
         Config.model_validate({"mcp": {"enabled": True, "servers": {"s": entry}}})
 
 
+@pytest.mark.parametrize(
+    ("url", "message"),
+    [
+        ("https://user:pw@h/mcp", "userinfo"),
+        ("https://h/mcp#tools", "fragment"),
+        ("http://", "no host"),
+        ("https://h:99999/mcp", "invalid url"),
+        ("http://[::1/mcp", "invalid url"),
+    ],
+)
+def test_a_server_url_is_parsed_at_load(url: str, message: str) -> None:
+    """A `url` passes the provider URL check; a prefix test let each of these reach the dial."""
+    with pytest.raises(ValueError, match=message):
+        Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"url": url}}}})
+
+
+def test_a_server_url_scheme_matches_in_any_case() -> None:
+    """`HTTPS://` is the https scheme; a case-sensitive prefix test refused it."""
+    cfg = Config.model_validate(
+        {"mcp": {"enabled": True, "servers": {"s": {"url": "HTTPS://h/mcp?v=1"}}}}
+    )
+    assert cfg.mcp.servers["s"].url == "HTTPS://h/mcp?v=1"
+
+
 def test_a_token_that_cannot_be_a_header_is_refused_before_it_leaks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

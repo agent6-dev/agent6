@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+import string
 from collections.abc import Mapping
 from typing import Literal
 
@@ -76,7 +77,8 @@ class Segment:
 def parse_template(template: str) -> tuple[Segment, ...]:
     """Split a template into literal text and fact names.
 
-    `{name}` is a fact; `{{` and `}}` are literal braces.
+    `{name}` is a fact; `{{` and `}}` are literal braces. An empty format specification
+    (`{name:}`) reads as `{name}`.
 
     Args:
         template: The template text.
@@ -88,41 +90,27 @@ def parse_template(template: str) -> tuple[Segment, ...]:
         ValueError: An unbalanced brace, or anything inside the braces but a plain name (an
             attribute, an index, a format specification, a conversion, an expression).
     """
+    try:
+        fields = list(string.Formatter().parse(template))
+    except ValueError as exc:
+        raise ValueError(f"template {template!r} does not parse: {exc}") from exc
     out: list[Segment] = []
-    text: list[str] = []
-    i = 0
-    while i < len(template):
-        ch = template[i]
-        if ch == "{":
-            if template.startswith("{{", i):
-                text.append("{")
-                i += 2
-                continue
-            end = template.find("}", i)
-            if end < 0:
-                raise ValueError(f"template {template!r} opens a brace it never closes")
-            name = template[i + 1 : end]
-            if not _FACT_NAME.fullmatch(name):
-                raise ValueError(
-                    f"template {template!r}: a placeholder holds a fact name and nothing"
-                    " else (no attribute, index, format or expression)"
-                )
-            if text:
-                out.append(Segment("text", "".join(text)))
-                text = []
-            out.append(Segment("fact", name))
-            i = end + 1
+    text = ""
+    for literal, name, spec, conversion in fields:
+        text += literal
+        if name is None:
             continue
-        if ch == "}":
-            if template.startswith("}}", i):
-                text.append("}")
-                i += 2
-                continue
-            raise ValueError(f"template {template!r} closes a brace it never opened")
-        text.append(ch)
-        i += 1
+        if spec or conversion or not _FACT_NAME.fullmatch(name):
+            raise ValueError(
+                f"template {template!r}: a placeholder holds a fact name and nothing"
+                " else (no attribute, index, format or expression)"
+            )
+        if text:
+            out.append(Segment("text", text))
+            text = ""
+        out.append(Segment("fact", name))
     if text:
-        out.append(Segment("text", "".join(text)))
+        out.append(Segment("text", text))
     return tuple(out)
 
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 import math
 import re
 from typing import Annotated, Any, Literal
-from urllib import parse
 
 import pydantic
 
@@ -43,36 +42,6 @@ def provider_name_refusal(name: str) -> str:
             " (use only ASCII letters, digits, '-', '_')."
         )
     return ""
-
-
-def validate_base_url(url: str, field: str = "base_url") -> None:
-    """Refuse a provider URL that is not an http(s) URL with a host and a valid port.
-
-    The usual paste error is an API key or a bare host in the field, which would otherwise
-    fail much later as an opaque HTTP error.
-
-    Args:
-        url: The configured URL.
-        field: The field name for the message.
-
-    Raises:
-        ValueError: No http(s) scheme, no host, userinfo, a fragment, or an out-of-range port.
-    """
-    try:
-        parts = parse.urlsplit(url)
-        port = parts.port  # raises ValueError on an out-of-range port
-    except ValueError as exc:
-        raise ValueError(f"invalid {field} {url!r}: {exc}") from exc
-    if parts.scheme not in ("http", "https"):
-        raise ValueError(f"{field} {url!r} must start with http:// or https://")
-    if not parts.hostname:
-        raise ValueError(f"{field} {url!r} has no host")
-    if parts.username is not None or parts.password is not None:
-        raise ValueError(f"{field} {url!r} carries userinfo; credentials never ride a URL")
-    if parts.fragment:
-        raise ValueError(f"{field} {url!r} carries a fragment, which no request can send")
-    if port is not None and not (1 <= port <= 65535):
-        raise ValueError(f"{field} {url!r} has an invalid port")
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -313,10 +282,10 @@ class _ProviderBase(pydantic.BaseModel):
             The URL unchanged.
 
         Raises:
-            ValueError: The URL fails `validate_base_url`.
+            ValueError: The URL fails `sandbox_config.validate_base_url`.
         """
         if v:
-            validate_base_url(v)
+            sandbox_config.validate_base_url(v)
         return v
 
     @pydantic.field_validator("extra_body")

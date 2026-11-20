@@ -45,7 +45,6 @@ from agent6.config.provider_config import (  # re-export
     ResponsesProviderEntry,
     plan_metered,
     provider_name_refusal,
-    validate_base_url,
 )
 from agent6.config.sandbox_config import (  # re-export
     MCPConfig,
@@ -54,6 +53,7 @@ from agent6.config.sandbox_config import (  # re-export
     is_cleartext_url,
     is_loopback_url,
     mcp_server_name_refusal,
+    validate_base_url,
 )
 from agent6.config.surface_config import (  # re-export
     MachineConfig,
