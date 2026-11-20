@@ -99,12 +99,12 @@ function osNotifyOn() { return 'Notification' in window && Notification.permissi
 function osNotify(title, body) {
   try { if (osNotifyOn()) new Notification(title, { body: body || '', icon: '/icon.svg' }); } catch (_) {}
 }
-// Attention on the hub: a session that starts waiting on an answer, or ends, is announced once
-// as a toast and an OS notification (when granted). The first paint seeds silently, as the
-// machine view does, so opening the hub replays nothing.
+// A session that starts waiting on an answer, or ends, is announced once as a toast on the hub and on its own page.
+// Only the hub (`notify`) raises it as an OS notification (when granted): the session's page in another tab adds no second.
+// The first paint seeds silently, as the machine view does, so opening a page replays nothing.
 const LIVE_WORDS = ['running', 'starting', 'waiting'];
 function seedStatuses(rows) { const m = {}; for (const r of rows || []) m[r.session_id] = r.status; return m; }
-function announceSessions(prev, rows) {
+function announceSessions(prev, rows, notify = true) {
   for (const r of rows || []) {
     const before = prev[r.session_id];
     if (before === undefined || before === r.status) continue;
@@ -113,7 +113,7 @@ function announceSessions(prev, rows) {
     else if (LIVE_WORDS.includes(before) && !LIVE_WORDS.includes(r.status)) title = `${r.session_id} ${r.status_label}`;
     if (!title) continue;
     toast(title);
-    osNotify('agent6: ' + title, firstLine(r.task, 120));
+    if (notify) osNotify('agent6: ' + title, firstLine(r.task, 120));
   }
 }
 

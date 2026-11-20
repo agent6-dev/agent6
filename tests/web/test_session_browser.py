@@ -625,6 +625,82 @@ def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
     assert not errors
 
 
+def test_the_session_page_announces_its_run_waiting_and_ending(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The session page announced nothing when its run started waiting on the operator or ended.
+
+    It announces both in the hub's words, and opening a waiting run replays nothing.
+    """
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    session = session_logs.write_run(tmp_path, "say-AAA111", [ask], live=True)
+    page, errors = open_page(port)
+    page.add_init_script(
+        """window.said = [];
+        { const hear = rs => rs.forEach(r => r.target.id === 'toasts'
+            && r.addedNodes.forEach(n => said.push(n.textContent)));
+          new MutationObserver(hear).observe(document, { childList: true, subtree: true }); }"""
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/session/say-AAA111")
+    expect(page.locator(".prompt-box")).to_be_visible()
+    # A line streamed in while the run still waits: the frames the page opened on came first.
+    _append(session, _reads(1))
+    expect(page.locator(".card-conv .ci").filter(has_text="f0.py")).to_be_attached()
+    assert page.evaluate("said") == []
+    answer = {"type": "approval.answer", "approved": True, "source": "web"}
+    _append(session, [{**answer, "id": "approval-1"}])
+    expect(page.locator(".prompt-box")).to_have_count(0)
+    _append(session, [{**ask, "id": "approval-2"}])
+    page.wait_for_function("said.length === 1")
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    _append(session, [{**answer, "id": "approval-2"}, stop])
+    page.wait_for_function("said.length === 2")
+    assert page.evaluate("said") == ["say-AAA111 needs you", "say-AAA111 passed"]
+    assert not errors
+
+
+# A granted Notification that records the title of each one made.
+NOTIFIED = """window.notes = [];
+window.Notification = class { constructor(title) { notes.push(title); }
+  static get permission() { return 'granted'; }
+  static requestPermission() { return Promise.resolve('granted'); } };"""
+
+
+def test_one_wait_raises_one_os_notification_with_the_hub_in_another_tab(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """With the hub in one tab and a session in another, one wait raised two OS notifications.
+
+    The hub raises it; the session's page announces it as a toast only.
+    """
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    session = session_logs.write_run(tmp_path, "two-AAA111", [ask], live=True)
+    hub, errors = open_page(port)
+    hub.context.add_init_script(NOTIFIED)
+    hub.goto(f"http://127.0.0.1:{port}/#/")
+    status = hub.locator(".item").filter(has_text="two-AAA111").locator(".pill")
+    expect(status).to_contain_text("waiting")
+    run = hub.context.new_page()
+    run.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))
+    run.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+    run.goto(f"http://127.0.0.1:{port}/#/session/two-AAA111")
+    expect(run.locator(".prompt-box")).to_be_visible()
+    answer = {"type": "approval.answer", "id": "approval-1", "approved": True, "source": "web"}
+    _append(session, [answer])
+    expect(run.locator(".prompt-box")).to_have_count(0)
+    expect(status).to_contain_text("running")
+    _append(session, [{**ask, "id": "approval-2"}])
+    expect(run.locator(".prompt-box")).to_be_visible()
+    expect(run.locator("#toasts")).to_contain_text("two-AAA111 needs you")
+    hub.wait_for_function("notes.length > 0")
+    assert hub.evaluate("notes") + run.evaluate("notes") == ["agent6: two-AAA111 needs you"]
+    assert not errors
+
+
 def test_a_prompt_waiting_behind_another_widget_marks_the_widget_menu(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

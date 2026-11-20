@@ -217,6 +217,7 @@ async function renderRun(id, opts, gen) {
   // Closing on finished would freeze this page on "stopped" while the hub says
   // "running". Only stream_dead (transport: nothing more will come) closes.
   let sawEnd = false;
+  let statuses = seedStatuses([snap]);
   live = openStream(base + '/events', data => {
     let s; try { s = JSON.parse(data); } catch (_) { return; }
     if (s.type === 'error') { closeLive(); toast('stream error: ' + s.error, true); return; }
@@ -228,6 +229,8 @@ async function renderRun(id, opts, gen) {
       return;
     }
     paintRun(cards, s);
+    announceSessions(statuses, [s], false); // the hub raises the OS notification
+    statuses = seedStatuses([s]);
     hbState.spin++;
     if (s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); return; }
     if (s.finished && !sawEnd) setTimeout(() => cc.conv.refresh(), 900); // one final fold after last writes flush
