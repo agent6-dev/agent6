@@ -274,14 +274,15 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
             cfg,
             budget.BudgetTracker(max_usd=10, max_tokens_fallback=10000, max_plan_points=20),
         )
-        result = executor.dispatch(
+        result = child_env.landed(
+            executor,
             loop_conversation.Conversation(),
             1,
             loop_state.LoopState(original_task="parent", tool_calls=0),
             [directive.Segment(task="Change README and finish", spec="1")],
             limits=child_records.ChildLimits(max_turns=5),
         )
-    assert result.dispatched and result.children[0].status == "joined", result.message
+    assert result.children[0].status == "joined", result.message
     worker = directory.parent / result.children[0].session_id
     panels = receipt.read_receipt(worker, repo).review.panels
     assert len(panels) == 1 and panels[0].completion == "complete"

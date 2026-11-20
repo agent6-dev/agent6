@@ -20,7 +20,8 @@ def _record(identity: str = "run-p1") -> child_dispatch.DispatchRecord:
         owner="exec-1",
         turn=3,
         base="a" * 40,
-        segments=(child_dispatch.SegmentRecord(task="audit", spec="2"),),
+        spec="2",
+        node_id="N1",
         children=(
             child_dispatch.ChildRecord(
                 session_id=f"{identity}-l1",
@@ -67,6 +68,19 @@ def test_a_newer_or_malformed_record_refuses(tmp_path: pathlib.Path) -> None:
     with pytest.raises(child_dispatch.DispatchRecordError, match="newer"):
         child_dispatch.read_records(tmp_path)
     path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(child_dispatch.DispatchRecordError, match="invalid dispatch record"):
+        child_dispatch.read_records(tmp_path)
+
+
+def test_a_record_of_the_older_shape_refuses(tmp_path: pathlib.Path) -> None:
+    """A version 5 row held several tasks as `segments`; no reader guesses which one a row is."""
+    child_dispatch.write_record(tmp_path, _record(), now=1.0)
+    path = child_dispatch.record_path(tmp_path, "run-p1")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["version"] = 5
+    del raw["spec"], raw["node_id"]
+    raw["segments"] = [{"task": "audit", "spec": "2", "children": 2, "node_id": None}]
+    path.write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(child_dispatch.DispatchRecordError, match="invalid dispatch record"):
         child_dispatch.read_records(tmp_path)
 

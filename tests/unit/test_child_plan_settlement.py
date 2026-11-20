@@ -64,7 +64,6 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
             owner="worker",
             turn=1,
             base="",
-            segments=(),
             children=(
                 child_dispatch.ChildRecord(
                     session_id=leaf.name,

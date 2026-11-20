@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import json
 import os
 import pathlib
@@ -16,15 +17,22 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget, child_records, kinds, paths
+from agent6 import budget, child_records, directive, kinds, paths
 from agent6.app import (
     child_launch,
     children,
     worktrees,
 )
 from agent6.config import Config
-from agent6.harness import child_repo, parallel_dispatch, run_chain
+from agent6.harness import (
+    child_repo,
+    loop_conversation,
+    loop_state,
+    parallel_dispatch,
+    run_chain,
+)
 from agent6.sessions import (
+    child_dispatch,
     event_log,
     layout,
     process,
@@ -54,6 +62,45 @@ def blocking(
         return ended(run(children, group, at=at))
 
     return start
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Landed:
+    """A work dispatch run to its landing.
+
+    Attributes:
+        started: What the dispatch started, or its refusal.
+        children: Each child's recorded join, in the order written.
+        message: The landing notices, one per task.
+    """
+
+    started: child_records.Started
+    children: list[child_records.ChildJoin]
+    message: str
+
+
+def landed(
+    dispatcher: parallel_dispatch.ParallelDispatcher,
+    conversation: loop_conversation.Conversation,
+    turn: int,
+    state: loop_state.LoopState,
+    segments: list[directive.Segment],
+    **kwargs: Any,
+) -> Landed:
+    """Dispatch, wait for the children and land them at once, as an entry with no turn does."""
+    started = dispatcher.dispatch(conversation, turn, state, segments, **kwargs)
+    dispatcher.wait()
+    dispatcher.settle(conversation, turn)
+    assert dispatcher.session_dir is not None
+    records = [
+        child_dispatch.read_record(child_dispatch.record_path(dispatcher.session_dir, group))
+        for group in started.groups
+    ]
+    return Landed(
+        started,
+        [join for group in started.groups for join in dispatcher.joins(group)],
+        "\n".join(record.message for record in records),
+    )
 
 
 def results_of(started: Sequence[child_records.StartedChild]) -> list[child_records.ChildResult]:

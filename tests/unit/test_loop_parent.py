@@ -3,8 +3,9 @@
 """Parent dispatch: `/parallel` steer dispatches children.
 
 A fake provider fires the steer once, and a fake group spawner fabricates real mergeable branches in
-the parent's tmp repo, so parse, the dirty-tree gate, the sequential join, DAG stamping, events
-and the summary run end-to-end.
+the parent's tmp repo, so parse, the dirty-tree gate, the landing at the next turn boundary, DAG
+stamping, events and the notices run end-to-end. The fake's children have ended when it returns:
+the steer lands at turn 1's boundary, their work at turn 2's, and turn 3's call reads the notices.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from agent6 import child_records, directive
 from agent6.app import children, finalize
 from agent6.config import Config
 from agent6.graph import curator, models
-from agent6.harness import loop, operator_bridge, provider_call, run_chain
+from agent6.harness import loop, operator_bridge, parallel_join, provider_call, run_chain
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import results as tools_results
@@ -115,6 +116,9 @@ class _FakeGraph:
     def cursor(self) -> str | None:
         return None
 
+    def set_cursor(self, node_id: str | None) -> None:
+        del node_id
+
     def add_subtask(self, intent: Any) -> Any:
         parent = self.entries.get(intent.parent_id) if intent.parent_id else None
         if intent.parent_id and parent is None:
@@ -174,9 +178,11 @@ def _make_branch(
 
 
 class _FakeGroupSpawner:
-    """A synchronous GroupChildSpawner stand-in that fabricates a mergeable branch per child.
+    """A GroupChildSpawner stand-in whose children have ended, a mergeable branch each.
 
     Records the (children, group) it was handed so a test can assert the parse and expansion.
+    `fail`, `conflict`, `empty` and `base_by_child` name children by the order they started in,
+    across groups: a task is its own group.
     """
 
     def __init__(
@@ -198,20 +204,26 @@ class _FakeGroupSpawner:
         self.base_by_child = base_by_child or {}
         self.empty = empty or set()
         self.calls: list[tuple[list[child_records.ChildTask], str]] = []
+        self.started = 0
 
     def tasks(self, call: int = 0) -> list[str]:
         return [child.task for child in self.calls[call][0]]
+
+    def groups(self) -> list[tuple[str, list[str]]]:
+        return [(group, [child.task for child in children]) for children, group in self.calls]
 
     def __call__(
         self, children: list[child_records.ChildTask], group: str, *, at: str | None = None
     ) -> list[child_records.StartedChild]:
         self.calls.append((list(children), group))
         results: list[child_records.ChildResult] = []
-        for i in range(1, len(children) + 1):
-            session_id = f"{self.parent_id}-{group}-l{i}"
+        for number in range(1, len(children) + 1):
+            self.started += 1
+            i = self.started
+            session_id = f"{self.parent_id}-{group}-l{number}"
             branch = f"agent6/{session_id}"
             spec = child_records.ChildSpec(
-                number=i,
+                number=number,
                 session_id=session_id,
                 worktree=self.wt_root / session_id,
                 settings=None,
@@ -285,7 +297,7 @@ def _build_wf(
     dispatcher: mock.MagicMock | None = None,
     verify_command: tuple[str, ...] = (),
     verify_when: str = "finish",
-    max_turns: int = 2,
+    max_turns: int = 3,
 ) -> loop.Harness:
     steer = _OneShotSteer(steer_text)
     disp = (
@@ -330,6 +342,7 @@ def _build_wf(
         curator=graph,
         bridge=operator_bridge.OperatorBridge(
             child_spawner=child_spawner,
+            child_ranker=_ranker((1, 2, 3, 4)),
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -340,6 +353,26 @@ def _build_wf(
         resume_state_path=(events.path.parent if events is not None else repo.parent / "session")
         / "loop_state.json",
     )
+
+
+def _three_reads() -> list[ProviderResponse]:
+    """Three turns: the steer lands after the first, the children after the second."""
+    return [_resp_tool("read_file", {"path": "README.md"}, f"t{i}") for i in (1, 2, 3)]
+
+
+def _ranker(order: tuple[int, ...], *, crowns: bool = True) -> Any:
+    """Rank a group's children in the given child order, by number; `crowns` off names no winner."""
+
+    def rank(
+        results: Sequence[child_records.ChildResult], *, group: str, base: str
+    ) -> child_records.Ranking:
+        by_child = {res.spec.number: res.spec.session_id for res in results}
+        ranked = tuple(by_child[n] for n in order if n in by_child)
+        return child_records.Ranking(
+            order=ranked, ranked_by="judge", winner=ranked[0] if ranked and crowns else ""
+        )
+
+    return rank
 
 
 def _user_texts(messages: list[dict[str, Any]]) -> list[str]:
@@ -398,14 +431,11 @@ def test_none_spawner_answers_with_feedback_and_continues(tmp_path: pathlib.Path
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(repo, provider, steer_text="/parallel do a thing", child_spawner=None)
     result = wf.run("start")
 
-    assert provider.call.call_count == 2  # ran to max_turns, no crash
+    assert provider.call.call_count == 3  # ran to max_turns, no crash
     assert result.reason == "max_turns"
     texts = _user_texts(_final_messages(provider))
     assert any("parallel dispatch is not available" in t for t in texts)
@@ -417,10 +447,7 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: pathlib
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-lk", tmp_path / "wt")
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(repo, provider, steer_text="/parallelfoo do x", child_spawner=spawner)
     wf.run("start")
 
@@ -430,8 +457,13 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: pathlib
     assert not any(t.startswith("[parallel]") for t in texts)
 
 
-def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
-    """Two clean children join in dispatch order with their DAG nodes passed and events fired."""
+def _landings(provider: mock.MagicMock) -> list[str]:
+    """Return the landing notices the last model call read, in the order they arrived."""
+    return [t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel] group")]
+
+
+def test_two_tasks_land_in_the_order_written_and_stamp_their_nodes(tmp_path: pathlib.Path) -> None:
+    """Each `/parallel` in a message is a task: its own group, one child, landed in turn."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-abc"
@@ -440,10 +472,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt")
 
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -454,45 +483,54 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     )
     wf.run("start")
 
-    # The spawner saw the parsed sibling group under a p1 group id.
-    assert spawner.tasks() == ["task one", "task two"]
-    assert spawner.calls[0][1] == "p1"
+    assert spawner.groups() == [("p1", ["task one"]), ("p2", ["task two"])]
     # Both child branches merged onto the chain, in order; the operator's HEAD never moves.
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert "agent6/run-abc-p1-l1" in log
-    assert "agent6/run-abc-p1-l2" in log
-    assert "l1" not in _git(repo, "log", "--oneline")
-    assert log.index("l1") > log.index("l2")  # l1 merged first => older => lower in log
+    assert "agent6/run-abc-p2-l1" in log
+    assert "p1-l1" not in _git(repo, "log", "--oneline")
+    assert log.index("p1-l1") > log.index("p2-l1")  # p1 merged first => older => lower in log
     # Two steering nodes added beside the root, both passed with a recorded commit sha.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
     assert all(n.status == "passed" and n.commit_sha for n in steering)
     assert all(n.rationale == "dispatched through /parallel by the operator" for n in steering)
     assert len(graph.commit_calls) == 2
-    # dispatched carries tasks and group (no child ids yet); joined names the real ids.
-    dispatched = events.of("parallel.dispatched")
-    joined = events.of("parallel.joined")
-    assert dispatched and dispatched[0] == {
-        "group": "p1",
-        "children": 2,
-        "tasks": ["task one", "task two"],
-        "source": "operator",
-    }
-    assert joined and [ln["status"] for ln in joined[0]["children"]] == ["joined", "joined"]
-    assert [ln["session_id"] for ln in joined[0]["children"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
-    # The join names the group the children were stamped with, the id `sessions compare` takes.
-    assert joined[0]["group"] == "run-abc-p1"
-    assert not events.of("parallel.failed")
-    # One summary message names both joined children.
-    summary = [
-        t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel] group")
+    # One dispatched row and one joined row per task; joined names the group's full id.
+    assert events.of("parallel.dispatched") == [
+        {"group": "p1", "children": 1, "tasks": ["task one"], "source": "operator"},
+        {"group": "p2", "children": 1, "tasks": ["task two"], "source": "operator"},
     ]
-    assert len(summary) == 1
-    assert "joined at" in summary[0]
+    joined = events.of("parallel.joined")
+    assert [(row["group"], [ln["status"] for ln in row["children"]]) for row in joined] == [
+        ("run-abc-p1", ["joined"]),
+        ("run-abc-p2", ["joined"]),
+    ]
+    assert not events.of("parallel.failed")
+    texts = _user_texts(_final_messages(provider))
+    # The steer's answer says what started; each child's end and each task's landing follow.
+    (started,) = [t for t in texts if t.startswith("[parallel] started")]
+    assert started.splitlines() == [
+        parallel_join.started_text(["run-abc-p1-l1"]),
+        parallel_join.started_text(["run-abc-p2-l1"]),
+    ]
+    ends = [t for t in texts if t.startswith("[parallel] child")]
+    assert ends == [
+        "[parallel] child run-abc-p1-l1 finished.",
+        "[parallel] child run-abc-p2-l1 finished.",
+    ]
+    landings = _landings(provider)
+    assert [t.splitlines()[0] for t in landings] == [
+        "[parallel] group run-abc-p1 complete (1 child(ren)):",
+        "[parallel] group run-abc-p2 complete (1 child(ren)):",
+    ]
+    assert all("joined at" in t for t in landings)
 
 
-def test_model_list_spec_expands_to_one_child_per_model(tmp_path: pathlib.Path) -> None:
-    """`/parallel a/b,c -- task` runs one child per model under a single segment node."""
+def test_a_model_list_starts_one_attempt_per_model_and_lands_the_first_ranked(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`/parallel a/b,c -- task` is two attempts at one task under a single node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-mdl"
@@ -500,10 +538,7 @@ def test_model_list_spec_expands_to_one_child_per_model(tmp_path: pathlib.Path) 
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt")
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -520,45 +555,61 @@ def test_model_list_spec_expands_to_one_child_per_model(tmp_path: pathlib.Path) 
         ("refactor the parser", "a/b"),
         ("refactor the parser", "c"),
     ]
-    # One DAG node for the segment, passed with a join sha, its note naming both children.
+    # One DAG node for the task, passed with a join sha, its note naming both children.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1
     assert steering[0].status == "passed" and steering[0].commit_sha
-    note = next(note for _id, _status, note in graph.status_calls)
-    assert f"{parent_id}-p1-l1" in note and f"{parent_id}-p1-l2" in note
-    # Both children still surface per-child in the joined event.
-    joined = events.of("parallel.joined")[0]
-    assert [ln["session_id"] for ln in joined["children"]] == [
-        f"{parent_id}-p1-l1",
-        f"{parent_id}-p1-l2",
+    note = next(
+        n for nid, status, n in graph.status_calls if (nid, status) == (steering[0].id, "passed")
+    )
+    assert f"{parent_id}-p1-l1 joined at" in note
+    assert f"{parent_id}-p1-l2 ranked 2 of 2; not joined" in note
+    # Both children surface in the joined event: the first ranked joined, the other placed.
+    (joined,) = events.of("parallel.joined")
+    assert [(ln["session_id"], ln["status"]) for ln in joined["children"]] == [
+        (f"{parent_id}-p1-l1", "joined"),
+        (f"{parent_id}-p1-l2", "ranked"),
     ]
 
 
-def test_child_count_spec_expands_to_n_default_children(tmp_path: pathlib.Path) -> None:
-    """`/parallel 2 -- task` runs two default children under one segment node."""
+def test_a_count_above_one_ranks_its_children_and_lands_one(tmp_path: pathlib.Path) -> None:
+    """`/parallel 3 -- task` is three attempts: one lands, the others keep their branches.
+
+    A live steer merged all three, one after another, as if they were three tasks.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-cnt"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt")
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
-        steer_text="/parallel 2 -- tidy the imports",
+        steer_text="/parallel 3 -- tidy the imports",
         child_spawner=spawner,
         graph=graph,
+        events=events,
     )
+    wf.bridge = dataclasses.replace(wf.bridge, child_ranker=_ranker((2, 3, 1)))
     wf.run("start")
 
     children = spawner.calls[0][0]
-    assert [(ln.task, ln.model) for ln in children] == [("tidy the imports", None)] * 2
+    assert [(ln.task, ln.model) for ln in children] == [("tidy the imports", None)] * 3
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
-    assert len(steering) == 1  # one node for the segment, not two
+    assert len(steering) == 1  # one node for the task, not three
+    (joined,) = events.of("parallel.joined")
+    assert [ln["status"] for ln in joined["children"]] == ["ranked", "joined", "ranked"]
+    files = _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
+    assert files == ["README.md", "child2.txt"]
+    (record,) = child_dispatch.read_records(tmp_path / parent_id)
+    assert (record.join_policy, record.spec, len(record.children)) == ("rank", "3", 3)
+    (landing,) = _landings(provider)
+    assert "run-cnt-p1-l1 (agent6/run-cnt-p1-l1): ranked 3 of 3; not joined" in landing
+    (started,) = [t for t in _user_texts(_final_messages(provider)) if "started" in t]
+    assert started.startswith("[parallel] started 3 attempts at one task: run-cnt-p1-l1, ")
 
 
 @pytest.mark.parametrize("task", ["src/x.py: add a test", "2 task", "5 task"])
@@ -570,18 +621,23 @@ def test_task_without_separator_dispatches_one_default_child(
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-default", tmp_path / "wt")
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
-    wf = _build_wf(repo, provider, steer_text=f"/parallel {task}", child_spawner=spawner)
+    provider.call.side_effect = _three_reads()
+    wf = _build_wf(
+        repo,
+        provider,
+        steer_text=f"/parallel {task}",
+        child_spawner=spawner,
+        events=_FakeEvents(tmp_path / "run-default" / "logs.jsonl"),
+    )
     wf.run("start")
 
     assert [(child.task, child.model) for child in spawner.calls[0][0]] == [(task, None)]
 
 
-def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path) -> None:
-    """A conflicting child fails its node, the summary says merge by hand, and the run continues."""
+def test_a_conflict_lands_nothing_and_names_the_files_and_the_branch(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A conflicting child fails its node; the notice names the files and its branch."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     base = _head(repo)  # before conflict.txt exists
@@ -597,10 +653,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
         repo, parent_id, tmp_path / "wt", conflict={2}, base_by_child={2: base}
     )
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -611,28 +664,35 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     )
     result = wf.run("start")
 
-    assert provider.call.call_count == 2  # run continued past the conflict
+    assert provider.call.call_count == 3  # run continued past the conflict
     assert result.reason == "max_turns"
     # The clean child's file reached the worktree; the conflicted merge touched nothing.
     assert (repo / "child1.txt").read_text(encoding="utf-8") == "child 1\n"
     assert (repo / "conflict.txt").read_text(encoding="utf-8") == "main version"
-    joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["children"]] == ["joined", "conflict"]
-    failed = events.of("parallel.failed")
-    assert failed and [ln["session_id"] for ln in failed[0]["children"]] == [f"{parent_id}-p1-l2"]
+    joined = events.of("parallel.joined")
+    assert [[ln["status"] for ln in row["children"]] for row in joined] == [
+        ["joined"],
+        ["conflict"],
+    ]
+    assert joined[1]["children"][0]["detail"] == "merge conflict in conflict.txt"
+    (failed,) = events.of("parallel.failed")
+    assert [ln["session_id"] for ln in failed["children"]] == [f"{parent_id}-p2-l1"]
     # The conflicting node is marked failed (NodeStatus has no "blocked").
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
-    summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
-    assert "CONFLICT" in summary
-    assert "git merge agent6/run-cf-p1-l2" in summary
+    _clean, conflicted = _landings(provider)
+    assert conflicted.splitlines()[1] == (
+        "  - run-cf-p2-l1 (agent6/run-cf-p2-l1): CONFLICT -- merge conflict in conflict.txt;"
+        " nothing landed. The branch holds its work (`git merge agent6/run-cf-p2-l1` for the"
+        " operator); continue without it."
+    )
 
 
-def test_a_group_of_no_change_children_passes_without_merging(tmp_path: pathlib.Path) -> None:
+def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: pathlib.Path) -> None:
     """Children that ended with a result and no commit pass their nodes; nothing merges.
 
     The chain ref, HEAD and the index stay where they were, the join names `no_changes`, no
-    `parallel.failed` fires and the summary says so.
+    `parallel.failed` fires and each notice says so.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -641,10 +701,7 @@ def test_a_group_of_no_change_children_passes_without_merging(tmp_path: pathlib.
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt", empty={1, 2})
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -660,28 +717,35 @@ def test_a_group_of_no_change_children_passes_without_merging(tmp_path: pathlib.
     assert _head(repo) == head_before
     assert _git(repo, "log", "--merges", "--oneline", "--all") == ""  # no ref gained a merge
     assert _git(repo, "status", "--porcelain") == ""
-    joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["children"]] == ["no_changes", "no_changes"]
+    joined = events.of("parallel.joined")
+    assert [[ln["status"] for ln in row["children"]] for row in joined] == [
+        ["no_changes"],
+        ["no_changes"],
+    ]
     assert not events.of("parallel.failed")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert [n.status for n in steering] == ["passed", "passed"]
     assert all(not n.commit_sha for n in steering)
-    summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
-    assert summary.count("finished with no changes to join") == 2
-    # Each child's finish summary reaches the conversation, and the record a resume delivers.
-    assert "    summary: child 1 found nothing to change" in summary
-    assert "    summary: child 2 found nothing to change" in summary
-    (record,) = child_dispatch.read_records(tmp_path / parent_id)
-    assert [child.report for child in record.children] == [
-        "child 1 found nothing to change",
-        "child 2 found nothing to change",
+    landings = _landings(provider)
+    assert [t.count("finished with no changes to join") for t in landings] == [1, 1]
+    assert all("FAILED" not in t and "CONFLICT" not in t for t in landings)
+    # Each child's finish summary reaches the conversation once, in the notice of its end.
+    texts = _user_texts(_final_messages(provider))
+    assert [t for t in texts if t.startswith("[parallel] child")] == [
+        "[parallel] child run-nc-p1-l1 finished.\nsummary: child 1 found nothing to change",
+        "[parallel] child run-nc-p2-l1 finished.\nsummary: child 2 found nothing to change",
     ]
-    assert record.message == summary
-    assert "FAILED" not in summary and "CONFLICT" not in summary
+    records = child_dispatch.read_records(tmp_path / parent_id)
+    assert [(child.report, child.reported) for record in records for child in record.children] == [
+        ("child 1 found nothing to change", True),
+        ("child 2 found nothing to change", True),
+    ]
+    assert [record.message for record in records] == landings
+    assert all(record.delivered for record in records)
 
 
-def test_a_mixed_group_merges_only_the_children_that_committed(tmp_path: pathlib.Path) -> None:
-    """One child committed, one ended clean, one failed: the segment stamps follow each child."""
+def test_three_tasks_each_stamp_their_own_outcome(tmp_path: pathlib.Path) -> None:
+    """One child committed, one ended clean, one failed: each task's stamp follows its child."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-mx"
@@ -689,10 +753,7 @@ def test_a_mixed_group_merges_only_the_children_that_committed(tmp_path: pathlib
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt", empty={2}, fail={3})
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -703,10 +764,14 @@ def test_a_mixed_group_merges_only_the_children_that_committed(tmp_path: pathlib
     )
     wf.run("start")
 
-    joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["children"]] == ["joined", "no_changes", "failed"]
-    failed = events.of("parallel.failed")
-    assert failed and [ln["session_id"] for ln in failed[0]["children"]] == [f"{parent_id}-p1-l3"]
+    joined = events.of("parallel.joined")
+    assert [ln["status"] for row in joined for ln in row["children"]] == [
+        "joined",
+        "no_changes",
+        "failed",
+    ]
+    (failed,) = events.of("parallel.failed")
+    assert [ln["session_id"] for ln in failed["children"]] == [f"{parent_id}-p3-l1"]
     assert (repo / "child1.txt").read_text(encoding="utf-8") == "child 1\n"
     assert "agent6/run-mx-p1-l1" in _git(repo, "log", "--oneline", "refs/agent6/parent")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
@@ -714,8 +779,8 @@ def test_a_mixed_group_merges_only_the_children_that_committed(tmp_path: pathlib
     assert [bool(n.commit_sha) for n in steering] == [True, False, False]
 
 
-def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> None:
-    """Three segments of two children each ask for six against max_children 4 and are refused.
+def test_the_cap_counts_every_child_a_message_asks_for(tmp_path: pathlib.Path) -> None:
+    """Three tasks of two attempts each ask for six against max_children 4 and are refused.
 
     The refusal comes before any clone, checkpoint or DAG node and names the total and the knob.
     """
@@ -724,10 +789,7 @@ def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> No
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, "run-cap", tmp_path / "wt")
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -740,7 +802,7 @@ def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> No
     assert not [n for n in graph.entries.values() if n.created_by == "steering"]
     texts = _user_texts(_final_messages(provider))
     assert any(
-        "request 6 children together but [harness.parallel].max_children = 4" in t
+        "this asks for 6 children with 0 running, over [harness.parallel].max_children = 4" in t
         and "nothing dispatched" in t
         for t in texts
     )
@@ -755,10 +817,7 @@ def test_failed_child_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     graph = _FakeGraph()
     spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt", fail={1})
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -770,9 +829,9 @@ def test_failed_child_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     result = wf.run("start")
 
     assert result.reason == "max_turns"  # did not crash
-    joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["children"]] == ["failed", "joined"]
-    assert joined["children"][0]["detail"] == "child boom"
+    joined = events.of("parallel.joined")
+    assert [ln["status"] for row in joined for ln in row["children"]] == ["failed", "joined"]
+    assert joined[0]["children"][0]["detail"] == "child boom"
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
     failed_note = next(note for _id, status, note in graph.status_calls if status == "failed")
@@ -781,15 +840,16 @@ def test_failed_child_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
         [{"type": event_type, **fields} for event_type, fields in events.emitted]
     )
     assert any(item.kind == "marker" and "child boom" in item.body for item in transcript)
-    summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
-    assert "FAILED -- child boom" in summary
+    texts = _user_texts(_final_messages(provider))
+    assert "[parallel] child run-fl-p1-l1 ended without a result: child boom" in texts
+    assert "FAILED -- child boom" in _landings(provider)[0]
 
 
-def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
+def test_spawner_raising_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
     """A raising group spawner does not abort the parent.
 
-    The run continues, parallel.failed fires, truthful feedback is injected, and no steering
-    node is left pending.
+    The run continues, parallel.failed fires for each task, truthful feedback is injected, and
+    no steering node is left pending.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -799,18 +859,14 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
 
     calls: list[str] = []
 
-    @child_env.blocking
     def exploding_spawner(
         children: list[child_records.ChildTask], group: str, *, at: str | None = None
-    ) -> list[child_records.ChildResult]:
+    ) -> list[child_records.StartedChild]:
         calls.append(group)
-        raise OSError("disk full while cloning child 2")
+        raise OSError("disk full while cloning child 1")
 
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(
         repo,
         provider,
@@ -821,19 +877,21 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
     )
     result = wf.run("start")
 
-    assert calls == ["p1"]  # the dispatch was attempted
-    assert provider.call.call_count == 2  # the run CONTINUED past the fault
+    assert calls == ["p1", "p2"]  # each task's launch was attempted
+    assert provider.call.call_count == 3  # the run CONTINUED past the fault
     assert result.reason == "max_turns"
     # The failure is rendered truthfully on every surface.
     failed = events.of("parallel.failed")
-    assert failed and failed[0]["group"] == "run-boom-p1"  # the stamped group id
+    assert [row["group"] for row in failed] == ["run-boom-p1", "run-boom-p2"]
     assert "disk full" in str(failed[0])
     texts = _user_texts(_final_messages(provider))
-    assert any("disk full while cloning child 2" in t for t in texts)
-    # No steering node is orphaned as pending.
+    assert any(t.count("disk full while cloning child 1") == 2 for t in texts)
+    # No steering node is orphaned as pending, and neither record waits on a delivery.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
     assert all(n.status == "failed" for n in steering)
+    records = child_dispatch.read_records(tmp_path / parent_id)
+    assert [(record.state, record.delivered) for record in records] == [("complete", True)] * 2
 
 
 @pytest.mark.parametrize(
@@ -852,10 +910,7 @@ def test_invalid_parallel_directive_dispatches_nothing_and_names_the_reason(
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-x", tmp_path / "wt")
     provider = mock.MagicMock()
-    provider.call.side_effect = [
-        _resp_tool("read_file", {"path": "README.md"}, "t1"),
-        _resp_tool("read_file", {"path": "README.md"}, "t2"),
-    ]
+    provider.call.side_effect = _three_reads()
     wf = _build_wf(repo, provider, steer_text=text, child_spawner=spawner)
     wf.run("start")
     assert spawner.calls == []  # nothing dispatched
@@ -888,6 +943,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
     provider.call.side_effect = [
         _resp_tool("run_command", {"command": "echo hi > wip.txt"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
+        _resp_tool("read_file", {"path": "README.md"}, "t3"),
     ]
     wf = _build_wf(
         repo,
@@ -947,6 +1003,7 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
     provider.call.side_effect = [
         _resp_tool("run_command", {"command": "x"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
+        _resp_tool("read_file", {"path": "README.md"}, "t3"),
     ]
     wf = _build_wf(
         repo,
@@ -1014,21 +1071,6 @@ def test_parent_spawner_gate_in_a_child(
 
 
 # A run that opens with a ranked dispatch (`run --parallel`).
-
-
-def _ranker(order: tuple[int, ...], *, crowns: bool = True) -> Any:
-    """Rank a group's children in the given child order, by number; `crowns` off names no winner."""
-
-    def rank(
-        results: Sequence[child_records.ChildResult], *, group: str, base: str
-    ) -> child_records.Ranking:
-        by_child = {res.spec.number: res.spec.session_id for res in results}
-        ranked = tuple(by_child[n] for n in order if n in by_child)
-        return child_records.Ranking(
-            order=ranked, ranked_by="judge", winner=ranked[0] if ranked and crowns else ""
-        )
-
-    return rank
 
 
 def _opening_wf(

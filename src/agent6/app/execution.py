@@ -532,8 +532,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             ipc.promote_queued_steer(layout.session_dir)
             return steer_state.requested()
 
-        # Child workers retain only harness-panel authority. Every child's record goes where
-        # this session's does: the root repository's state.
+        # A child worker keeps only panel authority; a child's record goes where this one's does.
         spawner = frontend.build_parent_spawner(
             cfg,
             inputs.explicit_leaves,

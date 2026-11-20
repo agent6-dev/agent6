@@ -150,7 +150,7 @@ class ChildResult:
         report: What the child said at its end, its finish summary; "" when it ended another
             way.
         stopped_by: What ended the child when its parent stopped it (its deadline, the
-            run's budget); "" when it ended by itself or by the operator.
+            run's budget, the parent's own stop); "" when it ended by itself or by the operator.
     """
 
     spec: ChildSpec
@@ -258,8 +258,9 @@ class ChildJoin:
             `ranked` (a rank join placed the child and did not join it: another child landed,
             or the run has no chain to join onto; the branch holds this one's work).
         sha: The merge commit, or "".
-        detail: The failure's reason; a ranked child's place (`2 of 3`); for a child that
-            joined or had nothing to join, what stopped it when its parent did; else "".
+        detail: The failure's reason; a conflict's files; a ranked child's place (`2 of 3`);
+            for a child that joined or had nothing to join, what stopped it when its parent
+            did; else "".
         report: What the child said at its end, its finish summary; "" when it gave none.
     """
 
@@ -272,8 +273,24 @@ class ChildJoin:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class Started:
+    """What a work dispatch started in the background, or why it started nothing.
+
+    Attributes:
+        children: The started children's session ids, in the order written; empty for a
+            refusal or a spawner failure.
+        message: What started and how to follow it, or the refusal.
+        groups: The group id of each dispatch record written.
+    """
+
+    children: tuple[str, ...]
+    message: str
+    groups: tuple[str, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class DispatchResult:
-    """What a dispatch did, for the caller to deliver as it sees fit.
+    """What a landed dispatch did, for the caller to deliver as it sees fit.
 
     Attributes:
         group: The group id the children were stamped with; "" when nothing was dispatched.

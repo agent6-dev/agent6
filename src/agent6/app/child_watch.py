@@ -106,8 +106,7 @@ class ChildWatch:
             child_dir: The child's session dir.
             label: The child, as the operator reads it.
         """
-        # Held from the check to the answer: the parent's prompts take one caller, the loop's
-        # own included, and a prompt answered meanwhile is never asked again.
+        # Held from the check to the answer: no prompt answered meanwhile is asked again.
         with self._prompts.one_at_a_time:
             state = session_fold.fold_session(
                 tail.tail_events(child_dir / layout.LOGS_NAME, follow=False)

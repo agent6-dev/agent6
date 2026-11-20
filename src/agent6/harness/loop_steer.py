@@ -61,9 +61,10 @@ def operator_boundary(
     turn: int,
     state: loop_state.LoopState,
 ) -> loop_snapshot.SessionResult | None:
-    """Honour a pending stop, then poll the steer flag, after every completed turn.
+    """Honour a pending stop, land what children finished, then poll the steer flag.
 
-    A stop or an injected instruction never splits a tool call from its result.
+    Runs after every completed turn: a stop, a child's notice or an injected instruction
+    never splits a tool call from its result.
 
     Args:
         harness: The execution's harness.
@@ -79,6 +80,8 @@ def operator_boundary(
     stopped = operator_stop(harness, turn, state)
     if stopped is not None:
         return stopped
+    if harness.children is not None:
+        harness.children.settle(conversation, turn)
     operator_state(harness, conversation, state)
     return steer_outcome(harness, harness.steering.handle(conversation, turn, state), turn, state)
 
@@ -126,9 +129,10 @@ def ranked_opening(
 ) -> loop_snapshot.SessionResult | None:
     """Run the dispatch a run opens with, joined by rank, and end the run on what landed.
 
-    The ranking's winner joins the run's chain; the run's own gate then judges the joined
-    tree. No model call is made unless the operator steered while the children ran: the run
-    then goes on with that steer, as a resume with a steer does later.
+    The run waits for its children, as no turn of its own runs meanwhile. The ranking's
+    winner joins the run's chain; the run's own gate then judges the joined tree. No model
+    call is made unless the operator steered while the children ran: the run then goes on
+    with that steer, as a resume with a steer does later.
 
     Args:
         harness: The execution's harness, built with an opening.
@@ -143,26 +147,25 @@ def ranked_opening(
         when a steer gives the run more work.
     """
     assert harness.opening is not None
-    result = harness.parallel.dispatch(
-        conversation, turn, state, [harness.opening], source="operator", join="rank"
-    )
+    started = harness.parallel.dispatch(conversation, turn, state, [harness.opening])
+    harness.parallel.wait()
     stopped = operator_stop(harness, turn, state)
     if stopped is not None:
         return stopped
+    # The notices enter the conversation either way: only a steer gives them a reader.
+    harness.parallel.settle(conversation, turn)
     if harness.bridge.steer_requested():
         # A steer sent while the children ran is the run's next work, from what landed.
-        harness.parallel.deliver(conversation, result)
         size = len(conversation)
         asked = steer_outcome(
             harness, harness.steering.handle(conversation, turn, state), turn, state
         )
         if asked is not None or len(conversation) > size:
             return asked
-    else:
-        harness.parallel.record_delivery(result)
-    # A refusal before any child ran has no children to word: its own message is the summary.
-    summary = parallel_join.rank_summary(result.children) if result.children else result.message
-    statuses = {join.status for join in result.children}
+    joins = [join for group in started.groups for join in harness.parallel.joins(group)]
+    # A dispatch that started no child has none to word: its own message is the summary.
+    summary = parallel_join.rank_summary(joins) if joins else started.message
+    statuses = {join.status for join in joins}
     # Without a chain (`git.control = "model"`) a placed child is the whole outcome.
     landed = statuses & {"joined", "no_changes"} or ("ranked" in statuses and not harness.chain.ref)
     if not landed:
@@ -407,8 +410,10 @@ def park_for_steer(
             # Injected (or a bare poke): the run continues where it parked.
             harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
-        if harness.operator_tasks.take(state.root_task_id):
-            # A queued task, goal or retirement is work; the next focus banner names it.
+        # A queued task, goal or retirement is work, and so is a child's end or landed work.
+        if harness.operator_tasks.take(state.root_task_id) or (
+            harness.children is not None and harness.children.settle(conversation, turn)
+        ):
             harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
         if operator_state(harness, conversation, state, boundary=False):

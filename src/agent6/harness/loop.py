@@ -1540,6 +1540,15 @@ class Harness:
         Returns:
             The execution's result.
         """
+        # Children end with the execution that started them; a resume lands their work.
+        unlanded = self.children.close() if self.children is not None else ()
+        if unlanded:
+            self.log(f"LOOP: {len(unlanded)} child(ren) had not landed: {', '.join(unlanded)}")
+            end = dataclasses.replace(
+                end,
+                summary=f"{end.summary}; {len(unlanded)} child(ren) ended with the run,"
+                " their work lands when it resumes",
+            )
         if end.checkpoint:
             self.checkpoints.final(turn=turn, task_id=state.focus.surfaced_task_id)
         # An end the loop declares is no death: the next resume re-enters at the snapshot.
@@ -1914,18 +1923,18 @@ class Harness:
     def _parallel_tool(
         self, raw: dict[str, Any], origin: kinds.ToolCallOrigin | None
     ) -> tools_results.ToolResult:
-        """Dispatch children for the model's `parallel` call through the steer's own path.
+        """Start children for the model's `parallel` call through the steer's own path.
 
-        The children run under the model-child ceilings and the run's reserved allowance; the
-        dispatch is recorded with the model as its source and its result is the tool's
-        answer, never a steer notice.
+        The children run under the model-child ceilings and what the run has left to spend;
+        the dispatch is recorded with the model as its source, and the call returns at once
+        with the children's ids.
 
         Args:
             raw: The validated arguments.
             origin: The model call the tool call answers; None outside a turn.
 
         Returns:
-            The dispatch's group, message and joins.
+            Whether children started, their session ids and the line that says so.
 
         Raises:
             ToolError: No turn is in progress.
@@ -1939,7 +1948,7 @@ class Harness:
             max_turns=parallel_dispatch.MODEL_CHILD_MAX_TURNS,
             deadline_at=time.time() + parallel_dispatch.MODEL_CHILD_DEADLINE_S,
         )
-        result = self.parallel.dispatch(
+        started = self.parallel.dispatch(
             conversation,
             turn,
             state,
@@ -1947,15 +1956,18 @@ class Harness:
             source="model",
             limits=limits,
         )
-        self.parallel.record_delivery(result)
         return tools_results.RawResult(
             {
-                "group": result.group,
-                "dispatched": result.dispatched,
-                "message": result.message,
-                "children": [dataclasses.asdict(join) for join in result.children],
+                "dispatched": bool(started.children),
+                "children": list(started.children),
+                "message": started.message,
             }
         )
+
+    @property
+    def children(self) -> parallel_dispatch.ParallelDispatcher | None:
+        """Return the dispatcher once a dispatch built it; None in a run that started no child."""
+        return self.__dict__.get("parallel")
 
     @functools.cached_property
     def parallel(self) -> parallel_dispatch.ParallelDispatcher:

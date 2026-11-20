@@ -664,7 +664,7 @@ def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
             owner="exec-1",
             turn=2,
             base="a" * 40,
-            segments=(child_dispatch.SegmentRecord(task="audit", spec="2", children=2),),
+            spec="2",
             children=(
                 child_dispatch.ChildRecord(
                     session_id="co-p1-l1",

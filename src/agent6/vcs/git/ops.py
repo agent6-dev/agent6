@@ -596,6 +596,20 @@ def chain_merge(
     return None if merged is None else merged.sha
 
 
+def merge_conflicts(path: pathlib.Path, ours: str, theirs: str) -> tuple[str, ...]:
+    """Return the paths git cannot merge between two commits, moving nothing.
+
+    Args:
+        path: The repository.
+        ours: The commit merged onto.
+        theirs: The commit merged in.
+
+    Returns:
+        The conflicted paths; empty when the two merge clean.
+    """
+    return _merge_tree(path, ours, theirs, merge_base=None).paths
+
+
 def chain_merge_with_markers(
     path: pathlib.Path,
     merge_rev: str,

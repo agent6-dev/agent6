@@ -136,6 +136,15 @@ def _child_result(
     )
 
 
+def _first_ranked(
+    results: Sequence[child_records.ChildResult], *, group: str, base: str
+) -> child_records.Ranking:
+    """Rank attempts in child order and crown the first."""
+    del group, base
+    order = tuple(res.spec.session_id for res in results)
+    return child_records.Ranking(order=order, winner=order[0] if order else "")
+
+
 def _build_wf(
     repo: pathlib.Path,
     session_dir: pathlib.Path,
@@ -186,6 +195,7 @@ def _build_wf(
         bridge=operator_bridge.OperatorBridge(
             child_spawner=child_spawner,
             child_recoverer=child_recoverer,
+            child_ranker=_first_ranked,
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -403,13 +413,13 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
             repo,
             session_dir,
             _provider(),
-            steer_text="/parallel 2 -- a",
+            steer_text="/parallel a",
             child_spawner=spawner,
             budget=_tracker(),
         ).run("start")
     monkeypatch.setattr(child_dispatch, "write_record", real_write)
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
-    assert log.count("run-abc-p1-l1 work") == 1 and "run-abc-p1-l2" not in log, log
+    assert log.count("run-abc-p1-l1 work") == 1, log
 
     def recoverer(group: str, ids: Sequence[str]) -> list[child_records.ChildResult]:
         return [
@@ -420,13 +430,13 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
     budget2 = _tracker()
     _build_wf(repo, session_dir, _provider(), child_recoverer=recoverer, budget=budget2).resume()
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
-    assert log.count("run-abc-p1-l1 work") == 1 and log.count("run-abc-p1-l2 work") == 1, log
+    assert log.count("run-abc-p1-l1 work") == 1, log
     (record,) = _records(session_dir)
     assert record.state == "complete"
     assert all(
         c.join is not None and c.join.status == "joined" and c.settled for c in record.children
     )
-    # The first execution settled both children; settled usage stays with it.
+    # The first execution settled the child; settled usage stays with it.
     assert budget2.estimate_usd()[0] == pytest.approx(0.0)
     assert budget2.available().usd == 10.0
 
@@ -534,21 +544,26 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
         repo,
         session_dir,
         _provider(),
-        steer_text="/parallel 2 -- a",
+        steer_text="/parallel a\n/parallel b",
         child_spawner=spawner,
         budget=budget,
     )
     events_wf.run("start")
-    (record,) = _records(session_dir)
-    assert record.state == "complete" and record.delivered
-    assert record.owner and record.source == "operator" and record.base == _head(repo)
+    first, second = _records(session_dir)
     assert ceilings == [10.0, 10.0]  # each child starts under all the run has left
-    for entry in record.children:
-        assert entry.join is not None and entry.join.status == "joined"
+    for record in (first, second):
+        assert record.state == "complete" and record.delivered
+        assert record.owner and record.source == "operator" and record.base == base
+        (entry,) = record.children
+        assert entry.join is not None and entry.join.status == "joined" and entry.reported
         assert entry.join.target_before and entry.join.target_after == entry.join.sha
         assert entry.usage == child_dispatch.UsageRecord(usd=0.5) and entry.settled
+    # The second task landed on the first's merge: in the order written.
+    assert first.children[0].join is not None and second.children[0].join is not None
+    assert second.children[0].join.target_before == first.children[0].join.target_after
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     assert budget.available().usd == pytest.approx(9.0)
     stored = json.loads(child_dispatch.record_path(session_dir, "run-abc-p1").read_text())
-    assert stored["version"] == 5
-    assert stored["join_policy"] == "merge"
+    assert stored["version"] == 6
+    assert (stored["join_policy"], stored["spec"], stored["node_id"]) == ("merge", "", None)
+    assert "segments" not in stored

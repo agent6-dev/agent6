@@ -17,29 +17,13 @@ import pydantic
 
 from agent6 import child_records, portable
 
-RECORD_VERSION = 5
+RECORD_VERSION = 6
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "joining", "complete"]
 
 
 class DispatchRecordError(Exception):
     """A record cannot be read: malformed, or written by a newer agent6."""
-
-
-class SegmentRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """One requested task and its child spec.
-
-    Attributes:
-        task: The task text.
-        spec: The child spec as given.
-        children: How many children the segment expanded to.
-        node_id: The DAG node the segment got, None without a graph.
-    """
-
-    task: str
-    spec: str = ""
-    children: int = 1
-    node_id: str | None = None
 
 
 class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
@@ -49,8 +33,8 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         branch: The child's branch.
         status: The join's outcome.
         sha: The merge commit, "" when none.
-        detail: The failure's reason, or what stopped a child whose work still joined; "" when
-            neither.
+        detail: The failure's reason, a conflict's files, a ranked child's place, or what
+            stopped a child whose work still joined; "" when none.
         target_before: The chain tip before the join.
         target_after: The chain tip after it; equal to `target_before` when nothing merged.
     """
@@ -103,8 +87,9 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         model: Its selector, None for the worker's own settings.
         limits: Its turn cap and deadline, None for the config's own.
         join: How it joined, None until it did.
-        report: What it said at its end, its finish summary; "" until it joined or when it
-            gave none.
+        report: What it said at its end, its finish summary; "" until its end was reported
+            or when it gave none.
+        reported: Whether its parent's conversation holds the notice of its end.
         usage: What it used, None until settled with known usage.
         settled: Whether its usage was charged; False while it is unknown.
     """
@@ -116,12 +101,13 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     limits: child_records.ChildLimits | None = None
     join: JoinRecord | None = None
     report: str = ""
+    reported: bool = False
     usage: UsageRecord | None = None
     settled: bool = False
 
 
 class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """The record of one dispatch.
+    """The record of one dispatch: one task's children, or one panel's reviewers.
 
     **Support: internal.** Written by the dispatching execution, read by a resume.
 
@@ -129,17 +115,18 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         version: The record's shape; a newer one refuses the read.
         identity: The dispatch's id, the group id `<parent>-p<n>`.
         source: Who asked.
-        join_policy: Ordered work merge, harness-owned record-only import, or the
-            best-ranked child alone.
+        join_policy: How the work lands: a task's one child merged, a panel's records
+            imported and nothing merged, or the best-ranked of a task's attempts alone.
         ranking: A rank join's order; None before it ranked and under the other policies.
         owner: The execution that made it.
         turn: The turn it was dispatched after.
         base: The chain tip the children were cut from.
-        segments: The requested tasks.
+        spec: The task's child spec as given; "" for one default child and for a panel.
+        node_id: The task's DAG node; None without a graph and for a panel.
         children: The children, in child order.
         state: How far the dispatch got.
-        message: The result delivered for it, "" until complete.
-        delivered: Whether the result reached the conversation.
+        message: The notice of what landed, "" until complete.
+        delivered: Whether that notice reached the conversation.
         written_at: When this version of the record was written, as epoch seconds.
     """
 
@@ -151,7 +138,8 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     owner: str
     turn: int
     base: str
-    segments: tuple[SegmentRecord, ...]
+    spec: str = ""
+    node_id: str | None = None
     children: tuple[ChildRecord, ...]
     state: DispatchState = "prepared"
     message: str = ""

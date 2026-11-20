@@ -62,11 +62,7 @@ def _record(
         owner="exec-1",
         turn=turn,
         base="a" * 40,
-        segments=(
-            child_dispatch.SegmentRecord(
-                task="audit", spec=str(len(children)), children=len(children)
-            ),
-        ),
+        spec=str(len(children)),
         children=tuple(
             child_dispatch.ChildRecord(
                 session_id=sid,

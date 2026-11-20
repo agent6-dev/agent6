@@ -79,7 +79,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             loop_state.LoopState(original_task="worker", tool_calls=0),
             [directive.Segment(task="not allowed", spec="1")],
         )
-        assert not refused.dispatched and "in a child" in refused.message
+        assert not refused.children and "in a child" in refused.message
         contract = kinds.ConversationContract(
             system="Review only.",
             opening="Read this tree.",
@@ -98,7 +98,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         assert result.children[0].status == "no_changes"
         record = child_dispatch.read_records(worker_dir)[0]
         assert record.source == "panel" and record.join_policy == "record_only"
-        assert record.version == 5
+        assert record.version == child_dispatch.RECORD_VERSION
         child = record.children[0]
         assert child.limits is not None and launch.limits is not None
         assert child.limits.deadline_at == launch.limits.deadline_at
@@ -388,7 +388,6 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
         owner="e",
         turn=1,
         base=target.snapshot_commit,
-        segments=(),
         children=(child_dispatch.ChildRecord(session_id=leaf.name, number=1, task="review"),),
     )
     child_dispatch.write_record(worker, record, now=time.time())
@@ -453,7 +452,6 @@ def test_an_unfinished_panel_keeps_the_ancestor_reservation(short_repo: pathlib.
         owner="w",
         turn=1,
         base="",
-        segments=(),
         children=(
             child_dispatch.ChildRecord(session_id=worker.name + "-r1-l1", number=1, task="review"),
         ),
@@ -478,7 +476,6 @@ def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
         owner="w",
         turn=1,
         base="",
-        segments=(),
         children=(
             child_dispatch.ChildRecord(
                 session_id=leaf,
@@ -524,7 +521,6 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unse
             owner="w",
             turn=1,
             base="",
-            segments=(),
             children=(child_dispatch.ChildRecord(session_id=leaf.name, number=1, task="review"),),
             state="running",
         ),

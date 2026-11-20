@@ -17,7 +17,14 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import child_records
 from agent6.config import Config
-from agent6.harness import loop, operator_bridge, provider_call, run_chain, toolset
+from agent6.harness import (
+    loop,
+    operator_bridge,
+    parallel_join,
+    provider_call,
+    run_chain,
+    toolset,
+)
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import dispatch, tool_errors
@@ -235,10 +242,13 @@ def _child_result(sid: str, workdir: pathlib.Path, *, branch: str, tip: str, usd
     )
 
 
-def test_the_model_dispatches_children_and_reads_the_result_as_the_tools_answer(
+def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
     tmp_path: pathlib.Path,
 ) -> None:
-    """One call: the children run under the model's ceilings, join in order, the result returns."""
+    """One call is one task: a model list starts attempts, and the answer is their ids.
+
+    The call blocked until every child returned and merged each one in order.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     base = _head(repo)
@@ -257,6 +267,10 @@ def test_the_model_dispatches_children_and_reads_the_result_as_the_tools_answer(
                 _child_result(sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tip, usd=0.5)
             )
         return out
+
+    def first_ranked(results: Any, *, group: str, base: str) -> child_records.Ranking:
+        order = tuple(res.spec.session_id for res in results)
+        return child_records.Ranking(order=order, winner=order[0])
 
     provider = mock.MagicMock()
     provider.call.side_effect = [
@@ -280,16 +294,31 @@ def test_the_model_dispatches_children_and_reads_the_result_as_the_tools_answer(
         curator=graph,  # type: ignore[arg-type]
         budget=budget,
         resume_state_path=session_dir / "loop_state.json",
-        bridge=operator_bridge.OperatorBridge(child_spawner=spawner),
+        bridge=operator_bridge.OperatorBridge(child_spawner=spawner, child_ranker=first_ranked),
         call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=2,
     )
     wf.run("start")
-    # The second call's messages carry the first call's tool result.
+    # The second call's messages carry the first call's tool result: the handles, no joins.
     second = provider.call.call_args_list[1]
     messages = second.kwargs.get("messages") or second.args[1]
+    (answer,) = [
+        json.loads(block["content"])
+        for message in messages
+        for block in message["content"]
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+    ids = ["run-abc-p1-l1", "run-abc-p1-l2"]
+    assert answer == {
+        "dispatched": True,
+        "children": ids,
+        "message": parallel_join.started_text(ids),
+    }
+    # The fake's children had ended, so the first boundary told their ends and landed the task.
     wire = json.dumps(messages)
-    assert "tool_result" in wire and "joined at" in wire, wire[-2500:]
+    assert wire.count("[parallel] child run-abc-p1-l") == 2
+    assert "run-abc-p1-l1 (agent6/run-abc-p1-l1): joined at" in wire
+    assert "run-abc-p1-l2 (agent6/run-abc-p1-l2): ranked 2 of 2; not joined" in wire
     assert [child.model for child in seen] == ["reviewer", "default"]
     assert all(
         child.limits
@@ -303,13 +332,12 @@ def test_the_model_dispatches_children_and_reads_the_result_as_the_tools_answer(
     )
     (record,) = child_dispatch.read_records(session_dir)
     assert record.source == "model" and record.state == "complete" and record.delivered
+    assert (record.join_policy, record.spec) == ("rank", "reviewer,default")
     assert all(c.limits is not None and c.limits.max_turns == 200 for c in record.children)
     assert graph.rationales[-1] == "dispatched through /parallel by the model"
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
+    # The first-ranked attempt alone is on the chain; the other keeps its branch.
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
-    assert "run-abc-p1-l1 work" in log and "run-abc-p1-l2 work" in log
-    # Child 1 joined first: the chain tip was its tip when child 2's merge was made.
-    l1, l2 = record.children
-    assert l1.join is not None and l2.join is not None
-    assert l2.join.target_before == _git(repo, "rev-parse", "agent6/run-abc-p1-l1")
+    assert "run-abc-p1-l1 work" in log and "run-abc-p1-l2 work" not in log
+    assert _git(repo, "rev-parse", "--verify", "agent6/run-abc-p1-l2")
     assert not os.environ.get("AGENT6_CHILD")

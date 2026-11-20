@@ -1788,6 +1788,25 @@ def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: pathlib.
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "ours\n"
 
 
+def test_merge_conflicts_names_the_paths_and_moves_nothing(tmp_path: pathlib.Path) -> None:
+    """The files a refused merge conflicts in are named for whoever holds the branch."""
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("ours\n", encoding="utf-8")
+    s1 = git_ops.chain_commit(
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t4", fallback_parent=head0
+    )
+    assert s1 is not None
+    child = _child_commit(tmp_path, head0, "b.txt", "theirs\n")
+    clean = _child_commit(tmp_path, head0, "c.txt", "new\n")
+
+    assert git_ops.merge_conflicts(tmp_path, s1, child) == ("b.txt",)
+    assert git_ops.merge_conflicts(tmp_path, s1, clean) == ()
+    assert _rev(tmp_path, "refs/agent6/t4") == s1
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "ours\n"
+    assert not (tmp_path / "c.txt").exists()
+
+
 def test_chain_merge_with_markers_commits_the_conflict_for_the_run_to_resolve(
     tmp_path: pathlib.Path,
 ) -> None:

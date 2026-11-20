@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 
 import pydantic
 
-from agent6 import child_records, errors
+from agent6 import child_records, errors, terminal
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import dag_focus
@@ -42,18 +42,19 @@ def join_child_result(
 
     Returns:
         `joined` with the sha, `no_changes` for a child whose imported tip holds no commit
-        beyond its base (nothing merged), `conflict`, or `failed` for a child that imported
-        nothing.
+        beyond its base (nothing merged), `conflict` naming the files, or `failed` for a
+        child that imported nothing.
     """
     rid = res.spec.session_id
     if not res.ok:
         return child_records.ChildJoin(rid, res.branch, "failed", "", res.error)
     if not res.has_commits:
         return child_records.ChildJoin(rid, res.branch, "no_changes", "", res.stopped_by)
+    rev = res.imported_ref or res.branch
     try:
         sha = git_ops.chain_merge(
             root,
-            res.imported_ref or res.branch,
+            rev,
             f"merge {res.branch}",
             ref=ref,
             fallback_parent=fallback_parent,
@@ -63,7 +64,14 @@ def join_child_result(
     except (errors.GitError, OSError) as exc:
         return child_records.ChildJoin(rid, res.branch, "failed", "", str(exc))
     if sha is None:
-        return child_records.ChildJoin(rid, res.branch, "conflict", "", "merge conflict")
+        try:
+            tip = git_read.chain_tip(root, ref) or fallback_parent
+            paths = git_ops.merge_conflicts(root, tip, rev) if tip else ()
+        except (errors.GitError, OSError):
+            paths = ()  # the conflict stands, its files unnamed
+        names = ", ".join(terminal.printable_name(path) for path in paths)
+        detail = f"merge conflict in {names}" if names else "merge conflict"
+        return child_records.ChildJoin(rid, res.branch, "conflict", "", detail)
     return child_records.ChildJoin(rid, res.branch, "joined", sha, res.stopped_by)
 
 
@@ -103,16 +111,55 @@ def child_note(j: child_records.ChildJoin) -> str:
     return f"{j.session_id} failed: {j.detail}"
 
 
+def started_text(children: Sequence[str]) -> str:
+    """Return the line that says what a task started and how its parent follows it.
+
+    Args:
+        children: The started children's session ids, in child order.
+
+    Returns:
+        The line: the tool's answer, or a steer's notice.
+    """
+    if len(children) == 1:
+        return (
+            f"[parallel] started child {children[0]}. A notice arrives when it ends and when"
+            " its work lands; read_background reads it and stop_background stops it, by this id."
+        )
+    return (
+        f"[parallel] started {len(children)} attempts at one task: {', '.join(children)}."
+        " A notice arrives as each ends; once all have, they are ranked and the first lands."
+        " read_background reads one and stop_background stops one, by id."
+    )
+
+
+def end_notice(res: child_records.ChildResult) -> str:
+    """Return the notice that tells a parent's model one child has ended.
+
+    Args:
+        res: The child's result.
+
+    Returns:
+        How it ended, with its finish summary under it as its journal holds it (2,000
+        characters at most).
+    """
+    sid = res.spec.session_id
+    if not res.ok:
+        return f"[parallel] child {sid} ended without a result: {res.error}"
+    stopped = f" ({res.stopped_by})" if res.stopped_by else ""
+    head = f"[parallel] child {sid} finished{stopped}."
+    report = res.report.strip()
+    return f"{head}\nsummary: " + report.replace("\n", "\n  ") if report else head
+
+
 def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
-    """Return the one message that gives every child's outcome and what the child said.
+    """Return the one notice that says how each child of a landed dispatch joined.
 
     Args:
         group: The dispatch's group id.
         children: Each child's join, in dispatch order.
 
     Returns:
-        One line per child, with the child's finish summary under it as its journal holds it
-        (2,000 characters at most).
+        One line per child.
     """
     lines = [f"[parallel] group {group} complete ({len(children)} child(ren)):"]
     for j in children:
@@ -126,9 +173,9 @@ def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
         elif j.status == "conflict":
             # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
             lines.append(
-                f"  - {j.session_id} ({j.branch}): CONFLICT -- branch imported but the merge"
-                f" conflicted. It exists locally for the operator (`git merge {j.branch}`);"
-                " continue without it."
+                f"  - {j.session_id} ({j.branch}): CONFLICT -- {j.detail or 'merge conflict'};"
+                f" nothing landed. The branch holds its work (`git merge {j.branch}` for the"
+                " operator); continue without it."
             )
         elif j.status == "ranked":
             lines.append(
@@ -137,8 +184,6 @@ def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
             )
         else:
             lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
-        if report := j.report.strip():
-            lines.append("    summary: " + report.replace("\n", "\n      "))
     lines.append("Review what landed and continue.")
     return "\n".join(lines)
 

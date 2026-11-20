@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Dispatch a `/parallel` steer.
+"""Dispatch a run's children and land their work.
 
 `ParallelDispatcher` owns the policy: when to cut children, the DAG stamps, the events, the
-injected group spawner. `parallel_join` projects child results into ordered merges, DAG
-stamps and summaries; record-only panel batches share the executor without merging, and a
-rank join lands the one child its injected ranker puts first.
+injected group spawner. A work dispatch starts its children in the background and returns;
+`settle` lands what finished at a turn boundary. `parallel_join` projects child results into
+ordered merges, DAG stamps and notices; record-only panel batches share the executor, block
+and merge nothing, and a rank join lands the one child its injected ranker puts first.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import dataclasses
 import pathlib
 import time
@@ -58,6 +60,19 @@ def segment_children(
 
 
 @dataclasses.dataclass(slots=True)
+class OpenDispatch:
+    """A work dispatch this execution started whose work has not landed.
+
+    Attributes:
+        record: The dispatch's record, as last written.
+        children: Its started children, in child order.
+    """
+
+    record: child_dispatch.DispatchRecord
+    children: list[child_records.StartedChild]
+
+
+@dataclasses.dataclass(slots=True)
 class ParallelDispatcher:
     """Dispatch sibling child groups for one run, each recorded so a resume can finish it.
 
@@ -79,6 +94,8 @@ class ParallelDispatcher:
         stop_pending: Whether the operator asked the run to stop.
         authority: Work and harness-panel permissions from the application.
         clock: The wall clock.
+        open: The work dispatches this execution started and has not landed, by identity,
+            oldest first.
     """
 
     chain: run_chain.RunChain
@@ -100,6 +117,7 @@ class ParallelDispatcher:
         default_factory=child_records.DispatchAuthority
     )
     clock: Callable[[], float] = time.time
+    open: dict[str, OpenDispatch] = dataclasses.field(default_factory=dict, init=False)
 
     def dispatch(  # noqa: PLR0911  # one return per refusal
         self,
@@ -110,123 +128,116 @@ class ParallelDispatcher:
         *,
         source: child_records.DispatchSource = "operator",
         limits: child_records.ChildLimits | None = None,
-        join: child_records.JoinPolicy = "merge",
-    ) -> child_records.DispatchResult:
-        """Dispatch a sibling group at the steer boundary and return what it did.
+    ) -> child_records.Started:
+        """Start each segment's task in the background and return what started.
 
-        Reserves the parent's allowance for the children, writes the dispatch record before any
-        launch, clones the parent's committed HEAD into one child per expanded child, runs
-        them through the spawner, settles their usage and joins each branch back in dispatch
-        order (under `rank`, the best-ranked child alone), advancing the record at each
-        boundary. Runs synchronously: no provider call happens while the group is in flight.
+        A segment is one task and one dispatch record, written before any launch: one child
+        lands its commits, several are attempts a ranker orders. Each child starts on a
+        clone of the parent's committed HEAD under what the parent has left to spend, and
+        runs while the parent takes its turns; `settle` lands the work at a turn boundary.
         Never ends the run: an unavailable spawner, a bad spec, a dirty tree, an unwritable
-        record, a spawner fault, a failed child or a join conflict each come back as the
-        result for the caller to deliver.
+        record or a spawner fault each come back as the refusal for the caller to deliver.
 
         Args:
-            conversation: The run's conversation, snapshotted before the group blocks.
+            conversation: The run's conversation, snapshotted before the children start.
             turn: The turn just completed.
             state: The loop state.
-            segments: The directive's segments, one DAG node each.
+            segments: The directive's segments, one task and one DAG node each.
             source: Who asked: the operator's steer, the model's tool call or a panel.
             limits: The turn cap and deadline every child runs under; None for the config's.
-            join: How the children land: each merged in order, or the best-ranked one alone.
 
         Returns:
-            The result; `dispatched` False names a refusal before any clone.
+            The children started and one line per task, or the refusal with none.
         """
         if source == "panel" or not self.authority.work:
-            return self.refusal("work dispatch is unavailable in a child; nothing dispatched.")
-        if join == "rank" and self.ranker is None:
-            return self.refusal("this execution has no ranker for a rank join; nothing dispatched.")
+            return self.refused("work dispatch is unavailable in a child; nothing dispatched.")
         if self.child_spawner is None:
-            return self.refusal(
+            return self.refused(
                 "parallel dispatch is not available in this front-end; continuing normally."
             )
         try:
-            # One DAG node per segment; its children join under it.
-            children_cap = self.max_children
-            per_segment = [
-                segment_children(seg, state.pins, limit=children_cap) for seg in segments
-            ]
+            tasks = [segment_children(seg, state.pins, limit=self.max_children) for seg in segments]
         except directive.DirectiveError as exc:
-            return self.refusal(f"bad /parallel spec: {exc}; nothing dispatched.")
-        children = [child for seg_children in per_segment for child in seg_children]
-        # The cap bounds the whole sibling group, repeated segments included, before any
-        # checkpoint, DAG write or clone.
-        if len(children) > children_cap:
-            return self.refusal(
-                f"the /parallel segments request {len(children)} children together but"
-                f" [harness.parallel].max_children = {children_cap}; nothing dispatched. Request"
-                " fewer, or raise [harness.parallel].max_children."
+            return self.refused(f"bad /parallel spec: {exc}; nothing dispatched.")
+        # The cap counts earlier dispatches' running children, before any commit, node or clone.
+        asked, running = sum(len(children) for children in tasks), self.running()
+        if asked + running > self.max_children:
+            return self.refused(
+                f"this asks for {asked} children with {running} running, over"
+                f" [harness.parallel].max_children = {self.max_children}; nothing dispatched."
+                " Ask for fewer, wait for one to end, stop one, or raise"
+                " [harness.parallel].max_children."
+            )
+        if self.ranker is None and any(len(children) > 1 for children in tasks):
+            return self.refused(
+                "this execution has no ranker for attempts at one task; nothing dispatched."
             )
         # Children cut from the chain tip only: commit a changed tree first, or refuse stale work.
-        if not self.ensure_clean(turn):
-            return self.refusal(
+        if not self.ensure_clean(turn, "/parallel dispatch"):
+            return self.refused(
                 "refusing to dispatch: the working tree is not clean and could not be"
                 " auto-committed. Commit or discard your changes, then retry /parallel."
             )
         if self.session_dir is None:
-            return self.refusal(
+            return self.refused(
                 "parallel dispatch needs a session dir for its record; nothing dispatched."
             )
-
-        state.parallel_groups_dispatched += 1
-        group = f"p{state.parallel_groups_dispatched}"
-        identity = f"{self.session_id}-{group}"
-        child_ids = [f"{identity}-l{i}" for i in range(1, len(children) + 1)]
         if self.budget is not None and self.budget.is_exhausted():
-            state.parallel_groups_dispatched -= 1
             reason = self.budget.snapshot().exhausted_reason
-            return self.refusal(f"the budget is exhausted ({reason}); nothing dispatched.")
-        children = [dataclasses.replace(child, limits=limits) for child in children]
+            return self.refused(f"the budget is exhausted ({reason}); nothing dispatched.")
         parent_id = parallel_join.parallel_parent_id(self.curator, state.root_task_id)
-        node_ids = [
-            parallel_join.add_parallel_node(
-                self.curator, seg.task, parent_id, source=source, log=self.log
+        base = self.chain.tip() or ""
+        prepared: list[tuple[child_dispatch.DispatchRecord, list[child_records.ChildTask]]] = []
+        lines: list[str] = []
+        for seg, task in zip(segments, tasks, strict=True):
+            state.parallel_groups_dispatched += 1
+            identity = f"{self.session_id}-p{state.parallel_groups_dispatched}"
+            children = [dataclasses.replace(child, limits=limits) for child in task]
+            record = child_dispatch.DispatchRecord(
+                identity=identity,
+                source=source,
+                join_policy="rank" if len(children) > 1 else "merge",
+                owner=self.execution_id,
+                turn=turn,
+                base=base,
+                spec=seg.spec,
+                node_id=parallel_join.add_parallel_node(
+                    self.curator, seg.task, parent_id, source=source, log=self.log
+                ),
+                children=tuple(
+                    child_dispatch.ChildRecord(
+                        session_id=f"{identity}-l{i}",
+                        number=i,
+                        task=child.task,
+                        model=child.model,
+                        limits=child.limits,
+                    )
+                    for i, child in enumerate(children, start=1)
+                ),
             )
-            for seg in segments
-        ]
-        record = child_dispatch.DispatchRecord(
-            identity=identity,
-            source=source,
-            join_policy=join,
-            owner=self.execution_id,
-            turn=turn,
-            base=self.chain.tip() or "",
-            segments=tuple(
-                child_dispatch.SegmentRecord(
-                    task=seg.task, spec=seg.spec, children=len(seg_children), node_id=nid
+            try:
+                # The record is the launch's precondition: nothing runs that a resume cannot find.
+                self.write(record)
+            except OSError as exc:
+                state.parallel_groups_dispatched -= 1
+                self.fail_nodes(record, "dispatch record could not be written")
+                lines.append(
+                    self.refused(
+                        f"could not persist the dispatch record ({exc}); nothing dispatched."
+                    ).message
                 )
-                for seg, seg_children, nid in zip(segments, per_segment, node_ids, strict=True)
-            ),
-            children=tuple(
-                child_dispatch.ChildRecord(
-                    session_id=child_id,
-                    number=i,
-                    task=child.task,
-                    model=child.model,
-                    limits=child.limits,
-                )
-                for i, (child_id, child) in enumerate(
-                    zip(child_ids, children, strict=True), start=1
-                )
-            ),
-        )
-        try:
-            # The record is the launch's precondition: nothing runs that a resume cannot find.
-            self.write(record)
-        except OSError as exc:
-            state.parallel_groups_dispatched -= 1
-            self.fail_nodes(record, "dispatch record could not be written")
-            return self.refusal(
-                f"could not persist the dispatch record ({exc}); nothing dispatched."
-            )
-        if any(n is not None for n in node_ids):
+                continue
+            prepared.append((record, children))
+        if self.curator is not None:
             self.emit_graph_snapshot()
-        # Persisted before the group blocks: a crash there would reuse this group's id on resume.
+        # Persisted before the children start: a crash there would reuse a group's id on resume.
         self.save_snapshot(state, conversation.to_wire(), next_turn=turn + 1)
-        return self.execute(record, children, group)
+        started = [self.launch(record, children) for record, children in prepared]
+        return child_records.Started(
+            tuple(child for one in started for child in one.children),
+            "\n".join([*lines, *(one.message for one in started)]),
+            tuple(group for one in started for group in one.groups),
+        )
 
     def dispatch_panel(  # noqa: PLR0911  # one return per refusal
         self,
@@ -304,7 +315,6 @@ class ParallelDispatcher:
             owner=self.execution_id,
             turn=turn,
             base=at,
-            segments=(),
             children=tuple(
                 child_dispatch.ChildRecord(
                     session_id=child_id,
@@ -324,51 +334,83 @@ class ParallelDispatcher:
             )
         return self.execute(record, bounded, group, batch_width=width)
 
+    def launch(
+        self, record: child_dispatch.DispatchRecord, children: list[child_records.ChildTask]
+    ) -> child_records.Started:
+        """Start a recorded task's children and return at once.
+
+        Args:
+            record: The durable prepared dispatch.
+            children: Its children, in child order.
+
+        Returns:
+            The children started, or a diagnosed spawner failure with none.
+        """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
+        assert self.child_spawner is not None
+        group = record.identity.removeprefix(f"{self.session_id}-")
+        record = self.announce(record, children, group)
+        # The children start under what the run has left now, and share it.
+        ceiling = self.budget.available() if self.budget is not None else None
+        started: list[child_records.StartedChild] = []
+        try:
+            started = self.child_spawner(
+                [dataclasses.replace(child, allowance=ceiling) for child in children],
+                group,
+                at=record.base or None,
+            )
+            if len(started) != len(children):
+                raise child_repo.ChildRepoError(
+                    f"group spawner started {len(started)} child(ren) for {len(children)}"
+                )
+        except Exception as exc:
+            for child in started:
+                child.stop()
+            # The caller delivers the failure as its answer: the record needs no second one.
+            failed = self.failed_launch(record, exc)
+            self.write(failed.model_copy(update={"delivered": True}))
+            return child_records.Started((), failed.message)
+        self.open[record.identity] = OpenDispatch(record, started)
+        ids = tuple(child.session_id for child in started)
+        return child_records.Started(
+            ids, parallel_join.started_text(ids), groups=(record.identity,)
+        )
+
     def execute(
         self,
         record: child_dispatch.DispatchRecord,
         children: list[child_records.ChildTask],
         group: str,
         *,
-        batch_width: int | None = None,
+        batch_width: int,
     ) -> child_records.DispatchResult:
-        """Run a published work or panel batch, then settle and land it under its recorded policy.
+        """Run a recorded panel in batches, waiting for each, then settle and record it.
 
         Args:
             record: The durable prepared dispatch.
             children: Its bounded tasks, in child order.
             group: The group suffix used by the shared spawner.
-            batch_width: The maximum children submitted together; None submits the whole group.
+            batch_width: The maximum children submitted together.
 
         Returns:
             The completed result, or a diagnosed spawner failure with unresolved holds.
         """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
         assert self.child_spawner is not None
-        identity = record.identity
-        what = "reviewer(s)" if record.source == "panel" else "child(ren)"
-        self.log(f"PARALLEL: dispatching group {identity} ({len(children)} {what})")
-        self.emit(
-            journal.ParallelDispatched(
-                group=group,
-                children=len(children),
-                tasks=[child.task[:200] for child in children],
-                source=record.source,
-            )
-        )
-        record = record.advanced("running")
-        self.write(record)
+        record = self.announce(record, children, group)
         started: list[child_records.StartedChild] = []
         try:
-            width = batch_width or len(children)
             results: list[child_records.ChildResult] = []
-            for offset in range(0, len(children), width):
+            for offset in range(0, len(children), batch_width):
                 # Each batch starts under what the run has left then; its children share it.
                 ceiling = self.budget.available() if self.budget is not None else None
                 batch = [
                     dataclasses.replace(child, allowance=ceiling)
-                    for child in children[offset : offset + width]
+                    for child in children[offset : offset + batch_width]
                 ]
-                batch_group = group if len(children) <= width else f"{group}-b{offset // width + 1}"
+                batch_group = (
+                    group
+                    if len(children) <= batch_width
+                    else f"{group}-b{offset // batch_width + 1}"
+                )
                 started = self.child_spawner(batch, batch_group, at=record.base or None)
                 results.extend(child.result.result() for child in started)
             if len(results) != len(children):
@@ -380,29 +422,218 @@ class ParallelDispatcher:
             # The front-end callback may fail after launching: the children's usage is unknown.
             for child in started:
                 child.stop()
-            self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
-            self.fail_nodes(record, f"dispatch failed: {exc}")
-            self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
-            message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was joined."
-            record = self.settled(record, {}).advanced("complete", message=message)
-            self.write(record)
-            return child_records.DispatchResult(identity, True, (), message, base=record.base)
+            failed = self.failed_launch(record, exc)
+            return child_records.DispatchResult(
+                failed.identity, True, (), failed.message, base=failed.base
+            )
         return self.land(record, results)
 
+    def announce(
+        self,
+        record: child_dispatch.DispatchRecord,
+        children: list[child_records.ChildTask],
+        group: str,
+    ) -> child_dispatch.DispatchRecord:
+        """Log and journal a dispatch about to launch, and record it running.
+
+        Args:
+            record: The durable prepared dispatch.
+            children: Its tasks, in child order.
+            group: The group suffix the event names.
+
+        Returns:
+            The record in the `running` state.
+        """
+        what = "reviewer(s)" if record.source == "panel" else "child(ren)"
+        self.log(f"PARALLEL: dispatching group {record.identity} ({len(children)} {what})")
+        self.emit(
+            journal.ParallelDispatched(
+                group=group,
+                children=len(children),
+                tasks=[child.task[:200] for child in children],
+                source=record.source,
+            )
+        )
+        record = record.advanced("running")
+        self.write(record)
+        return record
+
+    def failed_launch(
+        self, record: child_dispatch.DispatchRecord, exc: Exception
+    ) -> child_dispatch.DispatchRecord:
+        """Record a dispatch whose spawner failed: its nodes, its event, its message.
+
+        Args:
+            record: The running dispatch.
+            exc: The spawner's fault.
+
+        Returns:
+            The record, complete, its message the failure.
+        """
+        identity = record.identity
+        self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
+        self.fail_nodes(record, f"dispatch failed: {exc}")
+        self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
+        message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was joined."
+        record = self.settled(record, {}).advanced("complete", message=message)
+        self.write(record)
+        return record
+
+    def running(self) -> int:
+        """Return how many children this execution started that have not ended."""
+        return sum(
+            1 for task in self.open.values() for child in task.children if not child.result.done()
+        )
+
+    def wait(self) -> None:
+        """Block until every started child has ended, for an entry that takes no turn meanwhile."""
+        concurrent.futures.wait(
+            [child.result for task in self.open.values() for child in task.children]
+        )
+
+    def settle(self, conversation: loop_conversation.Conversation, turn: int) -> bool:
+        """Tell the model which children ended, then land each finished dispatch, oldest first.
+
+        Called at a turn boundary. A dispatch lands only after every dispatch written before
+        it, so one still running holds the later ones; their children's ends are told all
+        the same.
+
+        Args:
+            conversation: The run's conversation, which takes the notices.
+            turn: The turn just completed.
+
+        Returns:
+            Whether the conversation gained a notice.
+        """
+        told = held = False
+        for identity, task in list(self.open.items()):
+            results = [
+                self.result_of(task.record, child) for child in task.children if child.result.done()
+            ]
+            record = self.reported(conversation, task.record, results)
+            told = told or record is not task.record
+            task.record = record
+            held = held or len(results) < len(task.children)
+            if held:
+                continue
+            result = self.land(record, results, turn=turn)
+            if not result.message:
+                # A stop held the ranking: the execution's end settles what is left.
+                assert self.session_dir is not None
+                task.record = child_dispatch.read_record(
+                    child_dispatch.record_path(self.session_dir, identity)
+                )
+                held = True
+                continue
+            self.deliver(conversation, result)
+            del self.open[identity]
+            told = True
+        return told
+
+    def reported(
+        self,
+        conversation: loop_conversation.Conversation,
+        record: child_dispatch.DispatchRecord,
+        results: Sequence[child_records.ChildResult],
+    ) -> child_dispatch.DispatchRecord:
+        """Put each ended child's notice in the conversation, once per child.
+
+        Args:
+            conversation: The run's conversation.
+            record: The dispatch's record.
+            results: The results of its children that have ended.
+
+        Returns:
+            The record with those children marked reported; the same object when none was new.
+        """
+        told = record
+        for res in results:
+            child = told.child(res.spec.session_id)
+            if child.reported:
+                continue
+            conversation.notice(parallel_join.end_notice(res))
+            told = told.with_child(
+                child.model_copy(update={"reported": True, "report": res.report})
+            )
+        if told is not record:
+            self.write(told)
+        return told
+
+    def result_of(
+        self, record: child_dispatch.DispatchRecord, child: child_records.StartedChild
+    ) -> child_records.ChildResult:
+        """Return an ended child's result; a watch that failed reads as a child that did.
+
+        Args:
+            record: The child's dispatch.
+            child: The started child, its result resolved.
+
+        Returns:
+            The result.
+        """
+        try:
+            return child.result.result()
+        except Exception as exc:
+            # The watch is a bug's victim, not the child: its process died with its thread.
+            return child_records.ChildResult(
+                spec=child_records.ChildSpec(
+                    record.child(child.session_id).number, child.session_id, pathlib.Path(), None
+                ),
+                session_dir=pathlib.Path(),
+                branch=git_read.run_branch_for(child.session_id),
+                ok=False,
+                error=f"its watch failed: {exc}",
+            )
+
+    def joins(self, group: str) -> list[child_records.ChildJoin]:
+        """Return the joins a dispatch has recorded, in child order; none before it landed."""
+        if self.session_dir is None:
+            return []
+        record = child_dispatch.read_record(child_dispatch.record_path(self.session_dir, group))
+        return [parallel_join.join_of(child) for child in record.children if child.join is not None]
+
+    def close(self) -> tuple[str, ...]:
+        """End the execution's children: stop each still running, wait, charge what it used.
+
+        Their work stays on their branches and their records stay unlanded: the next
+        execution lands them before its first model call.
+
+        Returns:
+            The children whose dispatch had not landed.
+        """
+        left = tuple(child.session_id for task in self.open.values() for child in task.children)
+        for task in self.open.values():
+            for child in task.children:
+                if not child.result.done():
+                    child.stop()
+        for task in self.open.values():
+            self.settled(
+                task.record,
+                {child.session_id: self.result_of(task.record, child) for child in task.children},
+            )
+        self.open.clear()
+        return left
+
     def land(
-        self, record: child_dispatch.DispatchRecord, results: list[child_records.ChildResult]
+        self,
+        record: child_dispatch.DispatchRecord,
+        results: list[child_records.ChildResult],
+        *,
+        turn: int | None = None,
     ) -> child_records.DispatchResult:
         """Settle, join, stamp and complete a dispatch whose children have returned.
 
-        Each boundary advances the record first, so a crash in between leaves a resume one
-        step to finish, never one to repeat.
+        Work lands on a clean tree: the parent's uncommitted work is committed first. Each
+        boundary advances the record first, so a crash in between leaves a resume one step to
+        finish, never one to repeat.
 
         Args:
             record: The dispatch's record.
             results: The children's results; a child without one never started.
+            turn: The turn the landing follows; None for the turn of the dispatch.
 
         Returns:
-            The result, its message the record's.
+            The result, its message the record's; "" when a stop held a rank join's ranking.
         """
         by_id = {res.spec.session_id: res for res in results}
         record = self.settled(record, by_id)
@@ -410,14 +641,12 @@ class ParallelDispatcher:
             # No judge is asked after a stop: the record stays here and a resume ranks from it.
             self.log(f"PARALLEL: group {record.identity} stopped before its ranking")
             return child_records.DispatchResult(record.identity, True, (), "", base=record.base)
-        record = self.joined(record, by_id)
+        clean = record.join_policy == "record_only" or self.ensure_clean(
+            record.turn if turn is None else turn, "landing children"
+        )
+        record = self.joined(record, by_id, clean=clean)
         joins = [parallel_join.join_of(child) for child in record.children]
-        cursor = 0
-        for seg in record.segments:
-            parallel_join.stamp_segment_node(
-                self.curator, seg.node_id, joins[cursor : cursor + seg.children], log=self.log
-            )
-            cursor += seg.children
+        parallel_join.stamp_segment_node(self.curator, record.node_id, joins, log=self.log)
         self.emit_graph_snapshot()
         payload = [
             {
@@ -493,6 +722,8 @@ class ParallelDispatcher:
         self,
         record: child_dispatch.DispatchRecord,
         by_id: dict[str, child_records.ChildResult],
+        *,
+        clean: bool = True,
     ) -> child_dispatch.DispatchRecord:
         """Join each child not yet joined, in child order, recording each join as it lands.
 
@@ -501,6 +732,7 @@ class ParallelDispatcher:
         Args:
             record: The dispatch's record.
             by_id: The children's results by session id.
+            clean: Whether the tree holds only committed work; a merge needs it.
 
         Returns:
             The record in the `joining` state with every child's join recorded.
@@ -535,6 +767,16 @@ class ParallelDispatcher:
                 place = f"{order.index(child.session_id) + 1} of {len(order)}"
                 held = res.imported_ref or res.branch
                 join = child_records.ChildJoin(child.session_id, held, "ranked", "", place)
+            elif not clean and res is not None and res.ok and res.has_commits:
+                # Its branch stays imported: nothing merges over work no commit holds.
+                join = child_records.ChildJoin(
+                    child.session_id,
+                    res.imported_ref or res.branch,
+                    "failed",
+                    "",
+                    "the working tree holds uncommitted work that could not be committed"
+                    " (git.commit_per_turn is off)",
+                )
             else:
                 join = self.join_child(child, res)
             record = record.with_child(
@@ -736,7 +978,9 @@ class ParallelDispatcher:
                     ),
                 )
                 continue
-            self.deliver(conversation, self.land(record, results))
+            self.deliver(
+                conversation, self.land(self.reported(conversation, record, results), results)
+            )
 
     def deliver(
         self, conversation: loop_conversation.Conversation, result: child_records.DispatchResult
@@ -779,11 +1023,10 @@ class ParallelDispatcher:
         child_dispatch.write_record(self.session_dir, record, now=self.clock())
 
     def fail_nodes(self, record: child_dispatch.DispatchRecord, note: str) -> None:
-        """Stamp every segment's DAG node failed with the note."""
-        for seg in record.segments:
-            parallel_join.stamp_parallel_node(
-                self.curator, seg.node_id, status="failed", note=note, log=self.log
-            )
+        """Stamp the task's DAG node failed with the note."""
+        parallel_join.stamp_parallel_node(
+            self.curator, record.node_id, status="failed", note=note, log=self.log
+        )
         self.emit_graph_snapshot()
 
     def emit_budget(self, turn: int) -> None:
@@ -793,13 +1036,14 @@ class ParallelDispatcher:
         self.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(self.budget)))
         self.emit(budget_events.budget_turn(self.budget, turn))
 
-    def ensure_clean(self, turn: int) -> bool:
-        """Chain-commit a changed tree so children cut from the tip see current work.
+    def ensure_clean(self, turn: int, what: str) -> bool:
+        """Chain-commit a changed tree, so children are cut from, and land on, committed work.
 
-        With `commit_per_turn` off a changed tree cannot be captured, and dispatch is refused.
+        With `commit_per_turn` off a changed tree cannot be captured.
 
         Args:
             turn: The turn just completed, for the checkpoint subject.
+            what: What the checkpoint precedes, for its subject.
 
         Returns:
             Whether the chain tip carries the worktree's content.
@@ -809,10 +1053,10 @@ class ParallelDispatcher:
         if not self.chain.per_turn:
             return False
         try:
-            subject = f"checkpoint before /parallel dispatch (turn {turn})"
+            subject = f"checkpoint before {what} (turn {turn})"
             sha = self.chain.commit(subject)
             if sha:
-                self.log(f"  pre-dispatch checkpoint: {sha[:12]}")
+                self.log(f"  checkpoint before {what}: {sha[:12]}")
                 self.emit(journal.CheckpointCommitted(turn=turn, sha=sha, subject=subject))
                 self.emit(
                     journal.DiffUpdated(
@@ -821,10 +1065,15 @@ class ParallelDispatcher:
                     )
                 )
         except (errors.GitError, OSError) as exc:
-            self.log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")
+            self.log(f"PARALLEL: checkpoint before {what} failed: {exc}")
         return not self.chain.dirty()
 
     def refusal(self, msg: str) -> child_records.DispatchResult:
-        """Return the result of a dispatch refused before any child ran, logged once."""
+        """Return the result of a panel refused before any reviewer ran, logged once."""
         self.log(f"PARALLEL: {msg}")
         return child_records.DispatchResult("", False, (), f"[parallel] {msg}")
+
+    def refused(self, msg: str) -> child_records.Started:
+        """Return a work dispatch refused before any child started, logged once."""
+        self.log(f"PARALLEL: {msg}")
+        return child_records.Started((), f"[parallel] {msg}")

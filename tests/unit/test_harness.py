@@ -34,6 +34,7 @@ from agent6.harness import (
     loop_steer,
     metric_rules,
     operator_bridge,
+    parallel_join,
     provider_call,
     quiet_turns,
     run_chain,
@@ -7757,11 +7758,11 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
     assert at_spawn["persisted"] == 1, "the bump must be on disk before the group blocks"
 
 
-def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib.Path) -> None:
-    """`dispatch` returns what happened and leaves delivery to its caller.
+def test_dispatch_returns_what_started_and_settle_tells_the_rest(tmp_path: pathlib.Path) -> None:
+    """`dispatch` returns the children it started and leaves delivery to its caller.
 
-    The result names the group, the children's outcomes and the summary; the conversation gains no
-    message. The journal row and the DAG rationale name the source the caller gave.
+    The conversation gains nothing until `settle` runs at a turn boundary: then the child's end
+    and its task's landing. The journal row names the source the caller gave.
     """
     from agent6 import directive
 
@@ -7792,17 +7793,23 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
     before = len(conversation.messages)
-    result = wf.parallel.dispatch(
+    started = wf.parallel.dispatch(
         conversation, 3, _state(), [directive.Segment(spec="", task="consult")], source="model"
     )
-    assert isinstance(result, child_records.DispatchResult)
-    assert result.dispatched and result.group == "run-p1"
-    assert [j.status for j in result.children] == ["failed"]
-    assert result.message.startswith("[parallel] group run-p1 complete (1 child(ren))")
-    assert "FAILED -- child failed" in result.message
+    assert started == child_records.Started(
+        ("run-p1-l1",), parallel_join.started_text(["run-p1-l1"]), ("run-p1",)
+    )
     assert len(conversation.messages) == before
     dispatched = [e for e in ev.events if e["type"] == "parallel.dispatched"]
     assert dispatched and dispatched[0]["source"] == "model"
+    assert wf.parallel.settle(conversation, 3)
+    said = json.dumps(conversation.to_wire())
+    assert "[parallel] child run-p1-l1 ended without a result: child failed" in said
+    assert "[parallel] group run-p1 complete (1 child(ren))" in said
+    assert "FAILED -- child failed" in said
+    assert [j.status for j in wf.parallel.joins("run-p1")] == ["failed"]
+    assert not wf.parallel.settle(conversation, 4), "a landed task is told once"
+    before = len(conversation.messages)
     # A refusal before any child names itself and dispatches nothing.
     refused = wf.parallel.dispatch(
         conversation,
@@ -7810,8 +7817,11 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
         _state(),
         [directive.Segment(spec="3", task="a"), directive.Segment(spec="3", task="b")],
     )
-    assert not refused.dispatched and refused.children == ()
-    assert "request 6 children together but [harness.parallel].max_children = 4" in refused.message
+    assert refused.children == () and refused.groups == ()
+    assert (
+        "this asks for 6 children with 0 running, over [harness.parallel].max_children = 4"
+        in refused.message
+    )
     assert len(conversation.messages) == before
 
 

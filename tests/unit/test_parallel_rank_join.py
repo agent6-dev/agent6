@@ -141,14 +141,14 @@ def _dispatcher(
 
 def _dispatch(
     dispatcher: parallel_dispatch.ParallelDispatcher, spec: str = "3"
-) -> child_records.DispatchResult:
+) -> child_env.Landed:
     state = loop_state.LoopState(original_task="t", execution_id="exec-1", tool_calls=0)
-    return dispatcher.dispatch(
+    return child_env.landed(
+        dispatcher,
         loop_conversation.Conversation(),
         0,
         state,
         [directive.Segment(task="rewrite a.txt", spec=spec)],
-        join="rank",
     )
 
 
@@ -305,15 +305,26 @@ def test_the_winner_is_a_verified_child_or_nobody(
     assert parallel_results.ranked_winner(candidates, (), harness_gate=harness_gate) == ""
 
 
-def test_a_rank_join_without_a_ranker_is_refused_before_any_clone(repo: pathlib.Path) -> None:
-    """Only an execution built with a ranker can join by rank."""
+def test_attempts_without_a_ranker_are_refused_before_any_clone(repo: pathlib.Path) -> None:
+    """Only an execution built with a ranker can start attempts at one task."""
     children = _Children(repo, order=(1,))
 
     result = _dispatch(_dispatcher(repo, children, [], ranker=False))
 
-    assert (result.dispatched, children.results) == (False, [])
-    assert "no ranker for a rank join" in result.message
+    assert (result.started.children, children.results) == ((), [])
+    assert "no ranker for attempts at one task" in result.started.message
     assert child_dispatch.read_records(repo.parent / "root") == ()
+
+
+def test_one_child_lands_without_a_ranker(repo: pathlib.Path) -> None:
+    """A task with one child is no ranking: its work merges, whatever the execution can rank."""
+    children = _Children(repo, order=())
+
+    result = _dispatch(_dispatcher(repo, children, [], ranker=False), spec="")
+
+    assert [(j.session_id, j.status) for j in result.children] == [("root-p1-l1", "joined")]
+    record = _record(repo)
+    assert (record.join_policy, record.ranking) == ("merge", None)
 
 
 def test_a_ranked_child_reads_as_its_place_in_the_task_graph_note() -> None:

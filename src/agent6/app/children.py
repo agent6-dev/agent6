@@ -1018,8 +1018,7 @@ def build_child_spawner(
             try:
                 result.set_result(one(spec, child, asked))
             except BaseException as exc:
-                # A watch that raises is a bug, not a child failure: whoever reads the result
-                # hears it, and the child dies with this thread.
+                # A watch that raises is a bug: its reader hears it, the child dies with it.
                 result.set_exception(exc)
 
         started: list[child_records.StartedChild] = []
@@ -1028,8 +1027,7 @@ def build_child_spawner(
             result: concurrent.futures.Future[child_records.ChildResult] = (
                 concurrent.futures.Future()
             )
-            # The watch spawns its child: the kernel ties a child to the thread that forked
-            # it, so the thread outlives the child. A daemon, so no exit waits on a child.
+            # The kernel ties a child to the thread that forked it: its watch outlives it.
             threading.Thread(
                 target=watched,
                 args=(spec, child, asked, result),

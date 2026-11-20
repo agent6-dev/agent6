@@ -220,13 +220,26 @@ def test_segment_children_carry_the_operator_pins_out_of_band() -> None:
     assert plain[0].task == "do it" and plain[0].pins == ()
 
 
-def test_summary_text_gives_each_children_finish_summary() -> None:
-    """What a child said at its end reaches its parent under the child's line.
+def test_the_end_notice_gives_a_childs_finish_summary_and_the_landing_gives_its_join() -> None:
+    """What a child said reaches its parent when the child ends; how it joined, when it lands.
 
     The parent read only "finished with no changes to join." for a child sent to find
     something out, and went through the child's transcript for the answer.
     """
     said = "The suite passes as it is.\n3 tests, exit 0."
+    ended = dataclasses.replace(_res(ok=True, has_commits=False), report=said)
+    assert parallel_join.end_notice(ended).splitlines() == [
+        "[parallel] child child-1 finished.",
+        "summary: The suite passes as it is.",
+        "  3 tests, exit 0.",
+    ]
+    stopped = dataclasses.replace(_res(ok=True), stopped_by="stopped at the run's budget")
+    assert parallel_join.end_notice(stopped) == (
+        "[parallel] child child-1 finished (stopped at the run's budget)."
+    )
+    assert parallel_join.end_notice(_res(ok=False, error="no result (failed)")) == (
+        "[parallel] child child-1 ended without a result: no result (failed)"
+    )
     text = parallel_join.summary_text(
         "p1",
         [
@@ -238,12 +251,20 @@ def test_summary_text_gives_each_children_finish_summary() -> None:
     assert text.splitlines() == [
         "[parallel] group p1 complete (3 child(ren)):",
         "  - a (agent6/a): finished with no changes to join.",
-        "    summary: The suite passes as it is.",
-        "      3 tests, exit 0.",
         "  - b (agent6/b): joined at abc123def456",
         "  - c (agent6/c): FAILED -- boom; nothing joined.",
         "Review what landed and continue.",
     ]
+
+
+def test_started_text_tells_one_child_from_attempts() -> None:
+    """The line a dispatch answers with names each child's id, the handle the tools take."""
+    assert parallel_join.started_text(["run-p1-l1"]).startswith(
+        "[parallel] started child run-p1-l1. "
+    )
+    assert parallel_join.started_text(["run-p1-l1", "run-p1-l2"]).startswith(
+        "[parallel] started 2 attempts at one task: run-p1-l1, run-p1-l2. "
+    )
 
 
 def test_summary_text_says_what_stopped_a_child_that_still_joined() -> None:
@@ -279,8 +300,13 @@ def test_summary_hands_a_conflicted_child_to_the_operator() -> None:
     tells the model to continue rather than run `git merge` itself.
     """
     text = parallel_join.summary_text("g", [_join("conflict")])
-    assert "for the operator (`git merge " in text and "continue without it" in text
+    assert "(`git merge agent6/child-1` for the operator)" in text
+    assert "nothing landed" in text and "continue without it" in text
     assert "resolve" not in text
+    named = dataclasses.replace(_join("conflict"), detail="merge conflict in a.py, b.py")
+    assert "CONFLICT -- merge conflict in a.py, b.py; nothing landed." in (
+        parallel_join.summary_text("g", [named])
+    )
 
 
 def _ended_child(dest: pathlib.Path, *, reason: str, verification: str) -> None:

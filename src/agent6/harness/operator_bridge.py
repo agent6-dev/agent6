@@ -150,7 +150,7 @@ def try_pin(pins: list[str], instruction: str) -> bool:
 class Steering:
     """What a steer's text means for the run, taken at an operator boundary or a park.
 
-    A verb (`STEER_VERBS`), a `/parallel` directive dispatched at once, a `/pin` that survives
+    A verb (`STEER_VERBS`), a `/parallel` directive started at once, a `/pin` that survives
     compaction, a `/<skill>` expanded to its text, or an instruction injected into the
     conversation, paired with the question it answers when the model just asked one.
 
@@ -332,11 +332,11 @@ class Steering:
         try:
             segments = agent6_directive.parse_directive(steer_text)
         except agent6_directive.DirectiveError as exc:
-            conversation.notice(self.parallel().refusal(f"nothing dispatched: {exc}").message)
+            conversation.notice(self.parallel().refused(f"nothing dispatched: {exc}").message)
             return True
         if segments is None:
             return False
-        # The dispatcher returns what happened and records the delivery of its answer.
-        result = self.parallel().dispatch(conversation, turn, state, segments, source="operator")
-        self.parallel().deliver(conversation, result)
+        # The children run while the run goes on; the boundary after they end lands their work.
+        started = self.parallel().dispatch(conversation, turn, state, segments, source="operator")
+        conversation.notice(started.message)
         return True
