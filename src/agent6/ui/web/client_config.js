@@ -97,7 +97,9 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     const edit = breakable(el('button', 'cfg-edit'), k, '.');
     edit.type = 'button'; edit.setAttribute('aria-label', 'edit ' + k); edit.setAttribute('aria-haspopup', 'dialog');
     tr.appendChild(el('td', 'key')).appendChild(edit);
-    tr.appendChild(breakable(el('td', 'val'), s.display, '/')); // the one shared value column (viewmodel.display_value)
+    const value = breakable(el('td', 'val'), s.display, '/');
+    value.setAttribute('aria-label', s.display); // Inline blocks must not add spaces to the cell's name.
+    tr.appendChild(value);
     const source = tr.appendChild(el('td', 'source', esc(s.source)));
     if (s.source.includes(' (')) source.title = s.source; // a file (`flag (FILE)`) the column cuts short
     // Hover text: the leaf's meaning (the docs table cell), from the same
