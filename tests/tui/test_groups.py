@@ -27,13 +27,12 @@ async def _scenario(repo: pathlib.Path) -> None:
         table = tui.screen.query_one("#children", widgets.DataTable)
         assert table.display and table.row_count == 2
         assert table.border_title == "children: 2"
-        assert str(table.get_row_at(0)[1]) == "openai/child-1"
+        assert {"1", "fan-l1", "openai/child-1", "finished"} <= set(map(str, table.get_row_at(0)))
         with child.logs_path.open("a") as log:
             log.write('{"type":"budget.update","usd_total":1.25}\n')
             log.write('{"type":"session.stop","reason":"steer_abort"}\n')
         await pilot.pause(1.2)
-        assert str(table.get_row_at(0)[3]) == "$1.25"
-        assert "stopped" in str(table.get_row_at(0)[2])
+        assert {"stopped", "$1.25"} <= set(map(str, table.get_row_at(0)))
         assert isinstance(tui.screen, dashboard.DashboardScreen)
         table.focus()
         await pilot.press("enter")
@@ -98,12 +97,12 @@ async def _ordinary_scenario(tmp_path: pathlib.Path) -> None:
         await pilot.pause(1.3)
         assert table.display and table.row_count == 1
         assert table.border_title == "children: 1"
-        assert str(table.get_row_at(0)[1]) == "openai/child-1"
+        assert {"audit", "solo-p1-l1", "openai/child-1"} <= set(map(str, table.get_row_at(0)))
         with child.logs_path.open("a") as log:
             log.write('{"type":"budget.update","usd_total":0.75}\n')
             log.write('{"type":"session.stop","reason":"finish_session"}\n')
         await pilot.pause(1.3)
-        assert str(table.get_row_at(0)[3]) == "$0.75"
+        assert "$0.75" in map(str, table.get_row_at(0))
         table.focus()
         await pilot.press("enter")
     assert tui.return_value == app.TuiExit(open_next=child.session_dir)

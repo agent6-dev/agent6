@@ -26,12 +26,12 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.sessions import layout
 from agent6.ui import keymap
 from agent6.ui.tui import (
     clipboard,
     composer,
     conversation,
+    dashboard_children,
     dashboard_header,
     diff_pane,
     forms,
@@ -44,7 +44,7 @@ from agent6.ui.tui import (
     theme,
 )
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import SessionState, ToolCallView, format, tail, transcript_style, wire
+from agent6.viewmodel import SessionState, ToolCallView, format, tail, transcript_style
 from agent6.viewmodel.session import state
 
 if TYPE_CHECKING:
@@ -74,7 +74,6 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
        folded row keeps zero height, not display: none, so Tab still reaches its
        panes and unfolds them. */
     #summary { display: none; height: 1; padding: 0 1; color: $text-muted; }
-    #children { border: round $accent; }
     DashboardScreen.-compact #summary { display: block; }
     DashboardScreen.-compact #head, DashboardScreen.-compact #tools,
     DashboardScreen.-compact #body { height: 0; }
@@ -245,7 +244,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         """Yield the menu bar, the header, the three pane rows, the composer and the footer."""
         yield menubar.MenuBar(self.MENUS)
         yield dashboard_header.RunHeader()
-        yield textual_widgets.DataTable(id="children", cursor_type="row")
+        yield dashboard_children.ChildTable(self._tui.session_dir)
         yield textual_widgets.Static("", id="summary")  # compact only: the folded rows in one line
         with containers.Horizontal(id="head"):
             yield textual_widgets.Tree("tasks", id="plan")
@@ -310,9 +309,6 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
 
     def on_mount(self) -> None:
         """Set the tool columns, hide the diff for an ask or a plan, paint and focus the bar."""
-        # Every run may dispatch children; the table shows once one exists, however it came.
-        self._render_children()
-        self.set_interval(1.0, self._render_children)
         self.query_one("#tools", textual_widgets.DataTable).add_columns(
             "tool", "args", "ok", "summary"
         )
@@ -433,12 +429,6 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
 
     def on_data_table_row_selected(self, event: textual_widgets.DataTable.RowSelected) -> None:
         """Open a tool row's full args and summary in a modal on Enter."""
-        if event.data_table.id == "children":
-            sid = str(event.row_key.value)
-            target = layout.session_layout(layout.layout_of(self._tui.session_dir).state_dir, sid)
-            if target is not None:
-                self._tui.open_session(target.session_dir)
-            return
         if event.data_table.id != "tools":
             return
         window = self._visible_tools
@@ -457,33 +447,6 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             return
         self._selected_task_id = None if tid == self._selected_task_id else tid
         self.render_state()
-
-    def _render_children(self) -> None:
-        """Refresh the session's children even while its own log is silent.
-
-        The rows come from the children by lineage, a `run --parallel` parent's heading
-        from its group stamp, an ordinary run's from the count.
-        """
-        header = wire.manifest_header(self._tui.session_dir, repo=pathlib.Path.cwd())
-        children = self.query_one("#children", textual_widgets.DataTable)
-        rows = header.get("children", [])
-        children.display = bool(rows)
-        if children.display:
-            children.border_title = f"children: {len(rows)}"
-            if not children.columns:
-                children.add_columns("id (Enter opens)", "model", "status", "usage")
-            cursor = children.cursor_coordinate
-            children.clear()
-            for row in rows:
-                children.add_row(
-                    *(
-                        rich_text.Text(row[k])
-                        for k in ("session_id", "model", "status_label", "usage")
-                    ),
-                    key=row["session_id"],
-                )
-            children.move_cursor(row=cursor.row, column=cursor.column)
-            children.styles.height = min(len(rows) + 3, 12)
 
     def render_heartbeat(self) -> None:
         """Repaint the light parts: the header, the composer's labels and the stream pane."""
