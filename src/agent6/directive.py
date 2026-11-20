@@ -9,8 +9,8 @@
 
 A message is a directive only when it starts with the exact token.
 A whitespace-delimited `/parallel` token starts each segment.
-A segment's spec is a positive child count or a comma-separated list of
-`provider/model` entries, followed by a whitespace-delimited `--` token.
+A segment's spec is a comma-separated list of counts, roles or `provider/model` entries.
+A whitespace-delimited `--` token ends it.
 Without `--`, the whole segment is task text for one default child.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
 Pure stdlib parsing with no agent6 imports: a leaf both layers sit above.
@@ -47,8 +47,7 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     """Parse a child spec into one entry per child, the grammar the directive and the CLI share.
 
     Args:
-        spec: A positive child count, a comma-separated selector list (an exact role name
-            or `provider/model`), or "".
+        spec: A comma-separated list of positive counts, role names or `provider/model` entries.
         limit: The caller's `[harness.parallel].max_children`; an over-limit count refuses before
             the list is built.
 
@@ -63,20 +62,18 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     s = spec.strip()
     if not s:
         return [None]
-    # isdecimal is exactly the set int() parses; isdigit accepts superscripts int() rejects.
-    if s.isdecimal():
-        n = int(s)
-        if n < 1:
-            raise DirectiveError("parallel child count must be >= 1")
-        if n > limit:
-            raise DirectiveError(_over_limit(n, limit))
-        return [None] * n
-    models = [m.strip() for m in s.split(",") if m.strip()]
-    if not models:
+    selectors = [token.strip() for token in s.split(",") if token.strip()]
+    if not selectors:
         raise DirectiveError(f"parallel spec {spec!r} names no models")
-    if len(models) > limit:
-        raise DirectiveError(_over_limit(len(models), limit))
-    return list(models)
+    children: list[str | None] = []
+    for selector in selectors:
+        count = int(selector) if selector.isdecimal() else 1
+        if not count:
+            raise DirectiveError("parallel child count must be >= 1")
+        if len(children) + count > limit:
+            raise DirectiveError(_over_limit(len(children) + count, limit))
+        children.extend([None if selector.isdecimal() else selector] * count)
+    return children
 
 
 def _over_limit(requested: int, limit: int) -> str:

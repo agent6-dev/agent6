@@ -244,11 +244,12 @@ def test_a_judge_is_a_reviewer_child_with_the_tools_a_reviewer_is_handed() -> No
                 "default": {"model": "p/base"},
                 "reviewer": {"model": "p/critic", "temperature": 0.2},
             },
-            "harness": {"parallel": {"judges": ["reviewer", "p/second", "helper"]}},
+            "harness": {"parallel": {"judges": ["2", "p/second", "helper"]}},
         }
     )
     judges = parallel_rank.configured_judges(cfg, log=lambda _m: None)
     assert [(j.selector, j.settings.route.model) for j in judges] == [
+        ("reviewer", "critic"),
         ("reviewer", "critic"),
         ("p/second", "second"),
         ("helper", "base"),

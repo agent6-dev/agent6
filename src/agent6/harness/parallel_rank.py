@@ -93,7 +93,7 @@ def configured_judges(cfg: Config, *, log: Callable[[str], None]) -> tuple[Judge
     """
     unrouted = {role for role in kinds.MODEL_ROLES if cfg.models.resolve(role) is None}
     judges: list[Judge] = []
-    for selector in cfg.harness.parallel.judges:
+    for selector in cfg.harness.parallel.judge_selectors():
         if selector in unrouted:
             continue
         try:

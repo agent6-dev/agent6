@@ -47,7 +47,17 @@ def _models_for(config_paths: tuple[pathlib.Path, ...], provider: str) -> list[s
 
 
 def _prompt_for_provider(config_paths: tuple[pathlib.Path, ...]) -> str:
-    """Return the provider picked interactively, defaulting to the first connected one."""
+    """Return the provider picked interactively.
+
+    Args:
+        config_paths: The command-line config files.
+
+    Returns:
+        The chosen provider, or the first connected one when left blank.
+
+    Raises:
+        ConfigError: No provider is configured.
+    """
     providers = _connected_providers(config_paths)
     if providers:
         print("Connected providers: " + ", ".join(providers))
@@ -56,8 +66,7 @@ def _prompt_for_provider(config_paths: tuple[pathlib.Path, ...]) -> str:
         if choice is None:
             return ""
         return choice or default
-    print("No providers connected yet; run `agent6 connect` first, or type a name.")
-    return common.safe_input("Provider: ") or ""
+    raise ConfigError("no configured providers; run `agent6 connect` first.")
 
 
 def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> str | None:
@@ -203,17 +212,12 @@ def _read_route(
         provider = _prompt_for_provider(config_paths) if interactive else ""
         if not provider:
             raise ConfigError("no provider given: name it as provider/model.")
+        if provider not in _connected_providers(config_paths):
+            raise ConfigError(f"unknown provider {provider!r}; run `agent6 connect` first.")
         return provider, ""
     cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
     if "/" not in route and route in cfg.providers:
         return route, ""
-    if not cfg.providers and "/" in route:
-        provider, model = route.split("/", 1)
-        if not provider:
-            raise ConfigError(f"{route!r}: name the provider as provider/model.")
-        if not model:
-            raise ConfigError(f"{route!r}: no model id after the slash.")
-        return provider, model
     parsed = cfg.model_route(route)
     return parsed.provider, parsed.model
 

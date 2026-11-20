@@ -46,7 +46,7 @@ It writes no provider or model tables; an enabled reviewer also comes from your 
 
 | variable | effect | default |
 |---|---|---|
-| `AGENT6_REALWORLD_MODEL` | `[PROVIDER/]MODEL`, passed as `run --model` | your configured worker |
+| `AGENT6_REALWORLD_MODEL` | `PROVIDER/MODEL`, passed as `run --model` | your configured worker |
 | `PER_TASK_BUDGET_USD` | `[budget] max_usd` for each task | `1.00` |
 | `PER_TASK_MAX_PLAN_POINTS` | `[budget] max_plan_points` for each task (subscription providers) | your config |
 | `AGENT6_REALWORLD_TASK_TIMEOUT_S` | wall-clock bound on one task's `agent6 run`, in seconds | `3600` |

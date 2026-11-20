@@ -495,9 +495,20 @@ def test_connect_local_endpoint_no_key(
     assert not (tmp_path / "g" / "agent6" / "secrets.toml").is_file()
 
 
+def test_model_refuses_a_route_without_any_provider(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["model", "worker", "missing/m"]) == 2
+    assert "configured providers: (none)" in capsys.readouterr().err
+    assert not (iso / "agent6" / "config.toml").exists()
+
+
 def test_model_set_and_show(
     iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    cfg = iso / "agent6" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n')
     rc = main(["model", "worker", "anthropic/claude-x", "--effort", "medium"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -548,6 +559,9 @@ def test_model_all_sets_every_role(
     iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The target layer receives the default and every role.
+    cfg = iso / "agent6" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n')
     rc = main(["model", "all", "anthropic/claude-x"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -848,6 +862,9 @@ def test_model_all_interactive_prompts_once(
 
 
 def test_model_repo_scope_writes_repo(iso: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    cfg = iso / "agent6" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n')
     rc = main(["model", "reviewer", "anthropic/claude-o", "--repo"])
     assert rc == 0
     repo_cfg = (paths.state_dir(tmp_path) / "config.toml").read_text(encoding="utf-8")

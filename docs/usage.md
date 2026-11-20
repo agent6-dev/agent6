@@ -161,12 +161,14 @@ The parent's gate still runs when its policy calls for it.
 Without a parent result, a child can supply the pass if its full verify command and final tree match the parent's.
 `sessions show` and `sessions receipt` name the child that verified it.
 A different tree or command, or a scoped check, leaves verification to the parent's own gate policy.
-A judge is a reviewer child of the run, one per entry: its clone is cut at the commit the attempts started from and holds every attempt, its opening lists each attempt with its verify result, cost, finish summary and diff, and it has the tools a reviewer is handed (the reading tools, and `run_command` and `run_verify_command` where the run may run commands).
+A count in `judges`, such as `"2"`, seats that many reviewers.
+A judge is a reviewer child of the run: its clone is cut at the commit the attempts started from and holds every attempt, its opening lists each attempt with its verify result, cost, finish summary and diff, and it has the tools a reviewer is handed (the reading tools, and `run_command` and `run_verify_command` where the run may run commands).
 It answers with an order and its reason, within `review.max_turns` replies; the orders are summed, and the lowest sum wins.
 With no judge, with one candidate, or when no judge gives a usable order, the order is verify-pass first, then the cheaper, and the merge notice says which (`Ranked by verify result, then cost: no judge gave a usable order (reviewer: no verdict within 20 replies).`).
 A judge's findings are not kept as a review: only its order and reason are.
 Under agent6-owned git, the other children keep their branches, so `agent6 sessions merge <child> --into <branch>` merges one by hand.
-`SPEC` is a positive child count or a comma-separated list of selectors, the same as `run --parallel`.
+`SPEC` is a comma-separated list of positive counts, role names or `provider/model` entries, the same as `run --parallel`.
+Each count starts that many children on the worker settings.
 A count above one, or several selectors, means attempts at the one task; a second `/parallel` in the message is a second task.
 The TUI and web composers preview the number of children and the spec for each task as you type.
 At the `run -i` commit prompt, enter the line to preview it.

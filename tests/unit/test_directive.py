@@ -28,6 +28,12 @@ def test_parse_spec_int_is_n_default_children() -> None:
     assert directive.parse_spec("1", limit=4) == [None]
 
 
+def test_counts_in_selector_lists_choose_default_children() -> None:
+    assert directive.parse_spec("1,worker,2", limit=4) == [None, "worker", None, None]
+    with pytest.raises(directive.DirectiveError, match="max_children = 3"):
+        directive.parse_spec("2,worker,2", limit=3)
+
+
 def test_parse_spec_model_list_is_one_child_per_model() -> None:
     assert directive.parse_spec("gpt-5,opus", limit=4) == ["gpt-5", "opus"]
     assert directive.parse_spec("kimi, glm ", limit=4) == ["kimi", "glm"]

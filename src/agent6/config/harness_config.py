@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import kinds
+from agent6 import directive, kinds
 from agent6.config import validation
 
 _EFFORT_MEANINGS: dict[str, pydantic.JsonValue] = {
@@ -233,7 +233,7 @@ class ParallelConfig(pydantic.BaseModel):
         default=("reviewer",),
         description=(
             "who ranks the attempts at one task and the candidates of `sessions compare`: "
-            "selectors as `--parallel` takes them, a role name or `provider/model`; each is "
+            "a role, `provider/model`, or a count of reviewers (such as `'2'`); each is "
             "a reviewer child that reads and runs the attempts under `review.max_turns` and "
             "answers with an order; the lowest sum of ranks wins, a tie going to the "
             "mechanical order (a passed gate first, then the lower cost); a role with no "
@@ -258,6 +258,21 @@ class ParallelConfig(pydantic.BaseModel):
         if any(not judge.strip() for judge in v):
             raise ValueError("a judge is a role name or a `provider/model`; one entry is blank")
         return v
+
+    def judge_selectors(self) -> tuple[str, ...]:
+        """Expand each judge count to that many reviewers.
+
+        Returns:
+            One selector per judge.
+        """
+        selectors: list[str] = []
+        for judge in self.judges:
+            if judge.strip().isdecimal():
+                seats = directive.parse_spec(judge, limit=self.max_children)
+                selectors.extend("reviewer" for _ in seats)
+            else:
+                selectors.append(judge.strip())
+        return tuple(selectors)
 
 
 class PromptConfig(pydantic.BaseModel):

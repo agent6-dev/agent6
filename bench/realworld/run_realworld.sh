@@ -28,7 +28,7 @@ TOOLSET=${AGENT6_REALWORLD_TOOLSET:-index}
 PER_TASK_BUDGET_USD=${PER_TASK_BUDGET_USD:-1.00}
 # Plan points one task may use; unset keeps the operator's [budget].max_plan_points.
 PER_TASK_MAX_PLAN_POINTS=${PER_TASK_MAX_PLAN_POINTS:-}
-# [PROVIDER/]MODEL for `run --model`; unset runs the operator's configured worker.
+# PROVIDER/MODEL for `run --model`; unset runs the operator's configured worker.
 MODEL=${AGENT6_REALWORLD_MODEL:-}
 # Wall-clock bound on one task's `agent6 run`.
 TASK_TIMEOUT_S=${AGENT6_REALWORLD_TASK_TIMEOUT_S:-3600}

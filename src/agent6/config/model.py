@@ -257,7 +257,7 @@ class Config(pydantic.BaseModel):
                     f" [providers.{rm.provider}] is not configured."
                     f" Known providers: {known}."
                 )
-        for selector in self.harness.parallel.judges:
+        for selector in self.harness.parallel.judge_selectors():
             if selector not in kinds.MODEL_ROLES:
                 try:
                     self.model_route(selector)
