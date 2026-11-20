@@ -282,6 +282,7 @@ def test_thinking_is_not_stripped_without_a_tool_result_rewrite(tmp_path: pathli
         conv.assistant([{"type": "thinking", "thinking": "reasoning" * 1000}])
         _reads(conv, "small")
     before = conv.to_wire()
+    assert wf.compactor is not None
     wf.compactor.compact(
         wf.compaction_context(conv, loop_state.LoopState(original_task="task", tool_calls=3), [])
     )
@@ -872,6 +873,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
             ]
         )
 
+    assert wf.compactor is not None
     assert (
         wf.compactor.compact(
             wf.compaction_context(

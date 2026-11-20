@@ -3646,6 +3646,7 @@ def _compact_via_wire(
     wf: loop.Harness, messages: list[dict[str, Any]], *, state: Any = None
 ) -> bool:
     conversation = loop_conversation.Conversation.from_wire(messages)
+    assert wf.compactor is not None
     out = wf.compactor.compact(
         wf.compaction_context(conversation, state if state is not None else _state(), [])
     )
@@ -4528,6 +4529,7 @@ def test_a_restart_does_not_re_fire_on_the_next_turn() -> None:
     prefix = 100_000
 
     conversation = loop_conversation.Conversation.from_wire(msgs)
+    assert wf.compactor is not None
     assert (
         wf.compactor.compact(
             dataclasses.replace(wf.compaction_context(conversation, st, []), prefix_chars=prefix)
