@@ -1242,6 +1242,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `worker_pid` | `int, optional` | Pid that reported the start. |
 | `task_source` | `str, optional` | Who supplied the task, when known. |
 | `session_id` | `str, optional` | Session identifier. |
 | `user_task` | `str` | The displayed task text. |

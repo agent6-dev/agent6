@@ -239,7 +239,10 @@ def emit_session_start(
         event: The start record, its execution id set.
         settings: The settings this execution runs under.
     """
-    write_worker_pid(session_dir, os.getpid())
+    pid = os.getpid()
+    write_worker_pid(session_dir, pid)
+    if isinstance(event, journal.SessionStart):
+        event = event.model_copy(update={"worker_pid": pid})
     events.emit(event)
     events.emit(journal.ExecutionSettings(execution_id=event.execution_id, settings=settings))
 

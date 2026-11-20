@@ -46,6 +46,30 @@ def test_spawn_and_locate_finds_new_log_dir(
     assert found == base / "new"
 
 
+def test_a_finished_launch_is_not_an_unstarted_session(tmp_path: pathlib.Path) -> None:
+    """The worker can clear its pid file between two polls."""
+    draft = tmp_path / "draft"
+    finished = tmp_path / "finished"
+    for session in (draft, finished):
+        session.mkdir()
+    (draft / layout.LOGS_NAME).write_text('{"type":"metric.set"}\n')
+    script = (
+        "from pathlib import Path; from agent6.sessions import event_log, journal, process; "
+        f"d=Path({str(finished)!r}); sink=event_log.EventSink(d/'logs.jsonl'); "
+        "process.emit_session_start(sink, d, "
+        "journal.SessionStart(execution_id='one', user_task='run', mode='run')); "
+        "process.clear_worker_pid(d); (d/'finished').touch()"
+    )
+    found, err = spawn.spawn_and_locate(
+        [sys.executable, "-c", script],
+        tmp_path,
+        before=set(),
+        list_dirs=lambda: [draft, finished] if (finished / "finished").exists() else [draft],
+    )
+    assert not err
+    assert found == finished
+
+
 def test_spawn_and_locate_ignores_preexisting_dirs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

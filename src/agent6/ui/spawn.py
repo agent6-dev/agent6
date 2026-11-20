@@ -25,7 +25,7 @@ from agent6.app import child_wait
 from agent6.models import validate
 from agent6.sandbox import jail
 from agent6.sessions import id, layout, lock, process
-from agent6.viewmodel import listing
+from agent6.viewmodel import listing, tail
 
 
 def agent6_exe() -> str:
@@ -455,8 +455,14 @@ def _located(
     for d in list_dirs():
         if d in before or not (d / layout.LOGS_NAME).exists():
             continue
-        if process.read_worker_pid(d) == pid:
+        owner = process.read_worker_pid(d)
+        if owner == pid:
             return d
+        if owner is None:
+            rows = tail.tail_events(d / layout.LOGS_NAME, follow=False)
+            start = next((row for row in rows if row.get("type") == "session.start"), {})
+            if start.get("worker_pid") == pid:
+                return d
     return None
 
 
