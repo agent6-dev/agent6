@@ -124,11 +124,9 @@ def test_shell_git_overrides_do_not_reach_the_command_or_driver_probe(
 ) -> None:
     """Shell Git overrides must not redirect commands or bypass their driver policy."""
     envs = _captured_git_envs(monkeypatch, tmp_path, {name: "shell-override"})
-    assert len(envs) == 3  # the work tree query, the driver probe, the command
-    for env in envs[:2]:
+    assert len(envs) == 2  # the config listing, the command
+    for env in envs:
         assert name not in env
-    # The command names its own work tree, the checkout; nothing else of the shell's arrives.
-    assert envs[2].get(name) == (str(tmp_path.resolve()) if name == "GIT_WORK_TREE" else None)
 
 
 @pytest.mark.parametrize("reader", ["runner", "drivers", "ask", "sessions", "skills"])
@@ -152,7 +150,7 @@ def test_shell_git_dir_cannot_redirect_host_reads(
     if reader == "runner":
         assert git_command.run(root, "rev-parse", "HEAD").stdout.strip() == head
     elif reader == "drivers":
-        assert "filter.local.clean=" in git_policy.repo_driver_overrides(root)
+        assert "filter.local.clean=" in git_policy.git_hardening_flags(root)
     elif reader == "ask":
         diff = ask._git_diff_text(root, "HEAD")[1]
         assert "-repo\n+changed" in diff

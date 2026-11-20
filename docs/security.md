@@ -636,8 +636,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - that fetch downloads no bundle, runs no `core.alternateRefsCommand`, fetches no submodule and no tag
     - agent6 applies git's two rules for a fetched branch itself: one checked out somewhere is left alone, and an update no `+` forces must fast-forward
     - a missing object is never fetched from a promisor remote (`GIT_NO_LAZY_FETCH`): in a partial clone, agent6's git fails on an object the clone lacks
-- `core.worktree` never sends agent6's git to another directory: every call names its checkout (`GIT_WORK_TREE`), the directory whose `.git` is the git dir git found.
+- `core.worktree` does not send agent6's git to another directory: where the repository's own config sets the key, every call names its checkout (`GIT_WORK_TREE`), the directory whose `.git` is the git dir git found.
     - a linked worktree's or a submodule's git dir keeps no other record of its checkout: there, a `core.worktree` that names another directory refuses the call
+    - agent6 reads the key before each call, in the listing that names the content drivers.
+      Where a jailed command can write `.git/config`, a key it sets between that listing and the call moves the call to the directory it names
 - `core.pager` and `pager.<cmd>` never run: every agent6 git call carries `GIT_PAGER`, set to your `GIT_PAGER`, else your `PAGER`, else `less`.
 - `blame.ignoreRevsFile` is honoured for a repository-relative regular file, which blame reads as a private copy in a private work tree, since git opens the configured path itself after any check; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
     - Finding line-origin classification uses the same bounded blame reader and records an unknown reason on refusal.
@@ -927,7 +929,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 <summary>Allowed host-side subprocesses by module</summary>
 
 - `vcs/git/command.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the queries the next line names.
-- `vcs/git/policy.py`: shared hardening flags and hook/driver policy; its fixed git queries enumerate repo content drivers and find the checkout a call names.
+- `vcs/git/policy.py`: shared hardening flags and hook/driver policy; its fixed git queries enumerate repo content drivers and `core.worktree`, and find the checkout a call names.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/container.py`: bounded `ps`/`inspect` discovery and the fixed installation bootstrap through operator-owned prefixes ([Container transport boundary](#container-transport-boundary)).
   Model argv travels only through the prepared `JailSession` channel, never through a host subprocess argv.

@@ -138,12 +138,13 @@ def test_driver_names_enumerate_and_dedup(tmp_path: pathlib.Path) -> None:
         encoding="utf-8",
     )
     git_policy.set_policy(git_policy.GitPolicy())
-    overrides = git_policy.repo_driver_overrides(root)
+    overrides = git_policy.git_hardening_flags(root)
     assert overrides.count("filter.lfs.clean=") == 1, overrides
     assert "filter.lfs.smudge=" in overrides and "filter.lfs.process=" in overrides
     assert "merge.a.b.driver=" in overrides, "a dotted merge-driver name was mis-split"
     git_policy.set_policy(git_policy.GitPolicy(honor_repo_drivers=True))
-    assert git_policy.repo_driver_overrides(root) == ()
+    honored = git_policy.git_hardening_flags(root)
+    assert "filter.lfs.clean=" not in honored and "merge.a.b.driver=" not in honored
 
 
 def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathlib.Path) -> None:
@@ -163,7 +164,7 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathli
     (root / ".gitattributes").write_text("* filter=pwn\n", encoding="utf-8")
     (root / "f.txt").write_text("v2\n", encoding="utf-8")
     git_policy.set_policy(git_policy.GitPolicy())
-    assert "filter.pwn.clean=" in git_policy.repo_driver_overrides(root)
+    assert "filter.pwn.clean=" in git_policy.git_hardening_flags(root)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
 
@@ -181,7 +182,7 @@ def test_a_driver_in_a_worktrees_own_config_is_neutralized(tmp_path: pathlib.Pat
     (root / ".gitattributes").write_text("* filter=pwn\n", encoding="utf-8")
     (root / "f.txt").write_text("v2\n", encoding="utf-8")
     git_policy.set_policy(git_policy.GitPolicy())
-    assert "filter.pwn.clean=" in git_policy.repo_driver_overrides(root)
+    assert "filter.pwn.clean=" in git_policy.git_hardening_flags(root)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "a clean filter in config.worktree ran a host command"
 
@@ -198,7 +199,7 @@ def test_a_driver_in_the_operators_global_config_is_left_on(
     _git(root, "config", "filter.theirs.clean", "cat")
     git_policy.set_policy(git_policy.GitPolicy())
     assert git_command.run(root, "config", "filter.mine.clean").stdout == "cat\n"
-    overrides = git_policy.repo_driver_overrides(root)
+    overrides = git_policy.git_hardening_flags(root)
     assert "filter.theirs.clean=" in overrides
     assert "filter.mine.clean=" not in overrides
 

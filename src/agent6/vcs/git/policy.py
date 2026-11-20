@@ -96,8 +96,8 @@ _NESTED_REPOSITORY_HARDENING: tuple[str, ...] = (
 # gc.recentObjectsHook after a commit or a fetch (maintenance.auto), and a credential helper
 # on a fetch's bundle download (fetch.bundleURI). None costs correctness: agent6 signs and
 # verifies nothing, and the operator's own git still runs maintenance.
-# Content drivers (filter.*, merge.*.driver) have no blanket switch; `repo_driver_overrides`
-# blanks each by name. The prefix keys pin the `a/` and `b/` headers every cited path reads.
+# Content drivers (filter.*, merge.*.driver) have no blanket switch; `hardening` blanks each
+# by name. The prefix keys pin the `a/` and `b/` headers every cited path reads.
 _GIT_HARDENING: tuple[str, ...] = (
     "-c",
     "core.fsmonitor=false",
@@ -175,27 +175,44 @@ def use(policy: GitPolicy) -> Generator[None]:
         _request.reset(token)
 
 
-# The config keys that name a driver command.
-_DRIVER_KEY_RE = r"^(filter\..*\.(clean|smudge|process)|merge\..*\.driver)$"
+# The keys agent6's git answers by name in each repository: a driver command, and the work tree.
+_REPO_KEY_RE = r"^(filter\..*\.(clean|smudge|process)|merge\..*\.driver|core\.worktree)$"
 
 
-def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
-    """Return the `-c` flags that blank every content driver the repo's own config defines.
+@dataclasses.dataclass(frozen=True, slots=True)
+class Hardening:
+    """What one listing of a repository's own config gives agent6's git there.
+
+    Attributes:
+        flags: The `-c` overrides every invocation carries, placed before the subcommand:
+            the fixed set, the hooks path unless the policy honors repo hooks, and a blank
+            override per content driver the repo defines unless the policy honors drivers.
+        sets_work_tree: Whether the repo's own config sets `core.worktree`; True too when
+            git could not list the config.
+    """
+
+    flags: tuple[str, ...]
+    sets_work_tree: bool
+
+
+def hardening(cwd: pathlib.Path) -> Hardening:
+    """List the repository's own content drivers and work-tree key, in one git call.
 
     An empty `filter.<n>.clean` passes through and an empty `merge.<n>.driver` reports
-    a conflict instead of running. git names the scope of each key: a driver in the
-    operator's global or system config is trusted, and every other scope is the repo's
-    (`.git/config`, a worktree's `config.worktree`, their includes). Re-read per call, so a
-    driver a jailed command writes mid-run is caught too.
+    a conflict instead of running. git names the scope of each key: one in the operator's
+    global or system config is trusted, and every other scope is the repo's (`.git/config`,
+    a worktree's `config.worktree`, their includes). Re-read per call, so a key a jailed
+    command writes mid-run is caught too.
 
     Args:
         cwd: The repository.
 
     Returns:
-        The flags; empty when the policy honors drivers or the repo defines none.
+        The overrides, and whether the repository names its work tree.
     """
-    if current_policy().honor_repo_drivers:
-        return ()
+    # /dev/null is not a directory, so git finds no hooks there.
+    hooks = () if current_policy().honor_repo_hooks else ("-c", "core.hooksPath=/dev/null")
+    fixed = (*_GIT_HARDENING, *hooks)
     try:
         proc = subprocess.run(
             [
@@ -209,7 +226,7 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
                 "-z",
                 "--name-only",
                 "--get-regexp",
-                _DRIVER_KEY_RE,
+                _REPO_KEY_RE,
             ],
             capture_output=True,
             text=True,
@@ -218,7 +235,9 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
             env=git_environment(),
         )
     except (OSError, subprocess.SubprocessError):
-        return ()
+        return Hardening(fixed, sets_work_tree=True)
+    # git exits 1 when no key matches; any other failure leaves the config unread.
+    sets_work_tree = proc.returncode not in (0, 1)
     # A filter with both clean and smudge yields two keys for one driver.
     filters: set[str] = set()
     merges: set[str] = set()
@@ -230,19 +249,22 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
             filters.add(key[len("filter.") : key.rindex(".")])
         elif key.startswith("merge."):
             merges.add(key[len("merge.") : key.rindex(".")])
+        else:
+            sets_work_tree = True
     overrides: list[str] = []
-    for name in sorted(filters):
-        overrides += [
-            "-c",
-            f"filter.{name}.clean=",
-            "-c",
-            f"filter.{name}.smudge=",
-            "-c",
-            f"filter.{name}.process=",
-        ]
-    for name in sorted(merges):
-        overrides += ["-c", f"merge.{name}.driver="]
-    return tuple(overrides)
+    if not current_policy().honor_repo_drivers:
+        for name in sorted(filters):
+            overrides += [
+                "-c",
+                f"filter.{name}.clean=",
+                "-c",
+                f"filter.{name}.smudge=",
+                "-c",
+                f"filter.{name}.process=",
+            ]
+        for name in sorted(merges):
+            overrides += ["-c", f"merge.{name}.driver="]
+    return Hardening((*fixed, *overrides), sets_work_tree)
 
 
 # Force git's builtin renderer on every diff-family verb (diff, diff-tree, log, show, blame):
@@ -283,9 +305,7 @@ def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
         The fixed set, the hooks path unless the policy honors repo hooks, and a blank
         override per content driver the repo defines.
     """
-    # /dev/null is not a directory, so git finds no hooks there.
-    hooks = () if current_policy().honor_repo_hooks else ("-c", "core.hooksPath=/dev/null")
-    return (*_GIT_HARDENING, *hooks, *repo_driver_overrides(cwd))
+    return hardening(cwd).flags
 
 
 def work_tree(cwd: pathlib.Path) -> str | None:

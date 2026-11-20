@@ -42,12 +42,15 @@ def spawn(
         GitError: The command timed out, or `git_policy.work_tree` refused the checkout.
     """
     env = git_policy.git_environment(env_extra)
+    listed = git_policy.hardening(repo or cwd)
     # `init` and `clone` make a repository: they have no checkout to name, and `init` refuses one.
-    if not {"GIT_DIR", "GIT_WORK_TREE"} & env.keys() and args[:1] not in (("init",), ("clone",)):
+    names_own = {"GIT_DIR", "GIT_WORK_TREE"} & env.keys() or args[:1] in (("init",), ("clone",))
+    # Only `core.worktree` moves git off its checkout; a `repo` named apart was listed in its place.
+    if not names_own and (listed.sets_work_tree or repo is not None):
         checkout = git_policy.work_tree(cwd)
         if checkout is not None:
             env["GIT_WORK_TREE"] = checkout
-    hardening = git_policy.git_hardening_flags(repo or cwd)
+    hardening = listed.flags
     # Split temporary indexes otherwise write sharedindex files into the real git directory.
     if env_extra and "GIT_INDEX_FILE" in env_extra:
         hardening += ("-c", "core.splitIndex=false")
