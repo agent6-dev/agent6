@@ -39,10 +39,6 @@ class _StubDispatcher:
 
     config = config.Config()
     allowed_tools = None
-    config = config.Config()
-
-    def merge_child_available(self) -> bool:
-        return False
 
     def parallel_available(self) -> bool:
         """A stub offers the model no `parallel` tool."""
