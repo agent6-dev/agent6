@@ -153,7 +153,7 @@ function findingActions(card, entry, cards, state) {
     else body.reason = reason.value;
     return send(submit, verb, body);
   };
-  // The button shows and hides its form and says which, as Receipt does.
+  // The button shows and hides its form and says which.
   const show = open => { form.hidden = !open; button.setAttribute('aria-expanded', String(open)); button.classList.toggle('active', open); };
   show(false);
   button.onclick = () => { show(form.hidden); if (!form.hidden) reason.focus(); };
@@ -167,37 +167,29 @@ function paintFindings(cards, state) {
   // A draft has no Receipt, so its card waits for a review's first event (the version counts them).
   if (cards._readOnly) cards.findings.parentElement.style.display = review.version ? '' : 'none';
   const host = cards.findings, held = document.activeElement; host.innerHTML = '';
-  // The counts lead the card with the Receipt button at their end; the receipt opens under them.
+  // The counts lead the card with the Receipt button at their end.
   const counts = review.open_counts || {};
   const head = el('div', 'row finding-head');
   head.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
   host.appendChild(head);
   if (!cards._readOnly) {
-    // Keep the receipt's fetch target and output across streamed findings refreshes.
+    // The button survives a streamed repaint while its dialog owns the receipt.
     if (!cards._receipt) {
-      // A press during the fetch does nothing: disabling the button would drop the keyboard focus.
-      const inspect = el('button', 'mini', 'Receipt'), receipt = el('div', 'receipt');
-      let open = false, loading = false;
-      const mark = shown => {
-        open = shown;
-        inspect.setAttribute('aria-expanded', String(shown)); inspect.classList.toggle('active', shown);
-      };
-      mark(false);
+      const inspect = el('button', 'mini', 'Receipt');
+      inspect.setAttribute('aria-haspopup', 'dialog');
       inspect.onclick = async () => {
-        if (loading) return;
-        receipt.innerHTML = '';
-        if (open) { mark(false); return; }
-        mark(true);
-        loading = true;
+        const dialog = openDialog('Receipt', 'wide');
+        if (!dialog) return;
+        const receipt = el('div', 'receipt'); dialog.appendChild(receipt);
         receipt.appendChild(el('div', 'muted', 'loading the receipt…'));
-        try { drawReceipt(receipt, await getJSON(cards._base + '/receipt')); }
-        catch (e) { receipt.innerHTML = ''; mark(false); toast(e.message, true); }
-        finally { loading = false; }
+        try {
+          const data = await getJSON(cards._base + '/receipt');
+          if (dialog.open) drawReceipt(receipt, data);
+        } catch (e) { if (dialog.open) receipt.replaceChildren(el('div', 'err', e.message)); }
       };
-      cards._receipt = {inspect, receipt};
+      cards._receipt = {inspect};
     }
     head.appendChild(cards._receipt.inspect);
-    host.appendChild(cards._receipt.receipt);
   }
   const guard = reviewMergeReason(review);
   const facts = el('div', 'kv');
