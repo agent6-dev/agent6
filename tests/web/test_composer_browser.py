@@ -160,6 +160,43 @@ def test_a_sessions_button_waits_for_something_to_send(
     assert not errors
 
 
+@pytest.mark.parametrize("press", ["click", "space", "tap"])
+def test_a_send_from_the_button_leaves_the_focus_in_the_entry(
+    touch_page: TouchPage, port: int, tmp_path: pathlib.Path, press: str
+) -> None:
+    """A send from the button left the focus on the page, which closes a phone's keyboard.
+
+    The emptied entry disables the button, and a disabled button cannot take the focus back.
+    A click or a tap keeps the focus in the entry throughout, so a phone's keyboard stays open.
+    """
+    from playwright.sync_api import expect
+
+    session_logs.write_run(tmp_path, "live-AAA111", [], live=True)
+    width, height = (390, 844) if press == "tap" else (1440, 900)
+    page = touch_page(port, width, height, press == "tap")
+    page.route("**/api/session/*/steer", lambda route: route.fulfill(json={"message": "sent"}))
+    page.goto(f"http://127.0.0.1:{port}/#/session/live-AAA111")
+    entry = page.locator(".composer textarea")
+    button = page.get_by_role("button", name="Send", exact=True)
+    entry.fill("check the tests")
+    expect(button).to_be_enabled()
+    if press == "space":
+        entry.press("Tab")
+        expect(button).to_be_focused()
+    entry.evaluate("e => { window.blurs = 0; e.addEventListener('blur', () => window.blurs++); }")
+    with page.expect_request("**/api/session/live-AAA111/steer"):
+        if press == "click":
+            button.click()
+        elif press == "tap":
+            button.tap()
+        else:
+            page.keyboard.press("Space")
+    expect(entry).to_have_value("")
+    expect(button).to_be_disabled()
+    expect(entry).to_be_focused()
+    assert page.evaluate("window.blurs") == 0
+
+
 @pytest.mark.parametrize("touch", [False, True], ids=["keyboard", "touch"])
 @pytest.mark.parametrize("composer", list(COMPOSERS))
 def test_enter_sends_from_a_keyboard_and_types_a_new_line_on_a_touch_screen(

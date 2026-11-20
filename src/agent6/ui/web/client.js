@@ -574,7 +574,7 @@ function toNewWork(fields) {
 
 // --- hub ---------------------------------------------------------------------
 // The button runs `action` once at a time and only while ready(): busy, it reads disabled but keeps the focus; sync() re-reads ready().
-function runOnce(button, action, ready = () => true) {
+function runOnce(button, action, ready = () => true, home = null) {
   let busy = false;
   button.sync = () => {
     button.disabled = !ready();
@@ -582,8 +582,13 @@ function runOnce(button, action, ready = () => true) {
   };
   const run = async (...args) => {
     if (busy || !ready()) return;
+    const focused = document.activeElement === button;
     busy = true; button.sync();
-    try { await action(...args); } finally { busy = false; button.sync(); }
+    try { await action(...args); } finally {
+      busy = false; button.sync();
+      // A button that ends disabled drops its focus to the page: hand it to `home`.
+      if (focused && document.activeElement === document.body) (button.disabled && home || button).focus();
+    }
   };
   button.onclick = () => run();
   button.sync();
@@ -1842,6 +1847,7 @@ function makeComposer(id) {
   const sendBtn = el('button', 'primary send');
   sendBtn.innerHTML = SEND_ICON;
   const verb = sendBtn.appendChild(el('span'));
+  sendBtn.onmousedown = (e) => e.preventDefault(); // a click or a tap leaves the focus, and a phone's keyboard, in the entry
   // A typed draft survives a switch to another session and back (this browser only);
   // a sent or discarded line forgets it.
   const draftKey = 'a6-draft-' + id;
@@ -2036,7 +2042,7 @@ function makeComposer(id) {
         .catch(err => toast(err.message, true));
     }
     return resume(text);
-  }, () => finished !== null && !busy && !(finished && refused) && (!!ta.value.trim() || (finished && !needsWork))); // text, or a bare resume
+  }, () => finished !== null && !busy && !(finished && refused) && (!!ta.value.trim() || (finished && !needsWork)), ta); // text, or a bare resume
   row.appendChild(ta); row.appendChild(sendBtn);
   root.appendChild(summary); root.appendChild(presetRow); root.appendChild(row); root.appendChild(refusal); root.appendChild(hint);
   // A quoted diff line lands beneath what is typed, for the words that follow it.
