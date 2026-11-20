@@ -119,7 +119,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     ignoredToggle.hidden = filesState.rev.rev !== GIT_WORKTREE;
     pane.dataset.key = ''; shown = null; rev = ''; ignored = false; entries = [];
     if (!relisting) closeFile();
-    tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…'));
+    tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…')); count('');
     try {
       const d = await getJSON('/api/git/tree?rev=' + encodeURIComponent(filesState.rev.rev) + (showIgnored && !ignoredToggle.hidden ? '&ignored=1' : ''));
       if (n !== loading || !app.isConnected) return;

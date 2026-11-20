@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -386,6 +387,23 @@ def test_the_tree_insets_its_messages(
     expect(message).to_contain_text("unknown revision")
     top = page.locator(".files-tree").evaluate("e => e.getBoundingClientRect().top")
     assert message.evaluate(text)["y"] - top >= 16
+    assert [e for e in errors if "422" not in e] == []  # the unknown revision's response
+
+
+def test_a_failed_listing_shows_no_count(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """The count kept the last listing's total beside a revision that failed to list."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    counts = page.locator(".files-counts")
+    expect(counts).to_have_text(re.compile(r"^\d+ files$"))
+    page.get_by_role("combobox", name="revision").fill("zz-unknown")
+    page.keyboard.press("Enter")
+    expect(page.locator(".files-tree .err")).to_contain_text("unknown revision")
+    expect(counts).to_have_text("")
     assert [e for e in errors if "422" not in e] == []  # the unknown revision's response
 
 
