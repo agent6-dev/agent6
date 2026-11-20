@@ -57,10 +57,10 @@ def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
 
 
 def test_the_machine_header_paints_the_wire_status_as_a_pill() -> None:
-    """The detail view renders the machine's `status` and its level as the hub row does."""
+    """The detail view renders the machine's `status_label` and its level as the hub row does."""
     start = page.CLIENT_JS.index("function paintMachine(")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("\nfunction ", start + 1)]
-    assert "pill(m.status_level, m.status)" in body
+    assert "pill(m.status_level, m.status_label)" in body
     assert "const word =" not in body
 
 
