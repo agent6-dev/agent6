@@ -71,7 +71,9 @@ def test_background_wait_uses_the_shorter_enabled_interval(
         elapsed = time.monotonic() - started
 
         assert minimum <= elapsed < 2, f"wait took {elapsed:.2f}s"
-        assert "running" in result[roster_key][0]
+        # The fake child has a future but no live worker record.
+        expected = "running" if kind == "command" else "starting"
+        assert expected in result[roster_key][0]
         note = "Wait ended at harness.command_checkin_s = 0.2s."
         assert (note in result.get("output", "")) is capped
     finally:

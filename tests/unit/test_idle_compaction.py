@@ -208,7 +208,7 @@ def test_wait_delivers_its_result_after_the_callback(tmp_path: pathlib.Path, kin
                 result = dispatcher.dispatch(
                     "read_background", {"id": "run-p1-l1", "wait_s": 0.3}
                 ).to_wire()
-                assert "running" in str(result)
+                assert "starting" in result["children"][0]
             elif kind == "approval":
                 assert gate.approve("Allow the command?")
             else:
