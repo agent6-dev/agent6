@@ -114,7 +114,8 @@ nav.tabs a[aria-current=page]::before, aside.rail .rail-nav a[aria-current=page]
   content: ""; position: absolute; background: var(--accent);
 }
 nav.tabs a[aria-current=page]::before { top: 0; left: calc(50% - 1rem); width: 2rem; height: 0.1875rem; border-radius: 0 0 3px 3px; }
-.ic { width: 1.25rem; height: 1.25rem; flex: none; }
+.ic { width: 1.25rem; height: 1.25rem; flex: none; vertical-align: middle; }
+.mini > .ic { width: 1rem; height: 1rem; }
 
 /* The content column is at least the screen's dynamic height, which follows a phone browser's
    bars: main fills what the header leaves. The run pane fills main, and on a desktop the git

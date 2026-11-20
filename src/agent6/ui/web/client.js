@@ -467,7 +467,21 @@ function showProblem(heading, reason, failed, back) {
 const BACK = { session: ['Sessions', '#/'], machine: ['State machines', '#/machines'], draft: ['State machines', '#/machines'] };
 
 // A glyph that leads a control's words ('▶ code-fixer'), hidden from assistive technology.
-function glyph(char) { const g = el('span', null, char); g.setAttribute('aria-hidden', 'true'); return g; }
+function icon(name) {
+  const paths = {
+    back: 'M15 5 8 12l7 7', forward: 'm9 5 7 7-7 7',
+    stop: 'M6 6h12v12H6z', help: 'M9 8a3 3 0 0 1 6 0c0 3-3 2-3 5m0 4v.1',
+    refresh: 'M20 5v6h-6M20 11a8 8 0 1 0-1 7',
+    swap: 'm7 3-4 4 4 4M3 7h18M17 13l4 4-4 4M21 17H3',
+  };
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  for (const [key, value] of Object.entries({class: 'ic', viewBox: '0 0 24 24',
+    fill: 'none', stroke: 'currentColor', 'stroke-width': '1.75',
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'})) svg.setAttribute(key, value);
+  const path = document.createElementNS(svg.namespaceURI, 'path');
+  path.setAttribute('d', paths[name]); svg.appendChild(path);
+  return svg;
+}
 // A control repeated on every row is described by its row's title, so each names the row it acts on; a hidden copy of its own title keeps that in the description.
 let titleIds = 0;
 function describedBy(title, control) {

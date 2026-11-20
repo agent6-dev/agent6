@@ -39,7 +39,7 @@ function gitDiffViewer(body) {
     body.classList.add('diffing');
     const head = el('div', 'git-diff-head row');
     const back = el('button', 'mini');
-    back.append(glyph('‹'), ' Files');
+    back.append(icon('back'), ' Files');
     // Back in the list, the file's row reads selected and takes the focus ‹ Files held.
     back.onclick = () => {
       const focused = document.activeElement === back;
@@ -57,9 +57,9 @@ function gitDiffViewer(body) {
     head.appendChild(fileCounts(f));
     // The controls keep to one line beside or under the path, scrolled sideways where it is narrow.
     const tools = el('div', 'git-diff-tools'); head.appendChild(tools);
-    const prev = el('button', 'mini', '‹'); prev.title = 'Previous file'; prev.setAttribute('aria-label', prev.title); prev.disabled = i === 0;
+    const prev = el('button', 'mini'); prev.appendChild(icon('back')); prev.title = 'Previous file'; prev.setAttribute('aria-label', prev.title); prev.disabled = i === 0;
     prev.onclick = () => showDiff(ctx, i - 1);
-    const next = el('button', 'mini', '›'); next.title = 'Next file'; next.setAttribute('aria-label', next.title); next.disabled = i === ctx.files.length - 1;
+    const next = el('button', 'mini'); next.appendChild(icon('forward')); next.title = 'Next file'; next.setAttribute('aria-label', next.title); next.disabled = i === ctx.files.length - 1;
     next.onclick = () => showDiff(ctx, i + 1);
     tools.appendChild(prev); tools.appendChild(el('span', 'muted git-diff-pos', (i + 1) + ' / ' + ctx.files.length)); tools.appendChild(next);
     const fileLink = (side, label, cls) => {

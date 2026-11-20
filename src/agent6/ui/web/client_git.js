@@ -392,7 +392,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const bar = el('div', 'git-bar page-pad row wrap'); app.appendChild(bar);
   const refsBtn = el('button', 'git-refs', 'Refs');
   const compareBtn = el('button', null, 'Compare');
-  const reloadBtn = el('button', null, '↻'); reloadBtn.title = 'refresh: re-read the refs, the graph and the working tree';
+  const reloadBtn = el('button'); reloadBtn.appendChild(icon('refresh')); reloadBtn.title = 'refresh: re-read the refs, the graph and the working tree';
   reloadBtn.setAttribute('aria-label', 'refresh');
   const counts = el('span', 'muted git-counts');
   bar.appendChild(refsBtn); bar.appendChild(compareBtn); bar.appendChild(reloadBtn); bar.appendChild(counts);
@@ -636,7 +636,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const sideHead = (title) => {
     const h = el('div', 'git-side-head row');
     const back = el('button', 'mini git-back');
-    back.append(glyph('‹'), ' Graph');
+    back.append(icon('back'), ' Graph');
     back.onclick = () => {
       const had = document.activeElement === back;
       side.classList.remove('open');
@@ -833,7 +833,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       input.removeAttribute('aria-label');
       pick.root.prepend(fieldLabel(input, name));
     }
-    const swap = el('button', 'mini', '⇄'); swap.title = 'swap base and head'; swap.setAttribute('aria-label', 'swap base and head');
+    const swap = el('button', 'mini'); swap.appendChild(icon('swap')); swap.title = 'swap base and head'; swap.setAttribute('aria-label', 'swap base and head');
     swap.onclick = () => { query = new URLSearchParams(); const { base, head: h } = gitState.compare; gitState.compare = { base: h, head: base }; pickBase.set(h); pickHead.set(base); run(); };
     const row = el('div', 'gcmp-pick');
     row.appendChild(pickBase.root); row.appendChild(swap); row.appendChild(pickHead.root);

@@ -175,7 +175,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     body.classList.add('viewing');
     pane.innerHTML = '';
     const head = el('div', 'files-head row');
-    const back = el('button', 'mini files-back'); back.append(glyph('‹'), ' Files');
+    const back = el('button', 'mini files-back'); back.append(icon('back'), ' Files');
     back.onclick = () => { body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
     head.appendChild(back);
     const refreshFile = el('button', 'mini files-refresh', 'Refresh');

@@ -47,7 +47,7 @@ async function renderRun(id, opts, gen) {
       catch (e) { toast(e.message, true); }
     };
     const stopBtn = el('button', 'danger');
-    stopBtn.append(glyph('■'), '\u00a0Stop now'); // the mark keeps to its word
+    stopBtn.append(icon('stop'), '\u00a0Stop now'); // the mark keeps to its word
     stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'this session');
     const turnBtn = el('button', null, 'Stop after turn');
     turnBtn.onclick = async () => {
@@ -285,7 +285,7 @@ function paintPrompts(cards, s) {
       box.setAttribute('role', 'group');
       const head = ap.head || ap.prompt || 'Approve this action?';
       const q = box.appendChild(el('div', 'q'));
-      q.append(glyph('?'), ' ' + head + (ap.payload ? ':' : ''));
+      q.append(icon('help'), ' ' + head + (ap.payload ? ':' : ''));
       q.id = 'prompt-line-' + ++promptLines;
       const names = [q.id];
       if (ap.payload) {
