@@ -220,6 +220,33 @@ def test_the_revision_list_opens_under_its_field(
     assert not errors
 
 
+def test_the_revision_field_drops_text_it_did_not_apply(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """Typed text stayed in the revision field after Escape or a click away, naming no listing."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    field = page.get_by_role("combobox", name="revision")
+    field.click()
+    page.keyboard.type("mai")
+    page.keyboard.press("Escape")
+    expect(field).to_have_value("HEAD")
+    page.keyboard.press("ArrowDown")  # the whole list again, not a search for the label
+    expect(page.locator(".gpick-list .ac-item", has_text="working tree")).to_be_visible()
+    page.keyboard.type("mai")
+    page.keyboard.press("Tab")
+    expect(field).to_have_value("HEAD")
+    field.click()
+    page.keyboard.type("mai")
+    page.mouse.click(1200, 850)  # the empty pane, clear of the list
+    expect(field).to_have_value("HEAD")
+    assert page.url.endswith("#/files/HEAD")
+    assert not errors
+
+
 def test_the_file_head_keeps_one_height(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:

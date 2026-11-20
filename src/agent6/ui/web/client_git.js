@@ -308,7 +308,8 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
   input.placeholder = name + ': branch, tag, sha…';
   input.setAttribute('aria-label', name);
   input.autocomplete = 'off';
-  let value = initial || null;
+  // `value` is the pick the field shows, null once text is typed; `picked` is the last pick made.
+  let value = initial || null, picked = value;
   if (value) input.value = value.label;
   // The text is a search only once typed: a picked label opens the full list again.
   const query = () => value ? '' : input.value.trim();
@@ -334,8 +335,10 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
   const close = () => {
     clearTimeout(timer); request++; list.remove(); list.innerHTML = ''; items = []; active = -1;
     input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant');
+    // With nothing chosen the field shows the last pick again, never a revision not applied.
+    if (!value) { value = picked; input.value = picked ? picked.label : ''; }
   };
-  const choose = (v) => { value = v; input.value = v.label; close(); onPick(v); };
+  const choose = (v) => { value = picked = v; input.value = v.label; close(); onPick(v); };
   const paint = (d) => {
     list.innerHTML = ''; items = [];
     const q = query().toLowerCase();
@@ -374,7 +377,7 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
     }
   };
   root.appendChild(input);
-  return { root, get: () => value, set: (v) => { value = v; input.value = v ? v.label : ''; } };
+  return { root, get: () => value, set: (v) => { value = picked = v; input.value = v ? v.label : ''; } };
 }
 
 async function renderGit(gen, link = [], query = new URLSearchParams()) {
