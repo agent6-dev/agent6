@@ -90,7 +90,7 @@ Children remain reachable by their own ids.
 
 ```sh
 agent6 attach                 # follow live; --raw tails events, --tui full screen, --json one snapshot
-agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupts the call in flight
+agent6 steer ID "focus on X"  # queue an instruction; --now interrupts the call in flight
 agent6 answer ID "yes"        # answer a pending question or approval (bare: list them; --question QID picks a question set)
 agent6 stop ID                # stop during the current turn (the worker killed if it does not answer); --all
 agent6 stop ID --after-turn   # finish the current turn, then stop
