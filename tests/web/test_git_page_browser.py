@@ -115,7 +115,7 @@ def test_arrow_keys_move_between_graph_rows_and_tab_stops_at_one(
 ) -> None:
     """Arrow keys scrolled the graph under a focused row, and every row was a tab stop.
 
-    A row's name lists the refs, subject, author and date it shows; its lanes are hidden.
+    A row's name lists the refs, subject, author and date it shows; its columns are hidden.
     """
     from playwright.sync_api import expect
 
@@ -838,10 +838,10 @@ def test_a_handle_between_the_graph_and_the_panel_resizes_the_graph(
     assert errors == [], errors
 
 
-def test_a_lane_is_one_row_tall_at_a_larger_default_font(
+def test_a_column_is_one_row_tall_at_a_larger_default_font(
     open_page: OpenPage, git_port: int
 ) -> None:
-    """At a 20px default font each row was 37.5px and its lanes 30px, so every line broke."""
+    """At a 20px default font each row was 37.5px and its columns 30px, so every line broke."""
     page, errors = open_page(git_port)
     _default_font(page, 20)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
@@ -927,10 +927,10 @@ def test_the_fetch_row_hides_in_a_repository_without_a_remote(
     assert errors == [], errors
 
 
-def test_a_commit_past_the_lane_cap_keeps_its_dot(
+def test_a_commit_past_the_column_cap_keeps_its_dot(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
-    """Twenty branches off one root: the commits on lanes past the 16th drew no dot."""
+    """Twenty branches off one root: the commits on columns past the 16th drew no dot."""
     from playwright.sync_api import expect
 
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -1027,10 +1027,10 @@ def test_the_git_panes_lay_out_by_their_own_width(open_page: OpenPage, git_port:
     assert errors == [], errors
 
 
-def test_graph_lanes_read_at_three_to_one_in_the_light_theme(
+def test_graph_columns_read_at_three_to_one_in_the_light_theme(
     open_page: OpenPage, git_port: int
 ) -> None:
-    """Every lane reads at 3:1 on the light page; the dark theme's pastels read 1.9 to 2.3:1."""
+    """Every column reads at 3:1 on the light page; the dark theme's pastels read 1.9 to 2.3:1."""
     page, errors = open_page(git_port)
     page.emulate_media(color_scheme="light")
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
@@ -1041,7 +1041,7 @@ def test_graph_lanes_read_at_three_to_one_in_the_light_theme(
             .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
             .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
           const bg = lum(getComputedStyle(document.body).backgroundColor);
-          return [...document.querySelectorAll('.gc-lanes :is(path, circle)')].map(e => {
+          return [...document.querySelectorAll('.gc-columns :is(path, circle)')].map(e => {
             const l = lum(getComputedStyle(e).stroke);
             return (Math.max(l, bg) + 0.05) / (Math.min(l, bg) + 0.05);
           });

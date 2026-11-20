@@ -997,10 +997,10 @@ def _node(script: str) -> Any:
     return json.loads(done.stdout)
 
 
-def test_a_first_parent_keeps_its_lane_past_a_side_branchs_fork() -> None:
-    """Master keeps its lane when a branch forked from an older commit is drawn above the fork.
+def test_a_first_parent_keeps_its_column_past_a_side_branchs_fork() -> None:
+    """Master keeps its column when a branch forked from an older commit is drawn above the fork.
 
-    The layout ended master's lane at the fork's child and moved master into the branch's lane.
+    The layout ended master's column at the fork's child and moved master into the branch's column.
     """
     history = [
         {"sha": "m2", "parents": ["m1"]},
@@ -1012,15 +1012,15 @@ def test_a_first_parent_keeps_its_lane_past_a_side_branchs_fork() -> None:
     rows = _node(
         _client("gitLayout")
         + f"console.log(JSON.stringify(gitLayout({json.dumps(history)})"
-        + ".map(r => [r.lane, r.joins])));"
+        + ".map(r => [r.column, r.joins])));"
     )
     assert rows == [[0, []], [1, []], [0, []], [0, [1]], [0, []]]
 
 
-def test_the_working_tree_runs_a_lane_of_its_own_down_to_head() -> None:
+def test_the_working_tree_runs_a_column_of_its_own_down_to_head() -> None:
     """The working tree lays out as HEAD's child, its line in a slot no other edge shares.
 
-    The working-tree row sat in lane 0 with no line, above whatever commit was newest.
+    The working-tree row sat in column 0 with no line, above whatever commit was newest.
     """
     history = [
         {"sha": "WORKTREE", "parents": ["h"]},
@@ -1032,7 +1032,7 @@ def test_the_working_tree_runs_a_lane_of_its_own_down_to_head() -> None:
     rows = _node(
         _client("gitLayout")
         + f"console.log(JSON.stringify(gitLayout({json.dumps(history)})"
-        + ".map(r => [r.lane, r.joins, r.merges, r.wt])));"
+        + ".map(r => [r.column, r.joins, r.merges, r.wt])));"
     )
     assert rows == [
         [0, [], [], -1],
