@@ -1094,7 +1094,7 @@ class ToolDispatcher:
             bound = sessions_layout.layout_of(self._session_dir)
             if bound.session_dir == self._session_dir:
                 return sessions.read_entries(bound, args)
-        layout = sessions_layout.session_layout(self._state_dir, args.id)
+        layout = sessions.resolve_reader_id(self._state_dir, args.id)
         if layout is None:
             raise tool_errors.ToolError(f"no session {args.id!r} in this project")
         return sessions.read_entries(layout, args)

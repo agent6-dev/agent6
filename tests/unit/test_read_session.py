@@ -575,7 +575,10 @@ def test_a_parent_directory_link_is_not_a_session_source(
     path = tmp_path / component
     path.rename(tmp_path / "elsewhere")
     path.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
-    assert "no readable journal" in read()["conversation"]
+    from agent6.tools import tool_errors
+
+    with pytest.raises(tool_errors.ToolError, match="no session"):
+        read()
     assert not sessions.roster(tmp_path, "").briefs
 
 

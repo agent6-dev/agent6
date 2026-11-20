@@ -182,9 +182,8 @@ def _state_fd(
         os.close(fd)
 
 
-def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
-    """Return every session in this project, newest first."""
-    found: list[tuple[float, SessionBrief]] = []
+def _directories(state_dir: pathlib.Path) -> Iterator[tuple[sessions_layout.SessionLayout, float]]:
+    """Yield session directories and their modification times without following links."""
     for bucket in sessions_layout.SESSION_BUCKETS:
         root = sessions_layout.bucket_dir(state_dir, bucket)
         try:
@@ -197,28 +196,54 @@ def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
         except (OSError, path_safety.ContainmentError):
             continue
         for sid, mtime in dirs:
-            try:
-                with (
-                    _state_fd(state_dir, root / sid / manifest.MANIFEST_NAME) as fd,
-                    os.fdopen(fd, "rb", closefd=False) as record,
-                ):
-                    m = manifest.SessionManifest.model_validate_json(record.read())
-            except (OSError, path_safety.ContainmentError, pydantic.ValidationError):
-                continue
-            if m.version > manifest.MANIFEST_VERSION:
-                continue
-            found.append(
-                (
-                    mtime,
-                    SessionBrief(
-                        id=sid,
-                        mode=m.mode or "?",
-                        task=" ".join(m.user_task.split())[:120],
-                        started=m.start_ts,
-                        bucket=bucket,
-                    ),
-                )
+            yield sessions_layout.SessionLayout(state_dir, sid, bucket), mtime
+
+
+def resolve_reader_id(
+    state_dir: pathlib.Path, session_id: str
+) -> sessions_layout.SessionLayout | None:
+    """Resolve an exact id or an unambiguous prefix inside the reader's project.
+
+    Args:
+        state_dir: The project state directory.
+        session_id: The id or prefix supplied to the tool.
+
+    Returns:
+        The one matching session, or None.
+    """
+    matches = [
+        layout for layout, _ in _directories(state_dir) if layout.session_id.startswith(session_id)
+    ]
+    matches = [layout for layout in matches if layout.session_id == session_id] or matches
+    return matches[0] if len(matches) == 1 else None
+
+
+def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
+    """Return every session in this project, newest first."""
+    found: list[tuple[float, SessionBrief]] = []
+    for layout, mtime in _directories(state_dir):
+        try:
+            with (
+                _state_fd(state_dir, layout.manifest_path) as fd,
+                os.fdopen(fd, "rb", closefd=False) as record,
+            ):
+                m = manifest.SessionManifest.model_validate_json(record.read())
+        except (OSError, path_safety.ContainmentError, pydantic.ValidationError):
+            continue
+        if m.version > manifest.MANIFEST_VERSION:
+            continue
+        found.append(
+            (
+                mtime,
+                SessionBrief(
+                    id=layout.session_id,
+                    mode=m.mode or "?",
+                    task=" ".join(m.user_task.split())[:120],
+                    started=m.start_ts,
+                    bucket=layout.subdir,
+                ),
             )
+        )
     return [brief for _mtime, brief in sorted(found, key=lambda pair: -pair[0])]
 
 
