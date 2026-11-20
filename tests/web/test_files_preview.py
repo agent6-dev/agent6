@@ -206,7 +206,7 @@ def test_preview_is_static_confined_and_revoked_on_close(served: tuple[pathlib.P
         "sandbox",
         "default-src 'none'",
         "script-src 'none'",
-        "form-action 'none'",
+        f"form-action http://127.0.0.1:{port}{opened['url']} https://127.0.0.1:{port}{opened['url']};",
         "base-uri 'none'",
         "object-src 'none'",
         "frame-ancestors 'self'",
@@ -286,7 +286,7 @@ def test_script_grant_only_serves_the_open_pages_folder(served: tuple[pathlib.Pa
     status, headers, _ = get(port, url, "iframe")
     assert status == 200
     policy = headers["Content-Security-Policy"]
-    assert "sandbox allow-scripts;" in policy
+    assert "sandbox allow-forms allow-scripts;" in policy
     assert "script-src 'unsafe-inline'" in policy
     assert "worker-src 'none'" in policy
     assert "frame-src 'none'" in policy
@@ -309,6 +309,7 @@ def test_preview_actions_require_the_sign_in_header(served: tuple[pathlib.Path, 
     for action, body in (
         ("", {"rev": "WORKTREE", "path": "index.html"}),
         ("/renew", {"key": opened["key"]}),
+        ("/answers", {"key": opened["key"]}),
         ("/scripts", {"key": opened["key"]}),
         ("/close", {"key": opened["key"]}),
     ):

@@ -118,6 +118,10 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - HTML scripts are off by default; previews need HTTPS or localhost and refuse direct tabs
     - **Run scripts** asks each time the page opens; a page with scripts can read files in its folder and send them to any server through WebRTC
     - closing the preview ends the grant
+    - a working-tree HTML form can submit answers with `<form method="post">` and no `action`
+    - **Save form answers?** shows the sibling file, byte count and whether Save creates or replaces it
+    - Save writes `<page name>.answers.json` instead of editing the HTML; Cancel writes nothing
+    - one field value becomes a string; repeated names become lists in submission order
     - **Source**, another file, navigation away and tab exit close the preview; an abandoned preview expires after 30 seconds without the UI's renewal
     - markdown remote images, video and audio stay blocked until allowed for that open file; the bar inside the frame lists every full address, and **Load** opens a signed-in confirmation ([browser network limits](security.md#5-network))
     - the confirmation lists the same addresses and warns what loading them sends; Cancel leaves them blocked, and closing the preview discards the allowance
@@ -225,6 +229,11 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - every preview response carries a sandbox CSP and `Referrer-Policy: no-referrer`
     - signed-in `POST /api/files/preview/scripts` takes `{key}` and grants inline and repository scripts to the opened HTML document until close
     - a granted key serves files only from the page's folder and below
+    - `POST /preview/<key>/<page>` accepts URL-encoded fields from the opened working-tree HTML frame, up to 1 MiB and 1024 fields
+    - this submission holds one proposal in memory and writes nothing
+    - signed-in `POST /api/files/preview/answers` takes `{key}` and returns `{pending}` once per proposal
+    - `pending` is null or the Edit route's `{path, text, digest}` for the sibling answers file
+    - confirmation sends the displayed proposal to `/api/files/text`; a disk change refuses the save
     - markdown runs only its nonce-authorized owned script and escapes raw HTML
     - signed-in `POST /api/files/preview/remote` accepts only `{key}` and permits the snapshot's remote image origins in `img-src` and video/audio origins in `media-src` until close; it accepts no host list
     - other resource types gain no remote permission; scheme-relative image addresses use HTTPS

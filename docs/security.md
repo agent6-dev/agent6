@@ -566,10 +566,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Hidden paths and symlinks are refused.
   The server holds at most 128 live keys; close revokes a key, and its lease expires after 30 seconds without signed-in renewal.
 - Preview HTML requires `Sec-Fetch-Dest: iframe`; resource reads accept only the needed destinations and media types.
-  Missing metadata, standalone documents, objects, embeds and scripts receive 403.
+  Missing metadata, standalone documents, objects, embeds and ungranted scripts receive 403.
   Fetch Metadata is browser-controlled and sent only to HTTPS or localhost; non-browser clients can forge it but still need the random key.
   This gate supplies the standalone-navigation restriction that CSP lacks ([containment probe](../bench/web-preview-containment.md)).
-- Every preview response carries CSP `sandbox`, `default-src 'none'`, `frame-ancestors 'self'`, `form-action 'none'`, `base-uri 'none'` and `object-src 'none'`.
+- Every preview response carries CSP `sandbox`, `default-src 'none'`, `frame-ancestors 'self'`, `base-uri 'none'` and `object-src 'none'`.
   HTML scripts are off by default in both the frame and its policy.
   HTML styles, images, fonts and media are restricted to the key's preview path; inline styles are allowed.
   The UI's `frame-src` restricts frame navigation to the preview path.
@@ -589,6 +589,13 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Only the opened file can be served as a document on that key.
   The policy denies outside resource loads, workers and nested frames.
   Closing the preview discards its grant.
+- Only the opened working-tree HTML document has `allow-forms` in its sandbox and a `form-action` for its own preview address.
+  Other documents and refusals carry `form-action 'none'`.
+  The submission route requires the live key, `Sec-Fetch-Dest: iframe` and `Origin: null`.
+  It holds one URL-encoded submission in memory without reading or writing a file.
+  Only the signed-in UI can take the proposal for confirmation.
+  The server derives the sibling `.answers.json` path from the opened page, not from a field.
+  Save uses the Edit route with the confirmed digest.
 - The UI accepts markdown messages only from the frame it created (`event.source`).
   The owned checkbox script proposes `{type: "preview-save", name, text}` from the rendered snapshot.
   The UI accepts only the displayed working-tree file's own name.

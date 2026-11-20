@@ -34,34 +34,42 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
       } else if (/^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
       return;
     }
-    const save = event.data?.type === 'preview-save';
-    if (save) {
+    if (event.data?.type === 'preview-save') {
       if (opened.rev !== GIT_WORKTREE || event.data.name !== path.split('/').at(-1) || typeof event.data.text !== 'string') return;
-    } else if (event.data?.type !== 'preview-remote' || !(opened.images.length || opened.media.length)) return;
-    if (previewDialog?.open) return;
-    const dialog = openDialog(save ? 'Save checkbox change?' : 'Load remote files?', 'confirm');
+      review('Save checkbox change?', {path, text: event.data.text, digest});
+    } else if (event.data?.type === 'preview-remote' && (opened.images.length || opened.media.length)) {
+      review('Load remote files?', null);
+    }
+  };
+  const review = (title, proposal) => {
+    if (closed || previewDialog?.open) return;
+    const dialog = openDialog(title, 'confirm');
     if (!dialog) return;
     previewDialog = dialog;
-    if (save) {
-      dialog.appendChild(el('p', null, `Replace ${path} (${new Blob([event.data.text]).size} bytes) in the working tree.`));
+    const form = opened.kind === 'html';
+    if (form) dialog.addEventListener('close', () => { if (!closed) frame.src = opened.url; }, {once: true});
+    if (proposal) {
+      const verb = proposal.digest === null ? 'Create' : 'Replace';
+      dialog.appendChild(el('p', null, `${verb} ${proposal.path} (${new Blob([proposal.text]).size} bytes) in the working tree.`));
     } else {
       dialog.appendChild(el('p', null, 'This page can send anything it can read to these servers. Loading a file sends its full address and your IP address.'));
       const addresses = el('ul', 'files-remote-addresses');
       for (const address of [...opened.images, ...opened.media].sort()) addresses.appendChild(el('li', null, address));
       dialog.appendChild(addresses);
     }
-    const row = el('div', 'form-row'), accept = el('button', 'primary', save ? 'Save' : 'Load'), cancel = el('button', null, 'Cancel');
+    const row = el('div', 'form-row'), accept = el('button', 'primary', proposal ? 'Save' : 'Load'), cancel = el('button', null, 'Cancel');
     const error = el('p', 'err'); error.setAttribute('role', 'status');
     row.append(accept, cancel); dialog.append(row, error);
     cancel.onclick = () => dialog.close();
     accept.onclick = async () => {
       accept.disabled = true; error.textContent = '';
       try {
-        if (save) await postJSON('/api/files/text', {path, text: event.data.text, digest});
+        if (proposal) await postJSON('/api/files/text', proposal);
         else await postJSON('/api/files/preview/remote', {key});
         if (closed) return;
         dialog.close();
-        if (save) await afterSave(); else frame.src = opened.url;
+        if (form) toast('Saved ' + proposal.path);
+        else if (proposal) await afterSave(); else frame.src = opened.url;
       } catch (e) { error.textContent = e.message; accept.disabled = false; }
     };
   };
@@ -96,6 +104,16 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
       theme.observe(document.documentElement, {attributes: true, attributeFilter: ['class']});
       filesState.previewScroll = id => { anchor = id || ''; viewState(true); };
     } else {
+      if (opened.rev === GIT_WORKTREE) {
+        frame.sandbox.add('allow-forms');
+        frame.onload = async () => {
+          if (closed) return;
+          try {
+            const {pending} = await postJSON('/api/files/preview/answers', {key});
+            if (pending) review('Save form answers?', pending);
+          } catch (e) { if (!closed) toast(e.message, true); }
+        };
+      }
       const run = el('button', null, 'Run scripts');
       note.replaceChildren(el('span', null, 'Scripts are off for this page.'), ' ', run);
       run.onclick = async () => {
@@ -105,7 +123,7 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
         try {
           await postJSON('/api/files/preview/scripts', {key});
           if (closed) return;
-          frame.setAttribute('sandbox', 'allow-scripts'); frame.src = opened.url;
+          frame.sandbox.add('allow-scripts'); frame.src = opened.url;
           note.textContent = 'Scripts are on for this page.';
         } catch (e) { if (!closed) { toast(e.message, true); run.disabled = false; } }
       };

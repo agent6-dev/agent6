@@ -101,7 +101,9 @@ h1 {{font-family: demo}}</style>
     frame = iframe.content_frame
     sync_api.expect(frame.get_by_role("heading", name="Fixture heading")).to_be_visible()
     sync_api.expect(frame.locator("html")).not_to_have_attribute("data-repository-script", "ran")
-    sync_api.expect(iframe).to_have_attribute("sandbox", "" if is_html else "allow-scripts")
+    sync_api.expect(iframe).to_have_attribute(
+        "sandbox", "allow-forms" if is_html else "allow-scripts"
+    )
     assert iframe.evaluate("element => element.contentDocument === null")
     assert frame.locator("html").evaluate("() => window.origin") == "null"
     storage = "() => { try { void localStorage; return 'available' } catch (e) { return e.name } }"
@@ -118,6 +120,10 @@ h1 {{font-family: demo}}</style>
     direct.close()
     if is_html:
         frame.get_by_role("button", name="Submit form").click()
+        assert not connected.wait(1), "outside form action opened a TCP connection"
+        # A blocked form navigation can replace its frame with a browser error page.
+        page.get_by_role("button", name="Source", exact=True).click()
+        page.get_by_role("button", name="Preview", exact=True).click()
         for label in ("Top link", "Tab link", "Frame link"):
             frame.get_by_role("link", name=label).click()
     else:

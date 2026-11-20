@@ -1,8 +1,9 @@
-"""Serve short-lived, read-only preview capabilities for the signed-in Files page."""
+"""Serve short-lived file previews and hold form submissions for the signed-in Files page."""
 
 from __future__ import annotations
 
 import dataclasses
+import json
 import pathlib
 import re
 import secrets
@@ -14,13 +15,10 @@ from urllib import parse
 import pydantic
 
 from agent6 import errors
-from agent6.ui.web import git_model, markdown
+from agent6.ui.web import files_edit, git_model, markdown
 
-_BOUNDARY = (
-    "default-src 'none'; frame-ancestors 'self'; form-action 'none'; "
-    "base-uri 'none'; object-src 'none'"
-)
-DENY_CSP = f"sandbox; {_BOUNDARY}; script-src 'none'"
+_BOUNDARY = "default-src 'none'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'"
+DENY_CSP = f"sandbox; {_BOUNDARY}; form-action 'none'; script-src 'none'"
 REFUSAL = "Previews open inside the Files page. Previews need https or localhost."
 LEASE_SECONDS = 30
 _RESOURCE_TYPES = {
@@ -73,6 +71,11 @@ class Preview:
     rendered: markdown.Rendered | None = None
     remote_allowed: bool = False
     scripts_allowed: bool = False
+    pending: str | None = None
+
+    def accepts_form(self, path: str) -> bool:
+        """Return whether this is the opened working-tree HTML document."""
+        return self.rendered is None and self.rev == "WORKTREE" and self.path == path
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -239,7 +242,7 @@ class Store:
                 for kind, urls in (("img", page.rendered.images), ("media", page.rendered.media)):
                     remote[kind] = " ".join(sorted({markdown.remote_origin(url) for url in urls}))
             policy = (
-                f"sandbox allow-scripts; {_BOUNDARY}; frame-src 'none'; "
+                f"sandbox allow-scripts; {_BOUNDARY}; form-action 'none'; frame-src 'none'; "
                 f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
                 f"img-src {allowed} {remote['img']}; connect-src {allowed}; "
                 f"media-src {allowed} {remote['media']}"
@@ -263,18 +266,61 @@ class Store:
             if expected != destination:
                 raise PreviewError("this resource type is not allowed", 403)
         blob = git_model.blob_payload(self.repo, page.rev, path, ignored=page.ignored)
-        active = page.scripts_allowed and destination == "iframe"
-        policy = (
-            f"sandbox allow-scripts; {_BOUNDARY}; script-src 'unsafe-inline' {allowed}"
-            if active
-            else DENY_CSP
+        document = destination == "iframe"
+        scripts = document and page.scripts_allowed
+        forms = document and page.accepts_form(path)
+        sandbox = (
+            "sandbox" + (" allow-forms" if forms else "") + (" allow-scripts" if scripts else "")
         )
-        connections = allowed if active else "'none'"
-        policy += (
-            f"; style-src 'unsafe-inline' {allowed}; img-src {allowed}; font-src {allowed}; "
+        action = sources(host, parse.quote(route)) if forms else "'none'"
+        code = f"'unsafe-inline' {allowed}" if scripts else "'none'"
+        connections = allowed if scripts else "'none'"
+        policy = (
+            f"{sandbox}; {_BOUNDARY}; form-action {action}; script-src {code}; "
+            f"style-src 'unsafe-inline' {allowed}; img-src {allowed}; font-src {allowed}; "
             f"media-src {allowed}; frame-src 'none'; worker-src 'none'; connect-src {connections}"
         )
         return Response(blob.data, content_type, policy)
+
+    def submit(self, route: str, data: bytes) -> None:
+        """Keep one pending form without reading or writing the answers file.
+
+        Raises:
+            PreviewError: The form is not for this page or its fields are invalid.
+        """
+        key, _, path = route.removeprefix("/preview/").partition("/")
+        with self._lock:
+            page = self._get(key)
+            if not page.accepts_form(path):
+                raise PreviewError("Only the open working-tree HTML page can submit answers.", 403)
+            try:
+                fields = parse.parse_qs(
+                    data.decode("utf-8"),
+                    keep_blank_values=True,
+                    strict_parsing=True,
+                    errors="strict",
+                    max_num_fields=1024,
+                )
+            except ValueError as exc:
+                raise PreviewError("Use at most 1024 UTF-8 form fields.", 400) from exc
+            answers = {k: v[0] if len(v) == 1 else v for k, v in fields.items()}
+            text = json.dumps(answers, ensure_ascii=False)
+            self._pages[key] = dataclasses.replace(page, pending=text)
+
+    def take_answers(self, key: str) -> dict[str, Any]:
+        """Return the pending Edit proposal once, only to the signed-in UI.
+
+        Attributes:
+            pending: A sibling path, the JSON text and its current disk digest, or null.
+        """
+        with self._lock:
+            page = self._get(key)
+            if page.pending is None:
+                return {"pending": None}
+            self._pages[key] = dataclasses.replace(page, pending=None)
+        path = pathlib.PurePosixPath(page.path).with_suffix(".answers.json").as_posix()
+        digest = files_edit.read(self.repo, path)["digest"]
+        return {"pending": {"path": path, "text": page.pending, "digest": digest}}
 
 
 READ_ERRORS = (PreviewError, git_model.GitRequestError, errors.GitError)

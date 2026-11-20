@@ -65,7 +65,7 @@ def test_html_preview_is_static_and_closes_with_its_view(
     sync_api.expect(frame.locator("body")).not_to_have_attribute("data-executed", "yes")
     sync_api.expect(page.get_by_text("Scripts are off for this page.", exact=True)).to_be_visible()
     iframe = page.locator(".files-preview iframe")
-    sync_api.expect(iframe).to_have_attribute("sandbox", "")
+    sync_api.expect(iframe).to_have_attribute("sandbox", "allow-forms")
     assert frame.locator("img").evaluate("img => img.complete && img.naturalWidth > 0")
     assert page.context.browser
     captures.save(page, "files-html-" + page.context.browser.browser_type.name)
@@ -124,7 +124,7 @@ def test_html_scripts_require_a_new_confirmation_each_time(
     sync_api.expect(result).to_have_text("Static")
     run.click()
     dialog.get_by_role("button", name="Run scripts", exact=True).click()
-    sync_api.expect(iframe).to_have_attribute("sandbox", "allow-scripts")
+    sync_api.expect(iframe).to_have_attribute("sandbox", "allow-forms allow-scripts")
     sync_api.expect(result).to_have_text("Interactive")
     url = iframe.get_attribute("src")
     assert url

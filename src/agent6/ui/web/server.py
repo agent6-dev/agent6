@@ -602,6 +602,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self.close_connection = True
                 self._send_json({"error": f"body larger than {limit} bytes"}, status=413)
                 return
+            if path.startswith("/preview/"):
+                self._preview_form(path)
+                return
             if path not in PUBLIC_POST and not self._signed_in():
                 self.close_connection = True
                 self._send_sign_in_required()
@@ -614,6 +617,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         except pydantic.ValidationError as exc:
             # The body was read, so the framing is intact and the connection may stay open.
             self._send_json({"error": _validation_message(exc)}, status=400)
+        except files_preview.PreviewError as exc:
+            self.close_connection = True
+            self._send_bytes(str(exc).encode(), "text/plain; charset=utf-8", status=exc.status)
         except ValueError as exc:
             # Not JSON or not an object; the body was consumed, so the connection may stay open.
             self._send_json({"error": f"bad request: {exc}"}, status=400)
@@ -648,7 +654,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         The token rides a header the page adds, never a cookie: a browser sends a cookie to
         every port of the host, so a page a jailed command serves on another port would get
         it; a cross-origin page cannot add the header without a preflight this server never
-        answers, which is also why no POST needs a cross-site check.
+        answers.
 
         Returns:
             True when the header is `Bearer <token>`.
@@ -700,6 +706,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         if path in (
             "/api/files/preview",
+            "/api/files/preview/answers",
             "/api/files/preview/close",
             "/api/files/preview/remote",
             "/api/files/preview/renew",
@@ -1171,6 +1178,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json(self.server.previews.open(body))
             else:
                 key = files_preview.PreviewKeyBody.model_validate(self._read_body()).key
+                if path.endswith("/answers"):
+                    self._send_json(self.server.previews.take_answers(key))
+                    return
                 if path.endswith("/close"):
                     self.server.previews.close(key)
                 elif path.endswith("/remote"):
@@ -1182,8 +1192,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"ok": True})
         except git_model.BlobTooLargeError as exc:
             self._send_json({"error": str(exc)}, status=413)
+        except files_edit.FileEditError as exc:
+            self._send_json({"error": str(exc)}, status=exc.status)
         except files_preview.READ_ERRORS as exc:
             self._send_json({"error": str(exc)}, status=getattr(exc, "status", 422))
+
+    def _preview_form(self, path: str) -> None:
+        """Accept field data from a sandboxed form, without granting a file write.
+
+        Raises:
+            PreviewError: The page, destination or field encoding is refused.
+        """
+        if self.headers.get("Sec-Fetch-Dest") != "iframe" or self.headers.get("Origin") != "null":
+            raise files_preview.PreviewError(files_preview.REFUSAL, 403)
+        if self.headers.get_content_type() != "application/x-www-form-urlencoded":
+            raise files_preview.PreviewError("Submit URL-encoded form fields.", 415)
+        self.server.previews.submit(path, self.rfile.read(self._body_length))
+        self._send_bytes(b"Review the proposed save in Files.", "text/plain; charset=utf-8")
 
     def _route_preview(self, path: str) -> None:
         """Serve a read capability with browser metadata and an opaque origin."""
