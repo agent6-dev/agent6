@@ -114,7 +114,7 @@ The endpoint supplied the cache counts.
 - Both journals recorded `tool.call`, `compact.summarise.done` with `reason: idle`, then `tool.result`.
 - Each summary request contained the previous request's messages plus the summary instruction and the same tools.
 - Each run made four model calls, including the summary.
-- The cold receipt said: `providers.test.idle_compact_s = 2 is longer than the cache lasts. Idle summary 2.0s after the last request began: 1,000 uncached, 0 cached input tokens.`
+- The cold receipt said: `Idle summary 2.0s after the last request began: 1,000 uncached, 0 cached input tokens. providers.test.idle_compact_s = 2 may be longer than the cache lasts.`
 - Neither run measured a live cache lifetime or price.
 
 **Host smoke.** Use a throwaway repo with a configured HTTP provider and its normal command isolation.
@@ -131,3 +131,20 @@ jq -c 'select(.name == "run_command" or (.type | startswith("compact."))) | del(
 
 Compare the summary attempt's counts with its `gap_s`, not with the command duration.
 If the model takes longer than two seconds to answer, the idle limit is already due when the wait begins.
+
+## Idle compaction, live observation
+
+One run used `chatgpt/gpt-5.6-luna` at `low` effort with `providers.chatgpt.idle_compact_s = 12`, a floor of 8,000 characters, a 120-second check-in and a foreground `sleep 30`.
+
+| Event | Seconds after the worker request began | Input (uncached / cached) |
+| --- | ---: | ---: |
+| Worker request that called `run_command` | 0 | 3,223 / 3,072 |
+| Idle summary call, worker-written, accepted | 12.0 | 6,512 / 0 |
+| `run_command` result, exit 0 | 31.6 | |
+| Next worker call | 31.8 | 438 / 3,072 |
+
+- The journal order was `tool.call`, `compact.summarise.done` with `reason: idle` and `kept_messages: 1`, then `tool.result`.
+- The summary request had the previous request's cache key, instructions and tools, and read nothing from the cache 12 seconds after a request that read 3,072 tokens from it.
+- The cold-cache notice appeared once in the log, the journal and the receipt.
+
+**Limits:** n = 1 on a three-call conversation. This model also missed its cache on one call in each run of the writer comparison above, so one cold summary call does not measure the cache lifetime.
