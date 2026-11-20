@@ -636,7 +636,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const sideHead = (title) => {
     const h = el('div', 'git-side-head row');
     const back = el('button', 'mini git-back');
-    back.append(el('span', null, '‹'), ' Graph'); back.firstChild.setAttribute('aria-hidden', 'true');
+    back.append(glyph('‹'), ' Graph');
     back.onclick = () => {
       const had = document.activeElement === back;
       side.classList.remove('open');

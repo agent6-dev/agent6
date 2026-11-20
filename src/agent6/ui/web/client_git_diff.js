@@ -38,9 +38,8 @@ function gitDiffViewer(body) {
     diffView.innerHTML = '';
     body.classList.add('diffing');
     const head = el('div', 'git-diff-head row');
-    // The glyph is decoration: the button's name is its word.
     const back = el('button', 'mini');
-    back.append(el('span', null, '‹'), ' Files'); back.firstChild.setAttribute('aria-hidden', 'true');
+    back.append(glyph('‹'), ' Files');
     // Back in the list, the file's row reads selected and takes the focus ‹ Files held.
     back.onclick = () => {
       const focused = document.activeElement === back;
