@@ -466,7 +466,6 @@ function showProblem(heading, reason, failed, back) {
 // The page each kind of route sits under, for its problem view's way back.
 const BACK = { session: ['Sessions', '#/'], machine: ['State machines', '#/machines'], draft: ['State machines', '#/machines'] };
 
-// A glyph that leads a control's words ('▶ code-fixer'), hidden from assistive technology.
 function icon(name) {
   const paths = {
     back: 'M15 5 8 12l7 7', forward: 'm9 5 7 7-7 7',
