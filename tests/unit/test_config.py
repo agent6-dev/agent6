@@ -1098,9 +1098,10 @@ def test_model_git_control_requires_git_writes(tmp_path: pathlib.Path) -> None:
     assert ok.git.control == "model"
 
 
-def test_max_turns_defaults_to_200(tmp_path: pathlib.Path) -> None:
+def test_max_turns_defaults_to_unlimited(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.harness.max_turns == 200
+    assert cfg.harness.max_turns == -1
+    assert cfg.budget.max_usd == 10
 
 
 def test_max_turns_unlimited_is_minus_one(tmp_path: pathlib.Path) -> None:

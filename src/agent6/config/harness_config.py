@@ -404,7 +404,7 @@ class HarnessConfig(pydantic.BaseModel):
 
     # Per execution: a standing run is not capped by the sum of its executions.
     max_turns: int = pydantic.Field(
-        default=200,
+        default=-1,
         description=(
             "loop turns per execution before stop reason `max_turns`; `harness.max_turns = -1`: "
             "unlimited; fresh allowance on resume"

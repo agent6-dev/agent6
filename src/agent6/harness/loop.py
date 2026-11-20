@@ -165,7 +165,7 @@ class Harness:
     curator: graph_curator.GraphCurator | None = None
     budget: agent6_budget.BudgetTracker | None = None
     state_dir: pathlib.Path | None = None
-    max_turns: int = 200
+    max_turns: int = -1
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None = None
     bridge: operator_bridge.OperatorBridge = dataclasses.field(
         default_factory=operator_bridge.OperatorBridge

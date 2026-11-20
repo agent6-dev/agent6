@@ -441,7 +441,7 @@ Placement and setup of the worktrees agent6 makes: child and machine-state clone
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_turns` | `200` | loop turns per execution before stop reason `max_turns`; `harness.max_turns = -1`: unlimited; fresh allowance on resume |
+| `max_turns` | `-1` | loop turns per execution before stop reason `max_turns`; `harness.max_turns = -1`: unlimited; fresh allowance on resume |
 | `went_quiet_max_nudges` | `4` | Empty turns (no text, no tool call) re-asked per streak, reasoning-starvation bursts included; 0 ends the run on the first. |
 | `loop_guard_kill_threshold` | `10` | The same (tool, args) call this many times in a row ends the run as `loop_guard_killed` (the notice fires from three, every other turn); `harness.loop_guard_kill_threshold = -1`: the notice alone, no end. |
 | `settled_stop_after` | `12` | consecutive turns with no edit, commit or memory write and an unchanged tree before a plain run ends after a green verify or an editing step; verify runs and waits on a live background command neutral; streak reset by progress or operator steer; default 12, measured; `harness.settled_stop_after = -1`: stop disabled, nudge at three idle turns retained |
