@@ -143,7 +143,7 @@ assert.ok(classes.has('light'));
 assert.ok(classes.has('rail-min'));
 saveToken({token: 'signed-in'});
 assert.equal(authHeaders().Authorization, 'Bearer signed-in');
-globalThis.fetch = async () => ({status: 401});
+globalThis.fetch = async () => new Response(null, {status: 401});
 serverFetch('/api/hub');  // never settles: the sign-in form takes the page
 setTimeout(() => {
   assert.equal(logins, 1);
@@ -449,7 +449,7 @@ const withCode = text => el('text', null, text);
 const actionable = (node, action) => { node.onclick = action; };
 let routeGen = 0;
 const setting = {
-  type: 'list', source: 'repo', input: '[]', display: 'tests, tests',
+  type: 'list', source: 'repo', source_label: 'repo', input: '[]', display: 'tests, tests',
   value: [{focus: 'tests'}, {focus: 'tests'}],
 };
 const getJSON = async path => path === '/api/config/entry_tables' ? {tables: []}
