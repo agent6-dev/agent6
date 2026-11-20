@@ -10,17 +10,16 @@ loosen benign options (auto-stash, branch-per-run) and never these.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import pathlib
 import re
 import shutil
-import subprocess
 import tempfile
 from collections.abc import Collection, Sequence
 
 from agent6 import errors
 from agent6.vcs.git import command as git_command
-from agent6.vcs.git import policy as git_policy
 from agent6.vcs.git import read as git_read
 
 
@@ -1104,8 +1103,10 @@ def _bring_index_forward(
         for entry in git_command.nul_fields(path, "ls-files", "--stage", "-z")
         if "\t" in entry
     }  # path -> [mode, sha, stage]
-    updates: list[str] = []
-    left: list[str] = []
+    # path -> `<mode> <sha>`; mode 000000 is no entry (a merge-side deletion or addition).
+    updates: dict[str, str] = {}
+    olds: dict[str, str] = {}
+    news: dict[str, str] = {}
     i = 0
     while i + 1 < len(records):
         meta, rel = records[i], records[i + 1]
@@ -1114,75 +1115,118 @@ def _bring_index_forward(
             continue
         old_mode, new_mode, old_sha, new_sha, _status = meta[1:].split(" ")[:5]
         entry = staged.get(rel)
-        if (entry is None and old_mode == "000000") or (
+        if (entry is None and old_mode == _NO_ENTRY) or (
             entry is not None and entry[0] == old_mode and entry[1] == old_sha
         ):
-            # mode 000000 removes the entry (a merge-side deletion).
-            updates.append(f"{new_mode} {new_sha}\t{rel}")
-        if not _bring_worktree_file_forward(path, rel, old_mode, old_sha, new_mode, new_sha):
-            left.append(rel)
+            updates[rel] = f"{new_mode} {new_sha}"
+        # Symlinks and submodule pointers are left to the operator, never named as left behind.
+        if not {old_mode, new_mode} & {"120000", "160000"}:
+            olds[rel], news[rel] = f"{old_mode} {old_sha}", f"{new_mode} {new_sha}"
+    left = _bring_worktree_forward(path, old_tip, olds, news)
     if updates:
-        git_command.run(
-            path, "update-index", "-z", "--index-info", stdin_text="\x00".join(updates) + "\x00"
-        )
-    return tuple(left)
+        git_command.run(path, "update-index", "-z", "--index-info", stdin_text=_index_info(updates))
+    return left
 
 
-def _bring_worktree_file_forward(
-    path: pathlib.Path, rel: str, old_mode: str, old_sha: str, new_mode: str, new_sha: str
-) -> bool:
-    """Move one worktree file from the old tip's content to the new tip's.
+_NO_ENTRY = "000000"
 
-    Only a file still at the old tip moves (absent matches a deletion or a not-yet-added
-    path); symlinks and submodule pointers are left to the operator.
+
+def _index_info(entries: dict[str, str]) -> str:
+    """Return `update-index -z --index-info` input setting each path to its `<mode> <sha>`."""
+    return "".join(f"{entry}\t{rel}\0" for rel, entry in entries.items())
+
+
+def _bring_worktree_forward(
+    path: pathlib.Path, old_tip: str, olds: dict[str, str], news: dict[str, str]
+) -> tuple[str, ...]:
+    """Move the checkout's files that still hold the old tip's content to the new tip's.
+
+    git compares and writes the files in one two-way merge. It follows no link out of the
+    checkout, writes no path it would not check out (`..`, `.git`), and where it refuses
+    one path it moves none. An added path moves only where nothing exists.
 
     Args:
         path: The checkout.
-        rel: The file, repo-relative.
-        old_mode: The mode at the old tip; "000000" when absent.
-        old_sha: The blob at the old tip.
-        new_mode: The mode at the new tip; "000000" when deleted.
-        new_sha: The blob at the new tip.
+        old_tip: The tip before the move.
+        olds: Each changed file's `<mode> <sha>` at the old tip.
+        news: Each changed file's `<mode> <sha>` at the new tip.
 
     Returns:
-        False when the checkout keeps a third version, which the caller names.
+        The paths that do not hold the new tip's content afterwards.
     """
-    file = path / rel
-    if new_mode in ("120000", "160000") or old_mode in ("120000", "160000"):
-        return True  # left to the operator, and never named as left behind
     try:
-        current = (
-            ""
-            if not file.is_file() or file.is_symlink()
-            else git_command.run(path, "hash-object", "--", rel, check=False).stdout.strip()
+        behind = _lacking(path, news)
+        moving = behind - _lacking(path, {rel: olds[rel] for rel in behind})
+        if moving:
+            target = _tree_with_entries(path, old_tip, {rel: news[rel] for rel in moving})
+            with contextlib.suppress(errors.GitError):
+                sync_worktree(path, old_tip, target)
+            behind = _lacking(path, news)
+    except (errors.GitError, OSError):
+        return tuple(news)  # nothing is known to hold the new content
+    return tuple(rel for rel in news if rel in behind)
+
+
+def _lacking(path: pathlib.Path, entries: dict[str, str]) -> set[str]:
+    """Return the paths whose file in the checkout is not the given entry, as git compares them.
+
+    A missing file, a file behind a link and a path git refuses to index (`..`, `.git`) all
+    lack their blob. Where the entry is none, the path lacks it when anything exists there.
+
+    Args:
+        path: The checkout.
+        entries: Each path's `<mode> <sha>`.
+
+    Returns:
+        The paths.
+    """
+    blobs = {rel: entry for rel, entry in entries.items() if not entry.startswith(_NO_ENTRY)}
+    lacking = {
+        rel for rel in entries.keys() - blobs.keys() if (path / rel).exists(follow_symlinks=False)
+    }
+    if not blobs:
+        return lacking
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="agent6-compare-"))
+    env = {"GIT_INDEX_FILE": str(tmp / "index")}
+    try:
+        git_command.run(
+            path, "update-index", "-z", "--index-info", env_extra=env, stdin_text=_index_info(blobs)
         )
-        matches_old = not file.exists() if old_mode == "000000" else current == old_sha
-        if not matches_old:
-            # Already at the new content is landed, not left behind.
-            return current == new_sha or (new_mode == "000000" and not file.exists())
-        if new_mode == "000000":
-            file.unlink(missing_ok=True)
-            return True
-        file.parent.mkdir(parents=True, exist_ok=True)
-        # Bytes straight from git: lossy decoding would corrupt a binary blob.
-        with file.open("wb") as out:
-            subprocess.run(
-                [
-                    git_policy.git(),
-                    *git_policy.git_hardening_flags(path),
-                    "cat-file",
-                    "blob",
-                    new_sha,
-                ],
-                cwd=path,
-                stdout=out,
-                stderr=subprocess.DEVNULL,
-                check=True,
-                timeout=git_command.GIT_TIMEOUT_S,
-                env=git_policy.git_environment(),
-            )
-        if new_mode == "100755":
-            file.chmod(file.stat().st_mode | 0o111)
-    except (errors.GitError, OSError, subprocess.SubprocessError):
-        return False  # an unwritable path leaves truthful dirt, never a crash
-    return True
+        git_command.run(path, "update-index", "--refresh", env_extra=env, check=False)
+        indexed = set(git_command.nul_fields(path, "ls-files", "-z", env_extra=env))
+        changed = set(
+            git_command.nul_fields(path, "diff-files", "--name-only", "-z", env_extra=env)
+        )
+        return lacking | (blobs.keys() - indexed) | (blobs.keys() & changed)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _tree_with_entries(path: pathlib.Path, tree: str, entries: dict[str, str]) -> str:
+    """Return a tree equal to `tree` with each path set to its `<mode> <sha>`.
+
+    Mode 000000 drops the path, and git leaves out a path it would not check out.
+
+    Args:
+        path: The repository.
+        tree: The tree to start from.
+        entries: Each path's `<mode> <sha>`.
+
+    Returns:
+        The tree sha.
+    """
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="agent6-tree-"))
+    env = {"GIT_INDEX_FILE": str(tmp / "index")}
+    try:
+        git_command.run(path, "read-tree", tree, env_extra=env)
+        git_command.run(
+            path,
+            "update-index",
+            "-z",
+            "--index-info",
+            env_extra=env,
+            stdin_text=_index_info(entries),
+        )
+        return git_command.run(path, "write-tree", env_extra=env).stdout.strip()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)

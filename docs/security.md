@@ -872,7 +872,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 <details markdown="1">
 <summary>Allowed host-side subprocesses by module</summary>
 
-- `vcs/git/command.py` and `vcs/git/ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
+- `vcs/git/command.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
 - `vcs/git/policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/container.py`: bounded `ps`/`inspect` discovery and the fixed installation bootstrap through operator-owned prefixes ([Container transport boundary](#container-transport-boundary)).
