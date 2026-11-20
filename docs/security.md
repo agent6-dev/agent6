@@ -770,6 +770,7 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 - Scripts are committed, never fetched or generated at run time
     - the `.asm.toml` and `scripts/` are read-only in every jail during a run
 - Front-ends render `machine.notify` as an overlay, and `attach` / TUI call `notify-send` with fixed argv for a machine's notify and for a session that waits or ends, so a model message is inert data.
+    - the body is escaped (`html.escape`), since a notification server reads markup there
 - The out-of-band hook `[notify].on_event` runs an operator argv on the host with the minimal `hook_env` env plus `AGENT6_NOTIFY_*` and `AGENT6_MACHINE_*`.
 
 ### Container discovery boundary

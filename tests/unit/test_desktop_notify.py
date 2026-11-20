@@ -66,3 +66,29 @@ def test_desktop_notify_swallows_oserror(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(notify.subprocess, "Popen", boom)
     assert notify.desktop_notify("t", "b") is False
+
+
+def test_desktop_notify_escapes_markup_in_the_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A model's words reached the notification server as markup: a link or an image in the body.
+
+    The title is plain text to every server and stays as given; quotes are no markup.
+    """
+    monkeypatch.setattr(notify.shutil, "which", _which_found)
+    seen: list[list[str]] = []
+
+    def fake_popen(argv: list[str], **_kw: Any) -> Any:
+        seen.append(argv)
+
+    monkeypatch.setattr(notify.subprocess, "Popen", fake_popen)
+    notify.desktop_notify(
+        "agent6: <m>", "Allow run_command: echo '<b>hi</b>' && <a href=\"https://x.example\">go</a>"
+    )
+    assert seen == [
+        [
+            "/usr/bin/notify-send",
+            "--",
+            "agent6: <m>",
+            "Allow run_command: echo '&lt;b&gt;hi&lt;/b&gt;' &amp;&amp;"
+            ' &lt;a href="https://x.example"&gt;go&lt;/a&gt;',
+        ]
+    ]
