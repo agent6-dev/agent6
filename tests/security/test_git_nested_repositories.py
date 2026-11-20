@@ -241,6 +241,21 @@ def test_a_review_honors_no_driver_of_a_nested_repository(tmp_path: pathlib.Path
     assert not marker.exists(), "the nested repository's clean filter ran on the host"
 
 
+def test_a_review_runs_no_filter_whose_name_holds_an_equals_sign(tmp_path: pathlib.Path) -> None:
+    """Review's status of a submodule ran that submodule's clean filter named `a=b`."""
+    root = _repo(tmp_path / "r")
+    program, marker = _program(tmp_path)
+    nested = _record_nested(root)
+    _git(nested, "config", "filter.a=b.clean", program)
+    (nested / ".gitattributes").write_text("* filter=a=b\n", encoding="utf-8")
+    # The same size as the committed file: git has to read the content to compare it.
+    (nested / "f.txt").write_text("v2\n", encoding="utf-8")
+
+    dirty = review_submodules.dirty_paths(root, ("vendor",), path_safety.host_workspace(root, ()))
+    assert dirty == ("vendor",)
+    assert not marker.exists(), "the nested repository's clean filter ran on the host"
+
+
 _RAN = "the nested repository's clean filter ran on the host"
 
 

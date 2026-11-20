@@ -150,7 +150,8 @@ def test_shell_git_dir_cannot_redirect_host_reads(
     if reader == "runner":
         assert git_command.run(root, "rev-parse", "HEAD").stdout.strip() == head
     elif reader == "drivers":
-        assert "filter.local.clean=" in git_policy.git_hardening_flags(root)
+        flags = git_policy.git_hardening_flags(root)
+        assert f"--config-env=filter.local.clean={git_policy.BLANK_ENV}" in flags
     elif reader == "ask":
         diff = ask._git_diff_text(root, "HEAD")[1]
         assert "-repo\n+changed" in diff
@@ -159,6 +160,14 @@ def test_shell_git_dir_cannot_redirect_host_reads(
     else:
         assert skills_cmds._git_clone(str(root), tmp_path / "clone") == head
     assert git_read.toplevel(root) == root
+
+
+def test_the_shell_cannot_supply_the_value_a_blanked_driver_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shell value of `BLANK_ENV` would become the command of every driver agent6 blanks."""
+    monkeypatch.setenv(git_policy.BLANK_ENV, "touch pwned")
+    assert git_policy.git_environment()[git_policy.BLANK_ENV] == ""
 
 
 def test_explicit_git_environment_overrides_still_reach_the_child(

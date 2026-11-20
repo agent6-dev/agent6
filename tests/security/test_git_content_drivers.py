@@ -46,6 +46,11 @@ def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
     return tmp_path
 
 
+def _blank(key: str) -> str:
+    """Return the override that blanks one config key."""
+    return f"--config-env={key}={git_policy.BLANK_ENV}"
+
+
 def _poison_clean_filter(root: pathlib.Path, marker: pathlib.Path) -> None:
     cfg = root / ".git" / "config"
     cfg.write_text(
@@ -139,12 +144,13 @@ def test_driver_names_enumerate_and_dedup(tmp_path: pathlib.Path) -> None:
     )
     git_policy.set_policy(git_policy.GitPolicy())
     overrides = git_policy.git_hardening_flags(root)
-    assert overrides.count("filter.lfs.clean=") == 1, overrides
-    assert "filter.lfs.smudge=" in overrides and "filter.lfs.process=" in overrides
-    assert "merge.a.b.driver=" in overrides, "a dotted merge-driver name was mis-split"
+    assert overrides.count(_blank("filter.lfs.clean")) == 1, overrides
+    assert _blank("filter.lfs.smudge") in overrides and _blank("filter.lfs.process") in overrides
+    assert _blank("merge.a.b.driver") in overrides, "a dotted merge-driver name was mis-split"
     git_policy.set_policy(git_policy.GitPolicy(honor_repo_drivers=True))
     honored = git_policy.git_hardening_flags(root)
-    assert "filter.lfs.clean=" not in honored and "merge.a.b.driver=" not in honored
+    assert _blank("filter.lfs.clean") not in honored
+    assert _blank("merge.a.b.driver") not in honored
 
 
 def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathlib.Path) -> None:
@@ -164,7 +170,7 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathli
     (root / ".gitattributes").write_text("* filter=pwn\n", encoding="utf-8")
     (root / "f.txt").write_text("v2\n", encoding="utf-8")
     git_policy.set_policy(git_policy.GitPolicy())
-    assert "filter.pwn.clean=" in git_policy.git_hardening_flags(root)
+    assert _blank("filter.pwn.clean") in git_policy.git_hardening_flags(root)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
 
@@ -182,7 +188,7 @@ def test_a_driver_in_a_worktrees_own_config_is_neutralized(tmp_path: pathlib.Pat
     (root / ".gitattributes").write_text("* filter=pwn\n", encoding="utf-8")
     (root / "f.txt").write_text("v2\n", encoding="utf-8")
     git_policy.set_policy(git_policy.GitPolicy())
-    assert "filter.pwn.clean=" in git_policy.git_hardening_flags(root)
+    assert _blank("filter.pwn.clean") in git_policy.git_hardening_flags(root)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "a clean filter in config.worktree ran a host command"
 
@@ -200,8 +206,146 @@ def test_a_driver_in_the_operators_global_config_is_left_on(
     git_policy.set_policy(git_policy.GitPolicy())
     assert git_command.run(root, "config", "filter.mine.clean").stdout == "cat\n"
     overrides = git_policy.git_hardening_flags(root)
-    assert "filter.theirs.clean=" in overrides
-    assert "filter.mine.clean=" not in overrides
+    assert _blank("filter.theirs.clean") in overrides
+    assert _blank("filter.mine.clean") not in overrides
+
+
+def _define_drivers(root: pathlib.Path, name: str, command: str) -> None:
+    """Write a filter and a merge driver into `.git/config`, as a copied repository brings them."""
+    quoted = name.replace("\\", "\\\\").replace('"', '\\"')
+    with (root / ".git" / "config").open("a", encoding="utf-8") as config:
+        config.write(f'[filter "{quoted}"]\n\tclean = {command}\n\tsmudge = {command}\n')
+        config.write(f'[merge "{quoted}"]\n\tdriver = {command}\n')
+
+
+def _command_scope(root: pathlib.Path) -> dict[str, str]:
+    """Return each key agent6's own overrides set in the repository, with its value."""
+    fields = git_command.nul_fields(root, "config", "--show-scope", "-z", "--list")
+    pairs = zip(fields[::2], fields[1::2], strict=False)
+    return dict(entry.split("\n", 1) for scope, entry in pairs if scope == "command")
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("a=b",),
+        ("ends=",),
+        ("two words",),
+        ('quo"te',),
+        ("it's",),
+        ("tail #",),
+        ("x.clean=sh -c 'cat' #",),
+        ("x", "x.clean"),
+    ],
+)
+def test_the_overrides_blank_each_driver_key_and_set_no_other(
+    tmp_path: pathlib.Path, names: tuple[str, ...]
+) -> None:
+    """A `-c` override for a driver named `a=b` set `filter.a`: git cut it at its first `=`.
+
+    The driver kept its command, and a name shaped like `x.clean=<command> #` defined one.
+    """
+    root = _repo(tmp_path / "r")
+    git_policy.set_policy(git_policy.GitPolicy())
+    fixed = _command_scope(root)
+    for name in names:
+        _define_drivers(root, name, "false")
+    keys = {f"merge.{name}.driver" for name in names} | {
+        f"filter.{name}.{command}" for name in names for command in ("clean", "smudge", "process")
+    }
+    added = {key: value for key, value in _command_scope(root).items() if key not in fixed}
+    assert added == dict.fromkeys(keys, "")
+    for key in keys:
+        assert git_command.run(root, "config", "--get", key).stdout == "\n", key
+
+
+def test_the_overrides_run_on_a_callers_own_argv_under_git_environment(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`sessions diff` and `ask` put the overrides on an argv of their own.
+
+    git refuses a driver's override where `git_environment` did not set its variable.
+    """
+    root = _repo(tmp_path / "r")
+    _define_drivers(root, "a=b", "false")
+    git_policy.set_policy(git_policy.GitPolicy())
+    argv = ["git", *git_policy.git_hardening_flags(root), "config", "--get", "filter.a=b.clean"]
+    env = git_policy.git_environment()
+    ran = subprocess.run(argv, cwd=root, capture_output=True, text=True, check=False, env=env)
+    assert (ran.returncode, ran.stdout) == (0, "\n")
+    del env[git_policy.BLANK_ENV]
+    refused = subprocess.run(argv, cwd=root, capture_output=True, text=True, check=False, env=env)
+    assert refused.returncode == 128 and git_policy.BLANK_ENV in refused.stderr
+
+
+def _arm_equals_filter(root: pathlib.Path, marker: pathlib.Path) -> None:
+    """Give every file a clean filter named `a=b`, and `f.txt` a change to stage."""
+    _define_drivers(root, "a=b", f"touch {marker}")
+    (root / ".gitattributes").write_text("* filter=a=b\n", encoding="utf-8")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+
+
+def test_the_per_turn_tree_runs_no_filter_whose_name_holds_an_equals_sign(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The per-turn commit's `git add` ran a clean filter named `a=b`."""
+    marker = tmp_path / "pwned"
+    root = _repo(tmp_path / "r")
+    base = _git(root, "rev-parse", "HEAD").stdout.strip()
+    _arm_equals_filter(root, marker)
+    git_policy.set_policy(git_policy.GitPolicy())
+    sha = git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
+    assert not marker.exists(), "the repo's clean filter ran a host command"
+    assert _git(root, "show", f"{sha}:f.txt").stdout == "v2\n"
+
+
+def test_a_driver_name_supplies_no_command_to_its_own_override(tmp_path: pathlib.Path) -> None:
+    """The override for a filter named `x.clean=<command> #` set `filter.x.clean` to the command."""
+    marker = tmp_path / "pwned"
+    root = _repo(tmp_path / "r")
+    base = _git(root, "rev-parse", "HEAD").stdout.strip()
+    _define_drivers(root, f"x.clean=touch {marker} #", "true")
+    (root / ".gitattributes").write_text("* filter=x\n", encoding="utf-8")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+    git_policy.set_policy(git_policy.GitPolicy())
+    sha = git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
+    assert not marker.exists(), "agent6's own override ran a host command"
+    assert _git(root, "show", f"{sha}:f.txt").stdout == "v2\n"
+
+
+def test_staging_runs_no_filter_whose_name_holds_an_equals_sign(tmp_path: pathlib.Path) -> None:
+    """The Git page's stage ran a clean filter named `a=b`."""
+    marker = tmp_path / "pwned"
+    root = _repo(tmp_path / "r")
+    _arm_equals_filter(root, marker)
+    git_policy.set_policy(git_policy.GitPolicy())
+    git_ops.stage_paths(root, ["f.txt"])
+    assert not marker.exists(), "the repo's clean filter ran a host command"
+    assert _git(root, "show", ":f.txt").stdout == "v2\n"
+
+
+def test_a_landing_runs_no_merge_driver_whose_name_holds_an_equals_sign(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A landing's `merge-tree` ran a merge driver named `a=b`; blanked, the merge conflicts."""
+    marker = tmp_path / "pwned"
+    root = _repo(tmp_path / "r")
+    target = _git(root, "branch", "--show-current").stdout.strip()
+    _define_drivers(root, "a=b", f"touch {marker}")
+    (root / ".gitattributes").write_text("f.txt merge=a=b\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "attributes")
+    _git(root, "checkout", "-qb", "run")
+    (root / "f.txt").write_text("run\n", encoding="utf-8")
+    _git(root, "commit", "-qam", "run")
+    _git(root, "checkout", "-q", target)
+    (root / "f.txt").write_text("target\n", encoding="utf-8")
+    _git(root, "commit", "-qam", "target")
+    _git(root, "checkout", "-q", "--detach")
+    git_policy.set_policy(git_policy.GitPolicy())
+    landed = git_ops.plumb_merge(root, target, "run", method="merge", message="land")
+    assert not marker.exists(), "the repo's merge driver ran a host command"
+    assert landed.conflicted and landed.conflicts == ("f.txt",)
 
 
 def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(

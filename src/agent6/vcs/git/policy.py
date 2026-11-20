@@ -178,13 +178,16 @@ def use(policy: GitPolicy) -> Generator[None]:
 # The keys agent6's git answers by name in each repository: a driver command, and the work tree.
 _REPO_KEY_RE = r"^(filter\..*\.(clean|smudge|process)|merge\..*\.driver|core\.worktree)$"
 
+# The variable a driver's override reads its empty value from; `git_environment` sets it.
+BLANK_ENV = "AGENT6_GIT_BLANK"
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Hardening:
     """What one listing of a repository's own config gives agent6's git there.
 
     Attributes:
-        flags: The `-c` overrides every invocation carries, placed before the subcommand:
+        flags: The overrides every invocation carries, placed before the subcommand:
             the fixed set, the hooks path unless the policy honors repo hooks, and a blank
             override per content driver the repo defines unless the policy honors drivers.
         sets_work_tree: Whether the repo's own config sets `core.worktree`; True too when
@@ -251,19 +254,16 @@ def hardening(cwd: pathlib.Path) -> Hardening:
             merges.add(key[len("merge.") : key.rindex(".")])
         else:
             sets_work_tree = True
-    overrides: list[str] = []
+    keys: list[str] = []
     if not current_policy().honor_repo_drivers:
-        for name in sorted(filters):
-            overrides += [
-                "-c",
-                f"filter.{name}.clean=",
-                "-c",
-                f"filter.{name}.smudge=",
-                "-c",
-                f"filter.{name}.process=",
-            ]
-        for name in sorted(merges):
-            overrides += ["-c", f"merge.{name}.driver="]
+        keys = [
+            f"filter.{name}.{command}"
+            for name in sorted(filters)
+            for command in ("clean", "smudge", "process")
+        ]
+        keys += [f"merge.{name}.driver" for name in sorted(merges)]
+    # A driver's name can hold `=`: git cuts `-c` at the first one, `--config-env` at the last.
+    overrides = (f"--config-env={key}={BLANK_ENV}" for key in keys)
     return Hardening((*fixed, *overrides), sets_work_tree)
 
 
@@ -293,10 +293,11 @@ VERB_FLAGS: dict[str, tuple[str, ...]] = {
 
 
 def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
-    """Return the `-c` overrides every agent6 git invocation carries, placed before the subcommand.
+    """Return the overrides every agent6 git invocation carries, placed before the subcommand.
 
     Public so the callers that shell out to git outside this module carry the same
     hardening; diff and show callers also add `DIFF_SAFETY_FLAGS` after the subcommand.
+    git refuses a driver's override outside `git_environment`, which sets `BLANK_ENV`.
 
     Args:
         cwd: The repository, for its content drivers.
@@ -389,8 +390,8 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
         extra: Explicit agent6 settings, including temporary index paths.
 
     Returns:
-        The inherited environment with Git overrides and provider keys removed, and the
-        operator's pager set.
+        The inherited environment with Git overrides and provider keys removed, the
+        operator's pager set and `BLANK_ENV` empty.
     """
     # Inherit only GIT_{ASKPASS,AUTHOR_*,COMMITTER_*,EDITOR,SSH,SSH_COMMAND,SSH_VARIANT,TRACE*}.
     allowed = {"GIT_ASKPASS", "GIT_EDITOR", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"}
@@ -407,7 +408,7 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
     # Disable terminal credential prompts; stable Git prose keeps the stash rescue parseable.
     # No lazy fetch: a promisor remote in .git/config would fetch a missing object through
     # the repository's own transport keys (`core.sshCommand`, a credential helper).
-    return child_env.without_provider_keys(
+    env = child_env.without_provider_keys(
         {
             **inherited,
             "GIT_TERMINAL_PROMPT": "0",
@@ -417,3 +418,6 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
             **(extra or {}),
         }
     )
+    # Set last: no inherited variable and no dropped name changes what a driver's override reads.
+    env[BLANK_ENV] = ""
+    return env
