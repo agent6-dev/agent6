@@ -158,7 +158,12 @@ class _Scheduled(abc.ABC):
             apply_checkoff(context, raw, valid_ids={tid for tid, _ in open_tasks})
         keep = messages[tail_start:]
         if written.block is not None:
-            conversation.adopt(written.block, keep, context.endpoint_notice())
+            conversation.adopt(
+                written.block,
+                keep,
+                context.endpoint_notice(),
+                awaiting_reply=context.awaiting_reply,
+            )
         else:
             conversation.restart(context.restart_notice() + summary, keep=keep, task=context.task)
         # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.

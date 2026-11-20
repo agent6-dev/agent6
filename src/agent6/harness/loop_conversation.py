@@ -237,6 +237,8 @@ class Conversation:
         blocks = tuple(raw_blocks)
         message = AssistantMessage(raw_content=blocks, tool_uses=_parse_tool_uses(blocks))
         self._messages.append(message)
+        if not message.tool_uses:
+            self._deliver_restart_notice()
         return message
 
     def results(self, items: Sequence[ToolResultItem | Notice]) -> None:
@@ -262,24 +264,36 @@ class Conversation:
                 f" answer the pending tool_use ids {want}"
             )
         self._messages.append(message)
+        self._deliver_restart_notice()
 
+    def _deliver_restart_notice(self) -> None:
         if self._after_results is not None:
             self.notice(self._after_results)
             self._after_results = None
 
-    def adopt(self, block: dict[str, Any], keep: Sequence[Message], notice: str) -> None:
+    def adopt(
+        self,
+        block: dict[str, Any],
+        keep: Sequence[Message],
+        notice: str,
+        *,
+        awaiting_reply: bool = False,
+    ) -> None:
         """Put the endpoint's block before the kept turns and the restart notice after them.
 
         Args:
             block: The unmodified summary block.
             keep: Messages after the request the block covers.
+            awaiting_reply: The response to the summarised request has yet to enter history.
             notice: The task and restart instructions to repeat after the last complete turn.
         """
         self._messages.clear()
         self._marks.clear()
         self.assistant([block])
         self._messages.extend(keep)
-        if keep and isinstance(last := keep[-1], AssistantMessage) and last.tool_uses:
+        if awaiting_reply or (
+            keep and isinstance(last := keep[-1], AssistantMessage) and last.tool_uses
+        ):
             self._after_results = notice
         else:
             self.notice(notice)
@@ -413,19 +427,24 @@ class Conversation:
         )
         self._messages[message_idx] = UserMessage(items=tuple(items))
 
-    def limit_attachments(self) -> tuple[tuple[str, str], ...]:
-        """Keep the newest attachments inside the outbound request limits.
+    def limit_attachments(self, *, append_only: bool = False) -> tuple[tuple[str, str], ...]:
+        """Keep attachments inside the outbound request limits.
+
+        Args:
+            append_only: Give previously delivered media priority over new results.
 
         Returns:
             The call IDs and refusal texts of attachments replaced in canonical history.
         """
         budget = media.AttachmentBudget()
         refused: list[tuple[str, str]] = []
-        for mi in range(len(self._messages) - 1, -1, -1):
+        positions = range(len(self._messages))
+        for mi in positions if append_only else reversed(positions):
             message = self._messages[mi]
             if not isinstance(message, UserMessage):
                 continue
-            for ii in range(len(message.items) - 1, -1, -1):
+            indices = range(len(message.items))
+            for ii in indices if append_only else reversed(indices):
                 item = message.items[ii]
                 if (
                     isinstance(item, ToolResultItem)

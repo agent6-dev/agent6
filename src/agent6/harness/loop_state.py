@@ -109,6 +109,7 @@ class LoopState:
     execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
     call_context: kinds.CallContext | None = None
     idle_deadline: waits.Deadline | None = None
+    request_summarised: bool = False
     review_panels: tuple[review_records.ReviewPanel, ...] = ()
     budget_nudges: guards.BudgetNudges = dataclasses.field(default_factory=guards.BudgetNudges)
 

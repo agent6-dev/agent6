@@ -536,3 +536,17 @@ def test_request_limits_keep_newest_media_and_leave_call_ids_intact() -> None:
     ]
     assert [it.tool_use_id for it in items] == list("012345")
     assert [it.attachment is not None for it in items] == [False, False, True, True, True, True]
+
+
+def test_append_only_limit_refuses_the_new_image_without_changing_sent_results() -> None:
+    conv = loop_conversation.Conversation()
+    for i in range(5):
+        prefix = conv.to_wire()
+        message = conv.assistant([_tool_use_block(str(i), path=f"{i}.png")])
+        image = kinds.MediaAttachment(b"x", "image/png", f"{i}.png")
+        conv.results(
+            [loop_conversation.ToolResultItem(str(i), image.summary(), message.tool_uses[0], image)]
+        )
+        refused = conv.limit_attachments(append_only=True)
+        assert conv.to_wire()[:-2] == prefix
+        assert [call_id for call_id, _ in refused] == (["4"] if i == 4 else [])

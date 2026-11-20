@@ -124,3 +124,39 @@ def test_long_summary_instruction_keeps_the_focus_and_restates_the_whole_task() 
     instruction = worker.calls[0]["compaction"].instructions
     assert len(instruction) <= 16384 and "important focus" in instruction
     assert task in str(turn.conversation.to_wire()[-1])
+
+
+def test_size_repeats_the_successful_worker_request_before_adopting_its_reply() -> None:
+    """The size summary repeats the worker's messages without the clearing edit."""
+    from agent6.harness import loop_state
+
+    calls: list[dict[str, Any]] = []
+
+    class Worker:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
+            calls.append(kw)
+            sample = (
+                "compact" if isinstance(kw.get("compaction"), provider_types.Summarise) else "turn3"
+            )
+            return anthropic_parse.parse_response(captured.SAMPLES[sample]["response"])
+
+    worker = Worker()
+    conv = fixtures.history()
+    settings = fixtures.context(
+        worker, worker, [], endpoint=provider_types.EndpointCompaction(True, True)
+    ).settings
+    wf = test_harness._wf(provider=worker, compaction=settings)
+    state = loop_state.LoopState("original task", 1, system="sys")
+    got = wf._turn_provider_call(
+        "sys", conv, [], state, turn=2, ctx=wf._turn_context(state, turn=2, execution_start=1)
+    )
+    assert isinstance(got, provider_types.ProviderResponse)
+    assert len(calls) == 2 and isinstance(calls[0]["compaction"], provider_types.ClearToolResults)
+    assert calls[0]["compaction"].exclude_tools == ("ask_user",)
+    assert isinstance(calls[1]["compaction"], provider_types.Summarise)
+    assert all(calls[0][key] == calls[1][key] for key in ("system", "tools", "messages"))
+    assistant = conv.assistant(got.raw["content"])
+    tu = assistant.tool_uses[0]
+    conv.results([loop_conversation.ToolResultItem(tu.id, "result", tu)])
+    assert conv.to_wire()[1]["content"] == got.raw["content"]
+    assert "original task" in str(conv.to_wire()[3:])

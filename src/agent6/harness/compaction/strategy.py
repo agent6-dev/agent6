@@ -60,6 +60,7 @@ class Context:
     root_task_id: str | None
     emit_graph_snapshot: Callable[[], None]
     execution_id: str
+    awaiting_reply: bool = False
 
 
 @runtime_checkable

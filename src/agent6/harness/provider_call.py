@@ -149,6 +149,8 @@ class MediaRecovery:
     capabilities: media.InputCapabilities
     unsupported: set[Literal["image", "document"]] = dataclasses.field(default_factory=set)
 
+    append_only: bool = False
+
     def replace(
         self,
         conversation: loop_conversation.Conversation,
@@ -166,7 +168,20 @@ class MediaRecovery:
             Whether any attachment was replaced.
         """
         changed = False
-        for mi, message in enumerate(conversation.messages):
+        messages = conversation.messages
+        start = (
+            next(
+                (
+                    i + 1
+                    for i in reversed(range(len(messages)))
+                    if isinstance(messages[i], loop_conversation.AssistantMessage)
+                ),
+                0,
+            )
+            if self.append_only
+            else 0
+        )
+        for mi, message in enumerate(messages[start:], start=start):
             if not isinstance(message, loop_conversation.UserMessage):
                 continue
             for ii, item in enumerate(message.items):
@@ -248,7 +263,7 @@ def call_with_media_recovery(
         ProviderError: An unrelated rejection or a failed retry.
         MediaInputError: No affected attachment, or a rejected text-only retry.
     """
-    limited = conversation.limit_attachments()
+    limited = conversation.limit_attachments(append_only=recovery.append_only)
     for call_id, reason in limited:
         if emit is not None:
             emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
@@ -378,7 +393,8 @@ class ProviderCaller:
             context = dataclasses.replace(context, attempt=attempt, attempts=attempts)
             self.counter.attempts += 1
             try:
-                self.counter.request_started = time.monotonic()
+                if not isinstance(compaction, provider_types.Summarise):
+                    self.counter.request_started = time.monotonic()
                 resp = self.provider.call(
                     system=system,
                     messages=messages,

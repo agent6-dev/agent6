@@ -562,7 +562,7 @@ class Harness:
             ended = self._contract_turn(state, got, assistant, turn=turn)
             if ended is not None:
                 return ended
-            if isinstance(self.compactor, strategy.IdleStrategy):
+            if not state.request_summarised and isinstance(self.compactor, strategy.IdleStrategy):
                 state.idle_deadline = self.compactor.idle(
                     self.compaction_context(conversation, state, tools),
                     self.caller.counter.request_started,
@@ -701,12 +701,14 @@ class Harness:
             if parked is not None:
                 return parked
             self._turn_before_call(conversation, state, ctx)
-        for call_id, reason in conversation.limit_attachments():
+        endpoint = self.compaction.endpoint.writes_summary
+        for call_id, reason in conversation.limit_attachments(append_only=endpoint):
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
-        if not self.compaction.endpoint.writes_summary:
+        restarted = False
+        if not endpoint:
             conversation.roll_cache_marks()
-        assert self.compactor is not None
-        restarted = self.compactor.compact(self.compaction_context(conversation, state, tools))
+            assert self.compactor is not None
+            restarted = self.compactor.compact(self.compaction_context(conversation, state, tools))
         if self.contract is not None:
             # A reviewer reads which reply this is, and on the last that it decides now.
             # Said after compaction: a restart's kept tail would otherwise repeat it.
@@ -718,7 +720,7 @@ class Harness:
             if parked is not None:
                 return parked
             self._maybe_surface_current_task(conversation, state)
-        if not self.compaction.endpoint.writes_summary and (restarted or self.contract is not None):
+        if not endpoint and (restarted or self.contract is not None):
             conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -911,12 +913,13 @@ class Harness:
             if self.budget is not None:
                 # A child's settled spend stops the parent before its next call, not after it.
                 self.budget.check()
-            return provider_call.call_with_media_recovery(
+            response = provider_call.call_with_media_recovery(
                 _logical_call,
                 conversation,
                 provider_call.MediaRecovery(
                     self.media_input,
                     self.media_rejections.setdefault(self.media_input.route, set()),
+                    append_only=self.compaction.endpoint.writes_summary,
                 ),
                 emit=self.emit,
                 changed=lambda: loop_resume.save_resume_snapshot(
@@ -926,6 +929,17 @@ class Harness:
                     next_turn=turn,
                 ),
             )
+            # A signed summary covers the request that produced this reply, not a future request.
+            if self.compaction.endpoint.writes_summary:
+                assert self.compactor is not None
+                summary_context = dataclasses.replace(
+                    self.compaction_context(conversation, state, tools), awaiting_reply=True
+                )
+                state.request_summarised = self.compactor.compact(summary_context)
+                if state.request_summarised:
+                    state.focus.surfaced_task_id = None
+                    state.plan_injected = ""
+            return response
         except agent6_budget.BudgetExceededError as exc:
             self.log(f"LOOP: budget exhausted at turn {turn}")
             return self.finish(
@@ -1112,8 +1126,10 @@ class Harness:
                     self, state, turn, name, result, tool_input, tree_before=tree_before
                 )
                 # A repeated call with an unchanged result serves a stub, so a re-read stays small.
-                if attachment is None and state.spiral.stub_repeat(
-                    content, min_chars=_DEDUPE_MIN_CHARS
+                if (
+                    not self.compaction.endpoint.clears_tool_results
+                    and attachment is None
+                    and state.spiral.stub_repeat(content, min_chars=_DEDUPE_MIN_CHARS)
                 ):
                     served = json.dumps(
                         {
