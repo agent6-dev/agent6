@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from textual import widgets
 
+from agent6.app import merge_plan
 from agent6.app.review import actions as review_actions
 from agent6.sessions import event_log, ipc, journal, lock, process
 from agent6.ui import spawn
@@ -361,8 +362,8 @@ def test_merge_refusal_keeps_the_finding_ids_visible(
     notices: list[str] = []
     refusal = "merge refused: open block findings f1, f2"
 
-    def merge_refusal(*_args: object) -> tuple[bool, str]:
-        return False, refusal
+    def merge_refusal(*_args: object) -> tuple[merge_plan.MergeEnd, str]:
+        return merge_plan.MergeEnd(2), refusal
 
     def notify(message: object, **_kwargs: object) -> None:
         notices.append(str(message))

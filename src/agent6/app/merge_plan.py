@@ -274,6 +274,21 @@ def manual_merge_cmd(cwd: pathlib.Path, plan: MergePlan) -> str:
     return " && ".join(steps)
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class MergeEnd:
+    """How a merge ended.
+
+    Attributes:
+        code: The exit code: 0 merged or nothing to merge, 1 a conflict or a failed merge,
+            2 a refusal.
+        resolve_with: The branch `agent6 resume <id> --merge` merges into the run's work after
+            a conflict, for a run with a worktree of its own; "" otherwise.
+    """
+
+    code: int
+    resolve_with: str = ""
+
+
 def run_merge(
     cwd: pathlib.Path,
     layout: sessions_layout.SessionLayout,
@@ -284,7 +299,7 @@ def run_merge(
     message: str | None,
     config_paths: tuple[pathlib.Path, ...],
     reporter: app_reporter.Reporter,
-) -> int:
+) -> MergeEnd:
     """Land a run's work on a target branch with the chosen method.
 
     Ref plumbing only: the checkout, index and worktree are never the medium, so a worktree
@@ -301,17 +316,17 @@ def run_merge(
         reporter: Receives every line the merge says.
 
     Returns:
-        The exit code: 0 landed or nothing to land, 1 a conflict, 2 a refusal.
+        How the merge ended.
     """
     plan = plan_merge(
         cwd, layout, manifest, into, method, config_paths=config_paths, reporter=reporter
     )
     if isinstance(plan, int):
-        return plan
+        return MergeEnd(plan)
     if not git_read.list_run_commits(cwd, plan.base_sha, plan.run_branch):
         # A success line here would be indistinguishable from a real merge.
         reporter.out(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
-        return 0
+        return MergeEnd(0)
     # The merge lands whatever the gate said; the operator hears it first.
     if unverified := UNVERIFIED_WARNINGS.get(scan_session_log(plan.layout.logs_path).gate_word()):
         reporter.note(f"warning: {unverified}; merging it.")
@@ -330,7 +345,7 @@ def run_merge(
     )
     if outcome.status == "error":
         reporter.error(f"{outcome.error}")
-        return 1
+        return MergeEnd(1)
     if outcome.status == "conflict":
         in_worktree = (
             "Resolve them in the run's own worktree:\n"
@@ -344,7 +359,7 @@ def run_merge(
             f"{in_worktree}Or by hand:\n"
             f"    {manual_merge_cmd(cwd, plan)}"
         )
-        return 1
+        return MergeEnd(1, resolve_with=plan.target if plan.manifest.worktree is not None else "")
     note = (
         f"\n  (merge record could not be written: {outcome.stamp_error};"
         " `sessions prune` will call this branch unmerged)"
@@ -355,7 +370,7 @@ def run_merge(
         reporter.out(
             f"[agent6] {merge.noop_merge_line(plan.run_branch, plan.target, outcome)}.{note}"
         )
-        return 0
+        return MergeEnd(0)
     reporter.out(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
         f"({plan.method}) -> {outcome.merged_sha[:12]}{note}"
@@ -364,7 +379,7 @@ def run_merge(
         reporter.out(f"[agent6] {kept}")
     if same := same_paths_note(cwd, plan.layout.session_dir):
         reporter.out(f"[agent6] {same}")
-    return 0
+    return MergeEnd(0)
 
 
 def merge_session_dir(
@@ -373,7 +388,7 @@ def merge_session_dir(
     *,
     method: str | None,
     config_paths: tuple[pathlib.Path, ...],
-) -> tuple[bool, str]:
+) -> tuple[MergeEnd, str]:
     """Merge the session in a directory, for a front-end with no terminal of its own.
 
     Args:
@@ -383,7 +398,7 @@ def merge_session_dir(
         config_paths: The `--config` files in command-line order, if any.
 
     Returns:
-        Whether the merge landed or had nothing to land, and every line it said, in order.
+        How the merge ended, and every line it said, in order.
     """
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
@@ -391,8 +406,8 @@ def merge_session_dir(
         manifest = sessions_manifest.read_manifest(session_dir)
     except sessions_manifest.ManifestError as exc:
         reporter.error(f"could not read manifest: {exc}")
-        return False, "\n".join(said)
-    rc = run_merge(
+        return MergeEnd(2), "\n".join(said)
+    end = run_merge(
         cwd,
         sessions_layout.layout_of(session_dir),
         manifest,
@@ -402,7 +417,7 @@ def merge_session_dir(
         config_paths=config_paths,
         reporter=reporter,
     )
-    return rc == 0, "\n".join(said)
+    return end, "\n".join(said)
 
 
 def same_paths_note(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:

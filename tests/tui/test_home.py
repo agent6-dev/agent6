@@ -16,6 +16,7 @@ from rich import color as rich_color
 from textual.widgets._select import SelectCurrent
 
 from agent6 import paths
+from agent6.app import merge_plan
 from agent6.models import choices
 from agent6.sessions import ipc, process
 from agent6.ui import spawn
@@ -614,15 +615,22 @@ def test_the_hub_merge_lands_the_run_in_this_process(
     monkeypatch.setattr(spawn, "run_cli_capture", _no_child)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "r1-AAAAAA"
 
-    ok, msg = home._merge_run(tmp_path, session_dir)  # pyright: ignore[reportPrivateUsage]
+    end, msg = home._merge_run(tmp_path, session_dir)  # pyright: ignore[reportPrivateUsage]
 
-    assert ok is True
+    assert end.code == 0
     assert msg.startswith("merged agent6/r1-AAAAAA into main (")
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "a\n"
 
 
-def test_merge_action_confirms_then_merges(tmp_path: pathlib.Path, monkeypatch: object) -> None:
-    """`m` opens a confirm modal; confirming merges the selected run."""
+@pytest.mark.parametrize("conflict", [False, True])
+def test_merge_action_confirms_then_merges(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, conflict: bool
+) -> None:
+    """`m` opens a confirm modal; confirming merges the selected run.
+
+    A conflict in a run with its own worktree named a terminal command; the hub now offers the
+    resume that merges the base into the run's work.
+    """
     import asyncio
     import subprocess
 
@@ -668,18 +676,27 @@ def test_merge_action_confirms_then_merges(tmp_path: pathlib.Path, monkeypatch: 
 
     def _fake_merge(
         cwd: pathlib.Path, session_dir: pathlib.Path, config_paths: object = ()
-    ) -> tuple[bool, str]:
+    ) -> tuple[merge_plan.MergeEnd, str]:
         calls.append(session_dir.name)
-        return True, "merged"
+        if conflict:
+            return merge_plan.MergeEnd(1, resolve_with="main"), "CONFLICT: in a.py.\nOr by hand: x"
+        return merge_plan.MergeEnd(0), "merged"
 
-    monkeypatch.setattr(home, "_merge_run", _fake_merge)  # type: ignore[attr-defined]
+    resumed: list[tuple[str, tuple[str, ...]]] = []
+
+    def _fake_resume(_cwd: pathlib.Path, session_id: str, **kw: Any) -> str:
+        resumed.append((session_id, kw["flags"]))
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
+    monkeypatch.setattr(home, "_merge_run", _fake_merge)
     same = "unmerged runs that changed some of the same paths: r2 (work.txt)"
 
     def _same_paths(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
         return same if session_dir.name == "r1" else ""
 
     # The note's own content is pinned where a merge prints it; here the confirm shows it.
-    monkeypatch.setattr(home.merge_plan, "same_paths_note", _same_paths)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home.merge_plan, "same_paths_note", _same_paths)
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -696,6 +713,14 @@ def test_merge_action_confirms_then_merges(tmp_path: pathlib.Path, monkeypatch: 
             await pilot.press("y")  # confirm
             await pilot.pause()
             assert calls == ["r1"]  # merged the selected run
+            if conflict:
+                assert isinstance(app.screen, modals.ConfirmModal)
+                said = str(app.screen.query_one("#confirm-box > Static", widgets.Static).content)
+                assert said.startswith("Merge conflict in run r1\n\nCONFLICT: in a.py.\n\n"), said
+                assert "Or by hand" not in said
+                await pilot.press("y")
+                await pilot.pause()
+            assert resumed == ([("r1", ("--merge=main",))] if conflict else [])
 
     asyncio.run(scenario())
 

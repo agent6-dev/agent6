@@ -6,7 +6,15 @@ async function confirmMerge(r) {
 }
 async function postMerge(r) {
   try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); return true; }
-  catch (err) { toast(err.message, true); return false; }
+  catch (err) {
+    const branch = err.data?.resume_merge;
+    if (!branch) { toast(err.message, true); return false; }
+    // A conflict in a run with its own worktree: the run can resolve it there.
+    if (!await confirmDialog('Merge conflict in run ' + r.session_id, err.message.split('\n')[0] + '\n\nResume the run to resolve it: agent6 merges `' + branch + '` into the run\'s work in its own worktree, the run resolves the conflicts, and you merge again.', 'Resume and resolve')) return false;
+    try { await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/resume', { merge: branch }); toast('resuming ' + r.session_id + ' with ' + branch + ' merged in'); route(); }
+    catch (err2) { toast(err2.message, true); }
+    return false;
+  }
 }
 
 // Do not replace a row under a press or selection during a poll.

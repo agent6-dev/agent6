@@ -298,7 +298,7 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
 
     _srv, port = server
     _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.stop"}])
-    calls: list[tuple[pathlib.Path, str, str, str, str]] = []
+    calls: list[tuple[pathlib.Path, str, str, str, str, tuple[str, ...]]] = []
 
     def fake_resume(
         cwd: pathlib.Path,
@@ -309,8 +309,9 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
         model: str = "",
         options: object = None,
         config_paths: object = (),
+        flags: tuple[str, ...] = (),
     ) -> str:
-        calls.append((cwd, session_id, steer, preset, model))
+        calls.append((cwd, session_id, steer, preset, model, flags))
         return ""
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", fake_resume)
@@ -320,7 +321,11 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
         {"text": "also fix the docs", "preset": "no_review", "model": "o/b"},
     )
     assert status == 200 and data["ok"] is True
-    assert calls == [(tmp_path, "run-r", "also fix the docs", "no_review", "o/b")]
+    assert calls == [(tmp_path, "run-r", "also fix the docs", "no_review", "o/b", ())]
+    # The conflict offer resumes with the branch to merge in and no words.
+    status, data = _post(port, "/api/session/run-r/resume", {"merge": "main"})
+    assert status == 200 and data["ok"] is True
+    assert calls[-1] == (tmp_path, "run-r", "", "", "", ("--merge=main",))
 
 
 def test_new_work_from_a_plan_needs_no_task_and_leaves_the_plan_unchanged(

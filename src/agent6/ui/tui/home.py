@@ -551,8 +551,44 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            ok, msg = _merge_run(self.repo_cwd, session_dir, self.config_paths)
+            end, msg = _merge_run(self.repo_cwd, session_dir, self.config_paths)
+            if end.resolve_with:
+                self.app.push_screen(
+                    modals.ConfirmModal(
+                        f"Merge conflict in run {session_dir.name}",
+                        f"{msg.splitlines()[0]}\n\nResume the run to resolve it: agent6 merges"
+                        f" {end.resolve_with} into the run's work in its own worktree, the run"
+                        " resolves the conflicts, and you merge again.",
+                        confirm_label="Resume and resolve",
+                    ),
+                    self._on_resolve_confirm(session_dir, end.resolve_with),
+                )
+                return
+            ok = end.code == 0
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
+            self.action_refresh()
+
+        return cb
+
+    def _on_resolve_confirm(
+        self, session_dir: pathlib.Path, branch: str
+    ) -> Callable[[bool | None], None]:
+        """Return the confirm callback that resumes the run with the branch merged in."""
+
+        def cb(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            err = spawn.spawn_detached_resume(
+                self.repo_cwd,
+                session_dir.name,
+                config_paths=self.config_paths,
+                flags=(f"--merge={branch}",),
+            )
+            self.app.notify(
+                err or f"resuming {session_dir.name} with {branch} merged in",
+                severity="error" if err else "information",
+                timeout=10.0,
+            )
             self.action_refresh()
 
         return cb
@@ -706,12 +742,12 @@ class Agent6HomeApp(theme.PlainNotify, theme.MuxPointerShapes, app.App[pathlib.P
 
 def _merge_run(
     repo_cwd: pathlib.Path, session_dir: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
-) -> tuple[bool, str]:
-    """Return whether the session's merge landed, and what it said; no child process."""
-    ok, said = merge_plan.merge_session_dir(
+) -> tuple[merge_plan.MergeEnd, str]:
+    """Return how the session's merge ended, and what it said; no child process."""
+    end, said = merge_plan.merge_session_dir(
         repo_cwd, session_dir, method=None, config_paths=config_paths
     )
-    return ok, spawn.capture_message(said)
+    return end, spawn.capture_message(said)
 
 
 def _run_delete_cli(

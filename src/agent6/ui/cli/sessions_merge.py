@@ -45,4 +45,4 @@ def _cmd_merge(
         message=message,
         config_paths=config_paths,
         reporter=app_reporter.STDIO_REPORTER,
-    )
+    ).code

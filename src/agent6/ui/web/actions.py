@@ -265,6 +265,7 @@ def resume_run(
     *,
     preset: str = "",
     route: str = "",
+    merge: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Resume a finished or stopped run detached.
@@ -275,6 +276,7 @@ def resume_run(
         text: The first steering instruction, or "".
         preset: The preset to continue under; "" as recorded.
         route: The `provider/model` to continue on; "" as recorded.
+        merge: The branch to merge into the run's work before its first turn, or "".
         config_paths: The `--config` files in command-line order.
 
     Returns:
@@ -291,13 +293,19 @@ def resume_run(
         manifest = sessions_manifest.read_manifest(session_dir)
         if blocker := listing.manifest_resume_blocker(manifest, session_dir.name):
             return False, f"cannot resume {session_dir.name}: {blocker}"
-    if not text.strip() and listing.finished_needs_new_work(session_dir):
+    if not (text.strip() or merge) and listing.finished_needs_new_work(session_dir):
         return False, (
             f"run {session_id!r} already finished (the agent called finish_session);"
             " type what to do next (Enter resumes it with the instruction)"
         )
     err = spawn.spawn_detached_resume(
-        cwd, session_dir.name, steer=text, preset=preset, model=route, config_paths=config_paths
+        cwd,
+        session_dir.name,
+        steer=text,
+        preset=preset,
+        model=route,
+        config_paths=config_paths,
+        flags=(f"--merge={merge}",) if merge else (),
     )
     return (err == ""), (err or "resuming")
 
@@ -525,7 +533,7 @@ def merge_run(
     session_id: str,
     method: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
-) -> tuple[bool, str]:
+) -> tuple[merge_plan.MergeEnd, str]:
     """Merge a run's branch in this process, as `agent6 sessions merge` does.
 
     Args:
@@ -535,15 +543,15 @@ def merge_run(
         config_paths: The `--config` files in command-line order.
 
     Returns:
-        Whether the merge landed or had nothing to land, and what it said.
+        How the merge ended, and what it said.
     """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
-        return False, f"no session {session_id!r}"
-    ok, said = merge_plan.merge_session_dir(
+        return merge_plan.MergeEnd(2), f"no session {session_id!r}"
+    end, said = merge_plan.merge_session_dir(
         cwd, session_dir, method=method or None, config_paths=config_paths
     )
-    return ok, spawn.capture_message(said)
+    return end, spawn.capture_message(said)
 
 
 def review_run(

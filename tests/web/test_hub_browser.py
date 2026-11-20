@@ -374,6 +374,59 @@ def test_a_rows_buttons_name_the_row_they_act_on(
     assert not errors
 
 
+def test_a_merge_conflict_offers_the_resume_that_resolves_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A conflict answered with a terminal command; the page had no way to start that resume."""
+    from playwright.sync_api import Route, expect
+
+    row = {
+        "session_id": "run-A",
+        "mode": "run",
+        "status": "passed",
+        "status_label": "passed",
+        "status_level": "ok",
+        "task": "Merge me",
+        "branch": "agent6/run-A",
+        "unmerged": True,
+    }
+    conflict = {
+        "ok": False,
+        "error": "CONFLICT: merging agent6/run-A into main hit conflicts in a.py.\nOr by hand: x",
+        "resume_merge": "main",
+    }
+    resumes: list[object] = []
+
+    def resume(route: Route) -> None:
+        resumes.append(route.request.post_data_json)
+        route.fulfill(json={"ok": True, "message": "resuming"})
+
+    page, errors = open_page(port)
+    page.route("**/api/hub", lambda route: route.fulfill(json={"sessions": [row]}))
+    page.route(
+        "**/api/session/run-A/merge",
+        lambda route: (
+            route.fulfill(json={"same_paths": ""})
+            if route.request.method == "GET"
+            else route.fulfill(status=422, json=conflict)
+        ),
+    )
+    page.route("**/api/session/run-A/resume", resume)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.get_by_role("button", name="Merge", exact=True).click()
+    page.get_by_role("alertdialog", name="Merge run run-A?").get_by_role(
+        "button", name="Merge"
+    ).click()
+    offer = page.get_by_role("alertdialog", name="Merge conflict in run run-A")
+    expect(offer).to_contain_text("hit conflicts in a.py")
+    expect(offer).not_to_contain_text("Or by hand")
+    offer.get_by_role("button", name="Resume and resolve").click()
+    expect(page.locator("#toasts")).to_contain_text("resuming run-A with main merged in")
+    assert resumes == [{"merge": "main"}]
+    # A 422 is a failed fetch the page handles; nothing else may log.
+    assert [e for e in errors if "422" not in e] == []
+
+
 def test_a_pressed_button_keeps_the_focus_through_the_repaint_it_starts(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 from collections.abc import Callable
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import merge
+from agent6.app import merge, merge_plan
 from agent6.sessions import ipc, layout, process
 from agent6.ui import spawn
 from agent6.ui.cli import parser
@@ -140,9 +141,9 @@ def test_the_web_merge_runs_in_this_process_under_the_requests_git_policy(
     monkeypatch.setattr(merge, "dispatch_merge", _dispatch)
     before = git_policy.current_policy()
 
-    ok, message = actions.merge_run(repo, "run-WEB111", "squash", config_paths=(overlay,))
+    end, message = actions.merge_run(repo, "run-WEB111", "squash", config_paths=(overlay,))
 
-    assert ok, message
+    assert end == merge_plan.MergeEnd(0), message
     assert message.startswith("merged agent6/run-WEB111 into main (squash) -> ")
     assert (
         merge_tests._git(repo, "show", "main:a.txt")  # pyright: ignore[reportPrivateUsage]
@@ -162,11 +163,39 @@ def test_the_web_merge_reports_a_refusal_as_the_cli_words_it(tmp_path: pathlib.P
     merge_tests._git(tmp_path, "checkout", "-q", "-b", "side")  # pyright: ignore[reportPrivateUsage]
     merge_tests._git(tmp_path, "branch", "-D", "main")  # pyright: ignore[reportPrivateUsage]
 
-    ok, message = actions.merge_run(tmp_path, "run-WEB222", "squash")
+    end, message = actions.merge_run(tmp_path, "run-WEB222", "squash")
 
-    assert not ok
+    assert end == merge_plan.MergeEnd(2)
     assert message == "target branch 'main' does not exist; pass --into <existing-branch>."
-    assert actions.merge_run(tmp_path, "run-NOPE00", "") == (False, "no session 'run-NOPE00'")
+    assert actions.merge_run(tmp_path, "run-NOPE00", "") == (
+        merge_plan.MergeEnd(2),
+        "no session 'run-NOPE00'",
+    )
+
+
+@pytest.mark.parametrize("worktree", [True, False])
+def test_a_web_merge_conflict_names_the_branch_a_resume_merges_in(
+    tmp_path: pathlib.Path, worktree: bool
+) -> None:
+    """A conflict answered the page with a terminal command and nothing it could act on."""
+    from tests.unit import test_cli_sessions_merge as merge_tests
+
+    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, "run-WEB333", commits=[("README.md", "theirs\n", "agent6 turn 1")]
+    )
+    run = layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="run-WEB333")
+    if worktree:
+        recorded = json.loads(run.manifest_path.read_text(encoding="utf-8"))
+        recorded["worktree"] = str(tmp_path / "worktrees" / "run-WEB333")
+        recorded["worktree_git_dir"] = str(tmp_path / ".git")
+        run.manifest_path.write_text(json.dumps(recorded), encoding="utf-8")
+    (tmp_path / "README.md").write_text("ours\n", encoding="utf-8")
+    merge_tests._git(tmp_path, "commit", "-qam", "main moved")  # pyright: ignore[reportPrivateUsage]
+
+    end, message = actions.merge_run(tmp_path, "run-WEB333", "")
+
+    assert end == merge_plan.MergeEnd(1, resolve_with="main" if worktree else "")
+    assert message.startswith("CONFLICT: merging agent6/run-WEB333 into main")
 
 
 @pytest.mark.parametrize("asks", [False, True])
@@ -681,7 +710,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
 
     The web spawn is detached, so the same refusal from `agent6 resume` would land on a process
     nobody reads and the composer would report "resuming". An instruction still goes straight
-    through.
+    through, and so does a branch to merge in, which is new work with no words.
     """
     import json
 
@@ -696,7 +725,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
         + "\n",
         encoding="utf-8",
     )
-    spawned: list[str] = []
+    spawned: list[tuple[str, tuple[str, ...]]] = []
 
     def _spawn(
         _cwd: pathlib.Path,
@@ -706,8 +735,9 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
         preset: str = "",
         model: str = "",
         config_paths: object = (),
+        flags: tuple[str, ...] = (),
     ) -> str:
-        spawned.append(steer)
+        spawned.append((steer, flags))
         return ""
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", _spawn)
@@ -719,7 +749,10 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
 
     ok, _ = actions.resume_run(tmp_path, "done-WEB111", "do more")
     assert ok is True
-    assert spawned == ["do more"]
+    assert spawned == [("do more", ())]
+
+    assert actions.resume_run(tmp_path, "done-WEB111", merge="main") == (True, "resuming")
+    assert spawned[-1] == ("", ("--merge=main",))
 
 
 def test_resume_refuses_an_ended_child_without_spawning(

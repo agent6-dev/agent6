@@ -2067,6 +2067,19 @@ Source: [`ui.web.server._Handler._ok_or_err`](https://github.com/agent6-dev/agen
 | `ok` | `JSON` | Whether the requested action succeeded. |
 | `error` | `JSON` | The failure reason when the action failed. |
 
+### `POST /api/session/<id>/merge` result
+
+**Support: public.** Merge the run; a conflict the run can resolve is a 422 naming the branch to merge in.
+
+Source: [`ui.web.server._Handler._post_merge`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `ok` | `JSON` | Whether the merge landed or had nothing to land. |
+| `error` | `JSON` | What the merge said when it did not. |
+| `resume_merge` | `JSON` | The branch a resume merges into the run's work to resolve a conflict; present only on a conflict in a run with its own worktree. |
+| `message` | `JSON` | What the merge said when it did. |
+
 ### Web POST result fields
 
 **Support: public.** Dispatch a POST by path.
@@ -3170,6 +3183,7 @@ Source: [`agent6.ui.web.server.ResumeBody`](https://github.com/agent6-dev/agent6
 | `text` | `str` | The continuation instruction, empty to continue without new work. |
 | `preset` | `str` | The preset override, empty to use the recorded selection. |
 | `model` | `str` | The provider/model override, empty to use the recorded selection. |
+| `merge` | `str` | The branch to merge into the run's work before its first turn, empty for none. |
 
 ### MachineCreateBody
 

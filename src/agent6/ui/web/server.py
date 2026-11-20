@@ -173,11 +173,13 @@ class ResumeBody(_Body):
         text: The continuation instruction, empty to continue without new work.
         preset: The preset override, empty to use the recorded selection.
         model: The provider/model override, empty to use the recorded selection.
+        merge: The branch to merge into the run's work before its first turn, empty for none.
     """
 
     text: str = ""
     preset: str = ""
     model: str = ""
+    merge: str = ""
 
 
 class MachineCreateBody(_Body):
@@ -989,10 +991,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             qb = AnswerBody.model_validate(self._read_body())
             ok, msg = actions.answer_question(self.cwd, session_id, qb.id, qb.answers)
         elif verb == "merge":
-            mb = MergeBody.model_validate(self._read_body())
-            ok, msg = actions.merge_run(
-                self.cwd, session_id, mb.method, config_paths=self.config_paths
-            )
+            self._post_merge(session_id)
+            return
         elif verb in ("undo", "fork"):
             self._read_body()
             payload, err = (
@@ -1010,6 +1010,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 rb.text,
                 preset=rb.preset,
                 route=rb.model,
+                merge=rb.merge,
                 config_paths=self.config_paths,
             )
         elif verb == "stop":
@@ -1055,6 +1056,30 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._post_not_found(f"not found: machine/{name}/{verb}")
             return
         self._ok_or_err(ok, {"message": msg}, msg)
+
+    def _post_merge(self, session_id: str) -> None:
+        """Merge the run; a conflict the run can resolve is a 422 naming the branch to merge in.
+
+        Attributes:
+            ok: Whether the merge landed or had nothing to land.
+            message: What the merge said when it did.
+            error: What the merge said when it did not.
+            resume_merge: The branch a resume merges into the run's work to resolve a conflict;
+                present only on a conflict in a run with its own worktree.
+
+        Args:
+            session_id: The run.
+        """
+        body = MergeBody.model_validate(self._read_body())
+        end, msg = actions.merge_run(
+            self.cwd, session_id, body.method, config_paths=self.config_paths
+        )
+        if end.resolve_with:
+            self._send_json(
+                {"ok": False, "error": msg, "resume_merge": end.resolve_with}, status=422
+            )
+        else:
+            self._ok_or_err(end.code == 0, {"message": msg}, msg)
 
     def _ok_or_err(self, ok: bool, payload: dict[str, Any], err: str) -> None:
         """Send the payload under `ok`, or the error as 422.
