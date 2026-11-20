@@ -15,7 +15,7 @@ dependencies = [
     "ruff>=0.17.1,<1",  # runtime, not dev: lints the scripts `machine create` generates
     "textual>=8,<9",
     "tree-sitter-language-pack==1.22.1",
-    "tree-sitter==0.26.0",
+    "tree-sitter==0.26.1",
     "ty>=0.0.90,<0.1",  # runtime: typechecks the scripts `machine create` generates
 ]
 

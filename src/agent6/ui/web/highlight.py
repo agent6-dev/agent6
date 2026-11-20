@@ -86,7 +86,7 @@ def spans(text: str, language: str) -> list[list[Span]]:
             return []
         # Only the read-callback overload takes a progress callback; stopped, it raises ValueError.
         tree = parser.parse(lambda offset, _point: data[offset:], progress_callback=expired)
-        # No progress callback: tree-sitter 0.26.0 crashes the interpreter on a query's first one.
+        # No progress callback: tree-sitter 0.26.1 crashes the interpreter on a query's first one.
         matches = tree_sitter.QueryCursor(tree_sitter.Query(lang, source)).matches(tree.root_node)
     except (tree_sitter_language_pack.Error, OSError, ValueError):
         return []
