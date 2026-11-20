@@ -386,7 +386,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
 
   // -- toolbar: the ref filter, the compare toggle, the refresh, the counts -----------
   const bar = el('div', 'git-bar page-pad row wrap'); app.appendChild(bar);
-  const refsBtn = el('button', 'git-refs', 'Refs ▾');
+  const refsBtn = el('button', 'git-refs', 'Refs ');
+  refsBtn.appendChild(el('span', null, '▾')).setAttribute('aria-hidden', 'true'); // a dropdown's marker
   const compareBtn = el('button', null, 'Compare');
   const reloadBtn = el('button', null, '↻'); reloadBtn.title = 'refresh: re-read the refs, the graph and the working tree';
   reloadBtn.setAttribute('aria-label', 'refresh');
@@ -628,10 +629,11 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   gateCreate(); gatePull();
 
   // -- the side panel: a commit, or the compare --------------------------------------
-  // A phone's panel covers the graph; ‹ graph closes it, and the focus it held goes to the graph.
+  // A phone's panel covers the graph; ‹ Graph closes it, and the focus it held goes to the graph.
   const sideHead = (title) => {
     const h = el('div', 'git-side-head row');
-    const back = el('button', 'mini git-back', '‹ graph');
+    const back = el('button', 'mini git-back');
+    back.append(el('span', null, '‹'), ' Graph'); back.firstChild.setAttribute('aria-hidden', 'true');
     back.onclick = () => {
       const had = document.activeElement === back;
       side.classList.remove('open');

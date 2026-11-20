@@ -78,8 +78,8 @@
 .gref.wt { border-style: dashed; }
 /* The count of a row's other refs; their names are in its tooltip. */
 .gref.more { border-color: var(--border-strong); color: var(--muted); }
-/* The panel's head stays at the top while the panel scrolls, a phone's ‹ graph with it. A row
-   scrolled into view stops below the head: its padding and border, and its title line or ‹ graph. */
+/* The panel's head stays at the top while the panel scrolls, a phone's ‹ Graph with it. A row
+   scrolled into view stops below the head: its padding and border, and its title line or ‹ Graph. */
 .git-side-head { position: sticky; top: 0; z-index: 2; gap: 0.5rem; padding: 0.625rem 1rem 0.5rem; background: var(--bg); border-bottom: 1px solid var(--border); }
 .git-side { scroll-padding-top: calc(1.1875rem + max(1.25rem, var(--ctl-h-sm))); }
 .git-side-head h3 { margin: 0; font-size: var(--fs-s); font-weight: 600; line-height: 1.25rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }

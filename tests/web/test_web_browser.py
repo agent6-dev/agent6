@@ -980,7 +980,7 @@ def test_blame_opens_the_lines_commit_in_git(
     assert "path=a.txt" in page.url
     page.reload()
     page.wait_for_selector(".git-diff .dl[data-new='1']")
-    page.locator(".git-diff-head").get_by_role("button", name="\u2039 files", exact=True).click()
+    page.locator(".git-diff-head").get_by_role("button", name="Files", exact=True).click()
     assert "root commit" in page.locator(".git-side .gd-subject").inner_text()
     assert page.locator(".gc-row[aria-current=true]").count() == 1
     assert "path=" not in page.url

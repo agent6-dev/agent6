@@ -236,7 +236,7 @@ def test_a_phones_commit_panel_keeps_its_back_button_in_view(
     side = page.locator(".git-side.open")
     page.wait_for_selector(".git-side .gf")
     assert side.evaluate("s => { s.scrollTo(0, s.scrollHeight); return s.scrollTop > 0; }")
-    back = page.get_by_role("button", name="\u2039 graph", exact=True)
+    back = page.get_by_role("button", name="Graph", exact=True)
     panel, button = side.bounding_box(), back.bounding_box()
     assert panel and button and button["y"] >= panel["y"], (panel, button)
     assert errors == [], errors
@@ -271,11 +271,11 @@ def test_the_focus_follows_a_file_into_its_diff_and_back(
     page.locator(".git-side .gf[data-path='b.txt']").click()
     page.wait_for_selector(".git-diff .diff")
     head = page.locator(".git-diff-head")
-    expect(head.get_by_role("button", name="\u2039 files", exact=True)).to_be_focused()
+    expect(head.get_by_role("button", name="Files", exact=True)).to_be_focused()
     head.get_by_role("button", name="split", exact=True).click()
     page.wait_for_selector(".git-diff .ds-row")
     expect(head.get_by_role("button", name="split", exact=True)).to_be_focused()
-    head.get_by_role("button", name="\u2039 files", exact=True).click()
+    head.get_by_role("button", name="Files", exact=True).click()
     focused = "document.activeElement.closest('.gf')?.dataset.path"
     page.wait_for_function(f"{focused} === 'b.txt'")
     row = page.locator(".git-side .gf.sel")
@@ -321,6 +321,23 @@ def test_a_load_more_that_fails_keeps_the_rows_and_says_so_in_a_toast(
     assert [e for e in errors if "status of 500" not in e] == [], errors
 
 
+def test_the_back_buttons_read_in_sentence_case_with_their_glyphs_unread(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Git's back buttons read 'files' and 'graph', lower case beside the Files page's 'Files'."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main?path=b.txt")
+    files = page.locator(".git-diff-head").get_by_role("button", name="Files", exact=True)
+    expect(files).to_have_text("\u2039 Files")
+    files.click()
+    expect(page.get_by_role("button", name="Graph", exact=True)).to_have_text("\u2039 Graph")
+    expect(page.get_by_role("button", name="Refs", exact=True)).to_have_text("Refs \u25be")
+    assert errors == [], errors
+
+
 def test_closing_a_phones_panel_returns_the_focus_to_the_graph(
     open_page: OpenPage, git_port: int
 ) -> None:
@@ -332,7 +349,7 @@ def test_closing_a_phones_panel_returns_the_focus_to_the_graph(
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     rows = page.locator(".gc-row")
     rows.nth(1).click()
-    page.get_by_role("button", name="\u2039 graph", exact=True).click()
+    page.get_by_role("button", name="Graph", exact=True).click()
     expect(rows.nth(1)).to_be_focused()
     assert errors == [], errors
 
@@ -738,7 +755,7 @@ def test_the_refs_filter_lists_refs_in_its_groups_order(open_page: OpenPage, git
     """The Refs list ran in git's refname order: the switched-off agent6 run refs came first."""
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
-    page.get_by_role("button", name="Refs ▾").click()
+    page.get_by_role("button", name="Refs", exact=True).click()
     kinds = page.locator(".gfilter-item .gref").evaluate_all(
         "gs => gs.map(g => g.classList[1]).filter((k, i, all) => all.indexOf(k) === i)"
     )
@@ -752,7 +769,7 @@ def test_a_disabled_ref_in_the_filter_reads_not_allowed(open_page: OpenPage, git
     """A ref of an unticked group kept the pointer cursor while its checkbox was disabled."""
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
-    page.get_by_role("button", name="Refs ▾").click()
+    page.get_by_role("button", name="Refs", exact=True).click()
     off = page.locator(".gfilter-item.off").first  # the agent6 run refs' group starts unticked
     off.wait_for()
     assert off.evaluate("e => getComputedStyle(e).cursor") == "not-allowed"
@@ -941,7 +958,7 @@ def test_the_refs_filter_hangs_under_its_button_and_escape_refocuses_it(
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     page.wait_for_selector(".gc-row")
-    refs = page.get_by_role("button", name="Refs ▾")
+    refs = page.get_by_role("button", name="Refs", exact=True)
     refs.click()
     expect(page.get_by_role("searchbox")).to_be_focused()
     expect(refs).to_have_attribute("aria-expanded", "true")
@@ -1065,7 +1082,7 @@ def test_a_long_ref_name_shows_whole_in_the_refs_filter(
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     page.wait_for_selector(".gc-row")
-    page.get_by_role("button", name="Refs ▾").click()
+    page.get_by_role("button", name="Refs", exact=True).click()
     badge = page.locator(".gfilter-item .gref", has_text=name)
     assert badge.get_attribute("title") == name + " · branch"
     assert badge.evaluate("b => b.scrollWidth <= b.clientWidth")

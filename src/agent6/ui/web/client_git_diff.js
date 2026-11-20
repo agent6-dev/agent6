@@ -31,16 +31,17 @@ function gitDiffViewer(body) {
     const generation = routeGen;
     const current = () => request === showing && generation === routeGen && diffView.isConnected;
     const key = JSON.stringify([ctx.panel || '', ctx.base, ctx.head, f.path, f.old_path, !!whole, fullContext]);
-    // The rebuild keeps the focus the tab held: on the same control of the new head, else (a file
-    // row, the patch, a control now disabled) on ‹ files.
+    // A rebuild keeps the focus on the same control of the new head, or puts it on ‹ Files.
     const had = document.activeElement;
     const at = had && body.contains(had) ? [...diffView.querySelectorAll('.git-diff-head button, .git-diff-head a')].indexOf(had) : null;
     diffView.dataset.key = key;
     diffView.innerHTML = '';
     body.classList.add('diffing');
     const head = el('div', 'git-diff-head row');
-    const back = el('button', 'mini', '‹ files');
-    // Back in the list, the file's row reads selected and takes the focus ‹ files held.
+    // The glyph is decoration: the button's name is its word.
+    const back = el('button', 'mini');
+    back.append(el('span', null, '‹'), ' Files'); back.firstChild.setAttribute('aria-hidden', 'true');
+    // Back in the list, the file's row reads selected and takes the focus ‹ Files held.
     back.onclick = () => {
       const focused = document.activeElement === back;
       closeDiff();
