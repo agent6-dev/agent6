@@ -199,12 +199,14 @@ button.fold {
   border: 0; background: none; font-size: var(--fs-s); color: var(--muted);
 }
 button.fold:hover { background: none; color: var(--text); }
-/* The text starts at the top, so the chevron keeps to the middle of a wrapped line's first line. */
-button.fold::before {
-  content: ""; flex: none; width: 0.3125rem; height: 0.3125rem; margin: calc((1lh - 0.3125rem) / 2) 0.1875rem 0;
+/* The expand chevron, a fold's or a .chevron's: right while closed, down while it, its row or its details is open. */
+:is(button.fold, .chevron)::before {
+  content: ""; display: inline-block; flex: none; width: 0.3125rem; height: 0.3125rem; margin: 0 0.1875rem;
   border: solid currentColor; border-width: 0 1.5px 1.5px 0; rotate: -45deg; transition: rotate .15s;
 }
-button.fold[aria-expanded=true]::before { rotate: 45deg; }
+:is(button.fold, .chevron):is([aria-expanded=true], [aria-expanded=true] > *, [open] > *)::before { rotate: 45deg; }
+/* A fold's text starts at its top, so the chevron keeps to the middle of a wrapped line's first line. */
+button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 0.75rem; font-size: var(--fs-m); }
 .kv .k { color: var(--muted); }

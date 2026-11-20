@@ -472,6 +472,31 @@ def test_a_dock_at_the_pages_end_covers_no_height(
     assert not errors
 
 
+def test_every_expand_control_draws_the_folds_chevron(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A fold, a Config section heading and a Files folder drew three kinds of arrow.
+
+    The class .chevron gives any of them the fold's, turned down while it, its row or its details
+    is open.
+    """
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.wait_for_selector(".dock .pickers button.fold")
+    page.evaluate("""() => document.body.insertAdjacentHTML('beforeend',
+      '<details open><summary class="chevron">open</summary></details>'
+      + '<details><summary class="chevron">closed</summary></details>'
+      + '<div aria-expanded="true"><span class="chevron"></span></div>'
+      + '<div aria-expanded="false"><span class="chevron"></span></div>')""")
+    drawn = """es => es.map(e => { const s = getComputedStyle(e, '::before');
+      return [s.width, s.height, s.borderRightWidth, s.rotate]; })"""
+    fold = page.locator(".dock .pickers button.fold").evaluate(f"e => ({drawn})([e])[0]")
+    assert fold[3] == "-45deg"
+    turns = ["45deg", "-45deg", "45deg", "-45deg"]
+    assert page.locator(".chevron").evaluate_all(drawn) == [[*fold[:3], t] for t in turns]
+    assert not errors
+
+
 @pytest.mark.parametrize(("width", "height"), [(390, 844), (820, 1000)])
 def test_a_narrow_commit_message_takes_the_whole_row(
     open_page: Callable[[int], tuple[Page, list[str]]],
