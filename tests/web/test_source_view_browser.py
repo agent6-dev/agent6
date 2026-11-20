@@ -436,6 +436,68 @@ def test_a_tinted_diff_line_keeps_its_code_in_the_text_colour(
     assert not errors
 
 
+# Per mode: each changed line's kind and selector, and the unchanged line above it in its column.
+_OLD, _NEW = ".ds-row[data-old='{}'] > :nth-child(1)", ".ds-row[data-new='{}'] > :nth-child(2)"
+_CHANGED = {
+    "split": [
+        ["removed", _OLD.format(50), _OLD.format(49)],
+        ["added", _NEW.format(50), _NEW.format(49)],
+    ],
+    "old": [["removed", ".sl[data-line='50']", ".sl[data-line='49']"]],
+    "new": [["added", ".sl[data-line='50']", ".sl[data-line='49']"]],
+}
+
+
+@pytest.mark.parametrize("mode", ["split", "old", "new"])
+def test_split_old_and_new_mark_a_changed_line_beside_its_number(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    long_file: tuple[int, str, str],
+    mode: str,
+) -> None:
+    """Split, old and new told a changed line only by its tint, where inline marks it + or -.
+
+    The marker is generated text, so a copied selection holds none.
+    """
+    port, base, head = long_file
+    page, errors = open_page(port)
+    page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+    page.add_init_script(f"localStorage.setItem('a6-diff-mode', '{mode}')")
+    page.goto(f"http://127.0.0.1:{port}/#/git/compare/{base}..{head}?path=long.txt")
+    page.wait_for_selector(_CHANGED[mode][0][1])
+    marks = page.evaluate(
+        """lines => {
+      const probe = document.createElement('span'); document.body.appendChild(probe);
+      const token = v => { probe.style.color = v; return getComputedStyle(probe).color; };
+      const mark = s => { const code = document.querySelector(s + ' > .source-code');
+        const before = getComputedStyle(code, '::before');
+        return {content: before.content, color: before.color,
+          code: code.getBoundingClientRect().left}; };
+      return lines.map(([kind, line, same]) => ({kind, line: mark(line), same: mark(same),
+        colour: token(kind === 'added' ? 'var(--ok)' : 'var(--err)')}));
+    }""",
+        _CHANGED[mode],
+    )
+    words = {"added": '"+" / "added"', "removed": '"-" / "removed"'}
+    for mark in marks:
+        assert mark["line"]["content"] == words[mark["kind"]], marks
+        assert mark["line"]["color"] == mark["colour"], marks
+        assert mark["same"]["content"] == "none", marks
+        assert mark["same"]["code"] == mark["line"]["code"], marks  # every line keeps the slot
+    row = _NEW if mode == "split" else ".sl[data-line='{}']"
+    start = page.locator(row.format(49) + " > .source-code").bounding_box()
+    end = page.locator(row.format(51) + " > .source-code").bounding_box()
+    assert start and end
+    page.mouse.move(start["x"] + 1, start["y"] + start["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(end["x"] + end["width"] - 2, end["y"] + end["height"] / 2, steps=8)
+    page.mouse.up()
+    page.keyboard.press("Control+C")
+    fifty = "value_50 = 50" if mode == "old" else "value_50 = 'changed'"
+    copied = page.evaluate("navigator.clipboard.readText()")
+    assert copied.splitlines() == ["value_49 = 49", fifty, "value_51 = 51"], copied
+    assert not errors
+
+
 def test_the_source_container_leaves_the_config_source_column_alone(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
