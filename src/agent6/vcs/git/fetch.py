@@ -143,6 +143,12 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
         ).ok
     ):
         raise errors.GitError(f"no remote {name!r}")
+    # A nested remote name shares tracking refs with branch names under its parent.
+    for other in git_command.run(path, "remote").stdout.splitlines():
+        if name.startswith(other + "/") or other.startswith(name + "/"):
+            raise errors.GitError(
+                f"overlapping remote names {name!r} and {other!r}; rename one before fetching here"
+            )
     url = _fetch_url(path, remote)
     refspec = (
         f"+refs/heads/*:{tracking}*"

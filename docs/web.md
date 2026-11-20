@@ -120,6 +120,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - each working-tree row says when its changes are staged or partly staged, and an untracked file reads `U`
     - every write is refused while a session is live in this checkout (a worktree run, a fork or a child works elsewhere and does not block); push, pull, rebase, amend and reset stay in your terminal
     - **Fetch** brings the chosen remote's branches into `<remote>/<branch>` and prunes deleted branches there
+      Fetch refuses overlapping remote names, such as `team` and `team/mirror`, because they share tracking refs.
     - **Fetch PR** brings one pull request into `<remote>/pr/<number>` (the remote's `refs/pull/<number>/head`, as GitHub, Gitea and Forgejo name it), left selected for **Review**; nothing is merged, and no branch, tag or checkout moves
         - the fetch goes to the URL shown beside the buttons, over https, ssh or a local path, and reads [none of the repository's own git config](security.md#7-git)
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side

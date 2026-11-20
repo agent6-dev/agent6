@@ -85,6 +85,21 @@ def test_a_branch_fetch_prunes_only_vanished_tracking_branches(
     assert _git(work, "symbolic-ref", "refs/remotes/origin/HEAD") == "refs/remotes/origin/main"
 
 
+@pytest.mark.parametrize(("name", "pull"), [("origin", None), ("origin/mirror", 7)])
+def test_fetch_refuses_overlapping_remote_names(
+    pair: tuple[pathlib.Path, pathlib.Path], name: str, pull: int | None
+) -> None:
+    """A branch name under one remote can be a tracking ref for the other."""
+    upstream, work = pair
+    _git(work, "config", "remote.origin/mirror.url", str(upstream))
+    _git(work, "config", "remote.origin/mirror.fetch", "+refs/heads/*:refs/remotes/origin/mirror/*")
+    _git(work, "fetch", "origin/mirror")
+    before = _git(work, "for-each-ref", "refs/remotes")
+    with pytest.raises(errors.GitError, match="overlapping remote names"):
+        git_fetch.fetch_remote(work, name, pull=pull)
+    assert _git(work, "for-each-ref", "refs/remotes") == before
+
+
 def test_a_pull_request_is_fetched_under_the_remotes_pr_refs(
     pair: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
