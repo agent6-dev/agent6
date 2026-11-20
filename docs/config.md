@@ -550,7 +550,7 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `summariser` | `"worker"` | tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history without tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back |
+| `summariser` | `"worker"` | tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history without tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back<ul><li><code>worker</code>: Worker continues its own request</li><li><code>helper</code>: Helper reads history without tool output</li></ul> |
 | `drop_at_chars` | _adaptive_ | tier-1 threshold in accumulated tool-result characters (about 4 per token); above it: oldest results replaced by short, re-fetchable placeholders down to half the threshold where result protections allow; unset: about 45% of the model's context window; explicit thresholds: both `compaction.drop_at_chars` and `compaction.summarise_at_chars` required |
 | `summarise_at_chars` | _adaptive_ | tier-2 threshold in whole-context characters; checked before tier 1; an accepted summary restarts the conversation and preserves the task DAG; unset: model's window minus a 16k-token reserve; required above `compaction.drop_at_chars` |
 | `keep_recent_chars` | `80000` | characters of newest history kept verbatim after the summary on a tier-2 restart; `compaction.keep_recent_chars = 0`: none |

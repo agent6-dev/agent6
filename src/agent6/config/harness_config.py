@@ -523,6 +523,12 @@ class CompactionConfig(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     summariser: Literal["worker", "helper"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "worker": "Worker continues its own request",
+                "helper": "Helper reads history without tool output",
+            }
+        },
         default="worker",
         description=(
             "tier-2 writer: worker continues its own request with a summary instruction; "
