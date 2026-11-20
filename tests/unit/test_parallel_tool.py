@@ -289,7 +289,11 @@ def test_a_targeted_child_read_excludes_other_children_and_shells(
     work = _Work()
     d = _dispatcher(tmp_path, _config(tool=True), work=work)
     shell = background.ShellView("bg1", "true", "exited", 0, "")
-    monkeypatch.setattr(background.BackgroundShells, "roster", lambda _self: [shell])
+
+    def finished_shells(_owner: background.BackgroundShells) -> list[background.ShellView]:
+        return [shell]
+
+    monkeypatch.setattr(background.BackgroundShells, "roster", finished_shells)
     d.dispatch("parallel", {"task": "first"})
     d.dispatch("parallel", {"task": "second"})
     roster = d.dispatch("read_background", {}).to_wire()
