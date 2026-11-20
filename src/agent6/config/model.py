@@ -260,6 +260,38 @@ class Config(pydantic.BaseModel):
         return self
 
     @pydantic.model_validator(mode="after")
+    def _local_summary_fits_tail(self) -> Config:
+        """Refuse a local restart whose tail already exceeds the restart threshold.
+
+        Returns:
+            The validated configuration.
+
+        Raises:
+            ValueError: The worker keeps a tail that triggers another restart.
+        """
+        summarise = self.compaction.summarise_at_chars
+        tail = self.compaction.keep_recent_chars
+        if summarise is None or summarise > tail:
+            return self
+        from agent6.providers import anthropic_models
+
+        worker = self.models.resolve("worker")
+        if (
+            worker is not None
+            and isinstance(
+                entry := self.providers.get(worker.provider), provider_config.AnthropicProviderEntry
+            )
+            and entry.server_compaction
+            and anthropic_models.has_signed_compaction(worker.model)
+        ):
+            return self
+        raise ValueError(
+            f"compaction.summarise_at_chars ({summarise}) must be greater than"
+            f" keep_recent_chars ({tail}): the verbatim tail"
+            " alone would re-trigger tier 2 after every restart."
+        )
+
+    @pydantic.model_validator(mode="after")
     def _model_git_control_needs_git_writes(self) -> Config:
         """Refuse `git.control = "model"` beside `protect_git = "on"`: the model must write .git.
 

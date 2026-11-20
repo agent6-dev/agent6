@@ -1220,3 +1220,11 @@ def test_other_backends_refuse_server_compaction(tmp_path: pathlib.Path, backend
                 tmp_path, f'[providers.p]\nbackend = "{backend}"\n{url}server_compaction = true\n'
             )
         )
+
+
+def test_endpoint_compaction_does_not_validate_the_unused_tail(tmp_path: pathlib.Path) -> None:
+    body = _VALID_TOML.replace("claude-x", "claude-sonnet-5-5")
+    cfg = load_config(
+        _write(tmp_path, body + "\n[compaction]\ndrop_at_chars = 100\nsummarise_at_chars = 300\n")
+    )
+    assert cfg.compaction.keep_recent_chars == 80000
