@@ -84,6 +84,8 @@
   box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 18.75rem; overflow-y: auto;
 }
 .gpick-list .ac-item { display: flex; align-items: center; gap: 0.25rem; }
+/* A note row (no match, more, an error) wraps, so its whole text shows. */
+.gpick-list .ac-item[aria-disabled=true] { display: block; white-space: normal; overflow-wrap: anywhere; }
 .gpick-list .ac-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gpick-list .ac-item > span:nth-child(2) { flex: 1; min-width: 0; }
 /* A ref's whole name shows where its row has room; its sha stays whole. */

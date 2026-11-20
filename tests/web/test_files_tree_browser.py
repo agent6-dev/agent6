@@ -221,6 +221,26 @@ def test_the_revision_list_opens_under_its_field(
     assert not errors
 
 
+def test_a_revision_list_note_shows_its_whole_text(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """A note row in the revision list, such as a long error, was cut mid-word with no ellipsis."""
+    from playwright.sync_api import expect
+
+    reason = "git log failed: " + "a reason that keeps going " * 8
+    page, errors = open_page(big_tree)
+    page.route(
+        "**/api/git/search*",
+        lambda route: route.fulfill(status=500, json={"error": reason.strip()}),
+    )
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.get_by_role("combobox", name="revision").click()
+    note = page.locator(".gpick-list .ac-item.err")
+    expect(note).to_have_text(reason.strip())
+    assert note.evaluate("e => e.scrollWidth <= e.clientWidth")
+    assert [e for e in errors if "500" not in e] == []  # the failed search's response
+
+
 def test_the_revision_field_drops_text_it_did_not_apply(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
