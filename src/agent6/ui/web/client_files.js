@@ -200,7 +200,11 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         if (!facts.length) facts.push(fmtBytes(image.size));
         const wrap = el('div', 'git-img one'), fig = el('figure', 'git-img-side'), img = el('img');
         img.alt = f.path; fig.appendChild(img); wrap.appendChild(fig);
-        img.onload = () => { facts.push(img.naturalWidth + '\u00d7' + img.naturalHeight); note.textContent = facts.join(' · '); loading.replaceWith(wrap); };
+        img.onload = () => {
+          // An SVG states no pixel size: a browser guesses one (150 or 300 square) where it has none.
+          if (!/\.svg$/i.test(f.path)) facts.push(img.naturalWidth + '\u00d7' + img.naturalHeight);
+          note.textContent = facts.join(' · '); loading.replaceWith(wrap);
+        };
         img.onerror = () => { note.textContent = facts.join(' · '); loading.replaceWith(el('div', 'muted gf-note', 'the browser cannot show this image')); };
         img.src = image.url;
       }).catch(e => { if (current()) loading.replaceWith(failure('err gf-note', e, () => showFile(f, whole, linked))); });

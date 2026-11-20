@@ -679,6 +679,23 @@ def test_an_image_states_its_facts_once(
     assert not errors
 
 
+def test_an_svg_states_no_pixel_size_it_does_not_have(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A size-less SVG read 150x150 in Chromium and 300x300 in Firefox: the browser's guess."""
+    from playwright.sync_api import expect
+
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><circle r="9"/></svg>'
+    (tmp_path / "mark.svg").write_text(svg, encoding="utf-8")
+    _git(tmp_path, "add", "mark.svg")
+    _git(tmp_path, "commit", "-m", "a mark")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/mark.svg")
+    page.wait_for_selector(".files-view img")
+    expect(page.locator(".files-head .files-note")).to_have_text(f"{len(svg)} B")
+    assert not errors
+
+
 def test_an_image_the_browser_cannot_show_says_so_in_a_note(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
