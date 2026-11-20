@@ -225,7 +225,7 @@ def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:
     assert "if (r.branch && !live)" in paint and "if (r.unmerged)" in paint
     assert "if (!await confirmMerge(r)) return;" in paint and "await postMerge(r)" in paint
     steps = client[client.index("async function confirmMerge") : client.index("const focusables")]
-    # The confirm reads the run's merge preview; the POST to the same path lands it.
+    # GET previews the merge. POST to the same path merges the run.
     assert "getJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge')" in steps
     assert "(same ? '\\n\\n' + same : '')" in steps
     assert "postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {})" in steps

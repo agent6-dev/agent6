@@ -783,9 +783,8 @@ def quarantine(
 ) -> None:
     """Set aside a pack that `agent6 pack` did not write, and say so.
 
-    For a caller that knows whose the pack is. An ending operation started beside no pack
-    and holds the checkout's lease, which `pack` takes alone, or it saw none before its
-    landing; the start check names the session (`check_start`).
+    An ending operation holds the checkout's lease and started beside no pack.
+    A merge calls this only if it saw no pack before merging. `check_start` names the session.
 
     The manifest and the `config/`, `repo/` and `skills/` beside it move into one new
     directory, `.agent6/pack.invalid`: a later `agent6 pack` refuses to write beside those
