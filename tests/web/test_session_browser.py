@@ -625,6 +625,34 @@ def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
     assert not errors
 
 
+def test_the_phone_widget_button_draws_the_theme_buttons_icon_in_its_square(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The widget button drew the glyph ☰, lighter and smaller than the theme button's icon."""
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    session_logs.write_run(tmp_path, "menu-AAA111", [stop])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/menu-AAA111")
+    button = page.get_by_role("button", name="Widgets", exact=True)
+    expect(button).to_be_visible()
+    boxes = button.evaluate(
+        """b => [b, b.querySelector('svg.ic'), document.querySelector('header .theme-toggle'),
+          document.querySelector('header .theme-toggle svg.ic')]
+          .map(e => e && e.getBoundingClientRect().toJSON())"""
+    )
+    own, icon, theme, theme_icon = boxes
+    assert icon is not None, "no line icon"
+    assert button.text_content() == ""
+    assert (own["width"], own["height"]) == (theme["width"], theme["height"])
+    assert (icon["width"], icon["height"]) == (theme_icon["width"], theme_icon["height"])
+    assert icon["x"] - own["x"] == theme_icon["x"] - theme["x"]
+    assert icon["y"] - own["y"] == theme_icon["y"] - theme["y"]
+    assert not errors
+
+
 def test_the_phone_widget_menu_offers_only_the_widgets_a_run_has(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

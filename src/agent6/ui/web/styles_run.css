@@ -161,7 +161,7 @@
   .run-app.paged .card[data-w].w-active { display: block; }
   /* the widget menu button rides in the top bar, right of the theme toggle
      (the run view mounts it there), so it shares the theme button's skin */
-  .wmenu-btn { display: block; }
+  .wmenu-btn { display: inline-flex; }
   /* The open menu hangs just under the fixed header, at its right end. */
   .wmenu:popover-open {
     inset: calc(var(--hdr-h) + env(safe-area-inset-top) + 0.25rem) 1rem auto auto; margin: 0; padding: 0;

@@ -155,7 +155,8 @@ async function renderRun(id, opts, gen) {
                    ['review', 'Run review'], ['findings', 'Findings'],
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
                    ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];
-  const wbtn = el('button', 'wmenu-btn', '☰');
+  const wbtn = el('button', 'wmenu-btn');
+  wbtn.append(railShow.querySelector('svg').cloneNode(true)); // the menu icon the rail's show button draws
   wbtn.setAttribute('aria-label', 'Widgets'); wbtn.title = 'Widgets'; // as the theme button beside it
   const wmenu = el('div', 'wmenu');
   wmenu.popover = 'auto';
