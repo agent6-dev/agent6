@@ -961,7 +961,7 @@ def build_rank_recorder(
             rows=rows,
             committed={res.spec.session_id: res.has_commits for res in results},
             model_refs=model_refs,
-            merge_parent=parent_dir.name,
+            merge_parents={ranking.winner: parent_dir.name} if ranking.winner else None,
             reporter=reporter,
         )
 

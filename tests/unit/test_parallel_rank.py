@@ -686,17 +686,23 @@ def _child_record(repo: pathlib.Path, sid: str, verification: str) -> pathlib.Pa
     return dest
 
 
+@pytest.mark.parametrize("top_gate", ["passed", "failed"])
 def test_the_apps_recorder_stamps_journals_and_prints_a_ranking_the_harness_made(
-    repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    top_gate: kinds.Verification,
 ) -> None:
-    """The order reaches the manifests, the journal and the operator's table, once each."""
+    """The recorded order can have no winner. Only a winner's row offers the parent's merge."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
     origin_state = paths.state_dir(repo)
     root = _child_record(repo, "root", "not_applicable")
     run = _Run(repo, origin_state)
     results = [
-        dataclasses.replace(res, session_dir=_child_record(repo, res.spec.session_id, "passed"))
-        for res in (run.attempt(1), run.attempt(2))
+        dataclasses.replace(
+            res, verification=gate, session_dir=_child_record(repo, res.spec.session_id, gate)
+        )
+        for res, gate in ((run.attempt(1), "passed"), (run.attempt(2), top_gate))
     ]
     said: list[str] = []
     recorder = app_children.build_rank_recorder(
@@ -709,12 +715,13 @@ def test_the_apps_recorder_stamps_journals_and_prints_a_ranking_the_harness_made
     briefs = parallel_rank.candidates(
         repo, results, base=_git(repo, "rev-parse", "main"), task="rewrite a.txt"
     )
-    assert "+child 1" in briefs[0].diff and briefs[1].verification == "passed"
+    assert "+child 1" in briefs[0].diff and briefs[1].verification == top_gate
+    order = (TWO, ONE)
     ranking = child_records.Ranking(
-        order=(TWO, ONE),
+        order=order,
         ranked_by="judge",
         rationale="two is tidier",
-        winner=TWO,
+        winner=parallel_rank.winner(briefs, order, harness_gate=True),
         judge_cost_usd=0.1,
     )
 
@@ -725,7 +732,7 @@ def test_the_apps_recorder_stamps_journals_and_prints_a_ranking_the_harness_made
         for sid in (ONE, TWO)
     }
     assert placements[TWO] == sessions_manifest.PlacementStamp(
-        rank=1, of=2, winner=True, group="root-p1"
+        rank=1, of=2, winner=top_gate == "passed", group="root-p1"
     )
     assert placements[ONE] == sessions_manifest.PlacementStamp(
         rank=2, of=2, winner=False, group="root-p1"
@@ -738,6 +745,13 @@ def test_the_apps_recorder_stamps_journals_and_prints_a_ranking_the_harness_made
     assert [child["session_id"] for child in compared["ranking"]] == [TWO, ONE]
     assert (compared["rationale"], compared["judge_cost_usd"]) == ("two is tidier", 0.1)
     assert said[0] == "ranked candidates (best first):"
-    assert said[1].startswith(f"  1. {TWO}  passed  ")
+    assert said[1].startswith(f"  1. {TWO}  ")
+    assert said[1].rsplit("   ", 1)[-1] == (
+        "merges into root's chain; merge with: agent6 sessions merge root"
+        if top_gate == "passed"
+        else f"merge with: agent6 sessions merge {TWO}"
+    )
+    assert said[2].startswith(f"  2. {ONE}  passed  ")
+    assert said[2].endswith(f"   merge with: agent6 sessions merge {ONE}")
     assert said[-1] == "\njudge: two is tidier"
     assert app_compare.outcome_of(ranking).ranking == (TWO, ONE)

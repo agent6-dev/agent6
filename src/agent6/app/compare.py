@@ -164,7 +164,7 @@ def print_ranked_candidates(
     merged_into: Mapping[str, str] | None = None,
     committed: Mapping[str, bool] | None = None,
     model_refs: Mapping[str, str] | None = None,
-    merge_parent: str = "",
+    merge_parents: Mapping[str, str] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Print the ranked table, the total spend and the judge's rationale.
@@ -180,8 +180,7 @@ def print_ranked_candidates(
         committed: Whether a candidate's branch holds a commit, by session id; one named
             False has nothing to merge.
         model_refs: Imported work locations for model-controlled children.
-        merge_parent: The parent whose chain receives the first-ranked candidate; "" when
-            nothing merges by this ranking.
+        merge_parents: The parent whose chain receives the winner, keyed by the winner's id.
         reporter: The output channels.
     """
     if not outcome.ranking:
@@ -202,15 +201,12 @@ def print_ranked_candidates(
                 if model_refs[rid]
                 else "no imported work ref (git was model-controlled)"
             )
-        elif merge_parent and rnk == 1 and (committed or {}).get(rid, True):
-            merge_note = (
-                f"merges into {merge_parent}'s chain; merge with: "
-                f"agent6 sessions merge {merge_parent}"
-            )
-        elif (committed or {}).get(rid, True):
-            merge_note = f"merge with: agent6 sessions merge {rid}"
-        else:
+        elif not (committed or {}).get(rid, True):
             merge_note = "nothing to merge (no commit)"
+        elif parent := (merge_parents or {}).get(rid):
+            merge_note = f"merges into {parent}'s chain; merge with: agent6 sessions merge {parent}"
+        else:
+            merge_note = f"merge with: agent6 sessions merge {rid}"
         reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {merge_note}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
