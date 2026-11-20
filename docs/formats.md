@@ -2743,6 +2743,7 @@ Source: [`agent6.app.child_launch.ChildLaunch`](https://github.com/agent6-dev/ag
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `worktree` | `pathlib.Path` | The child's clone, the run's cwd. |
+| `clone` | `CloneReceipt \| None` | The receipt from first launch; an unbound launch cannot drive a checkout. |
 | `record_state` | `pathlib.Path` | The state dir of the repository that dispatched the child, where the child's record lives from its first event. |
 | `session_id` | `str` | The child's session id. |
 | `task` | `str` | The task text, exactly as the child's manifest records it. |
@@ -3335,6 +3336,18 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 | `value` | `str` | The string value parsed by the config writer. |
 | `repo` | `bool` | Whether to write repo config rather than global config. |
 | `unset` | `bool` | Whether to remove the setting instead of assigning value. |
+
+### CloneReceipt
+
+**Support: public.** The independent checkout and state the parent granted at first launch.
+
+Source: [`agent6.app.child_launch.CloneReceipt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/child_launch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `state` | `pathlib.Path` | The clone's project state directory. |
+| `directory` | `tuple[int, int]` | The device and inode of the checkout directory. |
+| `git` | `tuple[int, int]` | The device and inode of the checkout's git directory. |
 
 ### BudgetAllowance
 

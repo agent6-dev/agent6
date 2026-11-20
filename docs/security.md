@@ -894,7 +894,10 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - `read_background` and `stop_background` reach a child only by a session id the run's own dispatch records name, so the model reads or stops through them no session it did not start; under `run_commands = "deny"` a run with the `parallel` tool keeps `stop_background`, which then stops children only
     - `merge_child` accepts only a stopped child from the parent's own dispatch records, never a supplied git ref; it is offered only under `git.control = "agent6"`, records the request before answering, and merges at a clean turn boundary with the ordinary chain merge; model-owned git never runs this merge
     - `steer_child` rides the same knob and the same two gates, and reaches only a child the run's dispatch records name that runs or has stopped; the text enters that child's conversation as one notice headed as its parent's and is never read as a steer verb (`abort`, `exit`, `/undo`, `detach`), a directive (`/parallel`, `/pin`, `/review`, a skill) or an answer to a question, so it grants the child nothing its config does not; the child journals it as `steer.parent`, and a child is offered neither tool, so depth stays 1
-    - continuing a stopped child retains its clone and conversation, binds the private launch to the same child, parent and group, and restarts its watch with the parent's remaining allowance and approval policy; direct child resume is refused, and cumulative usage is charged only beyond the recorded continuation baseline
+    - only the parent can continue a stopped child, under its remaining allowance and approval policy
+    - the private launch binds the child, parent and group to the original clone, its git directory and its state
+    - the child reads its own origin journal by exact ID; its roster and memory stay in the clone's state
+    - a continuation charges only the usage beyond its recorded baseline
     - the parent's model cannot end the run over a child: `finish_session` is refused until every task has completed and every requested merge has been reported
 - A child's config carries key references, never secret values
     - the parent writes each child's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)

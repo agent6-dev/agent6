@@ -271,7 +271,8 @@ See the [provider defaults](config.md#providers).
 A stopped child continues the same conversation in its retained clone, under the parent's remaining budget and approval policy, with the text as its next instruction.
 Its finished work follows the same merge policy as a new child's work.
 The task's other attempts must have ended, with none already merged and no merge pending.
-A missing clone or conversation snapshot refuses continuation; `agent6 fork <child-id> --steer "..."` starts independent work from its commits.
+Continuation requires the conversation snapshot and the original clone recorded at first launch.
+If either is missing or the clone was replaced, `agent6 fork <child-id> --steer "..."` starts independent work from its commits.
 It queues in order with the operator's steers on the channel `agent6 steer <child>` uses.
 If the child takes another turn, it reads the message under `PARENT STEERING (an instruction from the run that started this child):`; a child can finish review without taking another turn.
 A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` in it are words, not commands.

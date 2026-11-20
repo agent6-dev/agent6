@@ -35,7 +35,13 @@ class LaunchError(ConfigError):
 
 
 class CloneReceipt(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """The independent checkout and state the parent granted at first launch."""
+    """The independent checkout and state the parent granted at first launch.
+
+    Attributes:
+        state: The clone's project state directory.
+        directory: The device and inode of the checkout directory.
+        git: The device and inode of the checkout's git directory.
+    """
 
     state: pathlib.Path
     directory: tuple[int, int]
