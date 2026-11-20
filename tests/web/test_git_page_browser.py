@@ -780,6 +780,19 @@ def test_the_fetch_row_hides_in_a_repository_without_a_remote(
     assert errors == [], errors
 
 
+def test_an_empty_repository_reads_as_one(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A repository with no commits read 'no refs selected', as if the filter hid its history."""
+    from playwright.sync_api import expect
+
+    _git(tmp_path, "init", "-q", "-b", "main")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/git")
+    expect(page.locator(".git-graph .empty")).to_have_text("no commits yet")
+    assert errors == [], errors
+
+
 def test_a_detached_head_reads_as_detached(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:

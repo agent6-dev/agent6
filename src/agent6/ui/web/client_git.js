@@ -534,7 +534,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       graph.appendChild(row);
     });
     if (loadError) graph.appendChild(el('div', 'empty err', 'error: ' + loadError));
-    else if (!commits.length) graph.appendChild(el('div', 'empty', selectedRefs().length || head.sha ? 'no commits yet' : 'no refs selected'));
+    else if (!commits.length) graph.appendChild(el('div', 'empty', refs.length && !selectedRefs().length ? 'no refs selected' : 'no commits yet'));
     if (hasMore) {
       // The next page waits on a disabled button; the focus it held goes to the first row it adds.
       const more = el('button', 'git-more', 'Load more');
