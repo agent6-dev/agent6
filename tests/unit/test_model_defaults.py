@@ -178,8 +178,11 @@ def test_model_all_writes_default_and_four_overrides(
     """All writes five route tables at the selected layer."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    global_path = paths.global_config_path()
+    global_path.parent.mkdir(parents=True)
+    global_path.write_text('[providers.p]\nbackend = "openai"\n', encoding="utf-8")
     assert entry.main(["model", "all", "p/m", *target]) == 0
-    path = paths.repo_config_path(tmp_path) if target else paths.global_config_path()
+    path = paths.repo_config_path(tmp_path) if target else global_path
     assert tomllib.loads(path.read_text())["models"] == {
         role: {"model": "p/m"} for role in ("default", "worker", "planner", "reviewer", "helper")
     }
