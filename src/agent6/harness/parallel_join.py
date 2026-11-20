@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import pathlib
+import time
 from collections.abc import Callable, Sequence
 
 import pydantic
@@ -16,6 +17,7 @@ from agent6.harness import dag_focus
 from agent6.sessions import child_dispatch
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import format
 
 
 def join_child_result(
@@ -85,22 +87,35 @@ def stopped_join(res: child_records.ChildResult) -> child_records.ChildJoin:
         "",
         res.stopped_by,
         commits=res.commits,
+        context=res.context,
     )
 
 
-def stopped_words(stopped_by: str, holder: str, commits: int) -> str:
+def stopped_words(
+    stopped_by: str,
+    holder: str,
+    commits: int,
+    context: child_records.ChildContext,
+) -> str:
     """Return how a stopped child stands: what stopped it, and what holds its work.
 
     Args:
         stopped_by: What stopped it (`stopped by its parent`).
         holder: The name of what holds its work: its branch, or `the branch`.
         commits: The commits it made beyond its base.
+        context: Its last measured conversation size and activity.
 
     Returns:
         The words every surface of the parent uses for a stopped child.
     """
-    held = f"{holder} holds {commits} commit(s)" if commits else "it made no commit"
-    return f"{stopped_by}, not merged; {held}"
+    held = f"{holder} holds {commits} commit(s)" if holder else f"{commits} commit(s); ref unknown"
+    size = f"{context.tokens} tokens" if context.tokens is not None else "unknown"
+    age = (
+        f"last ran {format.format_age(time.time() - context.last_run_at)} ago"
+        if context.last_run_at is not None
+        else "last ran: unknown"
+    )
+    return f"{stopped_by}, not merged; {held}; conversation at last call: {size}; {age}"
 
 
 def segment_stamp(
@@ -134,7 +149,7 @@ def join_words(j: child_records.ChildJoin) -> str:
     if j.status == "unmerged":
         return f"not merged; {j.branch} holds {j.commits} commit(s)"
     if j.status == "stopped":
-        return stopped_words(j.detail, j.branch, j.commits)
+        return stopped_words(j.detail, j.branch, j.commits, j.context)
     return "no changes" if j.status == "no_changes" else j.status
 
 
@@ -190,7 +205,9 @@ def end_notice(res: child_records.ChildResult) -> str:
         return f"[parallel] child {sid} ended without a result: {res.error}"
     how = "finished"
     if res.stopped_by:
-        how = stopped_words(res.stopped_by, res.imported_ref or res.branch, res.commits)
+        how = stopped_words(
+            res.stopped_by, res.imported_ref or res.branch, res.commits, res.context
+        )
     head = f"[parallel] child {sid} {how}."
     report = res.report.strip()
     return f"{head}\nsummary: " + report.replace("\n", "\n  ") if report else head
@@ -239,7 +256,7 @@ def summary_text(
                 f"  - {j.session_id}: {join_words(j)}. git.control = model: merge with git."
             )
         elif j.status == "stopped":
-            words = stopped_words(j.detail, "the branch", j.commits)
+            words = stopped_words(j.detail, "the branch", j.commits, j.context)
             lines.append(f"  - {j.session_id} ({j.branch}): {words}.")
         elif j.status == "conflict":
             # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
@@ -288,7 +305,7 @@ def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
         elif j.status == "conflict":
             what = f"first; its merge conflicted, {j.branch} holds its work"
         elif j.status == "stopped":
-            what = stopped_words(j.detail, j.branch, j.commits)
+            what = stopped_words(j.detail, j.branch, j.commits, j.context)
         else:
             what = j.detail or "no result"
         lines.append(f"  {j.session_id}: {what}")
@@ -308,6 +325,7 @@ def join_of(child: child_dispatch.ChildRecord) -> child_records.ChildJoin:
         join.detail,
         child.report,
         commits=join.commits,
+        context=join.context,
     )
 
 

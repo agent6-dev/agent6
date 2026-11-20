@@ -32,11 +32,13 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     background._init_repo(repo)
     ready = threading.Event()
     seen: list[dict[str, Any]] = []
+    parents: list[dict[str, Any]] = []
 
     def reply(body: dict[str, Any]) -> launch_env.Reply:  # noqa: PLR0911  # one reply per scripted turn
         task = children_cli._first_task(body)
         turn = children_cli._turn(body)
         if "PARENT:" in task:
+            parents.append(body)
             ids = children_cli._started(body)
             sid = ids[0] if ids else ""
             if turn == 1:
@@ -119,6 +121,9 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     assert child.join.status == ("joined" if control == "agent6" else "unmerged")
     continued = [b for b in seen if "CONTINUE-OWNED" in json.dumps(b["messages"])]
     assert continued
+    stopped = json.dumps(parents[3]["messages"])
+    assert "conversation at last call: 1 tokens; last ran" in stopped
+    assert "last ran: unknown" not in stopped
     assert children_cli._turn(continued[0]) > 0
     assert "original work" in json.dumps(continued[-1])
     assert (repo / "continued.txt").exists() is (control == "agent6")

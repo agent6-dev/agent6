@@ -514,6 +514,12 @@ def recorded_result(
     """
     summary = summarize_session_dir(dest)
     usage = child_usage(dest)
+    recorded = fold_session(tail_events(dest / sessions_layout.LOGS_NAME, follow=False))
+    call = recorded.last_model_call
+    context = child_records.ChildContext(
+        tokens=call.context_tokens if call is not None and call.context_tokens > 0 else None,
+        last_run_at=recorded.last_event_at,
+    )
     if not produced_result(summary.status):
         # Only a deliberate end joins the parent as a success.
         return child_records.ChildResult(
@@ -540,9 +546,8 @@ def recorded_result(
         commits=child_commits(origin, dest, imported),
         verification=summary.verification,
         usage=usage,
-        report=fold_session(
-            tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
-        ).finish_summary,
+        report=recorded.finish_summary,
+        context=context,
         # A stop counts as a result, and one that never merges by itself: the child's own
         # record says it was one, whoever asked.
         stopped_by=stopped_by or ("stopped" if summary.status == "stopped" else ""),

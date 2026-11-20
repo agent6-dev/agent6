@@ -146,6 +146,19 @@ class Imported:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ChildContext:
+    """The last measured conversation size and activity of a child.
+
+    Attributes:
+        tokens: Full provider input at its last measured call; None when unknown.
+        last_run_at: Epoch of its last journal activity when it ended; None when unknown.
+    """
+
+    tokens: int | None = None
+    last_run_at: float | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ChildResult:
     """Record the outcome of one child.
 
@@ -166,6 +179,7 @@ class ChildResult:
             came back.
         report: What the child said at its end, its finish summary; "" when it ended another
             way.
+        context: Its last measured conversation size and activity.
         stopped_by: What ended the child short of its own finish: its deadline, the run's
             budget, its parent's stop, or `stopped` for the operator's and for the end of the
             execution that started it; "" when it ended by itself. A stopped child's work
@@ -186,6 +200,7 @@ class ChildResult:
     usage: budget.UsageSettlement | None = None
     report: str = ""
     stopped_by: str = ""
+    context: ChildContext = ChildContext()
 
 
 class ChildSpawner(Protocol):
@@ -323,6 +338,7 @@ class ChildJoin:
         detail: The failure's reason; a conflict's files; a ranked child's place (`2 of 3`);
             what stopped a stopped child (`stopped by its parent`); else "".
         report: What the child said at its end, its finish summary; "" when it gave none.
+        context: Its last measured conversation size and activity.
         commits: The commits a stopped child's branch holds beyond its base; 0 otherwise.
     """
 
@@ -333,6 +349,7 @@ class ChildJoin:
     detail: str
     report: str = ""
     commits: int = 0
+    context: ChildContext = ChildContext()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

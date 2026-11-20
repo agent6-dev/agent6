@@ -238,7 +238,7 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_merge_gives_its_jo
     )
     assert parallel_join.end_notice(stopped) == (
         "[parallel] child child-1 stopped at the run's budget, not merged;"
-        " agent6/child-1 holds 2 commit(s)."
+        " agent6/child-1 holds 2 commit(s); conversation at last call: unknown; last ran: unknown."
     )
     assert parallel_join.end_notice(_res(ok=False, error="no result (failed)")) == (
         "[parallel] child child-1 ended without a result: no result (failed)"
@@ -281,8 +281,10 @@ def test_summary_text_says_a_stopped_child_did_not_merge() -> None:
     text = parallel_join.summary_text("p1", [idle, busy])
     assert text.splitlines() == [
         "[parallel] group p1 complete (2 child(ren)):",
-        "  - a (agent6/a): stopped at the run's budget, not merged; it made no commit.",
-        "  - b (agent6/b): stopped by its parent, not merged; the branch holds 3 commit(s).",
+        "  - a (agent6/a): stopped at the run's budget, not merged; the branch holds 0 commit(s);"
+        " conversation at last call: unknown; last ran: unknown.",
+        "  - b (agent6/b): stopped by its parent, not merged; the branch holds 3 commit(s);"
+        " conversation at last call: unknown; last ran: unknown.",
         "Every child stopped: nothing merged.",
     ]
     # A task whose every child stopped did not pass; one that merged a sibling did.
@@ -297,7 +299,8 @@ def test_summary_text_says_a_stopped_child_did_not_merge() -> None:
         "Review what merged and continue."
     )
     assert parallel_join.join_words(busy) == (
-        "stopped by its parent, not merged; agent6/b holds 3 commit(s)"
+        "stopped by its parent, not merged; agent6/b holds 3 commit(s);"
+        " conversation at last call: unknown; last ran: unknown"
     )
 
 
@@ -361,11 +364,13 @@ def test_a_children_result_carries_its_finish_summary(tmp_path: pathlib.Path) ->
     )
     assert res.ok and res.stopped_by == "stopped"
     assert parallel_join.end_notice(res).splitlines()[0] == (
-        "[parallel] child done stopped, not merged; it made no commit."
+        "[parallel] child done stopped, not merged; 0 commit(s); ref unknown;"
+        " conversation at last call: unknown; last ran: unknown."
     )
     join = parallel_join.stopped_join(res)
     assert parallel_join.summary_text("g", [join]).splitlines()[1:] == [
-        "  - done (): stopped, not merged; it made no commit.",
+        "  - done (): stopped, not merged; the branch holds 0 commit(s);"
+        " conversation at last call: unknown; last ran: unknown.",
         "Every child stopped: nothing merged.",
     ]
 

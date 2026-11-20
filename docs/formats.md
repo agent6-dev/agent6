@@ -3768,6 +3768,7 @@ Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a stopped child; "" when none. |
 | `commits` | `int` | The commits a stopped child's branch holds beyond its base; 0 otherwise. |
+| `context` | `ChildContext` | The child's last measured conversation size and activity. |
 | `target_before` | `str` | The chain tip before the join. |
 | `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
 
@@ -3998,6 +3999,17 @@ Source: [`agent6.viewmodel.session.records.Question`](https://github.com/agent6-
 | --- | --- | --- |
 | `question` | `str` | The question's text. |
 | `options` | `tuple[str, ...]` | Selectable presets; the operator may also type a free-text answer. |
+
+### ChildContext
+
+**Support: public.** The last measured conversation size and activity of a child.
+
+Source: [`agent6.child_records.ChildContext`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/child_records.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `tokens` | `int \| None` | Full provider input at its last measured call; None when unknown. |
+| `last_run_at` | `float \| None` | Epoch of its last journal activity when it ended; None when unknown. |
 
 ### ReviewerAssignment
 

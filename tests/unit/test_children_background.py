@@ -345,12 +345,14 @@ def test_an_end_stops_the_children_still_running_and_a_resume_merges_nothing_of_
     # The resumed model reads what it resumed into: the child, its branch, its commits.
     assert (
         f"[parallel] child {child} stopped by its parent, not merged;"
-        f" agent6/{child} holds 1 commit(s)." in resumed.seen[0]
+        f" agent6/{child} holds 1 commit(s); conversation at last call: unknown; last ran: unknown."
+        in resumed.seen[0]
     )
     assert (
         "[parallel] group run-p1 complete (1 child(ren)):\\n"
         f"  - {child} (agent6/{child}): stopped by its parent, not merged; the branch holds"
-        " 1 commit(s).\\nEvery child stopped: nothing merged." in resumed.seen[0]
+        " 1 commit(s); conversation at last call: unknown; last ran: unknown."
+        "\\nEvery child stopped: nothing merged." in resumed.seen[0]
     )
     assert not (repo / f"{child}.txt").exists()
     assert _git(repo, "rev-parse", "--verify", f"agent6/{child}")
@@ -560,15 +562,16 @@ def test_a_task_whose_every_child_stopped_merges_nothing_and_says_so(
     assert record.message == (
         "[parallel] group root-p1 complete (2 child(ren)):\n"
         "  - root-p1-l1 (agent6/root-p1-l1): stopped by its parent, not merged; the branch"
-        " holds 1 commit(s).\n"
-        "  - root-p1-l2 (agent6/root-p1-l2): stopped by its parent, not merged; it made no"
-        " commit.\n"
+        " holds 1 commit(s); conversation at last call: unknown; last ran: unknown.\n"
+        "  - root-p1-l2 (agent6/root-p1-l2): stopped by its parent, not merged; the branch"
+        " holds 0 commit(s); conversation at last call: unknown; last ran: unknown.\n"
         "Every child stopped: nothing merged."
     )
     assert _git(repo, "rev-parse", "HEAD") == before and dispatcher.open == {}
     said = json.dumps(conversation.to_wire())
     assert (
-        "[parallel] child root-p1-l2 stopped by its parent, not merged; it made no commit." in said
+        "[parallel] child root-p1-l2 stopped by its parent, not merged; agent6/root-p1-l2 holds"
+        " 0 commit(s); conversation at last call: unknown; last ran: unknown." in said
     )
 
 
@@ -671,7 +674,10 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     # The stop answers at once; the child ends in the background and never merges.
     assert children.stopped == [two]
     stopped = answers(provider.seen[3])[-1]
-    words = f"stopped by its parent, not merged; agent6/{two} holds 1 commit(s)"
+    words = (
+        f"stopped by its parent, not merged; agent6/{two} holds 1 commit(s);"
+        " conversation at last call: unknown; last ran: unknown"
+    )
     assert stopped["children"][1] in (f"[{two}] stopping: b", f"[{two}] {words}: b")
     assert f"[parallel] child {two} {words}." in provider.seen[3]
     assert "Every child stopped: nothing merged." in provider.seen[3]

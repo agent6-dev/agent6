@@ -192,6 +192,8 @@ It travels the steer channel `agent6 steer <child>` uses, so it queues in order 
 A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` in it are words, not commands.
 It is refused for an id that is no child of the run, a child that has finished or merged, or one that has not started.
 `stop_background` with a child's id stops the child; its work does not merge, and its branch holds what it committed.
+A stopped child's notice, roster and resumed parent state name its ref, commit count, conversation size at the last measured provider call, and how long ago it last ran.
+Missing measurements read as unknown.
 The two tools' descriptions mention children only in a run that has the `parallel` tool.
 `finish_session` is refused until every task has merged, and the refusal names the children that hold it: one still running, one that ended and has not merged, or one being ranked.
 A stopped child holds no end unless its parent requests a merge or continues it.

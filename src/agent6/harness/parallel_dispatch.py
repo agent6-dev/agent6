@@ -527,6 +527,7 @@ class ParallelDispatcher:
                 "sha": j.sha,
                 "detail": j.detail,
                 "commits": j.commits,
+                "context": dataclasses.asdict(j.context),
             }
             for j in joins
         ]
@@ -677,6 +678,7 @@ class ParallelDispatcher:
                             sha=join.sha,
                             detail=join.detail,
                             commits=join.commits,
+                            context=join.context,
                             target_before=before,
                             target_after=self.chain.tip() or "",
                         ),
