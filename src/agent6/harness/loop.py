@@ -2134,7 +2134,10 @@ class Harness:
     def review_gate(self) -> review_gate.ReviewGate:
         """Return the in-loop review panel."""
         return review_gate.ReviewGate(
-            settings=self.review,
+            # An ask or a plan writes no diff of its own: the in-loop panel sits only in a run.
+            settings=self.review
+            if self.mode == "run"
+            else dataclasses.replace(self.review, when="never"),
             session_id=self.session_id,
             chain=self.chain,
             hide=self.config.sandbox.hide_paths,

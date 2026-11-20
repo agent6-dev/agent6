@@ -631,7 +631,7 @@ class ReviewConfig(pydantic.BaseModel):
         },
         default="never",
         description=(
-            "In-loop panel over the diff so far, with findings sent to the model; only "
+            "In-loop panel over a run's diff so far, with findings sent to the model; only "
             "finish-time review can gate finish; periodic review uses "
             "`review.interval_turns`; without `review.reviewers`, one reviewer uses "
             "`[models.reviewer]`; each reviewer runs as a child with its own session."

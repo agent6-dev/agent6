@@ -494,6 +494,24 @@ def test_panel_advisory_does_not_block_finish() -> None:
 
 
 @pytest.mark.usefixtures("immutable_target")
+def test_an_ask_ends_without_the_in_loop_panel() -> None:
+    """An ask records no base commit, so its finish panel compared the whole repository."""
+    worker = mock.MagicMock()
+    worker.call.side_effect = [_resp("The answer is 42.")]
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.return_value = _resp(_BLOCK)
+    wf = _wf(
+        provider=worker,
+        dispatcher=_disp(),
+        mode="ask",
+        review=review_gate.ReviewSettings(reviewers=[_reviewer(reviewer_provider)], when="finish"),
+    )
+    result = _drive(wf, _begin())
+    assert result.reason == "answered"
+    assert reviewer_provider.call.call_count == 0
+
+
+@pytest.mark.usefixtures("immutable_target")
 def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
     """A grounded 'style' block never stalls a finish, even under veto.
 
