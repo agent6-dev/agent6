@@ -18,6 +18,7 @@ import json
 import pathlib
 from typing import Any
 
+from agent6 import config
 from agent6.tools import schema as tools_schema
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_tool_schemas.json"
@@ -186,6 +187,7 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
     assert "title" not in read_file["properties"]["path"]
 
     class _Dispatcher:
+        config = config.Config()
         dag_available = True
         session_id = ""
 

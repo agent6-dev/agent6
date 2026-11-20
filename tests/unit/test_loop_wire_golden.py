@@ -20,6 +20,7 @@ import pathlib
 import types
 from typing import Any
 
+from agent6 import config
 from agent6.harness import loop, loop_conversation, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.providers import ProviderResponse
@@ -37,6 +38,7 @@ class _StubDispatcher:
     """
 
     allowed_tools = None
+    config = config.Config()
 
     def parallel_available(self) -> bool:
         """A stub offers the model no `parallel` tool."""
