@@ -15,6 +15,8 @@ so far, its own running children included, and the parent's tracker bounds the s
 from __future__ import annotations
 
 import dataclasses
+import json
+import os
 import pathlib
 import threading
 import time
@@ -23,7 +25,6 @@ from collections.abc import Callable
 from agent6 import budget as agent6_budget
 from agent6.sessions import budget_events, ipc, journal, layout, process
 from agent6.tools import operator_prompts, schema
-from agent6.viewmodel import tail
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state as session_fold
@@ -38,6 +39,66 @@ class ChildStartup:
 
     pid: int
     start_at: int
+
+
+class _PromptJournal:
+    """Fold complete rows for one worker, starting at the launch boundary."""
+
+    def __init__(
+        self, directory: pathlib.Path, worker: process.ProcessIdentity, start_at: int
+    ) -> None:
+        self.binding = directory, worker, start_at
+        self.position = start_at
+        self.seen: os.stat_result | None = None
+        self.state = session_fold.initial_state()
+
+    def pending(self) -> state_types.ApprovalPrompt | state_types.QuestionPrompt | None:
+        """Return the same prompt object only while its journal slot stays open."""
+        directory, _, start_at = self.binding
+        try:
+            with (directory / layout.LOGS_NAME).open("rb") as fh:
+                # An unreadable or replaced file cannot confirm a cached slot. Stamp the open fd.
+                stamp = os.fstat(fh.fileno())
+                if self.seen is None or (
+                    not os.path.samestat(stamp, self.seen)
+                    or stamp.st_size < self.seen.st_size
+                    or (
+                        stamp.st_size == self.seen.st_size
+                        and stamp.st_ctime_ns != self.seen.st_ctime_ns
+                    )
+                ):
+                    self.position, self.state = start_at, session_fold.initial_state()
+                self.seen = stamp
+                fh.seek(self.position)
+                while self.position < stamp.st_size:
+                    line = fh.readline(stamp.st_size - self.position)
+                    if not line.endswith(b"\n"):
+                        break
+                    self.position += len(line)
+                    try:
+                        event = json.loads(line.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if isinstance(event, dict):
+                        self.state = session_fold.apply_event(self.state, event)
+        except OSError:
+            self.seen = None
+            return None
+        if self.state.finished:
+            return None
+        approval = session_fold.open_approval_of(self.state)
+        if approval is not None and not ipc.answer_written(directory, approval.id):
+            return approval
+        question = next((q for q in self.state.questions if q.blocking and not q.answered), None)
+        if question is not None and not ipc.question_answers_written(directory, question.id):
+            return question
+        return None
+
+
+class _WatchThread(threading.local):
+    """Drop the child's fold when its supervision thread exits."""
+
+    journal: _PromptJournal | None = None
 
 
 class ChildWatch:
@@ -63,6 +124,7 @@ class ChildWatch:
         self._parent_dir = parent_dir
         self._budget = budget
         self._emit = emit
+        self._thread = _WatchThread()
         self._row_lock = threading.Lock()
         self._journaled: tuple[float, int, float] = (0.0, 0, 0.0)
         self._journaled_at = 0.0
@@ -102,18 +164,26 @@ class ChildWatch:
             return False
         try:
             start_at = startup.start_at if startup is not None else 0
-            prompt = _open_prompt(child_dir, start_at)
+            reader = self._thread.journal
+            if reader is None or reader.binding != (child_dir, worker, start_at):
+                reader = self._thread.journal = _PromptJournal(child_dir, worker, start_at)
+            prompt = reader.pending()
             if prompt is None:
                 return False
 
+            ended = False
+
             def cancelled() -> bool:
-                return (
-                    interrupted()
+                nonlocal ended
+                ended = (
+                    ended
+                    or interrupted()
                     or ipc.stop_request_pending(child_dir)
                     or (self._budget is not None and self._budget.is_exhausted())
-                    or _open_prompt(child_dir, start_at) != prompt
+                    or reader.pending() is not prompt
                     or process.read_live_worker_identity(child_dir) != worker
                 )
+                return ended
 
             if not cancelled():
                 if isinstance(prompt, state_types.ApprovalPrompt):
@@ -202,29 +272,6 @@ class ChildWatch:
             ipc.write_question_answers(child_dir, prompt.id, answer.answers)
         else:
             ipc.write_question_unanswered(child_dir, prompt.id, answer.note)
-
-
-def _open_prompt(
-    child_dir: pathlib.Path, start_at: int
-) -> state_types.ApprovalPrompt | state_types.QuestionPrompt | None:
-    """Read a prompt from this launch's journal rows.
-
-    Args:
-        child_dir: The child's session directory.
-        start_at: The first byte to fold.
-
-    Returns:
-        The unanswered blocking prompt, or None while there is none to relay.
-    """
-    rows = tail.LogTail(child_dir / layout.LOGS_NAME).read(start_at=start_at)
-    state = session_fold.fold_session(rows)
-    approval = session_fold.open_approval_of(state)
-    if approval is not None and not ipc.answer_written(child_dir, approval.id):
-        return approval
-    question = next((q for q in state.questions if q.blocking and not q.answered), None)
-    if question is not None and not ipc.question_answers_written(child_dir, question.id):
-        return question
-    return None
 
 
 def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:

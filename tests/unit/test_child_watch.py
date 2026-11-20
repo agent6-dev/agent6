@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import time
+from typing import Any
 
 import pytest
 
@@ -19,6 +20,8 @@ from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import interact
 from agent6.viewmodel import listing
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as session_fold
 from agent6.viewmodel.session import view as state_view
 
 
@@ -134,6 +137,92 @@ def test_preflight_does_not_rewind_into_a_stopped_executions_prompt(tmp_path: pa
     parent = _Parent(tmp_path)
     parent.watch()(child, "attempt 1 child", startup)
     assert not parent.asked and _answer(child) is None
+
+
+@pytest.mark.parametrize("startup", [False, True], ids=["waiting", "startup"])
+def test_polling_an_open_approval_reads_each_row_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, startup: bool
+) -> None:
+    """The parent's answer wait reads appended rows, not the child's history on each tick."""
+    child = _child(tmp_path)
+    log = child / "logs.jsonl"
+    status = child_watch.ChildStartup(os.getpid(), log.stat().st_size) if startup else "waiting"
+    note = '{"type":"loop.note","text":"still working"}\n'
+    with log.open("a") as fh:
+        fh.write(note * 64 + json.dumps(_prompt()) + "\n")
+    apply = session_fold.apply_event
+    rows_folded = 0
+
+    def counted(state: state_types.SessionState, row: dict[str, Any]) -> state_types.SessionState:
+        nonlocal rows_folded
+        rows_folded += 1
+        return apply(state, row)
+
+    def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        for _ in range(8):
+            with log.open("a") as fh:
+                fh.write(note)
+            assert not request.interrupted()
+        return operator_prompts.ApprovalAnswer(True, "frontend")
+
+    monkeypatch.setattr(session_fold, "apply_event", counted)
+    watch = child_watch.ChildWatch(operator_prompts.OperatorPrompts(approver=approve), tmp_path)
+    watch(child, "child", status)
+    assert _answer(child) == "yes"
+    watch(child, "child", status)
+    assert rows_folded == 64 + 1 + 8 + (not startup)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "answered",
+        "consumed",
+        "reasked",
+        "rotated",
+        "truncated",
+        "missing",
+        "worker",
+        "stop",
+        "ended",
+    ],
+)
+def test_a_relay_writes_only_to_the_same_open_slot(tmp_path: pathlib.Path, change: str) -> None:
+    """An answer in flight cannot authorize another slot with the same id and text."""
+    child = _child(tmp_path, _prompt())
+    log = child / "logs.jsonl"
+
+    def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        assert not request.interrupted()
+        if change in {"answered", "consumed"}:
+            assert ipc.write_answer(child, "approval-1", "no")
+        elif change == "reasked":
+            with log.open("a") as fh:
+                fh.write('{"type":"approval.answer","id":"approval-1","approved":false}\n')
+                fh.write(json.dumps(_prompt()) + "\n")
+        elif change == "rotated":
+            replacement = child / "replacement"
+            replacement.write_bytes(log.read_bytes())
+            replacement.replace(log)
+        elif change == "truncated":
+            log.write_text(json.dumps(_prompt()) + "\n")
+        elif change == "missing":
+            log.unlink()
+        elif change == "worker":
+            (child / "worker.pid").unlink()
+        elif change == "ended":
+            with log.open("a") as fh:
+                fh.write('{"type":"session.stop","reason":"interrupted"}\n')
+        else:
+            assert ipc.request_stop(child, now=True)
+        assert request.interrupted()
+        if change == "consumed":
+            assert ipc.read_answer(child, "approval-1", timeout_s=0) == "no"
+        return operator_prompts.ApprovalAnswer(True, "frontend")
+
+    watch = child_watch.ChildWatch(operator_prompts.OperatorPrompts(approver=approve), tmp_path)
+    watch(child, "child", "waiting")
+    assert _answer(child) == ("no" if change == "answered" else None)
 
 
 def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) -> None:
