@@ -196,7 +196,7 @@ def _directories(state_dir: pathlib.Path) -> Iterator[tuple[sessions_layout.Sess
         except (OSError, path_safety.ContainmentError):
             continue
         for sid, mtime in dirs:
-            yield sessions_layout.SessionLayout(state_dir, sid, bucket), mtime
+            yield sessions_layout.SessionLayout(state_dir, sid, subdir=bucket), mtime
 
 
 def resolve_reader_id(
@@ -593,7 +593,7 @@ def roster(state_dir: pathlib.Path, query: str) -> Roster:
     for brief in briefs:
         if len(hits) > schema.ROSTER_MAX:
             break  # one past the cap: enough to know there are more
-        layout = sessions_layout.SessionLayout(state_dir, brief.id, brief.bucket)
+        layout = sessions_layout.SessionLayout(state_dir, brief.id, subdir=brief.bucket)
         found = needle in brief.task.casefold() or _journal_contains(layout, needle)
         if found:
             hits.append(brief)
