@@ -139,13 +139,10 @@ def test_steer_request_and_answer_bridge(tmp_path: pathlib.Path) -> None:
     assert b.steer_requested() is False
 
 
-def test_machine_agent_wires_the_summariser_seat(
+def test_machine_agent_wires_the_summariser_actor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The machine agent wires the reviewer-role summariser and shares one TranscriptSink.
-
-    Compaction side-calls otherwise fell back to the worker provider and were stamped seat="worker".
-    """
+    """The machine worker and helper share a recorder, not an actor label."""
     from typing import Any
 
     from agent6.app.machine import agent
@@ -179,13 +176,13 @@ def test_machine_agent_wires_the_summariser_seat(
         sinks["worker"] = k.get("transcript_sink")
         return object()
 
-    def _fake_summariser(*_a: Any, **k: Any) -> object:
-        sinks["summariser"] = k.get("transcript_sink")
+    def _fake_summariser(_cfg: Any, actor: str, **k: Any) -> object:
+        sinks[actor] = k.get("transcript_sink")
         return summariser
 
     monkeypatch.setattr(loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _fake_role)
-    monkeypatch.setattr(role_providers, "helper_seat_provider", _fake_summariser)
+    monkeypatch.setattr(role_providers, "helper_actor_provider", _fake_summariser)
 
     def _fake_dispatcher(**_k: Any) -> object:
         return types.SimpleNamespace(close=lambda: None)  # the state closes its dispatcher
@@ -203,7 +200,7 @@ def test_machine_agent_wires_the_summariser_seat(
     out = agent.run_one(req)
     assert out.reason == "finish_session"
     assert wf_kwargs["compaction"].helper is summariser
-    assert sinks["worker"] is sinks["summariser"]  # one sink, one seq counter
+    assert sinks["worker"] is sinks["helper:summariser"]  # one sink, one seq counter
 
 
 def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: pathlib.Path) -> None:
@@ -253,10 +250,10 @@ def test_away_wait_prompt_stops_with_the_run(tmp_path: pathlib.Path) -> None:
     t.join()
 
 
-def test_the_agent_seat_journals_under_a_driving_role(
+def test_the_machine_loop_journals_under_a_driving_actor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The machine execution's seat carries a role a SessionKind knows, so its replies fold."""
+    """The machine's replies belong to its conversation."""
     from unittest import mock
 
     from agent6 import budget, kinds
@@ -268,7 +265,7 @@ def test_the_agent_seat_journals_under_a_driving_role(
         return mock.MagicMock()
 
     monkeypatch.setattr(role_providers, "build_role_provider", stub_provider)
-    monkeypatch.setattr(role_providers, "helper_seat_provider", stub_provider)
+    monkeypatch.setattr(role_providers, "helper_actor_provider", stub_provider)
     req = agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,
@@ -283,4 +280,4 @@ def test_the_agent_seat_journals_under_a_driving_role(
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         attach_console=lambda _sink: None,
     )
-    assert not kinds.is_side_role(provider.role)
+    assert not kinds.is_side_actor(provider.actor)

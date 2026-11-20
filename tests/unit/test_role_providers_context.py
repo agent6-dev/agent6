@@ -152,6 +152,7 @@ def test_review_requests_belong_to_real_distinct_reviewer_sessions(
         logical = [r for child in child_dirs for r in _events(child, "model.call")]
         transcripts = [r for child in child_dirs for r in _transcripts(child)]
         assert len(requests) == len(logical) == len(transcripts) == 2
+        assert {r["actor"] for r in (*requests, *logical, *transcripts)} == {"reviewer:security"}
         assert {r["reviewer_index"] for r in requests} == {0, 1}
         assert {r["panel_id"] for r in requests} == {"panel-a"}
         assert len({r["model_call_id"] for r in requests}) == 2
@@ -176,6 +177,32 @@ def test_review_requests_belong_to_real_distinct_reviewer_sessions(
         assert repeated.n_abstain == 2 and len(calls) == 2
 
 
+def test_summariser_call_keeps_its_actor_on_the_shared_model_route(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The journal and transcript distinguish a summary from a reply on the worker's route."""
+    _mock_http(monkeypatch)
+    providers = _session(tmp_path)
+    assert providers.summariser_provider is not None
+    providers.summariser_provider.call(
+        system="summarise", messages=[], text_delta_callback=lambda _: None
+    )
+    providers.close()
+
+    (transcript,) = _transcripts(tmp_path)
+    for kind in (
+        "model.call",
+        "provider.request",
+        "model.text_delta",
+        "model.attempt",
+        "model.result",
+    ):
+        (row,) = _events(tmp_path, kind)
+        assert row.get("actor") == "helper:summariser", row
+        assert row["model_call_id"] == transcript["model_call_id"]
+    assert transcript["actor"] == "helper:summariser"
+
+
 @pytest.mark.parametrize("streaming", [False, True])
 def test_worker_request_and_transcript_carry_call_id_without_reviewer_fields(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, streaming: bool
@@ -188,6 +215,7 @@ def test_worker_request_and_transcript_carry_call_id_without_reviewer_fields(
     (request,) = _events(tmp_path, "provider.request")
     (transcript,) = _transcripts(tmp_path)
     assert request.get("model_call_id") == call["model_call_id"]
+    assert request["actor"] == call["actor"] == transcript["actor"] == "worker"
     assert transcript["model_call_id"] == call["model_call_id"]
     assert transcript["request_id"] == request["request_id"]
     assert "panel_id" not in request and "reviewer_index" not in request

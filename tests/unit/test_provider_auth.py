@@ -47,7 +47,7 @@ def _route(
     exchange: bool = False,
     expired: bool = False,
     observed: bool = True,
-    builder: str = "seat",
+    builder: str = "helper",
 ) -> tuple[
     openai.OpenAIProvider
     | anthropic.AnthropicProvider
@@ -101,9 +101,9 @@ def _route(
             events=events if observed else None,
         )
     else:
-        wrapped = role_providers.helper_seat_provider(
+        wrapped = role_providers.helper_actor_provider(
             cfg,
-            "summariser",
+            "helper:summariser",
             transcript_sink=sink,
             budget=tracker,
             events=events if observed else None,
@@ -150,7 +150,7 @@ def _serve(
 
 @pytest.mark.parametrize("backend", ["openai", "anthropic", "responses", "chatgpt"])
 @pytest.mark.parametrize("status", [200, 400])
-@pytest.mark.parametrize("builder", ["seat", "panel"])
+@pytest.mark.parametrize("builder", ["helper", "panel"])
 def test_refresh_journals_only_the_persisted_or_refused_outcome(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

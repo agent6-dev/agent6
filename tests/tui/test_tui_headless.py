@@ -351,9 +351,9 @@ def test_render_and_modals(tmp_path: pathlib.Path) -> None:
                         },
                     },
                 ),
-                _ev(type="model.call", role="worker", model="kimi-k2.6"),
-                _ev(type="model.thinking_delta", role="worker", text="let me [check]"),
-                _ev(type="model.text_delta", role="worker", text="answer is [x]"),
+                _ev(type="model.call", actor="worker", model="kimi-k2.6"),
+                _ev(type="model.thinking_delta", actor="worker", text="let me [check]"),
+                _ev(type="model.text_delta", actor="worker", text="answer is [x]"),
                 _ev(type="tool.call", name="grep", args={"pattern": "[a-z]+", "path": "x.py"}),
                 _ev(type="tool.result", name="grep", ok=True, summary="3 matches in [src]"),
                 _ev(type="diff.updated", index=1, patch="--- a\n+++ b\n@@ [x] @@"),
@@ -975,7 +975,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
         (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
         with (tmp_path / "logs.jsonl").open("a", encoding="utf-8") as log:
             log.write(json.dumps(_ev(type="session.resume", turn=2)) + "\n")
-            log.write(json.dumps(_ev(type="model.call", role="worker", model="m")) + "\n")
+            log.write(json.dumps(_ev(type="model.call", actor="worker", model="m")) + "\n")
         return ""
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
@@ -1174,11 +1174,11 @@ def test_context_used_percent_readout_in_top_line_and_bar(
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
-            app._handle_event(_ev(type="model.call", role="worker", model="m", provider="p"))
+            app._handle_event(_ev(type="model.call", actor="worker", model="m", provider="p"))
             app._handle_event(
                 _ev(
                     type="model.result",
-                    role="worker",
+                    actor="worker",
                     ok=True,
                     input_tokens=1_000,
                     cache_read_tokens=40_000,
@@ -1218,7 +1218,7 @@ def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: pa
             app._handle_event(
                 _ev(type="session.start", user_task="x", mode="run", ts=wedged_at - 5)
             )
-            app._handle_event(_ev(type="model.call", role="worker", model="m", ts=wedged_at))
+            app._handle_event(_ev(type="model.call", actor="worker", model="m", ts=wedged_at))
             app._tick()
             await pilot.pause()
             assert app.seconds_since_event() >= 2399
@@ -1279,7 +1279,7 @@ def test_plan_meter_reads_this_executions_points_after_a_resume(tmp_path: pathli
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
-            app._handle_event(_ev(type="model.call", role="worker", model="m"))
+            app._handle_event(_ev(type="model.call", actor="worker", model="m"))
             app._handle_event(_ev(**plan, plan_observed_points=2.0))
             app._handle_event(_ev(type="session.resume"))
             app._handle_event(_ev(**plan, plan_observed_points=0.5))
@@ -1305,7 +1305,7 @@ def test_budget_meter_reads_this_executions_spend_not_the_runs_total(
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
-            app._handle_event(_ev(type="model.call", role="worker", model="m"))
+            app._handle_event(_ev(type="model.call", actor="worker", model="m"))
             app._handle_event(_ev(type="budget.update", usd_total=2.0, usd_cap=2.5))
             app._handle_event(_ev(type="session.resume"))
             app._handle_event(_ev(type="budget.update", usd_total=0.5, usd_cap=2.5))
@@ -1355,7 +1355,7 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: pathlib.Path) -
                     name="run_command",
                     args={"argv": ["rg", "steer.signalled", "src/"]},
                 ),
-                _ev(type="model.call", role="worker", model="kimi"),
+                _ev(type="model.call", actor="worker", model="kimi"),
             )
         ),
         encoding="utf-8",
@@ -1389,7 +1389,7 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: pathli
             for e in (
                 _ev(type="session.start", user_task="fix it"),
                 _ev(type="steer.signalled", source="sigint"),
-                _ev(type="model.call", role="worker", model="kimi"),
+                _ev(type="model.call", actor="worker", model="kimi"),
             )
         ),
         encoding="utf-8",
@@ -1593,7 +1593,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
 
     events = [
         {"type": "session.start", "session_id": "dead-01", "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
@@ -1646,7 +1646,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: pathlib.Path) -> None:
 
     events = [
         {"type": "session.start", "session_id": "live-01", "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
@@ -1754,7 +1754,7 @@ def test_composer_compact_directive_routes_to_compact_request(tmp_path: pathlib.
 
     events = [
         {"type": "session.start", "session_id": "live-01", "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
@@ -1866,7 +1866,7 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: pathlib.Path) -> N
 def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pathlib.Path) -> None:
     """Before any model.call the header names the driver and says the worker is starting.
 
-    The first call then supplies the role and model shown with its in-flight beat.
+    The first call then supplies the actor and model shown with its in-flight beat.
     """
     (tmp_path / "manifest.json").write_text(
         json.dumps(
@@ -1889,12 +1889,12 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pa
             await _show_dashboard(pilot)
             top = str(app._dash.query_one("#top", widgets.Static).render())
             body = str(app._dash.query_one("#stream-body", widgets.Static).render())
-            assert "role: planner / m0" in top
+            assert "actor: planner / m0" in top
             assert "starting" in top and "starting" in body
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(_ev(type="session.start", user_task="t", mode="plan")) + "\n")
                 fh.write(
-                    json.dumps(_ev(type="model.call", role="planner", model="m1", provider="p"))
+                    json.dumps(_ev(type="model.call", actor="planner", model="m1", provider="p"))
                     + "\n"
                 )
             await waits.wait_for(
@@ -1907,7 +1907,7 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pa
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render())
-            assert "role: planner / m1" in top
+            assert "actor: planner / m1" in top
 
     asyncio.run(scenario())
 
@@ -1915,9 +1915,9 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pa
 def test_dashboard_does_not_call_a_dead_driverless_run_idle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A missing driver supplies no role fact, not an idle state.
+    """A missing driver supplies no actor label, not an idle state.
 
-    A worker that died launching reads stale, while the unknown role is a dash cached from the
+    A worker that died launching reads stale, while the unknown actor label is cached from the
     manifest rather than a manifest read on every heartbeat.
     """
     (tmp_path / "manifest.json").write_text(
@@ -1941,7 +1941,7 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
             await _show_dashboard(pilot)
             before = len(reads)
             header = app._dash.query_one(dashboard_header.RunHeader)  # pyright: ignore[reportPrivateUsage]
-            lines = {header._start_role() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
+            lines = {header._start_actor() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
             assert lines == {"(unknown)"}
             assert len(reads) - before <= 1
             top = str(app._dash.query_one("#top", widgets.Static).render())
@@ -1955,7 +1955,7 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
 def test_every_dashboard_pane_is_titled_and_the_run_widget_stays_short(
     tmp_path: pathlib.Path, transport: str
 ) -> None:
-    """Pin the titles: the top was loose role and environment lines, and panes had no names."""
+    """Pin the titles: the top was loose actor and environment lines, and panes had no names."""
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)
@@ -1973,7 +1973,7 @@ def test_every_dashboard_pane_is_titled_and_the_run_widget_stays_short(
             run = {"execution_id": "e1"}
             app._handle_event(_ev(type="session.start", user_task="t", mode="run", **run))
             app._handle_event(_ev(type="execution.target", target_id="abc", target=target, **run))
-            app._handle_event(_ev(type="model.call", role="worker", model="m", provider="p"))
+            app._handle_event(_ev(type="model.call", actor="worker", model="m", provider="p"))
             app._tick()
             await pilot.pause()
             assert app.state.targets.current is not None
@@ -1994,7 +1994,7 @@ def test_every_dashboard_pane_is_titled_and_the_run_widget_stays_short(
             # A run on the local host needs no line for where its commands run.
             where = "environment: container · commands /repo"
             assert lines[2:] == ([where] if transport == "container" else [])
-            assert lines[1].startswith("role: worker / m")
+            assert lines[1].startswith("actor: worker / m")
 
     asyncio.run(scenario())
 
@@ -2011,7 +2011,7 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pa
             await _show_dashboard(pilot)
             model = "moonshotai/kimi-k2.7-code-20260612-with-a-very-long-suffix"
             app._handle_event(_ev(type="session.start", user_task="t " * 80, mode="run"))
-            app._handle_event(_ev(type="model.call", role="worker", model=model, provider="p"))
+            app._handle_event(_ev(type="model.call", actor="worker", model=model, provider="p"))
             app._handle_event(
                 _ev(type="session.stop", verification="unverified", reason="max_turns")
             )
@@ -2021,7 +2021,7 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pa
             top = app._dash.query_one("#top", widgets.Static)
             lines = str(top.render()).split("\n")
             assert lines[0].startswith("failed · max turns")
-            assert lines[1].startswith("role: worker / moonshotai/kimi")
+            assert lines[1].startswith("actor: worker / moonshotai/kimi")
             assert all(len(line) <= top.content_size.width for line in lines)
             assert lines[1].endswith("…")
 
@@ -2066,8 +2066,8 @@ def test_the_compact_summary_counts_the_runs_tool_calls_not_the_window(
     """The compact summary counts the run's calls past the bounded window, finish call excluded."""
     events: list[dict[str, object]] = [
         _ev(type="session.start", session_id=tmp_path.name, mode="run", user_task="t"),
-        _ev(type="model.call", role="worker", model="m", provider="p"),
-        _ev(type="model.result", role="worker", ok=True),
+        _ev(type="model.call", actor="worker", model="m", provider="p"),
+        _ev(type="model.result", actor="worker", ok=True),
     ]
     for i in range(60):
         events.append(_ev(type="tool.call", name="read_file", args={"path": f"f{i}.py"}))

@@ -221,7 +221,7 @@ def test_steer_notes_an_unanswered_prompt_park(
 def test_steer_names_the_answer_verb_for_a_question(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 answer` takes a question in whichever seat the run waits.
+    """`agent6 answer` answers a question from any front-end.
 
     Its terminal prompt reads the answer file too; naming it for an approval sent the operator
     straight to a refusal.

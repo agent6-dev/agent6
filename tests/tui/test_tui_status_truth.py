@@ -57,7 +57,7 @@ def _mk_crashed(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
@@ -246,8 +246,8 @@ def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: pathlib.Pat
     d.mkdir()
     events = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
-        {"type": "model.result", "role": "worker", "ok": True, "text": "done"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
+        {"type": "model.result", "actor": "worker", "ok": True, "text": "done"},
         {
             "type": "tool.call",
             "name": "finish_session",
@@ -700,7 +700,7 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: pathlib.Path
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(
             json.dumps(
-                {"type": "model.text_delta", "role": "worker", "text": "partial stale answer"}
+                {"type": "model.text_delta", "actor": "worker", "text": "partial stale answer"}
             )
             + "\n"
         )
@@ -743,7 +743,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: pathlib.Path) -> None:
             # The operator resumes: a new execution appends to the log with a live worker pid.
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "session.resume", "turn": 2}) + "\n")
-                fh.write(json.dumps({"type": "model.call", "role": "worker", "model": "m"}) + "\n")
+                fh.write(json.dumps({"type": "model.call", "actor": "worker", "model": "m"}) + "\n")
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await waits.wait_for(
                 pilot, lambda: not app.worker_lost, "liveness to recover after resume"
@@ -837,7 +837,7 @@ def test_conversation_composer_routes_through_the_host_parser(tmp_path: pathlib.
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-                {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+                {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
             )
         ),
         encoding="utf-8",
@@ -1022,10 +1022,9 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: pathli
 def test_a_finished_log_is_folded_before_the_first_paint(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A finished run opens with its last role and end story.
+    """A finished run opens with its last actor and end story.
 
-    Seeding only the status left the dashboard's first paint on an empty fold, so it called the role
-    idle and promised a model was still coming until the reader replayed the journal.
+    Before the reader replays the journal, the header already names the last call's actor and model.
     """
     d = tmp_path / "seeded"
     d.mkdir(parents=True)
@@ -1042,8 +1041,8 @@ def test_a_finished_log_is_folded_before_the_first_paint(
     )
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "last-model", "provider": "p"},
-        {"type": "model.result", "role": "worker", "ok": True, "text": "done"},
+        {"type": "model.call", "actor": "worker", "model": "last-model", "provider": "p"},
+        {"type": "model.result", "actor": "worker", "ok": True, "text": "done"},
         {"type": "tool.call", "name": "finish_session", "args_preview": {"summary": "All done."}},
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
         {"type": "session.stop", "reason": "finish_session", "turns": 1, "verification": "passed"},
@@ -1068,7 +1067,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
                 assert status_facts(app.state).finished
                 top = str(app._dash.query_one("#top", widgets.Static).render())
                 body = str(app._dash.query_one("#stream-body", widgets.Static).render())
-                assert "role: worker / last-model" in top
+                assert "actor: worker / last-model" in top
                 assert "passed" in top
                 assert "passed" in body and "All done." in body
                 assert "waiting for the model" not in body
@@ -1079,7 +1078,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
     asyncio.run(scenario())
 
 
-def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
+def test_a_resumed_execution_drops_the_prior_executions_actor_and_finish_story(
     tmp_path: pathlib.Path,
 ) -> None:
     """An execution boundary makes the prior call and finish summary historical.
@@ -1103,8 +1102,8 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
     )
     first_execution = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "old-model", "provider": "p"},
-        {"type": "model.result", "role": "worker", "ok": True, "text": "done"},
+        {"type": "model.call", "actor": "worker", "model": "old-model", "provider": "p"},
+        {"type": "model.result", "actor": "worker", "ok": True, "text": "done"},
         {
             "type": "tool.call",
             "name": "finish_session",
@@ -1137,13 +1136,13 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render())
             body = str(app._dash.query_one("#stream-body", widgets.Static).render())
-            assert "role: worker / next-model" in top
+            assert "actor: worker / next-model" in top
             assert "old-model" not in top
             assert "First execution done." not in body
 
             append(
-                {"type": "model.call", "role": "worker", "model": "new-model", "provider": "p"},
-                {"type": "model.result", "role": "worker", "ok": True, "text": "stopping"},
+                {"type": "model.call", "actor": "worker", "model": "new-model", "provider": "p"},
+                {"type": "model.result", "actor": "worker", "ok": True, "text": "stopping"},
                 {"type": "session.stop", "reason": "steer_abort", "verification": "not_applicable"},
             )
             await waits.wait_for(pilot, lambda: app.state.finished, "the resumed execution's end")
@@ -1151,7 +1150,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render())
             body = str(app._dash.query_one("#stream-body", widgets.Static).render())
-            assert "role: worker / new-model" in top
+            assert "actor: worker / new-model" in top
             assert "stopped" in body
             assert "First execution done." not in body
 
@@ -1226,7 +1225,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
 
             append(
                 {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-                {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+                {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
             )
             await waits.wait_for(
                 pilot,
@@ -1243,7 +1242,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             assert app._conv._spin == conv_spin + 1  # pyright: ignore[reportPrivateUsage]
 
-            append({"type": "model.result", "role": "worker", "ok": True, "text": "done"})
+            append({"type": "model.result", "actor": "worker", "ok": True, "text": "done"})
             await waits.wait_for(
                 pilot,
                 lambda: (
@@ -1316,7 +1315,7 @@ def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: pathlib.
     d.mkdir(parents=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker

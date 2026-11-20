@@ -66,7 +66,7 @@ def test_logscreen_skips_streaming_deltas(tmp_path: pathlib.Path) -> None:
     _write_log(
         logs,
         [
-            {"type": "model.call", "role": "worker", "ts": "t"},
+            {"type": "model.call", "actor": "worker", "ts": "t"},
             {"type": "model.thinking_delta", "text": "hmm", "ts": "t"},
             {"type": "model.thinking_delta", "text": " let me", "ts": "t"},
             {"type": "model.text_delta", "text": "ok", "ts": "t"},

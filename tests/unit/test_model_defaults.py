@@ -284,3 +284,8 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
         cfg, tmp_path, mode="run", events=events, transcript_sink=sink, budget=budget
     )
     assert built == [("worker", "base"), ("helper", "help"), ("helper", "help")]
+    rows = [json.loads(line) for line in events.path.read_text().splitlines()]
+    assert [row["actor"] for row in rows if row["type"] == "model.call"] == [
+        "helper:summariser",
+        "helper:verify_inferer",
+    ]

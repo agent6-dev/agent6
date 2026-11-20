@@ -423,7 +423,7 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
     session_dir = paths.state_dir(clone) / "sessions" / "reviewers" / "leaf-l1"
     assert session_dir.is_dir(), list((paths.state_dir(clone) / "sessions").iterdir())
     rows = [json.loads(line) for line in (session_dir / "logs.jsonl").read_text().splitlines()]
-    assert [r["role"] for r in rows if r.get("type") == "model.call"] == ["reviewer"] * 4
+    assert [r["actor"] for r in rows if r.get("type") == "model.call"] == ["reviewer"] * 4
     assert all(
         call["model"] == "local-reasoning" and call["reasoning"] == {"effort": "high"}
         for call in calls

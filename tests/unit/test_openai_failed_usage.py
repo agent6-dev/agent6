@@ -89,7 +89,7 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
         inner=openai.OpenAIProvider(
             api_key="test", model="test-model", provider_name="test-provider", budget=tracker
         ),
-        role="worker",
+        actor="worker",
         model="test-model",
         provider_name="test-provider",
         events=events,
@@ -173,7 +173,7 @@ def test_successful_stream_reports_the_same_usage_fields(
         inner=openai.OpenAIProvider(
             api_key="test", model="test-model", provider_name="test-provider", budget=tracker
         ),
-        role="worker",
+        actor="worker",
         model="test-model",
         provider_name="test-provider",
         events=events,
@@ -213,7 +213,7 @@ def test_failure_before_usage_does_not_invent_tokens(
         inner=openai.OpenAIProvider(
             api_key="test", model="test-model", provider_name="test-provider", budget=tracker
         ),
-        role="worker",
+        actor="worker",
         model="test-model",
         provider_name="test-provider",
         events=events,

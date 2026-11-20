@@ -1418,17 +1418,17 @@ def test_a_late_tail_keeps_its_own_execution(tmp_path: pathlib.Path) -> None:
 def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Deltas stream live, and side-role deltas are not messages to the operator."""
+    """Deltas stream live, and side-call deltas are not messages to the operator."""
     events = [
-        {"type": "model.call", "role": "reviewer"},
-        {"type": "model.text_delta", "role": "reviewer", "text": "private"},
-        {"type": "model.result", "role": "reviewer", "text": "private"},
-        {"type": "model.call", "role": "worker"},
-        {"type": "model.thinking_delta", "role": "worker", "text": "think "},
-        {"type": "model.text_delta", "role": "worker", "text": "answer "},
-        {"type": "model.thinking_delta", "role": "worker", "text": "two"},
-        {"type": "model.text_delta", "role": "worker", "text": "one"},
-        {"type": "model.result", "role": "worker", "text": "ignored fallback"},
+        {"type": "model.call", "actor": "reviewer"},
+        {"type": "model.text_delta", "actor": "reviewer", "text": "private"},
+        {"type": "model.result", "actor": "reviewer", "text": "private"},
+        {"type": "model.call", "actor": "worker"},
+        {"type": "model.thinking_delta", "actor": "worker", "text": "think "},
+        {"type": "model.text_delta", "actor": "worker", "text": "answer "},
+        {"type": "model.thinking_delta", "actor": "worker", "text": "two"},
+        {"type": "model.text_delta", "actor": "worker", "text": "one"},
+        {"type": "model.result", "actor": "worker", "text": "ignored fallback"},
     ]
     at = [-1]
 
@@ -2166,10 +2166,10 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
             execution_id="execution",
         )
     )
-    sink.emit(journal.ModelCall(role="worker", model="m", provider="p", model_call_id="call"))
+    sink.emit(journal.ModelCall(actor="worker", model="m", provider="p", model_call_id="call"))
     sink.emit(
         journal.ModelResult(
-            role="worker",
+            actor="worker",
             model="m",
             provider="p",
             model_call_id="call",
@@ -2198,13 +2198,13 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
     Zed showed the final message twice, the deltas and then the `done` item's body.
     """
     events = [
-        {"type": "model.call", "role": "worker"},
-        {"type": "model.text_delta", "role": "worker", "text": "Appended the line.\n\n"},
-        {"type": "model.text_delta", "role": "worker", "text": "DONE"},
-        {"type": "model.result", "role": "worker", "text": "Appended the line.\n\nDONE"},
+        {"type": "model.call", "actor": "worker"},
+        {"type": "model.text_delta", "actor": "worker", "text": "Appended the line.\n\n"},
+        {"type": "model.text_delta", "actor": "worker", "text": "DONE"},
+        {"type": "model.result", "actor": "worker", "text": "Appended the line.\n\nDONE"},
         # The finish comes a call later, with no text of its own; the summary is the last text.
-        {"type": "model.call", "role": "worker"},
-        {"type": "model.result", "role": "worker", "text": ""},
+        {"type": "model.call", "actor": "worker"},
+        {"type": "model.result", "actor": "worker", "text": ""},
         {
             "type": "tool.call",
             "name": "finish_session",

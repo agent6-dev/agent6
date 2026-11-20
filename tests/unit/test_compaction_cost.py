@@ -14,8 +14,8 @@ from agent6.viewmodel import receipt
 from agent6.viewmodel.session import log as session_log
 
 
-def _call(call_id: str, *, role: str = "worker", **usage: Any) -> list[dict[str, Any]]:
-    identity = {"role": role, "model": "test", "provider": "test", "model_call_id": call_id}
+def _call(call_id: str, *, actor: str = "worker", **usage: Any) -> list[dict[str, Any]]:
+    identity = {"actor": actor, "model": "test", "provider": "test", "model_call_id": call_id}
     return [
         {"type": "model.call", **identity},
         {"type": "model.result", "ok": True, **identity, **usage},
@@ -30,7 +30,7 @@ def test_receipt_reports_cache_share_and_only_the_next_worker_call(tmp_path: pat
     """Helper calls and several compaction events cannot multiply a cold worker call."""
     rows = _call("one", input_tokens=100, cache_read_tokens=900)
     rows += [{"type": "compact.dropped", "count": 4}]
-    rows += _call("helper", role="summariser", input_tokens=5000, cache_read_tokens=0)
+    rows += _call("helper", actor="helper:summariser", input_tokens=5000, cache_read_tokens=0)
     rows += [{"type": "compact.thinking_dropped", "messages": 2}]
     rows += _call("two", input_tokens=800, cache_read_tokens=200, cache_write_tokens=100)
     rows += _call("three", input_tokens=100, cache_read_tokens=900)
@@ -82,7 +82,7 @@ def test_partial_usage_and_failed_calls_do_not_transfer_compaction_cost(
     rows += _call("first", input_tokens=100, cache_read_tokens=900)
     rows += [{"type": "compact.dropped", "count": 1}]
     rows += _call("failed", ok=False)
-    rows += [{"type": "model.attempt", "role": "worker", "input_tokens": 999999}]
+    rows += [{"type": "model.attempt", "actor": "worker", "input_tokens": 999999}]
     rows += _call("last", input_tokens=50, cache_read_tokens=50)
     _write(tmp_path / "logs.jsonl", rows)
     text = receipt.render(receipt.read_receipt(tmp_path, tmp_path))
@@ -119,7 +119,7 @@ def test_receipt_names_both_summary_attempts_and_their_usage(tmp_path: pathlib.P
             "model_call_id": "summary2",
             "fallback_reason": "summary contains a tool call",
         },
-        *_call("summary2", role="summariser", input_tokens=300, cache_read_tokens=0),
+        *_call("summary2", actor="helper:summariser", input_tokens=300, cache_read_tokens=0),
         {
             "type": "compact.summarise.done",
             "writer": "helper",

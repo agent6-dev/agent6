@@ -367,7 +367,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
     (state / "logs.jsonl").write_text(
-        '{"type": "model.call", "role": "worker", "model": "kimi"}\n', encoding="utf-8"
+        '{"type": "model.call", "actor": "worker", "model": "kimi"}\n', encoding="utf-8"
     )
 
     class _WatchHost(textual_app.App[None]):
@@ -1173,11 +1173,11 @@ reason = "done"
     evs: list[dict[str, Any]] = [{"type": "session.start", "mode": "run", "user_task": "t"}]
     for i in (1, 2, 3):  # three COMPLETED turns
         evs += [
-            {"type": "model.call", "role": "worker", "model": "m1"},
+            {"type": "model.call", "actor": "worker", "model": "m1"},
             {"type": "model.thinking_delta", "text": f"turn {i} reasoning. "},
-            {"type": "model.result", "role": "worker", "input_tokens": 10, "output_tokens": 5},
+            {"type": "model.result", "actor": "worker", "input_tokens": 10, "output_tokens": 5},
         ]
-    evs.append({"type": "model.call", "role": "worker", "model": "m1"})  # in flight
+    evs.append({"type": "model.call", "actor": "worker", "model": "m1"})  # in flight
     (sd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     (sd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (root / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
@@ -1308,7 +1308,7 @@ def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathli
     (state / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "model.call", "role": "worker", "model": "m"})
+        + json.dumps({"type": "model.call", "actor": "worker", "model": "m"})
         + "\n",
         encoding="utf-8",
     )

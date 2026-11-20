@@ -132,7 +132,7 @@ def test_worker_summary_keeps_the_wire_prefix_and_bills_the_same_tracker(
         )
     worker = role_providers.InstrumentedProvider(
         inner=inner,
-        role="worker",
+        actor="worker",
         model="test-model",
         provider_name="test",
         events=events,

@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import merge, role_providers
-from agent6.sessions import journal, process
+from agent6.sessions import event_log, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 from agent6.vcs.git import ops as git_ops
@@ -1318,7 +1318,7 @@ def test_merge_squash_trailer_names_every_code_writer(
 ) -> None:
     """The squash trailer names the journal's worker models in first-seen order.
 
-    A message-writing role never appears.
+    The actor writing the squash message does not appear in the trailer.
     """
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -1334,10 +1334,10 @@ def test_merge_squash_trailer_names_every_code_writer(
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                {"type": "model.call", "role": "worker", "model": "m-one"},
-                {"type": "model.call", "role": "reviewer", "model": "m-rev"},
-                {"type": "model.call", "role": "worker", "model": "m-two"},
-                {"type": "model.call", "role": "worker", "model": "m-one"},
+                {"type": "model.call", "actor": "worker", "model": "m-one"},
+                {"type": "model.call", "actor": "worker:squash", "model": "m-squash"},
+                {"type": "model.call", "actor": "worker", "model": "m-two"},
+                {"type": "model.call", "actor": "worker", "model": "m-one"},
             )
         ),
         encoding="utf-8",
@@ -1345,7 +1345,7 @@ def test_merge_squash_trailer_names_every_code_writer(
     assert main(["sessions", "merge", "run-TRL222", "--method", "squash"]) == 0
     head = _head_message(tmp_path)
     assert "Assisted-by: agent6:m-one, m-two" in head
-    assert "m-rev" not in head
+    assert "m-squash" not in head
 
 
 def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
@@ -1355,59 +1355,58 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
 
     `sessions merge` passes neither and keeps its per-invocation ceiling.
     """
-    from typing import Any
+    import httpx2
 
     from agent6 import budget as agent6_budget
     from agent6.app import merge_message
     from agent6.config import Config
-    from agent6.providers import provider_types
+    from agent6.providers import transport
 
-    seen: dict[str, Any] = {}
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"backend": "openai", "auth_style": "none"}},
+            "models": {"default": {"model": "p/m"}},
+        }
+    )
 
-    class _Prov:
-        def call(self, **_k: Any) -> provider_types.ProviderResponse:
-            return provider_types.ProviderResponse(
-                text="feat: x\n\nbody",
-                tool_uses=(),
-                stop_reason="end_turn",
-                input_tokens=10,
-                output_tokens=5,
-                cache_read_tokens=0,
-                cache_write_tokens=0,
-            )
+    def post(*_args: object, **_kwargs: object) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "feat: x\n\nbody"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            },
+        )
 
-    def _brp(_cfg: Any, _role: str, *, budget: Any, **_k: Any) -> Any:
-        seen["budget"] = budget
-        return _Prov()
-
-    class _Sink:
-        def __init__(self) -> None:
-            self.types: list[str] = []
-
-        def emit(self, event: journal.Event) -> None:
-            self.types.append(event.TYPE)
-
-    def _no_files(*_a: Any) -> list[tuple[str, str]]:
+    def _no_files(*_a: object) -> list[tuple[str, str]]:
         return []
 
-    monkeypatch.setattr(role_providers, "build_role_provider", _brp)
+    monkeypatch.setattr(transport, "http_post", post)
     monkeypatch.setattr(git_read, "range_name_status", _no_files)
-    sink = _Sink()
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    transcripts = tmp_path / "transcripts"
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     msg = merge_message.model_squash_message(
         tmp_path,
-        Config(),
+        cfg,
         (),
         base_sha="0" * 40,
         run_branch="agent6/x",
         task="t",
-        transcript_dir=tmp_path,
+        transcript_dir=transcripts,
         budget=tracker,
-        events=sink,  # pyright: ignore[reportArgumentType]
+        events=sink,
     )
     assert msg == "feat: x\n\nbody"
-    assert seen["budget"] is tracker, "the squash call minted its own budget"
-    assert "budget.update" in sink.types, "the squash spend never reached the log"
+    assert tracker.snapshot().input_total == 10, "the squash call minted its own budget"
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert any(row["type"] == "budget.update" for row in rows), (
+        "the squash spend never reached the log"
+    )
+    (call,) = [row for row in rows if row["type"] == "model.call"]
+    (transcript,) = [json.loads(path.read_text()) for path in transcripts.glob("*.json")]
+    assert call["actor"] == transcript["actor"] == "worker:squash"
+    assert call["model_call_id"] == transcript["model_call_id"]
 
 
 def test_merge_adopts_an_orphaned_group_child(

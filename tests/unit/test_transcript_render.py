@@ -756,7 +756,7 @@ def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
 
 
 def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.Path) -> None:
-    """Only the worker seat is the conversation; a side call's one-message request is no restart.
+    """A compaction request does not restart the worker's conversation.
 
     The gist distiller and the tier-2 summariser share the sink; the fold printed a phantom
     "context summarised" marker and rendered the scratch prompt as a user message.
@@ -766,12 +766,12 @@ def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.
     d = tmp_path / "transcripts"
     d.mkdir()
 
-    def rec(seq: int, seat: str, msgs: list[dict[str, object]], reply: str) -> None:
+    def rec(seq: int, actor: str, msgs: list[dict[str, object]], reply: str) -> None:
         (d / f"2026-{seq:06d}.json").write_text(
             json.dumps(
                 {
                     "seq": seq,
-                    "seat": seat,
+                    "actor": actor,
                     "request": {"url": "", "headers": {}, "body": {"messages": msgs}},
                     "response": {
                         "status": 200,
@@ -789,7 +789,7 @@ def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.
         return {"role": "assistant", "content": [{"type": "text", "text": text}]}
 
     rec(1, "worker", [u("TASK: fix the parser"), a("reading"), u("tool result")], "on it")
-    rec(2, "reviewer", [u("=== FILE a.py ===")], "a.py: the parser")  # the distiller
+    rec(2, "helper:summariser", [u("=== FILE a.py ===")], "a.py: the parser")  # the distiller
     rec(
         3,
         "worker",
@@ -804,24 +804,20 @@ def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.
     assert body.count("reading") == 1, "the history was re-emitted behind the side-call"
 
 
-def test_the_conversation_seat_is_the_driving_provider_not_always_worker(
+def test_the_conversation_actor_is_the_driving_provider_not_always_worker(
     tmp_path: pathlib.Path,
 ) -> None:
-    """The seat filter keeps the mode's driving role, plan mode's "planner" included.
-
-    Keeping only "worker" filtered every plan run out; reviewers stay excluded since their
-    one-message requests read as a restart.
-    """
+    """A plan keeps planner calls; reviewers speak for their own sessions."""
     import json
 
     d = tmp_path / "transcripts"
     d.mkdir()
-    for seq, seat in ((1, "planner"), (2, "reviewer"), (3, "review:security"), (4, "")):
+    for seq, actor in ((1, "planner"), (2, "reviewer"), (3, "reviewer:security"), (4, "")):
         (d / f"{seq:06d}.json").write_text(
             json.dumps(
                 {
                     "seq": seq,
-                    "seat": seat,
+                    "actor": actor,
                     "request": {"url": "", "headers": {}, "body": {"messages": []}},
                     "response": {"status": 200, "body": {}},
                 }
@@ -829,18 +825,20 @@ def test_the_conversation_seat_is_the_driving_provider_not_always_worker(
             encoding="utf-8",
         )
 
-    kept = [
-        t["seat"]
-        for t in transcript_render.load_transcripts(d)
-        if transcript_render.drives_conversation(t)
-    ]
+    records = transcript_render.load_transcripts(d)
+    kept = [t["actor"] for t in records if transcript_render.drives_conversation(t, mode="plan")]
     assert "planner" in kept, "a plan run lost its whole conversation"
-    assert "" in kept, "a transcript written before seats existed is the driving seat's"
-    assert "reviewer" not in kept and "review:security" not in kept
+    assert "" in kept, "an unlabeled transcript belongs to the driver"
+    assert "reviewer" not in kept and "reviewer:security" not in kept
+    assert all(
+        transcript_render.drives_conversation(t, mode="reviewer")
+        for t in records
+        if t["actor"].startswith("reviewer")
+    )
 
 
 def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: pathlib.Path) -> None:
-    """`sessions transcript --json` keeps every seat; the seat filter is the conversation fold's.
+    """`sessions transcript --json` keeps every actor; the actor filter is the conversation fold's.
 
     It is the one CLI surface for a side call's actual request and response.
     """
@@ -848,22 +846,22 @@ def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: pathlib.Path) ->
 
     d = tmp_path / "transcripts"
     d.mkdir()
-    for seq, seat in ((1, "worker"), (2, "reviewer"), (3, "review:security")):
+    for seq, actor in ((1, "worker"), (2, "reviewer"), (3, "reviewer:security")):
         (d / f"{seq:06d}.json").write_text(
             json.dumps(
                 {
                     "seq": seq,
-                    "seat": seat,
+                    "actor": actor,
                     "request": {"url": "", "headers": {}, "body": {"messages": []}},
                     "response": {"status": 200, "body": {}},
                 }
             ),
             encoding="utf-8",
         )
-    assert [t["seat"] for t in transcript_render.load_transcripts(d)] == [
+    assert [t["actor"] for t in transcript_render.load_transcripts(d)] == [
         "worker",
         "reviewer",
-        "review:security",
+        "reviewer:security",
     ]
 
 
@@ -894,11 +892,11 @@ def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: pat
     tdir = tmp_path / "transcripts"
     tdir.mkdir()
     (tdir / "0000001.json").write_text(
-        json.dumps({"seq": "notanumber", "seat": "worker", "request": {}, "response": {}}),
+        json.dumps({"seq": "notanumber", "actor": "worker", "request": {}, "response": {}}),
         encoding="utf-8",
     )
     (tdir / "0000002.json").write_text(
-        json.dumps({"seq": 2, "seat": "worker", "request": {}, "response": {}}),
+        json.dumps({"seq": 2, "actor": "worker", "request": {}, "response": {}}),
         encoding="utf-8",
     )
     loaded = transcript_render.load_transcripts(tdir)

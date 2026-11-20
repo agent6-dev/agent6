@@ -154,7 +154,7 @@ def _talk(lines: int) -> list[dict[str, Any]]:
     said = [
         {
             "type": "model.result",
-            "role": "worker",
+            "actor": "worker",
             "ok": True,
             "model_call_id": f"c{i}",
             "text": f"Step {i}: read the next file and noted what it does.",
@@ -316,7 +316,7 @@ def test_a_state_waiting_on_the_operator_shows_no_live_line(
     """
     from playwright.sync_api import expect
 
-    call = {"role": "worker", "model_call_id": "c9"}
+    call = {"actor": "worker", "model_call_id": "c9"}
     log = [*_talk(2), {"type": "model.call", "model": "m", "provider": "p", **call}]
     if streamed:
         log.append({"type": "model.thinking_delta", "text": "I will run the check.", **call})
@@ -347,7 +347,7 @@ def test_a_poll_that_answers_a_prompt_and_streams_on_leaves_the_conversation_at_
     expect(box.locator(".prompt-box")).to_have_count(1)
     expect(box).to_have_class("conv-box tail scrolled")
     said = "The parser keeps a quoted CRLF and drops the doubled quote before the line ending. "
-    call = {"role": "worker", "model_call_id": "n1"}
+    call = {"actor": "worker", "model_call_id": "n1"}
     rows = [
         {"type": "approval.answer", "id": "approval-1", "approved": True, "source": "web"},
         {"type": "model.call", "model": "m", "provider": "p", **call},

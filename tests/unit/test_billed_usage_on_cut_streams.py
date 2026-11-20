@@ -122,7 +122,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     wrapper = role_providers.InstrumentedProvider(
         inner=provider,
-        role="worker",
+        actor="worker",
         model="m",
         provider_name=api_format,
         events=events,

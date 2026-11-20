@@ -231,7 +231,7 @@ def test_deltas_are_folded_once_across_the_whole_run() -> None:
     events: list[dict[str, Any]] = [
         {"type": "model.text_delta", "text": "the "},
         {"type": "model.text_delta", "text": "answer"},
-        {"type": "model.result", "role": "worker", "ok": True},
+        {"type": "model.result", "actor": "worker", "ok": True},
     ]
     updates = updates_for_events(events, acp_session_id="s")
     assert _kinds(updates) == ["agent_message_chunk"]
@@ -241,7 +241,7 @@ def test_deltas_are_folded_once_across_the_whole_run() -> None:
 def test_a_headless_run_still_has_something_to_show() -> None:
     """Without streaming, the settled text on model.result reaches the editor."""
     events: list[dict[str, Any]] = [
-        {"type": "model.result", "role": "worker", "ok": True, "text": "done it"}
+        {"type": "model.result", "actor": "worker", "ok": True, "text": "done it"}
     ]
     updates = updates_for_events(events, acp_session_id="s")
     assert updates[0]["params"]["update"]["content"]["text"] == "done it"
@@ -546,10 +546,10 @@ def test_context_use_and_spend_follow_each_budget_update() -> None:
     The cost is the run's, so an earlier execution's spend is added to this one's.
     """
     events = [
-        {"type": "model.call", "role": "worker", "model": "big", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "big", "provider": "p"},
         {
             "type": "model.result",
-            "role": "worker",
+            "actor": "worker",
             "ok": True,
             "input_tokens": 100,
             "cache_read_tokens": 40,
@@ -574,20 +574,20 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
     """
     result = {
         "type": "model.result",
-        "role": "worker",
+        "actor": "worker",
         "ok": True,
         "input_tokens": 5,
         "cache_read_tokens": 0,
         "cache_write_tokens": 0,
     }
     unknown = [
-        {"type": "model.call", "role": "worker", "model": "tiny", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "tiny", "provider": "p"},
         result,
         {"type": "budget.update", "usd_total": 0.1, "usd_partial": False},
     ]
     assert _updates_of(_info(), unknown) == []
     partial = [
-        {"type": "model.call", "role": "worker", "model": "big", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "big", "provider": "p"},
         result,
         {"type": "budget.update", "usd_total": 0.1, "usd_partial": True},
     ]
@@ -595,7 +595,7 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
         {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}
     ]
     plan = [
-        {"type": "model.call", "role": "worker", "model": "big", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "big", "provider": "p"},
         result,
         {
             "type": "budget.update",
@@ -616,13 +616,13 @@ def test_a_run_that_spent_nothing_carries_a_zero_cost() -> None:
     """
     result = {
         "type": "model.result",
-        "role": "worker",
+        "actor": "worker",
         "ok": True,
         "input_tokens": 5,
         "cache_read_tokens": 0,
         "cache_write_tokens": 0,
     }
-    call = {"type": "model.call", "role": "worker", "model": "big", "provider": "p"}
+    call = {"type": "model.call", "actor": "worker", "model": "big", "provider": "p"}
     free = [call, result, {"type": "budget.update", "usd_total": 0.0, "usd_partial": False}]
     assert _updates_of(_info(), free) == [
         {
@@ -649,8 +649,8 @@ def test_a_run_that_spent_nothing_carries_a_zero_cost() -> None:
 
 def test_a_plan_row_written_before_the_account_record_keeps_its_points_the_spend() -> None:
     """A plan run's row in the older shape, the points keyed `plan_consumed`, sent a `$0` cost."""
-    result = {"type": "model.result", "role": "worker", "ok": True, "input_tokens": 5}
-    call = {"type": "model.call", "role": "worker", "model": "big", "provider": "p"}
+    result = {"type": "model.result", "actor": "worker", "ok": True, "input_tokens": 5}
+    call = {"type": "model.call", "actor": "worker", "model": "big", "provider": "p"}
     plan = {
         "type": "budget.update",
         "usd_total": 0.0,

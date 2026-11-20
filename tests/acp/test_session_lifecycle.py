@@ -229,7 +229,7 @@ def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathl
         {"type": "model.thinking_delta", "text": "Check the empty input."},
         {"type": "model.text_delta", "text": "I will "},
         {"type": "model.text_delta", "text": "inspect it."},
-        {"type": "model.result", "role": "worker", "text": "I will inspect it."},
+        {"type": "model.result", "actor": "worker", "text": "I will inspect it."},
         {
             "type": "tool.call",
             "call_id": 1,

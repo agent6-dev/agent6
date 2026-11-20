@@ -36,7 +36,7 @@ _EVENTS: list[dict[str, Any]] = [
         "mode": "run",
         "user_task": "fix the parser",
     },
-    {"type": "model.result", "role": "worker", "text": "Reading the parser."},
+    {"type": "model.result", "actor": "worker", "text": "Reading the parser."},
     {"type": "tool.call", "name": "read_file", "args_preview": {"path": "src/p.py"}, "call_id": 1},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "40 bytes", "call_id": 1},
     {"type": "tool.call", "name": "run_command", "args_preview": {"cmd": "pytest"}, "call_id": 2},
@@ -66,8 +66,8 @@ _EVENTS: list[dict[str, Any]] = [
         "stdout_tail": "3 passed",
         "stderr_tail": "",
     },
-    {"type": "model.result", "role": "reviewer", "text": "a side reviewer's answer"},
-    {"type": "model.result", "role": "worker", "text": "Done: the lexer is untouched."},
+    {"type": "model.result", "actor": "reviewer", "text": "a side reviewer's answer"},
+    {"type": "model.result", "actor": "worker", "text": "Done: the lexer is untouched."},
     {"type": "budget.update", "usd_total": 0.25},
     {"type": "session.stop", "reason": "finish_session", "turns": 6, "verification": "passed"},
 ]
@@ -530,7 +530,10 @@ def test_the_model_flag_reaches_the_reviewer(
     def loaded(*_a: object, **_k: object) -> types.SimpleNamespace:
         return types.SimpleNamespace(config=cfg)
 
-    def build(cfg_used: Config, role: kinds.RoleName, **_k: object) -> _FakeProvider:
+    def build(
+        cfg_used: Config, role: kinds.RoleName, *, actor: str = "", **_k: object
+    ) -> _FakeProvider:
+        assert (role, actor) == ("reviewer", "reviewer:recap")
         route = cfg_used.models.resolve(role)
         seen.append(route.model if route is not None else "")
         return _FakeProvider()

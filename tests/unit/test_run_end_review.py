@@ -48,8 +48,14 @@ def _panel(*votes: str, blocks: int = 0, warnings: int = 0) -> list[dict[str, An
         completion="inconclusive" if all(v == "abstain" for v in votes) else "complete",
     )
     verdicts = [
-        {"type": "review.verdict", "panel_id": "p", "execution_id": "e", **seat, "verdict": vote}
-        for seat, vote in zip(roster, votes, strict=True)
+        {
+            "type": "review.verdict",
+            "panel_id": "p",
+            "execution_id": "e",
+            **reviewer,
+            "verdict": vote,
+        }
+        for reviewer, vote in zip(roster, votes, strict=True)
     ]
     return [start, *verdicts, result]
 

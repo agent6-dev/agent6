@@ -111,7 +111,7 @@ def test_a_given_call_context_is_shared_by_every_attempt() -> None:
 
 
 def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None:
-    """Each delta row names the model call and the execution its model.call names."""
+    """Each delta carries its call's actor, logical ID and execution."""
     import json
 
     from agent6 import budget as agent6_budget
@@ -127,7 +127,7 @@ def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None
     logs = tmp_path / "logs.jsonl"
     wrapper = role_providers.InstrumentedProvider(
         inner=_Streaming(),  # pyright: ignore[reportArgumentType]
-        role="worker",
+        actor="reviewer:security",
         model="m",
         provider_name="p",
         events=event_log.EventSink(logs),
@@ -143,6 +143,7 @@ def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None
     rows = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     by_type = {row["type"]: row for row in rows}
     for name in ("model.call", "model.text_delta", "model.thinking_delta", "model.result"):
+        assert by_type[name]["actor"] == "reviewer:security", name
         assert by_type[name]["model_call_id"] == "given", name
         assert by_type[name]["execution_id"] == "exec-1", name
 
@@ -154,7 +155,7 @@ def _wrapped(inner: Any, tmp_path: pathlib.Path) -> Any:
 
     return role_providers.InstrumentedProvider(
         inner=inner,
-        role="worker",
+        actor="worker",
         model="m",
         provider_name="p",
         events=event_log.EventSink(tmp_path / "logs.jsonl"),
@@ -191,6 +192,7 @@ def test_a_retried_call_is_one_lifecycle_with_an_attempt_row_each(tmp_path: path
         "model.result",
     ]
     assert len({r["model_call_id"] for r in rows}) == 1
+    assert {r["actor"] for r in rows} == {"worker"}
     first, second = rows[1], rows[2]
     assert (first["attempt"], first["ok"], first["error"]) == (1, False, "busy")
     assert (second["attempt"], second["ok"]) == (2, True)

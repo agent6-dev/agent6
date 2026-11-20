@@ -115,7 +115,7 @@ def test_a_wrapped_conversation_line_hangs_under_its_text(
     assert lines > 1
     assert last == pytest.approx(text, abs=0.5)  # layout rounds to 1/64 px
     # The hang stops at 40% of the box, so a line indented 200 spaces keeps its words in it.
-    deep = {"type": "model.result", "role": "worker", "text": "Deep:\n" + " " * 200 + "word " * 40}
+    deep = {"type": "model.result", "actor": "worker", "text": "Deep:\n" + " " * 200 + "word " * 40}
     session_logs.write_run(tmp_path, "deep-AAA111", [deep])
     page.goto(f"http://127.0.0.1:{port}/#/session/deep-AAA111")
     deep_line = page.locator(".card-conv .ci > div").filter(has_text="word word")
@@ -193,7 +193,7 @@ def test_the_conversation_heading_lines_up_with_the_drawers_first_card(
     from playwright.sync_api import expect
 
     session_logs.write_run(
-        tmp_path, "heads-AAA111", [{"type": "model.call", "role": "worker", "model": "m1"}]
+        tmp_path, "heads-AAA111", [{"type": "model.call", "actor": "worker", "model": "m1"}]
     )
     page, errors = open_page(port)
     page.set_viewport_size({"width": width, "height": 900})

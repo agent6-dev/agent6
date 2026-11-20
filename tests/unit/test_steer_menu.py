@@ -299,13 +299,13 @@ def test_pause_menu_status_shows_ctx_and_profile(
                 {"type": "session.start", "user_task": "polish", "mode": "run"},
                 {
                     "type": "model.call",
-                    "role": "worker",
+                    "actor": "worker",
                     "provider": "anthropic",
                     "model": "claude-sonnet-4-5",
                 },
                 {
                     "type": "model.result",
-                    "role": "worker",
+                    "actor": "worker",
                     "input_tokens": 90_000,
                     "output_tokens": 10,
                 },

@@ -12,12 +12,12 @@ from agent6.ui.cli import history_transcripts, sessions_transcript
 from agent6.viewmodel import transcript_render
 
 
-@pytest.mark.parametrize("seat", ["worker", "review:security"])
+@pytest.mark.parametrize("actor", ["worker", "reviewer:security"])
 def test_sessions_transcript_labels_an_unfinalized_record(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    seat: str,
+    actor: str,
 ) -> None:
     """A pre-send record left by a killed process reads as incomplete, including side calls."""
     monkeypatch.chdir(tmp_path)
@@ -27,8 +27,8 @@ def test_sessions_transcript_labels_an_unfinalized_record(
     )
     layout.ensure()
     layout.logs_path.write_text('{"type": "session.start"}\n')
-    provider_types.TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir).for_seat(
-        seat
+    provider_types.TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir).for_actor(
+        actor
     ).open(
         request_headers={},
         request_body={"messages": [{"role": "user", "content": "pending request"}]},
@@ -49,6 +49,7 @@ def test_sessions_transcript_labels_an_unfinalized_record(
         == 0
     )
     (record,) = json.loads(capsys.readouterr().out)
+    assert record["actor"] == actor
     assert record["outcome"] == "incomplete"
 
 

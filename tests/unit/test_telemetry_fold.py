@@ -36,7 +36,7 @@ def _journal() -> list[dict[str, Any]]:
         {
             "type": "model.call",
             "ts": _ts(1),
-            "role": "worker",
+            "actor": "worker",
             "model": "m",
             "provider": "p",
             "model_call_id": "c1",
@@ -44,7 +44,7 @@ def _journal() -> list[dict[str, Any]]:
         {
             "type": "model.result",
             "ts": _ts(3),
-            "role": "worker",
+            "actor": "worker",
             "model": "m",
             "provider": "p",
             "model_call_id": "c1",
@@ -463,9 +463,15 @@ def test_a_journal_without_pairing_ids_pairs_only_what_is_certain() -> None:
     assert len(tools) == 4 and all(_attr(s, "agent6.incomplete") is None for s in tools)
     concurrent = [
         {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
-        {"type": "model.call", "ts": _ts(1), "role": "review:a", "model": "m", "provider": "p"},
-        {"type": "model.call", "ts": _ts(1), "role": "review:b", "model": "m", "provider": "p"},
-        {"type": "model.result", "ts": _ts(2), "role": "review:b", "ok": True, "input_tokens": 7},
+        {"type": "model.call", "ts": _ts(1), "actor": "reviewer:a", "model": "m", "provider": "p"},
+        {"type": "model.call", "ts": _ts(1), "actor": "reviewer:b", "model": "m", "provider": "p"},
+        {
+            "type": "model.result",
+            "ts": _ts(2),
+            "actor": "reviewer:b",
+            "ok": True,
+            "input_tokens": 7,
+        },
         {
             "type": "session.stop",
             "ts": _ts(3),
@@ -489,7 +495,7 @@ def test_free_labels_stop_at_the_bound() -> None:
             {
                 "type": "model.call",
                 "ts": _ts(i),
-                "role": "worker",
+                "actor": "worker",
                 "model": f"m{i}",
                 "provider": "p",
                 "model_call_id": f"c{i}",
@@ -570,7 +576,7 @@ def test_attempts_count_their_own_tokens_under_one_model_call_span() -> None:
     call = next(row for row in rows if row["type"] == "model.call")
     result = next(row for row in rows if row["type"] == "model.result")
     at = rows.index(result)
-    identity = {k: call[k] for k in ("role", "model", "provider", "model_call_id")}
+    identity = {k: call[k] for k in ("actor", "model", "provider", "model_call_id")}
     attempts = [
         {
             "type": "model.attempt",
@@ -612,7 +618,7 @@ def test_model_and_tool_spans_follow_the_genai_conventions() -> None:
         {
             "type": "model.call",
             "ts": _ts(1),
-            "role": "worker",
+            "actor": "worker",
             "model": "m",
             "provider": "p",
             "model_call_id": "c1",
@@ -620,7 +626,7 @@ def test_model_and_tool_spans_follow_the_genai_conventions() -> None:
         {
             "type": "model.result",
             "ts": _ts(2),
-            "role": "worker",
+            "actor": "worker",
             "ok": True,
             "model_call_id": "c1",
             "input_tokens": 10,
@@ -640,7 +646,7 @@ def test_model_and_tool_spans_follow_the_genai_conventions() -> None:
         {
             "type": "model.call",
             "ts": _ts(5),
-            "role": "worker",
+            "actor": "worker",
             "model": "m",
             "provider": "p",
             "model_call_id": "c2",
@@ -648,7 +654,7 @@ def test_model_and_tool_spans_follow_the_genai_conventions() -> None:
         {
             "type": "model.result",
             "ts": _ts(6),
-            "role": "worker",
+            "actor": "worker",
             "ok": False,
             "model_call_id": "c2",
         },
@@ -663,7 +669,7 @@ def test_model_and_tool_spans_follow_the_genai_conventions() -> None:
         "gen_ai.provider.name": "p",
         "gen_ai.request.model": "m",
         "gen_ai.conversation.id": "run-AAAAAA",
-        "agent6.role": "worker",
+        "agent6.actor": "worker",
         "agent6.ok": True,
         "gen_ai.usage.input_tokens": 42,
         "gen_ai.usage.output_tokens": 5,

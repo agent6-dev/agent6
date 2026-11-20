@@ -290,14 +290,12 @@ def test_local_transcript_keeps_the_call_id_without_an_http_request_id(
 ) -> None:
     """A local process records its logical call identity without inventing an HTTP attempt."""
     binary, _ = _install(tmp_path, {"turns": [[_round(text="ok")]]})
-    inner = _provider(
-        binary,
-        transcript_sink=TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects"),
-    )
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    inner = _provider(binary, transcript_sink=sink.for_actor("worker"))
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     provider = role_providers.InstrumentedProvider(
         inner=inner,
-        role="worker",
+        actor="worker",
         model="claude-haiku-4-5",
         provider_name="claude",
         events=events,
@@ -309,6 +307,7 @@ def test_local_transcript_keeps_the_call_id_without_an_http_request_id(
     (call,) = [row for row in rows if row["type"] == "model.call"]
     (path,) = (tmp_path / "transcripts").glob("*.json")
     transcript = json.loads(path.read_text())
+    assert transcript["actor"] == call["actor"] == "worker"
     assert transcript["model_call_id"] == call["model_call_id"]
     assert transcript["request_id"] == ""
     assert not any(row["type"] == "provider.request" for row in rows)
@@ -1028,13 +1027,18 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Pa
 def test_instrumented_provider_close_forwards_to_the_inner_close() -> None:
     inner = mock.MagicMock()
     wrapper = role_providers.InstrumentedProvider(
-        inner=inner, role="worker", model="m", provider_name="claude", events=None, budget=_budget()
+        inner=inner,
+        actor="worker",
+        model="m",
+        provider_name="claude",
+        events=None,
+        budget=_budget(),
     )
     wrapper.close()
     inner.close.assert_called_once_with()
     http_like = mock.MagicMock(spec=["call"])
     bare = role_providers.InstrumentedProvider(
-        inner=http_like, role="worker", model="m", provider_name="p", events=None, budget=_budget()
+        inner=http_like, actor="worker", model="m", provider_name="p", events=None, budget=_budget()
     )
     bare.close()  # an HTTP provider has no close
     assert not hasattr(http_like, "close")

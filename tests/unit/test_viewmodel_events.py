@@ -57,15 +57,15 @@ def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
 def test_coercion_matches_the_folds_historical_defaults() -> None:
     # Missing fields default, not raise (the fold never validated).
     assert ev.parse_event({"type": "model.call"}) == journal.ModelCall(
-        role="", model="", provider="", model_call_id="", reviewer_index=None
+        actor="", model="", provider="", model_call_id="", reviewer_index=None
     )
     # The pairing fields read with defaults, so a journal written without them folds as before;
     # a reviewer index is an int, never a bool.
     paired = ev.parse_event(
-        {"type": "model.call", "role": "review:x", "model_call_id": "abc", "reviewer_index": 1}
+        {"type": "model.call", "actor": "reviewer:x", "model_call_id": "abc", "reviewer_index": 1}
     )
     assert paired == journal.ModelCall(
-        role="review:x", model="", provider="", model_call_id="abc", reviewer_index=1
+        actor="reviewer:x", model="", provider="", model_call_id="abc", reviewer_index=1
     )
     result = ev.parse_event(
         {"type": "model.result", "ok": False, "model_call_id": "abc", "reviewer_index": True}
@@ -119,9 +119,10 @@ def test_tool_rows_and_deltas_read_their_call_identity() -> None:
     )
     assert call.provider_tool_call_id == "toolu_1"
     delta = ev.parse_event(
-        {"type": "model.text_delta", "role": "worker", "text": "hi", "model_call_id": "c1"}
+        {"type": "model.text_delta", "actor": "worker", "text": "hi", "model_call_id": "c1"}
     )
-    assert isinstance(delta, journal.ModelTextDelta) and delta.model_call_id == "c1"
+    assert isinstance(delta, journal.ModelTextDelta)
+    assert (delta.actor, delta.model_call_id) == ("worker", "c1")
     assert delta.execution_id is None  # a row without the field leaves it unset
 
 
@@ -130,13 +131,14 @@ def test_an_attempt_row_reads_into_its_record_with_defaults() -> None:
     row = ev.parse_event(
         {
             "type": "model.attempt",
-            "role": "worker",
+            "actor": "worker",
             "model_call_id": "c1",
             "ok": False,
             "error": "x",
         }
     )
     assert isinstance(row, journal.ModelAttempt)
+    assert row.actor == "worker"
     assert (row.attempt, row.ok, row.model_call_id, row.request_id) == (1, False, "c1", None)
 
 

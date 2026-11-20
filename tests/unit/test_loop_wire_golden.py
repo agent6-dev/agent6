@@ -126,7 +126,7 @@ class _WorkerScript:
 
 
 class _SummariserScript:
-    """Scripted summariser seat: the gist distiller first, then the tier-2 restart summary.
+    """Scripted summariser: the gist distiller first, then the tier-2 restart summary.
 
     Both requests embed the transcript-tail renderer's output, pinning that renderer too.
     """

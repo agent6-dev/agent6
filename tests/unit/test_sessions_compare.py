@@ -446,7 +446,7 @@ class _FakeProvider:
         return _Resp(self._texts.pop(0))
 
 
-def _seat(monkeypatch: pytest.MonkeyPatch, build: Callable[..., Provider]) -> None:
+def _stub_reviewers(monkeypatch: pytest.MonkeyPatch, build: Callable[..., Provider]) -> None:
     """Stand in for the spawner `sessions compare` starts its judges with.
 
     Each judge is a reviewer session of one reply: the scripted provider `build` returns
@@ -579,7 +579,7 @@ def test_compare_uses_judge_when_reviewer_configured(
     _write_reviewer_config(repo)
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b is cleaner"}'
     provider = _FakeProvider([verdict])
-    _seat(monkeypatch, _stub_builder(provider))
+    _stub_reviewers(monkeypatch, _stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -601,7 +601,7 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
     _write_reviewer_config(repo)
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b is cleaner"}'
     provider = _CostingFakeProvider([verdict])
-    _seat(monkeypatch, _costing_stub_builder(provider))
+    _stub_reviewers(monkeypatch, _costing_stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -629,7 +629,7 @@ def test_plan_points_and_a_judge_s_dollars_are_not_added(
         )
     _write_reviewer_config(repo)
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b is cleaner"}'
-    _seat(monkeypatch, _costing_stub_builder(_CostingFakeProvider([verdict])))
+    _stub_reviewers(monkeypatch, _costing_stub_builder(_CostingFakeProvider([verdict])))
     assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
     out = capsys.readouterr().out
     assert "total: candidates 2pt + judge $0.01\n" in out
@@ -705,7 +705,7 @@ def test_unpriced_candidates_make_the_sum_with_the_judge_a_lower_bound(
     _write_reviewer_config(repo)
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b is cleaner"}'
     provider = _CostingFakeProvider([verdict])
-    _seat(monkeypatch, _costing_stub_builder(provider))
+    _stub_reviewers(monkeypatch, _costing_stub_builder(provider))
     assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
     assert "total: candidates $? + judge $0.01 = ~$0.01\n" in capsys.readouterr().out
 
@@ -739,7 +739,7 @@ def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
     _write_reviewer_config(repo)
     # The fresh judge flips the order: stamped winner run-BBBB22 now ranks last.
     verdict = '{"order": ["run-AAAA11", "run-BBBB22"], "summary": "a is cleaner"}'
-    _seat(monkeypatch, _stub_builder(_FakeProvider([verdict])))
+    _stub_reviewers(monkeypatch, _stub_builder(_FakeProvider([verdict])))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -769,7 +769,7 @@ def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
     )
     _write_reviewer_config(repo)
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b still wins"}'
-    _seat(monkeypatch, _stub_builder(_FakeProvider([verdict])))
+    _stub_reviewers(monkeypatch, _stub_builder(_FakeProvider([verdict])))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -789,7 +789,7 @@ def test_failed_judge_announces_what_its_attempts_still_spent(
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
     _write_reviewer_config(repo)
     provider = _CostingFakeProvider(["not json at all", "still not json"])
-    _seat(monkeypatch, _costing_stub_builder(provider))
+    _stub_reviewers(monkeypatch, _costing_stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -835,7 +835,7 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
         provider.budget = kw["budget"]
         return cast(Provider, provider)
 
-    _seat(monkeypatch, _build)
+    _stub_reviewers(monkeypatch, _build)
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -870,7 +870,7 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
     )
     _write_reviewer_config(repo)
     provider = _FakeProvider(["not json at all", "still not json"])
-    _seat(monkeypatch, _stub_builder(provider))
+    _stub_reviewers(monkeypatch, _stub_builder(provider))
 
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -956,7 +956,7 @@ def test_rank_plain_judging_line_on_non_tty(
 ) -> None:
     """Piped or detached, one truthful line surrounds the judge call and no frame animates."""
     provider = _FakeProvider([_VERDICT])
-    _seat(monkeypatch, _stub_builder(provider))
+    _stub_reviewers(monkeypatch, _stub_builder(provider))
 
     _rank(_reviewer_cfg(), _two_candidates(), tmp_path)
 
@@ -970,7 +970,7 @@ def test_rank_animates_the_judging_status_on_a_tty(
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 2.4, text=_VERDICT)
-    _seat(monkeypatch, _stub_builder(provider))
+    _stub_reviewers(monkeypatch, _stub_builder(provider))
 
     _rank(_reviewer_cfg(), _two_candidates(), tmp_path)
 
@@ -988,7 +988,7 @@ def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 1.2, raise_exc=ProviderError("down"))
-    _seat(monkeypatch, _stub_builder(provider))
+    _stub_reviewers(monkeypatch, _stub_builder(provider))
 
     outcome = _rank(_reviewer_cfg(), _two_candidates(), tmp_path)
 
@@ -1046,14 +1046,14 @@ def _reviewer_judges(
             return cast(Provider, _SlowFakeProvider(sleep_s=0, raise_exc=reply))
         return cast(Provider, _FakeProvider([reply]))
 
-    _seat(monkeypatch, build)
+    _stub_reviewers(monkeypatch, build)
     return reviewers
 
 
 def test_several_judges_rank_by_the_lowest_sum_of_ranks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Each of `[harness.parallel].judges` ranks once, seated in the reviewer role."""
+    """Each of `[harness.parallel].judges` ranks once using the reviewer route."""
     reviewers = _reviewer_judges(
         monkeypatch,
         {
@@ -1198,7 +1198,7 @@ def test_compare_of_a_group_id_prints_the_recorded_verdict_without_judging(
     """Asking a group for its comparison reads the stamp, never a fresh judge call."""
     _stamped_group(repo)
     judge = _FakeProvider(['{"order": ["run-AAAA11", "run-BBBB22"], "summary": "flip"}'])
-    _seat(monkeypatch, _stub_builder(judge))
+    _stub_reviewers(monkeypatch, _stub_builder(judge))
 
     rc = main(["sessions", "compare", "fan"])
 
@@ -1217,7 +1217,7 @@ def test_rejudge_on_a_group_id_spends_a_fresh_judge_call(
 ) -> None:
     _stamped_group(repo)
     judge = _FakeProvider(['{"order": ["run-AAAA11", "run-BBBB22"], "summary": "flip"}'])
-    _seat(monkeypatch, _stub_builder(judge))
+    _stub_reviewers(monkeypatch, _stub_builder(judge))
 
     rc = main(["sessions", "compare", "fan", "--rejudge"])
 
@@ -1243,7 +1243,7 @@ def test_a_group_with_no_recorded_verdict_is_judged(
         )
     _write_reviewer_config(repo)
     judge = _FakeProvider(['{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b wins"}'])
-    _seat(monkeypatch, _stub_builder(judge))
+    _stub_reviewers(monkeypatch, _stub_builder(judge))
 
     rc = main(["sessions", "compare", "fan"])
 

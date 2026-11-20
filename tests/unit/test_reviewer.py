@@ -324,7 +324,7 @@ def _cfg_with_reviewers(reviewers: tuple[dict[str, str], ...]) -> Any:
     )
 
 
-def _stub_seat_provider(*_a: Any, **_k: Any) -> Provider:
+def _stub_reviewer_provider(*_a: Any, **_k: Any) -> Provider:
     """Stand in for `_provider_from_entry` and `_build_role_provider` so a reviewer needs no key.
 
     The test asserts on the reviewer label.
@@ -339,7 +339,7 @@ def test_a_routed_reviewer_leaves_pinned_reviewers_alone(monkeypatch: Any) -> No
     """
     from agent6.app import role_providers
 
-    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
+    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_reviewer_provider)
     cfg = _cfg_with_reviewers(
         (
             {"focus": "security", "model": "anthropic/claude-opus-4-8"},
@@ -359,7 +359,7 @@ def test_a_routed_reviewer_leaves_pinned_reviewers_alone(monkeypatch: Any) -> No
 def test_build_reviewers_no_override_keeps_pinned_models(monkeypatch: Any) -> None:
     from agent6.app import role_providers
 
-    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
+    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_reviewer_provider)
     cfg = _cfg_with_reviewers(({"focus": "security", "model": "anthropic/claude-opus-4-8"},))
 
     reviewers = role_providers.resolve_reviewers(cfg)
@@ -370,7 +370,7 @@ def test_a_bare_focus_reviewer_follows_the_routed_reviewer(monkeypatch: Any) -> 
     """A bare-focus reviewer inherits the reviewer role's route."""
     from agent6.app import role_providers
 
-    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
+    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_reviewer_provider)
     cfg = _cfg_with_reviewers(({"focus": "correctness"},))
     cfg = cfg.with_model_route("reviewer", cfg.model_route("anthropic/claude-haiku-override"))
 
@@ -683,7 +683,7 @@ def test_empty_roster_builds_one_security_reviewer_on_the_reviewer_route(monkeyp
     """An empty roster still builds the in-loop panel's default reviewer."""
     from agent6.app import role_providers
 
-    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
+    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_reviewer_provider)
     reviewers = role_providers.resolve_reviewers(_cfg_with_reviewers(()))
     assert [(s.focus, s.model) for s in reviewers] == [
         ("security", "anthropic/reviewer-default"),

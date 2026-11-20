@@ -57,7 +57,7 @@ def test_reopen_drops_torn_tail_before_resumed_events(
             execution_id="resumed",
         )
     )
-    resumed.emit(journal.ModelTextDelta(role="worker", text="done"))
+    resumed.emit(journal.ModelTextDelta(actor="worker", text="done"))
     resumed.emit(
         journal.SessionStop(
             execution_id="execution",
@@ -167,7 +167,9 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> No
             )
         )
     assert seen == []
-    sink.emit(journal.ModelTextDelta(role="worker", text="still live"))  # ephemeral: must not raise
+    sink.emit(
+        journal.ModelTextDelta(actor="worker", text="still live")
+    )  # ephemeral: must not raise
     assert [e["type"] for e in seen] == ["model.text_delta"]
 
 
@@ -187,8 +189,8 @@ def test_delta_events_flush_but_do_not_fsync(
     monkeypatch.setattr(os, "fsync", _fake_fsync)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
 
-    sink.emit(journal.ModelThinkingDelta(role="worker", text="reasoning"))
-    sink.emit(journal.ModelTextDelta(role="worker", text="answer"))
+    sink.emit(journal.ModelThinkingDelta(actor="worker", text="reasoning"))
+    sink.emit(journal.ModelTextDelta(actor="worker", text="answer"))
     assert synced == []  # no fsync for the deltas
 
     sink.emit(journal.ToolCall(name="read_file", args_preview={}, call_id=1))

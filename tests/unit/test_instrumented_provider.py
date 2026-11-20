@@ -38,7 +38,7 @@ def _resp() -> ProviderResponse:
 def _wrap(inner: mock.MagicMock) -> role_providers.InstrumentedProvider:
     return role_providers.InstrumentedProvider(
         inner=inner,
-        role="worker",
+        actor="worker",
         model="moonshotai/kimi-k2.6",
         provider_name="openai",
         events=mock.MagicMock(),
@@ -65,7 +65,7 @@ def test_a_call_and_its_result_share_one_id_and_identity() -> None:
     assert len(call["model_call_id"]) == 32 and call["model_call_id"] == result["model_call_id"]
     assert "reviewer_index" not in call and "reviewer_index" not in result
     for fields in (call, result):
-        assert (fields["role"], fields["model"], fields["provider"]) == (
+        assert (fields["actor"], fields["model"], fields["provider"]) == (
             "worker",
             "moonshotai/kimi-k2.6",
             "openai",
@@ -76,13 +76,14 @@ def test_a_call_and_its_result_share_one_id_and_identity() -> None:
 def test_a_failed_call_keeps_its_id_and_a_reviewer_carries_its_index() -> None:
     inner = mock.MagicMock()
     inner.call.side_effect = RuntimeError("down")
-    wrapper = dataclasses.replace(_wrap(inner), reviewer_index=2)
+    wrapper = dataclasses.replace(_wrap(inner), actor="reviewer:security", reviewer_index=2)
     with pytest.raises(RuntimeError):
         wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
     (call,) = _emitted(wrapper.events, "model.call")  # type: ignore[arg-type]
     (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]
     assert call["model_call_id"] == result["model_call_id"]
     assert call["reviewer_index"] == result["reviewer_index"] == 2
+    assert call["actor"] == result["actor"] == "reviewer:security"
     assert result["ok"] is False and result["model"] == "moonshotai/kimi-k2.6"
 
 
@@ -145,7 +146,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
     )
     role_providers.InstrumentedProvider(
         inner=inner,
-        role="worker",
+        actor="worker",
         model="m",
         provider_name="p",
         events=events,
@@ -196,7 +197,7 @@ def test_a_failed_call_still_reports_what_it_spent(
     inner.call.side_effect = _cut_stream
     wrapper = role_providers.InstrumentedProvider(
         inner=inner,
-        role="worker",
+        actor="worker",
         model="anthropic/claude-haiku-4.5",
         provider_name="anthropic",
         events=events,

@@ -35,15 +35,15 @@ def _nlines(app: tui_app.Agent6TUI) -> int:
 
 _EVENTS: list[dict[str, object]] = [
     {"type": "session.start", "user_task": "do X"},
-    {"type": "model.call", "role": "worker"},
+    {"type": "model.call", "actor": "worker"},
     # Multi-line on purpose: collapsed shows only the first line, so expanded is distinguishable.
     {
         "type": "model.thinking_delta",
-        "role": "worker",
+        "actor": "worker",
         "text": "thinking hard here\nsecond thought",
     },
-    {"type": "model.text_delta", "role": "worker", "text": "on it"},
-    {"type": "model.result", "role": "worker"},
+    {"type": "model.text_delta", "actor": "worker", "text": "on it"},
+    {"type": "model.result", "actor": "worker"},
     {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
@@ -300,7 +300,7 @@ def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: pathlib.
             assert not app.session_controllable()  # finished execution
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "session.resume", "turn": 1}) + "\n")
-                fh.write(json.dumps({"type": "model.call", "role": "worker"}) + "\n")
+                fh.write(json.dumps({"type": "model.call", "actor": "worker"}) + "\n")
             (run / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await waits.wait_for(
                 pilot, app.session_controllable, "the resumed execution to read live"
@@ -363,7 +363,7 @@ def test_follow_survives_the_live_pane_growing(tmp_path: pathlib.Path) -> None:
             conv_screen._detail = "expanded"
             overflow_before = scroll.max_scroll_y
             with logs.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "model.call", "role": "worker", "model": "m"}) + "\n")
+                fh.write(json.dumps({"type": "model.call", "actor": "worker", "model": "m"}) + "\n")
                 fh.write(json.dumps({"type": "model.thinking_delta", "text": "x " * 300}) + "\n")
             # The growing live pane shrinks the viewport, so the overflow grows.
             await waits.wait_for(
@@ -421,8 +421,8 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: pathlib.Pat
     logs = run / "logs.jsonl"
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "do X"},
-        {"type": "model.call", "role": "worker"},
-        {"type": "model.thinking_delta", "role": "worker", "text": "still reasoning"},
+        {"type": "model.call", "actor": "worker"},
+        {"type": "model.thinking_delta", "actor": "worker", "text": "still reasoning"},
     ]
 
     async def scenario() -> None:
@@ -433,7 +433,7 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: pathlib.Pat
             assert live.display  # the in-progress turn is shown live
             # A completed turn hands its prose to the scrollback; no next call is implied.
             with logs.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "model.result", "role": "worker"}) + "\n")
+                fh.write(json.dumps({"type": "model.result", "actor": "worker"}) + "\n")
             await waits.wait_for(pilot, lambda: not live.display, "the live pane handoff")
 
     asyncio.run(scenario())
@@ -496,7 +496,7 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: pathlib.Path) -> None
     """
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "fix it"},
-        {"type": "model.call", "role": "worker"},
+        {"type": "model.call", "actor": "worker"},
         {"type": "model.thinking_delta", "text": "planning the edit"},
         {"type": "model.text_delta", "text": "I will now edit"},
         # killed here: no model.result, no session.stop
@@ -521,9 +521,9 @@ def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: pa
     """Blocked on an approval or a question, the pane says waiting, not "thinking…"."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "fix it"},
-        {"type": "model.call", "role": "worker"},
+        {"type": "model.call", "actor": "worker"},
         {"type": "model.thinking_delta", "text": "I will run the tests"},
-        {"type": "model.result", "role": "worker"},
+        {"type": "model.result", "actor": "worker"},
         {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: pytest"},
     ]
 
@@ -570,7 +570,7 @@ def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: pathlib.
     d.mkdir()
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
         {"type": "model.result", "ok": True},
     ]
     logs = d / "logs.jsonl"
@@ -588,7 +588,7 @@ def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: pathlib.
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(
                     json.dumps(
-                        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"}
+                        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"}
                     )
                     + "\n"
                 )

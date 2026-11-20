@@ -72,9 +72,9 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
     out = _render(
         [
             {"type": "session.start", "user_task": "fix the failing test"},
-            {"type": "model.call", "role": "worker"},
-            {"type": "model.thinking_delta", "role": "worker", "text": "let me read the file"},
-            {"type": "model.result", "role": "worker"},
+            {"type": "model.call", "actor": "worker"},
+            {"type": "model.thinking_delta", "actor": "worker", "text": "let me read the file"},
+            {"type": "model.result", "actor": "worker"},
             {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
@@ -91,16 +91,16 @@ def test_non_streamed_role_result_renders_once() -> None:
     """Settled prose on model.result renders once, with or without delta events before it."""
     settled: dict[str, object] = {
         "type": "model.result",
-        "role": "worker",
+        "actor": "worker",
         "text": "the settled answer",
     }
-    out = _render([{"type": "model.call", "role": "worker"}, settled])
+    out = _render([{"type": "model.call", "actor": "worker"}, settled])
     assert out.count("the settled answer") == 1
 
     streamed = _render(
         [
-            {"type": "model.call", "role": "worker"},
-            {"type": "model.text_delta", "role": "worker", "text": "the settled answer"},
+            {"type": "model.call", "actor": "worker"},
+            {"type": "model.text_delta", "actor": "worker", "text": "the settled answer"},
             settled,
         ]
     )
@@ -111,9 +111,9 @@ def test_whitespace_only_text_prints_no_empty_block() -> None:
     # Only whitespace text streams before the tool call, so no "worker: response" bar prints.
     out = _render(
         [
-            {"type": "model.call", "role": "worker"},
-            {"type": "model.text_delta", "role": "worker", "text": "  \n "},
-            {"type": "model.result", "role": "worker"},
+            {"type": "model.call", "actor": "worker"},
+            {"type": "model.text_delta", "actor": "worker", "text": "  \n "},
+            {"type": "model.result", "actor": "worker"},
             {"type": "tool.call", "name": "apply_edit", "args_preview": {}},
             {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
         ]
@@ -257,7 +257,7 @@ def test_cli_heartbeat_shows_working_when_the_stream_stalls(
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "Let me investigate"})
         time.sleep(_STALL_WAIT_S)  # let the stall register and the spinner tick
         assert "working…" in out.getvalue()
@@ -288,7 +288,7 @@ def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
     out = _CountingTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "partial"})
         before = out.flushes
         time.sleep(1.2)  # two heartbeat ticks, under every stall threshold
@@ -308,7 +308,7 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "writing to tests/test"})
         time.sleep(_STALL_WAIT_S)  # over the between-blocks threshold, under 10s
         view.feed({"type": "model.text_delta", "text": "_calc.py now"})
@@ -326,8 +326,8 @@ def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "model.call", "role": "worker", "model": "m"})
-        view.feed({"type": "model.result", "role": "worker"})  # turn done...
+        view.feed({"type": "model.call", "actor": "worker", "model": "m"})
+        view.feed({"type": "model.result", "actor": "worker"})  # turn done...
         # ...now a tool.call starts a long jail command (no result yet).
         view.feed({"type": "tool.call", "name": "run_verify_command", "args_preview": {}})
         time.sleep(_STALL_WAIT_S)
@@ -342,7 +342,7 @@ def test_cli_heartbeat_silent_on_a_non_tty() -> None:
 
     buf = io.StringIO()
     view = console_render.ConsoleView(buf, color=False)
-    view.feed({"type": "model.call", "role": "worker", "model": "m"})
+    view.feed({"type": "model.call", "actor": "worker", "model": "m"})
     time.sleep(_STALL_WAIT_S)
     assert "working…" not in buf.getvalue()
     view.close()
@@ -355,7 +355,7 @@ def test_notice_clears_the_spinner_before_printing() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         time.sleep(_STALL_WAIT_S)  # spinner up
         assert "working…" in out.getvalue()
         view.notice("[agent6]   auto-commit: abc123")
@@ -395,7 +395,7 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         wedged_at = time.time() - 2400
-        view.feed({"type": "model.call", "role": "worker", "model": "m", "ts": wedged_at - 1})
+        view.feed({"type": "model.call", "actor": "worker", "model": "m", "ts": wedged_at - 1})
         view.feed({"type": "tool.call", "name": "run_command", "args_preview": {}, "ts": wedged_at})
         idle = time.monotonic() - view._last_output_at  # pyright: ignore[reportPrivateUsage]
         assert idle >= 2399, f"replay reset the idle timer to {idle:.1f}s"
@@ -416,7 +416,7 @@ def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "safe \x1b]52;c;cGF5"})
         view.feed({"type": "model.text_delta", "text": "bG9hZA==\x07 more"})
         got = out.getvalue()
@@ -503,9 +503,9 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
     out = _render(
         [
             {"type": "session.start", "user_task": "name the class", "mode": "ask"},
-            {"type": "model.call", "role": "worker"},
-            {"type": "model.text_delta", "role": "worker", "text": "CoreTest"},
-            {"type": "model.result", "role": "worker", "text": "CoreTest"},
+            {"type": "model.call", "actor": "worker"},
+            {"type": "model.text_delta", "actor": "worker", "text": "CoreTest"},
+            {"type": "model.result", "actor": "worker", "text": "CoreTest"},
             {
                 "type": "session.stop",
                 "verification": "passed",
@@ -519,8 +519,8 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
     out = _render(
         [
             {"type": "session.start", "user_task": "name the class", "mode": "ask"},
-            {"type": "model.call", "role": "worker"},
-            {"type": "model.result", "role": "worker", "text": "CoreTest"},
+            {"type": "model.call", "actor": "worker"},
+            {"type": "model.result", "actor": "worker", "text": "CoreTest"},
             {
                 "type": "session.stop",
                 "verification": "passed",

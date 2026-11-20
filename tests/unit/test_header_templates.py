@@ -326,7 +326,7 @@ def test_a_conversation_persists_across_a_resume_and_starts_new_on_a_fork(
     resumed = conversation_state.Conversations(path=path)
     again = resumed.context("worker", "work", initiator="agent")
     assert again.conversation_id == ctx.conversation_id and again.is_first_turn is False
-    other = resumed.context("review:security", "work", initiator="agent")
+    other = resumed.context("reviewer:security", "work", initiator="agent")
     assert other.conversation_id != ctx.conversation_id and other.is_first_turn
     forked = conversation_state.Conversations(path=tmp_path / "s2" / conversation_state.FILE_NAME)
     assert forked.context("worker", "work", initiator="user").conversation_id != ctx.conversation_id
@@ -353,7 +353,7 @@ class _Inner:
 def _instrumented(inner: _Inner) -> role_providers.InstrumentedProvider:
     return role_providers.InstrumentedProvider(
         inner=inner,  # type: ignore[arg-type]
-        role="worker",
+        actor="worker",
         model="m",
         provider_name="work",
         events=mock.MagicMock(),
@@ -386,6 +386,7 @@ def test_the_instrumented_provider_fills_the_context_and_reports_each_attempt() 
         if c.args[0].TYPE == "provider.request"
     ]
     assert len(requests) == 3
+    assert {request["actor"] for request in requests} == {"worker"}
     assert requests[0]["provider"] == "work" and requests[0]["target"] == "inference"
     assert len(requests[0]["request_id"]) == 32
     assert "x-" not in str(requests[0])  # no header value rides the event

@@ -221,10 +221,10 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
     assert context_fill(s) is None  # no call yet
     for ev in (
         {"type": "session.start", "user_task": "x", "mode": "run"},
-        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
         {
             "type": "model.result",
-            "role": "worker",
+            "actor": "worker",
             "ok": True,
             "input_tokens": 1_000,
             "cache_read_tokens": 40_000,
@@ -434,17 +434,30 @@ def test_tool_result_with_mismatched_name_does_not_overwrite() -> None:
     assert s.tool_calls[0].ok is None
 
 
-def test_role_call_then_result_clears_in_flight() -> None:
+def test_last_model_call_keeps_the_actor_when_the_call_ends() -> None:
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
-        {"type": "model.call", "role": "worker", "model": "gpt-5", "provider": "openai"},
+        {
+            "type": "model.call",
+            "actor": "helper:summariser",
+            "model": "gpt-5",
+            "provider": "openai",
+        },
     )
     assert s.last_model_call is not None
+    assert s.last_model_call.actor == "helper:summariser"
     assert s.last_model_call.in_flight is True
     s = viewmodel_state.apply_event(
-        s, {"type": "model.result", "role": "worker", "input_tokens": 10, "output_tokens": 20}
+        s,
+        {
+            "type": "model.result",
+            "actor": "helper:summariser",
+            "input_tokens": 10,
+            "output_tokens": 20,
+        },
     )
     assert s.last_model_call is not None
+    assert session_state_as_dict(s)["last_model_call"]["actor"] == "helper:summariser"
     assert s.last_model_call.in_flight is False
 
 
@@ -601,10 +614,10 @@ def test_full_run_trace_replay() -> None:
     events = [
         {"type": "session.start", "user_task": "do thing"},
         {"type": "graph.update", "nodes": tasks, "cursor": "two"},
-        {"type": "model.call", "role": "worker", "model": "gpt-5"},
+        {"type": "model.call", "actor": "worker", "model": "gpt-5"},
         {"type": "tool.call", "name": "apply_patch", "args_preview": {"path": "x.py"}},
         {"type": "tool.result", "name": "apply_patch", "ok": True, "summary": "applied=1"},
-        {"type": "model.result", "role": "worker", "input_tokens": 50, "output_tokens": 100},
+        {"type": "model.result", "actor": "worker", "input_tokens": 50, "output_tokens": 100},
         {
             "type": "budget.update",
             "input_total": 50,
@@ -644,7 +657,7 @@ def test_fold_run_reduces_events_to_a_snapshot() -> None:
     state = viewmodel_state.fold_session(
         [
             {"type": "session.start", "user_task": "do it"},
-            {"type": "model.call", "role": "worker", "model": "m"},
+            {"type": "model.call", "actor": "worker", "model": "m"},
             {"type": "model.text_delta", "text": "hi"},
             {"type": "session.stop", "verification": "passed"},
         ]
@@ -777,14 +790,14 @@ def test_resume_start_unfinishes_the_run() -> None:
     assert session_state_as_dict(s)["status_label"] == "running"
 
 
-def test_role_result_tracks_context_tokens_and_provider() -> None:
+def test_model_result_tracks_context_tokens_and_provider() -> None:
     """model.result folds the call's full prompt into context_tokens, which outlives the next call.
 
     Fresh, cache read and cache write together; an error result without usage keeps the last known.
     """
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "model.call", "role": "worker", "model": "m", "provider": "p"}
+        s, {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"}
     )
     assert s.last_model_call is not None and s.last_model_call.provider == "p"
     assert s.last_model_call.context_tokens == 0  # nothing measured yet
@@ -792,7 +805,7 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
         s,
         {
             "type": "model.result",
-            "role": "worker",
+            "actor": "worker",
             "ok": True,
             "input_tokens": 1_000,
             "cache_read_tokens": 40_000,
@@ -801,13 +814,13 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
     )
     assert s.last_model_call is not None and s.last_model_call.context_tokens == 43_000
     s = viewmodel_state.apply_event(
-        s, {"type": "model.call", "role": "worker", "model": "m", "provider": "p"}
+        s, {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"}
     )
     assert (
         s.last_model_call is not None and s.last_model_call.context_tokens == 43_000
     )  # carried over
     s = viewmodel_state.apply_event(
-        s, {"type": "model.result", "role": "worker", "ok": False, "error": "boom"}
+        s, {"type": "model.result", "actor": "worker", "ok": False, "error": "boom"}
     )
     assert (
         s.last_model_call is not None and s.last_model_call.context_tokens == 43_000
@@ -827,7 +840,7 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
         s, {"type": "session.stop", "verification": "unverified", "reason": "answered"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "follow-up"})
-    s = viewmodel_state.apply_event(s, {"type": "model.call", "role": "worker", "model": "m"})
+    s = viewmodel_state.apply_event(s, {"type": "model.call", "actor": "worker", "model": "m"})
     assert s.finished is False
     assert s.stop_reason == ""
     assert session_state_as_dict(s)["status_label"] == "running"
@@ -1199,7 +1212,12 @@ def test_a_cut_log_line_says_it_was_cut() -> None:
     """A clipped log-line field is marked, so a provider error never reads as ending there."""
     error = "E" * 150 + "-TRUNCATION-BOUNDARY-" + "Z" * 60
     line = log_line.format_log_line(
-        {"ts": "2026-09-01T22:00:00.000Z", "type": "model.result", "role": "worker", "error": error}
+        {
+            "ts": "2026-09-01T22:00:00.000Z",
+            "type": "model.result",
+            "actor": "worker",
+            "error": error,
+        }
     )
     assert "…" in line and "BOUNDARY" not in line
     prompt = log_line.format_log_line(

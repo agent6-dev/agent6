@@ -210,7 +210,7 @@ def test_a_conversation_at_its_tail_keeps_its_prompt_in_view_as_the_drawer_opens
     said = "The parser keeps a quoted CRLF and drops the doubled quote before the line ending. " * 3
     rows = _reads(30)
     for i in range(8):
-        reply = {"type": "model.result", "role": "worker", "ok": True, "text": f"{i}. {said}"}
+        reply = {"type": "model.result", "actor": "worker", "ok": True, "text": f"{i}. {said}"}
         rows += [*_reads(1, 30 + i), {**reply, "model_call_id": f"c{i}"}]
     rows.append({"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"})
     session_logs.write_run(tmp_path, "drawer-AAA111", rows, live=True)
@@ -688,7 +688,7 @@ def test_the_run_card_lines_up_the_judge_settings_and_last_call_with_its_rows(
     }
     for sid, manifest in manifests.items():
         session = session_logs.write_run(
-            tmp_path, sid, [{"type": "model.call", "role": "worker", "model": "m1"}]
+            tmp_path, sid, [{"type": "model.call", "actor": "worker", "model": "m1"}]
         )
         (session / "manifest.json").write_text(json.dumps({"mode": "run", **manifest}))
     page, errors = open_page(port)

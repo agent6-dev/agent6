@@ -122,7 +122,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
             pytest.fail("raw watch failed to consume the appended session end")
         appended = True
         with events.open("ab") as fh:
-            fh.write(b'call","role":"worker"}\n{"type":"session.stop"}\n')
+            fh.write(b'call","actor":"worker"}\n{"type":"session.stop"}\n')
 
     def _worker_is_alive(_target: pathlib.Path) -> bool:
         return True
@@ -132,7 +132,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
     assert plan_watch._cmd_watch_plain(target, since=5) == 0  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert "model.call" in out
-    assert "role='worker'" in out
+    assert "actor='worker'" in out
 
 
 def test_format_plain_event_renders_elapsed_for_iso_ts() -> None:

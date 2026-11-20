@@ -112,11 +112,8 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     assert ("x-title", "agent6") in prov.extra_headers.literal
 
 
-def test_role_builders_stamp_seats_and_review_resolution_stays_pure() -> None:
-    """The summariser stamps its seat; a roster resolves settings without a provider.
-
-    A transcript tells which actor made a call, even when routes are shared.
-    """
+def test_role_builders_stamp_actors_and_review_resolution_stays_pure() -> None:
+    """Calls sharing a model route have distinct actors in their transcripts."""
     from agent6.config import ReviewConfig, ReviewerConfig
 
     cfg = Config(
@@ -129,15 +126,19 @@ def test_role_builders_stamp_seats_and_review_resolution_stays_pure() -> None:
     )
 
     sink = mock.MagicMock()
-    role_providers.helper_seat_provider(
-        cfg, "summariser", transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
+    role_providers.helper_actor_provider(
+        cfg,
+        "helper:summariser",
+        transcript_sink=sink,
+        budget=mock.MagicMock(),
+        events=mock.MagicMock(),
     )
-    assert sink.for_seat.call_args == mock.call("summariser")
+    assert sink.for_actor.call_args == mock.call("helper:summariser")
 
     reviewers = role_providers.resolve_reviewers(cfg)
     assert [(r.focus, r.model) for r in reviewers] == [("security", "o/m")]
 
-    # The role builders keep stamping the role itself.
+    # Without a separate actor the transcript names the configured role.
     sink = mock.MagicMock()
     role_providers.build_role_provider(cfg, "worker", transcript_sink=sink, budget=mock.MagicMock())
-    assert sink.for_seat.call_args == mock.call("worker")
+    assert sink.for_actor.call_args == mock.call("worker")

@@ -128,7 +128,7 @@ def test_stream_attempt_keeps_one_record_with_its_outcome(
         model="m",
         transcript_sink=provider_types.TranscriptSink(
             tmp_path, objects_dir=tmp_path / "objects"
-        ).for_seat("worker"),
+        ).for_actor("worker"),
     )
     error: BaseException | None = None
     with mock.patch("httpx2.stream", return_value=contextlib.closing(response)):
@@ -159,7 +159,7 @@ def test_stream_attempt_keeps_one_record_with_its_outcome(
     assert doc["outcome"] == outcome
     assert doc["model_call_id"] == "logical-call"
     assert doc["request_id"]
-    assert doc["seat"] == "worker"
+    assert doc["actor"] == "worker"
     assert len(writes) == 2
     assert writes[0][0] == writes[1][0] == files[0]
     assert writes[0][1]["outcome"] == "incomplete"

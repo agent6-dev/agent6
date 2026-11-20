@@ -270,7 +270,7 @@ def test_read_and_message_a_child_in_place(
     append(
         child,
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "Read csv.py"},
-        {"type": "model.call", "role": "worker", "model": "reader", "turn": 3},
+        {"type": "model.call", "actor": "worker", "model": "reader", "turn": 3},
         {"type": "model.text_delta", "text": "Checking doubled quotes."},
     )
     sync_api.expect(row).to_contain_text("Checking doubled quotes.")

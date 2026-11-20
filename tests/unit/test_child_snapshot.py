@@ -88,7 +88,7 @@ def test_snapshot_writes_resolved_roles(child: child_records.ChildSpec) -> None:
 def test_a_selected_reviewer_keeps_the_parents_distinct_quorum_routes(
     child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A pinned reviewer must not replace the route of an inherited panel seat."""
+    """A pinned reviewer must not replace the route of a reviewer that inherits its model."""
     cfg = Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
@@ -107,8 +107,8 @@ def test_a_selected_reviewer_keeps_the_parents_distinct_quorum_routes(
     loaded = session_setup.load_session_config(child.worktree, (written.path,), mode="reviewer")
     driver = loaded.config.models.resolve("reviewer")
     assert driver is not None and driver.model == "b"
-    seats = [entry.resolve(driver) for entry in loaded.config.review.reviewers]
-    assert [seat.model for seat in seats if seat] == ["a", "b"]
+    reviewers = [entry.resolve(driver) for entry in loaded.config.review.reviewers]
+    assert [reviewer.model for reviewer in reviewers if reviewer] == ["a", "b"]
 
 
 def test_snapshot_reloads_resolved_sampling(

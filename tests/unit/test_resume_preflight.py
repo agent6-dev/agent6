@@ -887,7 +887,7 @@ def test_plan_resume_builds_the_planner_provider(
     """The resumed execution's DRIVING provider is the planner route.
 
     With both roles configured, the old path silently switched a plan run to the worker model on its
-    second execution (and stamped the transcript seat "worker").
+    second execution (and stamped the transcript actor "worker").
     """
     import dataclasses
 

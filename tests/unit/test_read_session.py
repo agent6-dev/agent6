@@ -136,24 +136,24 @@ def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(
     """
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
-    lines.append(json.dumps({"type": "model.result", "role": "worker", "text": "use ffmpeg"}))
-    side = ("review:security", "verify_inferer", "squash", "summariser")
-    for role in side:
-        lines.append(json.dumps({"type": "model.result", "role": role, "text": f"FROM {role}"}))
+    lines.append(json.dumps({"type": "model.result", "actor": "worker", "text": "use ffmpeg"}))
+    side = ("reviewer:security", "helper:verify_inferer", "worker:squash", "helper:summariser")
+    for actor in side:
+        lines.append(json.dumps({"type": "model.result", "actor": actor, "text": f"FROM {actor}"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     layout = sessions_layout.session_layout(tmp_path, "brave-elk-BBBBBB")
     assert layout is not None
     text = sessions.conversation(layout, max_chars=10_000)
     assert "use ffmpeg" in text
-    assert [role for role in side if f"FROM {role}" in text] == []
+    assert not any(f"FROM {actor}" in text for actor in side)
 
 
-def test_a_role_result_with_no_role_reads_as_the_sessions_own_words(tmp_path: pathlib.Path) -> None:
-    """Older journals carry no `role` field on `model.result`; that absence is not a side role."""
+def test_a_result_with_no_actor_reads_as_the_sessions_own_words(tmp_path: pathlib.Path) -> None:
+    """A missing or empty actor on a model result does not identify a side call."""
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     lines.append(json.dumps({"type": "model.result", "text": "use ffmpeg"}))
-    lines.append(json.dumps({"type": "model.result", "role": "", "text": "with libx265"}))
+    lines.append(json.dumps({"type": "model.result", "actor": "", "text": "with libx265"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     layout = sessions_layout.session_layout(tmp_path, "brave-elk-BBBBBB")
     assert layout is not None
@@ -166,7 +166,7 @@ def test_a_torn_journal_line_does_not_break_the_read(tmp_path: pathlib.Path) -> 
     """A live session's last line can be half-written."""
     d = _session(tmp_path, "runs", "live-BBBBBB", "run", "t", ["first"])
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write('{"type": "role.res')
+        fh.write('{"type": "model.res')
     layout = sessions_layout.session_layout(tmp_path, "live-BBBBBB")
     assert layout is not None
     assert "first" in sessions.conversation(layout, max_chars=10_000)
@@ -233,7 +233,7 @@ def test_filtered_entries_keep_their_journal_number_and_time(tmp_path: pathlib.P
                 "user_task": "Keep [a].",
             },
             {"type": "model.text_delta", "text": "not a second copy"},
-            {"type": "model.result", "role": "summariser", "text": "side call"},
+            {"type": "model.result", "actor": "helper:summariser", "text": "side call"},
             {"ts": "2026-07-31T12:32:18+00:00", "type": "model.result", "text": "Check [a]."},
             {"ts": "2026-07-31T12:31:59+00:00", "type": "steer.injected", "text": "Use [A]."},
             {"type": "steer.parent", "text": "Also [a]."},
@@ -539,7 +539,7 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     )
     role_providers.InstrumentedProvider(
         inner=inner,
-        role="worker",
+        actor="worker",
         model="m",
         provider_name="p",
         events=events,

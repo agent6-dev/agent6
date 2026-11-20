@@ -540,7 +540,7 @@ def test_recent_conversation_includes_the_unfinished_reply_without_replaying_the
         "live-child",
         [{"type": "model.result", "text": f"Checking row {i}"} for i in range(15)]
         + [
-            {"type": "model.call", "role": "worker", "model": "reader"},
+            {"type": "model.call", "actor": "worker", "model": "reader"},
             {"type": "model.text_delta", "text": "Still checking"},
         ],
         live=True,
@@ -1034,7 +1034,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
         "delta-run",
         [
             {"type": "session.start", "user_task": "stream"},
-            {"type": "model.call", "role": "worker", "model": "model"},
+            {"type": "model.call", "actor": "worker", "model": "model"},
         ],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "delta-run"
@@ -1100,7 +1100,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
             fh.write(json.dumps({"type": "session.resume", "ts": time.time()}) + "\n")
             fh.write(
                 json.dumps(
-                    {"type": "model.call", "role": "worker", "model": "m", "ts": time.time()}
+                    {"type": "model.call", "actor": "worker", "model": "m", "ts": time.time()}
                 )
                 + "\n"
             )
@@ -1346,7 +1346,7 @@ def test_sse_run_dead_worker_frame_is_terminal(
     _make_run(
         tmp_path,
         "dead-worker",
-        [{"type": "session.start", "user_task": "x"}, {"type": "model.call", "role": "worker"}],
+        [{"type": "session.start", "user_task": "x"}, {"type": "model.call", "actor": "worker"}],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dead-worker"
     (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
@@ -1381,7 +1381,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     _make_run(
         tmp_path,
         "pidless-stale",
-        [{"type": "session.start", "user_task": "x"}, {"type": "model.call", "role": "worker"}],
+        [{"type": "session.start", "user_task": "x"}, {"type": "model.call", "actor": "worker"}],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "pidless-stale"
     assert not (session_dir / "worker.pid").exists()
@@ -1527,7 +1527,7 @@ def test_sse_machine_frame_carries_the_idle_age(
         log.parent.mkdir(parents=True, exist_ok=True)
     # An event 15 minutes old: the age must report the event's, not the frame's.
     log.write_text(
-        json.dumps({"type": "model.call", "role": "agent", "model": "m", "ts": time.time() - 900})
+        json.dumps({"type": "model.call", "actor": "worker", "model": "m", "ts": time.time() - 900})
         + "\n",
         encoding="utf-8",
     )
@@ -1792,7 +1792,7 @@ def test_a_quiet_event_stream_outlives_the_socket_timeout(
             fh.write(json.dumps({"type": "session.resume", "ts": time.time()}) + "\n")
             fh.write(
                 json.dumps(
-                    {"type": "model.call", "role": "worker", "model": "m", "ts": time.time()}
+                    {"type": "model.call", "actor": "worker", "model": "m", "ts": time.time()}
                 )
                 + "\n"
             )

@@ -37,7 +37,7 @@ def test_transcripts_supply_full_sizes_not_recorded_elisions(tmp_path: pathlib.P
         (transcripts / f"{seq}.json").write_text(
             json.dumps(
                 {
-                    "seat": "worker",
+                    "actor": "worker",
                     "request": {
                         "body": {
                             "input": [
@@ -66,7 +66,7 @@ def test_cli_refuses_missing_transcript_objects(tmp_path: pathlib.Path) -> None:
     transcripts = tmp_path / "session" / "transcripts"
     transcripts.mkdir(parents=True)
     (transcripts / "one.json").write_text(
-        json.dumps({"seat": "worker", "request": {"body": {"input": [{"$object": "a" * 64}]}}})
+        json.dumps({"actor": "worker", "request": {"body": {"input": [{"$object": "a" * 64}]}}})
     )
     proc = subprocess.run(
         [sys.executable, "bench/compaction_replay.py", str(tmp_path), "--drop-at-chars", "6000"],

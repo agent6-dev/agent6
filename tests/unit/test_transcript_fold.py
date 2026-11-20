@@ -10,7 +10,7 @@ from agent6.viewmodel.session import status as session_status
 
 def _read(path: str) -> list[dict[str, object]]:
     return [
-        {"type": "model.call", "role": "worker"},
+        {"type": "model.call", "actor": "worker"},
         {"type": "model.thinking_delta", "text": "let me look"},
         {"type": "model.result"},
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": path}},
@@ -115,7 +115,7 @@ def test_done_line_says_why_a_stopped_run_ended() -> None:
 def test_a_marker_inside_a_stream_does_not_repeat_the_speech() -> None:
     """A child's start notice between a call's stream and its result showed the sentence twice."""
     events: list[dict[str, object]] = [
-        {"type": "model.call", "role": "worker"},
+        {"type": "model.call", "actor": "worker"},
         {"type": "model.text_delta", "text": "Two children"},
         {"type": "model.text_delta", "text": " are working."},
         {"type": "parallel.child_activity", "child": "run-p2-l1", "activity": "started"},
@@ -498,38 +498,51 @@ def test_pins_render_once_as_harness_lines() -> None:
 
 
 def test_an_internal_side_call_is_not_rendered_as_agent_speech() -> None:
-    """Only the role DRIVING the session speaks to the operator.
+    """Only the driving actor speaks to the operator.
 
-    agent6 makes side calls with their own roles -- the verify-command inferer
+    agent6 makes side calls with their own actors. The verify-command inferer
     runs before the loop even starts. Its `model.result` was folded into a
     message like any other, so an editor over ACP and the web conversation both
     opened with a bare "[]": the inferer's raw answer for "no verify command
     found", presented as the agent talking.
     """
     events: list[dict[str, object]] = [
-        {"type": "model.call", "role": "verify_inferer", "model": "m"},
-        {"type": "model.result", "role": "verify_inferer", "ok": True, "text": "[]"},
+        {"type": "model.call", "actor": "helper:verify_inferer", "model": "m"},
+        {"type": "model.result", "actor": "helper:verify_inferer", "ok": True, "text": "[]"},
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker", "model": "m"},
-        {"type": "model.result", "role": "worker", "ok": True, "text": "the real answer"},
+        {"type": "model.call", "actor": "worker", "model": "m"},
+        {"type": "model.result", "actor": "worker", "ok": True, "text": "the real answer"},
     ]
     bodies = [i.body for i in fold_transcript(events) if i.kind == "text"]
-    assert "the real answer" in bodies, "the driving role must still speak"
+    assert "the real answer" in bodies, "the driving actor must still speak"
     assert "[]" not in bodies, f"a side call was rendered as agent speech: {bodies}"
 
 
-def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
-    """Older events and the delta path carry no role; they must keep working.
+def test_a_streamed_reply_still_renders_when_the_actor_is_unnamed() -> None:
+    """A stream with unlabeled deltas still belongs to the conversation.
 
     The guard drops a side call, not every result.
     """
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "model.call", "role": "worker"},
+        {"type": "model.call", "actor": "worker"},
         {"type": "model.text_delta", "text": "streamed prose"},
         {"type": "model.result"},
     ]
     assert "streamed prose" in [i.body for i in fold_transcript(events) if i.kind == "text"]
+
+
+def test_a_focused_reviewer_speaks_only_in_its_own_session() -> None:
+    reply: dict[str, object] = {
+        "type": "model.result",
+        "actor": "reviewer:security",
+        "ok": True,
+        "text": "verdict",
+    }
+    for mode in ("run", "reviewer"):
+        events: list[dict[str, object]] = [{"type": "session.start", "mode": mode}, reply]
+        replies = [item.body for item in fold_transcript(events) if item.kind == "text"]
+        assert replies == (["verdict"] if mode == "reviewer" else [])
 
 
 def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
@@ -537,7 +550,7 @@ def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
     from agent6.viewmodel.session import state
 
     s = state.initial_state()
-    s = state.apply_event(s, {"type": "model.call", "role": "worker", "model": "m"})
+    s = state.apply_event(s, {"type": "model.call", "actor": "worker", "model": "m"})
     s = state.apply_event(s, {"type": "model.text_delta", "text": "safe \x1b]52;c;cGF5"})
     s = state.apply_event(s, {"type": "model.text_delta", "text": "bG9hZA==\x07 text"})
     assert s.last_model_call is not None
@@ -570,11 +583,11 @@ def test_restate_compacts_since_the_last_operator_input() -> None:
     """
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "build the thing"},
-        {"type": "model.call", "role": "worker"},
+        {"type": "model.call", "actor": "worker"},
         {"type": "model.text_delta", "text": "early work, out of frame"},
         {"type": "model.result"},
         {"type": "steer.injected", "text": "focus on the parser"},
-        {"type": "model.call", "role": "worker"},
+        {"type": "model.call", "actor": "worker"},
         {"type": "model.text_delta", "text": "on it"},
         {"type": "model.result"},
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": "parser.py"}},

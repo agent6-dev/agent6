@@ -188,8 +188,8 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
             "verify command running",
         ),
         ({"type": "tool.call", "name": "run_command", "args_preview": {}}, "tool call running"),
-        ({"type": "model.call", "role": "worker"}, "provider call in flight"),
-        ({"type": "model.text_delta", "role": "worker", "text": "x"}, "provider call in flight"),
+        ({"type": "model.call", "actor": "worker"}, "provider call in flight"),
+        ({"type": "model.text_delta", "actor": "worker", "text": "x"}, "provider call in flight"),
         ({"type": "checkpoint.committed"}, "long step"),
     ],
 )
@@ -558,10 +558,10 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(4), "type": "model.call", "role": "worker", "model": "claude-sonnet-4-5"},
-            {"ts": _ts(3), "type": "model.result", "role": "worker", "ok": False, "error": error},
+            {"ts": _ts(4), "type": "model.call", "actor": "worker", "model": "claude-sonnet-4-5"},
+            {"ts": _ts(3), "type": "model.result", "actor": "worker", "ok": False, "error": error},
             {"ts": _ts(3), "type": "provider.fatal", "status_code": 401, "error": error},
-            {"ts": _ts(2), "type": "model.result", "role": "reviewer", "ok": False, "error": "x"},
+            {"ts": _ts(2), "type": "model.result", "actor": "reviewer", "ok": False, "error": "x"},
             {
                 "ts": _ts(1),
                 "type": "session.stop",
