@@ -617,7 +617,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             seed = (
                 record_ref
                 if model_end
-                else git_read.chain_tip(cwd, chain_ref) or resume_base_sha or None
+                else git_read.chain_tip(cwd, chain_ref)
+                or snapshot.head_sha  # the model's git keeps no chain
+                or resume_base_sha
+                or None
             )
             written = _paths_the_run_wrote(layout.logs_path)
             if landed is not None:

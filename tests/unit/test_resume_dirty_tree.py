@@ -784,6 +784,48 @@ def test_a_killed_runs_own_edit_to_a_committed_file_is_not_stashed(
     assert (repo / "w.txt").read_text(encoding="utf-8") == "2\n"
 
 
+def test_a_model_git_run_killed_before_it_recorded_a_tree_keeps_its_own_commits(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no end tree, every file the model had committed read as an edit made outside the run.
+
+    The model's git leaves no chain, so the comparison fell back to the commit the run started
+    from and a clean checkout was refused.
+    """
+    repo = _setup(tmp_path, monkeypatch, 'control = "model"\n', run_commands="allow")
+    commit = {
+        "type": "tool_use",
+        "name": "run_command",
+        "id": "commit",
+        "input": {"argv": ["sh", "-c", "echo 'x = 2' > a.py && git commit -qam 'Change a'"]},
+    }
+    look = {
+        "type": "tool_use",
+        "name": "run_command",
+        "id": "look",
+        "input": {"argv": ["git", "status", "--short"]},
+    }
+    _stopped_run(repo, monkeypatch, "tree-KILL03", ("", (commit,)), ("", (look,)))
+    assert _git(repo, "show", "HEAD:a.py") == "x = 2\n"
+    assert _git(repo, "status", "--short") == ""
+    logs = _session_dir(repo, "tree-KILL03") / "logs.jsonl"
+    kept = [
+        ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.stop"' not in ln
+    ]
+    logs.write_text("\n".join(kept) + "\n", encoding="utf-8")  # as a SIGKILL leaves it
+    (repo / "b.py").write_text("y = 2\n", encoding="utf-8")  # never written by the run
+    capsys.readouterr()
+
+    assert _resume(monkeypatch, "tree-KILL03", [_finish()]) == 2
+    err = capsys.readouterr().err
+    assert "1 file changed since this run's last commit" in err
+    assert "- b.py" in err and "a.py" not in err
+
+    (repo / "b.py").write_text("y = 1\n", encoding="utf-8")
+    assert _resume(monkeypatch, "tree-KILL03", [_finish()]) == 0
+    assert "recorded no tree" not in capsys.readouterr().err
+
+
 def test_the_restore_recipe_names_the_file_as_it_is_not_as_it_prints(
     tmp_path: pathlib.Path,
 ) -> None:

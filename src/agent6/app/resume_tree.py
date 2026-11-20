@@ -8,8 +8,8 @@ follow `[git].dirty_tree`. "Differs from the chain tip" is not the test, because
 work can be uncommitted after a clean end: an operator stop skips the final checkpoint, and
 `commit_per_turn = false`, `git.control = "model"` and a failed commit all leave it in the
 tree. A run killed before it could record a tree (SIGKILL, a crash) leaves only the chain tip
-to go by: what differs from it and no tool of the run wrote follows the policy too, since
-nothing says whose it is.
+to go by, or under the model's git the HEAD its last snapshot recorded: what differs from it
+and no tool of the run wrote follows the policy too, since nothing says whose it is.
 """
 
 from __future__ import annotations
@@ -170,7 +170,8 @@ def refusal(
         policy: `[git].dirty_tree`.
         outside: The paths that changed outside the run.
         end_tree: The tree id the run's last end recorded; "" when none was.
-        seed: The chain tip, else the run's base: what the run left when no tree was recorded.
+        seed: The chain tip, else the HEAD the last snapshot recorded, else the run's base:
+            what the run left when no tree was recorded.
         run_branch: The run's branch, or None.
         answerable: Whether a question would reach anyone.
 
@@ -228,7 +229,8 @@ def settle(
         policy: `[git].dirty_tree`.
         outside: The paths that changed outside the run.
         end_tree: The tree id the run's last end recorded; "" when none was.
-        seed: The chain tip, else the run's base: what the run left when no tree was recorded.
+        seed: The chain tip, else the HEAD the last snapshot recorded, else the run's base:
+            what the run left when no tree was recorded.
         run_branch: The run's branch, or None.
         session_id: The run, which names the stash.
         ask: Asks the operator one question and returns the answer.
