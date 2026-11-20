@@ -891,7 +891,11 @@ class Harness:
                 self._worker_max_tokens(state),
                 initiator=conversation.initiator,
                 call_context=state.call_context,
-                compaction=self.compaction.clearing(conversation),
+                compaction=(
+                    self.compactor.clearing(self.compaction_context(conversation, state, tools))
+                    if isinstance(self.compactor, strategy.ClearingStrategy)
+                    else None
+                ),
             )
 
         try:

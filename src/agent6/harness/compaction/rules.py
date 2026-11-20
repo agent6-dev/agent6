@@ -17,6 +17,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from collections.abc import Sequence
 
 from agent6 import media
 from agent6.harness import loop_conversation
@@ -115,19 +116,50 @@ def _tool_result_pointers(
 
 
 def clearing(
-    conversation: loop_conversation.Conversation, limit: int
-) -> provider_types.ClearToolResults | None:
-    """Ask the endpoint to clear results above the local tool-output threshold.
+    conversation: loop_conversation.Conversation, limit: int, cleared: Sequence[str]
+) -> tuple[tuple[str, ...], provider_types.ClearToolResults | None]:
+    """Move the endpoint's clearing point in steps, as the local drop does.
+
+    Past the limit the point moves until the results after it fit in half the limit. It
+    stays there until the next step, so every request clears the same results and the
+    cached prefix holds.
 
     Args:
-        conversation: The whole history, including results cleared on earlier requests.
-        limit: The threshold in characters.
+        conversation: The whole history, which the endpoint clears on each request.
+        limit: The tool-output threshold in characters.
+        cleared: The tool-use ids of the results cleared on the last request, oldest first.
 
     Returns:
-        A clearing edit that protects operator answers, or None below the threshold.
+        The ids of the results this request clears and the edit, or None with none to clear.
     """
-    _, total = _tool_result_pointers(conversation)
-    return provider_types.ClearToolResults((ASK_USER_TOOL,)) if total > limit else None
+    # The endpoint leaves operator answers whole and out of its count.
+    clearable: list[tuple[str, int]] = []
+    kept = unread = 0
+    for message in conversation.messages:
+        if isinstance(message, loop_conversation.AssistantMessage):
+            unread = 0
+            continue
+        for item in message.items:
+            if not isinstance(item, loop_conversation.ToolResultItem):
+                continue
+            size = len(item.content) + (media.MEDIA_CONTEXT_CHARS if item.attachment else 0)
+            kept += size
+            if item.for_call.name != ASK_USER_TOOL:
+                clearable.append((item.tool_use_id, size))
+                unread += 1
+    ids = tuple(tool_use_id for tool_use_id, _ in clearable)
+    # A restart replaces the history, and the point starts again with it.
+    point = ids.index(cleared[-1]) + 1 if cleared and cleared[-1] in ids else 0
+    kept -= sum(size for _, size in clearable[:point])
+    if kept > limit:
+        # The newest two stay whole, and so does every result the model has yet to read.
+        stop = len(clearable) - max(2, unread)
+        while kept > limit // 2 and point < stop:
+            kept -= clearable[point][1]
+            point += 1
+    if not point:
+        return (), None
+    return ids[:point], provider_types.ClearToolResults(len(ids) - point, (ASK_USER_TOOL,))
 
 
 def count_elisions(conversation: loop_conversation.Conversation) -> tuple[int, int]:

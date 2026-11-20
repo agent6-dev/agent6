@@ -143,8 +143,9 @@ def _history_options(
             "edits": [
                 {
                     "type": "clear_tool_uses_20250919",
-                    "trigger": {"type": "input_tokens", "value": 1000},
-                    "keep": {"type": "tool_uses", "value": 1},
+                    # The caller decided when: the smallest trigger applies the edit every time.
+                    "trigger": {"type": "input_tokens", "value": 1},
+                    "keep": {"type": "tool_uses", "value": operation.keep},
                     "exclude_tools": list(operation.exclude_tools),
                 }
             ]

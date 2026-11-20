@@ -42,8 +42,14 @@ class Summarise:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ClearToolResults:
-    """Clear old tool output except for results of the named tools."""
+    """Clear tool output older than the newest results, except for the named tools.
 
+    Attributes:
+        keep: The newest tool uses left whole, not counting the named tools.
+        exclude_tools: Tools whose results are never cleared.
+    """
+
+    keep: int
     exclude_tools: tuple[str, ...]
 
 

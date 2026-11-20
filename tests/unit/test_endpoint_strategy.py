@@ -45,6 +45,90 @@ def test_route_facts_select_the_strategy(
     assert isinstance(harness.compactor, driver.Endpoint if writer else driver.Tiered)
 
 
+def _with_reads(
+    conv: loop_conversation.Conversation, count: int, *, name: str = "read_file", size: int = 400
+) -> loop_conversation.Conversation:
+    """Append tool exchanges, one call and one result each."""
+    start = sum(isinstance(m, loop_conversation.AssistantMessage) for m in conv.messages)
+    for n in range(start, start + count):
+        use = conv.assistant(
+            [{"type": "tool_use", "id": f"use{n}", "name": name, "input": {"n": n}}]
+        ).tool_uses[0]
+        conv.results([loop_conversation.ToolResultItem(use.id, "r" * size, use)])
+    return conv
+
+
+def _reads(count: int, **kw: Any) -> loop_conversation.Conversation:
+    conv = loop_conversation.Conversation()
+    conv.notice("task", origin="operator")
+    return _with_reads(conv, count, **kw)
+
+
+def test_clearing_moves_in_steps_and_holds_between_them() -> None:
+    """Pin the clearing point: a point that moved every request would empty the cache each time."""
+    from agent6.harness.compaction import rules
+
+    conv = _reads(5)
+    assert rules.clearing(conv, 2000, ()) == ((), None)
+    _with_reads(conv, 1)
+    # 2,400 characters pass the limit of 2,000: the oldest go until 1,000 or less stay.
+    cleared, edit = rules.clearing(conv, 2000, ())
+    assert cleared == ("use0", "use1", "use2", "use3")
+    assert edit == provider_types.ClearToolResults(2, ("ask_user",))
+    _with_reads(conv, 2)
+    again, edit = rules.clearing(conv, 2000, cleared)
+    assert again == cleared and edit == provider_types.ClearToolResults(4, ("ask_user",))
+    _with_reads(conv, 2)
+    moved, edit = rules.clearing(conv, 2000, cleared)
+    assert moved == (*cleared, "use4", "use5", "use6", "use7")
+    assert edit == provider_types.ClearToolResults(2, ("ask_user",))
+    # A restart replaces the history, and the point starts again.
+    assert rules.clearing(_reads(3), 2000, cleared) == ((), None)
+
+
+def test_clearing_keeps_operator_answers_and_every_unread_result() -> None:
+    """Pin the floor: with one kept tool use, parallel results were cleared before being read."""
+    from agent6.harness.compaction import rules
+
+    conv = _with_reads(_with_reads(_reads(3), 1, name="ask_user"), 1)
+    uses = conv.assistant(
+        [
+            {"type": "tool_use", "id": f"p{n}", "name": "read_file", "input": {"n": n}}
+            for n in range(3)
+        ]
+    ).tool_uses
+    conv.results([loop_conversation.ToolResultItem(u.id, "r" * 400, u) for u in uses])
+    cleared, edit = rules.clearing(conv, 100, ())
+    # The operator's answer is not cleared and not counted; the three unread results stay.
+    assert cleared == ("use0", "use1", "use2", "use4")
+    assert edit == provider_types.ClearToolResults(3, ("ask_user",))
+
+
+def test_endpoint_strategy_journals_each_clearing_step_once() -> None:
+    worker = fixtures.Writer(fixtures.response())
+    events: list[Any] = []
+    turn = fixtures.context(
+        worker,
+        worker,
+        events,
+        conversation=_reads(6),
+        endpoint=provider_types.EndpointCompaction(True, True),
+    )
+    turn = dataclasses.replace(
+        turn, settings=dataclasses.replace(turn.settings, drop_at_chars=2000)
+    )
+    compactor = driver.Endpoint()
+    edit = compactor.clearing(turn)
+    assert edit == compactor.clearing(turn) == provider_types.ClearToolResults(2, ("ask_user",))
+    dropped = [e for e in events if e.TYPE == "compact.dropped"]
+    assert [(e.count, list(e.calls)) for e in dropped] == [(4, ["use0", "use1", "use2", "use3"])]
+    off = dataclasses.replace(
+        turn,
+        settings=dataclasses.replace(turn.settings, endpoint=provider_types.EndpointCompaction()),
+    )
+    assert driver.Endpoint().clearing(off) is None
+
+
 def test_size_summary_uses_all_messages_then_repeats_task_and_pins() -> None:
     response = anthropic_parse.parse_response(captured.SAMPLES["compact"]["response"])
     worker, helper = fixtures.Writer(response), fixtures.Writer(fixtures.response())
@@ -141,7 +225,8 @@ def test_size_repeats_the_successful_worker_request_before_adopting_its_reply() 
             return anthropic_parse.parse_response(captured.SAMPLES[sample]["response"])
 
     worker = Worker()
-    conv = fixtures.history()
+    conv = _with_reads(fixtures.history(), 4)
+    conv.notice("A notice after the last cache mark.")
     settings = fixtures.context(
         worker, worker, [], endpoint=provider_types.EndpointCompaction(True, True)
     ).settings
@@ -151,8 +236,8 @@ def test_size_repeats_the_successful_worker_request_before_adopting_its_reply() 
         "sys", conv, [], state, turn=2, ctx=wf._turn_context(state, turn=2, execution_start=1)
     )
     assert isinstance(got, provider_types.ProviderResponse)
-    assert len(calls) == 2 and isinstance(calls[0]["compaction"], provider_types.ClearToolResults)
-    assert calls[0]["compaction"].exclude_tools == ("ask_user",)
+    assert len(calls) == 2
+    assert calls[0]["compaction"] == provider_types.ClearToolResults(2, ("ask_user",))
     assert isinstance(calls[1]["compaction"], provider_types.Summarise)
     assert all(calls[0][key] == calls[1][key] for key in ("system", "tools", "messages"))
     assistant = conv.assistant(got.raw["content"])

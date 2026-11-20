@@ -56,7 +56,7 @@ def test_request_keeps_messages_and_merges_required_betas(
     if sample == "compact":
         options["compaction"] = provider_types.Summarise("Keep the goal.")
     elif sample == "clearing-strict":
-        options["compaction"] = provider_types.ClearToolResults(exclude_tools=("ask_user",))
+        options["compaction"] = provider_types.ClearToolResults(3, exclude_tools=("ask_user",))
     response = provider.call(system="system", messages=messages, **options)
     assert body["messages"] == messages
     assert body["thinking"] == SAMPLES["own-restart-drop_block"]["thinking"]
@@ -71,8 +71,17 @@ def test_request_keeps_messages_and_merges_required_betas(
         assert response.input_tokens == 60
         assert "context_management" not in body
     elif sample == "clearing-strict":
-        edit = SAMPLES[sample]["context_management"]["edits"][0]
-        assert body["context_management"] == {"edits": [{**edit, "exclude_tools": ["ask_user"]}]}
+        # The harness decides when and how much: the edit always applies and keeps what it names.
+        assert body["context_management"] == {
+            "edits": [
+                {
+                    "type": "clear_tool_uses_20250919",
+                    "trigger": {"type": "input_tokens", "value": 1},
+                    "keep": {"type": "tool_uses", "value": 3},
+                    "exclude_tools": ["ask_user"],
+                }
+            ]
+        }
         assert "compaction" not in body
 
 

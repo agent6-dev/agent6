@@ -236,7 +236,7 @@ def test_compaction_option_and_counts_follow_the_logical_call() -> None:
         _resp(), thinking_blocks_dropped=2, tool_results_cleared=7
     )
     wrapper = _wrap(inner)
-    option = provider_types.ClearToolResults(("ask_user",))
+    option = provider_types.ClearToolResults(2, ("ask_user",))
     wrapper.call(system="s", messages=[], compaction=option)
     assert inner.call.call_args.kwargs["compaction"] is option
     (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]

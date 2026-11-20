@@ -233,13 +233,44 @@ class _Scheduled(abc.ABC):
         )
 
 
+@dataclasses.dataclass(slots=True)
 class Endpoint(_Scheduled):
-    """Keep local tool results and adopt the endpoint's signed summary."""
+    """Keep local tool results and adopt the endpoint's signed summary.
+
+    Attributes:
+        cleared: The tool-use ids of the results the endpoint clears on each request.
+    """
 
     endpoint = True
+    cleared: tuple[str, ...] = ()
 
     def drop(self, context: strategy.Context) -> None:
         """Leave the history intact for the clearing edit on the worker request."""
+
+    def clearing(self, context: strategy.Context) -> provider_types.ClearToolResults | None:
+        """Return the worker request's clearing edit, moving its point past the drop threshold.
+
+        Args:
+            context: The prepared turn.
+
+        Returns:
+            The edit, or None when the endpoint clears nothing.
+        """
+        if not context.settings.endpoint.clears_tool_results:
+            return None
+        before = self.cleared
+        self.cleared, edit = compaction_rules.clearing(
+            context.conversation, context.settings.drop_at_chars, before
+        )
+        extends = self.cleared[: len(before)] == before
+        added = self.cleared[len(before) :] if extends else self.cleared
+        if added:
+            context.log(
+                f"LOOP: compaction asks the endpoint to clear {len(added)} more old"
+                f" tool_result blocks ({len(self.cleared)} cleared on each request)"
+            )
+            context.emit(journal.CompactDropped(count=len(added), calls=list(added)))
+        return edit
 
 
 class Tiered(_Scheduled):

@@ -13,7 +13,6 @@ from typing import Literal
 from agent6 import media
 from agent6.harness import loop_conversation
 from agent6.harness.compaction import elision as compaction_elision
-from agent6.harness.compaction import rules
 from agent6.providers import Provider, provider_types
 
 # Chars, not tokens: tokens are roughly chars/4 for English-shaped content.
@@ -182,16 +181,6 @@ class CompactionSettings:
         default_factory=provider_types.EndpointCompaction
     )
     idle: IdleCompaction | None = None
-
-    def clearing(
-        self, conversation: loop_conversation.Conversation
-    ) -> provider_types.ClearToolResults | None:
-        """Return the clearing option for this request, if the endpoint offers it."""
-        return (
-            rules.clearing(conversation, self.drop_at_chars)
-            if self.endpoint.clears_tool_results
-            else None
-        )
 
 
 def strip_old_thinking(

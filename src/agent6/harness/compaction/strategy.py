@@ -82,6 +82,22 @@ class IdleStrategy(Protocol):
         ...
 
 
+@runtime_checkable
+class ClearingStrategy(Protocol):
+    """Name the tool results the endpoint clears on a worker request."""
+
+    def clearing(self, context: Context) -> provider_types.ClearToolResults | None:
+        """Return the edit for the request about to be sent.
+
+        Args:
+            context: The prepared turn.
+
+        Returns:
+            The edit, or None to send the history whole.
+        """
+        ...
+
+
 class Strategy(Protocol):
     """Compact the history of one worker request."""
 
