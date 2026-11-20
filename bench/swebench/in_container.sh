@@ -35,8 +35,8 @@ uv python install 3.14 >/dev/null 2>&1
 uv tool install --python 3.14 "$WHL" >/dev/null 2>&1
 
 # The worker's provider is chosen from the model slug (claude-* -> Anthropic,
-# else OpenRouter); BOTH provider blocks are always written so review seats
-# may reference either (a cross-model seat needs the other provider too).
+# else OpenRouter); BOTH provider blocks are always written so reviewers
+# may reference either (a cross-model reviewer needs the other provider too).
 # An unused block is inert; keys resolve from the mounted secrets.
 if [[ "$MODEL" == claude-* ]]; then
   PROVIDER=anthropic

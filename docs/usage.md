@@ -208,7 +208,7 @@ The parent's gate still runs when its policy calls for it.
 Without a parent result, a child can supply the pass if its full verify command and final tree match the parent's.
 `sessions show` and `sessions receipt` name the child that verified it.
 A different tree or command, or a scoped check, leaves verification to the parent's own gate policy.
-A count in `judges`, such as `"2"`, seats that many reviewers.
+A count in `judges`, such as `"2"`, starts that many judges.
 A judge is a reviewer child of the run: its clone is cut at the commit the attempts started from and holds every attempt, its opening lists each attempt with its verify result, cost, finish summary and diff, and it has the tools a reviewer is handed (the reading tools, and `run_command` and `run_verify_command` where the run may run commands).
 It answers with an order and its reason, within `review.max_turns` replies; the orders are summed, and the lowest sum wins.
 With no judge, with one candidate, or when no judge gives a usable order, the order is verify-pass first, then the cheaper, and the merge notice says which (`Ranked by verify result, then cost: no judge gave a usable order (reviewer: no verdict within 20 replies).`).

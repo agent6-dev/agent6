@@ -24,7 +24,7 @@ Numbers are stated with their split, n and date; a sample is never the full set.
 | split | config | resolved | date |
 |---|---|---|---|
 | SWE-bench Verified, 487 distinct instances across every draw | gpt-5.6-sol medium, $1/1200 s (verify-on 82/110, gateless 294/377) | 376/487 = 77.2% [73.3, 80.7] | 2026-08-23 |
-| Verified eval-50, held out | kimi-k3, veto seat, fast verify | 32/50 = 64.0%, $0.58 per solve, 1 empty (baseline wheel 31/50, 8 empty) | 2026-08 |
+| Verified eval-50, held out | kimi-k3, veto reviewer, fast verify | 32/50 = 64.0%, $0.58 per solve, 1 empty (baseline wheel 31/50, 8 empty) | 2026-08 |
 | Verified dev-slice-25, same model and materials | kimi-k3 | mini-swe-agent 2.4.6 23/25, pi 21/25, agent6 21/25 (pre-fix build 19/25) | 2026-08 |
 | SWE-rebench 2026_03, 110 instances | gpt-5.6-sol medium, finish gate, fixed staging | 63/110 and 66/110, mean 64.5/110 = 58.6% | 2026-08-30, 08-31 |
 
@@ -60,8 +60,8 @@ Wrong patches, not empties, are the frontier on every split.
 | lever | split, n | result | state |
 |---|---|---|---|
 | four run-mode prompt nudges against re-reads | Verified, 18 per arm, glm-5.2 | 7/18 = 7/18, mean turns 49.0 vs 49.6 | reverted |
-| a same-model `correctness` veto seat before finish | dev-25 | 21/25, every finish approved; 17 wrong patches passed | shipped as a preset only |
-| a cross-model sonnet-5 seat | dev-25 | 22/25, zero vetoes in 22 reviews | not default |
+| a same-model `correctness` veto reviewer before finish | dev-25 | 21/25, every finish approved; 17 wrong patches passed | shipped as a preset only |
+| a cross-model sonnet-5 reviewer | dev-25 | 22/25, zero vetoes in 22 reviews | not default |
 | a distinct-model review panel with a quorum gate | n=6 | 3/6 = 3/6, zero gate events | not default |
 | the structural repo priors (outline, hot symbols, co-change) | dev-25 (the last section) | 22 vs 20, one real instance | removed |
 | escalation to a strong model on a stall | two evals, n=6 (qwen3.6-27b -> glm-5.2; qwen3-coder-30b -> opus-4.7) | zero fail-to-resolve conversions; the `ever_edited` gate blocks the never-edited failures a strong model could help | reverted |
