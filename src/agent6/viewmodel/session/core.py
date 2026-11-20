@@ -13,7 +13,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import Any
 
-from agent6 import budget, kinds
+from agent6 import budget, kinds, token_usage
 from agent6.sessions import journal
 from agent6.viewmodel import events
 from agent6.viewmodel.session import records as state_types
@@ -75,7 +75,13 @@ def apply(  # noqa: PLR0911, PLR0912  # one branch per family
             )
             # The session's usage keeps the finished execution's; the account's last reading
             # stays, the run is plan-metered before its next call too.
-            usage = dataclasses.replace(core.budget, execution=state_types.ExecutionUsage())
+            usage = dataclasses.replace(
+                core.budget,
+                prior_model_tokens=core.budget.model_tokens
+                if life.started
+                else core.budget.prior_model_tokens,
+                execution=state_types.ExecutionUsage(),
+            )
             return state_types.SessionCore(lifecycle=begun, budget=usage)
         case journal.SessionStop(
             verification=verification, reason=reason, summary=summary, scoped=scoped
@@ -225,6 +231,9 @@ def _usage(
     execution = state_types.ExecutionUsage(
         input_tokens=row.input_total,
         output_tokens=row.output_total,
+        child_model_tokens=token_usage.TokenCounts(
+            row.input_settled_children, row.output_settled_children
+        ),
         cache_read_tokens=row.cache_read_total,
         cache_write_tokens=row.cache_write_total,
         usd=row.usd_total,
@@ -265,4 +274,4 @@ def _usage(
             credits_balance=row.account.credits_balance,
             observed_at=events.event_epoch(raw.get("ts")) or 0.0,
         )
-    return state_types.BudgetView(session=session, execution=execution, account=reading)
+    return dataclasses.replace(prior, session=session, execution=execution, account=reading)

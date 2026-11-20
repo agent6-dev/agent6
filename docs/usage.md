@@ -266,6 +266,8 @@ A resumed run merges nothing of a child that was stopped: before its first call 
 A task whose children had ended by themselves when the run ended completes then under the same merge policy as a turn boundary; each child's spend is settled once.
 `sessions list --children`, `sessions show` and the receipt list attempts and reviewers by dispatch group and number.
 The receipt's `Children` section names the settled spend already included in the run's total.
+The end summary splits this execution's fresh input and output tokens between the parent and its settled children, including ranking reviewers.
+The receipt shows the same counts across all executions; `unreported` means an older record lacks the count.
 The refusal names the child session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
 Steers sent while one waits queue in order, one per subsequent step; `abort`, `exit`, `/undo` and `detach` take the slot at once.

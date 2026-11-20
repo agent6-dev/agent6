@@ -51,6 +51,8 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
         )
     return dict(
         settled_children=tuple(sorted(snap.settled_children)),
+        input_settled_children=snap.child_model_tokens.input_tokens,
+        output_settled_children=snap.child_model_tokens.output_tokens,
         input_total=snap.input_total,
         output_total=snap.output_total,
         cache_read_total=snap.cache_read_total,

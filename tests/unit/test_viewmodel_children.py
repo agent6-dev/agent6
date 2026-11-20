@@ -225,16 +225,16 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
         payload["children"][0]["spend_usd"] == 0.5 and payload["children"][1]["launched"] is False
     )
     text = receipt.render(view)
-    assert "Children" in text
+    assert "Children" in text.splitlines()
     assert (
         "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $0.50"
         in text
     )
     assert "run-abc-p1 attempt 2: run-abc-p1-l2: failed: never started" in text
     assert "spend includes the children's $0.50" in text
-    # A session with no children renders no section and the review fields are untouched.
+    # A session with no children reports its counters but has no roster section.
     alone = receipt.read_receipt(_session(state, "alone"), tmp_path)
-    assert alone.children == () and "Children" not in receipt.render(alone)
+    assert alone.children == () and "Children" not in receipt.render(alone).splitlines()
 
 
 def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib.Path) -> None:
@@ -324,6 +324,54 @@ def test_the_children_section_names_each_group_and_its_ranking_reviewer(
     assert "root-p2 attempt 1: root-p2-l1" in roster
     assert "root-rp2 reviewer 1: root-rp2-l1" in roster
     assert "spend includes the children's $0.75" in roster
+
+
+def test_receipt_distinguishes_legacy_child_usage_from_zero(tmp_path: pathlib.Path) -> None:
+    """A settled dollar amount in an older record does not prove any token count."""
+    parent = _session(tmp_path, "root")
+    child_dispatch.write_record(parent, _record("g", [("child", None, 0.25)]), now=1)
+    (parent / "logs.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "budget.update",
+                "usd_total": 0.25,
+                "settled_children": ["child"],
+                "input_total": 0,
+                "output_total": 0,
+            }
+        )
+        + "\n"
+    )
+    text = receipt.render(receipt.read_receipt(parent, tmp_path))
+    assert "Parent: in=0 out=0" in text
+    assert "Children: in=unreported out=unreported" in text
+    assert "TOTAL: in=unreported out=unreported" in text
+
+
+def test_receipt_keeps_settlements_without_the_roster_across_resume(tmp_path: pathlib.Path) -> None:
+    """The journal proves the charge even after the child records have gone."""
+    parent = _session(tmp_path, "root")
+    update = {
+        "type": "budget.update",
+        "usd_total": 0.25,
+        "settled_children": ["old-child"],
+        "input_total": 9,
+        "output_total": 3,
+        "input_settled_children": 27,
+        "output_settled_children": 9,
+    }
+    rows = [
+        {"type": "session.start"},
+        update,
+        update,
+        {"type": "session.resume"},
+        {**update, "input_settled_children": 0, "output_settled_children": 0},
+    ]
+    (parent / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    text = receipt.render(receipt.read_receipt(parent, tmp_path))
+    assert "Parent: in=18 out=6" in text
+    assert "Children: in=27 out=9" in text
+    assert "TOTAL: in=45 out=15" in text
 
 
 def test_the_parent_header_reads_a_live_tool_and_usage_from_the_child(

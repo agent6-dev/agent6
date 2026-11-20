@@ -596,7 +596,10 @@ class ParallelDispatcher:
                     update={
                         "usage": (
                             child_dispatch.UsageRecord(
-                                usd=usage.usd, usd_partial=usage.usd_partial, tokens=usage.tokens
+                                usd=usage.usd,
+                                usd_partial=usage.usd_partial,
+                                tokens=usage.tokens,
+                                model_tokens=usage.model_tokens,
                             )
                             if usage is not None
                             else None

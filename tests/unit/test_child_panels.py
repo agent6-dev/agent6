@@ -130,6 +130,8 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         assert parent.estimate_usd()[0] == 1.0 + (panel_cost or 0.0)
         assert parent.available().usd == 7.0 - (panel_cost or 0.0)
         assert parent.snapshot().unmetered_tokens == 5 + panel_tokens
+        # Two worker calls (1 in, 4 out each) plus the reviewer's one (1 in, 1 out).
+        assert "Children: in=3 out=9" in parent.format_summary()
         spec = child_records.ChildSpec(1, worker_dir.name, clone, None)
         imported = parallel_results.import_child(
             child_records.ChildResult(

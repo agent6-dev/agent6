@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from agent6 import budget, evidence, kinds
+from agent6 import budget, evidence, kinds, token_usage
 from agent6.viewmodel import format, review
 from agent6.viewmodel.session import status as session_status
 
@@ -140,6 +140,7 @@ class ExecutionUsage:
     Attributes:
         input_tokens: Input tokens; None until a budget row carries the counters.
         output_tokens: Output tokens; None until a budget row carries the counters.
+        child_model_tokens: Fresh input and output charged through child settlement.
         cache_read_tokens: The cached side of the input; None when the row lacked it.
         cache_write_tokens: Cache-write tokens; None when the row lacked it.
         usd: The metered spend.
@@ -167,6 +168,7 @@ class ExecutionUsage:
     usd_cap: float | None = None
     tokens_fallback_cap: int | None = None
     plan_cap: float | None = None
+    child_model_tokens: token_usage.TokenCounts = token_usage.UNKNOWN
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -222,11 +224,22 @@ class BudgetView:
         session: The usage across every execution.
         execution: The current accounting lifetime's usage beside its caps.
         account: The latest subscription account reading; None before a plan call runs.
+        prior_model_tokens: Counts banked when a resume starts a fresh tracker.
     """
 
     session: SessionUsage = dataclasses.field(default_factory=SessionUsage)
     execution: ExecutionUsage = dataclasses.field(default_factory=ExecutionUsage)
     account: AccountReading | None = None
+    prior_model_tokens: token_usage.TokenBreakdown = token_usage.NO_PRIOR_USAGE
+
+    @property
+    def model_tokens(self) -> token_usage.TokenBreakdown:
+        """Return session-wide input and output, counting each tracker once."""
+        current = self.execution
+        return self.prior_model_tokens + token_usage.TokenBreakdown(
+            token_usage.TokenCounts(current.input_tokens, current.output_tokens),
+            current.child_model_tokens,
+        )
 
     @property
     def usd_so_far(self) -> float:

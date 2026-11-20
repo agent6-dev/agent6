@@ -14,9 +14,8 @@ percentage points against `max_plan_points`; a call with neither counts its toke
 against `max_tokens_fallback`. Each cap: -1 unlimited, 0 refuse that ledger, >
 0 the cap.
 
-A parent that dispatches children reserves what it has left (`reserve`): each child's share is
-its own cap, held until the child settles (`settle_child`) with its actual usage, charged
-whole, its plan readings folded through the same high-water rule as the parent's own.
+Running children share the remaining allowance. Settlement charges each child once, with its
+plan readings folded through the same high-water rule as the parent's own.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from agent6 import kinds
+from agent6 import kinds, token_usage
 from agent6.models import pricing
 
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
@@ -315,12 +314,14 @@ class UsageSettlement:
         tokens: The child's fallback-ledger tokens.
         plan_readings: The provider entry and reading of each plan observation the child
             made, oldest first: account-global movement the parent folds, not spend.
+        model_tokens: Fresh input and output across the child and its settled children.
     """
 
     usd: float
     usd_partial: bool
     tokens: int
     plan_readings: tuple[tuple[str, PlanUsage], ...] = ()
+    model_tokens: token_usage.TokenCounts = token_usage.UNKNOWN
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -374,6 +375,7 @@ class BudgetSnapshot:
         available: What is left to spend in each currency, running children taken out, with the
             cap's meaning.
         settled_children: Child sessions charged to this execution's cumulative totals.
+        child_model_tokens: Fresh input and output charged through those settlements.
     """
 
     input_total: int
@@ -393,6 +395,7 @@ class BudgetSnapshot:
     usd_settled_children: float
     available: BudgetAllowance
     settled_children: frozenset[str] = frozenset()
+    child_model_tokens: token_usage.TokenCounts = token_usage.ZERO
 
     @property
     def plan_latest(self) -> PlanUsage | None:
@@ -453,6 +456,7 @@ class BudgetTracker:
     _credits_spent_usd: float = 0.0
     # The spend the settled children's usage charged, and each running child's last reading.
     _children_usd: float = 0.0
+    _children_io: token_usage.TokenCounts = token_usage.ZERO
     _charged_children: set[str] = dataclasses.field(default_factory=set)
     _running: dict[str, UsageSettlement] = dataclasses.field(default_factory=dict)
     _child_executions: dict[str, ChildAccount] = dataclasses.field(default_factory=dict)
@@ -603,6 +607,7 @@ class BudgetTracker:
             usage,
             usd=max(0.0, usage.usd - account.prior.usd),
             tokens=max(0, usage.tokens - account.prior.tokens),
+            model_tokens=usage.model_tokens.since(account.prior.model_tokens),
         )
 
     def note_running(self, child: str, usage: UsageSettlement) -> None:
@@ -657,6 +662,7 @@ class BudgetTracker:
                 return
             self._running.pop(child, None)
             self._children_usd += max(usage.usd, 0.0)
+            self._children_io += usage.model_tokens
             self._unmetered_tokens += max(usage.tokens, 0)
             self._charged_children.add(child)
             provider = ""
@@ -889,6 +895,7 @@ class BudgetTracker:
                 usd_settled_children=self._children_usd,
                 available=self._available_locked(),
                 settled_children=frozenset(self._charged_children),
+                child_model_tokens=self._children_io,
             )
 
     def estimate_usd(self) -> tuple[float, bool]:
@@ -977,8 +984,8 @@ class BudgetTracker:
         Attributes:
             route: Each usage line starts with the provider/model route, such as
                 `chatgpt/gpt-6-astra`.
-            in: Fresh input tokens for the route, or all routes on the TOTAL line.
-            out: Output tokens for the route, or all routes on the TOTAL line.
+            in: Fresh input tokens. TOTAL includes the parent and its settled children.
+            out: Output tokens over the same calls as `in`.
             cache_r: Cache-read tokens for the route.
             cache_w: Cache-write tokens for the route.
             calls: Calls recorded for the route.
@@ -1012,9 +1019,10 @@ class BudgetTracker:
         if metered:
             usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
             cap = f" of {usd_cap}"
-        budget_line = (
-            f"  TOTAL: in={snap.input_total} out={snap.output_total} cost{approx}{total}{cap}"
-        )
+        own = token_usage.TokenCounts(snap.input_total, snap.output_total)
+        parent, children, totals = token_usage.TokenBreakdown(own, snap.child_model_tokens).lines()
+        lines.extend((f"  {parent}", f"  {children}"))
+        budget_line = f"  {totals} cost{approx}{total}{cap}"
         if snap.unmetered_tokens:
             fb_cap = (
                 "unlimited"

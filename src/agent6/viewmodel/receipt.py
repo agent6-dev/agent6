@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import budget, errors, evidence
+from agent6 import budget, errors, evidence, token_usage
 from agent6.sessions import journal, manifest
 from agent6.vcs import commit_graph
 from agent6.vcs.git import read as git_read
@@ -146,6 +146,7 @@ class ReceiptView:
         acquisitions: The container leases the run's executions acquired.
         children: The session's children, from its dispatch records or its children's lineage.
         cache_usage: Session-wide worker cache use and post-compaction input.
+        model_tokens: Session-wide fresh input and output, split by parent and children.
     """
 
     session_id: str
@@ -168,6 +169,9 @@ class ReceiptView:
         default_factory=vm_cache_usage.CacheUsage
     )
     child_verification: journal.ChildVerification | None = None
+    model_tokens: token_usage.TokenBreakdown = dataclasses.field(
+        default_factory=token_usage.TokenBreakdown
+    )
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -216,6 +220,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         vm_children.children_of(session_dir),
         fold.cache_usage,
         fold.child_verification,
+        fold.budget.model_tokens,
     )
 
 
@@ -450,6 +455,8 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         f"Execution: {view.execution_id or 'unknown'}",
         f"Source tip: {view.source_tip or 'unknown'}",
         environment_summary(view),
+        "Model tokens (all executions):",
+        *view.model_tokens.lines(),
         *view.cache_usage.lines(),
         *view.cache_usage.idle_notices,
         "",

@@ -387,7 +387,9 @@ def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
         ids = re.findall(r"^ATTEMPT (\S+)$", task, re.MULTILINE)
         return json.dumps({"order": list(reversed(ids)), "summary": "the second reads best"})
 
-    with launch_env.scripted_provider(reply_for=reply) as (base_url, _calls):
+    with launch_env.scripted_provider(
+        reply_for=reply, usage={"prompt_tokens": 9, "completion_tokens": 3}, cost_usd=0.01
+    ) as (base_url, _calls):
         cfg = Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
@@ -427,6 +429,15 @@ def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
     subject = "agent6 turn 1: update x.txt" if control == "agent6" else "child work"
     assert (ran["returncode"], ran["stdout"].strip()) == (0, subject)
     assert (state / "sessions" / "reviewers" / f"{session}-rp1-l1" / "completion.json").is_file()
+    # The bill counts both attempts and the ranking reviewer, not just the parent's calls.
+    parent_calls = sum(who == "PARENT" for who, _, _ in seen)
+    child_calls = len(seen) - parent_calls
+    assert cli_main(["sessions", "receipt", session]) == 0
+    for surface in (out.err + out.out, capsys.readouterr().out):
+        assert f"Parent: in={9 * parent_calls} out={3 * parent_calls}" in surface
+        assert f"Children: in={9 * child_calls} out={3 * child_calls}" in surface
+        assert f"TOTAL: in={9 * len(seen)} out={3 * len(seen)}" in surface
+    assert f"cost=${0.01 * len(seen):.2f}" in out.err + out.out
     # The second attempt wins; only agent6-owned git merges it.
     task, judges = (
         child_dispatch.read_records(session_dir)[-1],

@@ -124,8 +124,18 @@ class BudgetUpdate(Event):
             "Cumulative USD spend across provider/model routes, including purchased credits."
         ),
     )
-    input_total: int | None = pydantic.Field(default=None, description="Cumulative input tokens.")
-    output_total: int | None = pydantic.Field(default=None, description="Cumulative output tokens.")
+    input_total: int | None = pydantic.Field(
+        default=None, description="This tracker's own fresh input tokens."
+    )
+    output_total: int | None = pydantic.Field(
+        default=None, description="This tracker's own output tokens."
+    )
+    input_settled_children: int | None = pydantic.Field(
+        default=None, description="Fresh input tokens charged through child settlement."
+    )
+    output_settled_children: int | None = pydantic.Field(
+        default=None, description="Output tokens charged through child settlement."
+    )
     cache_read_total: int | None = pydantic.Field(
         default=None,
         description="Cumulative cached input tokens.",

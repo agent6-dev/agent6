@@ -80,7 +80,10 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
             session_id,
             resumed.account_id,
             budget.UsageSettlement(
-                usd=child.usage.usd, usd_partial=child.usage.usd_partial, tokens=child.usage.tokens
+                usd=child.usage.usd,
+                usd_partial=child.usage.usd_partial,
+                tokens=child.usage.tokens,
+                model_tokens=child.usage.model_tokens,
             ),
         )
     task = child_records.ChildTask(

@@ -15,7 +15,7 @@ from typing import Literal
 
 import pydantic
 
-from agent6 import child_records, portable
+from agent6 import child_records, portable, token_usage
 
 RECORD_VERSION = 13
 DIR_NAME = "dispatch"
@@ -101,11 +101,13 @@ class UsageRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         usd: The child's metered spend.
         usd_partial: Whether unpriced calls make it a lower bound.
         tokens: Its fallback-ledger tokens.
+        model_tokens: Its cumulative fresh input and output, including settled descendants.
     """
 
     usd: float
     usd_partial: bool = False
     tokens: int = 0
+    model_tokens: token_usage.TokenCounts = token_usage.UNKNOWN
 
 
 class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):

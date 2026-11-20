@@ -438,7 +438,9 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
         case "budget.update":
             return journal.BudgetUpdate(
                 settled_children=_strings(raw.get("settled_children")),
-                # A counter the row lacks stays unknown; the four travel as one group.
+                input_settled_children=_count(raw.get("input_settled_children")),
+                output_settled_children=_count(raw.get("output_settled_children")),
+                # A counter the row lacks stays unknown.
                 input_total=_count(raw.get("input_total")),
                 output_total=_count(raw.get("output_total")),
                 cache_read_total=_count(raw.get("cache_read_total")),

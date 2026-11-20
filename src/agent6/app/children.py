@@ -689,6 +689,7 @@ def child_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | No
         usd=scan.budget.session.usd,
         usd_partial=scan.budget.session.usd_partial,
         tokens=scan.budget.session.unmetered_tokens,
+        model_tokens=scan.budget.model_tokens.total,
         plan_readings=tuple((p, r) for _, p, r in sorted(readings, key=lambda item: item[0])),
     )
 

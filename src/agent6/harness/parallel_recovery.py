@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records
+from agent6 import child_records, token_usage
 from agent6.harness import parallel_dispatch, parallel_join
 from agent6.sessions import child_dispatch
 from agent6.vcs.git import read as git_read
@@ -120,7 +120,10 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                         child.session_id,
                         child.account_id,
                         agent6_budget.UsageSettlement(
-                            usd=prior.usd, usd_partial=prior.usd_partial, tokens=prior.tokens
+                            usd=prior.usd,
+                            usd_partial=prior.usd_partial,
+                            tokens=prior.tokens,
+                            model_tokens=prior.model_tokens,
                         ),
                     )
         results = (
@@ -135,7 +138,9 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
         ):
             if dispatcher.budget is not None:
                 # Nothing ran, so nothing was used; the journal names each child accounted.
-                nothing = agent6_budget.UsageSettlement(usd=0, usd_partial=False, tokens=0)
+                nothing = agent6_budget.UsageSettlement(
+                    usd=0, usd_partial=False, tokens=0, model_tokens=token_usage.ZERO
+                )
                 for child in children:
                     dispatcher.budget.settle_child(child, nothing)
             message = (
@@ -149,7 +154,9 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                         child.model_copy(
                             update={
                                 "settled": True,
-                                "usage": child_dispatch.UsageRecord(usd=0.0),
+                                "usage": child_dispatch.UsageRecord(
+                                    usd=0.0, model_tokens=token_usage.ZERO
+                                ),
                             }
                         )
                         for child in record.children
