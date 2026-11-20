@@ -49,7 +49,7 @@ const notLive = s => s.finished;
 let confirmations = 0, notices = [], posts = [];
 const confirmDialog = async () => { confirmations++; return true; };
 const crypto = {getRandomValues: array => array.fill(1)};
-let postJSON = async (url, body) => {
+postJSON = async (url, body) => {
   posts.push({url, body}); return {message: 'steer submitted'};
 };
 const paintRun = () => {};
