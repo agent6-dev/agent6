@@ -4774,6 +4774,22 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
     assert "task.surfaced" in event_types[restart_at + 1 :]
 
 
+@pytest.mark.parametrize("replace", [True, False], ids=["replaced", "retired"])
+def test_compaction_repeats_the_applied_metric(replace: bool) -> None:
+    worker = mock.MagicMock()
+    worker.call.return_value = _resp("Finished reading the benchmark.")
+    wf = _wf(provider=worker, compaction=compaction_window.CompactionSettings(keep_recent_chars=0))
+    wf.metrics.change(directive.parse_metric_spec("minimize -- old"))
+    wf.metrics.change(directive.parse_metric_spec("maximize -- new") if replace else None)
+    state = _state(system="Original metric: minimize -- old")
+    messages = _long_history(4)
+    _restart_via_wire(wf, messages, state=state)
+    notice = wf.metrics.notice()
+    assert notice in str(messages)
+    context = wf.compaction_context(loop_conversation.Conversation.from_wire(messages), state, [])
+    assert notice in context.endpoint_notice()
+
+
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
     worker = mock.MagicMock()
     worker.call.return_value = _resp("summary text")

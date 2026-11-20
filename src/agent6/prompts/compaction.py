@@ -111,6 +111,7 @@ def context_restart_notice(
     *,
     dag_available: bool = True,
     verification: str = "",
+    metric: str = "",
     endpoint_task: str | None = None,
     session_id: str = "",
 ) -> str:
@@ -123,6 +124,7 @@ def context_restart_notice(
         dag_available: The run has a curator, so `list_tasks` exists.
         endpoint_task: The task to repeat after a signed summary instead of adding prose.
         verification: The verify fact (`VerifyVerdict.fact`), or "" for a run without a gate.
+        metric: The applied metric notice, including retirement, or "" if never set.
         session_id: The id of the journal this turn can read, or "".
 
     Returns:
@@ -150,6 +152,8 @@ def context_restart_notice(
         parts.append(f"OPERATOR RULINGS (recorded, still binding):\n{decisions.strip()}\n")
     if verification:
         parts.append(f"VERIFICATION (the harness's record, not the summary's):\n{verification}\n")
+    if metric:
+        parts.append(metric)
     if endpoint_task is None:
         parts.append("PROGRESS SUMMARY:\n")
     return "\n\n".join(parts)

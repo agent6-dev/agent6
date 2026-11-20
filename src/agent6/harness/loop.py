@@ -2019,6 +2019,7 @@ class Harness:
                 decisions=self._load_decisions(),
                 dag_available=self.dispatcher.dag_available,
                 verification=self.verify_fact(state),
+                metric=self.metrics.notice() if self.metrics.revision else "",
             )
 
         return strategy.Context(
