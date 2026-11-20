@@ -233,9 +233,12 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_landing_gives_its_
         "summary: The suite passes as it is.",
         "  3 tests, exit 0.",
     ]
-    stopped = dataclasses.replace(_res(ok=True), stopped_by="stopped at the run's budget")
+    stopped = dataclasses.replace(
+        _res(ok=True), stopped_by="stopped at the run's budget", commits=2
+    )
     assert parallel_join.end_notice(stopped) == (
-        "[parallel] child child-1 stopped at the run's budget."
+        "[parallel] child child-1 stopped at the run's budget, not landed;"
+        " agent6/child-1 holds 2 commit(s)."
     )
     assert parallel_join.end_notice(_res(ok=False, error="no result (failed)")) == (
         "[parallel] child child-1 ended without a result: no result (failed)"
@@ -267,30 +270,35 @@ def test_started_text_tells_one_child_from_attempts() -> None:
     )
 
 
-def test_summary_text_says_what_stopped_a_child_that_still_joined() -> None:
-    """A child its run stopped at the budget or its deadline is not said to have finished.
+def test_summary_text_says_a_stopped_child_did_not_land() -> None:
+    """A stopped child's line says what stopped it, that nothing landed, and what holds its work.
 
-    Its join read "finished with no changes to join." beside a run that had just ended it.
+    A stopped child's commits were merged, its line reading "joined at <sha> (stopped by its
+    parent)".
     """
-    text = parallel_join.summary_text(
-        "p1",
-        [
-            dataclasses.replace(_join("no_changes", "a"), detail="stopped at the run's budget"),
-            dataclasses.replace(
-                _join("joined", "b", sha="abc123def4567"), detail="ended at its deadline"
-            ),
-        ],
-    )
-    assert "  - a (agent6/a): stopped at the run's budget with no changes to join." in text
-    # A segment whose only child was stopped before changing anything did not pass.
-    stopped = dataclasses.replace(_join("no_changes", "a"), detail="stopped at the run's budget")
-    assert parallel_join.segment_stamp([stopped]) == (
+    idle = dataclasses.replace(_join("stopped", "a"), detail="stopped at the run's budget")
+    busy = dataclasses.replace(_join("stopped", "b"), detail="stopped by its parent", commits=3)
+    text = parallel_join.summary_text("p1", [idle, busy])
+    assert text.splitlines() == [
+        "[parallel] group p1 complete (2 child(ren)):",
+        "  - a (agent6/a): stopped at the run's budget, not landed; it made no commit.",
+        "  - b (agent6/b): stopped by its parent, not landed; the branch holds 3 commit(s).",
+        "Every child stopped: nothing landed.",
+    ]
+    # A task whose every child stopped did not pass; one that landed a sibling did.
+    assert parallel_join.segment_stamp([idle, busy]) == (
         "failed",
-        "a made no changes (stopped at the run's budget)",
+        "a stopped at the run's budget; not landed; b stopped by its parent; not landed",
         "",
     )
-    assert "  - b (agent6/b): joined at abc123def456 (ended at its deadline)" in text
-    assert "finished" not in text
+    landed = _join("joined", "c", sha="abc123def4567")
+    assert parallel_join.segment_stamp([busy, landed])[0] == "passed"
+    assert parallel_join.summary_text("p1", [busy, landed]).splitlines()[-1] == (
+        "Review what landed and continue."
+    )
+    assert parallel_join.join_words(busy) == (
+        "stopped by its parent, not landed; agent6/b holds 3 commit(s)"
+    )
 
 
 def test_summary_hands_a_conflicted_child_to_the_operator() -> None:
@@ -332,7 +340,7 @@ def test_a_children_result_carries_its_finish_summary(tmp_path: pathlib.Path) ->
     res = children.recorded_result(spec, "", done, child_records.Imported(done), origin=tmp_path)
     assert res.ok and res.report == "The suite passes: 3 tests, exit 0."
 
-    # A child its parent stopped keeps its result and says what stopped it.
+    # A stopped child keeps its result, says what stopped it, and joins as stopped.
     halted = tmp_path / "halted"
     _ended_child(halted, reason="steer_abort", verification="unverified")
     res = children.recorded_result(
@@ -344,23 +352,22 @@ def test_a_children_result_carries_its_finish_summary(tmp_path: pathlib.Path) ->
         stopped_by="stopped at the run's budget",
     )
     assert res.ok and res.stopped_by == "stopped at the run's budget"
-    join = parallel_join.join_child_result(
-        tmp_path, res, ref="", fallback_parent=None, identity=None, also_branch=None
-    )
-    assert (join.status, join.detail) == ("no_changes", "stopped at the run's budget")
+    join = parallel_join.stopped_join(res)
+    assert (join.status, join.detail, join.commits) == ("stopped", "stopped at the run's budget", 0)
 
     # A child the operator stopped, or a resume found stopped, reads stopped, not finished.
     res = children.recorded_result(
         spec, "", halted, child_records.Imported(halted), origin=tmp_path
     )
     assert res.ok and res.stopped_by == "stopped"
-    assert parallel_join.end_notice(res).splitlines()[0] == "[parallel] child done stopped."
-    join = parallel_join.join_child_result(
-        tmp_path, res, ref="", fallback_parent=None, identity=None, also_branch=None
+    assert parallel_join.end_notice(res).splitlines()[0] == (
+        "[parallel] child done stopped, not landed; it made no commit."
     )
-    assert parallel_join.summary_text("g", [join]).splitlines()[1] == (
-        "  - done (): stopped with no changes to join."
-    )
+    join = parallel_join.stopped_join(res)
+    assert parallel_join.summary_text("g", [join]).splitlines()[1:] == [
+        "  - done (): stopped, not landed; it made no commit.",
+        "Every child stopped: nothing landed.",
+    ]
 
     cut = tmp_path / "cut"
     _ended_child(cut, reason="max_turns", verification="unverified")

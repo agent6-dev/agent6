@@ -526,11 +526,13 @@ def recorded_result(
         imported_ref=imported.ref,
         imported_tip=imported.tip,
         has_commits=child_has_commits(dest, imported),
+        commits=child_commits(origin, dest, imported),
         usage=usage,
         report=fold_session(
             tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
         ).finish_summary,
-        # A stop counts as a result: the child's own record still says it was one.
+        # A stop counts as a result, and one that never lands by itself: the child's own
+        # record says it was one, whoever asked.
         stopped_by=stopped_by or ("stopped" if summary.status == "stopped" else ""),
     )
 
@@ -715,6 +717,28 @@ def child_has_commits(session_dir: pathlib.Path, imported: child_records.Importe
     except sessions_manifest.ManifestError:
         return True
     return imported.tip != base
+
+
+def child_commits(
+    origin: pathlib.Path, session_dir: pathlib.Path, imported: child_records.Imported
+) -> int:
+    """Return how many commits the imported tip holds beyond the child's recorded base.
+
+    Args:
+        origin: The repository the child was imported into.
+        session_dir: The imported child's session dir, whose manifest records its base.
+        imported: What the import landed.
+
+    Returns:
+        The count; 0 for a record-only import, a tip at the base, or an unrecorded base.
+    """
+    if not imported.tip:
+        return 0
+    try:
+        base = sessions_manifest.read_manifest(session_dir).base_sha
+    except sessions_manifest.ManifestError:
+        return 0
+    return len(git_read.list_run_commits(origin, base, imported.tip)) if base else 0
 
 
 def build_child_ranker(

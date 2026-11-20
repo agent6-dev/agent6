@@ -30,6 +30,7 @@ from agent6.harness import (
     loop_state,
     operator_bridge,
     parallel_dispatch,
+    parallel_recovery,
     provider_call,
     run_chain,
 )
@@ -113,16 +114,19 @@ class _Children:
                 imported_ref=branch if tip else "",
                 imported_tip=tip,
                 has_commits=bool(tip),
+                commits=1 if tip else 0,
                 usage=agent6_budget.UsageSettlement(usd=0.25, usd_partial=False, tokens=0),
                 report=report,
                 stopped_by=stopped_by,
             )
         )
 
-    def stop(self, sid: str) -> None:
+    def stop(self, sid: str, *, path: str | None = None) -> None:
         """Stand in for the watch: a stopped child ends with what it had committed."""
         self.stopped.append(sid)
-        self.end(sid, path=f"{sid}.txt", stopped_by="stopped by its parent")
+        self.end(
+            sid, path=f"{sid}.txt" if path is None else path, stopped_by="stopped by its parent"
+        )
 
 
 def _first_ranked(
@@ -302,10 +306,13 @@ def test_tasks_that_end_before_one_boundary_land_in_the_order_written(
     assert list(dispatcher.open) == ["root-p1"]
 
 
-def test_an_end_stops_the_children_still_running_and_a_resume_lands_their_work(
+def test_an_end_stops_the_children_still_running_and_a_resume_lands_nothing_of_theirs(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Children end with the execution that started them; their commits land on the next."""
+    """Children end with the execution that started them; a stopped child never lands.
+
+    The resume merged the commits of a child the run's end had stopped before its first call.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     children = _Children(repo, "run")
@@ -321,7 +328,7 @@ def test_an_end_stops_the_children_still_running_and_a_resume_lands_their_work(
     assert result.reason == "max_turns"
     assert children.stopped == [child]
     assert result.summary.endswith(
-        "; 1 child(ren) ended with the run, their work lands when it resumes"
+        "; 1 child(ren) stopped with the run, their branches hold their work"
     )
     (record,) = child_dispatch.read_records(tmp_path / "run")
     # Charged, not landed: the chain holds none of its work.
@@ -341,11 +348,30 @@ def test_an_end_stops_the_children_still_running_and_a_resume_lands_their_work(
         repo, tmp_path / "run", resumed, _Children(repo, "run"), max_turns=2, recoverer=recoverer
     ).resume()
 
-    assert f"[parallel] child {child} stopped by its parent." in resumed.seen[0]
-    assert "[parallel] group run-p1 complete (1 child(ren))" in resumed.seen[0]
-    assert (repo / f"{child}.txt").exists()
+    # The resumed model reads what it resumed into: the child, its branch, its commits.
+    assert (
+        f"[parallel] child {child} stopped by its parent, not landed;"
+        f" agent6/{child} holds 1 commit(s)." in resumed.seen[0]
+    )
+    assert (
+        "[parallel] group run-p1 complete (1 child(ren)):\\n"
+        f"  - {child} (agent6/{child}): stopped by its parent, not landed; the branch holds"
+        " 1 commit(s).\\nEvery child stopped: nothing landed." in resumed.seen[0]
+    )
+    assert not (repo / f"{child}.txt").exists()
+    assert _git(repo, "rev-parse", "--verify", f"agent6/{child}")
     (record,) = child_dispatch.read_records(tmp_path / "run")
     assert (record.state, record.delivered, record.children[0].reported) == ("complete", True, True)
+    join = record.children[0].join
+    assert join is not None
+    assert (join.status, join.detail, join.commits, join.branch, join.sha) == (
+        "stopped",
+        "stopped by its parent",
+        1,
+        f"agent6/{child}",
+        "",
+    )
+    assert join.target_before == join.target_after
 
 
 def _dispatcher(
@@ -485,6 +511,112 @@ def test_attempts_are_told_as_each_ends_and_land_once_all_have(tmp_path: pathlib
     assert dispatcher.open == {}
 
 
+def test_a_stopped_attempt_is_no_candidate_and_the_others_are_ranked(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Among attempts a stopped child is not ranked: the first of the others lands."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "root")
+    dispatcher = _dispatcher(repo, children)
+    conversation = loop_conversation.Conversation()
+    started = _start(dispatcher, ("3", "rewrite it"))
+    child_work.stop(dispatcher, "root-p1-l1")
+    children.end("root-p1-l2", path="x.txt", text="second\n")
+    children.end("root-p1-l3", path="x.txt", text="third\n")
+
+    assert dispatcher.settle(conversation, 2)
+
+    joins = dispatcher.joins(started.groups[0])
+    assert [(j.session_id, j.status, j.detail) for j in joins] == [
+        ("root-p1-l1", "stopped", "stopped by its parent"),
+        ("root-p1-l2", "joined", ""),
+        ("root-p1-l3", "ranked", "2 of 2"),
+    ]
+    assert (repo / "x.txt").read_text(encoding="utf-8") == "second\n"
+    assert not (repo / "root-p1-l1.txt").exists()
+    (record,) = child_dispatch.read_records(repo.parent / "root")
+    assert record.ranking is not None
+    assert record.ranking.order == ("root-p1-l2", "root-p1-l3")
+    said = json.dumps(conversation.to_wire())
+    assert "Review what landed and continue." in said
+
+
+def test_a_task_whose_every_child_stopped_lands_nothing_and_says_so(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Every attempt stopped: no ranking, no merge, and one notice that nothing landed."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "root")
+    dispatcher = _dispatcher(repo, children)
+    conversation = loop_conversation.Conversation()
+    started = _start(dispatcher, ("2", "rewrite it"))
+    child_work.stop(dispatcher, "root-p1-l1")
+    children.stop("root-p1-l2", path="")
+    before = _git(repo, "rev-parse", "HEAD")
+
+    assert dispatcher.settle(conversation, 2)
+
+    assert [(j.status, j.commits) for j in dispatcher.joins(started.groups[0])] == [
+        ("stopped", 1),
+        ("stopped", 0),
+    ]
+    (record,) = child_dispatch.read_records(repo.parent / "root")
+    assert record.ranking is not None and record.ranking.order == ()
+    assert record.message == (
+        "[parallel] group root-p1 complete (2 child(ren)):\n"
+        "  - root-p1-l1 (agent6/root-p1-l1): stopped by its parent, not landed; the branch"
+        " holds 1 commit(s).\n"
+        "  - root-p1-l2 (agent6/root-p1-l2): stopped by its parent, not landed; it made no"
+        " commit.\n"
+        "Every child stopped: nothing landed."
+    )
+    assert _git(repo, "rev-parse", "HEAD") == before and dispatcher.open == {}
+    said = json.dumps(conversation.to_wire())
+    assert (
+        "[parallel] child root-p1-l2 stopped by its parent, not landed; it made no commit." in said
+    )
+
+
+def test_a_resume_lands_the_task_of_a_child_that_ended_by_itself(tmp_path: pathlib.Path) -> None:
+    """A task whose child finished lands at the resume: the boundary its execution never reached."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "root")
+    dispatcher = _dispatcher(repo, children)
+    _start(dispatcher, ("", "write a"), ("", "write b"))
+    children.end("root-p1-l1", path="a.txt", report="wrote a")
+
+    # The execution ends before the boundary: the second task's child is stopped with it.
+    assert dispatcher.close(3) == (("root-p2-l1",), ("root-p1-l1",))
+
+    ended = children.results
+
+    def recoverer(group: str, children: Sequence[str]) -> list[child_records.ChildResult]:
+        del group
+        return [ended[sid].result() for sid in children]
+
+    resumed = _dispatcher(repo, _Children(repo, "root"))
+    resumed.child_recoverer = recoverer
+    conversation = loop_conversation.Conversation()
+    state = loop_state.LoopState(original_task="t", execution_id="exec-2", tool_calls=0)
+
+    parallel_recovery.reconcile(resumed, state, conversation, turn=3)
+
+    first, second = child_dispatch.read_records(repo.parent / "root")
+    assert first.children[0].join is not None and second.children[0].join is not None
+    assert (first.children[0].join.status, second.children[0].join.status) == ("joined", "stopped")
+    assert (repo / "a.txt").exists() and not (repo / "root-p2-l1.txt").exists()
+    assert (first.state, second.state, first.delivered, second.delivered) == (
+        "complete",
+        "complete",
+        True,
+        True,
+    )
+    assert resumed.open == {}
+
+
 def test_close_stops_what_runs_charges_each_child_once_and_forgets_it(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -499,11 +631,12 @@ def test_close_stops_what_runs_charges_each_child_once_and_forgets_it(
     _start(dispatcher, ("", "write a"), ("", "write b"))
     children.end("root-p2-l1", path="b.txt")
 
-    assert dispatcher.close(3) == ("root-p1-l1", "root-p2-l1")
+    # The first task's child was stopped; the second's had ended and lands at a resume.
+    assert dispatcher.close(3) == (("root-p1-l1",), ("root-p2-l1",))
 
     assert children.stopped == ["root-p1-l1"]
     assert dispatcher.budget.estimate_usd()[0] == pytest.approx(0.5)
-    assert dispatcher.close(3) == ()
+    assert dispatcher.close(3) == ((), ())
     assert dispatcher.budget.estimate_usd()[0] == pytest.approx(0.5)
     assert [r.state for r in child_dispatch.read_records(repo.parent / "root")] == ["settling"] * 2
 
@@ -542,22 +675,51 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     read = answers(provider.seen[2])[-1]
     assert read["children"] == [f"[{one}] running: write a", f"[{two}] running: b"]
     assert read["output"] == f"[{one}] running: write a\n\n(no transcript yet)"
-    # The stop answers at once; the child ends in the background and lands like any other.
+    # The stop answers at once; the child ends in the background and never lands.
     assert children.stopped == [two]
     stopped = answers(provider.seen[3])[-1]
-    assert stopped["children"][1] in (f"[{two}] stopping: b", f"[{two}] ended, not landed: b")
-    assert f"[parallel] child {two} stopped by its parent." in provider.seen[3]
+    words = f"stopped by its parent, not landed; agent6/{two} holds 1 commit(s)"
+    assert stopped["children"][1] in (f"[{two}] stopping: b", f"[{two}] {words}: b")
+    assert f"[parallel] child {two} {words}." in provider.seen[3]
+    assert "Every child stopped: nothing landed." in provider.seen[3]
     # The wait for the next child to end returned with the first task's child ended.
     waited = answers(provider.seen[4])[-1]
-    assert waited["children"][0] == f"[{one}] ended, not landed: write a"
-    last = provider.seen[4]
-    assert last.index("[parallel] group run-p2 complete") < last.index(
-        "[parallel] group run-p1 complete"
-    )
-    assert f"{two} (agent6/{two}): joined at" in last and "(stopped by its parent)" in last
+    assert waited["children"] == [
+        f"[{one}] ended, not landed: write a",
+        f"[{two}] {words}: b",
+    ]
+    assert "[parallel] group run-p1 complete" in provider.seen[4]
+    assert (repo / "a.txt").exists() and not (repo / f"{two}.txt").exists()
+    assert _git(repo, "rev-parse", "--verify", f"agent6/{two}")
     roster = child_work.roster(wf.parallel)
     assert [(line.id, line.running) for line in roster] == [(one, False), (two, False)]
-    assert all(line.state.startswith("joined at ") for line in roster)
+    assert roster[0].state.startswith("joined at ") and roster[1].state == words
+    (failed,) = [[], *(_events(tmp_path / "run", "parallel.failed"))][-1:]
+    assert failed == [], "a stopped child is no failed join"
+    rows = _events(tmp_path / "run", "parallel.joined")
+    assert rows[0]["children"][0]["status"] == "stopped" and rows[0]["children"][0]["commits"] == 1
+
+
+def test_a_stopped_child_does_not_hold_the_end(tmp_path: pathlib.Path) -> None:
+    """A finish in the turn that stopped the last child goes through: its task will not land."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    child = "run-p1-l1"
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a"}))),
+        (
+            None,
+            _calls(("stop_background", {"id": child}), ("finish_session", {"summary": "done"})),
+        ),
+    )
+    wf = _harness(repo, tmp_path / "run", provider, children, max_turns=4)
+
+    result = wf.run("start")
+
+    assert (result.reason, result.turns) == ("finish_session", 2)
+    assert _events(tmp_path / "run", "finish.refused.children") == []
+    assert not (repo / f"{child}.txt").exists()
 
 
 def test_wait_for_returns_when_the_child_ends_the_wait_runs_out_or_a_stop_cuts_it(
@@ -624,8 +786,8 @@ def test_finish_session_is_refused_until_every_task_has_landed(tmp_path: pathlib
         "[harness] finish_session refused: 1 child(ren) have not landed:\\n"
         f"- {child}: running\\n"
         "read_background with a child's id reads it, read_background with wait_s and no id"
-        " waits for the next to end, and stop_background stops one. Work lands at the turn"
-        " boundary after its task's children end."
+        " waits for the next to end, and stop_background stops one, whose work then does not"
+        " land. Work lands at the turn boundary after its task's children end."
     )
     assert refusal in provider.seen[2]
     assert "[parallel] group run-p1 complete" in provider.seen[3]

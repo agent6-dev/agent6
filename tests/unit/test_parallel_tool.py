@@ -220,7 +220,10 @@ def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathl
         schema.ReadBackgroundInput.TOOL_DESCRIPTION + schema.ReadBackgroundInput.CHILDREN_NOTE
     )
     assert "With no `id`, a `wait_s` above 0 waits for the next child to end" in read
-    assert stop.endswith(" A child's id stops that child at once; the commits it made still land.")
+    assert stop.endswith(
+        " A child's id stops that child at once; a stopped child's work does not land, and its"
+        " branch holds what it committed."
+    )
     # The arguments are the same either way: no new field addresses a child.
     for name in ("read_background", "stop_background"):
         ((one,), (other,)) = (

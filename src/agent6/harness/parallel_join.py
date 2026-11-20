@@ -30,7 +30,8 @@ def join_child_result(
     """Join one returned child's branch onto the parent's chain.
 
     `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the child's
-    files. Never raises; the DAG stamp is the segment's (`segment_stamp`).
+    files. Never raises; the DAG stamp is the segment's (`segment_stamp`). A stopped child
+    never comes here: the dispatcher records it `stopped` and merges nothing.
 
     Args:
         root: The repository root.
@@ -49,7 +50,7 @@ def join_child_result(
     if not res.ok:
         return child_records.ChildJoin(rid, res.branch, "failed", "", res.error)
     if not res.has_commits:
-        return child_records.ChildJoin(rid, res.branch, "no_changes", "", res.stopped_by)
+        return child_records.ChildJoin(rid, res.branch, "no_changes", "", "")
     rev = res.imported_ref or res.branch
     try:
         sha = git_ops.chain_merge(
@@ -72,7 +73,34 @@ def join_child_result(
         names = ", ".join(terminal.printable_name(path) for path in paths)
         detail = f"merge conflict in {names}" if names else "merge conflict"
         return child_records.ChildJoin(rid, res.branch, "conflict", "", detail)
-    return child_records.ChildJoin(rid, res.branch, "joined", sha, res.stopped_by)
+    return child_records.ChildJoin(rid, res.branch, "joined", sha, "")
+
+
+def stopped_join(res: child_records.ChildResult) -> child_records.ChildJoin:
+    """Return the join of a stopped child: nothing merges, and its branch holds its commits."""
+    return child_records.ChildJoin(
+        res.spec.session_id,
+        res.imported_ref or res.branch,
+        "stopped",
+        "",
+        res.stopped_by,
+        commits=res.commits,
+    )
+
+
+def stopped_words(stopped_by: str, holder: str, commits: int) -> str:
+    """Return how a stopped child stands: what stopped it, and what holds its work.
+
+    Args:
+        stopped_by: What stopped it (`stopped by its parent`).
+        holder: The name of what holds its work: its branch, or `the branch`.
+        commits: The commits it made beyond its base.
+
+    Returns:
+        The words every surface of the parent uses for a stopped child.
+    """
+    held = f"{holder} holds {commits} commit(s)" if commits else "it made no commit"
+    return f"{stopped_by}, not landed; {held}"
 
 
 def segment_stamp(
@@ -82,7 +110,7 @@ def segment_stamp(
 
     A segment passes when any child joined or finished with no changes, recording the last
     joined sha (none for no changes); the note names every child. A conflict counts as not
-    joined, and so does a child its parent stopped before it changed anything.
+    joined, and so does a stopped child.
 
     Args:
         children: The segment's joins.
@@ -92,7 +120,7 @@ def segment_stamp(
     """
     joined = [j for j in children if j.status == "joined"]
     note = "; ".join(child_note(j) for j in children)
-    if joined or any(j.status == "no_changes" and not j.detail for j in children):
+    if joined or any(j.status == "no_changes" for j in children):
         return "passed", note, joined[-1].sha if joined else ""
     return "failed", note, ""
 
@@ -103,20 +131,23 @@ def join_words(j: child_records.ChildJoin) -> str:
         return f"joined at {j.sha[:12]}"
     if j.status == "ranked":
         return f"ranked {j.detail}"
+    if j.status == "stopped":
+        return stopped_words(j.detail, j.branch, j.commits)
     return "no changes" if j.status == "no_changes" else j.status
 
 
 def child_note(j: child_records.ChildJoin) -> str:
     """Return one child's outcome as a DAG note line."""
-    stopped = f" ({j.detail})" if j.detail else ""
     if j.status == "joined":
-        return f"{j.session_id} joined at {j.sha[:12]}{stopped}"
+        return f"{j.session_id} joined at {j.sha[:12]}"
     if j.status == "no_changes":
-        return f"{j.session_id} made no changes{stopped}"
+        return f"{j.session_id} made no changes"
     if j.status == "conflict":
         return f"{j.session_id} conflicted; merge manually"
     if j.status == "ranked":
         return f"{j.session_id} ranked {j.detail}; not joined"
+    if j.status == "stopped":
+        return f"{j.session_id} {j.detail}; not landed"
     return f"{j.session_id} failed: {j.detail}"
 
 
@@ -149,12 +180,16 @@ def end_notice(res: child_records.ChildResult) -> str:
 
     Returns:
         How it ended, with its finish summary under it as its journal holds it (2,000
-        characters at most).
+        characters at most). A stopped child's line says it did not land and what holds
+        its work.
     """
     sid = res.spec.session_id
     if not res.ok:
         return f"[parallel] child {sid} ended without a result: {res.error}"
-    head = f"[parallel] child {sid} {res.stopped_by or 'finished'}."
+    how = "finished"
+    if res.stopped_by:
+        how = stopped_words(res.stopped_by, res.imported_ref or res.branch, res.commits)
+    head = f"[parallel] child {sid} {how}."
     report = res.report.strip()
     return f"{head}\nsummary: " + report.replace("\n", "\n  ") if report else head
 
@@ -167,17 +202,20 @@ def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
         children: Each child's join, in dispatch order.
 
     Returns:
-        One line per child.
+        One line per child, then what to do; a dispatch whose every child stopped says
+        nothing landed.
     """
     lines = [f"[parallel] group {group} complete ({len(children)} child(ren)):"]
     for j in children:
         if j.status == "joined":
-            stopped = f" ({j.detail})" if j.detail else ""
-            lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}{stopped}")
+            lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
         elif j.status == "no_changes":
-            # A child its parent stopped did not finish: the line says what stopped it.
+            # A panel's reviewer the deadline ended did not finish: the line says so.
             ended = j.detail or "finished"
             lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
+        elif j.status == "stopped":
+            words = stopped_words(j.detail, "the branch", j.commits)
+            lines.append(f"  - {j.session_id} ({j.branch}): {words}.")
         elif j.status == "conflict":
             # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
             lines.append(
@@ -192,7 +230,10 @@ def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
             )
         else:
             lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
-    lines.append("Review what landed and continue.")
+    if children and all(j.status == "stopped" for j in children):
+        lines.append("Every child stopped: nothing landed.")
+    else:
+        lines.append("Review what landed and continue.")
     return "\n".join(lines)
 
 
@@ -204,7 +245,7 @@ def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
 
     Returns:
         The count line and each child's outcome: joined, changed nothing, its place with the
-        branch that holds its work, or its failure.
+        branch that holds its work, stopped, or its failure.
     """
     ranked = sum(1 for j in children if j.status in ("joined", "no_changes", "ranked"))
     lines = [f"{ranked} of {len(children)} child(ren) ranked:"]
@@ -217,6 +258,8 @@ def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
             what = f"{j.detail}; {j.branch} holds its work"
         elif j.status == "conflict":
             what = f"first; its merge conflicted, {j.branch} holds its work"
+        elif j.status == "stopped":
+            what = stopped_words(j.detail, j.branch, j.commits)
         else:
             what = j.detail or "no result"
         lines.append(f"  {j.session_id}: {what}")
@@ -229,7 +272,13 @@ def join_of(child: child_dispatch.ChildRecord) -> child_records.ChildJoin:
     if join is None:
         return child_records.ChildJoin(child.session_id, "", "failed", "", "not joined")
     return child_records.ChildJoin(
-        child.session_id, join.branch, join.status, join.sha, join.detail, child.report
+        child.session_id,
+        join.branch,
+        join.status,
+        join.sha,
+        join.detail,
+        child.report,
+        commits=join.commits,
     )
 
 

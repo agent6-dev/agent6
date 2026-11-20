@@ -1541,14 +1541,21 @@ class Harness:
         Returns:
             The execution's result.
         """
-        # Children end with the execution that started them; a resume lands their work.
-        unlanded = self.children.close(turn) if self.children is not None else ()
-        if unlanded:
-            self.log(f"LOOP: {len(unlanded)} child(ren) had not landed: {', '.join(unlanded)}")
+        # Children end with the execution that started them; a stopped child never lands.
+        stopped, ended = self.children.close(turn) if self.children is not None else ((), ())
+        if stopped:
+            self.log(f"LOOP: {len(stopped)} child(ren) stopped with the run: {', '.join(stopped)}")
             end = dataclasses.replace(
                 end,
-                summary=f"{end.summary}; {len(unlanded)} child(ren) ended with the run,"
-                " their work lands when it resumes",
+                summary=f"{end.summary}; {len(stopped)} child(ren) stopped with the run,"
+                " their branches hold their work",
+            )
+        if ended:
+            self.log(f"LOOP: {len(ended)} child(ren) had ended, not landed: {', '.join(ended)}")
+            end = dataclasses.replace(
+                end,
+                summary=f"{end.summary}; {len(ended)} child(ren) had ended, their work lands"
+                " when the run resumes",
             )
         if end.checkpoint:
             self.checkpoints.final(turn=turn, task_id=state.focus.surfaced_task_id)

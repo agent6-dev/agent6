@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from agent6 import directive
+from agent6 import child_records, directive
 from agent6.harness import parallel_join
 from agent6.sessions import child_dispatch
 from agent6.tools import child_tools, results, tool_errors
@@ -23,26 +23,45 @@ if TYPE_CHECKING:
     from agent6.harness import loop, parallel_dispatch
 
 
+def standing(
+    dispatcher: parallel_dispatch.ParallelDispatcher,
+    task: parallel_dispatch.OpenDispatch,
+    started: child_records.StartedChild,
+) -> str:
+    """Return where a child of an open dispatch stands.
+
+    Args:
+        dispatcher: The run's dispatcher.
+        task: The child's dispatch.
+        started: The child.
+
+    Returns:
+        `running`, `stopping`, `ended, not landed`, or a stopped child's words.
+    """
+    if not started.result.done():
+        return "stopping" if started.session_id in dispatcher.stopping else "running"
+    res = dispatcher.result_of(task.record, started)
+    if res.ok and res.stopped_by:
+        return parallel_join.join_words(parallel_join.stopped_join(res))
+    return "ended, not landed"
+
+
 def unlanded(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[str, str], ...]:
-    """Return each child whose task has not landed, with where it stands, oldest first.
+    """Return each child whose work may still land, with where it stands, oldest first.
+
+    A stopped child is not among them: it never lands, so it holds no end.
 
     Args:
         dispatcher: The run's dispatcher.
 
     Returns:
-        Each child's session id with `running`, `stopping` or `ended, not landed`.
+        Each child's session id with `running` or `ended, not landed`.
     """
     return tuple(
-        (
-            started.session_id,
-            "ended, not landed"
-            if started.result.done()
-            else "stopping"
-            if started.session_id in dispatcher.stopping
-            else "running",
-        )
+        (started.session_id, state)
         for task in dispatcher.open.values()
         for started in task.children
+        if (state := standing(dispatcher, task, started)) in ("running", "ended, not landed")
     )
 
 
@@ -53,7 +72,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
         dispatcher: The run's dispatcher.
 
     Returns:
-        One line per child of a work dispatch: the open ones as `unlanded` reads them, the
+        One line per child of a work dispatch: the open ones as `standing` reads them, the
         landed ones with how their work joined.
     """
     if dispatcher.session_dir is None:
@@ -62,7 +81,11 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
         records = child_dispatch.read_records(dispatcher.session_dir)
     except child_dispatch.DispatchRecordError:
         return ()
-    open_now = dict(unlanded(dispatcher))
+    open_now = {
+        started.session_id: standing(dispatcher, task, started)
+        for task in dispatcher.open.values()
+        for started in task.children
+    }
     lines: list[child_tools.ChildLine] = []
     for record in records:
         for child in record.children if record.source != "panel" else ():
@@ -107,7 +130,7 @@ def wait_for(
 
 
 def stop(dispatcher: parallel_dispatch.ParallelDispatcher, child: str) -> None:
-    """Ask a running child to stop now; its end is told and its commits land as any child's.
+    """Ask a running child to stop now; its end is told and its work never lands by itself.
 
     Args:
         dispatcher: The run's dispatcher.

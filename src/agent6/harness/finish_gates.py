@@ -301,9 +301,10 @@ def finish_contract(
 def children_finish(
     turn: loop_state.TurnState, state: loop_state.LoopState, ctx: advice.TurnContext
 ) -> advice.Refusal | None:
-    """Hold an end until every child has ended and its task has landed.
+    """Hold an end until every task that may still land has.
 
-    Uncapped: a child the model no longer wants is stopped, and a stopped child ends.
+    Uncapped: a child the model no longer wants is stopped, and a stopped child never
+    lands, so it holds no end.
 
     Args:
         turn: The turn that declared the end.
@@ -322,8 +323,8 @@ def children_finish(
     return advice.Refusal(
         f"[harness] {refused}: {len(children)} child(ren) have not landed:\n{listing}\n"
         "read_background with a child's id reads it, read_background with wait_s and no id"
-        " waits for the next to end, and stop_background stops one. Work lands at the turn"
-        " boundary after its task's children end.",
+        " waits for the next to end, and stop_background stops one, whose work then does not"
+        " land. Work lands at the turn boundary after its task's children end.",
         event=journal.FinishRefusedChildren(
             turn=turn.number, children=[child for child, _standing in children], trigger=ending
         ),

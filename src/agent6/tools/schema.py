@@ -386,7 +386,8 @@ class StopBackgroundInput(_ToolInput):
     )
     # Appended in a run that has the `parallel` tool; every other run reads the text above.
     CHILDREN_NOTE: ClassVar[str] = (
-        " A child's id stops that child at once; the commits it made still land."
+        " A child's id stops that child at once; a stopped child's work does not land, and"
+        " its branch holds what it committed."
     )
 
     id: str

@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import child_records, portable
 
-RECORD_VERSION = 6
+RECORD_VERSION = 7
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "joining", "complete"]
 
@@ -34,7 +34,8 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         status: The join's outcome.
         sha: The merge commit, "" when none.
         detail: The failure's reason, a conflict's files, a ranked child's place, or what
-            stopped a child whose work still joined; "" when none.
+            stopped a stopped child; "" when none.
+        commits: The commits a stopped child's branch holds beyond its base; 0 otherwise.
         target_before: The chain tip before the join.
         target_after: The chain tip after it; equal to `target_before` when nothing merged.
     """
@@ -43,6 +44,7 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     status: child_records.JoinStatus
     sha: str = ""
     detail: str = ""
+    commits: int = 0
     target_before: str = ""
     target_after: str = ""
 

@@ -1,37 +1,76 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Finish the dispatches an earlier execution left behind, before a resumed one's first call."""
+"""Settle the dispatches an earlier execution left behind, before a resumed one's first call."""
 
 from __future__ import annotations
 
+import concurrent.futures
+import pathlib
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records
+from agent6.harness import parallel_dispatch
 from agent6.sessions import child_dispatch
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
 
 if TYPE_CHECKING:
-    from agent6.harness import loop_conversation, loop_state, parallel_dispatch
+    from agent6.harness import loop_conversation, loop_state
+
+
+def reopened(
+    record: child_dispatch.DispatchRecord, results: Sequence[child_records.ChildResult]
+) -> parallel_dispatch.OpenDispatch:
+    """Return an interrupted task as an open dispatch whose children have all ended.
+
+    Args:
+        record: The task's record.
+        results: The results of its children that have a session dir.
+
+    Returns:
+        The dispatch, each child's result resolved; a child without one never started.
+    """
+    by_id = {res.spec.session_id: res for res in results}
+    children: list[child_records.StartedChild] = []
+    for child in record.children:
+        ended: concurrent.futures.Future[child_records.ChildResult] = concurrent.futures.Future()
+        ended.set_result(
+            by_id.get(child.session_id)
+            or child_records.ChildResult(
+                spec=child_records.ChildSpec(child.number, child.session_id, pathlib.Path(), None),
+                session_dir=pathlib.Path(),
+                branch=git_read.run_branch_for(child.session_id),
+                ok=False,
+                error="never started",
+            )
+        )
+        children.append(child_records.StartedChild(child.session_id, ended))
+    return parallel_dispatch.OpenDispatch(record, children)
 
 
 def reconcile(
     dispatcher: parallel_dispatch.ParallelDispatcher,
     state: loop_state.LoopState,
     conversation: loop_conversation.Conversation,
+    *,
+    turn: int,
 ) -> None:
-    """Finish or diagnose every dispatch the prior execution left behind, once each.
+    """Settle or diagnose every dispatch the prior execution left behind, once each.
 
     Runs before a resumed execution's first provider call. A complete record whose
     result never reached the conversation is delivered; an interrupted one has its
-    children found by the recoverer (live ones stopped, finished ones imported), its usage
-    settled and its joins landed exactly once, and its result delivered for the
-    original call.
+    children found by the recoverer (live ones stopped, finished ones imported) and its
+    usage settled. A task is then settled as a turn boundary settles it: a stopped child is
+    told with the branch that holds its work and never lands, and a task whose children
+    ended by themselves lands, as at the boundary its execution did not reach.
 
     Args:
         dispatcher: The resumed execution's dispatcher.
         state: The loop state.
-        conversation: The conversation the result enters.
+        conversation: The conversation the notices enter.
+        turn: The last turn the prior execution completed.
     """
     if dispatcher.session_dir is None:
         return
@@ -112,7 +151,11 @@ def reconcile(
                 child_records.DispatchResult(record.identity, True, (), message, base=record.base),
             )
             continue
-        dispatcher.deliver(
-            conversation,
-            dispatcher.land(dispatcher.reported(conversation, record, results), results),
-        )
+        if record.source == "panel":
+            dispatcher.deliver(
+                conversation,
+                dispatcher.land(dispatcher.reported(conversation, record, results), results),
+            )
+            continue
+        dispatcher.open[record.identity] = reopened(record, results)
+    dispatcher.settle(conversation, turn)

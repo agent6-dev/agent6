@@ -255,8 +255,8 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         )
         state = loop_state.LoopState(original_task="worker", tool_calls=0)
         conversation = loop_conversation.Conversation()
-        parallel_recovery.reconcile(recovered, state, conversation)
-        parallel_recovery.reconcile(recovered, state, conversation)
+        parallel_recovery.reconcile(recovered, state, conversation, turn=1)
+        parallel_recovery.reconcile(recovered, state, conversation, turn=1)
         assert len(calls) == before
         assert recovered_budget.snapshot().usd_running_children == 0
         usage = children.child_usage(worker_dir)

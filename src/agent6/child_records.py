@@ -23,7 +23,7 @@ DispatchSource = Literal["operator", "model", "panel"]
 # best-ranked one alone.
 JoinPolicy = Literal["merge", "record_only", "rank"]
 # How one child's work joined the parent's chain.
-JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked"]
+JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "stopped"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -143,6 +143,7 @@ class ChildResult:
         imported_ref: The ref the import landed the child's work in; "" when none.
         imported_tip: That ref's commit; "" when none.
         has_commits: Whether the imported tip holds commits beyond the child's base.
+        commits: How many it holds; 0 when none, or when the base is unrecorded.
         pid: The child process the spawn started, 0 when none did; a child that never
             reported its session dir is stopped through it.
         usage: What the child used, read from its imported record; None when no record
@@ -150,8 +151,9 @@ class ChildResult:
         report: What the child said at its end, its finish summary; "" when it ended another
             way.
         stopped_by: What ended the child short of its own finish: its deadline, the run's
-            budget, its parent's stop, or `stopped` for the operator's; "" when it ended by
-            itself.
+            budget, its parent's stop, or `stopped` for the operator's and for the end of the
+            execution that started it; "" when it ended by itself. A stopped child's work
+            never lands by itself.
     """
 
     spec: ChildSpec
@@ -162,6 +164,7 @@ class ChildResult:
     imported_ref: str = ""
     imported_tip: str = ""
     has_commits: bool = False
+    commits: int = 0
     pid: int = 0
     usage: budget.UsageSettlement | None = None
     report: str = ""
@@ -188,7 +191,8 @@ class StartedChild:
         session_id: The child's session id.
         result: Resolves once: with the child's result after its import, or with why it
             never ran.
-        stop: Asks the child to stop now; its result still resolves, with its work imported.
+        stop: Asks the child to stop now; its result still resolves, with its work imported
+            and never landed.
     """
 
     session_id: str
@@ -255,14 +259,15 @@ class ChildJoin:
         branch: The child's branch.
         status: `joined` (merged, `sha` set), `no_changes` (ended with a result and no commit
             beyond its base; nothing to merge), `conflict` (imported, the merge conflicted,
-            the ref exists locally), `failed` (no result or nothing importable) or
+            the ref exists locally), `failed` (no result or nothing importable),
             `ranked` (a rank join placed the child and did not join it: another child landed,
-            or the run has no chain to join onto; the branch holds this one's work).
+            or the run has no chain to join onto; the branch holds this one's work) or
+            `stopped` (the child was stopped, so nothing landed; the branch holds its work).
         sha: The merge commit, or "".
         detail: The failure's reason; a conflict's files; a ranked child's place (`2 of 3`);
-            for a child that joined or had nothing to join, what stopped it when its parent
-            did; else "".
+            what stopped a stopped child (`stopped by its parent`); else "".
         report: What the child said at its end, its finish summary; "" when it gave none.
+        commits: The commits a stopped child's branch holds beyond its base; 0 otherwise.
     """
 
     session_id: str
@@ -271,6 +276,7 @@ class ChildJoin:
     sha: str
     detail: str
     report: str = ""
+    commits: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

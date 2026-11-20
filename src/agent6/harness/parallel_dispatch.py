@@ -583,23 +583,28 @@ class ParallelDispatcher:
         record = child_dispatch.read_record(child_dispatch.record_path(self.session_dir, group))
         return [parallel_join.join_of(child) for child in record.children if child.join is not None]
 
-    def close(self, turn: int) -> tuple[str, ...]:
+    def close(self, turn: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """End the execution's children: stop each still running, wait, charge what it used.
 
-        Their work stays on their branches and their records stay unlanded: the next
-        execution lands them before its first model call.
+        Their work stays on their branches and their records stay unlanded. A stopped child
+        never lands; the next execution lands the task of one that had ended by itself.
 
         Args:
             turn: The turn the execution ended on.
 
         Returns:
-            The children whose dispatch had not landed.
+            The children this stopped, then the ones that had ended and whose task had not
+            landed.
         """
-        left = tuple(child.session_id for task in self.open.values() for child in task.children)
+        stopped: list[str] = []
+        ended: list[str] = []
         for task in self.open.values():
             for child in task.children:
-                if not child.result.done():
-                    child.stop()
+                if child.result.done():
+                    ended.append(child.session_id)
+                    continue
+                child.stop()
+                stopped.append(child.session_id)
         for task in self.open.values():
             self.settled(
                 task.record,
@@ -607,7 +612,7 @@ class ParallelDispatcher:
                 turn=turn,
             )
         self.open.clear()
-        return left
+        return tuple(stopped), tuple(ended)
 
     def land(
         self,
@@ -653,6 +658,7 @@ class ParallelDispatcher:
                 "status": j.status,
                 "sha": j.sha,
                 "detail": j.detail,
+                "commits": j.commits,
             }
             for j in joins
         ]
@@ -662,7 +668,8 @@ class ParallelDispatcher:
         failures = [
             p
             for p, j in zip(payload, joins, strict=True)
-            if j.status not in ("joined", "no_changes", "ranked")
+            # A stopped child is no failed join: nothing of it was meant to land.
+            if j.status not in ("joined", "no_changes", "ranked", "stopped")
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
@@ -730,6 +737,7 @@ class ParallelDispatcher:
         """Join each child not yet joined, in child order, recording each join as it lands.
 
         A rank join ranks first, once, and joins its winner alone; with no winner it joins none.
+        A stopped child never joins: its record names the branch that holds its commits.
 
         Args:
             record: The dispatch's record.
@@ -759,6 +767,8 @@ class ParallelDispatcher:
                     "",
                     (res.error or res.stopped_by) if res is not None else "no imported record",
                 )
+            elif res is not None and res.ok and res.stopped_by:
+                join = parallel_join.stopped_join(res)
             elif (
                 res is not None
                 and child.session_id in order
@@ -790,6 +800,7 @@ class ParallelDispatcher:
                             status=join.status,
                             sha=join.sha,
                             detail=join.detail,
+                            commits=join.commits,
                             target_before=before,
                             target_after=self.chain.tip() or "",
                         ),
@@ -815,13 +826,14 @@ class ParallelDispatcher:
             turn: The turn the judges' spend is journaled at.
 
         Returns:
-            The record with its ranking: the children that ended with a result, best first.
+            The record with its ranking: the children that ended with a result by
+            themselves, best first; a stopped child is no candidate.
         """
         assert self.ranker is not None
         rankable = [
             res
             for child in record.children
-            if (res := by_id.get(child.session_id)) is not None and res.ok
+            if (res := by_id.get(child.session_id)) is not None and res.ok and not res.stopped_by
         ]
         ranking = (
             self.ranker(rankable, group=record.identity, base=record.base)
@@ -873,11 +885,7 @@ class ParallelDispatcher:
             # Merged before the record advanced: recorded now, never merged twice.
             sha = git_read.merge_commit_for(self.chain.root, ref, res.imported_tip)
             return child_records.ChildJoin(
-                res.spec.session_id,
-                res.branch,
-                "joined",
-                sha or (self.chain.tip() or ""),
-                res.stopped_by,
+                res.spec.session_id, res.branch, "joined", sha or (self.chain.tip() or ""), ""
             )
         return parallel_join.join_child_result(
             self.chain.root,

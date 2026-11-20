@@ -330,11 +330,11 @@ def execution_opening(
             return ranked_opening(harness, conversation, turn, state)
         return None
     resume_opening(harness, conversation, state)
-    # An interrupted dispatch is finished or diagnosed before the first call.
+    # An interrupted dispatch is settled or diagnosed before the first call.
     if harness.resume_state_path is not None and (
         child_dispatch.records_dir(harness.resume_state_path.parent).is_dir()
     ):
-        parallel_recovery.reconcile(harness.parallel, state, conversation)
+        parallel_recovery.reconcile(harness.parallel, state, conversation, turn=turn - 1)
     return seeded_steer(harness, conversation, turn, state)
 
 

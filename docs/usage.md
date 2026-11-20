@@ -165,7 +165,10 @@ When a child ends, the model reads a notice with the summary the child finished 
 A task lands at the run's next turn boundary once its children have ended; a task still running holds no other.
 Tasks that finish before the same boundary land in the order written, so when two touch the same lines the later one to land gets the conflict.
 The run's uncommitted work is committed first, and one notice per task names each child's outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `ranked 2 of 3` (an attempt that did not land), `CONFLICT` with the files (nothing lands, and the child's branch holds its work for the operator) or `FAILED` with the reason.
-A child the run ended at its budget, or one that was stopped, says so on its line (`stopped at the run's budget with no changes to join`, `joined at <sha> (stopped by its parent)`), and a task whose children were all ended before changing anything is marked failed.
+A stopped child never lands by itself, whoever stopped it: its parent, the operator, the run's budget or the end of the execution that started it.
+Its end notice and its line say what stopped it, that it did not land, and what holds its work (`stopped by its parent, not landed; the branch holds 2 commit(s)`); the model decides what to do with it.
+Among attempts a stopped child is no candidate; a task whose every child stopped lands nothing, says `Every child stopped: nothing landed.` and is marked failed.
+`agent6 sessions merge <child> --into <branch>` lands a stopped child's branch by hand.
 
 ### The parallel tool
 
@@ -175,9 +178,10 @@ The call starts its children through the `/parallel` path (a checkpoint, fresh c
 Each child is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when its task lands.
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
 `read_background` with a child's id reads the child (its state and the tail of its transcript) after waiting up to `wait_s` for it to end; with no id and a `wait_s` it waits for the next child to end.
-`stop_background` with a child's id stops the child, and the commits it made still land.
+`stop_background` with a child's id stops the child; its work does not land, and its branch holds what it committed.
 The two tools' descriptions mention children only in a run that has the `parallel` tool.
-`finish_session` is refused until every task has landed, and the refusal names the children.
+`finish_session` is refused until every task has landed, and the refusal names the children that hold it: one still running, or one that ended and has not landed.
+A stopped child holds no end.
 The run counts its children's spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
 The tool is offered only in run mode, never inside a child and never in a front-end without a child dispatcher; a call that slips past the list is refused with the reason.
@@ -191,7 +195,8 @@ Their spend is included in the worker's total, not an extra charge, and their ev
 A child that needs an approval, or waits on an `ask_user`, asks on the run that dispatched it: the prompt names the child, and a standing answer given there covers the run's children.
 A question nobody answers on that run (`away mode deny`) returns `unanswered` to the child with the same note; a question the child queued (`wait: false`) stays on the child's own row.
 Children end with the execution that started them: when the run stops, or ends any other way, its running children are stopped and their spend is charged.
-A run that ended while its children ran lands their work first when resumed: children still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears each task's outcome before its first call.
+A resumed run lands nothing of a child that was stopped: before its first call the model reads each stopped child with the branch that holds its work and its commit count.
+A task whose children had ended by themselves when the run ended lands then, as at the boundary the run did not reach; each child's spend is settled once.
 Every session that dispatched children shows them: `sessions show`, the hubs and `attach --json` list a run's children under it whether it is a `run --parallel` group or a run that used `/parallel`, and the run's receipt carries a `Children` section (one line per child: its join, its spend) with the spend the children added to the run's total named, so the total is read as inclusive.
 The refusal names the child session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
