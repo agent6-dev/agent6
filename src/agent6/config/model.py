@@ -28,6 +28,7 @@ from agent6.config import (
     surface_config,
     validation,
 )
+from agent6.models import anthropic as anthropic_models
 
 
 def preset_name(name: str) -> str:
@@ -273,8 +274,6 @@ class Config(pydantic.BaseModel):
         tail = self.compaction.keep_recent_chars
         if summarise is None or summarise > tail:
             return self
-        from agent6.providers import anthropic_models
-
         worker = self.models.resolve("worker")
         if (
             worker is not None

@@ -19,8 +19,8 @@ import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6 import kinds
+from agent6.models import anthropic as anthropic_models
 from agent6.providers import (
-    anthropic_models,
     anthropic_parse,
     provider_types,
     request_headers,

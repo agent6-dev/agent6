@@ -257,16 +257,16 @@ depends_on = [
   "agent6.config.surface_config",  # is_loopback_host: no ambient proxy carries a loopback bearer off the host
   "agent6.kinds",
   "agent6.media",
+  "agent6.models.anthropic",
   "agent6.paths",
   "agent6.portable",
   "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent
   "agent6.sessions.objects",
   "agent6.sessions.retention",
-  "agent6.providers.anthropic_models",
 ]
 
 [[modules]]
-path = "agent6.providers.anthropic_models"
+path = "agent6.models.anthropic"
 depends_on = []
 
 [[modules]]
@@ -715,7 +715,7 @@ depends_on = [
   "agent6.config.surface_config",
   "agent6.config.validation",
   "agent6.kinds",
-  "agent6.providers.anthropic_models",
+  "agent6.models.anthropic",
 ]
 
 [[modules]]
