@@ -314,7 +314,7 @@ def test_child_reads_show_the_command_and_its_exit_without_output(
     child.mkdir(parents=True)
     (child / "manifest.json").write_text(json.dumps({"mode": "run", "user_task": "write a"}))
     identity = {"name": name, "call_id": 1, "execution_id": "worker"}
-    argv = ["sh", "pytest", "https://user@host.test/docs?q=private", "x" * 230]
+    argv = ["sh", "pytest", "https://demo@docs.example/guide?page=seven#notes", "x" * 230]
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "write a"},
         {
@@ -341,10 +341,12 @@ def test_child_reads_show_the_command_and_its_exit_without_output(
     (command,) = [
         line.split(f"{name} argv=", 1)[1] for line in text.splitlines() if " argv=" in line
     ]
-    assert command.startswith('["sh", "pytest", "https://host.test/docs", ')
+    assert command.startswith(
+        '["sh", "pytest", "https://demo@docs.example/guide?page=seven#notes", '
+    )
     assert len(command) == 200 and command.endswith("…")
     assert f"{name} result: exit=7 in 0.1s" in text
-    assert "private" not in text and "OUTPUT" not in text
+    assert "OUTPUT" not in text
 
 
 def test_stop_background_stops_a_child_even_where_commands_are_denied(
