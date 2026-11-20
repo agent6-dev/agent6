@@ -53,6 +53,7 @@ from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import policy, transcript_text
+from agent6.viewmodel.session import log as session_log
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -840,7 +841,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())
-        finalize.print_session_usage(layout, emit=reporter.err)
+        finalize.print_session_usage(
+            session_log.scan_session_log(layout.logs_path), emit=reporter.err
+        )
         return ExecutionEnd(finalize.session_exit_code(result, harness_gate=harness_gate))
 
     stranded = finalize.stranded_edits(result, layout, cwd, hidden=hidden)

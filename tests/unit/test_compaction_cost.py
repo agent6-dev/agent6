@@ -11,6 +11,7 @@ from agent6.app import finalize, reporter, role_providers
 from agent6.providers import openai_parse, responses_codec
 from agent6.sessions import layout
 from agent6.viewmodel import receipt
+from agent6.viewmodel.session import log as session_log
 
 
 def _call(call_id: str, *, role: str = "worker", **usage: Any) -> list[dict[str, Any]]:
@@ -199,7 +200,7 @@ def test_cold_idle_notice_is_part_of_the_receipt(tmp_path: pathlib.Path) -> None
     )
     assert message in receipt.render(receipt.read_receipt(session.session_dir, tmp_path))
     lines: list[str] = []
-    finalize.print_session_usage(session, emit=lines.append)
+    finalize.print_session_usage(session_log.scan_session_log(session.logs_path), emit=lines.append)
     assert not any(message in line for line in lines), "the live run already logged the notice"
 
 

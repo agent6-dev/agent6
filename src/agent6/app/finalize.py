@@ -8,6 +8,7 @@ and the operator notify hook.
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import json
 import pathlib
@@ -25,12 +26,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import (
-    format,
-    scan_session_log,
-    summarize_session_dir,
-    wire,
-)
+from agent6.viewmodel import format, listing, wire
+from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import status as session_status
 
 # The run stopped at its budget; resumable from its snapshot once the cap is raised.
@@ -216,7 +213,7 @@ def _print_red_gate(
     """
     if result.verification != "failed" or result.reason == "gate_red_at_base":
         return
-    scan = scan_session_log(layout.logs_path)
+    scan = session_log.scan_session_log(layout.logs_path)
     if limit := scan.verify_timeout_s:
         reporter.out(
             f"\nthe verify gate ran out its {limit:.0f}s limit (harness.verify.timeout_s),"
@@ -417,7 +414,7 @@ def print_session_end(
     reporter: app_reporter.Reporter,
     hidden: frozenset[str] = frozenset(),
 ) -> None:
-    """Print the composed end-of-run block: outcome, summary, cost and the next step.
+    """Print the run's outcome, summary, cost, review and next step.
 
     Args:
         result: The session's result.
@@ -426,12 +423,11 @@ def print_session_end(
         hidden: The run's hidden paths inside the repository, left out like its
             untracked files.
         budget: The execution's tracker.
-        console_stream: Whether a live console view already rendered the done line, so
-            only cost and the footer are added.
+        console_stream: Whether a live console view already rendered the done line.
         reporter: Receives the lines.
     """
     # The outcome comes from the fold `agent6 sessions` reads, so the two cannot diverge.
-    summary = summarize_session_dir(layout.session_dir)
+    summary = listing.summarize_session_dir(layout.session_dir)
     word, reason = summary.status, summary.detail
     if not console_stream:
         # Headless: this block is the only end output.
@@ -473,7 +469,22 @@ def print_session_end(
     _print_settled(result, layout=layout, reporter=reporter)
     reporter.out("")
     reporter.cost(budget.format_summary(include_stop_reason=result.reason != "budget_exhausted"))
-    print_session_usage(layout, emit=reporter.cost)
+    scan = session_log.scan_session_log(layout.logs_path)
+    print_session_usage(scan, emit=reporter.cost)
+    for panel in reversed(scan.review.panels):
+        if panel.execution_id != scan.execution_id or panel.result is None:
+            continue
+        # The gate counts blocking model routes; two reviewers can share a route.
+        votes = collections.Counter(reviewer.verdict for reviewer in panel.reviewers)
+        labels = {"block": "voted block", "pass": "voted pass", "abstain": "abstained"}
+        counted = ", ".join(f"{votes[v]} {label}" for v, label in labels.items() if votes[v])
+        outcome = counted or "no votes recorded"
+        if panel.completion == "inconclusive":
+            outcome = f"inconclusive ({outcome})"
+        reporter.out(f"  last review panel: {outcome}")
+        break
+    if findings := summary.merge_note():
+        reporter.out(f"  {findings}")
     reporter.out(f"  evidence:    agent6 sessions receipt {layout.session_id}")
     _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
 
@@ -623,7 +634,7 @@ def _print_left_out(
         ref: The ref holding the run's commits; "" when it recorded none.
         reporter: Receives the line.
     """
-    left_out = scan_session_log(layout.logs_path).left_out
+    left_out = session_log.scan_session_log(layout.logs_path).left_out
     if not left_out:
         return
     try:
@@ -685,16 +696,13 @@ def _print_no_commit_footer(
         reporter.out("\nno changes were committed")
 
 
-def print_session_usage(
-    layout: sessions_layout.SessionLayout, *, emit: Callable[[str], None]
-) -> None:
+def print_session_usage(scan: session_log.LogScan, *, emit: Callable[[str], None]) -> None:
     """Print session-wide cache use and spend across executions.
 
     Args:
-        layout: The session's layout.
+        scan: The session's journal fold.
         emit: Receives the lines on the caller's cost channel.
     """
-    scan = scan_session_log(layout.session_dir / sessions_layout.LOGS_NAME)
     for line in scan.cache_usage.lines():
         emit(f"  {line}")
     if scan.executions > 1 and scan.budget_seen:
@@ -718,7 +726,7 @@ def print_interrupt_end(
     """
     reporter.out("")
     reporter.cost(budget.format_summary())
-    print_session_usage(layout, emit=reporter.cost)
+    print_session_usage(session_log.scan_session_log(layout.logs_path), emit=reporter.cost)
     reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     run_branch = ""
     base_branch = ""
