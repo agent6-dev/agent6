@@ -982,7 +982,7 @@ def test_blame_opens_the_lines_commit_in_git(
     page.wait_for_selector(".git-diff .dl[data-new='1']")
     page.locator(".git-diff-head").get_by_role("button", name="\u2039 files", exact=True).click()
     assert "root commit" in page.locator(".git-side .gd-subject").inner_text()
-    assert page.locator(".gc-row.sel").count() == 1
+    assert page.locator(".gc-row[aria-current=true]").count() == 1
     assert "path=" not in page.url
     assert errors == [], errors
 
@@ -1032,10 +1032,12 @@ def test_diff_full_context_shows_lines_outside_the_hunk(
     page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/compare/HEAD..WORKTREE?path=long.txt")
     expect(page.locator(".git-diff-body")).to_contain_text("changed")
     assert page.locator(".git-diff [data-new='1']").count() == 0
-    page.get_by_role("button", name="Show full context", exact=True).click()
+    context = page.get_by_role("button", name="Show full context", exact=True)
+    context.click()
     expect(page.locator(".git-diff [data-new='1']")).to_contain_text("line 0")
     expect(page.locator(".git-diff [data-new='60']")).to_contain_text("line 59")
-    page.get_by_role("button", name="Show hunks only", exact=True).click()
+    expect(context).to_have_attribute("aria-pressed", "true")
+    context.click()
     expect(page.locator(".git-diff [data-new='1']")).to_have_count(0)
     page.get_by_role("link", name="Open in Files", exact=True).click()
     expect(page).to_have_url(f"http://127.0.0.1:{dirty_git_port}/#/files/WORKTREE/long.txt")
@@ -1133,7 +1135,7 @@ def test_git_and_files_deep_links_survive_reload_and_back(
     page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature")
     page.wait_for_selector(".git-side .gd-subject")
     assert "feature: rename" in page.locator(".git-side .gd-subject").inner_text()
-    assert page.locator(".gc-row.sel").count() == 1
+    assert page.locator(".gc-row[aria-current=true]").count() == 1
     page.locator(".gc-row").first.click()
     page.wait_for_function(
         "() => document.querySelector('.gd-subject')?.textContent.includes('merge feature')"

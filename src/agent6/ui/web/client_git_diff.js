@@ -86,7 +86,7 @@ function gitDiffViewer(body) {
     if (!f.binary) {
       const modes = el('span', 'gview');
       for (const m of DIFF_MODES) {
-        const b = el('button', 'mini' + (m === mode ? ' active' : ''), m);
+        const b = el('button', 'mini', m); b.setAttribute('aria-pressed', String(m === mode));
         b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
         if (m === 'split' && narrow) { b.disabled = true; b.title = 'split needs a wider screen'; }
         b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole, fullContext); };
@@ -95,7 +95,7 @@ function gitDiffViewer(body) {
       tools.appendChild(modes);
     }
     if (!f.binary && (mode === 'inline' || mode === 'split')) {
-      const context = el('button', 'mini diff-context', fullContext ? 'Show hunks only' : 'Show full context');
+      const context = el('button', 'mini diff-context', 'Show full context');
       context.setAttribute('aria-pressed', String(fullContext));
       context.disabled = !!ctx.panel;
       if (ctx.panel) context.title = 'Full context is unavailable for recorded review comparisons';
@@ -185,7 +185,7 @@ function gitDiffViewer(body) {
       const n = ++request;
       clearBlame(patch);
       box.querySelectorAll('.blame-note').forEach(e => e.remove());
-      button.setAttribute('aria-pressed', String(blameOn)); button.classList.toggle('active', blameOn);
+      button.setAttribute('aria-pressed', String(blameOn));
       if (!blameOn) return;
       const notice = el('div', 'muted blame-note', 'loading blame…'); box.insertBefore(notice, patch);
       const unavailable = reason => { notice.classList.add('err'); notice.textContent = 'Blame unavailable: ' + reason; };

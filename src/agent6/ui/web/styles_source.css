@@ -36,7 +36,7 @@
 .gview button.mini { border-radius: 0; }
 .gview button.mini:first-child { border-radius: 6px 0 0 6px; }
 .gview button.mini:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
-.gview button.mini.active { position: relative; z-index: 1; } /* its accent edge over the neighbour's border */
+.gview button.mini[aria-pressed=true] { position: relative; z-index: 1; } /* its accent edge over the neighbour's border */
 /* A tree row: a folder's caret, mark, name and note, or a file's mark, name and size. A caret and
    its gap make one indent step, so a file's name lines up with its sibling folders' names and a
    folder's children start under its name. `--tree-inset` sets the rows' side padding. */

@@ -252,7 +252,7 @@ function fileList(files, truncated, open, actions) {
   };
   const paint = () => {
     body.innerHTML = '';
-    for (const b of view.children) b.classList.toggle('active', b.textContent === mode);
+    for (const b of view.children) b.setAttribute('aria-pressed', String(b.textContent === mode));
     if (!files.length) { body.appendChild(el('div', 'muted gf-note', 'no files differ')); return; }
     if (mode === 'tree') body.appendChild(treeView(buildTree(files), (f) => fileRow(f, true), folderNote, false));
     else for (const f of files) body.appendChild(fileRow(f, false));
@@ -470,10 +470,13 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   // -- the graph -------------------------------------------------------------------
   let commits = [], tips = null, hasMore = false, selected = null, loading = 0, loadError = '';
   const settle = rovingRows(graph, '.gc-row');
-  // The selected row reads selected, and Tab enters the graph there.
+  // The selected row reads current, and Tab enters the graph there.
   const markRow = (sha) => {
     let hit = null;
-    for (const r of graph.querySelectorAll('.gc-row')) { const on = r.dataset.sha === sha; r.classList.toggle('sel', on); if (on) hit = r; }
+    for (const r of graph.querySelectorAll('.gc-row')) {
+      const on = r.dataset.sha === sha;
+      if (on) { r.setAttribute('aria-current', 'true'); hit = r; } else r.removeAttribute('aria-current');
+    }
     if (hit) settle(hit);
     return hit;
   };

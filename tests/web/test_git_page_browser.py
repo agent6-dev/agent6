@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import pathlib
-import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -543,9 +542,37 @@ def test_a_selected_merges_hollow_dot_takes_its_rows_colour(
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     row = page.locator(".gc-row").first  # the merge
     row.click()
-    expect(row).to_have_class(re.compile(r"\bsel\b"))
+    expect(row).to_have_attribute("aria-current", "true")
     fill = row.locator("circle.merge").evaluate("d => getComputedStyle(d).fill")
     assert fill == row.evaluate("r => getComputedStyle(r).backgroundColor")
+    assert errors == [], errors
+
+
+def test_the_git_toggles_and_the_open_commit_expose_their_state(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """The diff modes, list and tree, and the open commit's row kept their state in a class."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.locator(".gc-row").nth(1).click()
+    expect(page.locator(".gc-row[aria-current=true]")).to_have_attribute(
+        "data-sha", page.locator(".gc-row").nth(1).get_attribute("data-sha") or ""
+    )
+
+    def pressed(names: tuple[str, ...]) -> None:
+        for name in names:
+            button = page.get_by_role("button", name=name, exact=True)
+            expect(button).to_have_attribute("aria-pressed", str(name == names[0]).lower())
+
+    page.get_by_role("button", name="tree", exact=True).click()
+    pressed(("tree", "list"))
+    page.get_by_role("button", name="list", exact=True).click()
+    pressed(("list", "tree"))
+    page.locator(".git-side .gf-open").first.click()
+    page.get_by_role("button", name="split", exact=True).click()
+    pressed(("split", "inline", "old", "new"))
     assert errors == [], errors
 
 
@@ -910,7 +937,7 @@ def test_a_phone_presses_inline_when_split_has_no_room(open_page: OpenPage, git_
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature?path=b.txt")
     expect(page.locator(".git-diff .diff")).to_be_visible()
-    expect(page.locator(".git-diff .gview button.active")).to_have_text("inline")
+    expect(page.locator(".git-diff .gview [aria-pressed=true]")).to_have_text("inline")
     expect(page.locator(".git-diff .gview button", has_text="split")).to_be_disabled()
     expect(page.locator(".git-diff")).to_contain_text("split needs a wider screen")
     assert page.evaluate("localStorage.getItem('a6-diff-mode')") == "split"
