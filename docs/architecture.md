@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `budget`, `child_env`, `child_records`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `llm_json`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `vcs`, `viewmodel`, `words`.
+Any layer may also use the shared substrate: `budget`, `child_env`, `child_records`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `llm_json`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `token_usage`, `vcs`, `viewmodel`, `words`.
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `git_command.py`.
@@ -670,7 +670,9 @@ Its session dir is `sessions/reviewers/<id>` under the state of the repository t
 
 **`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.child_settings`, the resolver every entry point shares, and plans one `ChildSpec` per child, each started through the child bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
 
-`app.worktrees.write_child_config` uses `config.child_snapshot` to materialize the parent's resolved worker, planner, reviewer and helper routes and sampling settings, with the child's worker route override applied.
+`app.worktrees.write_child_config` uses `config.child_snapshot` to materialize the parent's resolved model settings, with the child's selection applied to its driving role.
+A work attempt journals `worker` calls even when its selector was `reviewer`; a ranking or panel reviewer journals `reviewer` calls with the selected route and effort.
+A reviewer snapshot keeps the parent's resolved panel routes for quorum validation.
 The snapshot keeps only the route in `models.default`; it omits sampling keys only for resolved `None` values.
 On the internal child path, `app.session.setup.load_session_config` replaces only `[models]` after normal layer discovery and preset selection, discarding lower-layer model values and their provenance.
 Other sections retain normal merging and explicit-default resets, including sandbox values and budgets; ordinary operator `--config` remains a merge.
@@ -685,7 +687,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - a manifest comparison record: the group id, ranking, method, rationale and judge cost; child manifests keep only their placement and group id
     - `VerifyGate.after_rank_join` applies the parent's gate policy to the joined tree
     - without a parent result, `session.stop.child_verification` can cite a child's full pass on the same tree by the same command (child, attempt id, argv and tree)
-    - `git.auto_merge` merges the run as it does any run (`finalize.LANDING_ENDS`)
+    - `git.auto_merge` requires the parent's own gate pass or no gate (`finalize.auto_merge_eligible`)
     - under `git.control = "model"` the run has no chain: every child is placed and none is joined
     - a resume with a steer continues from the joined work with the worker model
 - every child's manifest names the session that dispatched it (`parallel.parent`, stamped from the private launch), so each listing nests children under their parent, folded into a count
@@ -697,6 +699,9 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - a child is the parent's own child, tied with PDEATHSIG (SIGTERM) to the watch thread that spawned it, which outlives it: a parent that dies ends its children as a Ctrl-C would; a child that does not stop when asked (an interrupt, a deadline) is TERMed, KILLed after the kill grace and reaped by its recorded pid, reported failed with its clone kept, and a child that never reported a session dir is stopped the same way
 - a child's approval or waiting `ask_user` is asked on its parent: `child_wait.await_child` calls the parent's watch (`app/child_watch.py`) on each poll, which, while the child reads `waiting`, puts the child's open prompt through the parent's `OperatorPrompts` and writes the outcome into the child's answer slot (the answers, or the note that the parent's operator gave none); a child under a relay runs with the away mode `wait`, so a chain relays itself; the parent takes its own turns meanwhile, so `OperatorPrompts` asks one prompt at a time under one lock, which the relay holds from its "still unanswered" check to its answer
 - a dispatch reserves nothing: each child starts under what the parent has left in each finite ledger (`BudgetTracker.available`, `-1` and `0` passing through per currency) as its own caps, through its launch file, and a panel's later batch under what is left then; while a child runs, the parent's watch reads its journal on each poll and counts its spend so far against the parent's caps (`BudgetTracker.note_running`), the child's own running children included (`usd_running_children` and `tokens_running_children` on its `budget.update` row, which the watch writes as that spend moves, ten seconds apart at most); a running child's spend is inside `available`, `fraction_remaining` and the breaker and outside `usd_total`; the children together reaching a cap ends them at once, so the total can pass the cap by what was in flight and one poll; a child's settlement (`settle_child`) charges its final usage once and folds its plan readings through the parent's high-water rule so movement two children both saw counts once; a child whose usage is unknown stays unsettled, its last reading counted for that execution; a resumed execution takes the children its journal already names as settled (`mark_settled`) and charges none of them again; `run --parallel` hands down nothing (its children keep the config's caps and `--max-usd`)
+- `budget.update` keeps the tracker's own input and output separate from `input_settled_children` and `output_settled_children` charged through settlement.
+  Each child contributes its inclusive counts once, not its per-call rows as well.
+  A continuation contributes only its increase over `usage_before`.
 - every live dispatch is recorded before any child launches (`sessions/child_dispatch.py`, `<session_dir>/dispatch/<group>.json`, version 13, written atomically): the identity, source, join policy, owner execution, base, the task's spec, the DAG node it was dispatched under, each child's limits and whether its end was told; a work record is one task; an unwritable record refuses the dispatch; the record advances `prepared`, `running` (across the parent's turns), `settling` (each child's usage charged once, or marked outstanding), `ranking` (a task's attempts have ended and their judges run), `joining` (each join written as it merges with the chain tip before and after; a stopped child's join is `stopped` with its ref, commit count and measured context) and `complete` with the outcome notice, then `delivered`
 - `viewmodel.children.ChildView` describes one child in the parent's `children` list.
     - The dispatch gives the child its number, task, group and outcome.

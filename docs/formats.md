@@ -111,8 +111,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `settled_children` | `list, optional` | Child session IDs included in this execution's cumulative spend. |
 | `usd_total` | `float` | Cumulative USD spend across provider/model routes, including purchased credits. |
-| `input_total` | `int, optional` | Cumulative input tokens. |
-| `output_total` | `int, optional` | Cumulative output tokens. |
+| `input_total` | `int, optional` | This tracker's own fresh input tokens. |
+| `output_total` | `int, optional` | This tracker's own output tokens. |
+| `input_settled_children` | `int, optional` | Fresh input tokens charged through child settlement. |
+| `output_settled_children` | `int, optional` | Output tokens charged through child settlement. |
 | `cache_read_total` | `int, optional` | Cumulative cached input tokens. |
 | `cache_write_total` | `int, optional` | Cumulative cache-write tokens. |
 | `usd_partial` | `bool, optional` | Whether unpriced usage makes spend a lower bound. |
@@ -1254,6 +1256,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `child_verification.verify_id` | `str` | The attempt id in the child's journal. |
 | `child_verification.tree` | `str` | The git tree the child verified. |
 | `child_verification.command` | `list` | The full verify command that passed. |
+| `index_tree` | `str, optional` | The staged tree at a model-controlled stop, when available. |
 | `tree` | `str, optional` | The final working-tree content identifier. |
 | `tool` | `str, optional` | The repeated tool's name. |
 | `streak` | `int, optional` | Number of consecutive matching turns or calls. |
@@ -1759,8 +1762,8 @@ Source: [`budget.BudgetTracker.format_summary`](https://github.com/agent6-dev/ag
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `route` | `text` | Each usage line starts with the provider/model route, such as `chatgpt/gpt-6-astra`. |
-| `in` | `text` | Fresh input tokens for the route, or all routes on the TOTAL line. |
-| `out` | `text` | Output tokens for the route, or all routes on the TOTAL line. |
+| `in` | `text` | Fresh input tokens. TOTAL includes the parent and its settled children. |
+| `out` | `text` | Output tokens over the same calls as `in`. |
 | `cache_r` | `text` | Cache-read tokens for the route. |
 | `cache_w` | `text` | Cache-write tokens for the route. |
 | `calls` | `text` | Calls recorded for the route. |
@@ -2888,6 +2891,7 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `children` | `tuple[ChildView, ...]` | The session's children, from its dispatch records or its children's lineage. |
 | `cache_usage` | `CacheUsage` | Session-wide worker cache use and post-compaction input. |
 | `child_verification` | `ChildVerification \| None` | The full pass a child recorded on the final tree, when used. |
+| `model_tokens` | `TokenBreakdown` | Session-wide fresh input and output, split by parent and children. |
 
 ### CacheUsage
 
@@ -3681,6 +3685,7 @@ Source: [`agent6.viewmodel.session.records.BudgetView`](https://github.com/agent
 | `session` | `SessionUsage` | The usage across every execution. |
 | `execution` | `ExecutionUsage` | The current accounting lifetime's usage beside its caps. |
 | `account` | `AccountReading \| None` | The latest subscription account reading; None before a plan call runs. |
+| `prior_model_tokens` | `TokenBreakdown` | Counts banked when a resume starts a fresh tracker. |
 
 ### ApprovalPrompt
 
@@ -3918,6 +3923,17 @@ Source: [`agent6.sessions.journal.ChildVerification`](https://github.com/agent6-
 | `tree` | `str` | The git tree the child verified. |
 | `command` | `tuple[str, ...]` | The full verify command that passed. |
 
+### TokenBreakdown
+
+**Support: public.** Split a session's own calls from those charged through child settlement.
+
+Source: [`agent6.token_usage.TokenBreakdown`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/token_usage.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `parent` | `TokenCounts` | Usage from the session's own provider calls. |
+| `children` | `TokenCounts` | Usage charged through the settlement of attempts and reviewers. |
+
 ### FindingResolution
 
 **Support: public.** Record the operator's conclusion without inferring verification success.
@@ -3962,7 +3978,7 @@ Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-
 | `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped', 'retained']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a stopped child; "" when none. |
-| `commits` | `int` | The commits a stopped child's branch holds beyond its base; 0 otherwise. |
+| `commits` | `int` | The count beyond start on a stopped, ranked or retained ref, or 0 without a count. |
 | `context` | `ChildContext` | The child's last measured conversation size and activity. |
 | `target_before` | `str` | The chain tip before the join. |
 | `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
@@ -3978,6 +3994,7 @@ Source: [`agent6.sessions.child_dispatch.UsageRecord`](https://github.com/agent6
 | `usd` | `float` | The child's metered spend. |
 | `usd_partial` | `bool` | Whether unpriced calls make it a lower bound. |
 | `tokens` | `int` | Its fallback-ledger tokens. |
+| `model_tokens` | `TokenCounts` | Its cumulative fresh input and output, including settled descendants. |
 
 ### MergeRequest
 
@@ -4166,6 +4183,7 @@ Source: [`agent6.viewmodel.session.records.ExecutionUsage`](https://github.com/a
 | `usd_cap` | `float \| None` | `[budget].max_usd`. |
 | `tokens_fallback_cap` | `int \| None` | `[budget].max_tokens_fallback`. |
 | `plan_cap` | `float \| None` | `[budget].max_plan_points`. |
+| `child_model_tokens` | `TokenCounts` | Fresh input and output charged through child settlement. |
 
 ### AccountReading
 
@@ -4194,6 +4212,17 @@ Source: [`agent6.viewmodel.session.records.Question`](https://github.com/agent6-
 | --- | --- | --- |
 | `question` | `str` | The question's text. |
 | `options` | `tuple[str, ...]` | Selectable presets; the operator may also type a free-text answer. |
+
+### TokenCounts
+
+**Support: public.** Hold reported counts; a missing count stays unknown through a sum or a delta.
+
+Source: [`agent6.token_usage.TokenCounts`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/token_usage.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `input_tokens` | `int \| None` | Fresh input tokens, or null when unreported. |
+| `output_tokens` | `int \| None` | Output tokens, or null when unreported. |
 
 ### ChildContext
 
