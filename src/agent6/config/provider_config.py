@@ -128,7 +128,7 @@ IdleCompactSeconds = Annotated[
         ge=0,
         allow_inf_nan=False,
         description=(
-            "Seconds from the start of the last worker request to compact during a wait; "
+            "Seconds from worker request start to compact during a wait with either writer; "
             "0 disables idle compaction; defaults: 240 for anthropic and responses, "
             "0 for openai and chatgpt; neither idle setting applies to claude_code"
         ),
@@ -152,7 +152,9 @@ class _ProviderBase(pydantic.BaseModel):
     idle_compact_min_chars: int = pydantic.Field(
         default=240000,
         ge=0,
-        description=("Character floor for idle compaction, including the system text and tools."),
+        description=(
+            "Character floor for idle compaction with either writer, including system and tools."
+        ),
     )
     deployment: Deployment = pydantic.Field(
         json_schema_extra={
@@ -278,6 +280,9 @@ class _ProviderBase(pydantic.BaseModel):
             raise ValueError("deployment 'azure' requires backend 'openai'")
         if fmt in ("chatgpt", "responses") and dep != "direct":
             raise ValueError(f"backend {fmt!r} supports deployment 'direct' only")
+        if fmt == "anthropic":
+            data = dict(data)
+            data.setdefault("server_compaction", dep == "direct" and "base_url" not in data)
         if not data.get("base_url"):
             default = _default_base_url(fmt, dep) if isinstance(fmt, str) else None
             if default is None:
@@ -422,6 +427,15 @@ class AnthropicProviderEntry(_ProviderBase):
         description=(
             'prompt caching for `backend = "anthropic"` only; system prompt, tools and '
             "growing conversation re-read at 0.1x the input price"
+        ),
+    )
+    server_compaction: bool = pydantic.Field(
+        default=True,
+        description=(
+            "When true on a supported model, the endpoint clears old tool results and writes "
+            "the summary. agent6 changes no earlier message there. On other models or when "
+            "false, agent6 compacts by itself. Defaults to true on a direct deployment with "
+            "no configured base_url, false otherwise."
         ),
     )
 

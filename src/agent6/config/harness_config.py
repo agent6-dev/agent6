@@ -531,7 +531,8 @@ class CompactionConfig(pydantic.BaseModel):
         },
         default="worker",
         description=(
-            "tier-2 writer: worker continues its own request with a summary instruction; "
+            "Only when agent6 compacts by itself. "
+            "Tier-2 writer: worker continues its own request with a summary instruction; "
             "helper reads replaced history without tool output, bounded by its known window; "
             "worker falls back once to helper on rejection or unusable output; claude_code "
             "always uses helper because its live session cannot be rolled back"
@@ -543,8 +544,8 @@ class CompactionConfig(pydantic.BaseModel):
         default=None,
         gt=0,
         description=(
-            "tier-1 threshold in accumulated tool-result characters (about 4 per token); above "
-            "it: oldest results replaced by short, re-fetchable placeholders down to half "
+            "Accumulated tool-result characters before the endpoint clears old results or "
+            "agent6 replaces them with short, re-fetchable placeholders down to half "
             "the threshold where result protections allow; unset: about 45% "
             "of the model's context window; explicit thresholds: both `compaction.drop_at_chars` "
             "and `compaction.summarise_at_chars` required"
@@ -554,7 +555,7 @@ class CompactionConfig(pydantic.BaseModel):
         default=None,
         gt=0,
         description=(
-            "tier-2 threshold in whole-context characters; checked before tier 1; "
+            "Whole-context character threshold for a summary by the endpoint or agent6; "
             "an accepted summary restarts the conversation and preserves the task DAG; "
             "unset: model's window "
             "minus a 16k-token reserve; required above `compaction.drop_at_chars`"
@@ -564,14 +565,16 @@ class CompactionConfig(pydantic.BaseModel):
         ge=0,
         default=80_000,
         description=(
-            "characters of newest history kept verbatim after the summary on a tier-2 restart; "
+            "Only when agent6 compacts by itself. "
+            "Characters of newest history kept verbatim after the summary on a tier-2 restart; "
             "`compaction.keep_recent_chars = 0`: none"
         ),
     )
     keep_thinking_turns: validation.NoLimitOrPositive = pydantic.Field(
         default=-1,
         description=(
-            "thinking retained when tier 1 rewrites tool results for the newest N assistant "
+            "Only when agent6 compacts by itself. "
+            "Thinking retained when tier 1 rewrites tool results for the newest N assistant "
             "turns with "
             "`compaction.keep_thinking_turns = N` (`N >= 1`); "
             "`compaction.keep_thinking_turns = -1`: "
@@ -584,7 +587,7 @@ class CompactionConfig(pydantic.BaseModel):
         gt=0,
         default=2048,
         description=(
-            "output-token cap for a tier-2 summary or gist distillation; smaller caps "
+            "Output-token cap for either summary writer and for gist distillation; smaller caps "
             "overridden by a reasoning model's per-call floor for reasoning tokens; no cap "
             "accepted by the chatgpt backend"
         ),
@@ -594,7 +597,8 @@ class CompactionConfig(pydantic.BaseModel):
     elision_gists: bool = pydantic.Field(
         default=True,
         description=(
-            "large `read_file` results replaced at tier 1 by model-written gists before bare "
+            "Only when agent6 compacts by itself. "
+            "Large `read_file` results replaced at tier 1 by model-written gists before bare "
             "placeholders; gists also dropped under continued pressure to keep the byte bound; "
             "`compaction.elision_gists = false`: bare placeholders directly"
         ),

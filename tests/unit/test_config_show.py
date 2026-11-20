@@ -550,3 +550,24 @@ def test_a_description_renders_one_point_per_line_everywhere(tmp_path: pathlib.P
     assert points == list(config_view.description_points(leaf.description)) and len(points) >= 3
     shown = config_view.render_show(eff, descriptions=True)
     assert "      " + points[1] in shown
+
+
+def test_server_compaction_uses_the_entries_own_url_and_origin(tmp_path: pathlib.Path) -> None:
+    """An explicit URL opts out even when it names the direct Anthropic host."""
+    routes = tmp_path / "routes.toml"
+    routes.write_text(
+        '[providers.direct]\nbackend = "anthropic"\n'
+        '[providers.proxy]\nbackend = "anthropic"\nbase_url = "https://api.anthropic.com/v1"\n'
+        '[providers.vertex]\nbackend = "anthropic"\ndeployment = "vertex"\n'
+        'base_url = "https://example.invalid"\n'
+        '[providers.opt]\nbackend = "anthropic"\nserver_compaction = false\n'
+        '[providers.o]\nbackend = "openai"\n'
+    )
+    rows = json.loads(
+        config_view.render_show(layer.load_effective(tmp_path, (routes,)), as_json=True)
+    )
+    for name, value in (("direct", True), ("proxy", False), ("vertex", False), ("opt", False)):
+        row = rows[f"providers.{name}.server_compaction"]
+        assert row["value"] is value
+        assert (row["source"] == "default") is (name != "opt")
+    assert "providers.o.server_compaction" not in rows

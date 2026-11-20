@@ -1208,3 +1208,15 @@ def test_with_model_route_refuses_a_blank_and_an_empty_provider(tmp_path: pathli
     with pytest.raises(ConfigError, match="name the provider as provider/model"):
         cfg.model_route("worker", "/claude-y")
     assert cfg.model_route("worker", " claude-y ").model == "claude-y"
+
+
+@pytest.mark.parametrize("backend", ["chatgpt", "claude_code", "openai", "responses"])
+def test_other_backends_refuse_server_compaction(tmp_path: pathlib.Path, backend: str) -> None:
+    """Server compaction belongs to the Anthropic entry."""
+    url = 'base_url = "https://example.invalid"\n' if backend == "responses" else ""
+    with pytest.raises(ConfigError, match="server_compaction"):
+        load_config(
+            _write(
+                tmp_path, f'[providers.p]\nbackend = "{backend}"\n{url}server_compaction = true\n'
+            )
+        )
