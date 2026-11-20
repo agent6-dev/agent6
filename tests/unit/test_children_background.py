@@ -24,6 +24,7 @@ from agent6 import child_records, directive
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
 from agent6.harness import (
+    child_work,
     loop,
     loop_conversation,
     loop_state,
@@ -529,7 +530,7 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
         "[parallel] group run-p2 complete"
     )
     assert f"{two} (agent6/{two}): joined at" in last and "(stopped by its parent)" in last
-    roster = wf.parallel.roster()
+    roster = child_work.roster(wf.parallel)
     assert [(line.id, line.running) for line in roster] == [(one, False), (two, False)]
     assert all(line.state.startswith("joined at ") for line in roster)
 
@@ -545,21 +546,21 @@ def test_wait_for_returns_when_the_child_ends_the_wait_runs_out_or_a_stop_cuts_i
     _start(dispatcher, ("", "write a"))
 
     started = time.monotonic()
-    dispatcher.wait_for("root-p1-l1", 0.2, lambda: False)
+    child_work.wait_for(dispatcher, "root-p1-l1", 0.2, lambda: False)
     assert 0.15 < time.monotonic() - started < 2.0
     started = time.monotonic()
-    dispatcher.wait_for("", 30.0, lambda: True)
+    child_work.wait_for(dispatcher, "", 30.0, lambda: True)
     assert time.monotonic() - started < 2.0
     timer = threading.Timer(0.1, lambda: children.end("root-p1-l1"))
     timer.start()
     started = time.monotonic()
-    dispatcher.wait_for("", 30.0, lambda: False)
+    child_work.wait_for(dispatcher, "", 30.0, lambda: False)
     timer.join()
     assert time.monotonic() - started < 5.0
-    assert [(line.state, line.running) for line in dispatcher.roster()] == [
+    assert [(line.state, line.running) for line in child_work.roster(dispatcher)] == [
         ("ended, not landed", False)
     ]
-    dispatcher.stop("root-p1-l1")
+    child_work.stop(dispatcher, "root-p1-l1")
     assert children.stopped == [], "an ended child is left as it is"
 
 

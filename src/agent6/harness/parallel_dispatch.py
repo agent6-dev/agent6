@@ -23,7 +23,6 @@ from agent6 import child_records, directive, errors
 from agent6.graph import curator as graph_curator
 from agent6.harness import child_repo, parallel_join, run_chain
 from agent6.sessions import budget_events, child_dispatch, journal
-from agent6.tools import child_tools
 from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
@@ -485,77 +484,6 @@ class ParallelDispatcher:
         concurrent.futures.wait(
             [child.result for task in self.open.values() for child in task.children]
         )
-
-    def wait_for(self, child: str, wait_s: float, interrupted: Callable[[], bool]) -> None:
-        """Wait for one running child to end, or with "" for the next of them all.
-
-        Args:
-            child: The child's session id; "" for whichever ends next.
-            wait_s: The most seconds to wait.
-            interrupted: Cuts the wait short: the operator's stop reaches no turn boundary
-                while a tool call waits.
-        """
-        pending = [
-            started.result
-            for task in self.open.values()
-            for started in task.children
-            if not started.result.done() and child in ("", started.session_id)
-        ]
-        deadline = time.monotonic() + wait_s
-        while pending and not interrupted() and (left := deadline - time.monotonic()) > 0:
-            done, _ = concurrent.futures.wait(
-                pending, timeout=min(left, 0.5), return_when=concurrent.futures.FIRST_COMPLETED
-            )
-            if done:
-                return
-
-    def stop(self, child: str) -> None:
-        """Ask a running child to stop now; its end is told and its commits land as any child's.
-
-        Args:
-            child: The child's session id; one that has ended, or is no child, is left alone.
-        """
-        for task in self.open.values():
-            for started in task.children:
-                if started.session_id == child and not started.result.done():
-                    started.stop()
-                    self.stopping.add(child)
-
-    def unlanded(self) -> tuple[tuple[str, str], ...]:
-        """Return each child whose task has not landed, with where it stands, oldest first."""
-        return tuple(
-            (
-                started.session_id,
-                "ended, not landed"
-                if started.result.done()
-                else "stopping"
-                if started.session_id in self.stopping
-                else "running",
-            )
-            for task in self.open.values()
-            for started in task.children
-        )
-
-    def roster(self) -> tuple[child_tools.ChildLine, ...]:
-        """Return every child this run's tasks started and where it stands, oldest first."""
-        if self.session_dir is None:
-            return ()
-        try:
-            records = child_dispatch.read_records(self.session_dir)
-        except child_dispatch.DispatchRecordError:
-            return ()
-        open_now = dict(self.unlanded())
-        lines: list[child_tools.ChildLine] = []
-        for record in records:
-            for child in record.children if record.source != "panel" else ():
-                sid = child.session_id
-                state = open_now.get(sid, "ended, not landed")
-                if child.join is not None:
-                    state = parallel_join.join_words(parallel_join.join_of(child))
-                title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
-                running = state in ("running", "stopping")
-                lines.append(child_tools.ChildLine(sid, state, title[:80], running))
-        return tuple(lines)
 
     def settle(self, conversation: loop_conversation.Conversation, turn: int) -> bool:
         """Tell the model which children ended, then land each finished dispatch, oldest first.
