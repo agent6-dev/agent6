@@ -549,3 +549,51 @@ def test_files_sidebar_keys_are_in_the_footer_and_help(repo: pathlib.Path) -> No
             assert any("Show / hide outline" in row and row.endswith("o") for row in rows)
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("size", [(80, 24), (140, 40)])
+def test_the_tree_is_as_wide_as_its_names_up_to_a_limit(
+    repo: pathlib.Path, size: tuple[int, int]
+) -> None:
+    """A fixed share of the screen left short names beside empty columns the file could use."""
+    (repo / "README.md").write_text("# Guide\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=size) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "README.md")
+            tree = app.screen.query_one(widgets.DirectoryTree)
+            assert tree.region.width == len("├── 📄 README.md") + 2
+            (repo / ("long-name-" * 8 + ".txt")).write_text("x\n", encoding="utf-8")
+            await tree.reload()
+            await pilot.pause()
+            assert tree.region.width == size[0] * 2 // 5
+            assert app.screen.query_one("#files-preview").region.width == size[0] * 3 // 5
+
+    asyncio.run(scenario())
+
+
+def test_the_file_starts_under_the_menu_and_a_cut_file_says_so_above_it(
+    repo: pathlib.Path,
+) -> None:
+    """An empty note held a blank row above every file."""
+    (repo / "README.md").write_text("# Guide\n", encoding="utf-8")
+    (repo / "big.txt").write_text("line\n" * 300_000, encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "README.md")
+            preview = app.screen.query_one("#files-preview")
+            note = app.screen.query_one("#files-note", widgets.Static)
+            assert app.screen.query_one(widgets.MarkdownViewer).region.y == preview.region.y
+            await _select(pilot, "big.txt")
+            source = app.screen.query_one(widgets.RichLog)
+            assert note.region.y == preview.region.y and note.region.height == 1
+            assert source.region.y == preview.region.y + 1
+            await _select(pilot, "README.md")
+            assert app.screen.query_one(widgets.MarkdownViewer).region.y == preview.region.y
+
+    asyncio.run(scenario())

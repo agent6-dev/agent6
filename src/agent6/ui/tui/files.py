@@ -71,9 +71,9 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     BINDINGS: ClassVar = menubar.menu_bindings("files", MENUS, footer=FOOTER)
     COMMANDS: ClassVar = screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     CSS = """
-    #files-tree { width: 30%; }
+    #files-tree { width: auto; min-width: 16; max-width: 40%; padding-right: 1; }
     #files-preview { width: 1fr; }
-    #files-note { height: auto; }
+    #files-note { height: auto; display: none; }
     """
 
     def __init__(self, root: pathlib.Path) -> None:
@@ -123,7 +123,7 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         switcher.current = "files-message"
         message = self.query_one("#files-message", widgets.Static)
         note = self.query_one("#files-note", widgets.Static)
-        note.update("")
+        note.display = False
         self._is_markdown = False
         self.refresh_bindings()
         if not path.is_relative_to(self._root):
@@ -158,6 +158,7 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         body = terminal.scrub_terminal_controls(body)
         if truncated:
             note.update(f"Showing first 1 MiB of {info.st_size:,} bytes.")
+            note.display = True
         source = self.query_one(widgets.RichLog)
         source.clear()
         highlighted = syntax.Syntax(body, syntax.Syntax.guess_lexer(str(path), code=body))
