@@ -82,7 +82,7 @@ def parse_metric_spec(text: str) -> MetricSpec:
         pattern = args.pop(0)
         try:
             groups = re.compile(pattern).groups
-        except re.error as exc:
+        except (re.error, OverflowError, RecursionError, ValueError) as exc:
             raise DirectiveError(f"invalid metric pattern: {exc}") from exc
         if not groups:
             raise DirectiveError("metric pattern needs a capture group for the score")

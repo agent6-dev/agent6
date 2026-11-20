@@ -31,6 +31,7 @@ def test_run_metric_preserves_capture_and_command_arguments() -> None:
         "maximize --",
         "maximize '(' -- true",
         "maximize 'no group' -- true",
+        "maximize '(x{4294967296})' -- true",
         "minimize unquoted(1) -- true",
         "maximize -- 'broken",
     ],
