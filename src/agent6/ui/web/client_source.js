@@ -322,7 +322,7 @@ function renderBlame(rows) {
     const same = previous && previous.side === row.side && previous.segment === row.segment
       && previous.line.sha === line.sha && previous.line.filename === line.filename
       && previous.line.line + 1 === line.line;
-    if (!same) group = {cells: [], card: null, timer: null};
+    if (!same) group = {cells: [], card: null, timer: null, dismissed: false};
     const g = group;
     const cell = el('span', 'blame-cell');
     cell.dataset.sha = line.sha;
@@ -343,6 +343,7 @@ function renderBlame(rows) {
     }
     g.cells.push(cell);
     const hide = () => {
+      g.dismissed = false;
       clearTimeout(g.timer); // leaving the card also leaves its cell: one hide stays pending
       g.timer = setTimeout(() => {
         g.cells.forEach(c => c.classList.remove('blame-hover'));
@@ -352,10 +353,18 @@ function renderBlame(rows) {
     const show = async () => {
       clearTimeout(g.timer);
       g.cells.forEach(c => c.classList.add('blame-hover'));
-      if (!line.sha) return;
+      if (!line.sha || g.dismissed) return;
       if (!g.card) {
         g.card = el('span', 'blame-card');
         g.card.popover = 'manual';
+        // Escape closes the open card, which stays closed until the pointer leaves or the focus moves.
+        const escape = (e) => {
+          if (!g.card.isConnected) document.removeEventListener('keydown', escape); // removed while open: no toggle
+          if (e.key !== 'Escape' || !g.card.matches(':popover-open')) return;
+          g.card.hidePopover();
+          g.dismissed = g.cells.some(c => c.matches(':hover, :focus-within'));
+        };
+        g.card.addEventListener('toggle', (e) => document[e.newState === 'open' ? 'addEventListener' : 'removeEventListener']('keydown', escape));
         g.card.appendChild(el('span', 'mono', line.sha));
         g.card.appendChild(el('span', null, line.author + ' · ' + line.date));
         if (line.filename !== row.path) g.card.appendChild(el('span', null, line.filename));

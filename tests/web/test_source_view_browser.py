@@ -150,6 +150,34 @@ def test_the_blame_card_opens_beside_its_line_near_the_bottom_edge(
     assert not errors
 
 
+def test_escape_closes_the_blame_card_until_the_pointer_or_the_focus_moves(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """Escape left the blame card open over the code, opened by the pointer or by the focus."""
+    from playwright.sync_api import expect
+
+    port, _, _ = long_file
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    page.locator(".files-blame").click()
+    link = page.locator("[data-line='50'] .blame-commit")
+    link.wait_for()
+    open_cards = page.locator(".blame-card:visible")
+    for opener, mover in ((link.hover, lambda: page.mouse.move(5, 5)), (link.focus, link.blur)):
+        opener()
+        expect(open_cards).to_have_count(1)
+        page.keyboard.press("Escape")
+        expect(open_cards).to_have_count(0)
+        page.wait_for_timeout(300)  # past the hide's grace: the card stays closed
+        expect(open_cards).to_have_count(0)
+        mover()
+        opener()
+        expect(open_cards).to_have_count(1)
+        mover()
+        expect(open_cards).to_have_count(0)
+    assert not errors
+
+
 def test_the_blame_card_text_can_be_selected(
     open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
 ) -> None:
