@@ -112,7 +112,9 @@ def apply(  # noqa: PLR0911, PLR0912  # one branch per family
                     verify_timeout_s=events.verify_limit_hit(outcome, limit),
                 ),
             )
-        case journal.ModelResult(ok=False, role=role, error=error) if not kinds.is_side_role(role):
+        case journal.ModelResult(ok=False, role=role, error=error) if not kinds.is_side_role(
+            role, mode=life.mode
+        ):
             # A side call's failure never ends the run, so it is not the reason.
             return dataclasses.replace(
                 core, lifecycle=dataclasses.replace(life, provider_error=error or "")

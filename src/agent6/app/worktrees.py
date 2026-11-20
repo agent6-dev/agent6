@@ -11,7 +11,7 @@ import shlex
 import shutil
 from collections.abc import Callable
 
-from agent6 import child_records, errors, paths
+from agent6 import child_records, errors, kinds, paths
 from agent6.app import child_launch
 from agent6.config import Config, child_snapshot
 from agent6.harness import child_repo
@@ -375,7 +375,7 @@ def write_child_config(
     Raises:
         LaunchError: The dir cannot be private.
     """
-    child_cfg = cfg.with_model_settings("worker", spec.settings)
+    child_cfg = cfg.with_model_settings(kinds.session_kind(spec.mode).role, spec.settings)
     # The import fetches the child's branch, so branch_per_run stays on.
     child_cfg = child_cfg.model_copy(
         update={"git": child_cfg.git.model_copy(update={"branch_per_run": True})}

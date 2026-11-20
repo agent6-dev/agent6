@@ -334,7 +334,7 @@ class TranscriptFold:
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
         """Return whether the result is a side call's."""
-        return kinds.is_side_role(str(event.get("role", "")))
+        return kinds.is_side_role(str(event.get("role", "")), mode=self._mode)
 
     def _flush_message(self, *, settled: str = "") -> list[transcript_items.TranscriptItem]:
         """Emit the buffered thinking and text as items.

@@ -610,7 +610,8 @@ Its session dir is `sessions/reviewers/<id>` under the state of the repository t
 
 **`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.child_settings`, the resolver every entry point shares, and plans one `ChildSpec` per child, each started through the child bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
 
-`app.worktrees.write_child_config` uses `config.child_snapshot` to materialize the parent's resolved worker, planner, reviewer and helper routes and sampling settings, with the child's worker route override applied.
+`app.worktrees.write_child_config` uses `config.child_snapshot` to materialize the parent's resolved model settings, with the child's selection applied to its driving role.
+A work attempt journals `worker` calls even when its selector was `reviewer`; a ranking or panel reviewer journals `reviewer` calls with the selected route and effort.
 The snapshot keeps only the route in `models.default`; it omits sampling keys only for resolved `None` values.
 On the internal child path, `app.session.setup.load_session_config` replaces only `[models]` after normal layer discovery and preset selection, discarding lower-layer model values and their provenance.
 Other sections retain normal merging and explicit-default resets, including sandbox values and budgets; ordinary operator `--config` remains a merge.

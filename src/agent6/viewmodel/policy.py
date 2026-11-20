@@ -24,7 +24,7 @@ def model_lines(m: manifest.SessionManifest) -> tuple[str, ...]:
     driver_role = kinds.SESSION_KINDS[m.mode].role if m.mode in kinds.SESSION_KINDS else "driver"
     roles = {
         driver_role: m.models.driver,
-        "reviewer": m.models.reviewer,
+        **({"reviewer": m.models.reviewer} if driver_role != "reviewer" else {}),
         "helper": m.models.helper,
         **m.models.reviewers,
     }

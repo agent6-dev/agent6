@@ -139,7 +139,9 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
             if etype in ("tool.call", "tool.result", "verify.start", "metric.start"):
                 _tool_line(event, lines, commands)
             continue
-        if etype == "model.result" and kinds.is_side_role(str(event.get("role", ""))):
+        if etype == "model.result" and kinds.is_side_role(
+            str(event.get("role", "")), mode=kinds.bucket_mode(layout.subdir)
+        ):
             continue  # a side call's answer, not this session's own
         speaker, field = said
         body = str(event.get(field, "")).strip()

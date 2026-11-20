@@ -22,7 +22,7 @@ def build(cfg: config_model.Config, *, explicit_leaves: frozenset[str]) -> Snaps
     """Materialize resolved roles, keeping only the route in `models.default`.
 
     Args:
-        cfg: The child config, including its worker route override.
+        cfg: The child config, including its driving role's selected settings.
         explicit_leaves: The parent's explicit settings, including resets to defaults.
 
     Returns:

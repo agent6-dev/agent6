@@ -178,7 +178,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
         # answers with a verdict. It edits nothing and dispatches nothing.
         SessionKind(
             name="reviewer",
-            role="worker",
+            role="reviewer",
             edits=False,
             runs_commands=True,
             clamps_commands=False,
@@ -196,17 +196,20 @@ OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() i
 DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
 
 
-def is_side_role(role: str) -> bool:
+def is_side_role(role: str, *, mode: str = "") -> bool:
     """Return whether a `role.*` event's answer is a side call's, not the session's own.
 
     An unnamed role is not a side call: older events carry none.
 
     Args:
         role: The event's `role` field.
+        mode: The session mode. A reviewer speaks for its own session only.
 
     Returns:
-        True for a named role that drives no mode.
+        True for a side call, including a reviewer called within another session.
     """
+    if role == "reviewer":
+        return mode != "reviewer"
     return bool(role) and role not in DRIVING_ROLES
 
 

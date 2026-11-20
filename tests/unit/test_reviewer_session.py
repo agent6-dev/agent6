@@ -22,7 +22,7 @@ from agent6.providers import ProviderResponse
 from agent6.sessions import completion, journal, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, tool_errors
-from agent6.viewmodel import listing
+from agent6.viewmodel import listing, transcript
 from tests import launch_env
 
 
@@ -361,7 +361,13 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
             }
         )
         into = child_launch.launch_dir(paths.state_dir(short_repo), "leaf")
-        spec = child_records.ChildSpec(1, "leaf-l1", clone, None, mode="reviewer")
+        spec = child_records.ChildSpec(
+            1,
+            "leaf-l1",
+            clone,
+            kinds.ModelSettings(kinds.ModelRoute("p", "local-reasoning"), effort="high"),
+            mode="reviewer",
+        )
         config = worktrees.write_child_config(
             cfg,
             spec,
@@ -417,6 +423,10 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
     assert session_dir.is_dir(), list((paths.state_dir(clone) / "sessions").iterdir())
     rows = [json.loads(line) for line in (session_dir / "logs.jsonl").read_text().splitlines()]
     assert [r["role"] for r in rows if r.get("type") == "model.call"] == ["reviewer"] * 4
+    assert all(
+        call["model"] == "local-reasoning" and call["reasoning"] == {"effort": "high"}
+        for call in calls
+    )
     results = {r["name"]: r for r in rows if r.get("type") == "tool.result"}
     assert (
         results["apply_edit"]["ok"] is False and "not available" in results["apply_edit"]["summary"]
@@ -437,6 +447,9 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
     record = completion.read_completion(session_dir)
     assert record is not None and record.stop_reason == "answered"
     assert record.text == '{"verdict": "pass"}'
+    assert record.text in [
+        item.body for item in transcript.fold_transcript(rows) if item.kind == "text"
+    ]
     assert manifest["parallel"]["parent"] == "leaf"
     # Found by its bucket and its id; the resume gate refuses it.
     state = paths.state_dir(clone)

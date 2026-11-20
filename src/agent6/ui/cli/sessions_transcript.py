@@ -6,7 +6,7 @@ import json
 import pathlib
 import sys
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.sessions import id, objects, retention
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import common
@@ -114,8 +114,11 @@ def cmd_transcript(
         return 0
 
     # Fold the full set (the per-seq walk needs every call), then window the messages.
-    messages = transcript_render.fold_conversation(transcripts)
-    if not messages and not any(transcript_render.drives_conversation(t) for t in transcripts):
+    mode = kinds.bucket_mode(layout.subdir)
+    messages = transcript_render.fold_conversation(transcripts, mode=mode)
+    if not messages and not any(
+        transcript_render.drives_conversation(t, mode=mode) for t in transcripts
+    ):
         # A review-only dir: every round-trip is a side-call reviewer, so the fold prints nothing.
         print(
             f"session {layout.session_id} has only side-call transcripts (reviewers /"
