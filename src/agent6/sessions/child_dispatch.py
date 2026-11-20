@@ -23,9 +23,22 @@ _COMMIT_COUNT = "commits_beyond_start"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
 
 
-def read_commit_count(child_dir: pathlib.Path, join: JoinRecord | None = None) -> int | None:
-    """Return a work child's measured count beyond start, including an older join's count."""
-    if join is not None and join.status in ("ranked", "stopped", "retained"):
+def read_commit_count(
+    child_dir: pathlib.Path, join: JoinRecord | None = None, *, version: int = RECORD_VERSION
+) -> int | None:
+    """Return a work child's measured count beyond start.
+
+    Args:
+        child_dir: The child's session directory.
+        join: Its recorded outcome, when settled.
+        version: The dispatch format. Ranked rows first recorded a count in version 11.
+
+    Returns:
+        The observed count, or None without a measurement.
+    """
+    if join is not None and (
+        join.status in ("stopped", "retained") or (join.status == "ranked" and version >= 11)
+    ):
         return join.commits
     try:
         count = int((child_dir / _COMMIT_COUNT).read_text(encoding="ascii"))
@@ -53,7 +66,7 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         sha: The merge commit, "" when none.
         detail: The failure's reason, a conflict's files, a ranked child's place, or what
             stopped a stopped child; "" when none.
-        commits: The commits a stopped child's branch holds beyond its base; 0 otherwise.
+        commits: The count beyond start on a stopped, ranked or retained ref, or 0 without a count.
         context: The child's last measured conversation size and activity.
         target_before: The chain tip before the join.
         target_after: The chain tip after it; equal to `target_before` when nothing merged.

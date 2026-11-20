@@ -206,9 +206,17 @@ def children_of(
 
 
 def _session_child(
-    row: ChildView, child_dir: pathlib.Path, join: child_dispatch.JoinRecord | None = None
+    row: ChildView,
+    child_dir: pathlib.Path,
+    join: child_dispatch.JoinRecord | None = None,
+    *,
+    version: int = child_dispatch.RECORD_VERSION,
 ) -> ChildView:
-    commits = None if row.source == "panel" else child_dispatch.read_commit_count(child_dir, join)
+    commits = (
+        None
+        if row.source == "panel"
+        else child_dispatch.read_commit_count(child_dir, join, version=version)
+    )
     if listing.is_session_husk(child_dir):
         return dataclasses.replace(row, commits=commits)
     scan = session_log.scan_session_log(child_dir / layout.LOGS_NAME)
@@ -295,7 +303,7 @@ def _recorded_child(
     if not layout.is_safe_session_id(child.session_id):
         return dataclasses.replace(row, status="failed", error="invalid child session id")
     child_dir = bucket / child.session_id
-    row = _session_child(row, child_dir, child.join)
+    row = _session_child(row, child_dir, child.join, version=record.version)
     if record.source == "panel" and row.launched:
         try:
             verdict = completion.read_completion(child_dir)

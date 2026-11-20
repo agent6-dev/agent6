@@ -56,6 +56,12 @@ def test_a_retained_ref_keeps_its_recorded_commit_count(tmp_path: pathlib.Path) 
     assert child_dispatch.read_commit_count(tmp_path, join) == 3
 
 
+def test_a_rank_without_a_count_does_not_report_zero(tmp_path: pathlib.Path) -> None:
+    join = child_dispatch.JoinRecord(status="ranked", commits=0)
+    assert child_dispatch.read_commit_count(tmp_path, join, version=10) is None
+    assert child_dispatch.read_commit_count(tmp_path, join, version=12) == 0
+
+
 def test_records_read_in_dispatch_order(tmp_path: pathlib.Path) -> None:
     for identity in ("run-p10", "run-p2", "run-p1"):
         child_dispatch.write_record(tmp_path, _record(identity), now=1.0)

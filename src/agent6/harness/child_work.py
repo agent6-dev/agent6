@@ -120,7 +120,9 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             if child_merge.pending(child):
                 state = "merge requested"
             commits = (
-                child_dispatch.read_commit_count(dispatcher.session_dir.with_name(sid), child.join)
+                child_dispatch.read_commit_count(
+                    dispatcher.session_dir.with_name(sid), child.join, version=record.version
+                )
                 if sessions_layout.is_safe_session_id(sid)
                 else None
             )
