@@ -706,7 +706,9 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
         f"stopped by its parent, not merged; agent6/{two} holds 1 commit(s);"
         " conversation at last call: unknown; last ran: unknown"
     )
-    assert stopped["children"][1] in (
+    # The stop names one child, so its answer carries that child's row alone.
+    (row,) = stopped["children"]
+    assert row in (
         f"[{two}] attempt 1 · stopping: b",
         f"[{two}] attempt 1 · {words}: b",
     )
