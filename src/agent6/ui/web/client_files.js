@@ -193,8 +193,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     }
     if (f.kind !== 'file') { box.appendChild(el('div', 'muted gf-note', 'a submodule: its files are in another repository')); return; }
     if (isImagePath(f.path)) {
-      // The head's note takes the image's size and dimensions, as it takes a text file's facts.
-      // The image takes the place of "loading…" once it has loaded or failed.
+      // The image replaces "loading…" once loaded; one the browser cannot show becomes a note.
       const loading = el('div', 'muted gf-note', 'loading…'); box.appendChild(loading);
       blobImageData('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (ignored ? '&ignored=1' : '')).then(image => {
         if (!current()) return;
@@ -202,7 +201,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         const wrap = el('div', 'git-img one'), fig = el('figure', 'git-img-side'), img = el('img');
         img.alt = f.path; fig.appendChild(img); wrap.appendChild(fig);
         img.onload = () => { facts.push(img.naturalWidth + '\u00d7' + img.naturalHeight); note.textContent = facts.join(' · '); loading.replaceWith(wrap); };
-        img.onerror = () => { note.textContent = facts.concat('the browser cannot show this image').join(' · '); loading.replaceWith(wrap); };
+        img.onerror = () => { note.textContent = facts.join(' · '); loading.replaceWith(el('div', 'muted gf-note', 'the browser cannot show this image')); };
         img.src = image.url;
       }).catch(e => { if (current()) loading.replaceWith(failure('err gf-note', e, () => showFile(f, whole, linked))); });
       return;

@@ -679,6 +679,25 @@ def test_an_image_states_its_facts_once(
     assert not errors
 
 
+def test_an_image_the_browser_cannot_show_says_so_in_a_note(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """An image that failed to decode showed a broken image on a checkerboard strip."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.route(
+        "**/api/git/blob*",
+        lambda route: route.fulfill(status=200, content_type="image/png", body=b"not a png"),
+    )
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/logo.png")
+    text = page.locator(".files-text")
+    expect(text.locator(".gf-note")).to_have_text("the browser cannot show this image")
+    expect(text.locator("img, figure")).to_have_count(0)
+    expect(page.locator(".files-head .files-note")).to_have_text("69 B")
+    assert not errors
+
+
 def test_an_image_says_it_is_loading(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
