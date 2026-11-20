@@ -339,9 +339,14 @@ function paintPrompts(cards, s) {
         const inp = el('input', 'field');
         inp.setAttribute('aria-labelledby', line.id);
         inp.placeholder = (sub.options || []).length ? 'pick or type an answer…' : 'type an answer…';
+        const selectAnswer = () => {
+          for (const button of row.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.textContent === inp.value));
+        };
+        inp.oninput = selectAnswer;
         for (const opt of (sub.options || [])) {
           const b = el('button', null, opt);
-          b.onclick = () => { inp.value = opt; };
+          b.setAttribute('aria-pressed', 'false');
+          b.onclick = () => { inp.value = opt; selectAnswer(); };
           row.appendChild(b);
         }
         row.appendChild(inp); box.appendChild(row);
