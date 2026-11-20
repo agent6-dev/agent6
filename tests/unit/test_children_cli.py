@@ -184,14 +184,18 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         "",
         "user: CHILD-B: write b.txt",
         "",
-        "[tool] apply_edit",
+        r"[tool] apply_edit path=b.txt old_string= new_string=CHILD-B\n",
         "",
-        "[tool] finish_session",
+        "[tool] apply_edit result: applied=['create'] path=b.txt",
     ]
     if control == "model":
-        command = read_b["output"].splitlines()[6]
-        assert command.startswith("[tool] run_command sh -c") and command.endswith(" (exit 0)")
-        expected_read[-2:-2] = ["", command]
+        command, _, result = read_b["output"].splitlines()[8:11]
+        assert command.startswith('[tool] run_command argv=["sh", "-c", "git add')
+        assert result.startswith("[tool] run_command result: exit=0 in ")
+        expected_read.extend(["", command, "", result])
+    expected_read.extend(
+        ["", "[tool] finish_session summary=wrote b.txt", "", "[tool] finish_session result: ok"]
+    )
     assert read_b["output"].splitlines() == expected_read
     assert read_b["children"] == [expected_read[0]]
     # Agent6-owned git merges; model-owned git retains each ref without changing the checkout.

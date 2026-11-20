@@ -295,8 +295,9 @@ class ReadSessionInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read numbered journal entries by session id, oldest first. `start` is the first"
         " eligible entry number; `limit` caps matches. `kinds` selects speakers or tools;"
-        " `query` matches a literal substring, ignoring case. `max_chars` bounds the page;"
-        " `next_start` names the next match. Without an id, list sessions whose task or"
+        " `query` matches a literal substring, ignoring case. Tool entries show recorded"
+        " arguments and result summaries, up to 200 characters per value. `max_chars` bounds"
+        " the page; `next_start` names the next match. Without an id, list sessions whose task or"
         f" journal contains `query` ({ROSTER_MAX} newest)."
     )
 

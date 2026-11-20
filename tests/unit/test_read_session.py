@@ -15,7 +15,7 @@ import pytest
 
 from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import result_format, results, schema, sessions
+from agent6.tools import schema, sessions
 
 
 def _session(
@@ -69,10 +69,8 @@ def test_the_conversation_reads_oldest_first(tmp_path: pathlib.Path) -> None:
     assert text.startswith("user: how do I convert")
 
 
-@pytest.mark.parametrize(("code", "ending"), [(None, "handed off as bg1"), (7, "bg1, exit 7")])
-def test_a_handoff_only_reports_a_recorded_exit(
-    tmp_path: pathlib.Path, code: int | None, ending: str
-) -> None:
+@pytest.mark.parametrize("code", [None, 7])
+def test_a_handoff_only_reports_a_recorded_exit(tmp_path: pathlib.Path, code: int | None) -> None:
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="proof-p1-l1")
     shell = layout.session_dir / "shells" / "bg1"
     shell.mkdir(parents=True)
@@ -84,14 +82,21 @@ def test_a_handoff_only_reports_a_recorded_exit(
             "type": "tool.call",
             "name": "run_command",
             "call_id": 1,
-            "args": {"argv": ["make", "check"]},
+            "args_preview": {"argv": ["make", "check"]},
         },
-        {"type": "tool.result", "name": "run_command", "call_id": 1, "background_id": "bg1"},
+        {
+            "type": "tool.result",
+            "name": "run_command",
+            "call_id": 1,
+            "background_id": "bg1",
+            "summary": "still running as bg1 after 1.0s",
+        },
     ]
     layout.logs_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
-    assert (
-        sessions.conversation(layout, max_chars=300) == f"[tool] run_command make check ({ending})"
-    )
+    tail = sessions.conversation(layout, max_chars=300)
+    assert '[tool] run_command argv=["make", "check"]' in tail
+    assert "[tool] run_command result: still running as bg1 after 1.0s" in tail
+    assert ("[shell] bg1: exit 7" in tail) is (code is not None)
 
 
 def test_truncation_keeps_the_tail(tmp_path: pathlib.Path) -> None:
@@ -252,245 +257,103 @@ def test_filtered_entries_keep_their_journal_number_and_time(tmp_path: pathlib.P
     assert "no matching entries" in read(query=".*")["conversation"]
 
 
-def test_tool_entries_show_bounded_arguments_and_structured_outcomes(
-    tmp_path: pathlib.Path,
-) -> None:
+def test_tool_entries_show_only_the_recorded_preview_and_summary(tmp_path: pathlib.Path) -> None:
     read = _reader(
         tmp_path,
         [
             {
                 "type": "tool.call",
                 "name": "read_file",
-                "args_preview": {"path": "x" * 230, "start_line": 8, "api_key": "private key"},
-                "args": {"path": "not the preview"},
+                "args_preview": {"path": "x" * 230, "start_line": 8},
+                "args": {"path": "not shown"},
             },
             {"type": "steer.injected", "text": "Arrived before the result."},
             {
                 "type": "tool.result",
                 "name": "read_file",
                 "ok": True,
-                "summary": "private descriptive text",
-                "lines_total": 23,
-                "head_tail": "private file content",
-                "stdout_tail": "private output",
+                "summary": "y" * 230,
+                "stdout_tail": "not shown",
             },
+            {"type": "tool.call", "name": "read_file", "args": {"path": "not shown"}},
         ],
     )
-    session = tmp_path / "sessions" / "runs" / "calm-owl-AAAAAA"
-    (session / "transcripts").mkdir()
-    (session / "transcripts" / "1.json").write_text('{"text": "private provider request"}')
     assert read(kinds=["tool"])["conversation"].splitlines() == [
         f"#1 --:-- tool: read_file path={'x' * 199}… start_line=8",
-        "#3 --:-- tool: read_file result: 23 lines",
+        f"#3 --:-- tool: read_file result: {'y' * 199}…",
+        "#4 --:-- tool: read_file",
     ]
-    assert "no matching entries" in read(query="private")["conversation"]
-    assert not sessions.roster(tmp_path, "private").briefs
+    assert not sessions.roster(tmp_path, "not shown").briefs
 
 
-def test_fetch_previews_share_only_the_origin(tmp_path: pathlib.Path) -> None:
-    """A rejected call reaches the journal before URL validation."""
-    from agent6.config import Config
-    from agent6.tools import dispatch, tool_errors
-
-    d = _session(tmp_path, "runs", "calm-owl-AAAAAA", "run", "fetch check", [])
-    dispatcher = dispatch.ToolDispatcher(
-        root=tmp_path,
-        config=Config(),
-        state_dir=tmp_path,
-        events=event_log.EventSink(d / "logs.jsonl"),
-    )
-    for url in (
-        "https://marker-a:marker-b@[2001:db8::1]:8443/marker-path?label=marker-c#marker-d",
-        "https://example.invalid:marker-port/guide",
-        # The recorded preview ends in the userinfo, before the authority is known.
-        f"https://marker-{'a' * 220}@example.invalid/guide",
-    ):
-        with pytest.raises(tool_errors.ToolError):
-            dispatcher.dispatch("fetch", {"url": url})
-
-    page = dispatcher.dispatch("read_session", {"id": d.name, "kinds": ["tool"]}).to_wire()
-    assert "fetch url=https://[2001:db8::1]:8443" in page["conversation"]
-    assert "marker-" not in page["conversation"]
-    assert page["conversation"].count("url=") == 1
-    assert page["conversation"].count("fetch result: refused") == 3
-    assert not sessions.roster(tmp_path, "marker-").briefs
-
-
-@pytest.mark.parametrize("name", ["mcp__demo__lookup", "unregistered_tool"])
-def test_opaque_tools_disclose_only_name_and_disposition(tmp_path: pathlib.Path, name: str) -> None:
+def test_a_tool_search_finds_a_word_from_command_arguments(tmp_path: pathlib.Path) -> None:
     read = _reader(
         tmp_path,
         [
-            {"type": "tool.call", "name": name, "args_preview": {"path": "marker-input"}},
+            {
+                "type": "tool.call",
+                "name": "run_command",
+                "args_preview": {"argv": ["uv", "run", "pytest", "-q"]},
+            }
+        ],
+    )
+    assert read(kinds=["tool"], query="pytest") == {
+        "conversation": '#1 --:-- tool: run_command argv=["uv", "run", "pytest", "-q"]'
+    }
+    assert [brief.id for brief in sessions.roster(tmp_path, "pytest").briefs] == ["calm-owl-AAAAAA"]
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "query"),
+    [
+        ("add_task", {"title": "Check the receipt"}, "Check the receipt"),
+        ("steer_child", {"text": "Try the blue label!"}, "Try the blue label!"),
+        ("mcp__demo__lookup", {"selector": {"key": "nested value"}}, "nested value"),
+    ],
+)
+def test_free_text_is_searchable_for_every_tool(
+    tmp_path: pathlib.Path, name: str, args: dict[str, object], query: str
+) -> None:
+    read = _reader(
+        tmp_path,
+        [
+            {"type": "tool.call", "name": name, "args_preview": args},
             {
                 "type": "tool.result",
                 "name": name,
-                "ok": True,
-                "summary": "marker-text",
-                "exit_code": 7,
+                "summary": "No matching receipt: try Friday",
+                "ok": False,
             },
-            {"type": "tool.result", "name": name, "ok": False, "summary": "marker-error"},
         ],
     )
-    assert read()["conversation"].splitlines() == [
-        f"#1 --:-- tool: {name}",
-        f"#2 --:-- tool: {name} result: ok",
-        f"#3 --:-- tool: {name} result: refused",
-    ]
-    assert not sessions.roster(tmp_path, "marker-").briefs
+    assert query in read(kinds=["tool"], query=query)["conversation"]
+    assert (
+        read(query="Friday")["conversation"]
+        == f"#2 --:-- tool: {name} result: No matching receipt: try Friday"
+    )
 
 
-def test_only_complete_known_summaries_are_shared_for_builtin_results(
+def test_url_previews_keep_paths_without_credentials_queries_or_fragments(
     tmp_path: pathlib.Path,
 ) -> None:
-    rows = [
-        ("read_file", "128 bytes (truncated)"),
-        ("fetch", "404 · 21 bytes"),
-        ("read_file", "128 bytes (truncated) marker-suffix"),
-        ("ask_user", "unanswered"),
-    ]
-    read = _reader(
-        tmp_path,
-        [{"type": "tool.result", "name": n, "ok": True, "summary": s} for n, s in rows],
-    )
-    assert read()["conversation"].splitlines() == [
-        "#1 --:-- tool: read_file result: 128 bytes (truncated)",
-        "#2 --:-- tool: fetch result: 404 · 21 bytes",
-        "#3 --:-- tool: read_file result: ok",
-        "#4 --:-- tool: ask_user result: unanswered",
-    ]
-
-
-def test_a_command_handoff_is_not_a_finished_command(tmp_path: pathlib.Path) -> None:
-    result = results.ExecResult(None, "", "", 1.0, False, background_id="marker-job")
+    url = "https://private-user:private-password@[2001:db8::1]:8443/guide?private-query#private-fragment"
     read = _reader(
         tmp_path,
         [
+            {"type": "tool.call", "name": "fetch", "args_preview": {"url": url}},
+            {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["read", url]}},
+            {"type": "tool.result", "name": "mcp__demo__get", "summary": f"not found: {url}"},
             {
-                "type": "tool.result",
-                "name": "run_command",
-                "ok": True,
-                "summary": result.summary(),
-                **result_format.tool_result_fields("run_command", result),
-            }
-        ],
-    )
-    assert read()["conversation"] == "#1 --:-- tool: run_command result: handed off"
-    assert not sessions.roster(tmp_path, "marker-job").briefs
-
-
-def test_a_handler_return_does_not_mean_its_work_succeeded(tmp_path: pathlib.Path) -> None:
-    outcomes = [
-        ("parallel", results.StartedResult((), "marker-note")),
-        ("run_command", results.ExecResult(None, "", "", 1.0, False, stopped_by_operator=True)),
-        ("run_command", results.ExecResult(None, "", "marker-error", 0.0, True)),
-        ("run_verify_command", results.ExecResult(124, "", "", 2.0, False, timed_out=True)),
-    ]
-    read = _reader(
-        tmp_path,
-        [
-            {
-                "type": "tool.result",
-                "name": name,
-                "ok": True,
-                "summary": result.summary(),
-                **result_format.tool_result_fields(name, result),
-            }
-            for name, result in outcomes
-        ],
-    )
-    assert read()["conversation"].splitlines() == [
-        "#1 --:-- tool: parallel result: nothing started",
-        "#2 --:-- tool: run_command result: stopped by operator",
-        "#3 --:-- tool: run_command result: could not start",
-        "#4 --:-- tool: run_verify_command result: exit 124 (timed out)",
-    ]
-    assert not sessions.roster(tmp_path, "marker-").briefs
-
-
-def test_clipped_edits_do_not_hide_the_target_and_preview_flag(tmp_path: pathlib.Path) -> None:
-    args = result_format.truncate_args(
-        {
-            "path": "sample.txt",
-            "edits": [
-                {"old_string": f"before {i}", "new_string": "marker-edit"} for i in range(11)
-            ],
-            "preview": True,
-        }
-    )
-    read = _reader(tmp_path, [{"type": "tool.call", "name": "apply_edit", "args_preview": args}])
-    assert read()["conversation"] == "#1 --:-- tool: apply_edit path=sample.txt preview=true"
-
-
-def test_commands_share_the_program_without_opaque_operands(tmp_path: pathlib.Path) -> None:
-    argv = ["/usr/bin/demo", "https://example.invalid/?label=marker-url", '--data={"a":"marker"}']
-    read = _reader(
-        tmp_path,
-        [
-            {"type": "tool.call", "name": "run_command", "args_preview": {"argv": argv}},
-            {"type": "verify.start", "call_id": 3, "command": argv},
-            {"type": "metric.start", "command": argv},
-        ],
-    )
-    assert read()["conversation"].splitlines() == [
-        "#1 --:-- tool: run_command program=demo",
-        "#2 --:-- tool: run_verify_command program=demo",
-        "#3 --:-- tool: run_metric_command program=demo",
-    ]
-    assert not sessions.roster(tmp_path, "marker").briefs
-
-
-@pytest.mark.parametrize(
-    ("name", "args"),
-    [
-        ("run_command", {"argv": '["marker-arg"]'}),
-        ("run_command", {"argv": ["marker-arg", {"unexpected": "object"}]}),
-        ("read_file", {"path": ["marker-path"]}),
-        ("read_file", {"start_line": '{"field":"marker-number"}'}),
-        ("ask_user", {"questions": "[{'question': 'marker-question'}]"}),
-        ("ask_user", {"questions": [{"question": "marker-question", "options": [["nested"]]}]}),
-        ("ask_user", {"questions": [{"question": "Which?", "options": ['{"field":"marker"}']}]}),
-        ("apply_edit", {"edits": ["{'new_string': 'marker-edit'}"]}),
-    ],
-)
-def test_a_malformed_argument_is_omitted_as_a_unit(
-    tmp_path: pathlib.Path, name: str, args: dict[str, object]
-) -> None:
-    read = _reader(tmp_path, [{"type": "tool.call", "name": name, "args_preview": args}])
-    assert read()["conversation"] == f"#1 --:-- tool: {name}"
-
-
-@pytest.mark.parametrize(
-    ("name", "args", "public"),
-    [
-        (
-            "ask_user",
-            {
-                "questions": [
-                    {"question": "Which?", "options": [json.dumps(json.dumps({"label": "marker"}))]}
-                ],
-                "wait": False,
+                "type": "tool.call",
+                "name": "fetch",
+                "args_preview": {"url": "https://private-clipped… (302 chars)"},
             },
-            "wait=false",
-        ),
-        (
-            "read_file",
-            {"path": "https://example.invalid/?edition=marker#part", "limit": 2},
-            "limit=2",
-        ),
-        (
-            "add_task",
-            {"relevant_paths": ["src", "https://example.invalid/?marker"], "after": "1"},
-            "after=1",
-        ),
-    ],
-)
-def test_only_plain_argument_labels_can_reach_a_page_or_roster_match(
-    tmp_path: pathlib.Path, name: str, args: dict[str, object], public: str
-) -> None:
-    read = _reader(tmp_path, [{"type": "tool.call", "name": name, "args_preview": args}])
-    assert read()["conversation"] == f"#1 --:-- tool: {name} {public}"
-    assert not sessions.roster(tmp_path, "marker").briefs
+        ],
+    )
+    page = read(kinds=["tool"], query="/guide")["conversation"]
+    assert page.count("https://[2001:db8::1]:8443/guide") == 3
+    assert "private-" not in read()["conversation"]
+    assert not sessions.roster(tmp_path, "private-").briefs
 
 
 def test_search_does_not_page_through_its_own_calls_and_results(tmp_path: pathlib.Path) -> None:
@@ -512,33 +375,6 @@ def test_search_does_not_page_through_its_own_calls_and_results(tmp_path: pathli
         assert dispatcher.dispatch("read_session", {"query": query}).to_wire() == {"sessions": []}
         page = dispatcher.dispatch("read_session", {"id": d.name, "query": query})
         assert page.to_wire() == {"conversation": "(no matching entries)"}
-
-
-def test_nested_arguments_keep_declared_fields_without_opaque_data(tmp_path: pathlib.Path) -> None:
-    read = _reader(
-        tmp_path,
-        [
-            {
-                "type": "tool.call",
-                "name": "ask_user",
-                "args_preview": {
-                    "questions": [{"question": "Which?", "options": ["blue"], "token": "private"}]
-                },
-            },
-            {
-                "type": "tool.call",
-                "name": "finish_session",
-                "args_preview": {"result": {"token": "private"}},
-            },
-            {
-                "type": "tool.call",
-                "name": "mcp__service__get",
-                "args_preview": {"token": "private"},
-            },
-        ],
-    )
-    text = read()["conversation"]
-    assert "Which?" in text and "blue" in text and "private" not in text
 
 
 def test_a_journal_symlink_cannot_substitute_a_transcript(tmp_path: pathlib.Path) -> None:

@@ -17,7 +17,6 @@ import json
 import os
 import pathlib
 import re
-import shlex
 import stat
 from collections.abc import Generator, Iterator
 from typing import Any
@@ -26,8 +25,8 @@ from urllib import parse
 import pydantic
 
 from agent6 import kinds, path_safety, terminal
-from agent6.sessions import journal, manifest, shells
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest, shells
 from agent6.tools import results, schema
 
 # Who said what, from which field; settled events only (deltas repeat them), and every steer.
@@ -38,60 +37,7 @@ _SPEAKER = {
     "steer.parent": ("parent", "text"),
 }
 
-# Check each preview field on its own: the journal can clip a list but keep its siblings.
-# The input schema checks shape; only this projection grants disclosure.
-_PUBLIC_ARGS: dict[str, dict[str, tuple[pydantic.TypeAdapter[Any], dict[str, Any] | None]]] = {
-    cls.TOOL_NAME: {
-        key: (
-            pydantic.TypeAdapter(cls.model_fields[key].rebuild_annotation()),
-            fields[key] if isinstance(fields, dict) else None,
-        )
-        for key in fields
-    }
-    for cls, fields in (
-        (schema.Agent6DocsInput, {"name"}),
-        (schema.ApplyEditInput, {"path": None, "preview": None, "edits": {"__all__": {"kind"}}}),
-        (schema.ApplyPatchInput, {"path", "preview"}),
-        (schema.AskUserInput, {"questions": {"__all__": {"question", "options"}}, "wait": None}),
-        (schema.DagAddTaskInput, {"parent_id", "after", "depends_on", "relevant_paths"}),
-        (schema.DagListTasksInput, {"status"}),
-        (schema.DagUpdateTaskInput, {"id", "status", "depends_on"}),
-        (schema.FetchInput, {"url"}),
-        (schema.FindDefinitionInput, {"symbol"}),
-        (schema.FindReferencesInput, {"symbol"}),
-        (schema.ListDirInput, {"path"}),
-        (schema.ListFindingsInput, {"all"}),
-        (schema.MergeChildInput, {"id"}),
-        (schema.OutlineInput, {"path"}),
-        (schema.ParallelInput, {"spec"}),
-        (schema.ReadBackgroundInput, {"id", "tail_lines", "wait_s"}),
-        (schema.ReadFileInput, {"path", "start_line", "limit"}),
-        (schema.RunCommandInput, {"argv", "background"}),
-        (schema.SteerChildInput, {"id"}),
-        (schema.StopBackgroundInput, {"id"}),
-        (schema.UseSkillInput, {"name", "file"}),
-    )
-}
-
-# Some dispositions exist only in the summary. Match the whole outcome, never an error or tail.
-_PUBLIC_SUMMARIES = {
-    "ask_user": r"unanswered|queued, no answer yet|[0-9]+/[0-9]+ answered",
-    "fetch": r"[1-5][0-9]{2} · [0-9]+ bytes",
-    "find_definition": r"[0-9]+ definitions(?: \(truncated\))?",
-    "find_references": r"[0-9]+ references(?: \(truncated\))?",
-    "list_dir": r"[0-9]+ entries(?:, [0-9]+ hidden)?(?: \(truncated\))?",
-    "list_tasks": r"[0-9]+ tasks",
-    "outline": r"[0-9]+ symbols(?: \(truncated\))?",
-    "parallel": r"nothing started|started [0-9]+",
-    "read_file": r"[0-9]+ bytes(?: \(truncated\))?",
-}
-_COMMAND_STATES = (
-    ("stopped_by_operator", "stopped by operator"),
-    ("exec_failed", "could not start"),
-    ("timed_out", "timed out"),
-)
-_PLAIN_LABEL = re.compile(r"\w[\w .+-]*[!?]?")
-_LOCAL_NAME = re.compile(r"(?!//)[\w./+ -]+")
+_URL = re.compile(r"(?<![A-Za-z0-9.+-])[A-Za-z][A-Za-z0-9.+-]*://[^\s<>]*")
 _PREVIEW_CHARS = 200
 _MAX_ROW_BYTES = 1 << 20
 _OVERSIZE_NOTE = "(scan incomplete: one or more journal records over 1 MiB omitted)"
@@ -295,7 +241,6 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
         The conversation, or a note when the journal is unreadable or empty.
     """
     lines: list[str] = []
-    commands: dict[tuple[str, str, int | None], int] = {}
     mode = kinds.bucket_mode(layout.subdir)
     incomplete = False
     try:
@@ -303,13 +248,15 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
             if event is None:
                 incomplete = True
                 continue
-            etype = str(event.get("type", ""))
-            if etype in journal.SESSION_START_EVENTS:
-                commands.clear()
             if said := _speech(event, mode):
                 lines.append(f"{said[0]}: {said[1]}")
-            elif etype in ("tool.call", "tool.result", "verify.start", "metric.start"):
-                _tool_line(event, lines, commands, layout.session_dir)
+            elif tool := _tool_text(event):
+                lines.append(f"[tool] {tool}")
+                job = event.get("background_id")
+                if event.get("type") == "tool.result" and isinstance(job, str):
+                    record = shells.result_record(layout.session_dir / shells.SHELLS_DIR, job) or {}
+                    if type(code := record.get("returncode")) is int:
+                        lines.append(f"[shell] {job}: exit {code}")
     except (OSError, path_safety.ContainmentError) as exc:
         return f"(no readable journal: {exc})"
     if incomplete:
@@ -323,163 +270,60 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
     return text or "(this session recorded no conversation)"
 
 
-def _tool_line(
-    event: dict[str, Any],
-    lines: list[str],
-    commands: dict[tuple[str, str, int | None], int],
-    session_dir: pathlib.Path,
-) -> None:
-    """Add the call, then settle a command on that same line when its result arrives.
-
-    Args:
-        event: The tool call or result from the journal.
-        lines: The conversation so far.
-        commands: The unsettled command line positions in this execution.
-        session_dir: The session whose shell records hold observed exits.
-    """
-    etype = event["type"]
-    name = {"verify.start": "run_verify_command", "metric.start": "run_metric_command"}.get(
-        etype, str(event.get("name", ""))
-    )
-    call_id = event.get("call_id")
-    key = (str(event.get("execution_id") or ""), name, call_id if type(call_id) is int else None)
-    if etype in ("verify.start", "metric.start"):
-        if etype == "verify.start":
-            # A harness gate has no tool call to label.
-            index = commands.get(key) if type(call_id) is int else None
-        else:
-            # A metric start has no call id. Do not guess if more than one call is open.
-            pending = [i for (_, tool, _), i in commands.items() if tool == name]
-            index = pending[0] if len(pending) == 1 else None
-        if index is not None:
-            lines[index] = _command_line(name, event.get("command"))
-    elif etype == "tool.call":
-        line = f"[tool] {name}"
-        if name in ("run_command", "run_verify_command", "run_metric_command"):
-            commands[key] = len(lines)
-            args = event.get("args_preview", event.get("args"))
-            argv = args.get("argv") if isinstance(args, dict) else None
-            line = _command_line(name, argv)
-        lines.append(line)
-    elif (index := commands.pop(key, None)) is not None:
-        if type(code := event.get("exit_code")) is int:
-            lines[index] += f" (exit {code})"
-        elif isinstance(job := event.get("background_id"), str) and job:
-            record = shells.result_record(session_dir / shells.SHELLS_DIR, job) or {}
-            label = terminal.line_preview(job)
-            if type(code := record.get("returncode")) is int:
-                lines[index] += f" ({label}, exit {code})"
-            else:
-                lines[index] += f" (handed off as {label})"
-        elif event.get("ok") is False:
-            lines[index] += " (refused)"
+def _url_text(match: re.Match[str]) -> str:
+    """Return the URL without userinfo, query or fragment."""
+    try:
+        parts = parse.urlsplit(match[0])
+        # A clipped authority can end inside userinfo before its @.
+        if "…" in parts.netloc or "\\" in parts.netloc:
+            return "(unreadable URL)"
+        host = parts.netloc.rpartition("@")[2]
+        return parse.urlunsplit((parts.scheme, host, parts.path, "", ""))
+    except ValueError:
+        return "(unreadable URL)"
 
 
-def _command_line(name: str, argv: object) -> str:
-    """Return a tool label with one bounded line of its recorded command."""
-    label = f"[tool] {name}"
-    if isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv):
-        return f"{label} {terminal.line_preview(shlex.join(argv))}"
-    return label
-
-
-def _plain_values(value: object, shape: re.Pattern[str]) -> bool:
-    """Return whether every projected string has the public label or local name shape."""
-    if isinstance(value, str):
-        return shape.fullmatch(value) is not None
+def _without_url_secrets(value: Any) -> Any:
+    """Return the recorded value with URL userinfo, queries and fragments removed."""
+    if isinstance(value, str) and "://" in value:
+        return _URL.sub(_url_text, value)
     if isinstance(value, list):
-        return all(_plain_values(item, shape) for item in value)
+        return [_without_url_secrets(item) for item in value]
     if isinstance(value, dict):
-        return all(_plain_values(item, shape) for item in value.values())
-    return value is None or isinstance(value, int | float)
+        return {_without_url_secrets(k): _without_url_secrets(v) for k, v in value.items()}
+    return value
 
 
-def _program_preview(argv: object) -> str | None:
-    """Return the executable's label without its directories, options or operands."""
-    if not isinstance(argv, list) or not argv or not all(isinstance(v, str) for v in argv):
+def _value_text(value: Any) -> str:
+    """Return one bounded line of a recorded argument or summary."""
+    try:
+        clean = _without_url_secrets(value)
+        text = clean if isinstance(clean, str) else json.dumps(clean, ensure_ascii=False)
+    except RecursionError:
+        return "(value too deeply nested)"
+    return terminal.line_preview(text.replace("\n", r"\n"), limit=_PREVIEW_CHARS)
+
+
+def _tool_text(event: dict[str, Any]) -> str | None:
+    """Return a journaled tool call, configured command or result for both readers."""
+    etype = event.get("type")
+    if etype == "metric.start" or (etype == "verify.start" and type(event.get("call_id")) is int):
+        name = "run_metric_command" if etype == "metric.start" else "run_verify_command"
+        return f"{name} argv={_value_text(event['command'])}" if "command" in event else name
+    name = event.get("name")
+    if not isinstance(name, str):
         return None
-    if not re.fullmatch(r"[A-Za-z0-9_./+-]+", argv[0]):
-        return None
-    name = argv[0].rsplit("/", 1)[-1]
-    if name in ("", ".", ".."):
-        return None
-    return f"program={terminal.line_preview(name, limit=_PREVIEW_CHARS)}"
-
-
-def _arg_preview(key: str, value: Any) -> str | None:
-    """Return a labeled field, or None when its shape is ambiguous."""
-    if key == "argv":
-        return _program_preview(value)
-    if key == "url":
-        # A clipped authority can end before the @. Never echo an unparseable prefix.
-        if (
-            not isinstance(value, str)
-            or "…" in value
-            or "\\" in value
-            or any(c.isspace() or not c.isprintable() for c in value)
-        ):
-            return None
-        try:
-            parts = parse.urlsplit(value)
-            host, port = parts.hostname, parts.port
-        except ValueError:
-            return None
-        if not host or parts.scheme not in ("http", "https"):
-            return None
-        authority = f"[{host}]" if ":" in host else host
-        if port is not None:
-            authority += f":{port}"
-        text = f"{parts.scheme}://{authority}"
-    else:
-        if not _plain_values(value, _PLAIN_LABEL if key == "questions" else _LOCAL_NAME):
-            return None
-        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-    return f"{key}={terminal.line_preview(text, limit=_PREVIEW_CHARS)}"
-
-
-def _call_arguments(name: str, args: object) -> Iterator[str]:
-    """Yield only recorded fields that pass the tool's disclosure projection."""
-    projection = _PUBLIC_ARGS.get(name)
-    if projection is None or not isinstance(args, dict):
-        return
-    for key, value in args.items():
-        if (field := projection.get(key)) is None:
-            continue
-        adapter, include = field
-        try:
-            checked = adapter.validate_python(value, extra="ignore")
-        except pydantic.ValidationError:
-            continue
-        public = adapter.dump_python(checked, mode="json", include=include, exclude_unset=True)
-        if (shown := _arg_preview(key, public)) is not None:
-            yield shown
-
-
-def _outcome(name: str, event: dict[str, Any]) -> str:
-    """Return the recorded disposition or a known built-in quantity."""
-    ok = event.get("ok")
-    if ok is False:
-        return "refused"
-    if name in ("run_command", "run_verify_command", "run_metric_command"):
-        state = next((label for flag, label in _COMMAND_STATES if event.get(flag) is True), "")
-        if type(code := event.get("exit_code")) is int:
-            return f"exit {code} ({state})" if state else f"exit {code}"
-        job = event.get("background_id")
-        if not state and ok is True and code is None and isinstance(job, str) and job:
-            state = "handed off"
-        return state or "no recorded exit"
-    summary = event.get("summary")
-    if (
-        ok is True
-        and (pattern := _PUBLIC_SUMMARIES.get(name)) is not None
-        and isinstance(summary, str)
-        and len(summary) <= _PREVIEW_CHARS
-        and re.fullmatch(pattern, summary)
-    ):
-        return summary
-    if name == "read_file" and type(count := event.get("lines_total")) is int:
-        return f"{count} lines"
-    return "ok" if ok is True else "unknown"
+    label = _value_text(name)
+    if etype == "tool.call":
+        args = event.get("args_preview")
+        if isinstance(args, dict):
+            return " ".join(
+                [label, *(f"{_value_text(k)}={_value_text(v)}" for k, v in args.items())]
+            )
+        return label
+    if etype == "tool.result":
+        return f"{label} result: {_value_text(event.get('summary', '(no recorded summary)'))}"
+    return None
 
 
 def _entry(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
@@ -493,22 +337,9 @@ def _entry(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
         elif speaker == "parent":
             body = f"parent: {body}"
         return kind, body
-    etype = event.get("type")
-    if etype == "metric.start" or (etype == "verify.start" and type(event.get("call_id")) is int):
-        name = "run_metric_command" if etype == "metric.start" else "run_verify_command"
-        program = _program_preview(event.get("command"))
-        return "tool", f"{name} {program}" if program is not None else name
-    name = event.get("name")
     # The lookup is journaled before it runs. Its own traffic is never a lookup target.
-    if not isinstance(name, str) or name == "read_session":
-        return None
-    label = terminal.line_preview(name, limit=_PREVIEW_CHARS)
-    if etype == "tool.call":
-        args = event.get("args_preview", event.get("args"))
-        return "tool", " ".join((label, *_call_arguments(name, args)))
-    if etype == "tool.result":
-        shown = terminal.line_preview(_outcome(name, event), limit=_PREVIEW_CHARS)
-        return "tool", f"{label} result: {shown}"
+    if event.get("name") != "read_session" and (tool := _tool_text(event)):
+        return "tool", tool
     return None
 
 

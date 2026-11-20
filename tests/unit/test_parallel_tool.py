@@ -314,7 +314,7 @@ def test_child_reads_show_the_command_and_its_exit_without_output(
     child.mkdir(parents=True)
     (child / "manifest.json").write_text(json.dumps({"mode": "run", "user_task": "write a"}))
     identity = {"name": name, "call_id": 1, "execution_id": "worker"}
-    argv = ["sh", "-c", "cat <<'EOF' # " + "x" * 200 + "\nHEREDOC BODY\nEOF"]
+    argv = ["sh", "pytest", "https://user@host.test/docs?q=private", "x" * 230]
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "write a"},
         {
@@ -322,31 +322,29 @@ def test_child_reads_show_the_command_and_its_exit_without_output(
             **identity,
             "args_preview": {"argv": argv} if name == "run_command" else {},
         },
-        {"type": "tool.result", **identity, "exit_code": 7, "ok": True, "stdout_tail": "OUTPUT"},
+        {"type": "tool.result", **identity, "summary": "exit=7 in 0.1s", "stdout_tail": "OUTPUT"},
     ]
     if name == "run_verify_command":
-        events.insert(
-            -1, {"type": "verify.start", "call_id": 1, "execution_id": "worker", "command": argv}
-        )
+        events.insert(-1, {"type": "verify.start", "call_id": 1, "command": argv})
     elif name == "run_metric_command":
         events.insert(-1, {"type": "metric.start", "command": argv})
     (child / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in events))
-    work = _Work()
-    d = _dispatcher(tmp_path, _config(tool=True), work=work, state_dir=state)
+    d = _dispatcher(tmp_path, _config(tool=True), work=_Work(), state_dir=state)
     d.dispatch("parallel", {"task": "write a"})
     if reader == "read_background":
-        out = d.dispatch(reader, {"id": child.name, "tail_lines": 1, "wait_s": 0}).to_wire()
-        text = out["output"]
+        text = d.dispatch(reader, {"id": child.name, "tail_lines": 3, "wait_s": 0}).to_wire()[
+            "output"
+        ]
         assert "user: write a" not in text
-        line = text.splitlines()[-1]
-        assert name in line and "sh -c" in line and "cat <<" in line and "exit 7" in line
-        assert len(line) <= 180 and "…" in line
     else:
         text = d.dispatch(reader, {"id": child.name}).to_wire()["conversation"]
-        command, result = text.splitlines()[-2:]
-        assert command.endswith(f"{name} program=sh")
-        assert f"{name} result: exit 7" in result
-    assert "HEREDOC BODY" not in text and "OUTPUT" not in text
+    (command,) = [
+        line.split(f"{name} argv=", 1)[1] for line in text.splitlines() if " argv=" in line
+    ]
+    assert command.startswith('["sh", "pytest", "https://host.test/docs", ')
+    assert len(command) == 200 and command.endswith("…")
+    assert f"{name} result: exit=7 in 0.1s" in text
+    assert "private" not in text and "OUTPUT" not in text
 
 
 def test_stop_background_stops_a_child_even_where_commands_are_denied(

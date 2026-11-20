@@ -90,11 +90,12 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tool
 
 `read_session` reads numbered entries from a project journal.
 A child can also read its own journal by its full id, without listing or searching its parent's other sessions.
-Tool entries show selected built-in arguments and recorded outcomes, up to 200 characters per value.
-Command entries show the program name, not its operands.
-Fetch entries show the origin without a path or query.
-Search ignores opaque results and the reader's own calls.
-Session speech, paths and displayed labels are shared text, not a place for credentials.
+Tool entries show the journal's argument preview and result summary, up to 200 characters per value.
+URL values keep their paths but omit userinfo, queries and fragments.
+Only visible text is searchable.
+The reader skips its own calls and results.
+Keep credentials out of arguments, summaries and session speech.
+Other sessions in the project can read them.
 
 Under `backend = "claude_code"` the model runs inside the operator's installed Claude Code binary, unjailed, as the operator, with every built-in tool off (`--tools ""`).
 Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged.
