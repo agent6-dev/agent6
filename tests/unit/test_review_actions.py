@@ -31,6 +31,25 @@ def test_cli_lists_line_evidence_without_lowering_severity(
     assert wire["findings"][2]["line_origin"]["kind"] == "changed"
 
 
+def test_findings_names_an_absent_review_and_an_empty_review(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An empty finding list distinguishes a recorded review from no review."""
+    saved = review_helpers.reviewed_session(tmp_path)
+    panel = json.loads(saved.logs_path.read_text())
+    monkeypatch.chdir(tmp_path)
+    saved.logs_path.write_text('{"type":"session.start"}\n')
+    args = ["sessions", "findings", saved.session_id]
+    assert main(args) == 0
+    assert capsys.readouterr().out == "no review recorded\n"
+    panel.update(findings=[], injected_finding_ids=[])
+    saved.logs_path.write_text(json.dumps(panel) + "\n")
+    assert main(args) == 0
+    assert capsys.readouterr().out == "Review version 1\nno open findings\n"
+    assert main([*args, "--all"]) == 0
+    assert capsys.readouterr().out == "Review version 1\nno findings\n"
+
+
 def _resolve(request_id: str = "resolve", version: int = 1) -> review_records.FindingAction:
     return review_records.FindingAction(
         request_id=request_id,

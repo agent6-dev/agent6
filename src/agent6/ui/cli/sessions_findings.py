@@ -95,7 +95,12 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
         payload.pop("panels")
         print(json.dumps(payload, ensure_ascii=False))
         return 0
+    if view.version == 0:
+        print("no review recorded")
+        return 0
     print(f"Review version {view.version}")
+    if not payload["findings"] and not view.legacy_notice:
+        print("no findings" if all_findings else "no open findings")
     for finding in view.findings:
         if all_findings or finding.status == "open":
             brief = review_actions.finding_brief(finding)
