@@ -511,6 +511,42 @@ def test_a_checkbox_comes_first_6px_before_its_label(
     assert not errors
 
 
+def test_a_scrolling_card_body_draws_its_ring_inside(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The run's event log drew its focus ring 2px outside its body; a machine's drew it inside.
+
+    Drawn inside a body with no inset, the ring ran through the first glyph of every line.
+    """
+    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "log-AAAAAA"
+    run.mkdir(parents=True)
+    rows: list[dict[str, object]] = [{"type": "session.start", "mode": "run", "user_task": "Log"}]
+    for i in range(80):
+        call: dict[str, object] = {"type": "tool.call", "name": "read_file"}
+        call["args_preview"] = {"path": f"f{i}.py"}
+        rows.append(call)
+    (run / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/log-AAAAAA")
+    body = page.locator(".card-log .card-body")
+    body.wait_for()
+    for _ in range(80):
+        page.keyboard.press("Tab")
+        if body.evaluate("e => e === document.activeElement"):
+            break
+    assert body.evaluate("e => e.matches(':focus-visible')")
+    assert body.evaluate("e => getComputedStyle(e).outlineOffset") == "-2px"
+    # The ring covers the body's outer 2px: the text starts clear of it.
+    text_inset = """e => {
+      const range = document.createRange();
+      range.selectNodeContents(e);
+      const first = [...range.getClientRects()].find(r => r.width > 0);
+      return first.left - e.getBoundingClientRect().left;
+    }"""
+    assert body.evaluate(text_inset) >= 2
+    assert not errors
+
+
 def test_every_expand_control_draws_the_folds_chevron(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

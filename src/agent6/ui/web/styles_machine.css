@@ -2,10 +2,6 @@
    conversation under them, its prompts at its end, and the composer docked at the foot. */
 .machine-app { display: flex; flex-direction: column; flex: 1 0 auto; }
 .machine-app > .actions { margin-bottom: 0.625rem; }
-/* A body that scrolls is a Tab stop in both browsers; its ring goes inside, as a scroll pane's
-   does, in the 4px each side that the body reaches past its text. */
-.machine-grid .card-body { padding-inline: 0.25rem; margin-inline: -0.25rem; }
-.machine-grid .card-body:focus-visible { outline-offset: -2px; }
 /* A long name or reason wraps: in the summary line and in the States and Path lists. */
 .machine-grid :is(.sub, .tree) { overflow-wrap: anywhere; }
 /* Every name and transition shows whole: a long one wraps, and a wrapped line continues under the

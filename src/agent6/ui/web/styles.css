@@ -141,6 +141,9 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
    counts). */
 .card h2, .keys th, .card-children th { margin: 0 0 0.5rem; font-size: var(--fs-s); font-weight: 600; line-height: 1.25rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .card.scroll { max-height: 26.25rem; overflow: auto; }
+/* A body that scrolls is a Tab stop: its ring goes inside, in the 4px each side the body reaches past its text. */
+.card-body { padding-inline: 0.25rem; margin-inline: -0.25rem; }
+.card-body:focus-visible { outline-offset: -2px; }
 
 .row { display: flex; gap: 0.625rem; align-items: center; }
 .wrap { flex-wrap: wrap; }
