@@ -149,9 +149,8 @@ def build_approver(
             requester = requester if allow and requester else f"[session {session_dir.name}] "
             if request.scope is None and tool == "fetch":
                 # The approval shows the complete path and query. The notice names only the host.
-                host, sep, path = payload.partition(" ")
-                if sep and path.startswith("/") and re.fullmatch(r"[\w.:[\]-]+", host):
-                    tool += f": {host}"
+                if host := re.match(r"([\w.:[\]-]+) /", payload):
+                    tool += f": {host[1]}"
             elif request.scope == ipc.COMMAND_SCOPE and (
                 executable := re.fullmatch(r"[\w./+-]+", payload.partition(" ")[0], re.ASCII)
             ):
