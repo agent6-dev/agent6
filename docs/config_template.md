@@ -355,7 +355,8 @@ Under agent6-owned git, one child's work joins the parent's chain; with several 
 Under model-owned git, completed work stays on the imported refs.
 `harness.parallel.judges` names who ranks them: each judge is a reviewer child that reads and runs the attempts and answers with an order, and the lowest sum of ranks wins.
 A judge takes at most `review.max_turns` replies; with no usable order from any judge, the order is verify-pass first, then the cheaper.
-Under agent6-owned git, `git.auto_merge = true` then lands the parent as it lands any run; without it, `agent6 sessions merge <run id>` does.
+Under agent6-owned git, `git.auto_merge = true` merges the parent's work into the checkout branch.
+With `git.auto_merge = false`, `agent6 sessions merge <run id>` makes that merge.
 `--max-usd` caps the children and the judges together; `--auto-approve` forwards to every child.
 A live run dispatches children the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 `harness.parallel.tool = true` offers a run's model the `parallel` tool, which starts a task's children in the background through the same path, and `steer_child`, which sends a running child an instruction ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.

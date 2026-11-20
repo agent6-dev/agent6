@@ -145,14 +145,16 @@ The children list labels each work child by its attempt number within its task: 
 It gives each child's task, model, status, current tool, turn, tokens, spend and elapsed time.
 The parent reports when a child starts, reads an operator message, stops or finishes.
 A join records the commit on the parent's chain, not a merge into the checkout branch.
-`sessions show <child>` names the parent it joined; `sessions show <parent>` shows the parent's recorded checkout merge or how to land its work.
+`sessions show <child>` names the parent it joined.
+`sessions show <parent>` shows the parent's recorded checkout merge or how to merge its work.
 A failed launch has a row with its reason even when there is no child session to open.
 A work child shows its measured number of commits beyond start, including while it runs.
 A stopped child also shows the ref that holds its work.
 A reviewer shows its order and summary when it returns a verdict.
 To act on one running child, use `agent6 steer <child-id> "<message>"` or `agent6 stop <child-id>`.
 With `git.control = "agent6"`, every entry merges a task once: one child's work is merged onto the run's chain, and several children on one task are attempts, of which the first-ranked merges.
-With `git.control = "model"`, a finished child completes its task without a merge; its row names the retained ref.
+With `git.control = "model"`, a finished child completes its task.
+Its row names the retained ref without claiming a merge.
 The model can merge that ref with git.
 `run --parallel` waits for its children without a model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child follows this merge policy, and the run ends `finished · children ranked`.
 The parent's gate still runs when its policy calls for it.

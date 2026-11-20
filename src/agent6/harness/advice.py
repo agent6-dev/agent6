@@ -104,7 +104,7 @@ class TurnContext:
     standing_absorb: Callable[[str, int], str | None]
     # HEAD of the checkout: under model git control the model's own commits move it.
     head_sha: Callable[[], str] = lambda: ""
-    # The children whose task has not merged, each with where it stands.
+    # Each child whose task is pending, with its current state.
     unmerged_children: Callable[[], Sequence[tuple[str, str]]] = lambda: ()
 
 

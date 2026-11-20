@@ -17,7 +17,14 @@ This page is the reference for the command-line surface; the patterns behind the
 - `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded route unless it sets its own
   The web and TUI resume composers default to that route and offer the config's routes as choices.
   A resume that changes the route prints both the chosen and recorded routes.
-- `--parallel 3` (or `reviewer,provider/model-a`: a role name brings its model, effort and temperature; a `[provider/]model` runs with the worker's): isolated children, ranked by `harness.parallel.judges`, the first-ranked child joined onto the run's own branch; the run is a session that `attach`, `stop`, `sessions show`, `sessions merge` and `resume` address, its children folded under it (`--children` expands them) ([parallel](config.md#harnessparallel))
+- `--parallel 3` starts three isolated attempts at the task ([parallel](config.md#harnessparallel)).
+  A list such as `reviewer,provider/model-a` selects a role or model per attempt.
+  A role supplies its own effort and temperature.
+  A model uses the worker's settings.
+  `harness.parallel.judges` ranks the attempts.
+  Under agent6-owned git the first-ranked attempt joins the parent's chain.
+  Under model-owned git each attempt keeps its ref.
+  `sessions list --children` expands the attempts under the parent.
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[git.worktree].base_dir`
     - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([worktrees](usage.md#worktrees)), so you can keep working there or start more runs
     - `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits

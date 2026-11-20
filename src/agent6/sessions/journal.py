@@ -442,12 +442,12 @@ class ExecutionTarget(Event):
 
 
 class FinishRefusedChildren(Event):
-    """An end declared while a child's work had not merged was returned to the model."""
+    """The run could not finish while a child task was pending."""
 
     TYPE: ClassVar[str] = "finish.refused.children"
     turn: int = pydantic.Field(description="The execution's turn number.")
     children: Sequence[Any] = pydantic.Field(
-        description="The session ids of the children whose task had not merged.",
+        description="The session ids of the children whose task was pending.",
     )
     trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
 
@@ -1432,7 +1432,14 @@ class SessionStart(Event):
 
 
 class ChildVerification(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """Identify the child's full gate pass covering the parent's final tree."""
+    """Identify the child's full gate pass covering the parent's final tree.
+
+    Attributes:
+        session_id: The child that ran the gate.
+        verify_id: The attempt id in the child's journal.
+        tree: The git tree the child verified.
+        command: The full verify command that passed.
+    """
 
     session_id: str = pydantic.Field(min_length=1)
     verify_id: str = pydantic.Field(min_length=1)

@@ -388,12 +388,12 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### finish.refused.children
 
-**Support: public.** An end declared while a child's work had not merged was returned to the model.
+**Support: public.** The run could not finish while a child task was pending.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `turn` | `int` | The execution's turn number. |
-| `children` | `list` | The session ids of the children whose task had not merged. |
+| `children` | `list` | The session ids of the children whose task was pending. |
 | `trigger` | `str` | The action that triggered the gate or panel. |
 
 ### finish.refused.contract
@@ -472,7 +472,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### loop.note
 
-**Support: public.** A machine-creation progress note.
+**Support: public.** A progress note in the session log.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1248,7 +1248,12 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `summary` | `str, optional` | The result or outcome in words. |
 | `verification` | `str, optional` | Final verification state: passed, failed, unverified or not_applicable. |
 | `scoped` | `bool, optional` | Whether verification ran only the selected nearby tests. |
-| `final_verify_id` | `str, optional` | The final verification attempt identifier. |
+| `final_verify_id` | `str, optional` | The session's final verification attempt identifier. |
+| `child_verification` | `object, optional` | The child's full gate pass covering this tree, when used instead. |
+| `child_verification.session_id` | `str` |  |
+| `child_verification.verify_id` | `str` |  |
+| `child_verification.tree` | `str` |  |
+| `child_verification.command` | `list` |  |
 | `tree` | `str, optional` | The final working-tree content identifier. |
 | `tool` | `str, optional` | The repeated tool's name. |
 | `streak` | `int, optional` | Number of consecutive matching turns or calls. |
@@ -1666,7 +1671,8 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `model` | `str` | The resolved provider/model route. |
 | `model_from_flag` | `bool` | Whether a model flag selected the route. |
 | `id_cell` | `str` | The session identifier with winner and worktree marks. |
-| `unmerged` | `bool` | Whether the run holds unmerged work. |
+| `unmerged` | `bool` | Whether the run has agent6-owned commits outside its merge stamp. |
+| `retained_ref` | `str \| None` | The retained model-owned ref, or null without one. |
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The gate verdict, or null without a verdict. |
 | `winner` | `bool` | Whether this child won its comparison. |
 | `number` | `int \| None` | The child number, or null outside a group. |
@@ -1718,6 +1724,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `stop_reason` | `str \| None` | The journaled end reason, or null while unfinished. |
 | `baseline_ok` | `bool \| None` | Whether baseline verification passed, or null when unrecorded. |
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The final gate word, or null when unrecorded. |
+| `child_verification` | `dict[str, Any] \| None` | The child attempt covering the final tree, or null. |
 | `budget` | `dict[str, Any]` | The BudgetView with its rendered `usd_text` and `plan_text`, as `attach --json` carries it. |
 | `unattended_questions` | `int` | Questions answered empty because nobody was attached. |
 | `setup_output` | `str \| None` | Retained setup output, or null when absent. |
@@ -1733,7 +1740,10 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `children` | `list[dict[str, Any]]` | ChildView rows in dispatch order. Lineage-only groups keep their listing fields. |
 | `run_branch` | `str \| None` | The existing run branch, or null. |
 | `base_branch` | `str \| None` | The base branch, or null when unknown. |
-| `merged_into` | `str \| None` | The merge destination, or null when not merged. |
+| `merged_into` | `str \| None` | The merge destination, or null without a covering merge stamp. |
+| `retained_ref` | `str \| None` | The retained model-owned ref, or null without one. |
+| `joined_to` | `str \| None` | The parent whose chain this child joined, or null without a recorded join. |
+| `join_sha` | `str \| None` | The recorded parent-chain join commit, or null. |
 | `pins` | `list[str]` | The operator's active pinned instructions. |
 
 ## CLI text
@@ -2877,6 +2887,7 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `acquisitions` | `tuple[AcquisitionObservation, ...]` | The container leases the run's executions acquired. |
 | `children` | `tuple[ChildView, ...]` | The session's children, from its dispatch records or its children's lineage. |
 | `cache_usage` | `CacheUsage` | Session-wide worker cache use and post-compaction input. |
+| `child_verification` | `ChildVerification \| None` | The full pass a child recorded on the final tree, when used. |
 
 ### CacheUsage
 
@@ -2928,9 +2939,9 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `task` | `str` | Its task text; "" when unknown. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
-| `status` | `str` | Where the child stands in its task, including a merge or a ranking. |
-| `outcome` | `str` | The recorded merge outcome, including `stopped`, `ranked` and `unmerged`. An empty string means the parent has recorded no outcome. |
-| `join_sha` | `str` | The merge commit, "" when none. |
+| `status` | `str` | Where the child stands in its task, including a chain join or a ranking. |
+| `outcome` | `str` | The recorded dispatch outcome, including `stopped`, `ranked` and `retained`. An empty string means the parent has recorded no outcome. |
+| `join_sha` | `str` | The join commit on the parent's chain, "" when none. |
 | `imported_ref` | `str` | The branch the join read, "" when none. |
 | `error` | `str` | The status detail or the reason a child failed to start or merge. |
 | `spend_usd` | `float` | The cumulative child spend. |
@@ -2941,9 +2952,10 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `turn` | `int \| None` | Its latest recorded turn, or None before one. |
 | `tokens` | `int \| None` | Input, cache and output tokens in its current execution, or None if unreported. |
 | `elapsed_s` | `int \| None` | Seconds since the child started, frozen at its last event when it ends. |
-| `commits` | `int` | The commits its imported ref holds beyond the task's base, when recorded. |
+| `commits` | `int \| None` | Its measured commits beyond its start, None when unknown. |
 | `verdict_order` | `tuple[str, ...]` | A reviewer's order of attempts, best first. |
 | `verdict_summary` | `str` | The summary from the reviewer's verdict. |
+| `joined_to` | `str` | The parent session whose chain received the join, "" without a join. |
 
 ### DispatchView
 
@@ -3893,6 +3905,19 @@ Source: [`agent6.evidence.AcquisitionObservation`](https://github.com/agent6-dev
 | `started` | `bool` | This run's start command made the container appear. |
 | `start_s` | `float \| None` | How long the start took in seconds; None when none ran. |
 
+### ChildVerification
+
+**Support: public.** Identify the child's full gate pass covering the parent's final tree.
+
+Source: [`agent6.sessions.journal.ChildVerification`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/journal.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `session_id` | `str` | The child that ran the gate. |
+| `verify_id` | `str` | The attempt id in the child's journal. |
+| `tree` | `str` | The git tree the child verified. |
+| `command` | `tuple[str, ...]` | The full verify command that passed. |
+
 ### FindingResolution
 
 **Support: public.** Record the operator's conclusion without inferring verification success.
@@ -3934,7 +3959,7 @@ Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `branch` | `str` | The child's branch. |
-| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped', 'unmerged']` | The join's outcome. |
+| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped', 'retained']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a stopped child; "" when none. |
 | `commits` | `int` | The commits a stopped child's branch holds beyond its base; 0 otherwise. |

@@ -6,7 +6,7 @@ The loop runs a gate list in order over the turn that declared an end and
 applies the first `Refusal`: `FINISH_GATES` over a finish_session,
 `END_GATES` over an end the harness declares (settled, a plateau),
 `SILENT_END_GATES` over a silent finish. `turn.ending` names the end judged.
-Every list holds an end back while a child's work has not merged.
+Every list holds an end back while a child task is pending.
 """
 
 from __future__ import annotations

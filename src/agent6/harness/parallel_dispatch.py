@@ -56,7 +56,7 @@ def segment_children(
 
 @dataclasses.dataclass(slots=True)
 class OpenDispatch:
-    """A work dispatch this execution started whose work has not merged.
+    """A work dispatch this execution started whose task is pending.
 
     Attributes:
         record: The dispatch's record, as last written.
@@ -98,8 +98,7 @@ class ParallelDispatcher:
         stop_pending: Whether the operator asked the run to stop.
         authority: Work and harness-panel permissions from the application.
         clock: The wall clock.
-        open: The work dispatches this execution started and has not merged, by identity,
-            oldest first.
+        open: This execution's pending work dispatches by identity, oldest first.
         stopping: The running children this execution asked to stop.
     """
 
