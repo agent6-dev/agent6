@@ -80,7 +80,7 @@ async function renderMachine(name, gen) {
   const refusal = el('div', 'refusal');
   const hint = el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · ');
   hint.append(...enterHint('Enter sends, Shift+Enter newline', 'Enter newline'));
-  dock.append(drow, refusal, hint);
+  dock.append(fieldLabel(din, 'Message to the machine'), drow, refusal, hint);
   app.appendChild(dock);
   view.appendChild(app);
   const fetched = cc.conv.refresh(); // once the box is in the page: a refresh skips a box that is not

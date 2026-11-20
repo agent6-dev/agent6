@@ -232,6 +232,7 @@ button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 }
 .composer textarea.field::placeholder, .git-commit textarea.field::placeholder { white-space: nowrap; }
 /* The docked composers lay the entry and its buttons in a .row: the entry takes the width and the buttons sit on its bottom edge. */
+.field-label { display: block; font-size: var(--fs-s); color: var(--muted); margin-bottom: 0.25rem; }
 .composer .row > textarea.field { flex: 1 1 0; min-width: 0; }
 .composer .row:not(.pickers) > button { align-self: flex-end; }
 /* A hint: a line of help under a composer or the compare's pickers. */

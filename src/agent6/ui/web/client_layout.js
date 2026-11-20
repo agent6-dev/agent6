@@ -1,3 +1,11 @@
+let fieldLabels = 0;
+function fieldLabel(input, text) {
+  if (!input.id) input.id = 'field-' + ++fieldLabels;
+  const label = el('label', 'field-label', text);
+  label.htmlFor = input.id;
+  return label;
+}
+
 // CSS keeps each pane within its container when the viewport or sidebar changes.
 function resizeHandle(pane, { label, key, property, min, max }) {
   const h = el('div', 'resize-handle');

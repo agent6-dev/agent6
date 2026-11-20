@@ -843,6 +843,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   }));
   root.appendChild(picks);
   root.appendChild(more);
+  root.appendChild(fieldLabel(task, 'Task or question'));
   root.appendChild(row);
   const hint = root.appendChild(el('div', 'hint'));
   hint.append(...enterHint('Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline',
@@ -864,6 +865,7 @@ function createMachineDock() {
   ct.oninput = cbtn.sync;
   ct.onkeydown = (e) => { if (enterSends(e)) { e.preventDefault(); cbtn.click(); } };
   row.appendChild(ct); row.appendChild(cbtn);
+  root.appendChild(fieldLabel(ct, 'Machine description'));
   root.appendChild(row);
   root.appendChild(el('div', 'hint')).append(...enterHint('Enter creates a machine draft from the description · Shift+Enter newline',
     'Create machine drafts a machine from the description · Enter newline'));
@@ -2044,7 +2046,7 @@ function makeComposer(id) {
     return resume(text);
   }, () => finished !== null && !busy && !(finished && refused) && (!!ta.value.trim() || (finished && !needsWork)), ta); // text, or a bare resume
   row.appendChild(ta); row.appendChild(sendBtn);
-  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(row); root.appendChild(refusal); root.appendChild(hint);
+  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(fieldLabel(ta, 'Message to the run')); root.appendChild(row); root.appendChild(refusal); root.appendChild(hint);
   // A quoted diff line lands beneath what is typed, for the words that follow it.
   root.quote = (note) => {
     const typed = ta.value.replace(/\s+$/, '');
