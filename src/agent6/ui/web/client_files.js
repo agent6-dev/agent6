@@ -173,7 +173,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     body.classList.add('viewing');
     pane.innerHTML = '';
     const head = el('div', 'files-head row');
-    const back = el('button', 'mini files-back', '‹ Files');
+    const back = el('button', 'mini files-back'); back.append(glyph('‹'), ' Files');
     back.onclick = () => { body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
     head.appendChild(back);
     // A long path wraps after a slash, not inside a name.

@@ -635,6 +635,19 @@ def test_a_file_open_on_a_phone_keeps_the_focus_out_of_the_tree_under_it(
     assert not errors
 
 
+def test_the_files_back_button_leaves_its_glyph_out_of_its_name(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """A phone's back button over an open file had its glyph in its name, read aloud."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/b.txt")
+    expect(page.get_by_role("button", name="Files", exact=True)).to_have_text("\u2039 Files")
+    assert not errors
+
+
 def test_a_long_file_path_wraps_after_a_slash(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
 ) -> None:
