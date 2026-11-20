@@ -520,9 +520,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 commit_identity = git_read.CommitIdentity(name=name, email=email)
             agent_runner = agent.build_machine_agent_runner(
                 {
-                    state_name: agent.state_overlay(
-                        configs.states[state_name].config, configs.states[state_name].isolation
-                    )
+                    state_name: agent.state_overlay(configs.states[state_name], path)
                     for state_name in agent_states
                 },
                 cwd,

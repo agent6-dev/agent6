@@ -16,7 +16,7 @@ import shlex
 from collections.abc import Callable, Iterable, Iterator, Mapping
 
 from agent6 import kinds
-from agent6.config import Config, ConfigError, SandboxConfig, io, layer
+from agent6.config import Config, ConfigError, SandboxConfig, io, layer, layer_data
 from agent6.machine import AgentState, MachineSpec, ToolState
 from agent6.sandbox import detect
 from agent6.tools import policy as tools_policy
@@ -46,10 +46,12 @@ class StateConfig:
         config: The operator's layers, the machine's `[config]` and the state's `config`
             merged, with the invocation's sandbox flags applied last.
         isolation: The isolation level the state's jail runs at.
+        effective: The layers that supplied the config before invocation flags.
     """
 
     config: Config
     isolation: kinds.IsolationLevel
+    effective: layer_data.EffectiveConfig | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -310,7 +312,7 @@ def resolve_configs(
             raise ConfigError(f"{where}: {exc}") from exc
         cfg = with_flags(eff.config)
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
-        resolved = StateConfig(cfg, isolation)
+        resolved = StateConfig(cfg, isolation, eff)
         return resolved, config_widening(operator, operator_isolation, eff.config, isolation)
 
     machine, machine_wide = one(None, "the machine's [config]")
@@ -350,7 +352,7 @@ def resolve_configs(
                 " the committed chain is the only path out of a clone."
             )
     configs = MachineConfigs(
-        StateConfig(with_flags(operator), operator_isolation),
+        StateConfig(with_flags(operator), operator_isolation, operator_eff),
         machine,
         states,
     )

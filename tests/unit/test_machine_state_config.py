@@ -729,6 +729,22 @@ def test_a_config_flag_file_is_part_of_the_ceiling(
     assert ops.resolve() in protected and more.resolve() in protected
 
 
+def test_agent_launch_keeps_state_and_operator_setting_origins(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full launch snapshot does not turn every setting's source into the machine."""
+    monkeypatch.chdir(tmp_path)
+    _operator(OPERATOR)
+    path = _write(tmp_path, MACHINE)
+    ops = _write(tmp_path, "[budget]\nmax_usd = 2\n", name="ops.toml")
+    configs = resolve_configs(
+        load_machine(path), tmp_path, detect.probed_environment(), config_paths=(ops,)
+    )
+    snapshot = agent.state_overlay(configs.states["judge"], path)
+    assert snapshot.setting_origins["budget.max_usd"] == ("flag", str(ops))
+    assert snapshot.setting_origins["harness.max_turns"] == ("state", str(path))
+
+
 def test_the_operator_flags_apply_after_the_overlays(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

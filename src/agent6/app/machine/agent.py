@@ -37,13 +37,13 @@ from agent6.app import reporter as app_reporter
 from agent6.app.machine import state_configs
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, layer
+from agent6.config import Config, ConfigError, layer, layer_data
 from agent6.harness import child_repo, loop, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
-from agent6.sessions import event_log, ipc, process
+from agent6.sessions import event_log, ipc, journal, process
 from agent6.tools import dispatch, operator_prompts
 from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
@@ -68,6 +68,7 @@ class MachineAgentRequest(pydantic.BaseModel):
             `mode="run"` state, else `cwd`.
         overlay: The state's complete config, applied over the effective config.
         isolation: The isolation level the engine validated.
+        setting_origins: The source and file of each non-default setting.
         transcript_dir: Where the subprocess records transcripts.
         events_log: Where the subprocess writes a watchable event log, when set.
         protect_paths: The bundle paths the state may not rewrite.
@@ -83,6 +84,7 @@ class MachineAgentRequest(pydantic.BaseModel):
     cwd: pathlib.Path
     root: pathlib.Path
     overlay: dict[str, Any]
+    setting_origins: dict[str, tuple[str, str | None]] = pydantic.Field(default_factory=dict)
     isolation: kinds.IsolationLevel
     transcript_dir: pathlib.Path
     events_log: pathlib.Path | None = None
@@ -90,6 +92,27 @@ class MachineAgentRequest(pydantic.BaseModel):
     shared_writes: tuple[pathlib.Path, ...] = ()
     commit_identity: git_read.CommitIdentity | None = None
     request: AgentRequest
+
+    def settings(self, cfg: Config, base: Config) -> tuple[journal.SettingObservation, ...]:
+        """Keep the host source for each setting the state runs unchanged.
+
+        Args:
+            cfg: The config this state runs under.
+            base: The config before execution limits and role resolution.
+
+        Returns:
+            The non-default settings and their origins.
+        """
+        original = layer_data.config_leaves(base)
+        current = layer_data.config_leaves(cfg)
+        rows: list[journal.SettingObservation] = []
+        for row in execution_settings.observations(cfg, None):
+            origin = self.setting_origins.get(row.key)
+            if origin and current[row.key] == original.get(row.key):
+                rows.append(row.model_copy(update={"source": origin[0], "file": origin[1]}))
+            else:
+                rows.append(row)
+        return tuple(rows)
 
 
 def _machine_head_sha(root: pathlib.Path) -> str | None:
@@ -388,8 +411,9 @@ def run_one(
     r = req.request
     # A config error becomes an error result, not a traceback the host must salvage.
     try:
+        base_config = layer.load_effective_with_overlay(req.cwd, req.overlay).config
         cfg = state_configs.agent_config(
-            layer.load_effective_with_overlay(req.cwd, req.overlay).config,
+            base_config,
             effort=r.effort,
             remaining_usd=r.remaining_usd,
             max_plan_points=r.max_plan_points,
@@ -471,6 +495,7 @@ def run_one(
             r,
             cfg,
             dispatcher,
+            base_config=base_config,
             prompts=prompts,
             bridges=bridges,
             provider=provider,
@@ -490,6 +515,7 @@ def _drive_state(
     cfg: Config,
     dispatcher: dispatch.ToolDispatcher,
     *,
+    base_config: Config,
     prompts: operator_prompts.OperatorPrompts,
     bridges: _MachineBridges | None,
     provider: Provider,
@@ -505,6 +531,7 @@ def _drive_state(
         r: The state's agent request.
         cfg: The state's config.
         dispatcher: The state's dispatcher, its command session prepared.
+        base_config: The config before execution limits and role resolution.
         prompts: The operator prompt gate.
         bridges: The front-end bridges, when the state has a log.
         provider: The worker.
@@ -537,7 +564,7 @@ def _drive_state(
     )
     cfg = role_providers.resolve_decompose(cfg, rm, log=reporter.err)
     wf = loop.Harness(
-        settings=execution_settings.observations(cfg, None),
+        settings=req.settings(cfg, base_config),
         media_input=role_providers.input_capabilities(cfg, rm),
         # A run-mode state commits on its own chain, named by the instance dir.
         chain=run_chain.RunChain(
@@ -602,25 +629,35 @@ class StateOverlay:
         overlay: The state's complete config: the child cannot rediscover a `--config`
             layer, and omitting values equal to defaults loses an explicit reset.
         isolation: The isolation level the engine validated for the state.
+        setting_origins: The source and file of each non-default setting.
     """
 
     overlay: dict[str, Any]
     isolation: kinds.IsolationLevel
+    setting_origins: dict[str, tuple[str, str | None]] = dataclasses.field(default_factory=dict)
 
 
-def state_overlay(cfg: Config, isolation: kinds.IsolationLevel) -> StateOverlay:
+def state_overlay(state: state_configs.StateConfig, path: pathlib.Path) -> StateOverlay:
     """Return the overlay a state's resolved config travels as.
 
     Args:
-        cfg: The state's resolved config.
-        isolation: The isolation level the engine validated for the state.
+        state: The state's resolved config and isolation level.
+        path: The machine file that supplied both overlays.
 
     Returns:
         The whole config except `agent6.preset`, with the isolation level.
     """
+    cfg = state.config
     overlay = cfg.model_dump(mode="json")
     overlay["agent6"].pop("preset", None)  # an overlay cannot select a preset
-    return StateOverlay(overlay, isolation)
+    origins = {
+        row.key: (
+            "flag" if state.effective and row.source == "execution" else row.source,
+            str(path.resolve()) if row.source in ("machine", "state") else row.file,
+        )
+        for row in execution_settings.observations(cfg, state.effective)
+    }
+    return StateOverlay(overlay, state.isolation, origins)
 
 
 def build_machine_agent_runner(
@@ -697,6 +734,7 @@ def build_machine_agent_runner(
             cwd=cwd,
             root=workdir,
             overlay=resolved.overlay,
+            setting_origins=resolved.setting_origins,
             isolation=resolved.isolation,
             transcript_dir=transcript_dir,
             events_log=events_log,
