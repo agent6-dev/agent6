@@ -216,30 +216,12 @@ def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
     """
     if not run_branch:
         return ""
-    # Hardened like the diff: `git status` would fire a poisoned core.fsmonitor on the host.
     try:
-        current = subprocess.run(
-            ["git", *git_policy.git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
-            env=git_policy.git_environment(),
-            cwd=cwd,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if current.returncode != 0 or current.stdout.strip() != str(run_branch):
-            return ""
-        status = subprocess.run(
-            ["git", *git_policy.git_hardening_flags(cwd), "status", "--porcelain"],
-            env=git_policy.git_environment(),
-            cwd=cwd,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError:
+        status = git_read.status(cwd)
+    except (errors.GitError, OSError):
         return ""
-    n = len([ln for ln in status.stdout.splitlines() if ln.strip()])
-    if n == 0:
+    n = status.modified_count + status.untracked_count
+    if status.branch != str(run_branch) or n == 0:
         return ""
     files = "file" if n == 1 else "files"
     return (
