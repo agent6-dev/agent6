@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from agent6 import paths
+from tests import review_helpers
 from tests.web import signin, test_web_browser
 
 if TYPE_CHECKING:
@@ -544,6 +545,29 @@ def test_a_scrolling_card_body_draws_its_ring_inside(
       return first.left - e.getBoundingClientRect().left;
     }"""
     assert body.evaluate(text_inset) >= 2
+    assert not errors
+
+
+def test_an_empty_drawer_line_reads_lower_case_in_the_cards_type(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The drawer said 'No findings in this filter.' beside 'no task graph yet' in monospace."""
+    from playwright.sync_api import expect
+
+    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "empty-AAAAAA"
+    run.mkdir(parents=True)
+    start = {"type": "session.start", "mode": "run", "user_task": "Empty"}
+    rows = [start, *review_helpers.panel_rows(block=1), review_helpers.END]
+    (run / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/empty-AAAAAA")
+    tasks = page.locator(".card-tasks").get_by_text("no task graph yet", exact=True)
+    expect(tasks).to_be_visible()
+    font = "e => getComputedStyle(e).fontFamily"
+    assert tasks.evaluate(font) == page.locator(".card-tasks").evaluate(font)  # not the tree's mono
+    page.get_by_role("combobox", name="Finding status").select_option("resolved")
+    findings = page.locator(".card-findings").get_by_text("no findings in this filter", exact=True)
+    expect(findings).to_be_visible()
     assert not errors
 
 

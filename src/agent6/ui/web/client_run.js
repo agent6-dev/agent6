@@ -394,7 +394,7 @@ function paintDetails(cards, s, asOf) {
   // task tree
   cards.tasks.innerHTML = '';
   const tree = el('div', 'tree');
-  if (!(s.tasks||[]).length) tree.appendChild(el('div', 'muted', 'no task graph yet'));
+  if (!(s.tasks||[]).length) cards.tasks.appendChild(el('div', 'muted', 'no task graph yet')); // in the card's type, not the tree's
   for (const t of s.tasks || []) {
     const line = el('div', 'node' + (t.is_cursor ? ' cursor' : ''));
     const glyph = t.glyph || '·'; // the server's TASK_STATUS_GLYPH

@@ -771,7 +771,7 @@ def test_the_compare_hint_reads_as_a_note(open_page: OpenPage, git_port: int) ->
     page.get_by_role("button", name="Compare", exact=True).click()
     style = "e => [getComputedStyle(e).fontSize, getComputedStyle(e).color]"
     hint = page.locator(".gcmp .hint").evaluate(style)
-    muted = page.locator(".gcmp-result .muted").evaluate(style)
+    muted = page.locator(".gcmp-result .empty").evaluate(style)
     assert hint == ["12px", muted[1]], (hint, muted)
     assert errors == [], errors
 

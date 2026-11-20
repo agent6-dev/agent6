@@ -773,7 +773,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const run = async () => {
       const { base, head: h } = gitState.compare;
       result.innerHTML = '';
-      if (!base || !h) { setViewHash('#/git'); result.appendChild(el('div', 'muted', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return; }
+      if (!base || !h) { setViewHash('#/git'); result.appendChild(el('div', 'empty', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return; }
       const n = ++compareRun;
       setViewHash('#/git/compare/' + encodeURIComponent(base.rev) + '..' + encodeURIComponent(h.rev) + (query.size ? '?' + query : ''));
       result.appendChild(el('div', 'muted', 'comparing…'));

@@ -262,7 +262,7 @@ function paintFindings(cards, state) {
         + (action.resolution ? action.resolution.reason : action.reason || action.error || action.action || '')));
       if (!cards._readOnly) findingActions(card, entry, cards, state);
     }
-    if (!list.children.length) list.appendChild(el('div', 'muted', 'No findings in this filter.'));
+    if (!list.children.length) list.appendChild(el('div', 'muted', 'no findings in this filter'));
   };
   status.onchange = severity.onchange = paint; paint();
   refocus(held, host, host.querySelector(FOCUSABLE));
@@ -287,7 +287,7 @@ async function renderReviewedFile(gen, path, query) {
       box.appendChild(el('div', 'err', 'The file is truncated.'));
       const more = el('button', 'mini', 'Show the whole file'); more.onclick = () => load(true).catch(e => toast(e.message, true)); box.appendChild(more);
     }
-    if (t.binary) box.appendChild(el('div', 'muted', 'Binary file: no text.'));
+    if (t.binary) box.appendChild(el('div', 'muted', 'binary file: no text'));
     else box.appendChild(renderLines(splitLines(t.text), t.spans));
     const entries = reviewEntries(panel.review, panel.session_id, panel_id).filter(e => e.observation.finding.location.side === side);
     drawDiffFindings(box, entries, {path}, side === 'base' ? 'old' : 'new');
