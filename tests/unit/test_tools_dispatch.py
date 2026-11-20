@@ -1670,7 +1670,9 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: pathlib.Path) -> Non
     assert "Unknown tool" in results[1]["summary"]
 
 
-@pytest.mark.parametrize("reason", ["stop now", "abort", "check-in", "after turn"])
+@pytest.mark.parametrize(
+    "reason", ["stop now", "abort", "check-in", "after turn", "plain steer", "now steer"]
+)
 def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     tmp_path: pathlib.Path, reason: str, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
 ) -> None:
@@ -1723,6 +1725,8 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
             ipc.request_stop(session_dir, now=True)
         elif reason == "after turn":
             ipc.request_stop(session_dir)
+        elif reason in ("plain steer", "now steer"):
+            ipc.submit_steer(session_dir, "inspect the output", now=reason == "now steer")
         assert interrupted() is stopped
         return kinds.BackgroundHandoff(
             argv=argv,

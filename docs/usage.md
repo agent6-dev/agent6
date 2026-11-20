@@ -109,6 +109,7 @@ See [Media retention](security.md#media-retention) for containment and the upstr
 ## Follow and steer a run
 
 Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).
+Plain and immediate steers end a `read_background` wait with the output collected so far; the instruction reaches the run at its next turn boundary.
 
 A session's usage covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and a ranking's table print the same figure.
 A run that spent nothing reads `$0`; unpriced calls make the figure a lower bound (`~$0.03`), or `$?` with nothing priced beside them.

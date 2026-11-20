@@ -31,6 +31,7 @@ from agent6 import kinds
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail, jail_session
+from agent6.sessions import ipc
 from agent6.tools import dispatch
 
 
@@ -270,6 +271,39 @@ def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: pathlib.Path) ->
         d.dispatch("read_background", {"id": "bg1", "wait_s": 30})
         waited = time.monotonic() - started
         assert 1.0 < waited < 15.0, f"waited {waited:.1f}s; expected to wait for the ~2s command"
+    finally:
+        d.close()
+
+
+@pytest.mark.parametrize("now", [False, True])
+def test_a_pending_steer_ends_a_command_wait_without_consuming_it(
+    tmp_path: pathlib.Path, now: bool
+) -> None:
+    """A steer returns the output so far and leaves the command and instruction intact."""
+    d = _dispatcher(tmp_path, checkin=900.0)
+    session_dir = tmp_path / "session"
+    try:
+        d.dispatch(
+            "run_command",
+            {"argv": ["/bin/sh", "-c", "echo ready; sleep 30"], "background": True},
+        )
+        deadline = time.monotonic() + 5.0
+        while (
+            "ready"
+            not in d.dispatch("read_background", {"id": "bg1", "wait_s": 0}).to_wire()["output"]
+        ):
+            assert time.monotonic() < deadline, "the command did not print its output"
+            time.sleep(0.01)
+        ipc.submit_steer(session_dir, "inspect the output", now=now)
+
+        started = time.monotonic()
+        answer = d.dispatch("read_background", {"id": "bg1", "wait_s": 4}).to_wire()
+
+        assert time.monotonic() - started < 2.0, "the pending steer did not end the 4s wait"
+        assert answer["output"] == "ready" and "[bg1] running" in answer["shells"][0]
+        assert ipc.steer_request_pending(session_dir)
+        assert ipc.steer_interrupt_pending(session_dir) is now
+        assert ipc.read_steer_answer(session_dir) == "inspect the output"
     finally:
         d.close()
 

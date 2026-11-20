@@ -35,7 +35,7 @@ from agent6.harness import (
     run_chain,
 )
 from agent6.providers import ProviderResponse
-from agent6.sessions import child_dispatch, event_log
+from agent6.sessions import child_dispatch, event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch
 
@@ -748,6 +748,42 @@ def test_wait_for_returns_when_the_child_ends_the_wait_runs_out_or_a_stop_cuts_i
     ]
     child_work.stop(dispatcher, "root-p1-l1")
     assert children.stopped == [], "an ended child is left as it is"
+
+
+@pytest.mark.parametrize("now", [False, True])
+@pytest.mark.parametrize("child_id", ["run-p1-l1", ""])
+def test_a_pending_steer_ends_a_child_wait_without_consuming_it(
+    tmp_path: pathlib.Path, now: bool, child_id: str
+) -> None:
+    """Plain and immediate steers end child waits without stopping the child or losing the steer."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    session_dir = tmp_path / "run"
+    children = _Children(repo, "run")
+    started = 0.0
+
+    def steer() -> None:
+        nonlocal started
+        ipc.submit_steer(session_dir, "inspect the output", now=now)
+        started = time.monotonic()
+
+    def check_wait() -> None:
+        assert time.monotonic() - started < 2.0, "the pending steer did not end the 4s wait"
+        assert ipc.steer_request_pending(session_dir)
+        assert ipc.steer_interrupt_pending(session_dir) is now
+        assert children.running() == ["run-p1-l1"] and children.stopped == []
+
+    provider = _Script(
+        (None, _calls(("parallel", {"task": "write a"}))),
+        (steer, _calls(("read_background", {"id": child_id, "wait_s": 4}))),
+        (check_wait, _calls(READ)),
+    )
+    wf = _harness(repo, session_dir, provider, children, max_turns=3)
+
+    wf.run("start")
+
+    assert "[run-p1-l1] running: write a" in provider.seen[2]
+    assert ipc.read_steer_answer(session_dir) == "inspect the output"
 
 
 def _say(text: str) -> ProviderResponse:

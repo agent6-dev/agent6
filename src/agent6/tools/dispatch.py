@@ -912,19 +912,20 @@ class ToolDispatcher:
             access=self._jail_access("run_command"),
         )
 
-    def _operator_wants_out(self) -> bool:
-        """Return whether the operator has asked this run to stop or abort.
+    def _background_wait_interrupted(self) -> bool:
+        """Return whether a pending stop or steer should end a background wait.
 
-        Consulted only to cut a wait short; the run still ends at its own boundary.
+        A background wait loses no partial work; the loop reads the request at its boundary.
 
         Returns:
-            True while a stop request or an `abort` steer answer is pending; False when no run
-            dir is wired.
+            True for a pending stop, steer or abort; False when no run dir is wired.
         """
         if self._session_dir is None:
             return False
-        return ipc.stop_request_pending(self._session_dir) or ipc.steer_answer_is_abort(
-            self._session_dir
+        return (
+            ipc.stop_request_pending(self._session_dir)
+            or ipc.steer_request_pending(self._session_dir)
+            or ipc.steer_answer_is_abort(self._session_dir)
         )
 
     def _operator_wants_out_now(self) -> bool:
@@ -943,7 +944,7 @@ class ToolDispatcher:
         )
 
     def _read_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Return background output with the run's check-in and stop policy.
+        """Return background output with the run's check-in, stop and steer policy.
 
         An `id` the run's children hold reads that child; any other is a command's.
 
@@ -962,14 +963,14 @@ class ToolDispatcher:
                 self.children,
                 shells=tuple(view.line() for view in self._background().roster()),
                 checkin=self._config.harness.command_checkin_s,
-                interrupted=self._operator_wants_out,
+                interrupted=self._background_wait_interrupted,
                 state_dir=self._state_dir,
             )
         result = command_tools.read_background(
             raw,
             get_background=self._background,
             checkin=self._config.harness.command_checkin_s,
-            interrupted=self._operator_wants_out,
+            interrupted=self._background_wait_interrupted,
         )
         return dataclasses.replace(result, children=tuple(child.line() for child in roster))
 
