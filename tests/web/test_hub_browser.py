@@ -465,7 +465,7 @@ def test_the_folds_say_whether_they_are_open_and_keep_the_focus(
     expect(advanced).to_have_attribute("aria-expanded", "false")
     advanced.click()
     expect(advanced).to_have_attribute("aria-expanded", "true")
-    fields = page.locator(".dock select[title^='seed the run'], .dock input[type=number]")
+    fields = page.locator(".dock select[title^='seed the run'], .dock .pickers input.field")
     expect(fields).to_have_count(2)
     boxes = fields.evaluate_all("es => es.map(e => [e.getBoundingClientRect().y, e.offsetHeight])")
     assert boxes[0] == boxes[1], boxes
@@ -528,7 +528,7 @@ def test_a_phones_pickers_fold_behind_one_line_that_names_their_picks(
     expect(summary).to_have_text("run · preset: none · configured · worktree")
     page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
     page.locator(".dock select[title^='seed the run']").select_option("plan-AAAAAA")
-    page.locator(".dock input[type=number]").fill("2.5")
+    page.get_by_role("textbox", name="max USD").fill("2.5")
     expect(summary).to_have_text(
         "run · preset: none · configured · worktree · from plan: plan-AAAAAA · max USD: 2.5"
     )
@@ -750,6 +750,49 @@ def test_start_and_create_machine_wait_for_something_to_send(
     expect(create).to_be_disabled()
     page.locator(".dock textarea").fill("watch CI")
     expect(create).to_be_enabled()
+    assert not errors
+
+
+def test_a_spend_cap_the_page_cannot_read_holds_start_back(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A cap of 5,50 started a run capped at $550 in Chromium, and at the config's cap in Firefox.
+
+    The cap is a plain decimal number; the field and a phone's summary line say when it is not.
+    """
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    posted: list[object] = []
+
+    def capture(route: Route) -> None:
+        posted.append(json.loads(route.request.post_data or "{}")["max_usd"])
+        route.fulfill(json={"ok": False, "error": "held"})
+
+    page.route("**/api/new", capture)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    cap = page.locator(".dock .pick", has_text="max USD").locator("input")
+    start = page.locator(".dock button.primary")
+    page.locator(".dock textarea").fill("probe")
+    error = """e => { const t = document.body.appendChild(document.createElement('i'));
+      t.style.color = 'var(--err)'; const c = getComputedStyle(t).color; t.remove();
+      return getComputedStyle(e).borderTopColor === c; }"""
+    for typed in ("5,50", "1e3", "abc"):
+        cap.fill("")
+        cap.press_sequentially(typed)
+        expect(cap).to_have_attribute("aria-invalid", "true")
+        expect(start).to_be_disabled()
+        assert cap.evaluate(error)
+    page.set_viewport_size({"width": 390, "height": 844})
+    expect(page.locator(".dock .picker-summary")).to_contain_text("max USD: abc (not a number)")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    cap.fill("-1")
+    expect(cap).to_have_attribute("aria-invalid", "false")
+    assert not cap.evaluate(error)
+    start.click()
+    expect(page.locator(".toast")).to_have_count(1)
+    assert posted == [-1]
     assert not errors
 
 

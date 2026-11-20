@@ -733,8 +733,10 @@ function newWorkDock(presets, presetDefault, sessions) {
     const o = el('option', null, r.session_id + ' · ' + (r.task_line || '').split('\n')[0].slice(0, 40));
     o.value = r.session_id; seed.appendChild(o);
   }
-  const cap = el('input', 'field'); cap.type = 'number'; cap.step = 'any'; cap.placeholder = 'config';
+  const cap = el('input', 'field'); cap.placeholder = 'config';
   cap.title = 'the metered spend ceiling in USD for this session (--max-usd); -1 is unlimited';
+  // A plain decimal, read alike in every browser: a number field reads 5,50 as 550 in Chromium.
+  const capOk = () => /^(-?(\d+\.?\d*|\.\d+))?$/.test(cap.value.trim());
   // The last picker opens the advanced options in a row under the pickers.
   const more = pickerRow([['from plan', seed], ['max USD', cap]]);
   const advanced = el('button', 'fold', 'advanced');
@@ -792,8 +794,9 @@ function newWorkDock(presets, presetDefault, sessions) {
       if (d.session_id) { forget('a6-draft-new'); location.hash = '#/session/' + encodeURIComponent(d.session_id); }
     } catch (e) { toast(e.message, true); }
     task.readOnly = false;
-  }, () => !!task.value.trim() || (!!seed.value && mode.value === 'run'));
+  }, () => capOk() && (!!task.value.trim() || (!!seed.value && mode.value === 'run')));
   task.addEventListener('input', go.sync); mode.addEventListener('change', go.sync); seed.onchange = go.sync;
+  cap.oninput = () => { cap.setAttribute('aria-invalid', String(!capOk())); go.sync(); };
   const ac = attachParallelSuggest(task, root);
   const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
   task.onkeydown = (e) => {
@@ -810,7 +813,7 @@ function newWorkDock(presets, presetDefault, sessions) {
     const run = mode.value === 'run';
     return [mode.value, 'preset: ' + pickedName(preset), pickedModel(model),
       run && worktree.checked && 'worktree', run && seed.value && 'from plan: ' + seed.value,
-      cap.value.trim() && 'max USD: ' + cap.value.trim()];
+      cap.value.trim() && 'max USD: ' + cap.value.trim() + (capOk() ? '' : ' (not a number)')];
   }));
   root.appendChild(picks);
   root.appendChild(more);

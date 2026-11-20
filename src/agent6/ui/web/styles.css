@@ -233,8 +233,8 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 .pickers .pick:has(:disabled) > span { opacity: .55; } /* a label dims with its control */
 .pickers .field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); }
 .pickers select.field { field-sizing: content; } /* as wide as the chosen option, not the longest */
-/* The spend cap holds a few digits and no spin buttons at rest (Firefox paints them by default). */
-.pickers input[type=number] { width: 7em; appearance: textfield; }
+/* The spend cap holds a few digits. */
+.pickers input.field { width: 7em; }
 .pickers[hidden] { display: none; }
 /* Only a phone folds a composer's pickers behind their summary line (pickerSummary, below). */
 .composer .picker-summary { display: none; }
@@ -304,6 +304,8 @@ select, select.field {
   background-position: right 0.9375rem center, right 0.625rem center; background-size: 0.3125rem 0.3125rem; background-repeat: no-repeat;
 }
 select:disabled { opacity: .55; cursor: not-allowed; }
+/* A field holding what the page cannot read (the spend cap) draws its edge and ring in the error colour. */
+.field[aria-invalid=true] { border-color: var(--err); outline-color: var(--err); }
 .form-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
 /* The sign-in form: one field beside its button, the server's refusal under them. */
 .login { max-width: 30rem; }
