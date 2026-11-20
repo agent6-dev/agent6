@@ -111,7 +111,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     pane.innerHTML = ''; if (entries.length) pane.appendChild(unopened); body.classList.remove('viewing');
     shown = null; for (const r of tree.querySelectorAll('.gf[aria-selected=true]')) r.setAttribute('aria-selected', 'false');
   };
-  // A failed read says why; one the server did not refuse (a 4xx) offers to read again.
+  // A failed read says why, and offers to read again unless the server refused it with a 4xx.
   const failure = (cls, e, retry) => {
     const note = el('div', cls, e.message);
     if (!(e.status < 500)) { const again = el('button', 'mini', 'Try again'); again.onclick = retry; note.append(' ', again); }
