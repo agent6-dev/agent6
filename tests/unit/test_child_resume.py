@@ -296,6 +296,16 @@ def retained_child(tmp_path: pathlib.Path) -> child_records.ChildSpec:
     return spec
 
 
+def test_child_launch_requires_a_plain_git_directory(
+    retained_child: child_records.ChildSpec,
+) -> None:
+    """A common-directory pointer is not part of an independent child clone."""
+    clone = retained_child.worktree
+    (clone / ".git" / "commondir").write_text(".\n", encoding="utf-8")
+    with pytest.raises(child_launch.LaunchError, match="independent child clone"):
+        child_launch.CloneReceipt.capture(clone)
+
+
 def test_parent_does_not_rebind_a_continuation_to_a_replaced_clone(
     tmp_path: pathlib.Path, retained_child: child_records.ChildSpec
 ) -> None:

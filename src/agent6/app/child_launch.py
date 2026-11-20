@@ -68,6 +68,14 @@ class CloneReceipt(pydantic.BaseModel, frozen=True, extra="forbid"):
             paths.project_root(root) != root.resolve()
         ):
             raise LaunchError(f"not an independent child clone: {root}")
+        try:
+            (root / ".git" / "commondir").lstat()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise LaunchError(f"cannot check the child clone's common directory: {root}") from exc
+        else:
+            raise LaunchError(f"not an independent child clone: {root}")
         return cls(
             state=paths.state_base() / paths.repo_id(root),
             directory=(directory.st_dev, directory.st_ino),

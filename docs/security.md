@@ -902,6 +902,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - `steer_child` rides the same knob and the same two gates, and reaches only a child the run's dispatch records name that runs or has stopped; the text enters that child's conversation as one notice headed as its parent's and is never read as a steer verb (`abort`, `exit`, `/undo`, `detach`), a directive (`/parallel`, `/pin`, `/review`, a skill) or an answer to a question, so it grants the child nothing its config does not; the child journals it as `steer.parent`, and a child is offered neither tool, so depth stays 1
     - only the parent can continue a stopped child, under its remaining allowance and approval policy
     - the private launch binds the child, parent and group to the original clone, its git directory and its state
+    - a child clone must have its own Git common directory; a `commondir` pointer is refused without following it
     - the child reads its own origin journal by exact ID; its roster and memory stay in the clone's state
     - a continuation charges only the usage beyond its recorded baseline
     - the parent's model cannot end the run over a child: `finish_session` is refused until every task has completed and every requested merge has been reported
