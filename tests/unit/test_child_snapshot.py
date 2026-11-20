@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import tomllib
 
@@ -82,6 +83,32 @@ def test_snapshot_writes_resolved_roles(child: child_records.ChildSpec) -> None:
         "reviewer": {"model": "p/base", "effort": "low", "temperature": 0.2},
         "helper": {"model": "p/base", "effort": "high", "temperature": 0.7},
     }
+
+
+def test_a_selected_reviewer_keeps_the_parents_distinct_quorum_routes(
+    child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pinned reviewer must not replace the route of an inherited panel seat."""
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
+            "models": {"default": {"model": "p/a"}},
+            "review": {
+                "block_on": "model_quorum",
+                "reviewers": [{"focus": "tests"}, {"focus": "security", "model": "p/b"}],
+            },
+        }
+    )
+    spec = dataclasses.replace(child, mode="reviewer", settings=cfg.child_settings("p/b"))
+    written = worktrees.write_child_config(
+        cfg, spec, explicit_leaves=frozenset(), into=child.worktree.parent / "launch"
+    )
+    launch_env.mark_child(monkeypatch, written.path.parent, config=written.path)
+    loaded = session_setup.load_session_config(child.worktree, (written.path,), mode="reviewer")
+    driver = loaded.config.models.resolve("reviewer")
+    assert driver is not None and driver.model == "b"
+    seats = [entry.resolve(driver) for entry in loaded.config.review.reviewers]
+    assert [seat.model for seat in seats if seat] == ["a", "b"]
 
 
 def test_snapshot_reloads_resolved_sampling(

@@ -376,6 +376,18 @@ def write_child_config(
         LaunchError: The dir cannot be private.
     """
     child_cfg = cfg.with_model_settings(kinds.session_kind(spec.mode).role, spec.settings)
+    if spec.mode == "reviewer" and cfg.review.reviewers and spec.settings is not None:
+        # A reviewer's selection must not change the routes counted toward its parent's quorum.
+        reviewer = cfg.models.resolve("reviewer")
+        seats = tuple(
+            entry.model_copy(update={"model": f"{seat.provider}/{seat.model}"})
+            if (seat := entry.resolve(reviewer)) is not None
+            else entry
+            for entry in cfg.review.reviewers
+        )
+        child_cfg = child_cfg.model_copy(
+            update={"review": cfg.review.model_copy(update={"reviewers": seats})}
+        )
     # The import fetches the child's branch, so branch_per_run stays on.
     child_cfg = child_cfg.model_copy(
         update={"git": child_cfg.git.model_copy(update={"branch_per_run": True})}

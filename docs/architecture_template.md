@@ -612,6 +612,7 @@ Its session dir is `sessions/reviewers/<id>` under the state of the repository t
 
 `app.worktrees.write_child_config` uses `config.child_snapshot` to materialize the parent's resolved model settings, with the child's selection applied to its driving role.
 A work attempt journals `worker` calls even when its selector was `reviewer`; a ranking or panel reviewer journals `reviewer` calls with the selected route and effort.
+A reviewer snapshot keeps the parent's resolved panel routes for quorum validation.
 The snapshot keeps only the route in `models.default`; it omits sampling keys only for resolved `None` values.
 On the internal child path, `app.session.setup.load_session_config` replaces only `[models]` after normal layer discovery and preset selection, discarding lower-layer model values and their provenance.
 Other sections retain normal merging and explicit-default resets, including sandbox values and budgets; ordinary operator `--config` remains a merge.
