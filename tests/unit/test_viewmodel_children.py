@@ -227,8 +227,8 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
     text = receipt.render(view)
     assert "Children" in text.splitlines()
     assert (
-        "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $0.50"
-        in text
+        "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): "
+        "joined run-abc's chain at bbbbbbbbbbbb, $0.50" in text
     )
     assert "run-abc-p1 attempt 2: run-abc-p1-l2: failed: never started" in text
     assert "spend includes the children's $0.50" in text
