@@ -5,20 +5,21 @@
 Spans per line, each `(start, end, class)` in UTF-16 units as the page slices strings, from
 the pack's highlights query for the language a path names. The work is bounded: no spans
 over `HIGHLIGHT_MAX_BYTES`, none when the grammar is not cached and cannot be fetched, none
-when the parse and query run past `TIMEOUT_S`. The text never depends on it.
+past `TIMEOUT_S`. The parse stops at that deadline; the query after it runs to its end
+before the deadline is read again. The text never depends on it.
 """
 
 from __future__ import annotations
 
 import itertools
-import threading
+import time
 
 import tree_sitter
 import tree_sitter_language_pack
 
 # Text over this size is not highlighted.
 HIGHLIGHT_MAX_BYTES = 512 * 1024
-# The most the text waits for its spans; a slower parse finishes in its thread, unused.
+# Seconds from the call to the deadline that stops the parse.
 TIMEOUT_S = 1.0
 
 Span = tuple[int, int, str]
@@ -69,35 +70,27 @@ def spans(text: str, language: str) -> list[list[Span]]:
         specific capture kept where captures nest; `[]` without a language, over the cap,
         without the grammar, or past the deadline.
     """
-    if not language or len(text.encode()) > HIGHLIGHT_MAX_BYTES:
+    data = text.encode()
+    if not language or len(data) > HIGHLIGHT_MAX_BYTES:
         return []
-    out: list[list[list[Span]]] = []
-    worker = threading.Thread(target=lambda: out.append(_compute(text, language)), daemon=True)
-    worker.start()
-    worker.join(TIMEOUT_S)
-    return out[0] if out else []
+    deadline = time.monotonic() + TIMEOUT_S
 
+    def expired(*_: object) -> bool:
+        return time.monotonic() > deadline
 
-def _compute(text: str, language: str) -> list[list[Span]]:
-    """Parse the text, run the highlights query, and lay the captures out per line.
-
-    Args:
-        text: The source.
-        language: The pack's language name.
-
-    Returns:
-        The spans per line; `[]` when the grammar cannot be loaded or has no query.
-    """
     try:
         parser = tree_sitter_language_pack.get_parser(language)
         source = tree_sitter_language_pack.get_highlights_query(language)
         lang = parser.language
         if source is None or lang is None:
             return []
-        data = text.encode()
-        tree = parser.parse(data)
+        # Only the read-callback overload takes a progress callback; stopped, it raises ValueError.
+        tree = parser.parse(lambda offset, _point: data[offset:], progress_callback=expired)
+        # No progress callback: tree-sitter 0.26.0 crashes the interpreter on a query's first one.
         matches = tree_sitter.QueryCursor(tree_sitter.Query(lang, source)).matches(tree.root_node)
     except (tree_sitter_language_pack.Error, OSError, ValueError):
+        return []
+    if expired():
         return []
     # Painted outer before inner, and an earlier pattern before a later one, so the
     # innermost and most specific capture is what remains.
@@ -117,6 +110,8 @@ def _compute(text: str, language: str) -> list[list[Span]]:
     rows: list[list[Span]] = []
     pos = 0
     for line in lines:
+        if expired():
+            return []
         row: list[Span] = []
         col = 0
         for cls, run in itertools.groupby(paint[pos : pos + len(line)]):

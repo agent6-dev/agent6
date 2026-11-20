@@ -49,15 +49,18 @@ def test_nothing_is_highlighted_without_a_language_or_over_the_cap(
     assert highlight.spans(_PY, "python") == []
 
 
-def test_a_parse_past_the_deadline_yields_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The text never waits on the highlighter past `TIMEOUT_S`."""
+@pytest.mark.needs_grammar(language="python")
+def test_a_parse_past_the_deadline_is_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A parse that outlasts `TIMEOUT_S` is stopped there, and the text gets no spans.
 
-    def slow(text: str, language: str) -> list[list[highlight.Span]]:
-        time.sleep(0.3)
-        return [[(0, 1, "keyword")]]
-
-    monkeypatch.setattr(highlight, "_compute", slow)
-    monkeypatch.setattr(highlight, "TIMEOUT_S", 0.05)
-    assert highlight.spans(_PY, "python") == []
-    monkeypatch.setattr(highlight, "TIMEOUT_S", 2.0)
-    assert highlight.spans(_PY, "python") == [[(0, 1, "keyword")]]
+    Regression: the parse ran on a thread the caller joined for `TIMEOUT_S`. It holds the
+    interpreter lock, so the caller and every other thread waited for the whole parse.
+    The stopped parse leaves nothing behind for the next text.
+    """
+    slow = "x = [\n" * 40_000  # unclosed brackets: seconds of error recovery
+    with monkeypatch.context() as patch:
+        patch.setattr(highlight, "TIMEOUT_S", 0.05)
+        started = time.monotonic()
+        assert highlight.spans(slow, "python") == []
+        assert time.monotonic() - started < 1.0
+    assert (0, 3, "keyword") in highlight.spans(_PY, "python")[0]

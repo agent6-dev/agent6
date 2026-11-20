@@ -91,7 +91,7 @@ def test_each_diff_producer_preserves_the_parsers_side_and_utf16_spans(
         assert language == "python"
         return computed.pop(text)
 
-    monkeypatch.setattr(highlight, "_compute", parse)
+    monkeypatch.setattr(highlight, "spans", parse)
     base, head = _revisions(tmp_path, old.encode(), new.encode())
     payload = _payload(tmp_path, producer, base, head)
     assert payload["old_spans"]["code.py"] == [[(4, 8, "string")], [(0, 4, "keyword")]]
@@ -164,7 +164,7 @@ def test_full_context_without_text_hunks_highlights_the_captured_bytes(
         assert (source, language) == (text, "python")
         return [[(0, 4, "keyword")]]
 
-    monkeypatch.setattr(highlight, "_compute", parse)
+    monkeypatch.setattr(highlight, "spans", parse)
     payload = git_model.diff_payload(
         tmp_path, base, "WORKTREE", "renamed.py", "code.py", full_context=True
     )
@@ -187,28 +187,14 @@ def test_cut_patch_highlights_only_displayed_absolute_lines(tmp_path: pathlib.Pa
     assert rows[12] == []
 
 
+@pytest.mark.needs_grammar(language="python")
 @pytest.mark.parametrize("producer", ["git", "run", "review"])
 def test_diff_parse_timeout_leaves_the_patch_available(
     tmp_path: pathlib.Path, producer: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A parser that misses its deadline cannot suppress or delay the patch indefinitely."""
-    import threading
-
-    started = threading.Event()
-    release = threading.Event()
-
-    def blocked(_text: str, _language: str) -> list[list[highlight.Span]]:
-        started.set()
-        release.wait(5)
-        return []
-
+    """A highlight past its deadline leaves both sides without spans and the patch in place."""
     base, head = _revisions(tmp_path, b"pass\n", b"def f():\n    pass\n")
-    monkeypatch.setattr(highlight, "_compute", blocked)
-    monkeypatch.setattr(highlight, "TIMEOUT_S", 0.01)
-    try:
-        payload = _payload(tmp_path, producer, base, head)
-        assert started.is_set()
-        assert payload["old_spans"]["code.py"] == payload["new_spans"]["code.py"] == []
-        assert "+def f():" in payload["patch"]
-    finally:
-        release.set()
+    monkeypatch.setattr(highlight, "TIMEOUT_S", -1.0)
+    payload = _payload(tmp_path, producer, base, head)
+    assert payload["old_spans"]["code.py"] == payload["new_spans"]["code.py"] == []
+    assert "+def f():" in payload["patch"]
