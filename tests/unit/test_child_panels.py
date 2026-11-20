@@ -22,7 +22,14 @@ from agent6.app import (
     stop,
     worktrees,
 )
-from agent6.harness import child_repo, loop_conversation, loop_state, parallel_dispatch, run_chain
+from agent6.harness import (
+    child_repo,
+    loop_conversation,
+    loop_state,
+    parallel_dispatch,
+    parallel_recovery,
+    run_chain,
+)
 from agent6.sessions import (
     budget_events,
     child_dispatch,
@@ -248,8 +255,8 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         )
         state = loop_state.LoopState(original_task="worker", tool_calls=0)
         conversation = loop_conversation.Conversation()
-        recovered.reconcile(state, conversation)
-        recovered.reconcile(state, conversation)
+        parallel_recovery.reconcile(recovered, state, conversation)
+        parallel_recovery.reconcile(recovered, state, conversation)
         assert len(calls) == before
         assert recovered_budget.snapshot().usd_running_children == 0
         usage = children.child_usage(worker_dir)

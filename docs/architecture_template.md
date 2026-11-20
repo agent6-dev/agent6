@@ -119,7 +119,7 @@ What the turn leans on sits beside it, one module each:
 - `finish_gates` (what a finish call declares, what it must satisfy and what an end is called)
 - `standing_goal` (the standing goal's re-entry)
 - `operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`)
-- `parallel_dispatch` (a run's children: the dispatch, the landing at a turn boundary, the panel batches) and `child_work` (the children as the run's tools reach them)
+- `parallel_dispatch` (a run's children: the dispatch, the landing at a turn boundary, the panel batches), `parallel_recovery` (a resumed execution finishing the dispatches left behind) and `child_work` (the children as the run's tools reach them)
 - `run_checkpoint` (the per-turn commit and the final one)
 - `compaction_driver` (the compaction driver over `compaction_rules`'s tier-1 rules, `compaction_elision`'s markers and caps, and `compaction_window`'s sizing and restart rules)
 - `memory_touch` (what a tool call did to the memory store)

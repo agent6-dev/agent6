@@ -9,7 +9,13 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import terminal
-from agent6.harness import loop_conversation, loop_snapshot, loop_state, parallel_join
+from agent6.harness import (
+    loop_conversation,
+    loop_snapshot,
+    loop_state,
+    parallel_join,
+    parallel_recovery,
+)
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import operator_prompts, tool_errors
 from agent6.vcs.git import ops as git_ops
@@ -326,7 +332,7 @@ def execution_opening(
     if harness.resume_state_path is not None and (
         child_dispatch.records_dir(harness.resume_state_path.parent).is_dir()
     ):
-        harness.parallel.reconcile(state, conversation)
+        parallel_recovery.reconcile(harness.parallel, state, conversation)
     return seeded_steer(harness, conversation, turn, state)
 
 

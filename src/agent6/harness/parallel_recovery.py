@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Finish the dispatches an earlier execution left behind, before a resumed one's first call."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from agent6 import budget as agent6_budget
+from agent6 import child_records
+from agent6.sessions import child_dispatch
+from agent6.viewmodel.session import log as session_log
+
+if TYPE_CHECKING:
+    from agent6.harness import loop_conversation, loop_state, parallel_dispatch
+
+
+def reconcile(
+    dispatcher: parallel_dispatch.ParallelDispatcher,
+    state: loop_state.LoopState,
+    conversation: loop_conversation.Conversation,
+) -> None:
+    """Finish or diagnose every dispatch the prior execution left behind, once each.
+
+    Runs before a resumed execution's first provider call. A complete record whose
+    result never reached the conversation is delivered; an interrupted one has its
+    children found by the recoverer (live ones stopped, finished ones imported), its usage
+    settled and its joins landed exactly once, and its result delivered for the
+    original call.
+
+    Args:
+        dispatcher: The resumed execution's dispatcher.
+        state: The loop state.
+        conversation: The conversation the result enters.
+    """
+    if dispatcher.session_dir is None:
+        return
+    try:
+        records = child_dispatch.read_records(dispatcher.session_dir)
+    except child_dispatch.DispatchRecordError as exc:
+        dispatcher.log(f"PARALLEL: {exc}")
+        conversation.notice(f"[parallel] a dispatch record could not be read: {exc}")
+        return
+    for found in records:
+        record = found
+        scan = session_log.scan_session_log(dispatcher.session_dir / "logs.jsonl")
+        accounted = scan.budget.session.settled_children
+        if record.source == "panel":
+            record = record.model_copy(
+                update={
+                    "children": tuple(
+                        child.model_copy(update={"settled": False})
+                        if child.settled and child.session_id not in accounted
+                        else child
+                        for child in record.children
+                    )
+                }
+            )
+        if record.state == "complete" and all(c.settled for c in record.children):
+            if not record.delivered:
+                dispatcher.deliver(
+                    conversation,
+                    child_records.DispatchResult(
+                        record.identity, True, (), record.message, base=record.base
+                    ),
+                )
+            continue
+        dispatcher.log(
+            f"PARALLEL: reconciling the interrupted dispatch {record.identity} ({record.state})"
+        )
+        children = [c.session_id for c in record.children]
+        if dispatcher.budget is not None:
+            # The journal already holds these children's usage: charged once, by that execution.
+            dispatcher.budget.mark_settled(c for c in children if c in accounted)
+        results = (
+            dispatcher.child_recoverer(record.identity, children)
+            if dispatcher.child_recoverer is not None
+            else []
+        )
+        if (
+            record.state in ("prepared", "running")
+            and dispatcher.child_recoverer is not None
+            and not results
+        ):
+            if dispatcher.budget is not None:
+                # Nothing ran, so nothing was used; the journal names each child accounted.
+                nothing = agent6_budget.UsageSettlement(usd=0, usd_partial=False, tokens=0)
+                for child in children:
+                    dispatcher.budget.settle_child(child, nothing)
+            message = (
+                f"[parallel] group {record.identity}: dispatch interrupted before launch;"
+                " nothing ran."
+            )
+            record = dispatcher.fail_nodes(record, "dispatch interrupted before launch")
+            record = record.model_copy(
+                update={
+                    "children": tuple(
+                        child.model_copy(
+                            update={
+                                "settled": True,
+                                "usage": child_dispatch.UsageRecord(usd=0.0),
+                            }
+                        )
+                        for child in record.children
+                    ),
+                }
+            ).advanced("complete", message=message)
+            dispatcher.emit_budget(record.turn)
+            dispatcher.write(record)
+            dispatcher.deliver(
+                conversation,
+                child_records.DispatchResult(record.identity, True, (), message, base=record.base),
+            )
+            continue
+        dispatcher.deliver(
+            conversation,
+            dispatcher.land(dispatcher.reported(conversation, record, results), results),
+        )
