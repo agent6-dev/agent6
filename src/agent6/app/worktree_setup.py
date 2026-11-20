@@ -39,7 +39,7 @@ def _output_tail(res: kinds.CommandResult) -> list[str]:
     return lines[-_TAIL_LINES:]
 
 
-def infer_if_unset(
+def read_if_unset(
     cfg: Config, origin: pathlib.Path, *, reporter: app_reporter.Reporter, at: str | None = None
 ) -> Config:
     """Return the config with the setup command AGENTS.md states, when none is configured.
@@ -50,7 +50,7 @@ def infer_if_unset(
     Args:
         cfg: The session's config.
         origin: The checkout whose AGENTS.md is read.
-        reporter: Receives the line naming what was inferred.
+        reporter: Receives the line naming the command read.
         at: Read this commit's AGENTS.md instead of the checkout's copy.
 
     Returns:
@@ -63,7 +63,7 @@ def infer_if_unset(
     if argv is None:
         return cfg
     reporter.note(
-        f"setup_command not set; inferred from AGENTS.md: {shlex.join(argv)}\n"
+        f"setup_command not set; read from AGENTS.md: {shlex.join(argv)}\n"
         "         (pin it with git.worktree.setup_command in your per-repo config)"
     )
     return cfg.with_setup_command(argv)

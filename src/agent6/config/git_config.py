@@ -163,8 +163,8 @@ class GitWorktreeConfig(pydantic.BaseModel):
             "command run once in each worktree before the first turn, under the run's command "
             "sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: "
             "session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, "
-            "parsed like `## Verify command`, command printed; no configured or inferred "
-            "command: nothing run"
+            "parsed like `## Verify command`, command printed; no configured command or "
+            "setup block: nothing run"
         ),
     )
 

@@ -264,7 +264,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 2
 
     if worktree or stamps.parallel_lineage() is not None:
-        cfg = worktree_setup.infer_if_unset(cfg, repo, reporter=reporter, at=base_sha)
+        cfg = worktree_setup.read_if_unset(cfg, repo, reporter=reporter, at=base_sha)
     # A new worktree and a child's clone hold tracked files only: a gate neither can run refuses.
     if (worktree or opening) and (
         gate_refusal := worktree_setup.gate_refusal(

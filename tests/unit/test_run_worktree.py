@@ -1165,7 +1165,7 @@ def test_bare_resume_delivers_a_forks_steer_after_setup_failed(
     assert not (session_dir / ipc.STEER_ANSWER_FILE).exists()
 
 
-def test_resume_infers_setup_from_the_sessions_base_commit(
+def test_resume_reads_setup_from_the_sessions_base_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork's late setup reads its base, not the origin's edited AGENTS.md."""
@@ -1208,10 +1208,10 @@ def _commit_agents_md(repo: pathlib.Path, block: str) -> None:
     _git(repo, "commit", "-q", "-m", "agents")
 
 
-def test_the_setup_command_is_inferred_from_the_agents_md_block(
+def test_the_setup_command_is_read_from_the_agents_md_block(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A repository that states its setup in AGENTS.md needed a config line to have it run."""
+    """The setup notice names the committed command without calling it a guess."""
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _commit_agents_md(repo, "echo from-agents-md > .setup-ran")
     _script(monkeypatch)
@@ -1223,7 +1223,7 @@ def test_the_setup_command_is_inferred_from_the_agents_md_block(
     assert worktree is not None
     assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "from-agents-md\n"
     assert (
-        "setup_command not set; inferred from AGENTS.md: sh -c 'echo from-agents-md > .setup-ran'"
+        "setup_command not set; read from AGENTS.md: sh -c 'echo from-agents-md > .setup-ran'"
     ) in err
     (event,) = _setup_events(repo, "wt-SETU08")
     assert event["command"] == ["sh", "-c", "echo from-agents-md > .setup-ran"]
@@ -1231,7 +1231,7 @@ def test_the_setup_command_is_inferred_from_the_agents_md_block(
 
 @pytest.mark.parametrize("committed", [False, True])
 @pytest.mark.parametrize("deleted", [False, True])
-def test_worktree_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
+def test_worktree_setup_is_read_from_its_commit_not_the_dirty_agents_md(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1280,7 +1280,7 @@ def test_a_configured_setup_command_outranks_the_agents_md_block(
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU09")).worktree
     assert worktree is not None
     assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "configured\n"
-    assert "inferred from AGENTS.md" not in err
+    assert "setup_command not set;" not in err
 
 
 _FAKE_PYTHON = "#!/bin/sh\nexit 0\n"

@@ -492,7 +492,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             return 2
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
         if worktree_setup.session_needs_setup(layout.session_dir):
-            cfg = worktree_setup.infer_if_unset(cfg, repo, reporter=reporter, at=resume_base_sha)
+            cfg = worktree_setup.read_if_unset(cfg, repo, reporter=reporter, at=resume_base_sha)
 
         # Needs the config: the away grant is per scope, one per configured MCP server.
         app_frontend.settle_away_mode(
