@@ -174,6 +174,19 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
         None,
     )
 
+    label = f"passed · merged into {parent.name}'s chain"
+    assert own["status_label"] == label
+    assert cli_main(["attach", child, "--json"]) == 0
+    snapshot = json.loads(capsys.readouterr().out)
+    assert snapshot["status_label"] == label
+    assert snapshot["unmerged"] is False
+    assert (snapshot["merged_into_parent"], snapshot["parent_merge_sha"]) == (
+        parent.name,
+        merge.sha,
+    )
+    assert cli_main(["sessions", "merge", parent.name]) == 0
+    assert "unmerged runs that changed" not in capsys.readouterr().out
+
 
 def test_show_keeps_the_parent_chain_and_checkout_destinations_for_one_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

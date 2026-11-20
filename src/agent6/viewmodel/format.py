@@ -425,8 +425,26 @@ def child_id_cell(id_cell: str, depth: int = 1) -> str:
     return f"{'  ' * depth}└ {id_cell}"
 
 
+def parent_merge_label(parent: str, sha: str | None = None) -> str:
+    """Name the destination of a child's parent-chain merge.
+
+    Args:
+        parent: The parent session id.
+        sha: The merge commit, when known.
+
+    Returns:
+        The destination, with the short commit id when supplied.
+    """
+    return f"merged into {parent}'s chain" + (f" at {sha[:12]}" if sha else "")
+
+
 def listing_status_label(
-    mode: str, status: str, reason: StatusReason = "", *, unmerged: bool = False
+    mode: str,
+    status: str,
+    reason: StatusReason = "",
+    *,
+    unmerged: bool = False,
+    merged_into_parent: str | None = None,
 ) -> str:
     """Return the listing status cell every hub shows.
 
@@ -434,7 +452,8 @@ def listing_status_label(
         mode: The session's mode.
         status: The status word.
         reason: The status detail.
-        unmerged: The run's branch holds commits its base does not.
+        unmerged: The run holds work outside its recorded merges.
+        merged_into_parent: The parent whose chain received this child.
 
     Returns:
         The mode folded in when the word does not imply it ("plan · running", a bare
@@ -443,8 +462,11 @@ def listing_status_label(
     label = status_label(status, reason)
     if mode not in ("run", "?", "") and _MODE_IMPLIED.get(status) != mode:
         label = f"{mode} · {label}"
-    if unmerged and status in ENDED_WORDS:
-        label = f"{label} · unmerged"
+    if status in ENDED_WORDS:
+        if merged_into_parent:
+            return f"{label} · {parent_merge_label(merged_into_parent)}"
+        if unmerged:
+            return f"{label} · unmerged"
     return label
 
 

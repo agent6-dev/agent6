@@ -77,7 +77,7 @@ def _cmd_list(*, as_json: bool = False, children: bool = False) -> int:
     ) -> tuple[str, str, str, str, str, session_status.TaskLabel]:
         """Return a row's cells with the id cell as given."""
         s = row.summary
-        label = format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged)
+        label = s.merge.status_label(s.mode, s.status, s.detail)
         note = s.merge_note()
         styled, plain = common.styled_status(
             s.status, s.detail, color=color, label=f"{label} · {note}" if note else label

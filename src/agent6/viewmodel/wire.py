@@ -16,7 +16,7 @@ from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import children, comparison, format, listing, tail
+from agent6.viewmodel import children, comparison, format, listing, merges, tail
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.session import log as session_log
@@ -159,6 +159,8 @@ def manifest_header(
         git_control: The launch git-control policy.
         base_sha: The run chain's base commit.
         unmerged: Whether the run holds unmerged work, when a repository is supplied.
+        merged_into_parent: The parent whose chain received this child, or null without a merge.
+        parent_merge_sha: The recorded parent-chain merge commit, or null.
         forked_from: The rendered fork lineage when recorded.
         worktree: The linked worktree path when recorded.
         children: ChildView rows in dispatch order, including launch failures and reviewers.
@@ -186,13 +188,16 @@ def manifest_header(
             header["unreadable"] = unreadable
         return header
     header.update(branch_facts(m, repo))
+    if repo is not None and not status:
+        scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
+        status, _reason = session_status.status_for_session_dir(session_dir, scan.status_facts())
+    merge = merges.read_merge_state(
+        session_dir, m, status, git_read.run_ref_tips(repo) if repo else None
+    )
     if repo is not None:
-        if not status:
-            scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
-            status, _reason = session_status.status_for_session_dir(
-                session_dir, scan.status_facts()
-            )
-        header["unmerged"] = listing.unmerged(m, status, git_read.run_ref_tips(repo))
+        header["unmerged"] = merge.unmerged
+    header["merged_into_parent"] = merge.merged_into_parent
+    header["parent_merge_sha"] = merge.parent_merge_sha
     dispatches = children.dispatches_of(session_dir)
     nested = children.children_of(session_dir, dispatches)
     if nested:
@@ -267,11 +272,8 @@ def session_snapshot(
         session_dir, state_view.status_facts(state)
     )
     header = manifest_header(session_dir, repo=repo, status=word)
-    snap = state_view.session_state_as_dict(
-        state, session_dir, unmerged=bool(header.get("unmerged"))
-    )
+    snap = state_view.session_state_as_dict(state, session_dir, header=header)
     snap["as_of"] = as_of
-    snap.update(header)
     return snap
 
 

@@ -48,6 +48,7 @@ from agent6.viewmodel import (
     context_fill,
     format,
     listing,
+    merges,
     restate,
     status_facts,
     tail,
@@ -145,7 +146,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self._continue_child = ""
         # Set by action_detach_exit; run_tui reads it to print the reattach hint.
         self.detached = False
-        self._unmerged = False
+        self._merge = merges.MergeState()
         self._manifest_due = 0.0
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
@@ -233,9 +234,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     @property
     def status_label(self) -> str:
         """The listing label for every run screen, with its mode and unmerged mark."""
-        return format.listing_status_label(
-            self.state.mode or self.mode, *self.dir_status, unmerged=self._unmerged
-        )
+        return self._merge.status_label(self.state.mode or self.mode, *self.dir_status)
 
     def run_title(self) -> str:
         """Return the dashboard's subtitle: the mode word and the task."""
@@ -370,14 +369,13 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self.sub_title = str(exc)
             return
         status = session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
-        has_unmerged = self._unmerged and self.state.finished
+        merge = self._merge if self.state.finished else merges.MergeState()
         unreadable = self.unreadable
         blocker = self.manifest_resume_blocker
         # Manifest changes are polled every five seconds, not on each repaint.
         if time.monotonic() >= self._manifest_due:
             self._manifest_due = time.monotonic() + 5.0
-            if self.state.finished:
-                has_unmerged = False
+            merge = merges.MergeState()
             try:
                 manifest = sessions_manifest.read_manifest(self.session_dir)
             except sessions_manifest.ManifestError as exc:
@@ -394,13 +392,16 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                     self.fallback_continued = manifest.continued_task
                     self._dirty = True
                 if self.state.finished:
-                    has_unmerged = listing.unmerged(
-                        manifest, status[0], git_read.run_ref_tips(pathlib.Path.cwd())
+                    merge = merges.read_merge_state(
+                        self.session_dir,
+                        manifest,
+                        status[0],
+                        git_read.run_ref_tips(pathlib.Path.cwd()),
                     )
-        seen = (self.dir_status, self._unmerged, self.unreadable, self.manifest_resume_blocker)
-        if (status, has_unmerged, unreadable, blocker) != seen:
+        seen = (self.dir_status, self._merge, self.unreadable, self.manifest_resume_blocker)
+        if (status, merge, unreadable, blocker) != seen:
             self.dir_status = status
-            self._unmerged = has_unmerged
+            self._merge = merge
             self.unreadable = unreadable
             self.manifest_resume_blocker = blocker
             self._dirty = True

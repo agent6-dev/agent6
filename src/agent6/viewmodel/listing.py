@@ -18,7 +18,7 @@ from agent6 import errors, kinds, paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import comparison, events, format, review
+from agent6.viewmodel import comparison, events, format, merges, review
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import status as session_status
 
@@ -115,9 +115,7 @@ class SessionSummary:
         cost_usd: The cumulative spend across executions.
         usd_partial: `cost_usd` is a lower bound: some execution had unpriced spend.
         last_activity: The last-activity time as epoch seconds.
-        unmerged: The run's chain or branch holds commits its base does not, per the
-            merge stamp and the caller's branch-tips snapshot; False without a
-            snapshot, and for an undone run (its /undo child carries the mark).
+        merge: The parent-chain merge or the unmerged mark from the run refs.
         verification: The gate verdict from the gate facts, not the status word: the
             compare table and the judge read it.
         parent: The session that dispatched this child, the row it nests under.
@@ -146,7 +144,7 @@ class SessionSummary:
     usd_partial: bool
     last_activity: float
     stop_reason: str = ""
-    unmerged: bool = False
+    merge: merges.MergeState = dataclasses.field(default_factory=merges.MergeState)
     verification: kinds.Verification | None = None
     parent: str = ""
     number: int | None = None
@@ -162,6 +160,11 @@ class SessionSummary:
     source_tip: str = ""
     retained_ref: str = ""
     open_findings: review.SeverityCounts = dataclasses.field(default_factory=review.SeverityCounts)
+
+    @property
+    def unmerged(self) -> bool:
+        """Whether the run holds work outside its recorded merges."""
+        return self.merge.unmerged
 
     @property
     def usage_cell(self) -> str:
@@ -434,7 +437,7 @@ def summary_row(
         model: The resolved provider/model route.
         model_from_flag: Whether a model flag selected the route.
         id_cell: The session identifier with winner and worktree marks.
-        unmerged: Whether the run has agent6-owned commits outside its merge stamp.
+        unmerged: Whether the run has agent6-owned work outside its recorded merges.
         retained_ref: The retained model-owned ref, or null without one.
         verification: The gate verdict, or null without a verdict.
         number: The child number, or null outside a group.
@@ -465,9 +468,7 @@ def summary_row(
         "status": s.status,
         "status_detail": str(s.detail),
         "stop_reason": s.stop_reason,
-        "status_label": format.listing_status_label(
-            s.mode, s.status, s.detail, unmerged=s.unmerged
-        ),
+        "status_label": s.merge.status_label(s.mode, s.status, s.detail),
         "status_level": format.status_level(s.status),
         "last_activity": s.last_activity,
         "when": format.format_when(s.last_activity) if s.last_activity else "",
@@ -677,28 +678,6 @@ def needs_new_work_refusal(session_id: str) -> str:
     )
 
 
-def unmerged(
-    manifest: sessions_manifest.SessionManifest, word: str, branch_tips: Mapping[str, str]
-) -> bool:
-    """Return whether the run holds work outside its merge stamp.
-
-    Args:
-        manifest: The run's manifest.
-        word: The dir-aware status word; an undone run's child carries its work.
-        branch_tips: The caller's `git_read.run_ref_tips` snapshot.
-
-    Returns:
-        Whether its chain or branch has a tip beyond the base and outside the stamp.
-    """
-    if word == "undone" or manifest.git_control == "model":
-        return False
-    tips = _run_tips(manifest, branch_tips)
-    # The branch may carry the operator's own commits; a merge stamps whichever tip it merged.
-    return bool(tips - {manifest.base_sha}) and (
-        manifest.merged is None or manifest.merged.tip not in tips
-    )
-
-
 def existing_branch(
     manifest: sessions_manifest.SessionManifest | None, branch_tips: Mapping[str, str] | None
 ) -> str:
@@ -717,20 +696,6 @@ def existing_branch(
     if manifest is None or branch_tips is None or not manifest.run_branch:
         return ""
     return manifest.run_branch if manifest.run_branch in branch_tips else ""
-
-
-def _run_tips(
-    manifest: sessions_manifest.SessionManifest, branch_tips: Mapping[str, str]
-) -> set[str]:
-    """Return the tips of the refs holding the run's work, its chain and its branch."""
-    return {
-        tip
-        for tip in (
-            branch_tips.get(git_read.chain_ref_for(manifest.session_id)),
-            branch_tips.get(manifest.run_branch or ""),
-        )
-        if tip
-    }
 
 
 def summarize_session_dir(
@@ -767,11 +732,6 @@ def summarize_session_dir(
         label = session_status.TaskLabel("(no logs)")
     word, reason = session_status.status_for_session_dir(session_dir, scan.status_facts())
     lineage = manifest.parallel if manifest is not None else None
-    has_unmerged = (
-        unmerged(manifest, word, branch_tips)
-        if branch_tips is not None and manifest is not None
-        else False
-    )
     missing = sessions_manifest.worktree_blocker(manifest.worktree) if manifest else ""
     # Prune removes a merged session's worktree: nothing is missing then.
     pruned = bool(missing) and manifest is not None and manifest.merged is not None
@@ -786,7 +746,7 @@ def summarize_session_dir(
         status=word,
         detail=reason,
         stop_reason=scan.stop_reason if scan.finished else "",
-        unmerged=has_unmerged,
+        merge=merges.read_merge_state(session_dir, manifest, word, branch_tips),
         cost_usd=scan.budget.usd_so_far,
         usd_partial=scan.budget.session.usd_partial,
         last_activity=scan.last_ep if scan.last_ep is not None else session_mtime(session_dir),

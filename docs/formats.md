@@ -1699,7 +1699,7 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `model` | `str` | The resolved provider/model route. |
 | `model_from_flag` | `bool` | Whether a model flag selected the route. |
 | `id_cell` | `str` | The session identifier with winner and worktree marks. |
-| `unmerged` | `bool` | Whether the run has agent6-owned commits outside its merge stamp. |
+| `unmerged` | `bool` | Whether the run has agent6-owned work outside its recorded merges. |
 | `retained_ref` | `str \| None` | The retained model-owned ref, or null without one. |
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The gate verdict, or null without a verdict. |
 | `winner` | `bool` | Whether this child won its comparison. |
@@ -1866,6 +1866,8 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `commits_ref` | `JSON` | The ref holding the run's commits when available. |
 | `merged_into_checkout` | `JSON` | The merge destination while the stamp still covers the run. |
 | `branch_line` | `JSON` | The rendered branch and merge facts. |
+| `merged_into_parent` | `JSON` | The parent whose chain received this child, or null without a merge. |
+| `parent_merge_sha` | `JSON` | The recorded parent-chain merge commit, or null. |
 | `session_actions` | `JSON` | Whether each session action applies to this session kind. |
 | `git_control` | `JSON` | The launch git-control policy. |
 | `base_sha` | `JSON` | The run chain's base commit. |

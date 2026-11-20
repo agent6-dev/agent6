@@ -21,19 +21,6 @@ from agent6.viewmodel.session import status as session_status
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class ParentMerge:
-    """A child's recorded merge on a parent's chain, not a checkout merge."""
-
-    parent: str
-    sha: str
-
-    @property
-    def label(self) -> str:
-        """Name the parent and its merge commit."""
-        return f"merged into {self.parent}'s chain" + (f" at {self.sha[:12]}" if self.sha else "")
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
 class ChildView:
     """One child of a session, as the surfaces show it.
 
@@ -93,7 +80,7 @@ class ChildView:
     @property
     def parent_merge_label(self) -> str:
         """Name the recorded chain merge without implying a checkout merge."""
-        return ParentMerge(self.merged_into_parent, self.parent_merge_sha).label
+        return format.parent_merge_label(self.merged_into_parent, self.parent_merge_sha)
 
     @property
     def number_label(self) -> str:
@@ -274,33 +261,6 @@ def _session_child(
         spend_usd=scan.budget.usd_so_far,
         usd_partial=scan.budget.session.usd_partial,
     )
-
-
-def parent_merge(
-    session_dir: pathlib.Path, lineage: sessions_manifest.ParallelLineage | None
-) -> ParentMerge | None:
-    """Read a child's merge from its parent's dispatch, not from the child's merge stamp.
-
-    Args:
-        session_dir: The child's run directory.
-        lineage: Its recorded parent and group.
-
-    Returns:
-        The parent and its merge commit; None without a recorded merge.
-    """
-    if not lineage or not all(
-        layout.is_safe_session_id(s) for s in (lineage.parent, lineage.group)
-    ):
-        return None
-    parent = session_dir.parent / lineage.parent
-    try:
-        record = child_dispatch.read_record(child_dispatch.record_path(parent, lineage.group))
-        merge = record.child(session_dir.name).merge
-    except (KeyError, child_dispatch.DispatchRecordError):
-        return None
-    if record.identity == lineage.group and merge and merge.status == "merged":
-        return ParentMerge(parent.name, merge.sha)
-    return None
 
 
 def _recorded_child(

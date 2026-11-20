@@ -14,6 +14,7 @@ import dataclasses
 import functools
 import pathlib
 import time
+from collections.abc import Mapping
 from typing import Any
 
 from agent6.models import registry
@@ -178,7 +179,7 @@ def session_state_as_dict(
     state: state_types.SessionState,
     session_dir: pathlib.Path | None = None,
     *,
-    unmerged: bool = False,
+    header: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
@@ -211,7 +212,7 @@ def session_state_as_dict(
 
     Args:
         state: The folded state.
-        unmerged: The manifest header's fact that the run holds unmerged work.
+        header: The manifest fields, including the merge facts used in the status label.
         session_dir: The session's state dir; with it `status` is the dir-aware word,
             `live` says whether a steer or stop would reach anything, `ports` and
             `shells` are live probes, a plan's `plan_md` is its deliverable, and the
@@ -279,7 +280,13 @@ def session_state_as_dict(
         )
     d["status"] = word
     d["status_label"] = (
-        format.listing_status_label(d["mode"], word, reason, unmerged=unmerged)
+        format.listing_status_label(
+            d["mode"],
+            word,
+            reason,
+            unmerged=bool(header and header.get("unmerged")),
+            merged_into_parent=header.get("merged_into_parent") if header else None,
+        )
         if session_dir is not None
         else format.status_label(word, reason)
     )
@@ -292,4 +299,6 @@ def session_state_as_dict(
     # From the fold, so a dir-less consumer still gets the "blocked, not working" signal.
     d["operator_blocked"] = status_facts(state).operator_blocked
     d["log_tail"] = [line.text for line in state.log_tail]
+    if header:
+        d.update(header)
     return d

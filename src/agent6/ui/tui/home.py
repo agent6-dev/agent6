@@ -113,9 +113,7 @@ def attention_notice(before: str, summary: SessionSummary) -> tuple[str, str] | 
 def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
     """Return the status cell in its colour; a narrow table drops the reason."""
     reason = "" if narrow else summary.detail
-    label = format.listing_status_label(
-        summary.mode, summary.status, reason, unmerged=summary.unmerged
-    )
+    label = summary.merge.status_label(summary.mode, summary.status, reason)
     note = summary.merge_note()
     if note and not narrow:
         label += f" · {note}"
@@ -431,7 +429,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         capability the hub lacks. A run under model-owned git or with an unreadable manifest
         cannot merge.
         The CLI makes the other refusals (no commits, already merged).
-        The summary's `unmerged` mark is branch-derived and
+        The summary's `merge.unmerged` mark is branch-derived and
         reads False for a session whose commits live only on its chain ref.
 
         Args:

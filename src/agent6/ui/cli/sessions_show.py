@@ -28,6 +28,7 @@ from agent6.viewmodel import (
     existing_run_branch,
     format,
     listing,
+    merges,
     policy,
     receipt,
     scan_session_log,
@@ -36,7 +37,6 @@ from agent6.viewmodel import (
     transcript,
     wire,
 )
-from agent6.viewmodel import children as child_views
 from agent6.viewmodel.session import view as state_view
 
 
@@ -93,7 +93,7 @@ def _print_parallel_compare(
 
 
 def _status_state(
-    row: SessionSummary, scan: LogScan, *, last_age: float | None, mark_unmerged: bool
+    row: SessionSummary, scan: LogScan, *, last_age: float | None
 ) -> tuple[str, str, str]:
     """Return the run's state as `(status, label, detail)`.
 
@@ -103,15 +103,12 @@ def _status_state(
         row: The listing's fold of this run.
         scan: The log scan.
         last_age: Seconds since the last event, when there is one.
-        mark_unmerged: Show the listing's mark unless a checkout line names the merge state.
 
     Returns:
         The listing's word and label, then what to do or why the word applies.
     """
     word, reason = row.status, row.detail
-    cell = format.listing_status_label(
-        row.mode, row.status, row.detail, unmerged=mark_unmerged and row.unmerged
-    )
+    cell = row.merge.status_label(row.mode, row.status, row.detail)
     if word == "unreadable":
         # The record, not the journal, decides: a newer or corrupt manifest names itself.
         return word, cell, format.dead_run_note(word, reason)[0]
@@ -405,14 +402,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
     children = sessions_children.read_children(target, tips=tips)
-    merge = child_views.parent_merge(target, manifest.parallel)
-    chain_merge = merge is not None or any(c.view.merged_into_parent for c in children)
-    status, status_cell, status_detail = _status_state(
-        summary,
-        scan,
-        last_age=last_age,
-        mark_unmerged=not chain_merge,
-    )
+    status, status_cell, status_detail = _status_state(summary, scan, last_age=last_age)
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
     def status_json() -> StatusJSON:
@@ -463,8 +453,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "base_branch": manifest.base_branch or None,
             "merged_into_checkout": changes.merged_into_checkout or None,
             "retained_ref": summary.retained_ref or None,
-            "merged_into_parent": merge.parent if merge else None,
-            "parent_merge_sha": (merge.sha or None) if merge else None,
+            "merged_into_parent": summary.merge.merged_into_parent,
+            "parent_merge_sha": summary.merge.parent_merge_sha,
             "pins": list(scan.pins),
         }
 
@@ -497,7 +487,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             if item.kind == "verify"
         ),
     )
-    changes.print_merge(merge, chain_merge=chain_merge)
+    changes.print_merge(
+        summary.merge, received_children=any(c.view.merged_into_parent for c in children)
+    )
     for prefix, task in [
         ("task:       ", summary.task_label.task),
         *(
@@ -553,24 +545,25 @@ class _Changes:
     line: str
     merged_into_checkout: str
 
-    def print_merge(self, merge: child_views.ParentMerge | None, *, chain_merge: bool) -> None:
+    def print_merge(self, merge: merges.MergeState, *, received_children: bool) -> None:
         """Print the checkout merge separately from the parent's chain merge.
 
         Args:
-            merge: This child's merge, when the parent recorded one.
-            chain_merge: This run received a child merge or merged into its own parent.
+            merge: The session's merge state.
+            received_children: The run received a merge from one of its children.
         """
-        if merge:
-            print(f"parent merge: {merge.label}")
-        if not chain_merge:
+        parent = merge.merged_into_parent
+        if parent:
+            print(f"parent merge: {format.parent_merge_label(parent, merge.parent_merge_sha)}")
+        if not parent and not received_children:
             if self.line:
                 print(f"changes:    {self.line}")
         elif self.merged_into_checkout:
             print(f"checkout:   {self.line}")
-        elif merge:
+        elif parent:
             print(
                 "checkout:   no direct merge recorded for this tip; "
-                f"see agent6 sessions show {merge.parent}"
+                f"see agent6 sessions show {parent}"
             )
         else:
             detail = f"; {self.line}" if self.line else ""

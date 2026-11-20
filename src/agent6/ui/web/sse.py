@@ -151,10 +151,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         """
         nonlocal previous
         # The dir is read per frame: a resumed parked run changes the label and `live`.
-        d = {
-            **session_state_as_dict(state, session_dir, unmerged=bool(header.get("unmerged"))),
-            **header,
-        }
+        d = session_state_as_dict(state, session_dir, header=header)
         if dead:
             # A transport signal, distinct from `finished`: the client closes instead of retrying.
             d["stream_dead"] = True
