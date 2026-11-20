@@ -21,11 +21,8 @@ def _add_model_flag(parser: argparse.ArgumentParser) -> None:
     arg = parser.add_argument(
         "--model",
         default="",
-        metavar="[PROVIDER/]MODEL",
-        help=(
-            "Use MODEL for this session, over every config file. A bare MODEL keeps the"
-            " configured provider; PROVIDER/MODEL names another."
-        ),
+        metavar="PROVIDER/MODEL",
+        help="Use this provider/model for the session, over every config file.",
     )
     arg.completer = completers._complete_model_routes  # type: ignore[attr-defined]
 
@@ -101,7 +98,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             ' With git.control = "model", the commits stay on the children\'s refs.'
             " Otherwise agent6 merges the first-ranked attempt onto this run's chain."
             " N starts N attempts on the worker model. A list starts one attempt per"
-            " SELECTOR (a role name or [provider/]model)."
+            " SELECTOR (a role name or provider/model)."
         ),
     )
     run_parallel_flag.completer = completers._complete_parallel_models  # type: ignore[attr-defined]

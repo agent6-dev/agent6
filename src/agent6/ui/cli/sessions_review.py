@@ -29,7 +29,7 @@ def _cmd_sessions_review(
     Args:
         config_paths: The `--config` files in command-line order, if any.
         session_id: The session, or "" for the newest.
-        model: The `--model` override, `[provider/]model`, applied to the reviewer route.
+        model: The `--model` override, `provider/model`, applied to the reviewer route.
 
     Returns:
         The exit code: 0 reviewed, 2 refused, 3 budget exceeded.
@@ -50,7 +50,7 @@ def _cmd_sessions_review(
     def load() -> Config:
         cfg = layer.load_effective(cwd, config_paths).config
         if model:
-            cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", model))
+            cfg = cfg.with_model_route("reviewer", cfg.model_route(model))
         return cfg
 
     return review_recap.recap(cwd, layout, config=load, reporter=reporter.STDIO_REPORTER)

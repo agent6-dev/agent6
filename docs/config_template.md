@@ -25,7 +25,7 @@ It can be empty or absent when the global config supplies a provider and model.
 
 - `agent6 connect`: add a provider and, when needed, credentials (stored `0600`), global by default; `--repo` writes the provider entry to the repo config while credentials stay global.
   An existing block's format wins over a preset's.
-- `agent6 model <role> [provider/]model [--effort off|low|medium|high|xhigh|max]`: a model id alone keeps the role's provider; a configured provider name alone opens a model picker on a terminal, or lists its models without one.
+- `agent6 model <role> provider/model [--effort off|low|medium|high|xhigh|max]`: a configured provider name alone opens a model picker on a terminal, or lists its models without one.
   A model change preserves the target layer's other role settings; only an explicit `--effort` replaces effort.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `harness.verify.command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.

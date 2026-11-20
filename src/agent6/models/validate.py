@@ -317,7 +317,7 @@ def directive_model_refusal(
     try:
         cfg = layer.load_effective(cwd, config_paths, preset=preset).config
         if model:
-            cfg = cfg.with_model_route("worker", cfg.model_route("worker", model))
+            cfg = cfg.with_model_route("worker", cfg.model_route(model))
     except ConfigError:
         return None  # a broken config is its own error elsewhere
     try:

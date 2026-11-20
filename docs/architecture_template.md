@@ -607,7 +607,7 @@ Each turn opens with the reply count (`prompts.review.reply_notice`: `reply 14 o
 A response with no tool call ends it `answered`, on the last allowed turn too; a last allowed turn that still asks for tools ends it `max_turns` with that response's text and those tools not run; either way `completion.json` (`sessions/completion.py`) holds the text, the stop reason, the provider calls made and what the limit cut.
 Its session dir is `sessions/reviewers/<id>` under the state of the repository that dispatched it (`child_wait.child_dir` reads the bucket from the child's mode); `resume` refuses it.
 
-**`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.child_settings`, the resolver every entry point shares, and plans one `ChildSpec` per child, each started through the child bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
+**`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `provider/model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.child_settings`, the resolver every entry point shares, and plans one `ChildSpec` per child, each started through the child bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
 
 `app.worktrees.write_child_config` uses `config.child_snapshot` to materialize the parent's resolved model settings, with the child's selection applied to its driving role.
 A work attempt journals `worker` calls even when its selector was `reviewer`; a ranking or panel reviewer journals `reviewer` calls with the selected route and effort.

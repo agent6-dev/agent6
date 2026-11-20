@@ -42,7 +42,7 @@ Rebound grants are removed locally only; the provider configuration stays.
 `agent6 check config` reports local credential refusals and exits 1; a passing local check does not verify remote authentication.
 
 Every model call requires `[models.default]` with `model = "provider/model"`.
-The CLI also accepts a bare id on the current provider.
+A model selector splits at the first slash: `openrouter/moonshotai/kimi-k2.6` selects the `openrouter` provider.
 Each optional role inherits its unset `model`, `effort` and `temperature` directly from `models.default`, never from another role.
 For example, `models.planner.effort = "max"` changes only the planner's effort.
 
@@ -171,7 +171,7 @@ A count above one, or several selectors, means attempts at the one task; a secon
 The TUI and web composers preview the number of children and the spec for each task as you type.
 At the `run -i` commit prompt, enter the line to preview it.
 Repeat the same line to send it, or type another command.
-A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `[provider/]model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
+A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `provider/model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
 The spec ends at a whitespace-delimited `--` token.
 Without `--`, the whole segment is task text for one default child, even if it starts with a path, a number or a model name.
 A bare `--`, a missing task, or more children than `[harness.parallel].max_children` allows to run at once, counting the children already running, is refused with the reason.

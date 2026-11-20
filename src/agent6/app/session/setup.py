@@ -266,7 +266,7 @@ def load_session_config(
         preset: The preset to apply.
         budget_overrides: The `--max-*` flags.
         sandbox_overrides: The sandbox and approval flags, landing last.
-        model: A typed `[provider/]model`, parsed once here, or a recorded pair applied as is.
+        model: A typed `provider/model`, parsed once here, or a recorded pair applied as is.
 
     Returns:
         The effective config, checked runnable for the mode's role.
@@ -288,7 +288,7 @@ def load_session_config(
         cfg = budget_overrides.apply(cfg)
     if model:
         role = kinds.session_kind(mode).role
-        route = cfg.model_route(role, model) if isinstance(model, str) else model
+        route = cfg.model_route(model) if isinstance(model, str) else model
         cfg = cfg.with_model_route(role, route)
     cfg = session_config(cfg, mode, sandbox_overrides)
     cfg.require_runnable(kinds.session_kind(mode).role)

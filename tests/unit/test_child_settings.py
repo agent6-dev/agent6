@@ -43,11 +43,11 @@ def test_a_selector_resolves_to_complete_settings() -> None:
     assert cfg.child_settings("default") == kinds.ModelSettings(
         kinds.ModelRoute("o", "base"), "low", 0.3
     )
-    # A route runs the worker's effort and temperature; a bare id stays on the worker's provider.
+    # A route runs the worker's effort and temperature.
     assert cfg.child_settings("p/other") == kinds.ModelSettings(
         kinds.ModelRoute("p", "other"), "medium", 0.3
     )
-    assert cfg.child_settings("vendor/model@tag") == kinds.ModelSettings(
+    assert cfg.child_settings("o/vendor/model@tag") == kinds.ModelSettings(
         kinds.ModelRoute("o", "vendor/model@tag"), "medium", 0.3
     )
     # A model named like a role is written with its provider.
@@ -59,7 +59,7 @@ def test_a_role_without_a_route_refuses() -> None:
     assert Config().child_settings("") is None  # the worker's own, whatever it is
     with pytest.raises(ConfigError, match=r"models\.worker: no model route"):
         Config().child_settings("worker")
-    with pytest.raises(ConfigError, match="no model id"):
+    with pytest.raises(ConfigError, match="name the provider"):
         _cfg().child_settings("p/")
 
 

@@ -1314,33 +1314,36 @@ def test_resume_model_flag_is_recorded_and_replayed(
     def _route(cfg: object, role: str, *, reporter: object, model_flag: str = "") -> bool:
         planner = cfg.models.resolve(role)  # type: ignore[attr-defined]
         routes.append((model_flag, planner.model))
-        return model_flag != "claude-refused"
+        return model_flag != "anthropic/claude-refused"
 
     monkeypatch.setattr(preflight, "route_preflight", _route)
     monkeypatch.setattr(session_runtime, "select_isolation", _unconfined)
     monkeypatch.setattr(git_read, "verify_git_identity", _nothing)
     monkeypatch.setattr(execution, "run_execution", _finished_execution)
-    assert cli_resume._cmd_resume((), "plan-MODEL1", force=False, model="claude-refused") == 2
+    assert (
+        cli_resume._cmd_resume((), "plan-MODEL1", force=False, model="anthropic/claude-refused")
+        == 2
+    )
     assert sessions_manifest.read_manifest(session_dir).models.driver_from_flag is False
-    assert cli_resume._cmd_resume((), "plan-MODEL1", force=False, model="claude-y") == 0
+    assert cli_resume._cmd_resume((), "plan-MODEL1", force=False, model="anthropic/claude-y") == 0
     stamped = sessions_manifest.read_manifest(session_dir).models
     assert stamped.driver_from_flag and stamped.driver is not None
     assert (stamped.driver.provider, stamped.driver.model) == ("anthropic", "claude-y")
     cfg = load_config(tmp_path / "cfg.toml")
-    route = cfg.model_route("planner", "claude-y")
+    route = cfg.model_route("anthropic/claude-y")
     stamps.stamp_execution(session_dir, cfg.with_model_route("planner", route), "plan", "none")
     assert sessions_manifest.read_manifest(session_dir).models.driver_from_flag
     assert cli_resume._cmd_resume((), "plan-MODEL1", force=False) == 0
     # The replayed execution carries the recorded pair, spelled provider/model.
     assert routes == [
-        ("claude-refused", "claude-refused"),
-        ("claude-y", "claude-y"),
+        ("anthropic/claude-refused", "claude-refused"),
+        ("anthropic/claude-y", "claude-y"),
         ("anthropic/claude-y", "claude-y"),
     ]
 
 
 @pytest.mark.parametrize("parked", [False, True])
-@pytest.mark.parametrize("model", ["", "claude-y"])
+@pytest.mark.parametrize("model", ["", "anthropic/claude-y"])
 def test_resume_keeps_the_recorded_route_or_reports_its_replacement(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1367,7 +1370,7 @@ def test_resume_keeps_the_recorded_route_or_reports_its_replacement(
     cfg = load_config(tmp_path / "cfg.toml")
     mode = "run" if parked else "plan"
     role = "worker" if parked else "planner"
-    recorded = cfg.with_model_route(role, cfg.model_route(role, "claude-recorded"))
+    recorded = cfg.with_model_route(role, cfg.model_route("anthropic/claude-recorded"))
     stamps.stamp_execution(session_dir, recorded, mode, "none")
     seen: list[str] = []
 

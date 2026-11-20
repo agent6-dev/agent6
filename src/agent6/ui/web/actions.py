@@ -274,7 +274,7 @@ def resume_run(
         session_id: The run.
         text: The first steering instruction, or "".
         preset: The preset to continue under; "" as recorded.
-        route: The `[provider/]model` to continue on; "" as recorded.
+        route: The `provider/model` to continue on; "" as recorded.
         config_paths: The `--config` files in command-line order.
 
     Returns:

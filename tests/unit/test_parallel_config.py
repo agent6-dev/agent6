@@ -139,5 +139,5 @@ def test_child_config_keeps_worker_route_and_budget_override(repo: pathlib.Path)
 
     assert written["models"]["worker"]["model"] == "p/child-model"
     assert written["budget"]["max_usd"] == 3.5
-    assert child.config.model_route("worker", "child-model") == kinds.ModelRoute("p", "child-model")
+    assert child.config.model_route("p/child-model") == kinds.ModelRoute("p", "child-model")
     assert child.config.budget.max_usd == 3.5

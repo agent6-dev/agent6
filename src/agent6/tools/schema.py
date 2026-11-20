@@ -317,7 +317,7 @@ class ParallelInput(_ToolInput):
         ' With `git.control = "agent6"` the first merges onto this run at a turn boundary;'
         ' with `git.control = "model"` the result names the ref that holds each child\'s commits.'
         " A selector that is a role name brings its model, effort and temperature;"
-        " `[provider/]model` runs with the worker's. A notice arrives when a child ends,"
+        " `provider/model` runs with the worker's. A notice arrives when a child ends,"
         " with its summary, and when its task completes. `read_background` reads a child"
         " or waits for the next to end; `steer_child` sends an instruction to a running"
         " child or continues a stopped child; `stop_background` stops one. `finish_session`"

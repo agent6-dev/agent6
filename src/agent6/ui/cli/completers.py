@@ -341,7 +341,7 @@ def _complete_config_values(
 def _complete_model_verb_values(
     prefix: str, parsed_args: argparse.Namespace | None = None, **kw: object
 ) -> list[str]:
-    """Return the provider names and routes for `model <role> [PROVIDER/]MODEL`.
+    """Return the provider names and routes for `model <role> PROVIDER/MODEL`.
 
     Only once a valid role is typed: argcomplete bleeds every optional positional's
     completer into the first slot.

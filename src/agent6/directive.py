@@ -10,7 +10,7 @@
 A message is a directive only when it starts with the exact token.
 A whitespace-delimited `/parallel` token starts each segment.
 A segment's spec is a positive child count or a comma-separated list of
-`[provider/]model` entries, followed by a whitespace-delimited `--` token.
+`provider/model` entries, followed by a whitespace-delimited `--` token.
 Without `--`, the whole segment is task text for one default child.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
 Pure stdlib parsing with no agent6 imports: a leaf both layers sit above.
@@ -48,7 +48,7 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
 
     Args:
         spec: A positive child count, a comma-separated selector list (an exact role name
-            or `[provider/]model`), or "".
+            or `provider/model`), or "".
         limit: The caller's `[harness.parallel].max_children`; an over-limit count refuses before
             the list is built.
 

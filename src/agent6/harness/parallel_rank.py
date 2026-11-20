@@ -39,7 +39,7 @@ class Judge:
     """One entry of `[harness.parallel].judges`, resolved.
 
     Attributes:
-        selector: The entry as written: a role name or `[provider/]model`.
+        selector: The entry as written: a role name or `provider/model`.
         settings: The route, effort and temperature the reviewer runs with.
     """
 

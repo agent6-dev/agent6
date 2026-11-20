@@ -178,17 +178,14 @@ def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: st
 
 
 def _read_route(
-    config_paths: tuple[pathlib.Path, ...], role: str, route: str, *, interactive: bool
+    config_paths: tuple[pathlib.Path, ...], route: str, *, interactive: bool
 ) -> tuple[str, str]:
-    """Return `(provider, model)` from a `[PROVIDER/]MODEL` value.
+    """Return `(provider, model)` from a `PROVIDER/MODEL` value.
 
-    A configured provider at the first slash names the provider; any other slash stays in
-    the model id on the role's current provider. A configured provider's name alone leaves
-    the model to pick. A blank value prompts for the provider on a terminal.
+    A provider name alone opens its model picker. A blank value prompts on a terminal.
 
     Args:
         config_paths: The `--config` files in command-line order, if any.
-        role: The role being set.
         route: The value as typed.
         interactive: Both channels are a terminal.
 
@@ -217,14 +214,7 @@ def _read_route(
         if not model:
             raise ConfigError(f"{route!r}: no model id after the slash.")
         return provider, model
-    route_role = cast("RoleName", "default" if role == "all" else role)
-    if "/" not in route and cfg.models.resolve(route_role) is None:
-        known = ", ".join(sorted(cfg.providers)) or "(none)"
-        raise ConfigError(
-            f"{route!r}: no provider is set for {role}, so name one as provider/model"
-            f" (configured providers: {known})."
-        )
-    parsed = cfg.model_route(route_role, route)
+    parsed = cfg.model_route(route)
     return parsed.provider, parsed.model
 
 
@@ -284,7 +274,7 @@ def _cmd_model(
     Args:
         config_paths: The `--config` files in command-line order, if any.
         role: The default, a role or `all`; None shows the assignments.
-        route: The `[PROVIDER/]MODEL` value; "" prompts or lists.
+        route: The `PROVIDER/MODEL` value; "" prompts or lists.
         effort: The reasoning effort to set.
         to_repo: Write to the repo config instead of the global one.
 
@@ -296,7 +286,7 @@ def _cmd_model(
     # Interactive means both channels are a tty: a piped stdout gets the listing, not a prompt.
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     try:
-        provider, model = _read_route(config_paths, role, route, interactive=interactive)
+        provider, model = _read_route(config_paths, route, interactive=interactive)
     except ConfigError as exc:
         common.error(str(exc))
         return 2

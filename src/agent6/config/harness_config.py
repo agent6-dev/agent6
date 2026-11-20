@@ -233,7 +233,7 @@ class ParallelConfig(pydantic.BaseModel):
         default=("reviewer",),
         description=(
             "who ranks the attempts at one task and the candidates of `sessions compare`: "
-            "selectors as `--parallel` takes them, a role name or `[provider/]model`; each is "
+            "selectors as `--parallel` takes them, a role name or `provider/model`; each is "
             "a reviewer child that reads and runs the attempts under `review.max_turns` and "
             "answers with an order; the lowest sum of ranks wins, a tie going to the "
             "mechanical order (a passed gate first, then the lower cost); a role with no "
@@ -256,7 +256,7 @@ class ParallelConfig(pydantic.BaseModel):
             ValueError: An entry is blank.
         """
         if any(not judge.strip() for judge in v):
-            raise ValueError("a judge is a role name or a `[provider/]model`; one entry is blank")
+            raise ValueError("a judge is a role name or a `provider/model`; one entry is blank")
         return v
 
 

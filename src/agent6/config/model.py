@@ -257,6 +257,12 @@ class Config(pydantic.BaseModel):
                     f" [providers.{rm.provider}] is not configured."
                     f" Known providers: {known}."
                 )
+        for selector in self.harness.parallel.judges:
+            if selector not in kinds.MODEL_ROLES:
+                try:
+                    self.model_route(selector)
+                except validation.ConfigError as exc:
+                    raise ValueError(f"harness.parallel.judges: {exc}") from exc
         return self
 
     @pydantic.model_validator(mode="after")
@@ -366,46 +372,30 @@ class Config(pydantic.BaseModel):
             budget["max_plan_points"] = max_plan_points
         return Config.model_validate(data)
 
-    def model_route(self, role: kinds.RoleName, spec: str) -> kinds.ModelRoute:
-        """Parse a `[provider/]model` value into the route it names for a role.
-
-        A first segment naming a configured provider is the provider; otherwise the whole
-        value is a model id on the role's current provider, so an OpenRouter id with its own
-        slash stays one id.
+    def model_route(self, spec: str) -> kinds.ModelRoute:
+        """Resolve a provider/model selector at its first slash.
 
         Args:
-            role: The role whose current provider an unprefixed id lands on.
-            spec: The value.
+            spec: The selector as typed.
 
         Returns:
-            The route.
+            The configured provider and model id.
 
         Raises:
-            ConfigError: The value is empty, names no model, or names no provider while the
-                role has none.
+            ConfigError: The selector lacks a provider or model, or the provider is unknown.
         """
-        raw_spec = spec
-        spec = spec.strip()
-        if not spec:
-            raise validation.ConfigError(f"{raw_spec!r}: no model id.")
-        provider, slash, model = spec.partition("/")
         known = ", ".join(sorted(self.providers)) or "(none)"
-        if slash and not provider:
+        try:
+            route = validation.model_route(spec.strip())
+        except ValueError as exc:
             raise validation.ConfigError(
-                f"{raw_spec!r}: name the provider as provider/model"
-                f" (configured providers: {known})."
+                f"{spec!r}: name the provider as provider/model (configured providers: {known})."
+            ) from exc
+        if route.provider not in self.providers:
+            raise validation.ConfigError(
+                f"{spec!r}: unknown provider {route.provider!r} (configured providers: {known})."
             )
-        if slash and not model:
-            raise validation.ConfigError(f"{raw_spec!r}: no model id after the slash.")
-        if not slash or provider not in self.providers:
-            current = self.models.resolve(role)
-            if current is None:
-                raise validation.ConfigError(
-                    f"{raw_spec!r}: name the provider as provider/model"
-                    f" (configured providers: {known})."
-                )
-            provider, model = current.provider, spec
-        return kinds.ModelRoute(provider, model)
+        return route
 
     def role_settings(self, role: kinds.RoleName) -> kinds.ModelSettings:
         """Return a role's resolved route, effort and temperature together.
@@ -436,7 +426,7 @@ class Config(pydantic.BaseModel):
         Args:
             selector: None or "" for the worker's own settings, unchanged; an exact role name
                 (`default`, `worker`, `planner`, `reviewer`, `helper`) for that role's route,
-                effort and temperature together; any other text for a `[provider/]model`
+                effort and temperature together; any other text for a `provider/model`
                 route run with the worker's effort and temperature. A model named like a
                 role is written `provider/reviewer`.
 
@@ -453,7 +443,7 @@ class Config(pydantic.BaseModel):
             return self.role_settings(text)
         worker = self.models.resolve("worker")
         return kinds.ModelSettings(
-            self.model_route("worker", text),
+            self.model_route(text),
             effort=worker.effort if worker is not None else None,
             temperature=worker.temperature if worker is not None else 0.0,
         )

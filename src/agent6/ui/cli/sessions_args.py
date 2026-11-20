@@ -148,11 +148,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     review_model = sessions_review.add_argument(
         "--model",
         default="",
-        metavar="[PROVIDER/]MODEL",
-        help=(
-            "The reviewer for this review, over every config layer: provider/model, or a"
-            " model id on the reviewer's provider."
-        ),
+        metavar="PROVIDER/MODEL",
+        help="Use this provider/model for the review, over every config file.",
     )
     review_model.completer = completers._complete_model_routes  # type: ignore[attr-defined]
 

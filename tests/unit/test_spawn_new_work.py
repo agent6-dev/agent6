@@ -138,7 +138,7 @@ def test_parallel_child_count(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
 
 
 def _configure_worker() -> None:
-    """A worker route in the global config, so a child's bare model id has a provider to run on."""
+    """Configure the provider used by the child selectors."""
     from agent6 import paths
 
     cfg_home = paths.global_config_dir()
@@ -155,9 +155,11 @@ def test_parallel_model_list_with_preset(
 ) -> None:
     _configure_worker()
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus -- refactor", preset="no_review")
+    spawn.spawn_new_work(
+        tmp_path, "run", "/parallel o/gpt-5,o/opus -- refactor", preset="no_review"
+    )
     assert captured[-1][1:] == [
-        "run", "--preset", "no_review", "--parallel", "gpt-5,opus", "--", "refactor",
+        "run", "--preset", "no_review", "--parallel", "o/gpt-5,o/opus", "--", "refactor",
     ]  # fmt: skip
 
 
@@ -215,7 +217,7 @@ def test_parallel_refuses_unknown_model_before_spawn(
     monkeypatch.setattr(layer, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
     session_dir, err = spawn.spawn_new_work(
-        tmp_path, "run", "/parallel moonshotai/kimi-k2.7 -- fix it"
+        tmp_path, "run", "/parallel o/moonshotai/kimi-k2.7 -- fix it"
     )
     assert session_dir is None
     assert "unknown model 'o/moonshotai/kimi-k2.7'" in err
@@ -256,14 +258,14 @@ def test_parallel_validation_uses_the_picked_model_provider(
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(
-        tmp_path, "run", "/parallel q-child,q-child -- fix it", model="q/q-default"
+        tmp_path, "run", "/parallel q/q-child,q/q-child -- fix it", model="q/q-default"
     )
     assert captured[-1][1:] == [
         "run",
         "--model",
         "q/q-default",
         "--parallel",
-        "q-child,q-child",
+        "q/q-child,q/q-child",
         "--",
         "fix it",
     ]
@@ -282,8 +284,8 @@ def test_parallel_unknown_model_no_cache_proceeds(
 
     monkeypatch.setattr(layer, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel made-up/model -- fix it")
-    assert captured[-1][1:] == ["run", "--parallel", "made-up/model", "--", "fix it"]
+    spawn.spawn_new_work(tmp_path, "run", "/parallel o/made-up/model -- fix it")
+    assert captured[-1][1:] == ["run", "--parallel", "o/made-up/model", "--", "fix it"]
 
 
 def test_parallel_only_for_run_mode(
@@ -309,10 +311,12 @@ def test_parallel_multi_segment_spawns_one_group_per_segment(
 ) -> None:
     _configure_worker()
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- task A /parallel gpt-5,opus -- task B")
+    spawn.spawn_new_work(
+        tmp_path, "run", "/parallel 2 -- task A /parallel o/gpt-5,o/opus -- task B"
+    )
     assert [c[1:] for c in captured] == [
         ["run", "--parallel", "2", "--", "task A"],
-        ["run", "--parallel", "gpt-5,opus", "--", "task B"],
+        ["run", "--parallel", "o/gpt-5,o/opus", "--", "task B"],
     ]
 
 

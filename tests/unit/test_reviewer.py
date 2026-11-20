@@ -346,7 +346,7 @@ def test_a_routed_reviewer_leaves_pinned_reviewers_alone(monkeypatch: Any) -> No
             {"focus": "correctness", "model": "anthropic/some-model"},
         )
     )
-    cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
+    cfg = cfg.with_model_route("reviewer", cfg.model_route("anthropic/claude-haiku-override"))
 
     reviewers = role_providers.resolve_reviewers(cfg)
     assert [s.model for s in reviewers] == [
@@ -372,7 +372,7 @@ def test_a_bare_focus_reviewer_follows_the_routed_reviewer(monkeypatch: Any) -> 
 
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
     cfg = _cfg_with_reviewers(({"focus": "correctness"},))
-    cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
+    cfg = cfg.with_model_route("reviewer", cfg.model_route("anthropic/claude-haiku-override"))
 
     reviewers = role_providers.resolve_reviewers(cfg)
     assert reviewers[0].model == "anthropic/claude-haiku-override"

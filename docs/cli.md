@@ -14,7 +14,7 @@ This page is the reference for the command-line surface; the patterns behind the
   `AGENT6_DISABLE_SANDBOX=1` applies the same opt-out across verbs.
 
 - `--preset <name>`: a strategy preset (`no_review`, `review`, `deep_review`, or your own; `none` selects no preset), fixed for the execution; `resume --preset` switches ([presets](config.md#presets))
-- `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded route unless it sets its own
+- `--model provider/model`: the model for the mode's role, over every config layer; a resume keeps the recorded route unless it sets its own
   The web and TUI resume composers default to that route and offer the config's routes as choices.
   A resume that changes the route prints both the chosen and recorded routes.
 - `--parallel 3` starts three isolated attempts at the task ([parallel](config.md#harnessparallel)).

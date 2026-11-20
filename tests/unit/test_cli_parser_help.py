@@ -308,7 +308,9 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
         "Task for the agent, usually in quotes. On a terminal, omit it to choose whether to run "
         "the newest plan."
     )
-    assert (_option(run, "--model").help or "").startswith("Use MODEL for this session")
+    assert (_option(run, "--model").help or "").startswith(
+        "Use this provider/model for the session"
+    )
     assert (_option(run, "--decompose").help or "").startswith(
         "Make the agent split the task into ordered subtasks before editing"
     )
@@ -445,7 +447,7 @@ def test_profile_flags_have_the_profiles_completer() -> None:
 
 
 def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
-    """`--model [PROVIDER/]MODEL` rides run, resume, plan run and ask query.
+    """`--model PROVIDER/MODEL` rides run, resume, plan run and ask query.
 
     Completing the routes.
     """
@@ -458,7 +460,7 @@ def test_the_model_flag_rides_every_session_verb_with_its_completer() -> None:
     )
     for sub in carriers:
         action = _option(sub, "--model")
-        assert action.metavar == "[PROVIDER/]MODEL"
+        assert action.metavar == "PROVIDER/MODEL"
         assert getattr(action, "completer", None) is completers._complete_model_routes
     assert parser.parse_args(["run", "--model", "p/m", "t"]).model == "p/m"
     assert parser.parse_args(["resume", "--model", "m", "sid"]).model == "m"

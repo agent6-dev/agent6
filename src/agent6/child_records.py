@@ -96,7 +96,7 @@ class ChildTask:
 
     Attributes:
         task: The child's task text.
-        model: The child's selector (a role name or `[provider/]model`), None for the
+        model: The child's selector (a role name or `provider/model`), None for the
             worker's own settings.
         pins: The operator's pins, passed beside the task so the child's manifest task stays clean.
         allowance: The child's share of the parent's allowance; None for the config's caps.

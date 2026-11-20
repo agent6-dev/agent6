@@ -1146,11 +1146,8 @@ def test_auto_stash_pop_needs_the_stash_choice() -> None:
         git_config.GitConfig(dirty_tree="include", auto_stash_pop=True)
 
 
-def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: pathlib.Path) -> None:
-    """`--model provider/model` routes the role.
-
-    A bare or unknown-provider id keeps the role's provider.
-    """
+def test_model_selectors_split_at_the_first_slash(tmp_path: pathlib.Path) -> None:
+    """A bare or unknown provider cannot silently charge the role's account."""
     body = (
         _VALID_TOML.replace(
             '[models.worker]\nmodel = "anthropic/claude-x"\n',
@@ -1159,56 +1156,38 @@ def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: pathlib.
         + '\n[providers.openrouter]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
     )
     cfg = load_config(_write(tmp_path, body))
-    route = cfg.model_route("worker", "openrouter/moonshotai/kimi-k2.6")
+    route = cfg.model_route("openrouter/moonshotai/kimi-k2.6")
     out = cfg.with_model_route("worker", route)
     assert (out.models.worker.provider, out.models.worker.model) == (  # type: ignore[union-attr]
         "openrouter",
         "moonshotai/kimi-k2.6",
     )
     assert out.models.worker.effort == "high"  # type: ignore[union-attr]
-    bare = cfg.with_model_route("worker", cfg.model_route("worker", "claude-y"))
-    assert (bare.models.worker.provider, bare.models.worker.model) == (  # type: ignore[union-attr]
-        "anthropic",
-        "claude-y",
-    )
-    provider_named = cfg.with_model_route("worker", cfg.model_route("worker", "openrouter"))
-    assert (provider_named.models.worker.provider, provider_named.models.worker.model) == (  # type: ignore[union-attr]
-        "anthropic",
-        "openrouter",
-    )
-    slug = cfg.with_model_route("worker", cfg.model_route("worker", "moonshotai/kimi-k2.6"))
-    assert (slug.models.worker.provider, slug.models.worker.model) == (  # type: ignore[union-attr]
-        "anthropic",
-        "moonshotai/kimi-k2.6",
-    )
+    for spec in ("claude-y", "openrouter", "moonshotai/kimi-k2.6"):
+        with pytest.raises(ConfigError, match="configured providers: anthropic, openrouter"):
+            cfg.model_route(spec)
     # An unset planner falls back to the worker: the flag sets the planner, the worker untouched.
-    planned = cfg.with_model_route("planner", cfg.model_route("planner", "openrouter/m"))
+    planned = cfg.with_model_route("planner", cfg.model_route("openrouter/m"))
     assert planned.models.planner is not None
     assert planned.models.planner.provider == "openrouter"
     assert planned.models.worker == cfg.models.worker
     assert cfg.models.worker is not None and cfg.models.worker.model == "claude-x"
 
 
-def test_with_model_route_refuses_what_it_cannot_route(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("spec", ["anthropic/", "", "   ", "/claude-y", "claude-y"])
+def test_model_route_refuses_an_incomplete_selector(tmp_path: pathlib.Path, spec: str) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    with pytest.raises(ConfigError, match="no model id"):
-        cfg.model_route("worker", "anthropic/")
-    with pytest.raises(ConfigError, match="no model id"):
-        cfg.model_route("worker", "not-a-provider/")
-    roleless = cfg.model_validate({**cfg.model_dump(mode="python"), "models": {}})
     with pytest.raises(ConfigError, match="configured providers: anthropic"):
-        roleless.model_route("worker", "claude-y")
+        cfg.model_route(spec)
 
 
-def test_with_model_route_refuses_a_blank_and_an_empty_provider(tmp_path: pathlib.Path) -> None:
-    """`--model` refuses a blank id and `/model` with no provider."""
-    cfg = load_config(_write(tmp_path, _VALID_TOML))
-    with pytest.raises(ConfigError, match="no model id") as exc:
-        cfg.model_route("worker", "   ")
-    assert "'   '" in str(exc.value)
-    with pytest.raises(ConfigError, match="name the provider as provider/model"):
-        cfg.model_route("worker", "/claude-y")
-    assert cfg.model_route("worker", " claude-y ").model == "claude-y"
+@pytest.mark.parametrize("spec", ["claude-y", "vendor/claude-y"])
+def test_judge_selectors_refuse_an_unknown_provider(tmp_path: pathlib.Path, spec: str) -> None:
+    body = _VALID_TOML + f'\n[harness.parallel]\njudges = ["{spec}"]\n'
+    with pytest.raises(
+        ConfigError, match=r"harness.parallel.judges.*configured providers: anthropic"
+    ):
+        load_config(_write(tmp_path, body))
 
 
 @pytest.mark.parametrize("backend", ["chatgpt", "claude_code", "openai", "responses"])

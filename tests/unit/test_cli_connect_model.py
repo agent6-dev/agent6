@@ -705,7 +705,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
     assert "note:" not in capsys.readouterr().err
 
 
-def test_model_set_keeps_an_openrouter_slug_on_the_roles_provider(
+def test_model_set_requires_the_provider_before_an_openrouter_slug(
     iso: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """A slash inside a model id splits only when its head names a configured provider."""
@@ -717,7 +717,8 @@ def test_model_set_keeps_an_openrouter_slug_on_the_roles_provider(
         encoding="utf-8",
     )
 
-    assert main(["model", "worker", "moonshotai/kimi-k2.6"]) == 0
+    assert main(["model", "worker", "moonshotai/kimi-k2.6"]) == 2
+    assert main(["model", "worker", "openrouter/moonshotai/kimi-k2.6"]) == 0
     text = config.read_text(encoding="utf-8")
     assert "provider =" not in text
     assert 'model = "openrouter/moonshotai/kimi-k2.6"' in text
@@ -730,7 +731,7 @@ def test_model_piped_unknown_provider_errors(
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub([]))
     rc = main(["model", "worker", "nosuch"])
     assert rc == 2
-    assert "name one as provider/model" in capsys.readouterr().err
+    assert "name the provider as provider/model" in capsys.readouterr().err
 
 
 def test_model_stdout_piped_lists_even_with_a_tty_stdin(

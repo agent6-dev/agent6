@@ -263,9 +263,9 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "route",
         nargs="?",
         default="",
-        metavar="[PROVIDER/]MODEL",
+        metavar="PROVIDER/MODEL",
         help=(
-            "PROVIDER/MODEL; MODEL alone keeps the assignment's current provider. On a terminal,"
+            "Name the provider and model as PROVIDER/MODEL. On a terminal,"
             " a configured PROVIDER alone lets you choose from its models, and no value lets you"
             " choose both. Without a terminal, a configured PROVIDER prints its known models."
         ),

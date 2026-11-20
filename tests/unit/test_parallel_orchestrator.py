@@ -352,7 +352,7 @@ def test_a_parallel_spec_naming_an_unknown_model_is_refused_before_any_session(
 
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
 
-    refusal = parallel_cmd.spec_refusal(_provider_cfg(), "moonshotai/kimi-k2.7")
+    refusal = parallel_cmd.spec_refusal(_provider_cfg(), "o/moonshotai/kimi-k2.7")
 
     assert refusal is not None
     assert "unknown model 'o/moonshotai/kimi-k2.7'" in refusal
@@ -365,7 +365,7 @@ def test_a_parallel_spec_no_cache_can_check_warns_and_proceeds(
     """An offline machine is never blocked on a model cache it can regenerate."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # empty: no snapshot
 
-    assert parallel_cmd.spec_refusal(_provider_cfg(), "made-up/model") is None
+    assert parallel_cmd.spec_refusal(_provider_cfg(), "o/made-up/model") is None
     assert "WARNING: unvalidated model" in capsys.readouterr().err
 
 
@@ -432,7 +432,7 @@ def test_parent_dispatch_refuses_unknown_model(
     with pytest.raises(
         app_children.ParallelError, match=r"unknown model 'o/moonshotai/kimi-k2\.7'"
     ):
-        dispatch([child_records.ChildTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
+        dispatch([child_records.ChildTask(task="do it", model="o/moonshotai/kimi-k2.7")], "p1")
 
 
 def test_parent_dispatch_wait_honors_a_stop_request(
@@ -1660,7 +1660,7 @@ def test_build_child_spawner_builds_specs_and_preserves_order(
         runtime=runtime,
     )
     children = [
-        child_records.ChildTask(task="task a", model="kimi"),
+        child_records.ChildTask(task="task a", model="o/kimi"),
         child_records.ChildTask(task="task b", model=None),
     ]
     results = child_env.results_of(dispatch(children, "p2"))
