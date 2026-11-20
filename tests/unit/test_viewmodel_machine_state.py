@@ -410,7 +410,12 @@ def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: pathlib
 
 
 def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: pathlib.Path) -> None:
-    """A machine held on an `ask_user` question reads as waiting on a question, not an approval."""
+    """A machine held on an `ask_user` question reads as waiting on a question, not an approval.
+
+    The label said its status word twice: "waiting · waiting on an answer in 0001-attempt".
+    """
+    from agent6.viewmodel import format
+
     (tmp_path / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     log = tmp_path / "states" / "0001-attempt" / "logs.jsonl"
     log.parent.mkdir(parents=True)
@@ -419,13 +424,50 @@ def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: path
     for owner in (tmp_path, log.parent):
         (owner / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
-    assert (
-        machine_state.summarize_machine_dir(tmp_path).reason
-        == "waiting on an answer in 0001-attempt"
-    )
+    blocked = machine_state.summarize_machine_dir(tmp_path)
+    label = format.status_label(blocked.status, blocked.reason)
+    assert label == "waiting · on an answer in 0001-attempt"
     # A stopped machine's prompt has no reader (its execution restarts on resume).
     (tmp_path / "worker.pid").unlink()
     assert machine_state.summarize_machine_dir(tmp_path).reason == ""
+
+
+def test_a_status_label_quotes_a_reason_and_spaces_only_a_bare_stop_reason(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The label spaced every underscore: a held state read "0000-run tests".
+
+    An end's URL read "merge requests?state=merged"; a run's bare stop reason (`max_turns`)
+    still reads as words.
+    """
+    from agent6.viewmodel import format
+
+    (tmp_path / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    journal = machine_journal.MachineJournal(tmp_path)
+    journal.begin(machine="tiny", version=1)
+    state = tmp_path / "states" / "0000-run_tests"
+    state.mkdir(parents=True)
+    prompt = {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]}
+    (state / "logs.jsonl").write_text(json.dumps(prompt) + "\n", encoding="utf-8")
+    for owner in (tmp_path, state):
+        (owner / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    blocked = machine_state.summarize_machine_dir(tmp_path)
+    label = format.status_label(blocked.status, blocked.reason)
+    assert label == "waiting · on an answer in 0000-run_tests"
+    reason = "the forge refused /api/v4/projects/platform%2Finfra/merge_requests?state=merged"
+    journal.append(
+        machine_journal.MachineEnd(
+            ts="t", status="failed", reason=reason, state="done", transitions=0
+        )
+    )
+    ms = machine_state.fold_machine(_spec(tmp_path), journal.read())
+    assert machine_state.machine_state_as_dict(ms, tmp_path)["status_label"] == (
+        f"failed · {reason}"
+    )
+    assert format.status_label("failed", "max_turns") == "failed · max turns"
+    stop = "max_turns · 2 questions unanswered"
+    assert format.status_label("failed", stop) == "failed · max turns · 2 questions unanswered"
 
 
 @pytest.mark.parametrize(

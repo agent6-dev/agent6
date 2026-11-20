@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import pathlib
+import re
 import shlex
 import time
 from collections.abc import Mapping
@@ -384,9 +385,16 @@ def format_compare(
     return " · ".join(parts), comparison.rationale if comparison is not None else ""
 
 
+# A run's stop reason (`max_turns`); any other reason, a path or a URL, keeps its underscores.
+_STOP_REASON = re.compile(r"[a-z]+(?:_[a-z]+)+")
+
+
 def status_label(status: str, reason: str = "") -> str:
-    """Return the label for a run outcome: the word, then the reason with underscores spaced."""
-    return status if not reason else f"{status} · {reason.replace('_', ' ')}"
+    """Return the status word, then its reason as written; a bare stop reason reads as words."""
+    if not reason:
+        return status
+    parts = (p.replace("_", " ") if _STOP_REASON.fullmatch(p) else p for p in reason.split(" · "))
+    return " · ".join((status, *parts))
 
 
 # Status words that already name the session's mode.

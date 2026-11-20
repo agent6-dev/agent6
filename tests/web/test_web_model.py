@@ -980,13 +980,13 @@ def test_a_waiting_machine_is_not_labelled_failed(tmp_path: pathlib.Path) -> Non
             name="inst",
             machine="m",
             status="waiting",
-            reason="waiting on an answer in 0001-work",
+            reason="on an answer in 0001-work",
             current="work",
             mtime=0.0,
         )
     )
 
-    assert row["status_label"] == "waiting · waiting on an answer in 0001-work"
+    assert row["status_label"] == "waiting · on an answer in 0001-work"
     assert row["status_level"] == "warn"
 
 

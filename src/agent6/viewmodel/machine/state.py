@@ -293,7 +293,7 @@ class InstanceProbes:
         if ms.ended is not None:
             return ms.ended.reason if ms.ended.status == "failed" else ""
         if self.alive and self.execution.blocked_in:
-            return f"waiting on an answer in {self.execution.blocked_in}"
+            return f"on an answer in {self.execution.blocked_in}"
         return "no worker" if self.parked and not self.alive else ""
 
     def refusals(self, name: str, ms: MachineState) -> dict[MachineVerb, str]:
