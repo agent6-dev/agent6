@@ -937,3 +937,19 @@ def check_start(directory: pathlib.Path, *, warn: Callable[[str], None]) -> None
     premise = _writer(directory)
     if premise is not None:
         quarantine(directory, warn=warn, premise=premise)
+
+
+def check_session_read(cwd: pathlib.Path, *, warn: Callable[[str], None]) -> None:
+    """Check for a pack before an open viewer reads the project's sessions.
+
+    Args:
+        cwd: The viewer's working directory.
+        warn: Receives the warning if the pack is set aside.
+
+    Raises:
+        PackError: A pack remains in the project.
+    """
+    root = paths.project_root(cwd, allow_pack=True)
+    if os.path.lexists(root / ".agent6" / "pack.json"):
+        check_start(root, warn=warn)
+        pack_manifest.check_origin(root)

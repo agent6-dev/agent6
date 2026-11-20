@@ -26,7 +26,7 @@ from urllib import parse
 
 import pydantic
 
-from agent6 import __version__, errors, kinds
+from agent6 import __version__, errors, kinds, pack
 from agent6.config import is_loopback_host, layer, write
 from agent6.machine import MachineError
 from agent6.sessions import process
@@ -510,6 +510,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     """One request's handler."""
 
     _streaming = False  # the SSE headers went out; an error is a frame now
+    _pack_warning = ""
     _body_length = 0  # this request's Content-Length, parsed once per request
     protocol_version = "HTTP/1.1"
     # Seconds one socket read or one response write may block; an idle event stream is in neither.
@@ -523,6 +524,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def cwd(self) -> pathlib.Path:
         """The repository the server reads."""
         return self.server.cwd
+
+    def _warn_pack(self, message: str) -> None:
+        """Encode the warning for the signed-in viewer's response header."""
+        self._pack_warning = parse.quote(message)
+
+    def end_headers(self) -> None:
+        """Return the pack warning once on the read that found it."""
+        if self._pack_warning:
+            self.send_header("X-Agent6-Pack-Warning", self._pack_warning)
+            self._pack_warning = ""
+        super().end_headers()
 
     @property
     def config_paths(self) -> tuple[pathlib.Path, ...]:
@@ -583,6 +595,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._send_sign_in_required()
             else:
                 self._route(path)
+        except errors.PackError as exc:
+            self._send_json({"error": str(exc)}, status=409)
         except (BrokenPipeError, ConnectionResetError):
             pass  # client went away mid-response
         except TimeoutError:
@@ -1093,6 +1107,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         Args:
             path: The requested route path.
         """
+        if path.startswith("/api/"):
+            pack.check_session_read(self.cwd, warn=self._warn_pack)
         if path == "/":
             self._send_bytes(
                 page.PAGE_HTML.encode("utf-8"),

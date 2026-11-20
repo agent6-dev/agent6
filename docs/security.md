@@ -747,6 +747,7 @@ Each file is installed as a new file from the bytes the listing hashed, never by
 A manifest that names state `pack` never carries (`worktrees/`, `locks/`, `pack-base.json`) is refused.
 No run, resume, machine or exec starts beside a pack, and `pack` writes only while none of them is live in the checkout.
 A `.agent6/pack.json` found when one of them ends is therefore not `agent6 pack`'s: agent6 moves it to `.agent6/pack.invalid/pack.json.invalid`, with the `config/`, `repo/` and `skills/` beside it, and warns against unpacking it.
+An open web UI or TUI applies the same check when it reads sessions.
 A taken name is left alone: the directory is then `pack.invalid.1`, `.2` and so on.
 The end of a session, a machine or an exec walks the checkout's tree as the run preflight does, so a pack in a subdirectory is set aside too.
 A session journals the warning as `pack.quarantined`, which the terminal, the TUI, the web and an ACP editor show.

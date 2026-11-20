@@ -26,7 +26,7 @@ except ImportError as e:  # pragma: no cover
     ) from e
 
 # Reached only once the textual guard above passed.
-from agent6 import errors
+from agent6 import errors, pack
 from agent6.app import merge_plan
 from agent6.config import ConfigError, layer
 from agent6.models import choices
@@ -251,6 +251,15 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
     def action_refresh(self) -> None:
         """Rebuild the table, keeping the selection by session id, since activity reorders rows."""
+        try:
+            pack.check_session_read(self.repo_cwd, warn=self.app.notify)
+        except errors.PackError as exc:
+            self.app.sub_title = str(exc)
+            return
+        self._refresh_table()
+
+    def _refresh_table(self) -> None:
+        """Keep the cursor on the same session as activity reorders the rows."""
         table = self.query_one("#sessions", widgets.DataTable)
         selected = ""
         if self._runs and 0 <= table.cursor_row < len(self._runs):

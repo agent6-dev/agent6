@@ -35,6 +35,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6 import errors, pack
 from agent6.app import fork, reporter, stop, undo
 from agent6.models import choices
 from agent6.sessions import ipc, journal, layout, process, shells
@@ -363,6 +364,11 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         The covered screen's bar is relabelled too, or the two would disagree until
         its next event-driven paint.
         """
+        try:
+            pack.check_session_read(pathlib.Path.cwd(), warn=self.notify)
+        except errors.PackError as exc:
+            self.sub_title = str(exc)
+            return
         status = session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
         has_unmerged = self._unmerged and self.state.finished
         unreadable = self.unreadable

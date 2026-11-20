@@ -98,6 +98,29 @@ def test_clear_pending_answers_wipes_stale_state(tmp_path: pathlib.Path) -> None
     assert not (ipc.questions_dir(tmp_path) / "question-1.answer").exists()
 
 
+def test_an_open_home_sets_aside_a_running_sessions_pack(tmp_path: pathlib.Path) -> None:
+    """A session read applies the pack check without closing the home screen."""
+    from agent6.ui.tui import home
+
+    state = paths.state_dir(tmp_path)
+    session = _write_run(state, "runs", "active", [{"type": "session.start", "mode": "run"}])
+    process.write_worker_pid(session, os.getpid())
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(state, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, home.HomeScreen)
+            directory = tmp_path / ".agent6"
+            directory.mkdir(exist_ok=True)
+            (directory / "pack.json").write_text("{}", encoding="utf-8")
+            screen.action_refresh()
+            assert (directory / "pack.invalid/pack.json.invalid").is_file()
+
+    asyncio.run(scenario())
+
+
 def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(
     tmp_path: pathlib.Path,
 ) -> None:

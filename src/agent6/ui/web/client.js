@@ -147,6 +147,8 @@ async function serverFetch(url, init = {}) {
   let r;
   try { r = await fetch(url, { ...init, headers: authHeaders(init.headers) }); }
   catch (e) { throw new Error(`no answer from the agent6 web server at ${location.host} (${e.message})`); }
+  const packWarning = r.headers.get('X-Agent6-Pack-Warning');
+  if (packWarning) toast(decodeURIComponent(packWarning), 'warn');
   if (r.status !== 401) return r;
   r.body?.cancel(); // nothing reads it, and an unread body holds its request open
   loginToken = '';
