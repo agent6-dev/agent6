@@ -12,7 +12,7 @@ import pathlib
 import pytest
 
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import Config, ConfigError
 from agent6.models import choices, validate
 
 _GLOBAL = """\
@@ -50,18 +50,19 @@ def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Pat
 def test_the_flag_routes_the_modes_role(repo: pathlib.Path) -> None:
     """The flag routes the mode's role.
 
-    Run and ask set the worker, plan the planner; the flag lands after the config layers and a
-    preset, so it is what the session runs.
+    Run and ask set the worker. Plan sets the planner. The flag takes precedence over the preset.
     """
     planned = session_setup.load_session_config(repo, (), mode="plan", model="openrouter/m").config
     assert planned.models.planner is not None
     assert (planned.models.planner.provider, planned.models.planner.model) == ("openrouter", "m")
     assert planned.models.worker is not None and planned.models.worker.model == "claude-x"
-    asked = session_setup.load_session_config(repo, (), mode="ask", model="claude-y").config
+    asked = session_setup.load_session_config(
+        repo, (), mode="ask", model="anthropic/claude-y"
+    ).config
     assert asked.models.worker is not None
     assert (asked.models.worker.provider, asked.models.worker.model) == ("anthropic", "claude-y")
     no_review = session_setup.load_session_config(
-        repo, (), mode="run", preset="no_review", model="claude-z"
+        repo, (), mode="run", preset="no_review", model="anthropic/claude-z"
     ).config
     assert no_review.models.worker is not None and no_review.models.worker.model == "claude-z"
 
@@ -195,12 +196,18 @@ def test_a_refused_flag_route_names_the_flag_not_the_config(
     monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    flagged = session_setup.load_session_config(repo, (), mode="run", model="claude-y").config
+    flagged = session_setup.load_session_config(
+        repo, (), mode="run", model="anthropic/claude-y"
+    ).config
     assert (
-        preflight.route_preflight(flagged, "worker", reporter=reporter, model_flag="claude-y")
+        preflight.route_preflight(
+            flagged, "worker", reporter=reporter, model_flag="anthropic/claude-y"
+        )
         is False
     )
-    assert said[-1].startswith("REFUSING: --model 'claude-y' is not in anthropic's model listing")
+    assert said[-1].startswith(
+        "REFUSING: --model 'anthropic/claude-y' is not in anthropic's model listing"
+    )
     assert "Closest: claude-x" in said[-1] and "config" not in said[-1]
     configured = session_setup.load_session_config(repo, (), mode="run").config
     assert preflight.route_preflight(configured, "worker", reporter=reporter) is False
@@ -235,48 +242,21 @@ def test_a_refused_flag_names_the_modes_provider_when_role_ids_collide(
     monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
     monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
-    cfg = session_setup.load_session_config(repo, (), mode="plan", model="claude-x").config
+    cfg = session_setup.load_session_config(
+        repo, (), mode="plan", model="openrouter/claude-x"
+    ).config
     assert not preflight.route_preflight(
         cfg,
         "planner",
         reporter=app_reporter.Reporter(out=said.append, err=said.append),
-        model_flag="claude-x",
+        model_flag="openrouter/claude-x",
     )
     assert "openrouter's model listing" in said[-1]
 
 
-def test_a_refused_flag_names_a_provider_head_that_matches_nothing(
-    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A refused flag names a provider head that matches nothing.
-
-    `--model openrouterr/claude-x` (a mistyped provider) is read as one model id on the role's
-    provider; the refusal says so, so the operator sees the typo and not a missing model.
-    """
-    from agent6.app import preflight
-    from agent6.app import reporter as app_reporter
-    from agent6.models import validate
-
-    def _keys_ok(_cfg: object, extra: object = ()) -> None:
-        return None
-
-    def _refused(cfg: Config, role: str) -> validate.ModelValidation:
-        model = cfg.models.resolve(role).model  # type: ignore[union-attr]
-        return validate.ModelValidation(unknown=(model,), suggestions={}, can_validate=True)
-
-    monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(validate, "validate_configured_model", _refused)
-    said: list[str] = []
-    reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    cfg = session_setup.load_session_config(
-        repo, (), mode="run", model="openrouterr/claude-x"
-    ).config
-    assert cfg.models.worker is not None and cfg.models.worker.provider == "anthropic"
-    assert not preflight.route_preflight(
-        cfg, "worker", reporter=reporter, model_flag="openrouterr/claude-x"
-    )
-    assert "No provider is named 'openrouterr' (configured: anthropic, openrouter)" in said[-1]
-    assert "read as a model id on anthropic" in said[-1]
+def test_an_unknown_flag_provider_names_the_configured_providers(repo: pathlib.Path) -> None:
+    with pytest.raises(ConfigError, match=r"unknown provider 'openrouterr'.*anthropic, openrouter"):
+        session_setup.load_session_config(repo, (), mode="run", model="openrouterr/claude-x")
 
 
 def test_a_fresh_run_records_its_model_flag(repo: pathlib.Path) -> None:
@@ -289,7 +269,7 @@ def test_a_fresh_run_records_its_model_flag(repo: pathlib.Path) -> None:
     from agent6.sessions import layout as sessions_layout
     from agent6.sessions import manifest as sessions_manifest
 
-    cfg = session_setup.load_session_config(repo, (), mode="run", model="claude-y").config
+    cfg = session_setup.load_session_config(repo, (), mode="run", model="anthropic/claude-y").config
     layout = sessions_layout.SessionLayout(state_dir=repo / "state", session_id="run-1")
     layout.session_dir.mkdir(parents=True)
     stamps.write_session_manifest(

@@ -250,25 +250,16 @@ def flag_model_refusal(v: ModelValidation, cfg: Config, role: RoleName, spec: st
         spec: The flag's value as typed.
 
     Returns:
-        One line naming the value, the provider checked, the closest ids and, when the
-        first segment names no configured provider, that the whole value was read as an id.
+        One line naming the value, the provider checked and the closest ids.
     """
     model = v.unknown[0]
     route = cfg.models.resolve(role)
     provider = route.provider if route is not None else ""
     close = v.suggestions.get(model, ())
     suffix = f" Closest: {', '.join(close)}." if close else ""
-    head, slash, _rest = spec.strip().partition("/")
-    misread = ""
-    if slash and head and head not in cfg.providers:
-        known = ", ".join(sorted(cfg.providers)) or "(none)"
-        misread = (
-            f" No provider is named {head!r} (configured: {known}), so the whole value was"
-            f" read as a model id on {provider}."
-        )
     return (
         f"--model {spec.strip()!r} is not in {provider}'s model listing (checked live)."
-        f"{misread}{suffix} Pass one of its ids, or provider/model for another provider."
+        f"{suffix} Pass an id as provider/model."
     )
 
 
