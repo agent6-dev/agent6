@@ -80,9 +80,9 @@ def test_an_unreadable_inbox_entry_is_dropped(tmp_path: pathlib.Path) -> None:
 
 def test_the_composer_says_how_many_steers_are_ahead(tmp_path: pathlib.Path) -> None:
     did, said = directive_actions.submit_composer_line(tmp_path, "first")
-    assert did and said == "steer queued; it reaches the model at the next step"
+    assert did and said == "steer queued, not yet delivered"
     did, said = directive_actions.submit_composer_line(tmp_path, "second")
-    assert did and said == "steer queued behind 1 other; they reach the model one per step"
+    assert did and said == "steer queued behind 1 other; not yet delivered"
     did, said = directive_actions.submit_composer_line(tmp_path, "third")
-    assert did and said == "steer queued behind 2 others; they reach the model one per step"
+    assert did and said == "steer queued behind 2 others; not yet delivered"
     assert [entry.text for entry in ipc.queued_steers(tmp_path)] == ["second", "third"]

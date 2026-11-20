@@ -189,7 +189,9 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         "[tool] finish_session",
     ]
     if control == "model":
-        expected_read[-2:-2] = ["", "[tool] run_command"]
+        command = read_b["output"].splitlines()[6]
+        assert command.startswith("[tool] run_command sh -c") and command.endswith(" (exit 0)")
+        expected_read[-2:-2] = ["", command]
     assert read_b["output"].splitlines() == expected_read
     assert read_b["children"][0] == f"[{one}] running: CHILD-A: write a.txt"
     # Agent6-owned git merges; model-owned git retains each ref without changing the checkout.
@@ -311,7 +313,7 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
     )
     assert answer == {
         "steered": child,
-        "message": f"[parallel] child {child} reads this at its next turn boundary.",
+        "message": f"[parallel] child {child}: steer queued for another turn, if any.",
     }
     # The child's second request carries the steer under its parent's heading, once.
     second = next(body for who, turn, body in seen if (who, turn) == ("CHILD", 1))

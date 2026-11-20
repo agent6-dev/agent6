@@ -222,12 +222,12 @@ def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: pathl
     d = _live_run(tmp_path / "plain")
     assert directive_actions.submit_composer_line(d, "focus on the parser") == (
         True,
-        "steer queued; it reaches the model at the next step",
+        "steer queued, not yet delivered",
     )
     # `/parallel` separates tasks by design, so a later one is meant; it waits in the inbox.
     assert (
         directive_actions.submit_composer_line(d, "/parallel a /parallel b")[1]
-        == "steer queued behind 1 other; they reach the model one per step"
+        == "steer queued behind 1 other; not yet delivered"
     )
 
 

@@ -119,7 +119,10 @@ class ChildRuntime:
 
         def drain() -> None:
             for row in reader.read():
-                if parent_events is not None and row.get("type") == journal.SteerInjected.TYPE:
+                if parent_events is not None and row.get("type") in (
+                    journal.SteerInjected.TYPE,
+                    journal.SteerFromParent.TYPE,
+                ):
                     parent_events.emit(
                         journal.ParallelChildActivity(
                             child=spec.session_id,

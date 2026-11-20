@@ -354,8 +354,8 @@ class SteerChildInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "steer_child"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Send an instruction to a child, by the id `parallel` returned. A running child reads"
-        " it at its next turn boundary, marked as from its parent. A stopped child continues"
+        "Send an instruction to a child, by the id `parallel` returned. A running child's"
+        " instruction queues for its next turn, if it takes one. A stopped child continues"
         " in its own clone under this run's budget and approvals, with the text as its next"
         " instruction. The call returns at once; `read_background` shows what the child has done."
     )

@@ -183,12 +183,9 @@ def submit_composer_line(
             "; the steer that waited follows it" if ahead else ""
         )
     elif ahead and sent.strip().lower() not in ipc.STEER_VERBS:
-        said = (
-            f"steer queued behind {ahead} other{'s' if ahead > 1 else ''}; they reach the model"
-            " one per step"
-        )
+        said = f"steer queued behind {ahead} other{'s' if ahead > 1 else ''}; not yet delivered"
     else:
-        said = "steer queued; it reaches the model at the next step"
+        said = "steer queued, not yet delivered"
     # A token inside the sent text travelled as words, in case it was meant as a directive.
     if (stray := agent6_directive.stray_directive(sent)) is not None:
         said += f" (`{stray}` mid-line is text; a directive has to start the line)"

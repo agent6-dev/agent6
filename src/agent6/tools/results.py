@@ -714,7 +714,7 @@ class SteeredResult(ToolResult):
 
     Attributes:
         child: The child's session id.
-        message: When the child reads it.
+        message: What the call queued or continued.
     """
 
     child: str
@@ -726,7 +726,7 @@ class SteeredResult(ToolResult):
 
     def summary(self) -> str:
         """Return the one-line summary."""
-        return f"steered {self.child}"
+        return self.message
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

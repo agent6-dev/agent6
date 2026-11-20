@@ -229,7 +229,8 @@ A stopped child continues the same conversation in its retained clone, under the
 Its finished work follows the same merge policy as a new child's work.
 The task's other attempts must have ended, with none already merged and no merge pending.
 A missing clone or conversation snapshot refuses continuation; `agent6 fork <child-id> --steer "..."` starts independent work from its commits.
-It travels the steer channel `agent6 steer <child>` uses, so it queues in order with the operator's steers, and the child reads it at its next turn boundary under `PARENT STEERING (an instruction from the run that started this child):`.
+It queues in order with the operator's steers on the channel `agent6 steer <child>` uses.
+If the child takes another turn, it reads the message under `PARENT STEERING (an instruction from the run that started this child):`; a child can finish review without taking another turn.
 A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` in it are words, not commands.
 It is refused for an id that is no child of the run, a child that has finished or merged, or one that has not started.
 `stop_background` with a child's id stops the child; its work does not merge, and its branch holds what it committed.
@@ -260,7 +261,7 @@ A task whose children had ended by themselves when the run ended completes then 
 Every session that dispatched children shows them: `sessions show`, the hubs and `attach --json` list a run's children under it whether it is a `run --parallel` group or a run that used `/parallel`, and the run's receipt carries a `Children` section (one line per child: its join, its spend) with the spend the children added to the run's total named, so the total is read as inclusive.
 The refusal names the child session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
-Steers sent while one waits queue in order and reach the model one per step; `abort`, `exit`, `/undo` and `detach` take the slot at once.
+Steers sent while one waits queue in order, one per subsequent step; `abort`, `exit`, `/undo` and `detach` take the slot at once.
 The pending label clears when the worker consumes the last steer.
 
 ## Answer a parked prompt

@@ -67,7 +67,7 @@ class _Work:
 
     def steer(self, child: str, text: str) -> str:
         self.steered.append((child, text))
-        return f"[parallel] child {child} reads this at its next turn boundary."
+        return f"[parallel] child {child}: steer queued for another turn, if any."
 
 
 def _tools(
@@ -122,8 +122,8 @@ def test_steer_child_is_offered_where_parallel_is_and_refused_everywhere_else(
     assert _names(on).index("steer_child") == _names(on).index("parallel") + 1
     (steer,) = [t for t in toolset.tool_definitions(on) if t.name == "steer_child"]
     assert steer.description == (
-        "Send an instruction to a child, by the id `parallel` returned. A running child reads"
-        " it at its next turn boundary, marked as from its parent. A stopped child continues"
+        "Send an instruction to a child, by the id `parallel` returned. A running child's"
+        " instruction queues for its next turn, if it takes one. A stopped child continues"
         " in its own clone under this run's budget and approvals, with the text as its next"
         " instruction. The call returns at once; `read_background` shows what the child has done."
     )
@@ -148,9 +148,9 @@ def test_steer_child_answers_at_once_and_refuses_a_blank_instruction(
     assert work.steered == [("run-p1-l1", "also write the test")]
     assert result.to_wire() == {
         "steered": "run-p1-l1",
-        "message": "[parallel] child run-p1-l1 reads this at its next turn boundary.",
+        "message": "[parallel] child run-p1-l1: steer queued for another turn, if any.",
     }
-    assert result.summary() == "steered run-p1-l1"
+    assert result.summary() == result.message
     for bad in ({"id": "run-p1-l1", "text": "  \n"}, {"id": "", "text": "t"}, {"text": "t"}):
         with pytest.raises(tool_errors.ToolError):
             d.dispatch("steer_child", bad)
@@ -249,6 +249,8 @@ def test_finish_review_holds_the_child_on_both_parent_rosters(tmp_path: pathlib.
     (line,) = child_work.roster(dispatcher)
     assert line.state == "in review" and line.running
     assert child_work.unmerged(dispatcher) == ((sid, "in review"),)
+    said = child_work.steer(dispatcher, sid, "check the test")
+    assert "in review" in said and "queued" in said and "another turn" in said
     with log.open("a") as out:
         out.write(json.dumps({"type": "review.skipped", **panel, "reason": "budget"}) + "\n")
     assert (
@@ -285,7 +287,7 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
 
     (runs / one).mkdir()
     said = child_work.steer(dispatcher, one, "also write the test")
-    assert said == f"[parallel] child {one} reads this at its next turn boundary."
+    assert said == f"[parallel] child {one}: steer queued for another turn, if any."
     assert (runs / one / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == (
         "PARENT STEERING (an instruction from the run that started this child):\n"
         "also write the test"

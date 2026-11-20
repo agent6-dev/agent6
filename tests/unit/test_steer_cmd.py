@@ -33,14 +33,12 @@ def test_steer_queues_for_a_live_run(
 
     assert main(["steer", "tiny-run", "land your best patch now"]) == 0
     out = capsys.readouterr().out
-    assert "tiny-run-AAAA11: steer queued; it reaches the model at the next step." in out
+    assert "tiny-run-AAAA11: steer queued, not yet delivered." in out
     assert main(["sessions", "show", d.name]) == 0
     shown = capsys.readouterr().out
     assert "steer queued, not yet delivered: land your best patch now" in shown
     assert main(["steer", "tiny-run", "then run the gate"]) == 0
-    assert "steer queued behind 1 other; they reach the model one per step" in (
-        capsys.readouterr().out
-    )
+    assert "steer queued behind 1 other; not yet delivered" in (capsys.readouterr().out)
     assert main(["sessions", "show", d.name]) == 0
     assert "land your best patch now (+1 more queued)" in capsys.readouterr().out
     # The one shared channel: request marker + answer, exactly what the

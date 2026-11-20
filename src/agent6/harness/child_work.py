@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
 from agent6.harness import child_continue, child_merge, operator_bridge, parallel_join
-from agent6.sessions import child_dispatch, ipc, journal
+from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
 from agent6.viewmodel.session import log as session_log
@@ -38,8 +38,7 @@ def standing(
         started: The child.
 
     Returns:
-        `running`, `in review`, `stopping`, `ended, not merged`, `being ranked` while its task's judges
-        run, or a stopped child's words.
+        Its live state, `ended, not merged`, `being ranked`, or a stopped child's words.
     """
     if not started.result.done():
         if started.session_id in dispatcher.stopping:
@@ -169,7 +168,7 @@ def stop(dispatcher: parallel_dispatch.ParallelDispatcher, child: str) -> None:
 def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: str) -> str:
     """Steer a running child or continue a stopped child under its parent.
 
-    The child reads it at its next turn boundary under `operator_bridge.PARENT_STEERING`:
+    A child taking another turn reads it under `operator_bridge.PARENT_STEERING`:
     text for its model, never a steer verb or a directive.
 
     Args:
@@ -178,18 +177,22 @@ def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: st
         text: The instruction.
 
     Returns:
-        The line that says when the child reads it.
+        The confirmation of submission, not delivery.
 
     Raises:
         ToolError: The id names no child of this run, a child that has ended, or one that
             has not started; nothing was sent.
     """
-    running = any(
-        started.session_id == child and not started.result.done()
-        for task in dispatcher.open.values()
-        for started in task.children
+    state = next(
+        (
+            standing(dispatcher, task, started)
+            for task in dispatcher.open.values()
+            for started in task.children
+            if started.session_id == child and not started.result.done()
+        ),
+        None,
     )
-    if not running:
+    if state is None:
         ended = next((line for line in roster(dispatcher) if line.id == child), None)
         if ended is None:
             raise tool_errors.ToolError(
@@ -212,8 +215,8 @@ def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: st
             f"child {child} has not started yet; nothing was sent. Send it again once"
             " read_background shows its transcript."
         )
-    dispatcher.emit(journal.ParallelChildActivity(child=child, activity="steered", detail=text))
-    return f"[parallel] child {child} reads this at its next turn boundary."
+    review = " (in review)" if state == "in review" else ""
+    return f"[parallel] child {child}{review}: steer queued for another turn, if any."
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
