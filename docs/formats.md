@@ -2861,7 +2861,7 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 | `repo_id` | `str` | The state dir's name for the repo. |
 | `id` | `str` | The session id or machine name. |
 | `mode` | `str` | The session mode, or "machine". |
-| `status` | `str` | The raw status word, without its detail. |
+| `status` | `str` | The raw status word in JSON, the status label in the table. |
 | `status_detail` | `str` | The detail explaining the status, or "" when there is none. |
 | `pid` | `int \| None` | The worker pid, when readable. |
 | `attached` | `bool` | A front end is live on the session. |

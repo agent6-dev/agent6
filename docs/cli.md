@@ -197,6 +197,7 @@ Exit `0` also covers harness-declared and gateless ends, including a run that ch
 [`git.auto_merge`](config.md#git) can merge a completed `finish_session` or `children_ranked` run into the checkout when the run passed its own gate or had no gate.
 A child's gate pass is evidence about the tree, not permission to merge it into the checkout.
 
+The status label prints a stop code such as `max_turns` as “max turns” and keeps names, paths and other detail as written.
 Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `sessions list --json`), and each reason one row:
 
 | End reason | Headline | Exit code |
