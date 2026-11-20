@@ -231,12 +231,15 @@ class TelemetryFold:
         if reviewer is not None and execution.panels:
             parent = next(reversed(execution.panels.values())).span_id
         model = str(event.get("model", ""))
+        actor = str(event.get("actor", ""))
+        if self.capture == "metadata" and actor.startswith("reviewer:"):
+            actor = "reviewer"
         fields: dict[str, telemetry_records.AttributeValue] = {
             "gen_ai.operation.name": telemetry_records.OPERATION_CHAT,
             "gen_ai.provider.name": str(event.get("provider", "")),
             "gen_ai.request.model": model,
             "gen_ai.conversation.id": self.session_id,
-            "agent6.actor": str(event.get("actor", "")),
+            "agent6.actor": actor,
         }
         if reviewer is not None:
             fields["agent6.reviewer"] = reviewer

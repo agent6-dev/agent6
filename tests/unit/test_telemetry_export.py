@@ -195,6 +195,35 @@ def test_an_export_posts_every_signal_and_a_rerun_resends_only_the_metrics(
     assert start_again["sum"]["dataPoints"][0]["startTimeUnixNano"] == str(first_ns)
 
 
+@pytest.mark.parametrize(
+    ("capture", "actor"), [("metadata", "reviewer"), ("content", "reviewer:API design")]
+)
+@pytest.mark.parametrize("index", [None, 2])
+def test_a_reviewer_exports_its_focus_only_in_content_capture(
+    repo: pathlib.Path, capture: str, actor: str, index: int | None
+) -> None:
+    """A metadata collector sees the reviewer role even when the call has no panel index."""
+    _write_session(
+        repo,
+        "reviewer-a",
+        [
+            {"type": "session.start", "execution_id": "e", "mode": "reviewer"},
+            {"type": "model.call", "actor": "reviewer:API design", "reviewer_index": index},
+            {"type": "model.result", "ok": True},
+            {"type": "session.stop", "reason": "finish_session"},
+        ],
+    )
+    collector = _Collector()
+    export.export(repo, _config(capture=capture), post=collector.post)
+    (traces,) = [body for url, _, body in collector.requests if url.endswith("/v1/traces")]
+    spans = traces["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    (call,) = [s for s in spans if s["name"] == "chat"]
+    attrs = {a["key"]: a["value"] for a in call["attributes"]}
+    assert attrs.get("agent6.reviewer") == ({"intValue": str(index)} if index is not None else None)
+    assert attrs["agent6.actor"] == {"stringValue": actor}
+    assert ("API design" in json.dumps(collector.requests)) == (capture == "content")
+
+
 @pytest.mark.parametrize("capture", ["metadata", "content"])
 def test_export_remasks_stored_settings_before_posting(repo: pathlib.Path, capture: str) -> None:
     """A malformed neighbor cannot leak through a settings log or hide a valid observation."""
