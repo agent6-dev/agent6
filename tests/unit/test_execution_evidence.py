@@ -585,7 +585,7 @@ def test_cli_and_web_read_the_recorded_environment(
 
 @pytest.mark.parametrize("resumed", [False, True], indirect=True, ids=["mirrored", "stale-mirror"])
 def test_tui_header_reads_recorded_environment(resumed: layout.SessionLayout) -> None:
-    """The rendered dashboard shows the resumed target within its header's height limit."""
+    """The dashboard reads the resumed target; the local host with one root adds no line."""
     first, latest = (
         row["target_id"]
         for line in resumed.logs_path.read_text().splitlines()
@@ -599,9 +599,10 @@ def test_tui_header_reads_recorded_environment(resumed: layout.SessionLayout) ->
             await pilot.pause()
             await pilot.press("ctrl+d")
             await pilot.pause()
+            current = app.state.targets.current
+            assert current is not None and current.target_id == latest
             screenshot = app.export_screenshot().replace("&#160;", " ")
-            assert f"Environment: local (target {latest})" in screenshot
-            assert f"Environment: local (target {first})" not in screenshot
+            assert "environment: local" not in screenshot.casefold()
 
     asyncio.run(scenario())
 
