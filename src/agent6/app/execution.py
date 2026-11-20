@@ -655,7 +655,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 summariser=cfg.compaction.summariser,
                 helper=session.summariser_provider,
                 helper_context_tokens=role_providers.helper_context_window(cfg),
-                worker_backend=role_providers.worker_backend(cfg, session.rm_role),
+                endpoint=role_providers.endpoint_compaction(cfg, session.rm_role),
                 idle=role_providers.idle_compaction(cfg, session.rm_role),
             ),
         )

@@ -6,7 +6,7 @@ import dataclasses
 from collections.abc import Callable
 
 from agent6 import kinds, providers
-from agent6.harness import loop_conversation
+from agent6.harness import loop_conversation, provider_call
 from agent6.harness.compaction import window
 from agent6.providers import provider_types, request_headers
 
@@ -16,6 +16,7 @@ class Calls:
     """Use the same providers, metering and stop signals as the driving run."""
 
     worker: providers.Provider
+    caller: provider_call.ProviderCaller
     settings: window.CompactionSettings
     conversation: loop_conversation.Conversation
     system: str
@@ -38,6 +39,30 @@ class Calls:
             raise provider_types.ProviderAborted("operator stopped compaction")
         if self.should_interrupt():
             raise provider_types.ProviderInterrupted("operator steered during compaction")
+
+    def call_endpoint(
+        self, instruction: str, call_id: str, count: int
+    ) -> provider_types.ProviderResponse:
+        """Ask the endpoint for a summary without appending to its request.
+
+        Args:
+            instruction: The summary instruction outside the messages.
+            call_id: The summary attempt's identity.
+            count: The number of messages in the request being summarised.
+
+        Returns:
+            The metered response after the caller's retry policy.
+        """
+        identity = self.turn_identity or kinds.CallContext(execution_id=self.execution_id)
+        return self.caller.call(
+            self.system,
+            self.conversation.to_wire()[:count],
+            self.tools,
+            self.settings.summary_max_tokens,
+            initiator=self.conversation.initiator,
+            call_context=dataclasses.replace(identity, model_call_id=call_id),
+            compaction=provider_types.Summarise(instruction),
+        )
 
     def call_worker(self, instruction: str, call_id: str) -> provider_types.ProviderResponse:
         """Ask the worker for text without running any returned tool calls.

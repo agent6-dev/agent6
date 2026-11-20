@@ -21,6 +21,7 @@ import re
 from agent6 import media
 from agent6.harness import loop_conversation
 from agent6.harness.compaction import elision as compaction_elision
+from agent6.providers import provider_types
 from agent6.tools import schema
 
 ASK_USER_TOOL = schema.AskUserInput.TOOL_NAME
@@ -111,6 +112,22 @@ def _tool_result_pointers(
             pointers.append((message_idx, item_idx, size))
             total += size
     return pointers, total
+
+
+def clearing(
+    conversation: loop_conversation.Conversation, limit: int
+) -> provider_types.ClearToolResults | None:
+    """Ask the endpoint to clear results above the local tool-output threshold.
+
+    Args:
+        conversation: The whole history, including results cleared on earlier requests.
+        limit: The threshold in characters.
+
+    Returns:
+        A clearing edit that protects operator answers, or None below the threshold.
+    """
+    _, total = _tool_result_pointers(conversation)
+    return provider_types.ClearToolResults((ASK_USER_TOOL,)) if total > limit else None
 
 
 def count_elisions(conversation: loop_conversation.Conversation) -> tuple[int, int]:

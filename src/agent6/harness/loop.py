@@ -177,9 +177,7 @@ class Harness:
     compaction: compaction_window.CompactionSettings = dataclasses.field(
         default_factory=compaction_window.CompactionSettings
     )
-    compactor: strategy.Strategy = dataclasses.field(
-        default_factory=harness_compaction.default_strategy
-    )
+    compactor: strategy.Strategy | None = None
     review: review_gate.ReviewSettings = dataclasses.field(
         default_factory=review_gate.ReviewSettings
     )
@@ -215,6 +213,8 @@ class Harness:
 
     def __post_init__(self) -> None:
         """Hand the dispatcher the run's children, which the loop owns."""
+        if self.compactor is None:
+            self.compactor = harness_compaction.default_strategy(self.compaction.endpoint)
         self.dispatcher.children = child_work.ChildWork(self)
 
     # ---- run / resume entry --------------------------------------------------
@@ -703,7 +703,9 @@ class Harness:
             self._turn_before_call(conversation, state, ctx)
         for call_id, reason in conversation.limit_attachments():
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
-        conversation.roll_cache_marks()
+        if not self.compaction.endpoint.writes_summary:
+            conversation.roll_cache_marks()
+        assert self.compactor is not None
         restarted = self.compactor.compact(self.compaction_context(conversation, state, tools))
         if self.contract is not None:
             # A reviewer reads which reply this is, and on the last that it decides now.
@@ -716,7 +718,7 @@ class Harness:
             if parked is not None:
                 return parked
             self._maybe_surface_current_task(conversation, state)
-        if restarted or self.contract is not None:
+        if not self.compaction.endpoint.writes_summary and (restarted or self.contract is not None):
             conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -887,6 +889,7 @@ class Harness:
                 self._worker_max_tokens(state),
                 initiator=conversation.initiator,
                 call_context=state.call_context,
+                compaction=self.compaction.clearing(conversation),
             )
 
         try:
@@ -1928,6 +1931,7 @@ class Harness:
         """
         calls = compaction_calls.Calls(
             self.provider,
+            self.caller,
             self.compaction,
             conversation,
             state.system,
@@ -1939,6 +1943,17 @@ class Harness:
             self.bridge.should_abort,
             self.bridge.should_interrupt,
         )
+
+        def notice(task: str | None = None) -> str:
+            return compaction_prompts.context_restart_notice(
+                self.mode,
+                endpoint_task=task,
+                pins=state.pins,
+                decisions=self._load_decisions(),
+                dag_available=self.dispatcher.dag_available,
+                verification=self.verify_fact(state),
+            )
+
         return strategy.Context(
             execution_id=state.execution_id,
             conversation=conversation,
@@ -1946,14 +1961,10 @@ class Harness:
             prefix_chars=compaction_window.request_prefix_chars(state.system, tools),
             task=state.original_task,
             pins=state.pins,
-            restart_notice=lambda: compaction_prompts.context_restart_notice(
-                self.mode,
-                pins=state.pins,
-                decisions=self._load_decisions(),
-                dag_available=self.dispatcher.dag_available,
-                verification=self.verify_fact(state),
-            ),
+            restart_notice=notice,
+            endpoint_notice=lambda: notice(state.original_task),
             call_worker=calls.call_worker,
+            call_endpoint=calls.call_endpoint,
             call_helper=calls.call_helper,
             check_stop=calls.check_stop,
             check_budget=calls.check_budget,

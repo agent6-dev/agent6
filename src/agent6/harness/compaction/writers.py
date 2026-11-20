@@ -5,12 +5,14 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 from agent6.harness import loop_conversation
 from agent6.harness.compaction import window
 from agent6.prompts import compaction
 from agent6.providers import provider_types
+
+type Writer = Literal["worker", "helper", "endpoint"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -18,9 +20,10 @@ class Summary:
     """An accepted summary and its writer's provenance."""
 
     raw: str
-    writer: Literal["worker", "helper"]
+    writer: Writer
     fallback_reason: str
     usage: provider_types.ProviderUsage
+    block: dict[str, Any] | None = None
 
 
 def helper_input(
@@ -86,11 +89,25 @@ def helper_input(
     return prefix + transcript.decode()
 
 
+def endpoint_rejection(response: provider_types.ProviderResponse) -> str:
+    """Name the stop reason when no usable summary block came back.
+
+    Args:
+        response: The endpoint summary reply.
+
+    Returns:
+        A diagnostic, or an empty string for an accepted block.
+    """
+    if response.summary_block is None or response.stop_reason != "compaction":
+        return f"no summary block (stop_reason: {response.stop_reason})"
+    return "" if window.strip_checkoff(response.text.strip()) else "empty summary"
+
+
 def rejection(response: provider_types.ProviderResponse) -> str:
     """Name an unusable summary, or return an empty string for accepted prose.
 
     Args:
-        response: Either writer's response.
+        response: The writer's response.
 
     Returns:
         The reason the conversation must stay unchanged.
@@ -116,9 +133,31 @@ def rejection(response: provider_types.ProviderResponse) -> str:
     return ""
 
 
+def _prior_summary(messages: Sequence[loop_conversation.Message]) -> str:
+    """Return the last restart summary for the helper's bounded transcript."""
+    # A helper tail clip must not erase the previous restart summary; the worker has it in view.
+    prior_req = ""
+    for message in messages:
+        if isinstance(message, loop_conversation.AssistantMessage):
+            for block in message.raw_content:
+                if isinstance(block, dict) and block.get("type") == "compaction":
+                    prior_req = f"\n\nPrevious progress summary:\n{block['content']}"
+        for item in getattr(message, "items", ()):
+            if isinstance(item, loop_conversation.Notice) and (
+                prior := compaction.progress_summary_from_notice(item.text)
+            ):
+                prior_req = (
+                    "\n\nThis conversation was ALREADY compacted; the summary from"
+                    " that restart follows, and the transcript below covers only what"
+                    " happened SINCE. Carry anything still relevant into the new"
+                    f" summary:\n{prior}"
+                )
+    return prior_req
+
+
 def instruction(
     *,
-    writer: Literal["worker", "helper"],
+    writer: Writer,
     task: str,
     open_tasks: list[tuple[str, str]],
     focus: str,
@@ -164,19 +203,16 @@ def instruction(
     if pins:
         pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(pins, start=1))
         pins_req = compaction.PINS_NO_RESTATE_CLAUSE + pin_lines
-    # A helper tail clip must not erase the previous restart summary; the worker has it in view.
-    prior_req = ""
-    for message in messages if writer == "helper" else ():
-        for item in getattr(message, "items", ()):
-            if isinstance(item, loop_conversation.Notice) and (
-                prior := compaction.progress_summary_from_notice(item.text)
-            ):
-                prior_req = (
-                    "\n\nThis conversation was ALREADY compacted; the summary from"
-                    " that restart follows, and the transcript below covers only what"
-                    " happened SINCE. Carry anything still relevant into the new"
-                    f" summary:\n{prior}"
-                )
+    if writer == "endpoint":
+        # The mandatory instruction and focus take precedence over verbatim copies.
+        base = compaction.CONTEXT_SUMMARY_SYSTEM_PROMPT + focus_req + checkoff_req
+        limit = 16384
+        parts = base[:limit]
+        for optional in (f"\n\nTASK (the goal, verbatim):\n{task}", pins_req):
+            if len(parts) + len(optional) <= limit:
+                parts += optional
+        return parts
+    prior_req = _prior_summary(messages) if writer == "helper" else ""
     body = f"TASK (the goal, verbatim):\n{task}{checkoff_req}{focus_req}{pins_req}{prior_req}"
     if writer == "helper":
         return body

@@ -25,6 +25,7 @@ class Context:
         task: The original task.
         pins: Operator instructions that survive a restart.
         restart_notice: Build the restart header with current pins, rulings and verify fact.
+        call_endpoint: Ask the endpoint to summarise the given request.
         call_worker: Append one instruction to the worker request using the supplied call id.
         call_helper: Send system and user text to the helper using the supplied call id.
         check_stop: Raise on a pending stop or steer.
@@ -44,7 +45,9 @@ class Context:
     prefix_chars: int
     task: str
     pins: Sequence[str]
+    endpoint_notice: Callable[[], str]
     restart_notice: Callable[[], str]
+    call_endpoint: Callable[[str, str, int], provider_types.ProviderResponse]
     call_worker: Callable[[str, str], provider_types.ProviderResponse]
     call_helper: Callable[[str, str, str], provider_types.ProviderResponse]
     check_stop: Callable[[], None]

@@ -13,6 +13,7 @@ from typing import Literal
 from agent6 import media
 from agent6.harness import loop_conversation
 from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import rules
 from agent6.providers import Provider, provider_types
 
 # Chars, not tokens: tokens are roughly chars/4 for English-shaped content.
@@ -163,7 +164,7 @@ class CompactionSettings:
         summariser: The writer selected for tier 2.
         helper: The helper role's provider; the worker's when None.
         helper_context_tokens: The helper's known window; None refuses a helper summary.
-        worker_backend: The driving provider's backend, for the Claude Code exception.
+        endpoint: The history operations of the driving route.
         idle: The driving provider's idle settings, or None without an HTTP provider.
     """
 
@@ -177,8 +178,20 @@ class CompactionSettings:
     summariser: Literal["worker", "helper"] = "worker"
     helper: Provider | None = None
     helper_context_tokens: int | None = None
-    worker_backend: str = ""
+    endpoint: provider_types.EndpointCompaction = dataclasses.field(
+        default_factory=provider_types.EndpointCompaction
+    )
     idle: IdleCompaction | None = None
+
+    def clearing(
+        self, conversation: loop_conversation.Conversation
+    ) -> provider_types.ClearToolResults | None:
+        """Return the clearing option for this request, if the endpoint offers it."""
+        return (
+            rules.clearing(conversation, self.drop_at_chars)
+            if self.endpoint.clears_tool_results
+            else None
+        )
 
 
 def strip_old_thinking(

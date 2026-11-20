@@ -41,9 +41,14 @@ from agent6.providers import (
     ToolDefinition,
     TranscriptRecorder,
     TranscriptSink,
+    anthropic,
+    chatgpt,
+    claude_code,
     oauth,
+    openai,
     provider_types,
     request_headers,
+    responses,
 )
 from agent6.sessions import budget_events, event_log, journal
 
@@ -76,7 +81,8 @@ def resolve_compaction_thresholds(
         drop_override=drop_override,
         summarise_override=summarise_override,
     )
-    if log is not None and drop_override is None:
+    endpoint = endpoint_compaction(cfg, rm)
+    if log is not None:
         ctx = models_registry.context_window(provider, model) if model else None
         src = (
             f"adaptive from {model} (context {ctx:,} tok)"
@@ -86,10 +92,14 @@ def resolve_compaction_thresholds(
         key = models_registry.bundled_context_key(model)
         if key is not None and key not in (model, models_registry.normalize_model_id(model)):
             src += f"; family fallback from {key}"
-        # Thresholds compaction will fire at, not a compaction that happened.
-        log(f"compaction thresholds: drop at {drop:,} chars, summarise at {summarise:,} [{src}]")
+        writer = "endpoint" if endpoint.writes_summary else "agent6"
+        source = src if drop_override is None else "configured"
+        log(
+            f"compaction thresholds: {writer} drops at {drop:,} chars, "
+            f"summarises at {summarise:,} [{source}]"
+        )
     keep = cfg.compaction.keep_recent_chars
-    if summarise_override is None and keep > summarise // 2:
+    if not endpoint.writes_summary and summarise_override is None and keep > summarise // 2:
         keep = summarise // 2
         if log is not None:
             log(
@@ -131,18 +141,27 @@ def idle_compaction(cfg: Config, rm: RoleModel | None) -> window.IdleCompaction 
     return window.IdleCompaction(rm.provider, entry.idle_compact_s, entry.idle_compact_min_chars)
 
 
-def worker_backend(cfg: Config, rm: RoleModel | None) -> str:
-    """Name the backend of the provider that drives the run.
+def endpoint_compaction(cfg: Config, rm: RoleModel | None) -> provider_types.EndpointCompaction:
+    """Return the history operations of the driving route.
 
     Args:
         cfg: The effective configuration.
-        rm: The resolved driving role.
+        rm: The driving model, if configured.
 
     Returns:
-        The backend, or an empty string when no configured provider drives the run.
+        The facts supplied by the backend for this model.
     """
-    entry = cfg.providers.get(rm.provider) if rm is not None else None
-    return entry.backend if entry is not None else ""
+    if rm is None or (entry := cfg.providers.get(rm.provider)) is None:
+        return provider_types.EndpointCompaction()
+    if isinstance(entry, AnthropicProviderEntry):
+        return anthropic.endpoint_compaction(rm.model, server_compaction=entry.server_compaction)
+    if isinstance(entry, ClaudeCodeProviderEntry):
+        return claude_code.ENDPOINT_COMPACTION
+    if isinstance(entry, ChatGPTProviderEntry):
+        return chatgpt.ENDPOINT_COMPACTION
+    if isinstance(entry, ResponsesProviderEntry):
+        return responses.ENDPOINT_COMPACTION
+    return openai.ENDPOINT_COMPACTION
 
 
 def resolve_decompose(
@@ -473,6 +492,7 @@ class InstrumentedProvider:
             thinking_delta_callback: Receives each reasoning piece as it streams.
             should_abort: Polled to abort the call.
             should_interrupt: Polled to interrupt the call.
+            compaction: The endpoint operation, if requested.
             context: The caller's context; one without a conversation id names the initiator
                 only, and the conversation supplies the rest; None is an agent-initiated call.
 

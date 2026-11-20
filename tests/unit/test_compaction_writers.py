@@ -81,6 +81,8 @@ def context(
     conversation: loop_conversation.Conversation | None = None,
     tools: list[provider_types.ToolDefinition] | None = None,
     helper_context_tokens: int = 200000,
+    task: str = "task",
+    pins: tuple[str, ...] = (),
     **settings: Any,
 ) -> strategy.Context:
     harness = test_harness._wf(
@@ -95,7 +97,9 @@ def context(
         ),
     )
     turn = harness.compaction_context(
-        conversation or history(), loop_state.LoopState("task", 1, system="system"), tools or []
+        conversation or history(),
+        loop_state.LoopState(task, 1, system="system", pins=list(pins)),
+        tools or [],
     )
     return dataclasses.replace(turn, emit=events.append)
 
@@ -210,11 +214,13 @@ def test_helper_bounds_input_and_marks_missing_beginning() -> None:
 def test_claude_code_uses_helper_without_advancing_worker() -> None:
     worker, helper = Writer(response()), Writer(response())
     events: list[Any] = []
-    turn = context(worker, helper, events, worker_backend="claude_code")
+    turn = context(
+        worker, helper, events, endpoint=provider_types.EndpointCompaction(keeps_session=True)
+    )
     assert driver.Tiered().compact(turn)
     assert worker.calls == []
     assert len(helper.calls) == 1
-    assert "claude_code" in events[-1].fallback_reason
+    assert "owns its live session" in events[-1].fallback_reason
 
 
 def test_responses_refusal_is_not_lost_beside_text() -> None:

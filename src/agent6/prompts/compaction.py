@@ -99,6 +99,7 @@ def context_restart_notice(
     *,
     dag_available: bool = True,
     verification: str = "",
+    endpoint_task: str | None = None,
 ) -> str:
     """Build the post-compaction restart preamble.
 
@@ -107,19 +108,32 @@ def context_restart_notice(
         pins: The operator's pinned instructions, rendered as standing orders.
         decisions: The recorded operator rulings, or "".
         dag_available: The run has a curator, so `list_tasks` exists.
+        endpoint_task: The task to repeat after a signed summary instead of adding prose.
         verification: The verify fact (`VerifyVerdict.fact`), or "" for a run without a gate.
 
     Returns:
         The preamble, ending with the "PROGRESS SUMMARY:" label the summary follows.
     """
-    parts = [_CONTEXT_RESTART_HEAD]
+    parts = (
+        [_CONTEXT_RESTART_HEAD]
+        if endpoint_task is None
+        else [
+            "[harness context restart] Continue from the endpoint summary above.",
+            f"TASK (the goal, verbatim):\n{endpoint_task}",
+        ]
+    )
     if dag_available and mode in ("run", "plan"):
-        parts.append(_CONTEXT_RESTART_DAG)
+        parts.append(
+            _CONTEXT_RESTART_DAG
+            if endpoint_task is None
+            else "Use list_tasks to check the current task statuses."
+        )
     if block := pinned_block(pins):
         parts.append(block)
     if decisions.strip():
         parts.append(f"OPERATOR RULINGS (recorded, still binding):\n{decisions.strip()}\n")
     if verification:
         parts.append(f"VERIFICATION (the harness's record, not the summary's):\n{verification}\n")
-    parts.append("PROGRESS SUMMARY:\n")
+    if endpoint_task is None:
+        parts.append("PROGRESS SUMMARY:\n")
     return "\n\n".join(parts)

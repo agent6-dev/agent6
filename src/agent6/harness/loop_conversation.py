@@ -170,9 +170,10 @@ class Conversation:
     history.
     """
 
-    __slots__ = ("_marks", "_messages")
+    __slots__ = ("_after_results", "_marks", "_messages")
 
     def __init__(self) -> None:
+        self._after_results: str | None = None
         self._messages: list[Message] = []
         self._marks: list[tuple[int, int]] = []
 
@@ -186,8 +187,11 @@ class Conversation:
     def __len__(self) -> int:
         return len(self._messages)
 
-    def complete(self) -> Conversation:
+    def complete(self, *, keep_reply: bool = False) -> Conversation:
         """Return the history up to the last complete turn, with its cache marks.
+
+        Args:
+            keep_reply: Leave even a prose reply after an endpoint summary of its request.
 
         Returns:
             This conversation, or its prefix without the assistant awaiting tool results.
@@ -195,7 +199,7 @@ class Conversation:
         if (
             self._messages
             and isinstance(last := self._messages[-1], AssistantMessage)
-            and last.tool_uses
+            and (keep_reply or last.tool_uses)
         ):
             prefix = Conversation()
             prefix._messages = self._messages[:-1]
@@ -259,6 +263,27 @@ class Conversation:
             )
         self._messages.append(message)
 
+        if self._after_results is not None:
+            self.notice(self._after_results)
+            self._after_results = None
+
+    def adopt(self, block: dict[str, Any], keep: Sequence[Message], notice: str) -> None:
+        """Put the endpoint's block before the kept turns and the restart notice after them.
+
+        Args:
+            block: The unmodified summary block.
+            keep: Messages after the request the block covers.
+            notice: The task and restart instructions to repeat after the last complete turn.
+        """
+        self._messages.clear()
+        self._marks.clear()
+        self.assistant([block])
+        self._messages.extend(keep)
+        if keep and isinstance(last := keep[-1], AssistantMessage) and last.tool_uses:
+            self._after_results = notice
+        else:
+            self.notice(notice)
+
     def notice(self, text: str, *, origin: Literal["harness", "operator"] = "harness") -> None:
         """Append harness or operator text as its own user message.
 
@@ -299,13 +324,14 @@ class Conversation:
         ):
             self._messages.pop()
 
-    def restart(self, summary_text: str, keep: Sequence[Message] = ()) -> None:
+    def restart(self, summary_text: str, keep: Sequence[Message] = (), *, task: str = "") -> None:
         """Replace everything after the initial message with a summary notice and a tail.
 
         Marks outside the kept messages are dropped with their blocks.
 
         Args:
             summary_text: The restart notice.
+            task: The original task when replacing an earlier endpoint summary.
             keep: The most recent messages, already balanced. A tail leading with
                 tool results would answer a message the restart summarised away.
 
@@ -318,6 +344,8 @@ class Conversation:
             raise ValueError("conversation invariant: cannot restart from a tool_use message")
         if keep and isinstance(keep[0], UserMessage) and _result_ids(keep[0]):
             raise ValueError("conversation invariant: a kept tail cannot lead with tool_results")
+        if isinstance(first, AssistantMessage) and task:
+            first = UserMessage(items=(Notice(task, "operator"),))
         self._messages[:] = [first, UserMessage(items=(Notice(summary_text),)), *keep]
         self._marks = [m for m in self._marks if m[0] == 0]
 

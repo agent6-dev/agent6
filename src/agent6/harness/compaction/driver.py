@@ -10,10 +10,12 @@ or on the operator's request. The driver owns writer selection and DAG check-off
 
 from __future__ import annotations
 
+import abc
 import dataclasses
 import functools
 import time
 import uuid
+from typing import ClassVar
 
 import pydantic
 
@@ -37,7 +39,7 @@ from agent6.tools import waits
 
 
 @dataclasses.dataclass(slots=True)
-class Tiered:
+class _Scheduled(abc.ABC):
     """Drop old results in steps and restart from one accepted summary.
 
     Attributes:
@@ -45,6 +47,7 @@ class Tiered:
         cold_notice_execution: The execution that received the cold-cache notice.
     """
 
+    endpoint: ClassVar[bool] = False
     tier2_floor_chars: int = 0
     cold_notice_execution: str | None = None
 
@@ -98,49 +101,12 @@ class Tiered:
             context.log("LOOP: manual compaction skipped: too little history to summarise")
             context.emit(journal.CompactRefused(reason="too little history to summarise"))
 
-        stats = compaction_rules.compact_old_tool_results(
-            conversation,
-            max_total_bytes=context.settings.drop_at_chars,
-            keep_recent=2,
-            protect_paths=compaction_rules.recently_edited_paths(conversation),
-            gister=functools.partial(distill_gists, context)
-            if context.settings.elision_gists
-            else None,
-        )
-        n_deduped = len(stats.deduped_calls)
-        n_elided = len(stats.elided_calls)
-        n_gisted = len(stats.gist_paths)
-        n_demoted = len(stats.demoted_paths)
-        if context.settings.keep_thinking_turns > 0 and (n_deduped or n_elided or n_demoted):
-            # Strip only alongside a result rewrite, so thinking adds no cache break.
-            n_messages, n_chars = compaction_window.strip_old_thinking(
-                conversation, keep_messages=context.settings.keep_thinking_turns
-            )
-            if n_messages:
-                context.log(
-                    f"LOOP: compaction dropped thinking from {n_messages} old messages"
-                    f" ({n_chars} chars)"
-                )
-                context.emit(journal.CompactThinkingDropped(messages=n_messages, chars=n_chars))
-        if n_deduped:
-            context.log(f"LOOP: compaction deduplicated {n_deduped} identical tool results")
-            context.emit(journal.CompactDeduped(count=n_deduped, calls=list(stats.deduped_calls)))
-        if n_elided:
-            detail = f", {n_gisted} kept as distilled gists" if n_gisted else ""
-            context.log(f"LOOP: compaction elided {n_elided} old tool_result blocks{detail}")
-            context.emit(journal.CompactDropped(count=n_elided, calls=list(stats.elided_calls)))
-        if n_demoted:
-            context.log(f"LOOP: compaction demoted {n_demoted} gists to bare placeholders")
-        if n_gisted or n_demoted:
-            context.emit(
-                journal.CompactGistDone(
-                    gisted=n_gisted,
-                    demoted=n_demoted,
-                    paths=list(stats.gist_paths),
-                    demoted_paths=list(stats.demoted_paths),
-                )
-            )
+        self.drop(context)
         return False
+
+    @abc.abstractmethod
+    def drop(self, context: strategy.Context) -> None:
+        """Apply the local drop, if any."""
 
     def summarise_and_restart(
         self,
@@ -164,7 +130,9 @@ class Tiered:
         reason = "size" if focus is None else "requested"
         if idle_gap_s is not None:
             reason = "idle"
-            tail_start = len(conversation.complete())
+            tail_start = len(conversation.complete(keep_reply=self.endpoint))
+        elif self.endpoint:
+            tail_start = len(messages)
         else:
             tail_start = compaction_window.recent_tail_start(
                 messages, context.settings.keep_recent_chars
@@ -177,6 +145,7 @@ class Tiered:
         written = write_summary(
             context,
             tail_start=tail_start,
+            writer="endpoint" if self.endpoint else context.settings.summariser,
             open_tasks=open_tasks,
             focus=focus or "",
         )
@@ -187,10 +156,11 @@ class Tiered:
         # Only after the narrative passed: bookkeeping alone never mutates the DAG.
         if open_tasks:
             apply_checkoff(context, raw, valid_ids={tid for tid, _ in open_tasks})
-        conversation.restart(
-            context.restart_notice() + summary,
-            keep=messages[tail_start:],
-        )
+        keep = messages[tail_start:]
+        if written.block is not None:
+            conversation.adopt(written.block, keep, context.endpoint_notice())
+        else:
+            conversation.restart(context.restart_notice() + summary, keep=keep, task=context.task)
         # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.
         self.tier2_floor_chars = int(
             (compaction_window.context_chars(conversation) + context.prefix_chars) * 1.25
@@ -206,7 +176,7 @@ class Tiered:
                 kept_messages=len(messages) - tail_start,
             )
         )
-        if idle_gap_s is not None and written.writer == "worker":
+        if idle_gap_s is not None and written.writer != "helper":
             self._report_cold_cache(context, written.usage, idle_gap_s)
         return True
 
@@ -251,6 +221,65 @@ class Tiered:
         )
 
 
+class Endpoint(_Scheduled):
+    """Keep local tool results and adopt the endpoint's signed summary."""
+
+    endpoint = True
+
+    def drop(self, context: strategy.Context) -> None:
+        """Leave the history intact for the clearing edit on the worker request."""
+
+
+class Tiered(_Scheduled):
+    """Drop local tool results before the next worker call."""
+
+    def drop(self, context: strategy.Context) -> None:
+        """Apply the first tier in place without a restart."""
+        conversation = context.conversation
+        stats = compaction_rules.compact_old_tool_results(
+            conversation,
+            max_total_bytes=context.settings.drop_at_chars,
+            keep_recent=2,
+            protect_paths=compaction_rules.recently_edited_paths(conversation),
+            gister=functools.partial(distill_gists, context)
+            if context.settings.elision_gists
+            else None,
+        )
+        n_deduped = len(stats.deduped_calls)
+        n_elided = len(stats.elided_calls)
+        n_gisted = len(stats.gist_paths)
+        n_demoted = len(stats.demoted_paths)
+        if context.settings.keep_thinking_turns > 0 and (n_deduped or n_elided or n_demoted):
+            # Strip only alongside a result rewrite, so thinking adds no cache break.
+            n_messages, n_chars = compaction_window.strip_old_thinking(
+                conversation, keep_messages=context.settings.keep_thinking_turns
+            )
+            if n_messages:
+                context.log(
+                    f"LOOP: compaction dropped thinking from {n_messages} old messages"
+                    f" ({n_chars} chars)"
+                )
+                context.emit(journal.CompactThinkingDropped(messages=n_messages, chars=n_chars))
+        if n_deduped:
+            context.log(f"LOOP: compaction deduplicated {n_deduped} identical tool results")
+            context.emit(journal.CompactDeduped(count=n_deduped, calls=list(stats.deduped_calls)))
+        if n_elided:
+            detail = f", {n_gisted} kept as distilled gists" if n_gisted else ""
+            context.log(f"LOOP: compaction elided {n_elided} old tool_result blocks{detail}")
+            context.emit(journal.CompactDropped(count=n_elided, calls=list(stats.elided_calls)))
+        if n_demoted:
+            context.log(f"LOOP: compaction demoted {n_demoted} gists to bare placeholders")
+        if n_gisted or n_demoted:
+            context.emit(
+                journal.CompactGistDone(
+                    gisted=n_gisted,
+                    demoted=n_demoted,
+                    paths=list(stats.gist_paths),
+                    demoted_paths=list(stats.demoted_paths),
+                )
+            )
+
+
 def distill_gists(
     context: strategy.Context, requests: tuple[compaction_elision.GistRequest, ...]
 ) -> dict[str, str]:
@@ -281,6 +310,7 @@ def write_summary(
     context: strategy.Context,
     *,
     tail_start: int,
+    writer: writers.Writer,
     open_tasks: list[tuple[str, str]],
     focus: str,
 ) -> writers.Summary | None:
@@ -289,6 +319,7 @@ def write_summary(
     Args:
         context: The prepared turn.
         tail_start: The first message retained verbatim.
+        writer: The first summary writer to try.
         open_tasks: The tasks eligible for check-off.
         focus: The operator's summary focus.
 
@@ -301,11 +332,10 @@ def write_summary(
         ProviderInterrupted: A steer is pending.
     """
     messages = context.conversation.complete().messages
-    writer = context.settings.summariser
     fallback_reason = ""
-    if writer == "worker" and context.settings.worker_backend == "claude_code":
+    if writer == "worker" and context.settings.endpoint.keeps_session:
         writer = "helper"
-        fallback_reason = "claude_code owns its live session"
+        fallback_reason = "endpoint owns its live session"
     resp: provider_types.ProviderResponse | None = None
     while True:
         context.check_budget()
@@ -313,7 +343,7 @@ def write_summary(
         call_id = uuid.uuid4().hex
         context.emit(
             journal.CompactSummariseCall(
-                messages=len(messages),
+                messages=tail_start if writer == "endpoint" else len(messages),
                 writer=writer,
                 fallback_reason=fallback_reason,
                 model_call_id=call_id,
@@ -328,7 +358,9 @@ def write_summary(
             messages=messages,
         )
         try:
-            if writer == "worker":
+            if writer == "endpoint":
+                resp = context.call_endpoint(request, call_id, tail_start)
+            elif writer == "worker":
                 resp = context.call_worker(request, call_id)
             else:
                 request = writers.helper_input(
@@ -340,7 +372,11 @@ def write_summary(
                 resp = context.call_helper(
                     compaction.CONTEXT_SUMMARY_SYSTEM_PROMPT, request, call_id
                 )
-            failure = writers.rejection(resp)
+            failure = (
+                writers.endpoint_rejection(resp)
+                if writer == "endpoint"
+                else writers.rejection(resp)
+            )
         except (ProviderAborted, ProviderInterrupted):
             raise
         except ProviderError as exc:
@@ -359,7 +395,13 @@ def write_summary(
         fallback_reason = failure
     context.check_stop()
     assert resp is not None
-    return writers.Summary(resp.text.strip(), writer, fallback_reason, resp.usage)
+    return writers.Summary(
+        resp.text.strip(),
+        writer,
+        fallback_reason,
+        resp.usage,
+        resp.summary_block if writer == "endpoint" else None,
+    )
 
 
 def apply_checkoff(context: strategy.Context, summary_text: str, *, valid_ids: set[str]) -> None:
