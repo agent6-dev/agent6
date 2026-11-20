@@ -643,7 +643,9 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - `skills install` clones with fixed argv.
 - The web Git page's writes go through the same package, under the sign-in: stage and unstage by file, restore one tracked file from the index after a confirm, commit the index under the repository's own identity, create a branch at HEAD, switch branches.
   Each is refused while a session is live in the checkout; the page never deletes an untracked file, pushes, pulls, rebases, amends or resets.
-- The Git page's **Fetch** brings a remote's branches, or one pull request, into `refs/remotes/<name>/` and merges nothing; tags, submodules and `FETCH_HEAD` are left alone.
+- The Git page's **Fetch** brings a remote's branches, or one pull request, into `refs/remotes/<name>/` and merges nothing.
+    - a branch fetch prunes deleted remote-tracking branches but keeps the default-branch link and fetched PRs
+    - tags, submodules and `FETCH_HEAD` are left alone.
     - The network step runs in a scratch repository in agent6's state base (`$XDG_STATE_HOME/agent6/fetch/`), which no jail reaches.
       There git reads the operator's global and system config and no key of the project's `.git/config`: a jailed command can write that file below `full` `sandbox.isolation`.
     - The project lends its object store and the remote's URL; the page shows that URL, and the fetch connects wherever it points with the operator's own credentials for that host.

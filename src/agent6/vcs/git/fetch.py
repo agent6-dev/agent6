@@ -152,20 +152,29 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
     before = refs(path, tracking)
     after = scratch_fetch(path, url, [refspec], protocols=ALLOWED_PROTOCOLS, source=name)
     moved = {ref: sha for ref, sha in after.items() if before.get(ref) != sha}
-    if moved:
+    # HEAD is the remote's default branch link. PR refs come from separate fetches.
+    stale = sorted(
+        ref
+        for ref in before.keys() - after.keys()
+        if pull is None and ref != tracking + "HEAD" and not ref.startswith(tracking + "pr/")
+    )
+    if moved or stale:
         git_command.run(
             path,
             "update-ref",
+            "--no-deref",
             "-m",
             f"agent6: fetch {name}",
             "--stdin",
-            stdin_text="".join(f"update {ref} {sha}\n" for ref, sha in moved.items()),
+            stdin_text="".join(f"update {ref} {sha}\n" for ref, sha in moved.items())
+            + "".join(f"delete {ref} {before[ref]}\n" for ref in stale),
         )
     if pull is not None:
         return f"fetched {name}/pr/{pull} at {after[f'{tracking}pr/{pull}'][:12]}"
-    if not moved:
+    if not moved and not stale:
         return f"{name} is up to date"
     names = [ref.removeprefix(tracking) for ref in moved]
+    names.extend(f"pruned {ref.removeprefix(tracking)}" for ref in stale)
     more = f" and {len(names) - 3} more" if len(names) > 3 else ""
     return f"fetched {name}: {', '.join(names[:3])}{more}"
 

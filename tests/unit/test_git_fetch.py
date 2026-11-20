@@ -70,7 +70,22 @@ def test_a_fetch_moves_only_the_remotes_tracking_refs(
     assert git_fetch.fetch_remote(work, "origin") == "origin is up to date"
 
 
-def test_a_pull_request_lands_under_the_remotes_pr_refs(
+def test_a_branch_fetch_prunes_only_vanished_tracking_branches(
+    pair: tuple[pathlib.Path, pathlib.Path],
+) -> None:
+    """A deleted remote branch disappears without deleting PRs, HEAD or local branches."""
+    upstream, work = pair
+    _git(upstream, "branch", "-D", "dev")
+    _git(work, "branch", "dev", "origin/dev")
+    git_fetch.fetch_remote(work, "origin", pull=7)
+    assert _git(work, "rev-parse", "origin/dev") == _git(work, "rev-parse", "dev")
+    assert git_fetch.fetch_remote(work, "origin") == "fetched origin: pruned dev"
+    assert _git(work, "branch", "-r", "--list", "origin/dev") == ""
+    assert _git(work, "rev-parse", "origin/pr/7") == _git(work, "rev-parse", "dev")
+    assert _git(work, "symbolic-ref", "refs/remotes/origin/HEAD") == "refs/remotes/origin/main"
+
+
+def test_a_pull_request_is_fetched_under_the_remotes_pr_refs(
     pair: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
     """`refs/pull/N/head` becomes `<remote>/pr/N`, which `/review` and the graph can name."""
