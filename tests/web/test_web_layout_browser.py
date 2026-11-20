@@ -829,4 +829,3 @@ def test_every_pages_first_row_stands_one_gap_under_the_top_bar(
     )
     assert gaps == [14, 14]
     assert not errors
-
