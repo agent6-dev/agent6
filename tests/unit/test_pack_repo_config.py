@@ -152,7 +152,7 @@ def test_unpack_folded_config_leaves_global_settings_untouched_and_shows_repo_or
         _write(ui_config, '[tui]\ntheme = "light"\n')
     capsys.readouterr()
 
-    assert _invoke(["unpack"]) == 0
+    assert _invoke(["unpack", "--yes"]) == 0
 
     assert "No global config.toml or ui.toml written." in capsys.readouterr().out
     assert tomllib.loads(paths.repo_config_path(destination).read_text()) == {

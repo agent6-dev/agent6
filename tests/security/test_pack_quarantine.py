@@ -652,6 +652,17 @@ def test_a_start_beside_a_live_session_sets_its_pack_aside_and_runs(
     ]
     assert "sandbox.isolation" in out and _UNPACK_IT not in out + err
 
+    # `unpack` installed the forged config while the run was live.
+    _forge(repo)
+    assert cli_main(["unpack", "--yes"]) == 2
+    out, err = capsys.readouterr()
+    assert _names(repo / ".agent6") == ["pack.invalid", "pack.invalid.1"]
+    assert "Session pk-LIVE01 is live" in err and out == ""
+    assert err.splitlines()[-1] == (
+        f"ERROR: {repo}: a run, exec or machine of this checkout is live; stop it or wait for"
+        " it, then unpack"
+    )
+
 
 def test_a_pack_beside_no_such_session_is_refused_in_the_checks_own_words(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -678,8 +689,9 @@ def test_a_pack_beside_no_such_session_is_refused_in_the_checks_own_words(
     assert out == "" and err.splitlines() == [
         f"ERROR: {repo / '.agent6'}: a pack is present, and no command starts beside one. The"
         " pack says it is from 'laptop\\nERROR: nothing is wrong':'/home/you', packed at"
-        " 2026-11-17T00:00:00Z. Run `agent6 unpack` in that workspace, or delete a pack you"
-        " did not make from that directory: pack.json, config/, repo/ and skills/."
+        " 2026-11-17T00:00:00Z. Run `agent6 unpack` in that workspace, which lists what it"
+        " would install and asks first; or delete a pack you did not make from that directory:"
+        " pack.json, config/, repo/ and skills/."
     ]
 
 
@@ -812,6 +824,6 @@ def test_a_real_pack_is_never_renamed_and_unpack_accepts_it(
     assert not [name for name in _names(repo / ".agent6") if "invalid" in name]
 
     note.unlink()
-    assert cli_main(["unpack"]) == 0
+    assert cli_main(["unpack", "--yes"]) == 0
     assert note.read_text(encoding="utf-8") == "carried"
     assert "WARNING" not in capsys.readouterr().err

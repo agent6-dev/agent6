@@ -1126,7 +1126,7 @@ def _dispatch_pack(args: argparse.Namespace) -> int:
     from agent6.ui.cli import pack_cmds
 
     return (
-        pack_cmds.cmd_unpack()
+        pack_cmds.cmd_unpack(yes=args.yes)
         if args.command == "unpack"
         else pack_cmds.cmd_pack(repo_config=args.repo_config)
     )

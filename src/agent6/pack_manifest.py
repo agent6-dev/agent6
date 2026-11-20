@@ -160,8 +160,9 @@ def check_origin(root: pathlib.Path) -> None:
     raise errors.PackError(
         f"{root / '.agent6'}: a pack is present, and no command starts beside one. The pack"
         f" says it is from {origin.host!r}:{origin.home!r}, packed at {time}. Run `agent6"
-        " unpack` in that workspace, or delete a pack you did not make from that directory:"
-        " pack.json, config/, repo/ and skills/."
+        " unpack` in that workspace, which lists what it would install and asks first; or"
+        " delete a pack you did not make from that directory: pack.json, config/, repo/ and"
+        " skills/."
     )
 
 

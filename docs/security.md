@@ -222,9 +222,9 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a grant at or inside a private dir is refused at config load
     - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
     - a `sandbox.extra_read_paths` or `extra_write_paths` entry inside a `hide_paths` entry refuses at every jailed level: the launcher binds a grant through the mask above it
-    - every run, resume, machine and exec holds the checkout's workspace lease (shared) for its lifetime, and `pack` takes it alone before it writes, so neither starts under the other; a session and a pack of a nested checkout hold the leases of the checkouts above it too, since a worktree under `.agent6/worktrees` sits inside the workspace
+    - every run, resume, machine and exec holds the checkout's workspace lease (shared) for its lifetime, and `pack` and `unpack` take it alone before they write, so neither starts under the other; a session and a pack of a nested checkout hold the leases of the checkouts above it too, since a worktree under `.agent6/worktrees` sits inside the workspace
     - a present `.agent6/pack.json` refuses startup at every isolation level, including `partial`.
-      Run `agent6 unpack` in that workspace, or delete a pack you did not make from that directory: `pack.json`, `config/`, `repo/` and `skills/`
+      Run `agent6 unpack` in that workspace, which lists what it would install and asks first, or delete a pack you did not make from that directory: `pack.json`, `config/`, `repo/` and `skills/`
     - run preflight scans the project tree once for nested packs, without following symlinks or entering `.git`, and refuses with every pack's path.
       The end of a run, a machine or an exec walks the same tree and sets aside each pack it finds ([Secrets](#8-secrets-and-connect))
       Trees reached through `extra_read_paths` grants are not scanned: unpack or delete a pack before granting the tree that holds it
@@ -653,16 +653,16 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 **A nested repository's own config**
 
 - A repository inside the workspace (a vendored one, a submodule, one a command made) has a `.git/config`, attributes and hooks of its own, which a jailed command can write at every isolation level.
-- agent6's own status, diff, branch switch and stash restore run no git inside one.
+- agent6's own status, diff, branch switch, staging, stash and commit run no git inside one.
     - a status or a diff compares the commit the nested repository is at (`--ignore-submodules=dirty`), so one whose own files changed reads unchanged
     - `checkout`, `switch` and `stash apply` run quiet, without their list of local changes
+    - `git add` (the per-turn commit, a run's diff, the Git page's stage) leaves out, by pathspec, each nested repository the index records; `git update-index` then records the commit it is at, which git reads without running there
+    - `git stash push` (the auto-stash) leaves them out the same way, and no stash moves a nested checkout
+    - git refuses an empty commit by printing a status, which runs git there: agent6 refuses an empty commit itself, and tells git to allow one (`--allow-empty`).
+      A change undone between that check and the commit lands as an empty commit
 - `submodule.recurse`, `diff.submodule` and `status.submoduleSummary` are off on every call: no checkout recurses into a submodule, no diff renders inside one, no status summarises one.
 - A directory laid out as a git dir is a repository only as a `.git` (`safe.bareRepository=explicit`): agent6 started below any other finds no repository.
 - Review asks each selected submodule for its status with that submodule's hooks and drivers off, whatever `git.run_repo_hooks` and `git.run_repo_drivers` say.
-- **Staging runs git inside a nested repository the project records.**
-  `git add` (the per-turn commit, a run's diff, the Git page's stage), `git stash push` (the auto-stash) and a `git commit` with nothing to commit run `git status` there to ask whether its files changed, and git has no switch for it.
-    - that status carries agent6's overrides: the nested repository's fsmonitor stays off, and its hooks unless `git.run_repo_hooks` is set
-    - its clean filter runs on the host: agent6 blanks a filter by name, and lists the names in the project's config alone
 
 ### 8. Secrets and `connect`
 
@@ -671,7 +671,11 @@ A present pack stops every run until it is unpacked or deleted, even on its orig
 `pack` verifies git's ignore decision and refuses tracked `.agent6` paths before writing the snapshot.
 That refusal is the pack's only protection: `.agent6/` is an ordinary directory to file tools and commands.
 
-A model can write a pack of its own there, and `agent6 unpack` would install its config.
+A model can write a pack of its own there.
+`agent6 unpack` trusts the files in `.agent6/` as they are: it installs them into this home's config and state, and compares none with the manifest's hashes.
+So it shows them first: every file with its destination and every setting of each packed config file with its value, the ones under `sandbox` or closed to a machine file (`PROTECTED_OVERLAY_TABLES`, `PROTECTED_OVERLAY_LEAVES`) marked `[operator-only]`.
+Then it asks for a yes; `--yes` answers ahead, and with no terminal and no `--yes` it refuses.
+It refuses a pack or a home that changed after the listing, and while a run, exec or machine of the checkout is live.
 No run, resume, machine or exec starts beside a pack, and `pack` writes only while none of them is live in the checkout.
 A `.agent6/pack.json` found when one of them ends is therefore not `agent6 pack`'s: agent6 moves it to `.agent6/pack.invalid/pack.json.invalid`, with the `config/`, `repo/` and `skills/` beside it, and warns against unpacking it.
 A taken name is left alone: the directory is then `pack.invalid.1`, `.2` and so on.

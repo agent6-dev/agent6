@@ -45,7 +45,7 @@ def test_pack_and_unpack_cli(
     assert exclude.read_text().count(".agent6/") == 1
     assert "Excluded" not in capsys.readouterr().out
     (state / "note").unlink()
-    assert _invoke(["unpack"]) == 0
+    assert _invoke(["unpack", "--yes"]) == 0
     out = capsys.readouterr().out
     assert "moved" in out and "kept" in out
     assert str(tmp_path) in out

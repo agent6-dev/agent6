@@ -14,6 +14,7 @@ import shutil
 import socket
 import stat
 import tempfile
+import tomllib
 from collections.abc import Callable, Iterator
 from typing import Literal
 
@@ -21,6 +22,7 @@ import pydantic
 
 from agent6 import errors, pack_manifest, paths, portable
 from agent6.config import io, layer, layer_data, write
+from agent6.machine import schema as machine_schema
 from agent6.sessions import event_log, journal, layout, lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import listing
@@ -28,6 +30,13 @@ from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.session import status as session_status
 
 Outcome = Literal["move", "keep", "conflict"]
+# The packed files a config or secrets writer also writes; `unpack` lists what each one sets.
+_CONFIG_NAMES = (
+    "config/config.toml",
+    "config/secrets.toml",
+    "config/ui.toml",
+    "repo/config.toml",
+)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -41,6 +50,38 @@ class FileFacts:
     mtime: datetime.datetime
     home_mtime: datetime.datetime | None
     outcome: Outcome
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Setting:
+    """Hold one leaf a packed config file sets.
+
+    Attributes:
+        key: The dotted key.
+        value: The value as JSON; "" for a secret, which is never shown.
+        operator_only: The key is one no machine overlay may carry, or a `sandbox` key.
+    """
+
+    key: str
+    value: str
+    operator_only: bool
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Preview:
+    """Hold what an unpack would do, read before anything is written.
+
+    Attributes:
+        origin: Where the manifest says the pack is from.
+        packed_at: When the manifest says it was packed.
+        files: Every packed file with its destination and outcome.
+        settings: Every leaf of each config file the unpack would install, by pack name.
+    """
+
+    origin: pack_manifest.Origin
+    packed_at: str
+    files: tuple[FileFacts, ...]
+    settings: dict[str, tuple[Setting, ...]]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -341,18 +382,19 @@ def _remove_own(directory: pathlib.Path) -> None:
             old.unlink()
 
 
-def _exclusive_leases(root: pathlib.Path) -> list[int]:
+def _exclusive_leases(root: pathlib.Path, verb: str = "pack") -> list[int]:
     """Take the workspace lease of the root and of every checkout above it, alone.
 
-    A live run, exec or machine of any of them holds the lease shared, and its sandbox could
-    read the secrets a pack writes; the parents count because a nested checkout sits inside
-    their workspace.
+    A live run, exec or machine of any of them holds the lease shared. Its sandbox could
+    read the secrets a pack writes, and its commands can rewrite a pack being unpacked; the
+    parents count because a nested checkout sits inside their workspace.
 
     Args:
         root: The resolved project root.
+        verb: The command the refusal names: `pack` or `unpack`.
 
     Returns:
-        The held fds, released when the pack is written.
+        The held fds, released when the pack is written or moved.
 
     Raises:
         PackError: A run, exec or machine of one of the checkouts is live.
@@ -365,7 +407,7 @@ def _exclusive_leases(root: pathlib.Path) -> list[int]:
                 lock.release_single_writer(earlier)
             raise errors.PackError(
                 f"{checkout}: a run, exec or machine of this checkout is live; stop it or wait"
-                " for it, then pack"
+                f" for it, then {verb}"
             )
         held.append(fd)
     return held
@@ -456,29 +498,103 @@ def _move(file: FileFacts) -> None:
         paths.chown_to_real_user(file.home)
 
 
-def unpack(root: pathlib.Path) -> ImportResult:
-    """Move a conflict-free pack into this home, keyed to the current project root.
+def _settings(file: FileFacts) -> tuple[Setting, ...]:
+    """Return every leaf a packed config file sets, from the bytes the plan hashed.
+
+    Args:
+        file: The file's preflight decision.
+
+    Returns:
+        The leaves in key order, each marked when the key is the operator's alone: one
+        `machine_schema.protected_overlay_key_error` refuses in an overlay, or a `sandbox` key.
+
+    Raises:
+        PackError: The file changed since it was hashed, or is not valid TOML.
+    """
+    data = file.packed.read_bytes()
+    if hashlib.sha256(data).hexdigest() != file.sha256:
+        raise errors.PackError(f"{file.packed}: changed while unpack read it; nothing moved")
+    try:
+        table = tomllib.loads(data.decode("utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+        raise errors.PackError(
+            f"{file.packed}: not valid TOML, so unpack cannot list what it sets: {exc}"
+        ) from exc
+    secret = file.name == "config/secrets.toml"
+    return tuple(
+        Setting(
+            key,
+            "" if secret else json.dumps(value, default=str),
+            key.split(".", 1)[0] == "sandbox"
+            or machine_schema.protected_overlay_key_error(key) is not None,
+        )
+        for key, value in sorted(layer_data.flatten_leaves(table).items())
+    )
+
+
+def preview(root: pathlib.Path) -> Preview:
+    """Read what an unpack would install, writing nothing.
+
+    The list is complete by construction: every packed file, and every leaf of each config
+    file among those to install. No list of risky keys decides what is shown.
 
     Args:
         root: The resolved project root.
 
     Returns:
+        The files, their destinations and outcomes, and the settings.
+
+    Raises:
+        PackError: A session of the checkout is live, or the pack is missing, invalid,
+            unreadable or in conflict with this home.
+    """
+    root = root.resolve()
+    held = _exclusive_leases(root, "unpack")
+    try:
+        manifest = pack_manifest.read(root)
+        facts = _preflight(root, manifest)
+        return Preview(
+            manifest.origin,
+            manifest.model_dump(mode="json")["packed_at"],
+            facts,
+            {
+                file.name: _settings(file)
+                for file in facts
+                if file.outcome == "move" and file.name in _CONFIG_NAMES
+            },
+        )
+    except OSError as exc:
+        raise errors.PackError(f"unpack {root / '.agent6'}: {exc}") from exc
+    finally:
+        for fd in held:
+            lock.release_single_writer(fd)
+
+
+def unpack(root: pathlib.Path, *, shown: Preview | None = None) -> ImportResult:
+    """Move a conflict-free pack into this home, keyed to the current project root.
+
+    The files are trusted as they are: no hash in the manifest is compared with them. A
+    caller that asked the operator first passes what it showed, and the import refuses a
+    pack or a home that differs from it.
+
+    Args:
+        root: The resolved project root.
+        shown: The preview the operator agreed to; None for a caller that asked nothing.
+
+    Returns:
         The moved and kept files, with their origin.
 
     Raises:
-        PackError: A conflict, invalid manifest or filesystem error prevents the import.
+        PackError: A live session of the checkout, a conflict, an invalid manifest, a change
+            since the preview or a filesystem error prevents the import.
     """
     root = root.resolve()
-    manifest = pack_manifest.read(root)
+    held = _exclusive_leases(root, "unpack")
     try:
+        manifest = pack_manifest.read(root)
         with contextlib.ExitStack() as locks:
             # Config and secrets writers use the same target-keyed lock.
-            for name in (
-                "config/config.toml",
-                "config/secrets.toml",
-                "config/ui.toml",
-                "repo/config.toml",
-            ):
+            for name in _CONFIG_NAMES:
                 if name not in manifest.files:
                     continue
                 target = _home(root, name)
@@ -487,6 +603,11 @@ def unpack(root: pathlib.Path) -> ImportResult:
                 if not locks.enter_context(portable.locked_file(target)):
                     raise errors.PackError(f"{target}: cannot take writer lock; nothing moved")
             facts = _preflight(root, manifest)
+            if shown is not None and facts != shown.files:
+                raise errors.PackError(
+                    f"{root / '.agent6'}: the pack or this home changed after unpack listed"
+                    " them; nothing moved. Run agent6 unpack again."
+                )
             for file in facts:
                 if file.outcome == "move":
                     _move(file)
@@ -510,6 +631,9 @@ def unpack(root: pathlib.Path) -> ImportResult:
             )
     except OSError as exc:
         raise errors.PackError(f"unpack {root / '.agent6'}: {exc}") from exc
+    finally:
+        for fd in held:
+            lock.release_single_writer(fd)
 
 
 def _set_aside(directory: pathlib.Path) -> tuple[str, list[str], list[str]]:

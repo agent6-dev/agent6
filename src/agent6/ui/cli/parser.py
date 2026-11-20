@@ -391,7 +391,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         action="store_true",
         help="Fold global config into repo config; omit global config.toml and ui.toml.",
     )
-    common._sub(sub, "unpack", help="Move .agent6/ state into this home, refusing conflicts.")
+    unpack_p = common._sub(
+        sub,
+        "unpack",
+        help="List what .agent6/ would install into this home, ask, then move it in.",
+    )
+    unpack_p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Install what is listed without asking; without a terminal, unpack refuses"
+        " unless this is given.",
+    )
 
     init_p = common._sub(
         sub,

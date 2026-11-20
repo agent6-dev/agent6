@@ -82,7 +82,7 @@ Other commands:
 | `agent6 fork <id> --at-turn 7` | fork a coding run from an earlier turn into a separate worktree |
 | `agent6 telemetry export` | export session journals as OpenTelemetry signals or a Prometheus textfile |
 | `agent6 pack` | copy your config, secrets, sessions and memory into the workspace before a sync |
-| `agent6 unpack` | move the packed files into the new home |
+| `agent6 unpack` | list what the pack would install into the new home, ask, then move it in |
 
 To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 

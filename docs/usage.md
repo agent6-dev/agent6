@@ -444,6 +444,11 @@ It copies this home's state into `<project root>/.agent6/` and keeps it out of g
 Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not (a `.gitignore` rule such as `!.agent6/` outranks the exclude file) or if any `.agent6` path is tracked.
 Home keeps its copies.
 Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
+It first lists every file it would install with its destination and, under each packed config file, every setting that file sets with its value; a secret is listed by key only.
+A key under `sandbox`, or one no machine file may set (a host command, a provider, a credential), is marked `[operator-only]`.
+Then it asks for a yes: `--yes` (`-y`) answers ahead, and without a terminal `unpack` refuses unless `--yes` is given.
+When every file already matches this home, nothing is installed and nothing is asked.
+`unpack` installs the files as they are and compares none with the manifest's hashes: read the listing, since `.agent6/` is a directory any command in the workspace can write.
 After a successful import it removes the pack's own entries (`pack.json`, `config/`, `repo/`, `skills/`), and `.agent6/` itself when nothing else is left in it.
 A repeated `pack` replaces a snapshot from the same host and home; a pack from another origin requires `unpack` first.
 
@@ -464,6 +469,7 @@ Symlinks and special files refuse rather than following a path outside the snaps
 **The pack contains credentials.** Use a trusted workspace sync and see [Secrets](security.md#8-secrets-and-connect).
 A command already running in this checkout's sandbox can read the pack.
 `agent6 pack` refuses while a run, an `agent6 exec` or a machine of this checkout is live, and a run refuses to start while `pack` writes: a pack made under a live sandbox would put the secrets within its commands' reach.
+`agent6 unpack` refuses beside them too: a live command could rewrite the pack after the listing.
 
 <details markdown="1">
 <summary>Pack contents and conflict rules</summary>
@@ -496,6 +502,7 @@ The imported hashes are saved in `<state-dir>/pack-base.json` for the trip back.
 
 Commands that resolve the project root refuse with exit 2 if `.agent6/pack.json` is present, even for a pack this home made.
 `pack` and `unpack` are exempt.
+A pack beside a session of the checkout that is live, or that died without an end, is taken as that session's and moved to `.agent6/pack.invalid` instead; [Secrets](security.md#8-secrets-and-connect) has the rule and what to do with a real pack it catches.
 
 For a devcontainer or remote-ssh round trip:
 
