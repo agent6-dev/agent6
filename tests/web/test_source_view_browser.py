@@ -18,6 +18,7 @@ pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 git_port = test_web_browser.git_port
+dirty_git_port = test_web_browser.dirty_git_port
 port = test_web_browser.port
 
 # Each line box of a row's code starts at the code column: the leftmost fragment per line box.
@@ -172,6 +173,25 @@ def test_a_blame_label_sits_on_its_codes_baseline(
     }""")
     assert gap == pytest.approx(0, abs=0.25), gap
     assert line.evaluate(height) == unblamed
+    assert not errors
+
+
+def test_the_narrow_blame_column_marks_an_uncommitted_group_with_a_dash(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """The narrow blame column cut 'not committed' to 'not c…'."""
+    page, errors = open_page(dirty_git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/files/WORKTREE/b.txt")
+    page.locator(".files-blame").click()
+    cell = page.locator(".sl[data-line='4'] .blame-cell")
+    cell.wait_for()
+    dash = "c => getComputedStyle(c.querySelector('.blame-none'), '::before').content"
+    assert cell.evaluate(dash).startswith('"\u2013"')
+    assert cell.inner_text() == ""  # the words are not drawn
+    assert "not committed" in cell.aria_snapshot()
+    assert cell.locator(".blame-none").get_attribute("title") == "not committed"
+    assert cell.evaluate("c => c.scrollWidth <= c.clientWidth")
     assert not errors
 
 

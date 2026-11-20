@@ -107,9 +107,15 @@ pre:is(.src, .diff):has(.blame-cell) { container: source / inline-size; }
 .blame-commit { flex: none; color: inherit; }
 .blame-date { flex: none; }
 .blame-author { flex: 1; max-width: 14ch; }
+/* The narrow column marks an uncommitted group with a dash that a screen reader names. */
 .ds-cell > .blame-cell { width: 9ch; }
-.ds-cell .blame-author, .ds-cell .blame-date { display: none; }
-@container source (width < 45rem) { .blame-cell { width: 9ch; } .blame-author, .blame-date { display: none; } }
+.ds-cell :is(.blame-author, .blame-date, .blame-none > span) { display: none; }
+.ds-cell .blame-none::before { content: '–' / 'not committed'; }
+@container source (width < 45rem) {
+  .blame-cell { width: 9ch; }
+  :is(.blame-author, .blame-date, .blame-none > span) { display: none; }
+  .blame-none::before { content: '–' / 'not committed'; }
+}
 .blame-hover { color: var(--text); border-color: var(--accent); background: var(--surface2); }
 /* A group's card opens over the page by the cell that holds it: below the line, or above it,
    or leftward, wherever it fits. */

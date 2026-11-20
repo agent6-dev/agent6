@@ -338,7 +338,12 @@ function renderBlame(rows) {
         label.appendChild(link);
         label.appendChild(el('span', 'blame-author', line.author));
         label.appendChild(el('span', 'blame-date', line.date.slice(0, 10)));
-      } else label.appendChild(el('span', null, 'not committed'));
+      } else {
+        // The narrow column shows a dash in place of the words (styles_source.css).
+        const none = el('span', 'blame-none'); none.title = 'not committed';
+        none.appendChild(el('span', null, 'not committed'));
+        label.appendChild(none);
+      }
       cell.appendChild(label);
     }
     g.cells.push(cell);

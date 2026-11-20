@@ -972,7 +972,7 @@ def test_blame_opens_the_lines_commit_in_git(
     page.goto(f"http://127.0.0.1:{dirty_git_port}/#/files/WORKTREE/b.txt")
     page.locator(".files-blame").click()
     page.wait_for_selector(".sl[data-line='4'] .blame-cell")
-    assert "not committed" in page.locator(".sl[data-line='4'] .blame-cell").inner_text()
+    assert "not committed" in page.locator(".sl[data-line='4'] .blame-cell").aria_snapshot()
     assert page.locator(".files-view .sl").count() == 4
     page.locator(".sl[data-line='1'] .blame-commit").click()
     page.wait_for_selector(".git-diff .dl[data-new='1']")
