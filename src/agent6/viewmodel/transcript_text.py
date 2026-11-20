@@ -145,7 +145,6 @@ def parallel_dispatched_body(event: dict[str, Any]) -> str:
     tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
     if event.get("source") == "panel":
-        # A panel's reviewers are read-only sessions of their own, on no child listing.
         head = (
             f"dispatched {n} reviewer{'' if n == 1 else 's'} ({parallel_group_label(event)});"
             " each runs as a read-only session"

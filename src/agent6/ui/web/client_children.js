@@ -81,7 +81,7 @@ function childRow(sid, card, readOnly) {
       live = d.live;
       const text = d.text || (live ? 'No conversation yet.' : 'No conversation recorded.');
       if (recent.textContent !== text) recent.textContent = text;
-      if (live && !readOnly && child.source !== 'panel') {
+      if (live && !readOnly) {
         if (!controls.isConnected) body.appendChild(controls);
       } else controls.remove();
     } catch (err) {

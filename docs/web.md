@@ -99,7 +99,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
       Open a row to read the whole prompt and recent conversation in place.
       **Send** messages the live child.
       **Stop** asks before stopping that child and its live descendants.
-      Reviewer rows are read-only.
+      These controls also work on a live reviewer.
     - the composer steers a live run or resumes an ended one under the preset and model picked above it (on a phone, behind one line that names them), and takes the [steer directives](usage.md#follow-and-steer-a-run); its button, **Send** on a live run and **Resume** on an ended one, does what Enter does, and a phone shows it as a send icon; Ctrl+Enter sends a live steer as `/now`, Ctrl+R searches past messages
     - an ended child, and an ended run whose worktree is gone or whose manifest cannot be read, closes the composer; the line under it says why, as `agent6 sessions show` does, and **Fork** continues a child in a worktree of its own
     - an ended run whose manifest cannot be read also dims **Fork** and **Merge**, whose tooltips say why

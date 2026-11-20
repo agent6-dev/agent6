@@ -255,3 +255,33 @@ def test_read_and_message_a_child_in_place(
     sync_api.expect(summary).to_have_text("children: 1 finished, 2 stopped")
     sync_api.expect(page).to_have_url(url)
     assert not errors
+
+
+def test_a_live_reviewer_can_receive_a_message_from_its_parent(
+    open_page: Callable[[int], tuple[Page, list[str]]], family: tuple[int, pathlib.Path]
+) -> None:
+    """The reviewer's read-only checkout does not hide its operator controls."""
+    from playwright import sync_api
+
+    port, _ = family
+    reviewer = "csv-reader-r1-l1"
+    directory = (
+        layout.bucket_dir(paths.state_dir(pathlib.Path.cwd()), layout.EVIDENCE_BUCKET) / reviewer
+    )
+    append(directory, {"type": "session.start", "mode": "reviewer", "user_task": "Review CSV"})
+    process.write_worker_pid(directory, os.getpid())
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{PARENT}")
+    card = page.locator(".drawer details.card-children")
+    card.locator(":scope > summary").click()
+    row = card.locator("details").filter(has_text=reviewer)
+    row.locator("summary").click()
+    entry = row.get_by_role("textbox", name="Message")
+    sync_api.expect(entry).to_be_visible()
+    entry.fill("Check both attempts.")
+    entry.press("Enter")
+    sync_api.expect(entry).to_have_value("")
+    assert (directory / ipc.STEER_ANSWER_FILE).read_text().strip() == "Check both attempts."
+    row.get_by_role("button", name="Stop", exact=True).click()
+    sync_api.expect(page.get_by_role("alertdialog")).to_contain_text(reviewer)
+    assert not errors
