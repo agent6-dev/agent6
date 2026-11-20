@@ -1034,23 +1034,40 @@ def test_a_row_the_keyboard_reaches_scrolls_clear_of_the_dock(
     assert not errors
 
 
-def test_a_long_machine_file_name_wraps_from_its_buttons_start(
+def test_a_long_machine_file_name_wraps_inside_its_button(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A machine file name too long for a phone centred its two lines in its Run button."""
-    name = "release-notes-drafter-for-the-quarterly-platform-changelog.asm.toml"
+    """A machine file name too long for a phone centred its two lines in its Run button.
+
+    Its lines then touched the button's edges, and a name with no break point ran off the card.
+    """
+    names = (
+        "ci.asm.toml",
+        "release-notes-drafter-for-the-quarterly-platform-changelog.asm.toml",
+        "nightly_dependency_upgrade_and_security_advisory_sweep_for_all_services.asm.toml",
+    )
     (tmp_path / "machines").mkdir()
-    (tmp_path / "machines" / name).write_text("", encoding="utf-8")
+    for name in names:
+        (tmp_path / "machines" / name).write_text("", encoding="utf-8")
     page, errors = open_page(port)
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/machines")
-    lines = page.get_by_role("button", name=name).evaluate(
-        """b => { const r = document.createRange(); r.selectNodeContents(b); const starts = {};
-        for (const x of r.getClientRects()) {  // a line starts at its leftmost box
-          const top = Math.round(x.top); starts[top] = Math.min(starts[top] ?? 1e9, x.left); }
-        return Object.values(starts).map(Math.round); }"""
-    )
-    assert len(lines) > 1 and len(set(lines)) == 1, lines
+    measure = """b => {
+      const box = b.getBoundingClientRect(), range = document.createRange();
+      range.selectNodeContents(b);
+      const lines = [...range.getClientRects()].filter(r => r.width);
+      return { lines: new Set(lines.map(r => Math.round(r.top))).size,
+        lefts: new Set(lines.map(r => Math.round(r.left))).size,
+        above: Math.min(...lines.map(r => r.top)) - box.top,
+        below: box.bottom - Math.max(...lines.map(r => r.bottom)),
+        fits: b.scrollWidth <= b.clientWidth };
+    }"""
+    one, *long = (page.get_by_role("button", name=name).evaluate(measure) for name in names)
+    assert one["lines"] == 1, one
+    for button in long:
+        assert button["lines"] > 1 and button["lefts"] == 1 and button["fits"], button
+        assert button["above"] == pytest.approx(one["above"], abs=0.5), button
+        assert button["below"] == pytest.approx(one["below"], abs=0.5), button
     assert not errors
 
 
