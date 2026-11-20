@@ -7,6 +7,7 @@ import os
 import pathlib
 import subprocess
 import threading
+import tracemalloc
 from collections.abc import Callable
 from typing import Any
 
@@ -323,6 +324,39 @@ def test_parent_does_not_rebind_a_continuation_to_a_replaced_clone(
     )
     assert not result.ok and "clone" in result.error
     assert private.read_bytes() == before
+
+
+def test_a_continuation_skips_complete_history_with_bounded_reads(
+    tmp_path: pathlib.Path, retained_child: child_records.ChildSpec
+) -> None:
+    repo = tmp_path / "repo"
+    state = paths.state_dir(repo)
+    child = child_wait.child_dir(state, retained_child.session_id, mode=retained_child.mode)
+    with (child / "logs.jsonl").open("ab") as fh:
+        fh.write(b'{"type":"loop.note","text":"' + b"x" * (8 << 20) + b'"}\n')
+        fh.write(b"{" + b" " * (2 << 20))
+
+    def finished(*_args: object, **_kwargs: object) -> tuple[None, int, str]:
+        return None, 1, "ended before report"
+
+    tracemalloc.start()
+    try:
+        app_children.bridge_spawner(
+            retained_child,
+            "work",
+            cfg=Config(),
+            explicit_leaves=frozenset(),
+            origin=repo,
+            record_state=state,
+            max_usd=None,
+            group_id="root-p1",
+            parent="root",
+            continuation="finish",
+            runtime=app_children.ChildRuntime(spawn=finished),
+        )
+        assert tracemalloc.get_traced_memory()[1] < (4 << 20)
+    finally:
+        tracemalloc.stop()
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])

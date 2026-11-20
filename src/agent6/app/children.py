@@ -16,7 +16,7 @@ from collections.abc import Callable, Generator, Sequence
 from typing import Any, Protocol
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, errors, kinds, paths
+from agent6 import child_records, errors, journal_tail, kinds, paths
 from agent6.app import (
     child_launch,
     child_resume,
@@ -294,9 +294,13 @@ def bridge_spawner(
     memory.seed_store(paths.state_dir(origin), clone.state)
     # The child's record lives in the origin's state from its first event.
     child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
-    reader = tail.LogTail(child_dir / sessions_layout.LOGS_NAME)
-    reader.read()  # A continuation appends to the stopped execution's journal.
-    start_at = reader.position
+    log = child_dir / sessions_layout.LOGS_NAME
+    reader = tail.LogTail(log)
+    try:
+        with log.open("rb") as fh:
+            start_at = journal_tail.complete_end(fh)
+    except FileNotFoundError:
+        start_at = 0
     report = journal.SessionResume.TYPE if continuation else journal.SessionStart.TYPE
 
     def ready(pid: int) -> pathlib.Path | None:

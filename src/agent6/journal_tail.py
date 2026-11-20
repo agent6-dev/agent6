@@ -5,6 +5,31 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+from typing import BinaryIO
+
+
+def complete_end(fh: BinaryIO) -> int:
+    """Return the offset after the last newline without reading the journal into memory.
+
+    Args:
+        fh: The open journal.
+
+    Returns:
+        The end of the complete rows, or zero before the first newline.
+    """
+    end = fh.seek(0, os.SEEK_END)
+    if end:
+        fh.seek(-1, os.SEEK_END)
+        if fh.read(1) == b"\n":
+            return end
+    while end:
+        start = max(0, end - (1 << 20))
+        fh.seek(start)
+        cut = fh.read(end - start).rfind(b"\n")
+        if cut >= 0:
+            return start + cut + 1
+        end = start
+    return 0
 
 
 def heal_torn_tail(path: pathlib.Path) -> None:
@@ -21,20 +46,9 @@ def heal_torn_tail(path: pathlib.Path) -> None:
         return
     with fh:
         size = fh.seek(0, os.SEEK_END)
-        if not size:
+        end = complete_end(fh)
+        if size == end:
             return
-        fh.seek(-1, os.SEEK_END)
-        if fh.read(1) == b"\n":
-            return
-        end = size
-        while end:
-            start = max(0, end - (1 << 20))
-            fh.seek(start)
-            cut = fh.read(end - start).rfind(b"\n")
-            if cut >= 0:
-                end = start + cut + 1
-                break
-            end = start
         # Truncating in place keeps committed bytes visible to readers holding the file open.
         fh.truncate(end)
     logging.getLogger(__name__).warning(
