@@ -50,7 +50,7 @@ def reopened(
     return parallel_dispatch.OpenDispatch(record, children)
 
 
-def reconcile(
+def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery path
     dispatcher: parallel_dispatch.ParallelDispatcher,
     state: loop_state.LoopState,
     conversation: loop_conversation.Conversation,
@@ -110,7 +110,19 @@ def reconcile(
         children = [c.session_id for c in record.children]
         if dispatcher.budget is not None:
             # The journal already holds these children's usage: charged once, by that execution.
-            dispatcher.budget.mark_settled(c for c in children if c in accounted)
+            dispatcher.budget.mark_settled(
+                c.account_id for c in record.children if c.account_id in accounted
+            )
+            for child in record.children:
+                if child.continuation is not None:
+                    prior = child.continuation.usage_before
+                    dispatcher.budget.child_execution(
+                        child.session_id,
+                        child.account_id,
+                        agent6_budget.UsageSettlement(
+                            usd=prior.usd, usd_partial=prior.usd_partial, tokens=prior.tokens
+                        ),
+                    )
         results = (
             dispatcher.child_recoverer(record.identity, children)
             if dispatcher.child_recoverer is not None

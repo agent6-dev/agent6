@@ -324,6 +324,19 @@ class UsageSettlement:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ChildAccount:
+    """A continued child's settlement key and already charged usage.
+
+    Attributes:
+        key: The durable settlement key for this continuation.
+        prior: The cumulative usage before the continuation.
+    """
+
+    key: str
+    prior: UsageSettlement
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class PlanSpend:
     """One subscription plan's latest reading and observed window movement.
 
@@ -442,6 +455,7 @@ class BudgetTracker:
     _children_usd: float = 0.0
     _charged_children: set[str] = dataclasses.field(default_factory=set)
     _running: dict[str, UsageSettlement] = dataclasses.field(default_factory=dict)
+    _child_executions: dict[str, ChildAccount] = dataclasses.field(default_factory=dict)
 
     def record(
         self,
@@ -561,6 +575,36 @@ class BudgetTracker:
             points = max(0.0, points - self._plan_observed_points())
         return BudgetAllowance(usd=usd, tokens=tokens, plan_points=points)
 
+    def child_execution(self, child: str, key: str, prior: UsageSettlement) -> None:
+        """Register a continued child's accounting key and already charged usage.
+
+        Args:
+            child: The child's session id, as its watch and settlement use it.
+            key: The durable key for this continuation's settlement.
+            prior: The cumulative usage charged before this execution started.
+        """
+        with self._lock:
+            self._child_executions[child] = ChildAccount(key, prior)
+
+    def _child_reading(self, child: str, usage: UsageSettlement) -> tuple[str, UsageSettlement]:
+        """Return a child's accounting key and new spend, with the lock held.
+
+        Args:
+            child: The child's session id.
+            usage: Its cumulative usage across executions.
+
+        Returns:
+            The key and usage beyond its continuation's baseline.
+        """
+        account = self._child_executions.get(child)
+        if account is None:
+            return child, usage
+        return account.key, dataclasses.replace(
+            usage,
+            usd=max(0.0, usage.usd - account.prior.usd),
+            tokens=max(0, usage.tokens - account.prior.tokens),
+        )
+
     def note_running(self, child: str, usage: UsageSettlement) -> None:
         """Count a running child's spend so far against the caps, replacing its last reading.
 
@@ -573,6 +617,7 @@ class BudgetTracker:
             usage: What the child has used so far.
         """
         with self._lock:
+            child, usage = self._child_reading(child, usage)
             if child in self._charged_children:
                 return
             self._running[child] = usage
@@ -604,8 +649,11 @@ class BudgetTracker:
             child: The child's session id.
             usage: What the child used; None when its record never came back.
         """
+        if usage is None:
+            return
         with self._lock:
-            if child in self._charged_children or usage is None:
+            child, usage = self._child_reading(child, usage)
+            if child in self._charged_children:
                 return
             self._running.pop(child, None)
             self._children_usd += max(usage.usd, 0.0)

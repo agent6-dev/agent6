@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import child_records, portable
 
-RECORD_VERSION = 9
+RECORD_VERSION = 10
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
 
@@ -93,6 +93,20 @@ class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     fallback: str = ""
 
 
+class ContinuationRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """The latest continuation's instruction and accounting baseline.
+
+    Attributes:
+        sequence: The continuation number, starting at 1.
+        instruction: The parent's next instruction.
+        usage_before: The cumulative child usage charged before this continuation.
+    """
+
+    sequence: int = pydantic.Field(ge=1)
+    instruction: str
+    usage_before: UsageRecord
+
+
 class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     """One child of the dispatch.
 
@@ -109,6 +123,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         usage: What it used, None until settled with known usage.
         settled: Whether its usage was charged; False while it is unknown.
         merge_request: The explicit request to merge stopped work; None before one.
+        continuation: The latest continuation, or None for the initial execution.
     """
 
     session_id: str
@@ -122,6 +137,13 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     usage: UsageRecord | None = None
     settled: bool = False
     merge_request: MergeRequest | None = None
+    continuation: ContinuationRecord | None = None
+
+    @property
+    def account_id(self) -> str:
+        """The settlement key, unique to this child's execution."""
+        suffix = f":{self.continuation.sequence}" if self.continuation is not None else ""
+        return self.session_id + suffix
 
 
 class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
