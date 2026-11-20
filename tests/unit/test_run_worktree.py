@@ -422,7 +422,7 @@ def test_a_worktree_run_resumed_after_its_merge_shows_only_its_unmerged_work(
 
     _script(monkeypatch, _edit("two.txt", "2\n"))
     assert cli_main(["resume", "wt-RESUME", "--steer", "add two.txt"]) == 0
-    assert "earlier work merged into main" in capfd.readouterr().err
+    assert "earlier work was merged into main" in capfd.readouterr().err
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-RESUME"))
     assert manifest.base_sha == first_tip and manifest.base_branch == "main"
