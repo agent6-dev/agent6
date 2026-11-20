@@ -32,11 +32,18 @@ def test_tool_rows_open_to_selectable_arguments(
         "tools-AAA111",
         [
             {"type": "tool.call", "name": "run_command", "args_preview": {"argv": [tail]}},
-            {"type": "tool.result", "name": "run_command", "ok": True, "summary": "first\nlast"},
+            {
+                "type": "tool.result",
+                "name": "run_command",
+                "ok": True,
+                "summary": "first\nlast",
+                "exit_code": 3,
+                "duration_s": 0.75,
+            },
         ],
     )
     page, errors = open_page(port)
-    page.set_viewport_size({"width": width, "height": 900})
+    page.set_viewport_size({"width": width, "height": 844 if width == 390 else 900})
     page.goto(f"http://127.0.0.1:{port}/#/session/tools-AAA111")
     if width == 390:
         page.get_by_role("button", name="Widgets", exact=True).click()
@@ -47,6 +54,7 @@ def test_tool_rows_open_to_selectable_arguments(
     page.keyboard.press("Enter")
     expect(call.locator("pre")).to_contain_text("END_ARGUMENT")
     expect(call.locator("pre")).to_contain_text("first\nlast")
+    expect(call.locator("pre")).to_contain_text("exit 3 in 0.75s")
     call.locator("pre").evaluate("e => getSelection().selectAllChildren(e)")
     assert "END_ARGUMENT" in page.evaluate("getSelection().toString()")
     captures.save(page, "tool-details")

@@ -26,8 +26,8 @@ class TranscriptItem:
         name: The tool's name; the status label for `done`.
         arg: The tool's salient argument (a path, a pattern, a command); the end reason
             for `done`, which says whose sentence the body is.
-        args_full: Every tool argument without abbreviation, for the expanded item; empty
-            when `arg` shows them all.
+        args_full: The journaled argument preview for the expanded item. Empty when `arg`
+            shows the whole preview.
         ok: The tool or run outcome; None while in flight or when not applicable.
         detail: The tool result's summary, the verify badge or the commit and done
             metadata; for a call in flight, why it waits ("awaiting approval").

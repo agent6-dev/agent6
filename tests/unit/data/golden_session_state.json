@@ -34,7 +34,10 @@
       "result_summary": "4773 bytes",
       "ok": true,
       "task_id": "n1",
-      "call_id": null
+      "call_id": null,
+      "execution_id": null,
+      "exit_code": null,
+      "duration_s": null
     },
     {
       "name": "run_command",
@@ -43,7 +46,10 @@
       "result_summary": "exit=2",
       "ok": false,
       "task_id": "n1",
-      "call_id": null
+      "call_id": null,
+      "execution_id": null,
+      "exit_code": null,
+      "duration_s": null
     },
     {
       "name": "apply_patch",
@@ -52,7 +58,10 @@
       "result_summary": "applied=1",
       "ok": true,
       "task_id": "n1",
-      "call_id": null
+      "call_id": null,
+      "execution_id": null,
+      "exit_code": null,
+      "duration_s": null
     },
     {
       "name": "finish_session",
@@ -61,7 +70,10 @@
       "result_summary": "finish_session",
       "ok": true,
       "task_id": null,
-      "call_id": null
+      "call_id": null,
+      "execution_id": null,
+      "exit_code": null,
+      "duration_s": null
     }
   ],
   "last_verify": null,

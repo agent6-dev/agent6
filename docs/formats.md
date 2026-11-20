@@ -3604,11 +3604,14 @@ Source: [`agent6.viewmodel.session.records.ToolCallView`](https://github.com/age
 | --- | --- | --- |
 | `name` | `str` | The tool's name. |
 | `args_preview` | `str` | The args rendered with each value truncated, for the inline table. |
-| `args_full` | `str` | Every arg as journaled, a multi-line string as its lines, for the detail view. |
-| `result_summary` | `str` | The result's summary once it landed. |
+| `args_full` | `str` | The detail text of the journaled argument preview. |
+| `result_summary` | `str` | The result's summary once it arrives. |
 | `ok` | `bool \| None` | The tool's verdict; None while in flight. |
 | `task_id` | `str \| None` | The task in focus when the call ran, for filtering. |
-| `call_id` | `int \| None` | The per-dispatch correlation id; None on a log without ids. |
+| `call_id` | `int \| None` | The call number in its execution, if recorded. |
+| `execution_id` | `str \| None` | The execution that made the call, if recorded. |
+| `exit_code` | `int \| None` | The command exit code, if recorded. |
+| `duration_s` | `float \| None` | The recorded wall time in seconds, if known. |
 
 ### VerifyView
 

@@ -60,11 +60,14 @@ class ToolCallView:
     Attributes:
         name: The tool's name.
         args_preview: The args rendered with each value truncated, for the inline table.
-        args_full: Every arg as journaled, a multi-line string as its lines, for the detail view.
-        result_summary: The result's summary once it landed.
+        args_full: The detail text of the journaled argument preview.
+        result_summary: The result's summary once it arrives.
         ok: The tool's verdict; None while in flight.
         task_id: The task in focus when the call ran, for filtering.
-        call_id: The per-dispatch correlation id; None on a log without ids.
+        call_id: The call number in its execution, if recorded.
+        execution_id: The execution that made the call, if recorded.
+        exit_code: The command exit code, if recorded.
+        duration_s: The recorded wall time in seconds, if known.
     """
 
     name: str
@@ -74,6 +77,9 @@ class ToolCallView:
     ok: bool | None = None
     task_id: str | None = None
     call_id: int | None = None
+    execution_id: str | None = None
+    exit_code: int | None = None
+    duration_s: float | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

@@ -26,6 +26,29 @@ from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state as viewmodel_state
 
 
+def test_tool_results_match_the_execution_and_call_together() -> None:
+    """A late command result cannot complete a resumed execution's call of the same id."""
+    call = {"type": "tool.call", "call_id": 1, "name": "run_command", "args_preview": {}}
+    result = {"type": "tool.result", "call_id": 1, "ok": True, "name": "run_command"}
+    state = viewmodel_state.fold_session(
+        [
+            {**call, "execution_id": "first"},
+            {**call, "execution_id": "second"},
+            {
+                **result,
+                "execution_id": "first",
+                "summary": "first",
+                "exit_code": 7,
+                "duration_s": 0,
+            },
+        ]
+    )
+    first, second = state.tool_calls
+    assert first.result_summary == "first" and second.ok is None
+    assert (first.execution_id, first.exit_code, first.duration_s) == ("first", 7, 0)
+    assert second.execution_id == "second" and second.exit_code is None
+
+
 def test_expanded_tool_args_are_uncapped_and_keep_nested_values() -> None:
     """Detail arguments retain long values, every edit and every question option."""
     words = "full argument " * 500 + "LAST ARGUMENT BYTE"

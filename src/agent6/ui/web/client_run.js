@@ -586,7 +586,10 @@ function paintRun(cards, s) {
       const a = el('div', 'args');
       a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
       summary.appendChild(a);
-      call.append(summary, el('pre', 'call-full', tc.args_full + (tc.result_summary ? '\n→ ' + tc.result_summary : '')));
+      const outcome = [tc.exit_code == null ? '' : `exit ${tc.exit_code}`,
+        tc.duration_s == null ? '' : `${tc.duration_s}s`].filter(Boolean).join(' in ');
+      const detail = [tc.args_full, tc.result_summary && `→ ${tc.result_summary}`, outcome];
+      call.append(summary, el('pre', 'call-full', detail.filter(Boolean).join('\n')));
       calls.appendChild(call);
     }
     if (!shownCalls.length) cards.tools.appendChild(el('div', 'muted', 'no tool calls yet'));

@@ -199,6 +199,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ok=None,
                 task_id=state.cursor_task_id,
                 call_id=cid,
+                execution_id=record.execution_id or state.execution_id or None,
             )
             return dataclasses.replace(
                 state,
@@ -207,32 +208,24 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
 
         case journal.ToolResult(name=name, ok=ok, summary=summary, call_id=cid):
-            if not state.tool_calls:
-                return state
-            if cid is not None:
-                # Concurrent reviewers interleave events, so the matching call may not be the last.
-                for i in range(len(state.tool_calls) - 1, -1, -1):
-                    if state.tool_calls[i].call_id == cid:
-                        updated = dataclasses.replace(
-                            state.tool_calls[i], ok=ok, result_summary=summary
-                        )
-                        return dataclasses.replace(
-                            state,
-                            tool_calls=(
-                                *state.tool_calls[:i],
-                                updated,
-                                *state.tool_calls[i + 1 :],
-                            ),
-                        )
-                return state
-            last = state.tool_calls[-1]
-            if last.name != name:
-                return state
-            updated_last = dataclasses.replace(last, ok=ok, result_summary=summary)
-            return dataclasses.replace(
-                state,
-                tool_calls=(*state.tool_calls[:-1], updated_last),
-            )
+            execution_id = record.execution_id or state.execution_id or None
+            for index, call in reversed(list(enumerate(state.tool_calls))):
+                if call.execution_id != execution_id or call.call_id != cid:
+                    continue
+                if cid is None and (call.name != name or index != len(state.tool_calls) - 1):
+                    break
+                updated = dataclasses.replace(
+                    call,
+                    ok=ok,
+                    result_summary=summary,
+                    exit_code=record.exit_code,
+                    duration_s=record.duration_s,
+                )
+                return dataclasses.replace(
+                    state,
+                    tool_calls=(*state.tool_calls[:index], updated, *state.tool_calls[index + 1 :]),
+                )
+            return state
 
         case journal.VerifyStart(command=cmd):
             return dataclasses.replace(

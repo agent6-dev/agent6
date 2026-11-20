@@ -110,7 +110,7 @@ def _block(value: Any) -> list[str]:
 
 
 def render_args_full(args: dict[str, Any]) -> str:
-    """Render every arg whole, for a detail view.
+    """Render the recorded argument preview for a detail view.
 
     Args:
         args: The tool call's args.
