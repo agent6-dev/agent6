@@ -409,27 +409,39 @@ def test_the_bar_holds_still_while_filtering_and_toggling(
     assert not errors
 
 
-def test_the_count_holds_only_its_listings_longest_text(
+def test_the_bar_holds_still_when_the_listing_arrives(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
-    """The count held room for "19999 of 20000 files+", so the bar took two rows at rest."""
-    from playwright.sync_api import expect
+    """The fields shrank 54px when the count arrived beside them, on every load."""
+    from playwright.sync_api import Route
 
     page, errors = open_page(big_tree)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/git/tree*", hold)
     page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
-    page.wait_for_selector(_row("deep"))
-    counts = page.locator(".files-counts")
-    total = counts.text_content() or ""
-    width = "e => e.getBoundingClientRect().width"
-    rest = counts.evaluate(width)
-    page.locator(".files-bar input.filter").fill(".")  # every path in this tree has a dot
-    expect(counts).to_have_text(total.split()[0] + " of " + total)
-    assert counts.evaluate(width) == pytest.approx(rest, abs=0.5)
-    text = counts.evaluate(
-        "e => { const r = document.createRange(); r.selectNodeContents(e);"
-        " return r.getBoundingClientRect().width; }"
+    page.wait_for_selector(".files-tree .empty")
+    boxes = (
+        "() => [...document.querySelectorAll('.files-bar .gpick, .files-bar input.filter')]"
+        ".map(c => { const r = c.getBoundingClientRect(); return [r.left, r.width]; }).flat()"
     )
-    assert text == pytest.approx(rest, abs=1)
+    loading = page.evaluate(boxes)
+    while not held:
+        page.wait_for_timeout(50)
+    held[0].continue_()
+    page.wait_for_selector(_row("deep"))
+    assert page.evaluate(boxes) == pytest.approx(loading, abs=0.5)
+    page.locator(".files-bar input.filter").fill("f1")
+    gap = page.evaluate(
+        "() => { const f = document.querySelector('.files-bar input.filter');"
+        " const end = f.getBoundingClientRect().right"
+        " - parseFloat(getComputedStyle(f).paddingRight);"
+        " return document.querySelector('.files-counts').getBoundingClientRect().left - end; }"
+    )
+    assert gap > 0, "the typed text runs under the count"
     assert not errors
 
 

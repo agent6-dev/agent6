@@ -11,12 +11,12 @@
   position: absolute; z-index: 40; position-anchor: --files-revision;
   top: anchor(bottom); left: anchor(left); right: 0; max-width: max(30rem, anchor-size(width));
 }
-.files-bar input.filter { flex: 1 1 10rem; width: auto; min-width: 0; }
-/* The count and the tree toggle hold the width of their longest text (the listing's own
-   "N of N files", and "Show tree"), so typing in the filter or toggling the tree moves nothing on
-   the bar. A count wrapped to a row of its own keeps to the right. */
-.files-counts { margin-left: auto; font-size: var(--fs-s); white-space: nowrap; text-align: end; font-variant-numeric: tabular-nums; }
-.files-counts::after { content: attr(data-room); display: block; height: 0; visibility: hidden; }
+/* The count sits in the filter's end, where the typed text stops (--count-w): it moves no field. */
+.files-filter { flex: 1 1 10rem; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.files-filter > * { grid-area: 1 / 1; }
+.files-filter > input.filter { min-width: 0; padding-inline-end: calc(var(--count-w, 0rem) + 2 * var(--ctl-px)); }
+.files-counts { justify-self: end; align-self: center; margin-inline-end: var(--ctl-px); font-size: var(--fs-s); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
+/* The tree toggle holds the width of "Show tree", so toggling the tree moves nothing on the bar. */
 .files-tree-toggle { min-width: 7em; }
 /* Each name keeps to one line, ending in an ellipsis where it does not fit; the row's title
    holds the whole path. A narrow tree shows the names alone: the folder notes and the file
