@@ -319,6 +319,7 @@ MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "review.start": review.rules_notice,
     "mcp.server_unavailable": mcp_unavailable_body,
     "jail.degraded": jail_degraded_body,
+    "pack.quarantined": lambda event: f"WARNING: {event.get('warning', '')}",
     "parallel.dispatched": parallel_dispatched_body,
     "parallel.joined": parallel_joined_body,
     "parallel.failed": parallel_failed_body,

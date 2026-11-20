@@ -12,7 +12,7 @@ from agent6.sessions import event_log, journal
 
 
 def test_a_degraded_jail_is_said_once_on_the_headless_log(tmp_path: pathlib.Path) -> None:
-    """Only `jail.degraded` reaches the text log; the event's detail is folded to one line."""
+    """A warning marker reaches the text log, a steer does not; the detail is folded to one line."""
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     lines: list[str] = []
     sink.subscribe(functools.partial(execution.headless_marker, log=lines.append))

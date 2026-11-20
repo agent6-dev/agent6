@@ -24,7 +24,7 @@ import types
 from collections.abc import Generator
 from typing import Any
 
-from agent6 import child_env, kinds
+from agent6 import child_env, kinds, pack, paths
 from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
@@ -275,5 +275,7 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
             common.error(f"{exc}")
             return 2
         finally:
+            # The command had the checkout: a script a model wrote can write a pack.json there.
+            pack.quarantine(paths.checkout_root(cwd), warn=common.warn)
             if session_net is not None:
                 session_net.close()

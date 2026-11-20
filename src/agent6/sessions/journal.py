@@ -908,6 +908,18 @@ class OperatorPresence(Event):
     presence: str = pydantic.Field(description="The observed operator attachment and away state.")
 
 
+class PackQuarantined(Event):
+    """An ending operation left a `.agent6/pack.json` that `agent6 pack` did not write."""
+
+    TYPE: ClassVar[str] = "pack.quarantined"
+    path: str = pydantic.Field(description="The `pack.json` found.")
+    renamed: str | None = pydantic.Field(
+        default=None,
+        description="Its new path; null when it was left where it is.",
+    )
+    warning: str = pydantic.Field(description="The warning the operator was given.")
+
+
 class ParallelCompared(Event):
     """Parallel candidates were ranked."""
 
@@ -1874,6 +1886,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "nudge.verify_settled": NudgeVerifySettled,
     "nudge.went_quiet": NudgeWentQuiet,
     "operator.presence": OperatorPresence,
+    "pack.quarantined": PackQuarantined,
     "parallel.compared": ParallelCompared,
     "parallel.dispatched": ParallelDispatched,
     "parallel.failed": ParallelFailed,

@@ -651,6 +651,15 @@ A present pack stops every run until it is unpacked or deleted, even on its orig
 `pack` verifies git's ignore decision and refuses tracked `.agent6` paths before writing the snapshot.
 That refusal is the pack's only protection: `.agent6/` is an ordinary directory to file tools and commands.
 
+A model can write a pack of its own there, and `agent6 unpack` would install its config.
+No run, resume, machine or exec starts beside a pack, and `pack` writes only while none of them is live in the checkout.
+A `.agent6/pack.json` found when one of them ends is therefore not `agent6 pack`'s: agent6 renames it to `pack.json.invalid` (`pack.json.invalid.1`, `.2` and so on when the name is taken) and warns against unpacking it.
+A session journals the warning as `pack.quarantined`, which the terminal, the TUI, the web and an ACP editor show.
+A merge renames a `pack.json` that its landing writes into the repository's checkout.
+The rename follows no link: a link named `pack.json` is renamed as a link, and a symlinked `.agent6` is reported and left alone; the start check and `unpack` refuse a pack behind a link.
+The check runs when the command ends: after a killed run, or when plain `git` or the web Git page checks out a commit that holds the file, the start check still names `agent6 unpack`.
+Delete a pack you did not make.
+
 The secrets copy is created through a `0600` descriptor in a `0700` directory.
 A workspace sync can expose it to the sync service and the destination host; use only trusted destinations.
 A devcontainer that maps the user to another uid can leave a synced secrets file foreign-owned, which the secrets loader refuses.

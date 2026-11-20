@@ -12,13 +12,14 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime
+import os
 import pathlib
 import shlex
 from collections.abc import Callable, Mapping
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import errors
+from agent6 import errors, pack, paths
 from agent6.app import merge_message, stamps
 from agent6.config import Config
 from agent6.graph import models as graph_models
@@ -442,6 +443,7 @@ def execute_merge(
 
     Ref plumbing only: the checkout is never switched and the worktree is never required
     clean. The existing writer lock serializes review dispositions and this mutation.
+    A `.agent6/pack.json` the landing writes into the repository is renamed (`pack.quarantine`).
 
     Args:
         cwd: The repository.
@@ -456,7 +458,7 @@ def execute_merge(
         identity: The committer.
         budget: The run's tracker, when the merge runs inside one.
         events: The run's event sink, when the merge runs inside one.
-        warn: Where a degraded squash message is reported.
+        warn: Where a degraded squash message and a renamed `pack.json` are reported.
         worker_lock_fd: The executing worker's held lock, else this call takes the lock.
 
     Returns:
@@ -513,6 +515,15 @@ def execute_merge(
                 )
             target_tip_before = git_read.branch_tip_sha(cwd, target) or ""
             merge_base = landed_base(cwd, layout, manifest, target, tip)
+            # A merge holds no workspace lease: a pack there before it may be `agent6 pack`'s.
+            root = paths.project_root(cwd, allow_pack=True)
+            if not os.path.lexists(root / ".agent6" / "pack.json"):
+                cleanup.callback(
+                    pack.quarantine,
+                    root,
+                    warn=lambda text: warn(f"WARNING: {text}"),
+                    events=events,
+                )
             result = dispatch_merge(
                 cwd,
                 method,

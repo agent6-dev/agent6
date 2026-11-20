@@ -21,7 +21,7 @@ import pydantic
 
 from agent6 import errors, pack_manifest, paths, portable
 from agent6.config import io, layer, layer_data, write
-from agent6.sessions import lock
+from agent6.sessions import event_log, journal, lock
 
 Outcome = Literal["move", "keep", "conflict"]
 
@@ -506,3 +506,77 @@ def unpack(root: pathlib.Path) -> ImportResult:
             )
     except OSError as exc:
         raise errors.PackError(f"unpack {root / '.agent6'}: {exc}") from exc
+
+
+def quarantine(
+    root: pathlib.Path,
+    *,
+    warn: Callable[[str], None],
+    events: event_log.EventSink | None = None,
+) -> None:
+    """Rename a `.agent6/pack.json` that an ending operation left in a checkout, and say so.
+
+    For a caller that knows the file is not `agent6 pack`'s: it started beside no pack and
+    holds the checkout's lease, which `pack` takes alone, or it saw none before its landing.
+    The rename stays inside a descriptor on `.agent6` opened without following a link: a link
+    named `pack.json` moves as a link, and a linked `.agent6` is reported and left as it is.
+
+    Args:
+        root: The checkout the operation ran in or landed work in.
+        warn: Receives the operator's warning when no journal takes it.
+        events: The session's journal, whose row every view of the session shows; None
+            outside a session.
+    """
+    directory = root / ".agent6"
+    found = directory / "pack.json"
+    # The start check's own view, through a linked `.agent6` too; a stat writes nothing there.
+    if not os.path.lexists(found):
+        return
+    premise = "No agent6 command starts beside a pack, so this operation"
+    renamed: pathlib.Path | None = None
+    try:
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            taken = 0
+            while True:
+                name = "pack.json.invalid" + (f".{taken}" if taken else "")
+                try:
+                    os.lstat(name, dir_fd=fd)
+                except FileNotFoundError:
+                    break
+                taken += 1
+            os.rename("pack.json", name, src_dir_fd=fd, dst_dir_fd=fd)
+        finally:
+            os.close(fd)
+    except FileNotFoundError:
+        return  # gone between the stat and the rename
+    except OSError as exc:
+        if directory.is_symlink():
+            warning = (
+                f"{directory} is a symlink that leads to a pack.json. {premise} made the link"
+                " or the file. agent6 follows no link there and changed nothing: remove the"
+                " link. Do not run `agent6 unpack` there."
+            )
+        else:
+            warning = (
+                f"found {found}. {premise} created it; `agent6 pack` did not. agent6 could"
+                f" not rename it ({exc}): delete it. Do not run `agent6 unpack` on it."
+            )
+    else:
+        renamed = directory / name
+        warning = (
+            f"found {found}. {premise} created it; `agent6 pack` did not. agent6 renamed it"
+            f" to `{name}`. Do not run `agent6 unpack` on it."
+        )
+    if events is not None:
+        # Said once: a dead journal leaves the warning to `warn`.
+        with contextlib.suppress(event_log.EventWriteError):
+            events.emit(
+                journal.PackQuarantined(
+                    path=str(found),
+                    renamed=None if renamed is None else str(renamed),
+                    warning=warning,
+                )
+            )
+            return
+    warn(warning)

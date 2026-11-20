@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, errors, kinds, paths, review_records
+from agent6 import directive, errors, kinds, pack, paths, review_records
 from agent6.app import (
     child_launch,
     child_watch,
@@ -151,14 +151,14 @@ class ExecutionEnd:
 
 
 def headless_marker(event: dict[str, Any], *, log: Callable[[str], None]) -> None:
-    """Print the degraded-jail marker a live view renders, through the run's text log.
+    """Print the warning markers a live view renders, through the run's text log.
 
     Args:
         event: One journal event.
         log: The run's text logger.
     """
-    if event.get("type") == "jail.degraded":
-        log(f"[agent6] {transcript_text.jail_degraded_body(event)}")
+    if event.get("type") in ("jail.degraded", "pack.quarantined"):
+        log(f"[agent6] {transcript_text.MARKER_BODIES[event['type']](event)}")
 
 
 def detach_to_background(
@@ -444,7 +444,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
 
         loop_log = frontend.loop_logger(mode)
         if not console_stream:
-            # Headless, the fold's markers reach no view: a degraded jail is said once here.
+            # Headless, the fold's markers reach no view: its warnings are said once here.
             events.subscribe(functools.partial(headless_marker, log=loop_log))
         # A bounded conversation is its parent's evidence: the operator hears of the parent.
         if inputs.contract is None:
@@ -796,6 +796,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         finally:
             # Never leave root-owned run state in the user's repo (the sudo case).
             paths.chown_to_real_user(state_dir)
+            # On every end, after the run's commands close: a model's tools can write a pack.json.
+            pack.quarantine(paths.checkout_root(cwd), warn=reporter.warn, events=events)
 
     finalize.settle_budget(budget, events)
     if interrupted:

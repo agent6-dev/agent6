@@ -19,7 +19,7 @@ from collections.abc import Callable, Mapping
 
 import pydantic
 
-from agent6 import budget, errors, kinds, paths
+from agent6 import budget, errors, kinds, pack, paths
 from agent6.app import confine, preflight, worktree_setup, worktrees
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -717,6 +717,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 )
             finally:
                 process.clear_worker_pid(root)
+                if agent_states or has_tool_state:
+                    # Under the lease: a tool state's command can write a pack.json in the checkout.
+                    pack.quarantine(paths.checkout_root(cwd), warn=reporter.warn)
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
         return 1
