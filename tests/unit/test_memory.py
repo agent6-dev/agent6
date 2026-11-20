@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import portable
+from agent6 import path_safety, portable
 from agent6.context import memory
 
 
@@ -794,14 +794,14 @@ def test_index_skips_a_fact_it_cannot_read(
     (store / "kept.md").write_text("Kept.\n", encoding="utf-8")
     vanished = store / "vanished.md"
     vanished.write_text("Gone before the read.\n", encoding="utf-8")
-    real_read_text = pathlib.Path.read_text
+    real_read = path_safety.read_bytes_contained
 
-    def read_after_a_deletion(self: pathlib.Path, *args: Any, **kwargs: Any) -> str:
-        if self.name == "vanished.md":
-            self.unlink()
-        return real_read_text(self, *args, **kwargs)
+    def read_after_a_deletion(sp: path_safety.SafePath, **kwargs: Any) -> bytes:
+        if sp.abs_path == vanished:
+            vanished.unlink()
+        return real_read(sp, **kwargs)
 
-    monkeypatch.setattr(pathlib.Path, "read_text", read_after_a_deletion)
+    monkeypatch.setattr(path_safety, "read_bytes_contained", read_after_a_deletion)
     unreadable = store / "unreadable.md"
     unreadable.write_text("Hidden.\n", encoding="utf-8")
     unreadable.chmod(0)
@@ -811,6 +811,42 @@ def test_index_skips_a_fact_it_cannot_read(
     finally:
         unreadable.chmod(0o600)
     assert not vanished.exists()
+
+
+@pytest.mark.parametrize("site", ["index", "seed", "merge"])
+def test_a_link_swapped_in_at_the_read_is_not_followed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, site: str
+) -> None:
+    """The fact checked is the fact read: an entry that becomes a link is skipped at the open.
+
+    Checked by name and then read by name, a link swapped in between carried a file outside
+    the store into the index, a child's seed and the origin's store.
+    """
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP SECRET\n", encoding="utf-8")
+    store = tmp_path / "store"
+    memory.add(store, "swapped", "A fact.")
+    victim = memory.memory_dir(store) / "swapped.md"
+    real_read = path_safety.read_bytes_contained
+
+    def read_after_a_swap(sp: path_safety.SafePath, **kwargs: Any) -> bytes:
+        if sp.abs_path == victim:
+            victim.unlink()
+            victim.symlink_to(secret)
+        return real_read(sp, **kwargs)
+
+    monkeypatch.setattr(path_safety, "read_bytes_contained", read_after_a_swap)
+    other = tmp_path / "other"
+    if site == "index":
+        assert memory.index_entries(store) == ()
+    elif site == "seed":
+        assert memory.seed_store(store, other) == 0
+        assert list(memory.memory_dir(other).iterdir()) == []
+    else:
+        merged = memory.merge_memory(store, other, held_dir=tmp_path / "held")
+        assert merged == memory.MemoryMerge()
+        assert list(memory.memory_dir(other).iterdir()) == []
+    assert victim.is_symlink()  # the swap landed at the read
 
 
 def test_a_store_that_cannot_be_listed_reads_as_empty(tmp_path: pathlib.Path) -> None:

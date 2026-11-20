@@ -22,7 +22,7 @@ import time
 from collections.abc import Collection, Generator, Mapping, Sequence
 from typing import Any, Literal, cast
 
-from agent6 import errors, paths, portable
+from agent6 import errors, path_safety, paths, portable
 
 MEMORY_DIR_NAME = "memory"
 # Past the cap the operator rulings inject as their newest tail behind a clip marker.
@@ -492,15 +492,15 @@ def merge_memory(
     dst = memory_dir(dst_state_dir)
     paths.mkdir_for_real_user(dst)
     seeds = seed_digests(src_state_dir)
-    child = {p.stem: p for p in src.glob("*.md") if _is_fact_file(p)}
+    listed = {p.stem for p in src.glob("*.md")}
     landed: dict[str, list[str]] = {"carried": [], "updated": [], "deleted": [], "held": []}
-    for name in sorted(seeds.keys() | child.keys()):
+    for name in sorted(seeds.keys() | listed):
         if _NAME_RE.fullmatch(name) is None:
             continue  # not a memory name (`_check_name`): names no path in either store
-        path = child.get(name)
+        fact = _read_fact(src / f"{name}.md")
         origin = dst / f"{name}.md"
         seed = seeds.get(name)
-        theirs = _sha256(path) if path is not None else None
+        theirs = hashlib.sha256(fact).hexdigest() if fact is not None else None
         with _locked_memory(dst_state_dir):
             ours = _sha256(origin) if origin.is_file() else None
             fate = _fate(seed, theirs, ours)
@@ -510,11 +510,11 @@ def merge_memory(
                 origin.unlink()
                 _drop_use(dst_state_dir, name)
             elif fate == "held":
-                if path is not None:
+                if fact is not None:
                     paths.mkdir_for_real_user(held_dir)
-                    portable.atomic_write(held_dir / path.name, path.read_bytes())
-            elif path is not None:  # carried or updated: the child has the file
-                portable.atomic_write(origin, path.read_bytes())
+                    portable.atomic_write(held_dir / f"{name}.md", fact)
+            elif fact is not None:  # carried or updated: the child has the file
+                portable.atomic_write(origin, fact)
         landed[fate].append(name)
     return MemoryMerge(
         carried=tuple(landed["carried"]),
@@ -579,14 +579,15 @@ def seed_store(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> int:
         recover_unrecorded_copy = not seed_path(dst_state_dir).exists()
         earlier = seed_digests(dst_state_dir)
         for path in sorted(src.iterdir()):
-            if not _is_fact_file(path) or path.stem in earlier:
+            fact = None if path.stem in earlier else _read_fact(path)
+            if fact is None:
                 continue
             target = dst / path.name
             if target.exists():
-                if recover_unrecorded_copy and _sha256(path) == _sha256(target):
+                if recover_unrecorded_copy and hashlib.sha256(fact).hexdigest() == _sha256(target):
                     digests[path.stem] = _sha256(target)
                 continue
-            portable.atomic_write(target, path.read_bytes())
+            portable.atomic_write(target, fact)
             copied += 1
             digests[path.stem] = _sha256(target)
         portable.atomic_write(
@@ -649,6 +650,28 @@ def _is_fact_file(path: pathlib.Path) -> bool:
     )
 
 
+def _read_fact(path: pathlib.Path) -> bytes | None:
+    """Return a store entry's bytes, or None when it is absent or not a fact.
+
+    The open follows no link and judges the file it opened, so the entry checked is the entry read.
+
+    Args:
+        path: The store entry.
+
+    Returns:
+        The fact's bytes.
+
+    Raises:
+        OSError: The fact cannot be read.
+    """
+    if path.suffix != ".md" or not is_memory_name(path.stem):
+        return None
+    try:
+        return path_safety.read_bytes_contained(path_safety.contain(path.parent, path.name))
+    except (FileNotFoundError, path_safety.ContainmentError):
+        return None
+
+
 def _store_entries(state_dir: pathlib.Path) -> list[pathlib.Path]:
     """Return the store's entries, sorted; a store that cannot be listed reads as empty."""
     try:
@@ -671,12 +694,13 @@ def index_entries(state_dir: pathlib.Path) -> tuple[tuple[str, str], ...]:
     """
     entries: list[tuple[str, str]] = []
     for path in _store_entries(state_dir):
-        if not _is_fact_file(path):
-            continue
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            fact = _read_fact(path)
         except OSError:
             continue
+        if fact is None:
+            continue
+        text = fact.decode("utf-8", errors="replace")
         first = next((line.strip() for line in text.splitlines() if line.strip()), "(empty)")
         entries.append((path.stem, first.lstrip("#").lstrip(" ")))
     return tuple(entries)
