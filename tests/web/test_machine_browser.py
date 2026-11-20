@@ -781,12 +781,15 @@ def test_the_palette_offers_the_machine_views_actions(
 def test_stop_asks_by_the_instance_name(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
-    """Stop's confirm said "this machine" and showed a command in Markdown backticks."""
+    """Stop's confirm said "this machine" and showed a command in Markdown backticks.
+
+    The button's name led with its glyph: "■ Stop".
+    """
     from playwright.sync_api import expect
 
     _machine(tmp_path, "working", LOOP, [], _talk(2), alive=True)
     page, errors = _open(open_page, port, "working")
-    stop = page.get_by_role("button", name="Stop")
+    stop = page.get_by_role("button", name="Stop", exact=True)
     stop.click()
     question = page.get_by_role("alertdialog", name="Stop working?")
     text = question.locator("p")

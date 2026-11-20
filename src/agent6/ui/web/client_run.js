@@ -46,7 +46,8 @@ async function renderRun(id, opts, gen) {
       try { const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/' + verb, {}); toast(d.message || okMsg); }
       catch (e) { toast(e.message, true); }
     };
-    const stopBtn = el('button', 'danger', '■ Stop now');
+    const stopBtn = el('button', 'danger');
+    stopBtn.append(glyph('■'), '\u00a0Stop now'); // the mark keeps to its word
     stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'this session');
     const turnBtn = el('button', null, 'Stop after turn');
     turnBtn.onclick = async () => {

@@ -270,6 +270,21 @@ def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
     assert not errors
 
 
+def test_stop_now_is_named_by_its_words_alone(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The Stop now button's name led with its glyph: "■ Stop now"."""
+    from playwright.sync_api import expect
+
+    session_logs.write_run(tmp_path, "stop-AAA111", [], live=True)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/stop-AAA111")
+    stop = page.locator(".run-app .actions").get_by_role("button", name="Stop now", exact=True)
+    expect(stop).to_be_visible()
+    expect(stop).to_have_text("■\u00a0Stop now")
+    assert not errors
+
+
 def test_the_composer_keeps_the_focus_while_a_resume_is_in_flight(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

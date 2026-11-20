@@ -15,7 +15,8 @@ async function renderMachine(name, gen) {
   // Stop, as `agent6 machine stop` and the TUI machine watch do: the machine parks at its next
   // transition and `machine run` resumes it.
   const actions = el('div', 'row wrap page-pad actions');
-  const stopBtn = el('button', 'danger', '■ Stop');
+  const stopBtn = el('button', 'danger');
+  stopBtn.append(glyph('■'), '\u00a0Stop'); // the mark keeps to its word
   stopBtn.onclick = async () => {
     if (!await confirmDialog(`Stop ${name}?`, `It parks at its next transition, and \`agent6 machine run ${name}\` resumes it.`, 'Stop', true)) return;
     try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stop requested'); }
