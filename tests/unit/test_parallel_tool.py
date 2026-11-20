@@ -297,7 +297,7 @@ def test_stop_background_stops_a_child_even_where_commands_are_denied(
     assert "stop_background" not in _names(without)
 
 
-def test_the_description_names_every_role_the_providers_and_the_ceilings(
+def test_the_description_names_every_role_the_providers_and_the_limits(
     tmp_path: pathlib.Path,
 ) -> None:
     """The model reads what each selector would run: route, effort, temperature, inheritance."""
@@ -311,8 +311,9 @@ def test_the_description_names_every_role_the_providers_and_the_ceilings(
     assert "worker: p/base, effort high, temperature 0.7 (as default)" in text
     assert "reviewer: q/critic, effort max, temperature 0.7 (temperature from default)" in text
     assert "Configured providers: p, q" in text
-    assert "200 turns" in text and "30 minutes" in text
-    assert "edit" in text and "this run's remaining budget, which the children share" in text
+    assert "turns" not in text.split("Configured providers")[1] and "minutes" not in text
+    assert "an ordinary run with this run's tools and limits that may edit its clone" in text
+    assert "the children share this run's remaining budget" in text
     assert "at most 4 run at once (`harness.parallel.max_children`)" in text
     assert "secret" not in text and "localhost" not in text
 
@@ -461,20 +462,15 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
     assert "run-abc-p1-l1 (agent6/run-abc-p1-l1): joined at" in wire
     assert "run-abc-p1-l2 (agent6/run-abc-p1-l2): ranked 2 of 2; not joined" in wire
     assert [child.model for child in seen] == ["reviewer", "default"]
-    assert all(
-        child.limits
-        == child_records.ChildLimits(max_turns=200, deadline_at=child.limits.deadline_at)
-        for child in seen
-        if child.limits
-    )
-    assert all(child.limits is not None and child.limits.deadline_at is not None for child in seen)
+    # A child the model starts runs under its parent's config: no cap of its own.
+    assert [child.limits for child in seen] == [None, None]
     assert all(
         child.allowance is not None and child.allowance.usd == pytest.approx(10.0) for child in seen
     )
     (record,) = child_dispatch.read_records(session_dir)
     assert record.source == "model" and record.state == "complete" and record.delivered
     assert (record.join_policy, record.spec) == ("rank", "reviewer,default")
-    assert all(c.limits is not None and c.limits.max_turns == 200 for c in record.children)
+    assert [c.limits for c in record.children] == [None, None]
     assert graph.rationales[-1] == "dispatched through /parallel by the model"
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     # The first-ranked attempt alone is on the chain; the other keeps its branch.

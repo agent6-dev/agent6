@@ -5,12 +5,10 @@
 from __future__ import annotations
 
 import dataclasses
-import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from agent6 import child_records, directive
-from agent6.harness import parallel_dispatch
+from agent6 import directive
 from agent6.tools import child_tools, results, tool_errors
 
 if TYPE_CHECKING:
@@ -46,15 +44,7 @@ class ChildWork:
             raise tool_errors.ToolError("not available: no turn in progress")
         conversation, state, turn = self.harness.tool_turn
         started = self.harness.parallel.dispatch(
-            conversation,
-            turn,
-            state,
-            [directive.Segment(task=task, spec=spec)],
-            source="model",
-            limits=child_records.ChildLimits(
-                max_turns=parallel_dispatch.MODEL_CHILD_MAX_TURNS,
-                deadline_at=time.time() + parallel_dispatch.MODEL_CHILD_DEADLINE_S,
-            ),
+            conversation, turn, state, [directive.Segment(task=task, spec=spec)], source="model"
         )
         return results.StartedResult(started.children, started.message)
 

@@ -30,9 +30,8 @@ from agent6.viewmodel.session import log as session_log
 if TYPE_CHECKING:
     from agent6.harness import loop_conversation, loop_state
 
-# The ceilings of a child the model dispatches: a smaller configured cap wins, unlimited cannot.
-MODEL_CHILD_MAX_TURNS = 200
-MODEL_CHILD_DEADLINE_S = 1800.0
+# The window one batch of a panel's reviewers runs in; a work child has no deadline of its own.
+PANEL_BATCH_DEADLINE_S = 1800.0
 
 
 def segment_children(
@@ -130,14 +129,14 @@ class ParallelDispatcher:
         segments: list[directive.Segment],
         *,
         source: child_records.DispatchSource = "operator",
-        limits: child_records.ChildLimits | None = None,
     ) -> child_records.Started:
         """Start each segment's task in the background and return what started.
 
         A segment is one task and one dispatch record, written before any launch: one child
         lands its commits, several are attempts a ranker orders. Each child starts on a
-        clone of the parent's committed HEAD under what the parent has left to spend, and
-        runs while the parent takes its turns; `settle` lands the work at a turn boundary.
+        clone of the parent's committed HEAD under the parent's config and what it has left
+        to spend, with no turn cap or deadline of its own, and runs while the parent takes
+        its turns; `settle` lands the work at a turn boundary.
         Never ends the run: an unavailable spawner, a bad spec, a dirty tree, an unwritable
         record or a spawner fault each come back as the refusal for the caller to deliver.
 
@@ -147,7 +146,6 @@ class ParallelDispatcher:
             state: The loop state.
             segments: The directive's segments, one task and one DAG node each.
             source: Who asked: the operator's steer, the model's tool call or a panel.
-            limits: The turn cap and deadline every child runs under; None for the config's.
 
         Returns:
             The children started and one line per task, or the refusal with none.
@@ -192,10 +190,9 @@ class ParallelDispatcher:
         base = self.chain.tip() or ""
         prepared: list[tuple[child_dispatch.DispatchRecord, list[child_records.ChildTask]]] = []
         lines: list[str] = []
-        for seg, task in zip(segments, tasks, strict=True):
+        for seg, children in zip(segments, tasks, strict=True):
             state.parallel_groups_dispatched += 1
             identity = f"{self.session_id}-p{state.parallel_groups_dispatched}"
-            children = [dataclasses.replace(child, limits=limits) for child in task]
             record = child_dispatch.DispatchRecord(
                 identity=identity,
                 source=source,
@@ -298,7 +295,7 @@ class ParallelDispatcher:
         for i, child in enumerate(children):
             assert child.contract is not None
             # Batches run one after another: each gets its own window, fixed before launch.
-            deadlines = [start + MODEL_CHILD_DEADLINE_S * (i // width + 1)]
+            deadlines = [start + PANEL_BATCH_DEADLINE_S * (i // width + 1)]
             if self.authority.deadline_at is not None:
                 deadlines.append(self.authority.deadline_at)
             if child.limits is not None and child.limits.deadline_at is not None:

@@ -132,8 +132,8 @@ def parallel_description(cfg: Config) -> str:
         tools_schema.ParallelInput.TOOL_DESCRIPTION
         + " Roles: "
         + "; ".join(roles)
-        + f". Configured providers: {providers}. Each child is an ordinary run that may edit"
-        " its clone, under 200 turns, 30 minutes and this run's remaining budget, which the"
-        f" children share; at most {cfg.harness.parallel.max_children} run at once"
+        + f". Configured providers: {providers}. Each child is an ordinary run with this"
+        " run's tools and limits that may edit its clone; the children share this run's"
+        f" remaining budget, at most {cfg.harness.parallel.max_children} run at once"
         " (`harness.parallel.max_children`), and `read_session` reads a child's whole transcript."
     )

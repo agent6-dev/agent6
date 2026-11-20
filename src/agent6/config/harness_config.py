@@ -205,12 +205,12 @@ class ParallelConfig(pydantic.BaseModel):
     tool: bool = pydantic.Field(
         default=False,
         description=(
-            "offer a run's model the `parallel` tool, which dispatches a task to isolated "
+            "offer a run's model the `parallel` tool, which starts one task in isolated "
             "children (fresh clones of the committed tree, each an ordinary run that may edit) "
-            "and joins their commits back in order; each child runs under 200 turns, 30 minutes "
-            "and the run's remaining budget, which the children share; `harness.parallel.tool = "
-            "false`: no run is offered it; neither value changes `run --parallel`, the "
-            "`/parallel` steer or the review panel"
+            "and lands their work at the run's turn boundaries; a child runs under the run's "
+            "own config and its remaining budget, which the children share; "
+            "`harness.parallel.tool = false`: no run is offered it; neither value changes "
+            "`run --parallel`, the `/parallel` steer or the review panel"
         ),
     )
 
@@ -221,8 +221,8 @@ class ParallelConfig(pydantic.BaseModel):
         le=1024,
         default=4,
         description=(
-            "The most children one `--parallel` group may run, `1` to `1024`; a spec asking for "
-            "more is refused before anything is cloned; a review roster longer than this "
+            "The most children a run has running at once, `1` to `1024`; a dispatch asking "
+            "for more is refused before anything is cloned; a review roster longer than this "
             "runs in batches of this width, with no reviewer dropped."
         ),
     )

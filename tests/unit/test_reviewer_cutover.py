@@ -93,7 +93,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     assert meter.estimate_usd()[0] == 5 and meter.snapshot().usd_running_children == 0
     assert [j.detail for j in result.children] == ["scripted failure"] * 5
     # A later batch waits for the earlier ones: its window starts where theirs ends.
-    window = parallel_dispatch.MODEL_CHILD_DEADLINE_S
+    window = parallel_dispatch.PANEL_BATCH_DEADLINE_S
     assert deadlines == [1000 + window] * 2 + [1000 + 2 * window] * 2 + [1000 + 3 * window]
 
 
@@ -280,7 +280,6 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
             1,
             loop_state.LoopState(original_task="parent", tool_calls=0),
             [directive.Segment(task="Change README and finish", spec="1")],
-            limits=child_records.ChildLimits(max_turns=5),
         )
     assert result.children[0].status == "joined", result.message
     worker = directory.parent / result.children[0].session_id
