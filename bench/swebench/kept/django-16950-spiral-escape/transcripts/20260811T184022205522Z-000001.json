@@ -1,4 +1,5 @@
 {
+  "actor": "worker",
   "request": {
     "body": {
       "max_tokens": 32768,
@@ -824,7 +825,6 @@
     },
     "status": 200
   },
-  "seat": "worker",
   "seq": 1,
   "ts": "20260811T184022205522Z"
 }

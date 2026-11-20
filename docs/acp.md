@@ -29,7 +29,7 @@ ACP carries a tool call as two messages.
 - a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.stop` is written, or when the tail ends without one (a worker killed mid-call)
 - `toolCallId` is `<run id>:<execution id>:<call>`, unique for the life of the session; the dispatcher numbers each execution's calls from 1
 
-Worker text and thinking arrive as they stream; side-role output stays out of the conversation.
+Worker text and thinking arrive as they stream; output from side calls stays out of the conversation.
 
 Inspect persisted [line-origin evidence](usage.md#session-findings) with `/findings`, `agent6 sessions findings <id>` or the web Findings card.
 

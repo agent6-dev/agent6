@@ -67,6 +67,19 @@ It does not replace the required default.
 `agent6 config show` shows each inherited leaf with the default's origin.
 An old worker-only config refuses without migration: rename `[models.worker]` to `[models.default]`.
 
+### Model call actors
+
+A role selects model settings; `actor` tells you who made a call with them.
+The actor is the calling role, optionally followed by `:` and a detail:
+
+- `worker` runs the coding turn; `worker:squash` drafts a squash commit message.
+- `helper:verify_inferer` infers a verification command; `helper:summariser` writes helper summaries and gists.
+- A panel review child calls as `reviewer:<focus>`; a review child with no actor specified calls as `reviewer`.
+- `reviewer:recap` reviews a finished session's record for `agent6 sessions review <id>`.
+
+Read `actor` on `model.*` and `provider.request` journal events and on provider transcripts.
+Inside the recorded request, a message's `role` identifies its speaker, such as `user` or `assistant`.
+
 ## Your first run
 
 ```sh

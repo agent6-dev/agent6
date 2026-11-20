@@ -3,7 +3,7 @@
 
 Run on a machine that has real sessions under $XDG_STATE_HOME/agent6/. It copies a
 curated set of runs into docs/screenshots/seed/runs/<id>/, trimming the
-token-delta bloat out of logs.jsonl (a 9 MB log is ~99% role.*_delta events)
+token-delta bloat out of logs.jsonl (a 9 MB log is ~99% streaming deltas)
 and keeping only the structural events plus a tail of reasoning, so the TUI hub
 and dashboard render the same but each fixture is tens of KB. Secrets are
 already redacted by agent6; this also neutralizes absolute home/temp paths.

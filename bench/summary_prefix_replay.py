@@ -258,12 +258,12 @@ def replay(session: pathlib.Path) -> bool:
     frames: dict[str, pathlib.Path] = {}
     for path in sorted((session / "transcripts").glob("*.json")):
         record = json.loads(path.read_text())
-        if record.get("seat") == "worker":
+        if record.get("actor") == "worker":
             frames[record["model_call_id"]] = path
     rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
 
     def worker(row: Body) -> bool:
-        return row["type"] == "model.result" and row["role"] == "worker" and row["ok"]
+        return row["type"] == "model.result" and row["actor"] == "worker" and row["ok"]
 
     def frame(row: Body) -> Body:
         path = frames[row["model_call_id"]]

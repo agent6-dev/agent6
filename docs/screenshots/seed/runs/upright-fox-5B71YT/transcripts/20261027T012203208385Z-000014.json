@@ -1,4 +1,5 @@
 {
+  "actor": "worker",
   "request": {
     "body": {
       "max_tokens": 16384,
@@ -1013,7 +1014,6 @@
     },
     "status": 200
   },
-  "reviewer": "worker",
   "seq": 14,
   "ts": "20261027T012203208385Z"
 }

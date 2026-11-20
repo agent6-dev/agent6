@@ -25,7 +25,7 @@ uv run python bench/summary_prefix_replay.py RECORDINGS
 ```
 
 Each session under `RECORDINGS` supplies `logs.jsonl`, `transcripts/` and `objects/`.
-The replay joins the worker calls on either side of `compact.summarise.call` to their transcripts by `model_call_id`.
+On either side of `compact.summarise.call`, the replay selects `model.result` rows and transcripts with `actor` set to `worker` and joins them by `model_call_id`.
 It rebuilds the conversation from the previous request, its reply and the tool results and notices in the retained tail.
 It takes the worker settings and conversation key from the following request.
 It passes the conversation through the worker summary call builder and the ChatGPT adapter without sending the request.

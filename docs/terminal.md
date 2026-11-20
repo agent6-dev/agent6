@@ -48,8 +48,9 @@ When the manifest cannot be read, **Run > Fork this session** is dimmed too, as 
 ## Run dashboard
 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
-Each pane names itself on its border: `run: <id>`, `children: N`, `tasks: done/total`, `<role> output`, `tools: N`, `log` and `diff`.
-The run pane shows the status, usage, budget and plan on its first line and the driving role, its model and the task on its second.
+Each pane names itself on its border: `run: <id>`, `children: N`, `tasks: done/total`, `<actor> output`, `tools: N`, `log` and `diff`.
+The run pane shows the status, usage, budget and plan on its first line and the latest [model call actor](usage.md#model-call-actors), its model and the task on its second.
+Before the first call it shows the driving role instead.
 It adds a line for where commands run only when that is not the local host, and the branch, fork lineage, pins, serving ports and a child's comparison when the run has them.
 `agent6 sessions show <id>` prints every role's model and the full environment record.
 The children table refreshes every second and keeps the same child selected when rows move.

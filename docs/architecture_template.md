@@ -801,6 +801,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `graph/**/*.md` | one markdown file per task node, nested under its parent, rewritten atomically (curator-owned) |
 | `cursor.json` | the curator's current task pointer |
 | `logs.jsonl` | the structured event stream |
+| `conversations.json` | opaque conversation ids and completed-call counts |
 | `loop_state.json` | the latest resume snapshot, written before each LLM call and at turn end |
 | `checkpoints/<NNNN>.json` | pre-call snapshots with message references, the run's chain tip (`head_sha`) and the curator `graph_version`; kept until explicit pruning |
 | `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
@@ -818,6 +819,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `steers/` | the instructions queued behind the steer in flight, one file each in the order sent; the worker moves the oldest into the slot when it clears |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
+Session manifest version 14 identifies the journal and transcript format that records the [actor](usage.md#model-call-actors) of a model call.
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
 Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.

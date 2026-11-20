@@ -52,7 +52,7 @@ def read_frames(session: pathlib.Path) -> list[tuple[Result, ...]]:
     frames: list[tuple[Result, ...]] = []
     for path in sorted((session / "transcripts").glob("*.json")):
         record = json.loads(path.read_text(encoding="utf-8"))
-        if record.get("seat") != "worker":
+        if record.get("actor") != "worker":
             continue
         # Session objects live beside transcripts, not inside them.
         body = objects.materialize(record["request"]["body"], session / "objects", record_path=path)

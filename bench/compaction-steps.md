@@ -42,7 +42,7 @@ uv run python bench/compaction_replay.py RECORDINGS --drop-at-chars BOUND
 ```
 
 The input directory contains one directory per session.
-The script reads Responses worker requests only and makes no model calls.
+The script reads only Responses transcripts with `actor` set to `worker` and makes no model calls.
 Missing objects produce `unavailable` cells, a diagnostic naming the object and exit status 1.
 
 ## Method

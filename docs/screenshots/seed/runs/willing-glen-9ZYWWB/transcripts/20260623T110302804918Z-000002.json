@@ -1,4 +1,5 @@
 {
+  "actor": "worker",
   "request": {
     "body": {
       "max_tokens": 65536,

@@ -126,6 +126,7 @@ It does not report `no matches` when the search is incomplete.
 
 `sessions show --json`, `sessions list --json` and `attach --json` return the operator's full words in `task`, the latest resume steer in `continued_task` and their headlines in `task_line`; [Formats](formats.md#cli-json) lists every field and the clipping rules.
 An unsteered resume clears `continued_task`.
+In `attach --json`, `last_model_call.actor` identifies the [caller](usage.md#model-call-actors) of the latest model call.
 
 ## Clean up sessions
 
@@ -275,6 +276,7 @@ agent6 config show telemetry            # every key with its origin
 - With `web.metrics_route = true` (default: `false`), `agent6 web` serves fresh hub-session metrics at `/metrics` only with `Authorization: Bearer <web-secret>` (Prometheus `authorization.credentials`), never a cookie or browser sign-in token.
 - A session's meter keeps 64 distinct values per free label (model, provider, tool) and reads `other` past them; an export that merges sessions carries each session's values, so the merged set can exceed 64.
 - A cursor per endpoint and session keeps a re-run from re-sending delivered spans and log records; the metrics reading is always the whole cumulative snapshot, and the Prometheus file is rewritten whole.
+- A model-call span identifies the caller with the `agent6.actor` attribute.
 - The default `capture = "metadata"` exports outcomes, counts, timings and the journal's ids, never the task, arguments, outputs or diffs; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)).
 - `--follow` posts what it holds every five seconds while events arrive and once more on Ctrl-C; a live run's unfinished work is sent when the run finishes it, not at the export's end.
   A crashed run's unfinished work is sent once, marked incomplete.

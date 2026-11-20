@@ -98,6 +98,7 @@ agent6 config set --repo harness.verify.command '["uv", "run", "pytest"]'
 To [measure one run](https://agent6.dev/usage/#measure-a-run), pass `--metric 'minimize -- python3 bench.py'` to `agent6 run`.
 
 The worker, planner, reviewer, and helper inherit each unset model, effort, and temperature from the required `models.default`.
+Session records identify who made each model call by its [actor](https://agent6.dev/usage/#model-call-actors).
 [Budgets][budgets] limit spending, tokens for unpriced calls, and supported subscription usage.
 
 ## [Security][security]
