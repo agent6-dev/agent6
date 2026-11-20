@@ -3414,6 +3414,7 @@ Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agen
 | `temperature` | `float \| None` | The sampling temperature; None keeps the worker's. |
 | `review_binding` | `ReviewBinding \| None` | Parent-owned review provenance, or None for other conversations. |
 | `allowed_tools` | `tuple[str, ...]` | The tools the parent hands down: the ones its own model is offered now, within the `reviewer` mode's surface. |
+| `actor` | `str` | Who makes the calls. An empty label takes the driving role. |
 
 ### ReviewBinding
 

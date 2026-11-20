@@ -192,7 +192,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
 # Only resumable modes start outside the machine supervisor.
 OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() if k.resumable)
 
-# A call from a helper or a more specific actor is a side call.
+# The roles that drive sessions, before a call adds detail.
 DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
 
 
@@ -206,7 +206,7 @@ def is_side_actor(actor: str, *, mode: str = "") -> bool:
     Returns:
         True for a side call, including a reviewer called within another session.
     """
-    if actor == "reviewer":
+    if actor.partition(":")[0] == "reviewer":
         return mode != "reviewer"
     return bool(actor) and actor not in DRIVING_ROLES
 
@@ -281,6 +281,7 @@ class ConversationContract:
             for tools ends the conversation `max_turns` with its text kept and those tools
             not run.
         temperature: The sampling temperature; None keeps the worker's.
+        actor: Who makes the calls. An empty label takes the driving role.
         review_binding: Parent-owned review provenance, or None for other conversations.
         allowed_tools: The tools the parent hands down: the ones its own model is offered
             now, within the `reviewer` mode's surface.
@@ -292,6 +293,7 @@ class ConversationContract:
     temperature: float | None = None
     review_binding: review_records.ReviewBinding | None = None
     allowed_tools: tuple[str, ...] = ()
+    actor: str = ""
 
     def __post_init__(self) -> None:
         if self.max_turns < 1:

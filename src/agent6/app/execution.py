@@ -361,6 +361,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         session = session_runtime.build_session_providers(
             cfg,
             role=role,
+            actor=inputs.contract.actor if inputs.contract else "",
             events=events,
             transcript_sink=transcript_sink,
             stream_text=stream_text,

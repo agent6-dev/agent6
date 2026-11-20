@@ -221,6 +221,7 @@ def build_session_providers(
     cfg: Config,
     *,
     role: RoleName,
+    actor: str = "",
     events: event_log.EventSink,
     transcript_sink: TranscriptSink,
     stream_text: bool,
@@ -232,6 +233,7 @@ def build_session_providers(
     Args:
         cfg: The resolved config.
         role: The driving role.
+        actor: The actor to record, or the role name when empty.
         events: The run's event sink.
         transcript_sink: Where every provider call is transcribed.
         stream_text: Whether the provider streams text into the sink.
@@ -243,15 +245,16 @@ def build_session_providers(
     """
     conversations = conversations or conversation_state.Conversations()
     budget = session_setup.budget_tracker(cfg)
+    actor = actor or role
     inner = role_providers.build_role_provider(
-        cfg, role, transcript_sink=transcript_sink, budget=budget, events=events
+        cfg, role, actor=actor, transcript_sink=transcript_sink, budget=budget, events=events
     )
     rm_role = cfg.models.resolve(role)
     assert rm_role is not None  # require_runnable validated this
     preflight.warn_if_prompt_override_incomplete(cfg, reporter=reporter)
     provider: Provider = role_providers.InstrumentedProvider(
         inner=inner,
-        actor=role,
+        actor=actor,
         model=rm_role.model,
         provider_name=rm_role.provider,
         events=events,

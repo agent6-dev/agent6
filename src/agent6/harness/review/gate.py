@@ -146,6 +146,7 @@ def run_panel(
             ),
             max_turns=max_turns,
             temperature=reviewer.temperature,
+            actor=f"reviewer:{reviewer.focus}",
             review_binding=review_records.ReviewBinding(panel_id, i, target),
             allowed_tools=handed,
         )
