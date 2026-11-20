@@ -770,7 +770,7 @@ An open web UI or TUI applies the same check when it reads sessions.
 A taken name is left alone: the directory is then `pack.invalid.1`, `.2` and so on.
 The end of a session, a machine or an exec walks the checkout's tree as the run preflight does, so a pack in a subdirectory is set aside too.
 A session journals the warning as `pack.quarantined`, which the terminal, the TUI, the web and an ACP editor show.
-A merge sets aside a pack whose `pack.json` its landing writes into the repository's checkout.
+A merge sets aside a pack if it writes `pack.json` into the checkout.
 The move follows no link: a link named `pack.json` or `repo` moves as a link, and a symlinked `.agent6` is reported and left alone; the start check and `unpack` refuse a pack behind a link.
 It first gives `.agent6` and each area its owner's access again, so a `chmod` from a jailed command pins nothing in place.
 
@@ -781,12 +781,15 @@ A run's preflight applies it to each pack its walk finds.
 - A session is live while its `worker.pid` names a running process.
   It died without an end when that process is gone and its journal shows no `session.stop` for its last execution, as after a kill.
 - A machine counts by its own `worker.pid`.
-  A session that works in a worktree or a clone of its own does not count; a checkout above a nested directory does.
+  A session in another checkout does not count.
+  A session in a checkout above a nested directory can write there.
 - `agent6 pack` refuses beside such a session and names it, so a pack made in this home is never taken for a session's.
 - A pack synced in from another home beside such a session is set aside too.
   Let the live session end, or resume or remove the dead one, then sync the pack again.
 - The start check's warning goes to the stderr of the command that started; a hub does not show the stderr of a run it starts.
-- A hub that is already open applies no rule to its own requests: they refuse beside the pack until a command starts in the checkout or the session ends.
+- An open web UI or TUI checks the viewed checkout before reading sessions.
+  It sets aside a session-written pack and shows the warning.
+  Other packs stay in place.
 
 A pack beside no such session stays where it is.
 The start check refuses, quotes the origin and time as what the pack says, and names both remedies: plain `git` or the web Git page can check out a commit that holds a forged `pack.json`.

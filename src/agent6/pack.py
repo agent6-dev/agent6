@@ -874,6 +874,35 @@ def quarantine_tree(
         quarantine(directory, warn=warn, events=events)
 
 
+def _session_in_checkout(
+    session_dir: pathlib.Path, checkout: pathlib.Path, project: pathlib.Path, state: pathlib.Path
+) -> bool:
+    """Return whether the session works in this checkout, not just in its project.
+
+    Args:
+        session_dir: The session's directory.
+        checkout: The checkout beside the pack.
+        project: The checkout owning project state.
+        state: The shared state directory.
+
+    Returns:
+        Whether the session can account for the pack.
+    """
+    try:
+        manifest = sessions_manifest.read_manifest(session_dir)
+    except sessions_manifest.ManifestError:
+        manifest = None
+    if manifest and manifest.worktree:
+        return manifest.worktree == checkout
+    if manifest and manifest.execution_targets:
+        return {paths.checkout_root(t.host_root) for t in manifest.execution_targets.values()} == {
+            checkout
+        }
+    if manifest and manifest.parallel:
+        return False
+    return lock.repo_writer_holder(state, checkout) == session_dir.name or checkout == project
+
+
 def _writer(directory: pathlib.Path) -> str | None:
     """Return the session that wrote a pack in the directory, as a warning's premise.
 
@@ -881,7 +910,7 @@ def _writer(directory: pathlib.Path) -> str | None:
     live, or that died without an end, was written by that session. No session starts beside
     a pack, `agent6 pack` writes beside no live one, and a session that reaches its end sets
     aside what it wrote. A checkout above the directory counts, since the directory sits
-    inside its workspace; a session that works in a worktree or a clone of its own does not.
+    inside its workspace. A session working in another checkout does not count.
 
     Args:
         directory: The directory whose `.agent6` holds the pack.
@@ -890,19 +919,13 @@ def _writer(directory: pathlib.Path) -> str | None:
         The premise, or None when no such session exists.
     """
     for checkout in lock.checkouts_from(directory):
-        state = paths.state_dir(checkout, allow_pack=True)
+        project = paths.project_root(checkout, allow_pack=True)
+        state = paths.state_dir(project, allow_pack=True)
         for session_dir in listing.session_dirs(state, layout.SESSION_BUCKETS):
             # A session clears its `worker.pid` at its end, after its own check.
             if process.read_worker_pid(session_dir) is None:
                 continue
-            try:
-                manifest = sessions_manifest.read_manifest(session_dir)
-            except sessions_manifest.ManifestError:
-                manifest = None  # nothing says it works elsewhere
-            works_elsewhere = manifest is not None and (
-                manifest.worktree is not None or manifest.parallel is not None
-            )
-            if works_elsewhere:
+            if not _session_in_checkout(session_dir, checkout, project, state):
                 continue
             word = listing.summarize_session_dir(session_dir).status
             if word in session_status.LIVE_STATUS_WORDS:
@@ -911,6 +934,8 @@ def _writer(directory: pathlib.Path) -> str | None:
                 return (
                     f"Session {session_dir.name} died in {checkout} without an end, so that session"
                 )
+        if checkout != project:
+            continue  # The machine record has no separate checkout stamp.
         for machine_dir in machine_state.machine_instance_dirs(state):
             if process.read_worker_pid(machine_dir) is None:
                 continue
@@ -949,7 +974,9 @@ def check_session_read(cwd: pathlib.Path, *, warn: Callable[[str], None]) -> Non
     Raises:
         PackError: A pack remains in the project.
     """
-    root = paths.project_root(cwd, allow_pack=True)
-    if os.path.lexists(root / ".agent6" / "pack.json"):
-        check_start(root, warn=warn)
-        pack_manifest.check_origin(root)
+    checkout = paths.checkout_root(cwd)
+    project = paths.project_root(checkout, allow_pack=True)
+    for root in dict.fromkeys((checkout, project)):
+        if os.path.lexists(root / ".agent6" / "pack.json"):
+            check_start(root, warn=warn)
+            pack_manifest.check_origin(root)

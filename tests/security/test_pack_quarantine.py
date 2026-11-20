@@ -696,6 +696,35 @@ def live_worker(
         worker.communicate()
 
 
+@pytest.mark.parametrize("same_checkout", [True, False])
+def test_a_viewer_checks_its_linked_checkout_for_a_pack(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, same_checkout: bool
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    linked = tmp_path / "linked"
+    _git(repo, "worktree", "add", "--detach", str(linked))
+    session = _run_dir(repo, "writer")
+    session.mkdir(parents=True)
+    (session / "worker.pid").write_text(str(os.getpid()))
+    (session / "logs.jsonl").write_text(
+        '{"type":"session.start","user_task":"work","mode":"run"}\n'
+    )
+    record = sessions_manifest.SessionManifest(
+        session_id="writer", mode="run", worktree=linked if same_checkout else None
+    )
+    (session / "manifest.json").write_text(record.model_dump_json())
+    _forge(linked)
+    warnings: list[str] = []
+    if same_checkout:
+        pack.check_session_read(linked, warn=warnings.append)
+        assert (linked / ".agent6/pack.invalid/pack.json.invalid").exists()
+        assert len(warnings) == 1 and "Session writer" in warnings[0]
+    else:
+        with pytest.raises(errors.PackError, match=_UNPACK_IT):
+            pack.check_session_read(linked, warn=warnings.append)
+        assert not warnings and (linked / ".agent6/pack.json").exists()
+
+
 def test_a_start_after_a_killed_session_sets_its_pack_aside_and_runs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
