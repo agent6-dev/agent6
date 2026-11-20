@@ -278,6 +278,11 @@ def resolved(candidate: str | pathlib.Path) -> pathlib.Path:
         return pathlib.Path(candidate).resolve()
 
 
+def directory_lookup_flags() -> int:
+    """Return directory traversal flags that avoid requiring read permission where possible."""
+    return getattr(os, "O_PATH", os.O_RDONLY) | os.O_DIRECTORY
+
+
 def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
     """Return a descriptor on a subdirectory, creating it when missing and asked to.
 
@@ -287,12 +292,12 @@ def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
         create: Whether to create it when missing.
 
     Returns:
-        An `O_PATH` descriptor the caller owns.
+        A directory descriptor the caller owns.
 
     Raises:
         FileNotFoundError: The subdirectory is missing and `create` is off.
     """
-    flags = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW
+    flags = directory_lookup_flags() | os.O_NOFOLLOW
     try:
         return os.open(name, flags, dir_fd=dir_fd)
     except FileNotFoundError:
@@ -334,7 +339,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         raise ContainmentError(f"Path is not relative to the workspace: {rel_path}")
     if ".." in rel_path.parts:
         raise ContainmentError(f"Path contains '..': {rel_path}")
-    dir_fd = os.open(sp.base, os.O_PATH | os.O_DIRECTORY)
+    dir_fd = os.open(sp.base, directory_lookup_flags())
     at = "."  # the component the walk is on, for the error path below
     try:
         for at in rel_path.parts[:-1]:

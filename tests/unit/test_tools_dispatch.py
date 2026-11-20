@@ -1270,16 +1270,39 @@ def test_read_tools_distinguish_missing_paths_from_wrong_kind(
     assert str(exc.value) == error
 
 
-def test_missing_path_error_does_not_stat_the_full_path(tmp_path: pathlib.Path) -> None:
+def test_single_file_read_grant(tmp_path: pathlib.Path) -> None:
+    """The grant names the file itself, not its parent directory."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    granted = tmp_path / "note.py"
+    granted.write_text("x = 1\n", encoding="utf-8")
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "full", "extra_read_paths": [str(granted)]}}
+    )
+    d = dispatch.ToolDispatcher(root=root, config=cfg)
+    assert d.dispatch("read_file", {"path": str(granted)}).to_wire()["content"] == "x = 1\n"
+    with pytest.raises(tool_errors.ToolError) as exc:
+        d.dispatch("list_dir", {"path": str(granted)})
+    assert str(exc.value) == f"Not a directory: {granted}"
+    with pytest.raises(tool_errors.ToolError, match="only allowed inside a granted path"):
+        d.dispatch("list_dir", {"path": str(granted.parent)})
+
+
+@pytest.mark.parametrize("without_o_path", [False, True])
+def test_missing_path_error_does_not_stat_the_full_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, without_o_path: bool
+) -> None:
     """A tool's diagnostic must stay inside the same boundary as the read."""
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    (tmp_path / "folder").mkdir()
-    target = tmp_path / "folder" / "missing"
+    target = tmp_path / "folder" / "sub" / "missing"
+    target.parent.mkdir(parents=True)
+    if without_o_path:
+        monkeypatch.delattr(os, "O_PATH", raising=False)
     with (
         mock.patch.object(os, "stat", wraps=os.stat) as calls,
-        pytest.raises(tool_errors.ToolError, match=r"^No such file: folder/missing$"),
+        pytest.raises(tool_errors.ToolError, match=r"^No such file: folder/sub/missing$"),
     ):
-        d.dispatch("read_file", {"path": "folder/missing"})
+        d.dispatch("read_file", {"path": "folder/sub/missing"})
     assert all(call.args[0] not in (target, str(target)) for call in calls.call_args_list)
 
 

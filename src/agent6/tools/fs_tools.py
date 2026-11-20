@@ -78,9 +78,12 @@ def resolve_read_path(
         ToolError: The path is missing, cannot be inspected or has the wrong kind.
     """
     sp = ws.resolve_read(path)
+    if not sp.rel_path.parts and sp.base != ws.root:
+        # An exact grant can be a file. Use its resolved name as the no-follow leaf.
+        sp = path_safety.contain(sp.base.parent, sp.base.name)
     parent = path_safety.contain(sp.base, sp.rel_path.parent)
     try:
-        fd = path_safety.open_contained(parent, os.O_PATH | os.O_DIRECTORY)
+        fd = path_safety.open_contained(parent, path_safety.directory_lookup_flags())
         try:
             mode = os.lstat(sp.rel_path.name or ".", dir_fd=fd).st_mode
         finally:
