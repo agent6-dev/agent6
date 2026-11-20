@@ -1498,7 +1498,7 @@ def test_a_resume_onto_another_tree_keeps_the_verified_tree_as_a_fact(
 def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A resume whose earlier work landed moves the base; the old base's red is no verdict on it.
+    """A resume whose earlier work merged moves the base; the old base's red is no verdict on it.
 
     `gate_red_at_base` read the old base's verdict and excused the run's own breakage.
     """

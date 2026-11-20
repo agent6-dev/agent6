@@ -509,7 +509,7 @@ def test_a_runs_commits_leave_a_forged_pack_out(
 ) -> None:
     """The per-turn commit staged `.agent6/pack.json` with the rest of the tree.
 
-    A merge then landed it, and a restore or a branch switch put it back beside no session.
+    A merge then included it, and a restore or a branch switch put it back beside no session.
     A run excludes `.agent6/` as `agent6 pack` does, in the repository's own exclude file.
     """
     repo = _repo(tmp_path, monkeypatch)
@@ -532,7 +532,7 @@ def test_a_runs_commits_leave_a_forged_pack_out(
     assert "excluded .agent6/" not in "".join(capsys.readouterr())  # said once
 
 
-def test_a_merge_that_lands_a_tracked_pack_json_leaves_it_renamed(
+def test_a_merge_that_writes_a_tracked_pack_json_leaves_it_renamed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A session's commits held the forged file, so `sessions merge` wrote it into the checkout.
@@ -555,21 +555,21 @@ def test_a_merge_that_lands_a_tracked_pack_json_leaves_it_renamed(
 
     assert ".agent6/pack.json" in git_read.tree_paths(repo, "main")
     assert _names(repo / ".agent6") == ["pack.invalid", "pack.invalid.1"]
-    landed = repo / ".agent6/pack.invalid.1/pack.json.invalid"
-    assert landed.read_text(encoding="utf-8") == _MANIFEST
+    quarantined = repo / ".agent6/pack.invalid.1/pack.json.invalid"
+    assert quarantined.read_text(encoding="utf-8") == _MANIFEST
     assert f"[agent6] WARNING: found {repo / '.agent6/pack.json'}." in err
     assert "agent6 moved it to `pack.invalid.1/pack.json.invalid`." in err
     assert _UNPACK_IT not in out + err
     _next_start_is_not_refused(capsys)
 
 
-def test_an_automatic_merge_from_a_worktree_run_lands_no_pack(
+def test_an_automatic_merge_from_a_worktree_run_writes_no_pack(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A `--worktree` run under `git.auto_merge` put the forged file in the checkout unseen.
 
     A `!.agent6/` rule in a `.gitignore` the model wrote outranked the exclude file, so the
-    run's commits held the pack and the landing wrote it. No tree of a run holds `.agent6/`.
+    run's commits held the pack and the merge wrote it. No tree of a run holds `.agent6/`.
     """
     repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\nauto_merge = true\n")
     _script(monkeypatch, _UNIGNORE, _FORGE, _FINISH)
@@ -589,12 +589,12 @@ def test_an_automatic_merge_from_a_worktree_run_lands_no_pack(
     _next_start_is_not_refused(capsys)
 
 
-def test_a_landing_leaves_a_pack_that_was_there_before_it(
+def test_a_merge_leaves_a_pack_that_was_there_before_it(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A worktree run does not hold the checkout's lease, so `agent6 pack` can write beside it.
 
-    The landing renames only what appears during it: a pack made first is `agent6 pack`'s own.
+    The merge renames only what appears during it: a pack made first is `agent6 pack`'s own.
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _create("new.txt", "made by the run\n"), _FINISH)
@@ -614,7 +614,7 @@ def test_a_landing_leaves_a_pack_that_was_there_before_it(
         target="main",
         base_sha=manifest.base_sha,
         method="squash",
-        message="land the run",
+        message="merge the run",
         cfg=cfg,
         identity=merge.commit_identity(cfg, run_dir, manifest),
         warn=said.append,

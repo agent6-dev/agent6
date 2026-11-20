@@ -195,7 +195,7 @@ def test_auto_merge_needs_a_model_finish_and_a_vouched_for_tree() -> None:
     assert not finalize.auto_merge_eligible(
         _result(completed=False, reason="max_turns", verification="passed")
     )
-    # A `run --parallel` run lands its best-ranked child by the same gate rule.
+    # A `run --parallel` run merges its best-ranked child by the same gate rule.
     assert finalize.auto_merge_eligible(
         _result(completed=True, reason="children_ranked", verification="passed")
     )
@@ -218,7 +218,7 @@ def test_auto_merge_rejects_a_harness_end(
 def test_exit_code_stranded_edits_are_five() -> None:
     """A green finish whose promised branch never materialized exits 5, not 0.
 
-    The edits sit uncommitted, so 0 would tell a script the deliverable landed. A red gate
+    The edits sit uncommitted, so 0 would tell a script the edits were committed. A red gate
     outranks 5; an unstranded finish stays 0.
     """
     ok = _result(completed=True, reason="finish_session", verification="passed")
@@ -277,7 +277,7 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
     """The stranded predicate reads the commit record, not the branch name.
 
     Keyed on the branch name, `branch_per_run = false` exited 0 with no warning over a commit
-    that never landed, and `commit_per_turn = false` exited 5 over a commit nothing attempted.
+    that was never made, and `commit_per_turn = false` exited 5 over a commit nothing attempted.
     It reads `commits_ref` (the branch, else the chain ref) and the manifest's commit stamp; a
     run with no chain to commit to (a plan, `[git].control = "model"`) never strands.
     """
@@ -314,7 +314,7 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
         branchless = layout_for("b1", {"session_id": "b1", "user_task": "t", "run_branch": None})
         assert (
             finalize.stranded_edits(result, branchless, repo) is True
-        )  # dirty, no chain: nothing landed
+        )  # dirty, no chain: nothing committed
         subprocess.run(
             ["git", "-C", str(repo), "update-ref", git_read.chain_ref_for("b1"), "HEAD"], check=True
         )

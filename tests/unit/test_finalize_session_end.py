@@ -589,7 +589,7 @@ def test_end_banner_of_a_branchless_run_names_its_chain_ref(
 ) -> None:
     """A `branch_per_run = false` run gets the where-are-my-changes footer, naming its chain ref.
 
-    A branchless run whose commit never landed gets the same WARNING a branchful one does.
+    A branchless run that made no commit gets the same WARNING a branchful one does.
     """
     import subprocess
 
@@ -607,7 +607,7 @@ def test_end_banner_of_a_branchless_run_names_its_chain_ref(
     assert f"changes are on {chain}" in out
     assert "agent6 sessions merge nobranch" in out and "agent6 sessions diff nobranch" in out
     assert "WARNING" not in out
-    # No chain either: the commit never landed, and the footer says so.
+    # No chain either: the run made no commit, and the footer says so.
     subprocess.run(["git", "update-ref", "-d", chain], cwd=repo, check=True)
     out = _end_footer(tmp_path, repo, "nobranch2", {**manifest, "session_id": "nobranch2"}, capsys)
     assert "WARNING: the run finished with no commit" in out

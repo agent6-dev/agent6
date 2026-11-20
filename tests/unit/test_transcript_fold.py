@@ -1223,7 +1223,7 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
     )
     assert [(i.kind, i.name or i.body) for i in items[-2:]] == [
         ("done", "passed"),
-        ("marker", "no commit landed: the edits sit uncommitted (not committed)"),
+        ("marker", "no commit: the edits sit uncommitted (not committed)"),
     ]
 
 

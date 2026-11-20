@@ -166,7 +166,7 @@ def test_graph_takes_a_ref_list_and_pages(
 def test_graph_pages_keep_the_original_tips_when_refs_move(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
-    """Paging resolved tips neither repeats nor loses a row after a new commit lands."""
+    """Paging resolved tips neither repeats nor loses a row after the branch gains a commit."""
     path, shas = repo
     expected = _ok(port, "/api/git/graph?refs=HEAD")["commits"]
     first = _ok(port, "/api/git/graph?refs=HEAD&limit=2")

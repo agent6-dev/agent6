@@ -2515,7 +2515,7 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
 
 
 def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path) -> None:
-    """The finished heartbeat pushes a refreshed header when a merge lands after session.stop.
+    """The finished heartbeat pushes a refreshed header after a finished session merges.
 
     Read once per connection, the branch line and Merge button kept the pre-merge answer.
     """
@@ -2554,7 +2554,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
         d_payload = cast(dict[str, Any], payload)
         frames.append(d_payload)
         if not merged.is_set():
-            # The merge lands while the page is open (a surface's merge stamps it).
+            # The session merges while the page is open (a surface's merge stamps it).
             layout.manifest_path.write_text(
                 json.dumps({**manifest, "merged": {"into": "master", "sha": "abc123", "tip": "t"}}),
                 encoding="utf-8",
@@ -2578,7 +2578,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
         sse.SESSION_POLL_S = orig
 
     assert any(f.get("merged_into_checkout") == "master" for f in frames), (
-        "a merge landing after session.stop must reach the open stream"
+        "a merge after session.stop must reach the open stream"
     )
 
 

@@ -647,7 +647,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
     ]
 
 
-def test_a_child_never_lands_itself(
+def test_a_child_never_auto_merges_itself(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A child with `git.auto_merge` on leaves its branch to the session that dispatched it.
@@ -686,7 +686,7 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
 ) -> None:
     """Harness ends must keep their branch and explain a skipped automatic merge.
 
-    Only finish_session with a green or absent gate lands on the base branch.
+    Only finish_session with a green or absent gate allows an auto-merge into the base branch.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -910,7 +910,7 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
         state_dir=state,
     )
 
-    assert end.rc == finalize.EXIT_NO_COMMIT_LANDED
+    assert end.rc == finalize.EXIT_NO_COMMIT
     rows = [json.loads(line) for line in layout.logs_path.read_text().splitlines()]
     assert [e["type"] for e in rows][-2:] == ["session.stop", "session.stranded"]
     row = listing.summarize_session_dir(layout.session_dir)

@@ -1561,7 +1561,7 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
     assert pathlib.Path.cwd() == repo
 
 
-def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
+def test_resume_of_a_pruned_fork_points_at_its_recorded_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A merged fork whose branch and worktree are gone is refused, pointing at the merge stamp."""

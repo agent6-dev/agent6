@@ -74,7 +74,7 @@ def _setup_run_on_branch(
     return base_sha
 
 
-def test_auto_merge_squashes_and_lands_on_base(
+def test_auto_merge_squashes_onto_base(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -133,7 +133,7 @@ def test_auto_merge_refuses_a_manifest_with_no_base_sha(
     assert "merged" not in json.loads(layout.manifest_path.read_text(encoding="utf-8"))
 
 
-def test_auto_merge_lands_the_hidden_chain_ref(
+def test_auto_merge_uses_the_hidden_chain_ref(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With branch_per_run off, auto_merge merges the run's refs/agent6/<id> chain ref."""

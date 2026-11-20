@@ -373,10 +373,10 @@ def test_resume_auto_stash_pop_keeps_the_run_branch_checked_out_in_its_worktree(
     assert f"restored your pre-run changes in the worktree {worktree}" in capsys.readouterr().err
 
 
-def test_merge_lands_the_work_and_prune_removes_the_worktree(
+def test_prune_removes_the_worktree_after_its_work_merges(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions merge <id>` lands a worktree run on the checkout's branch; prune then sweeps it.
+    """`sessions merge <id>` merges a worktree run into the checkout's branch; prune then sweeps it.
 
     Before the merge prune keeps the worktree and says why.
     """
@@ -402,38 +402,38 @@ def test_merge_lands_the_work_and_prune_removes_the_worktree(
     assert _worktrees(repo) == [str(repo)]
 
 
-def test_a_worktree_run_resumed_after_its_merge_shows_only_its_unlanded_work(
+def test_a_worktree_run_resumed_after_its_merge_shows_only_its_unmerged_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """A worktree run resumed after its merge diffs, lists and lands the same new work.
+    """A worktree run resumed after its merge diffs, lists and merges the same new work.
 
-    The worktree's HEAD never holds the landing commit, so the run kept the base it started
+    The worktree's HEAD never holds the target's merge commit, so the run kept the base it started
     on: `sessions diff` and `sessions commits` showed both executions while the next merge
-    landed only the second.
+    included only the second.
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("one.txt", "1\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-LAND01", "add one.txt"]) == 0
-    chain = git_read.chain_ref_for("wt-LAND01")
+    assert cli_main(["run", "--worktree", "--session-id", "wt-RESUME", "add one.txt"]) == 0
+    chain = git_read.chain_ref_for("wt-RESUME")
     first_tip = git_read.chain_tip(repo, chain)
     assert first_tip is not None
-    assert cli_main(["sessions", "merge", "wt-LAND01"]) == 0
-    landed = _git(repo, "rev-parse", "main").strip()
+    assert cli_main(["sessions", "merge", "wt-RESUME"]) == 0
+    merged_tip = _git(repo, "rev-parse", "main").strip()
 
     _script(monkeypatch, _edit("two.txt", "2\n"))
-    assert cli_main(["resume", "wt-LAND01", "--steer", "add two.txt"]) == 0
-    assert "earlier work landed on main" in capfd.readouterr().err
+    assert cli_main(["resume", "wt-RESUME", "--steer", "add two.txt"]) == 0
+    assert "earlier work merged into main" in capfd.readouterr().err
 
-    manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-LAND01"))
+    manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-RESUME"))
     assert manifest.base_sha == first_tip and manifest.base_branch == "main"
-    assert cli_main(["sessions", "diff", "wt-LAND01", "--stat"]) == 0
+    assert cli_main(["sessions", "diff", "wt-RESUME", "--stat"]) == 0
     shown = capfd.readouterr().out
     assert "two.txt" in shown and "one.txt" not in shown
-    assert cli_main(["sessions", "commits", "wt-LAND01"]) == 0
+    assert cli_main(["sessions", "commits", "wt-RESUME"]) == 0
     listed = capfd.readouterr().out
     assert listed.strip() and first_tip[:12] not in listed
-    assert cli_main(["sessions", "merge", "wt-LAND01"]) == 0
-    assert _git(repo, "diff", "--name-only", landed, "main").split() == ["two.txt"]
+    assert cli_main(["sessions", "merge", "wt-RESUME"]) == 0
+    assert _git(repo, "diff", "--name-only", merged_tip, "main").split() == ["two.txt"]
 
 
 def test_remove_removes_the_worktree_with_the_record(

@@ -137,10 +137,10 @@ def test_a_checkpoint_names_its_task_in_a_trailer_and_its_event(tmp_path: pathli
     assert next(e for e in events if e["type"] == "checkpoint.committed")["task_id"] == "task-7"
 
 
-def test_tasks_merge_lands_one_commit_per_task_range_under_its_title(
+def test_tasks_merge_creates_one_commit_per_task_range_under_its_title(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two subtasks worked in turn land as two commits named by them, in chain order."""
+    """Two consecutive subtasks merge as two commits in chain order, each named for its task."""
     monkeypatch.chdir(tmp_path)
     base = _repo(tmp_path)
     layout = _session(tmp_path, "run-TASK01", base)
@@ -212,10 +212,10 @@ def test_tasks_merge_under_the_model_style_takes_the_models_message_with_the_tas
     assert len(asked) == 2 and "+parser.py" in asked[0] and "+parser.py" not in asked[1]
 
 
-def test_tasks_merge_of_an_undecomposed_run_lands_one_commit(
+def test_tasks_merge_of_an_undecomposed_run_creates_one_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Checkpoints outside any subtask land as one squash with the squash style's message."""
+    """Checkpoints outside any subtask merge as one squash with the squash style's message."""
     monkeypatch.chdir(tmp_path)
     base = _repo(tmp_path)
     _session(tmp_path, "run-TASK02", base)
@@ -229,7 +229,7 @@ def test_tasks_merge_of_an_undecomposed_run_lands_one_commit(
     assert (tmp_path / "b.txt").exists()
 
 
-def test_tasks_merge_with_an_operator_message_lands_one_commit(
+def test_tasks_merge_with_an_operator_message_creates_one_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -245,10 +245,10 @@ def test_tasks_merge_with_an_operator_message_lands_one_commit(
     assert _git(tmp_path, "log", "--format=%s", "main").splitlines() == ["both at once", "init"]
 
 
-def test_a_conflict_in_a_later_task_range_lands_nothing(
+def test_a_conflict_in_a_later_task_range_leaves_the_target_unchanged(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The squashes chain off the target; a conflict in range two leaves range one unlanded too."""
+    """The squashes chain off the target; a conflict in range two leaves range one unmerged too."""
     monkeypatch.chdir(tmp_path)
     base = _repo(tmp_path)
     layout = _session(tmp_path, "run-TASK04", base)

@@ -227,7 +227,7 @@ def test_format_compare_headline_and_rationale() -> None:
 def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(
     tmp_path: pathlib.Path,
 ) -> None:
-    """`branch_line` is the header's branch line: merged into its base, else the base it lands on.
+    """`branch_line` names the checkout merge if recorded, else the intended merge target.
 
     "" without a run branch; `manifest_branches` hands it to every header.
     """
@@ -323,7 +323,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.P
     """`commits_ref` is the ref a merge or diff reads: run branch, else chain ref, else none.
 
     The web Merge button gated on `run_branch`, so a `branch_per_run = false` run read "no branch
-    to merge" while `sessions merge` landed it.
+    to merge" while `sessions merge` could merge it.
     """
     import subprocess
 
@@ -387,7 +387,7 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: pathlib.
     assert manifest_branches(d, repo=repo) == {"base_branch": "main"}
     snap = session_snapshot(d, repo=repo)
     assert "run_branch" not in snap and "branch_line" not in snap
-    # The first commit creates it: from here the header names it and Merge lands.
+    # The first commit creates it: from here the header names it and Merge works.
     env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t"}
     env["GIT_COMMITTER_EMAIL"] = "t@t"
     subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)

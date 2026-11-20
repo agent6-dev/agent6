@@ -31,23 +31,23 @@ def test_steer_queues_for_a_live_run(
     d = _run_session(tmp_path, "tiny-run-AAAA11")
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "tiny-run", "land your best patch now"]) == 0
+    assert main(["steer", "tiny-run", "merge your best patch now"]) == 0
     out = capsys.readouterr().out
     assert "tiny-run-AAAA11: steer queued, not yet delivered." in out
     assert main(["sessions", "show", d.name]) == 0
     shown = capsys.readouterr().out
-    assert "steer queued, not yet delivered: land your best patch now" in shown
+    assert "steer queued, not yet delivered: merge your best patch now" in shown
     assert main(["steer", "tiny-run", "then run the gate"]) == 0
     assert "steer queued behind 1 other; not yet delivered" in (capsys.readouterr().out)
     assert main(["sessions", "show", d.name]) == 0
-    assert "land your best patch now (+1 more queued)" in capsys.readouterr().out
+    assert "merge your best patch now (+1 more queued)" in capsys.readouterr().out
     # The one shared channel: request marker + answer, exactly what the
     # composers write and the loop consumes. A plain steer never carries the
     # interrupt urgency; --now writes it into the marker.
 
     assert ipc.steer_request_pending(d)
     assert not ipc.steer_interrupt_pending(d)
-    assert ipc.take_steer_answer(d) == "land your best patch now"
+    assert ipc.take_steer_answer(d) == "merge your best patch now"
 
     assert main(["steer", "tiny-run", "wrap up", "--now"]) == 0
     out = capsys.readouterr().out

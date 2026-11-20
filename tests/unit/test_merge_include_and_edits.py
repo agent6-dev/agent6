@@ -127,10 +127,10 @@ def _manifest(repo: pathlib.Path, session_id: str) -> sessions_manifest.SessionM
     return sessions_manifest.read_manifest(paths.state_dir(repo) / "sessions" / "runs" / session_id)
 
 
-def test_merging_the_including_run_lands_the_run_it_absorbed(
+def test_merging_the_including_run_marks_the_absorbed_run_merged(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run whose work a later run took in by "include" reads merged once that run lands.
+    """A run whose work a later run took in by "include" reads merged once that run merges.
 
     The include was recorded nowhere, so the absorbed run stayed "unmerged" and its own merge
     conflicted with its work already on the base.

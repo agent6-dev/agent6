@@ -53,7 +53,7 @@ def test_git_control_without_sandbox(
     err = capsys.readouterr().err
     warning = (
         "git.control = 'agent6' is not enforced without the sandbox; "
-        "a commit the model runs lands on the checkout's branch."
+        "a commit the model makes goes on the checkout's branch."
     )
     assert err.count(warning) == (1 if control == "agent6" else 0)
 

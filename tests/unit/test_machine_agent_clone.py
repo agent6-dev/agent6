@@ -130,7 +130,7 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     # The operator's checkout never moved and holds neither file.
     assert _git(origin, "branch", "--show-current") == "main"
     assert not (origin / "work0.txt").exists()
-    # Clones are gone once landed; the subprocess ran as a child.
+    # Clones are gone once merged; the subprocess ran as a child.
     assert not any((tmp_path / "clones").glob("state-*"))
     assert _FakeChild.captured_env["AGENT6_CHILD"] == "1"
 
@@ -151,7 +151,7 @@ def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
     assert _FakeChild.worktrees[-1] != origin
 
 
-def test_read_only_states_see_the_machine_tree_and_land_nothing(
+def test_read_only_states_see_the_machine_tree_and_merge_nothing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A read-only judge in a machine with run states runs in a fresh clone at the chain tip.
@@ -169,7 +169,7 @@ def test_read_only_states_see_the_machine_tree_and_land_nothing(
     judge_dir = _FakeChild.worktrees[-1]
     assert judge_dir != origin
     assert "work0.txt" in _FakeChild.seen_files[-1]  # the run state's committed work
-    assert git_read.chain_tip(origin, BRANCH) == tip_after_run  # nothing landed
+    assert git_read.chain_tip(origin, BRANCH) == tip_after_run  # nothing merged
     assert not any((tmp_path / "clones").glob("state-*"))  # cleaned up
 
 
@@ -200,7 +200,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
 
     origin = _origin(tmp_path)
     _git(origin, "checkout", "-q", "-b", "scratch")
-    (origin / "work.txt").write_text("landed\n", encoding="utf-8")
+    (origin / "work.txt").write_text("merged\n", encoding="utf-8")
     _git(origin, "add", "-A")
     _git(origin, "commit", "-q", "-m", "agent6 turn 1: work")
     _git(origin, "update-ref", CHAIN, "HEAD")

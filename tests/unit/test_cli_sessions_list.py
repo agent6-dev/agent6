@@ -411,7 +411,7 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
 def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A landed run names the ended, unmerged runs over its paths; a listing names none.
+    """A merged run names the ended, unmerged runs over its paths; a listing names none.
 
     A listing flagged every such pair on every read, at one tree diff per unmerged run.
     """

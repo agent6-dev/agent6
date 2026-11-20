@@ -162,7 +162,7 @@ def test_a_run_that_committed_nothing_is_not_reported_as_deleted(
     assert "committed nothing" in out and "never cut" in out
     assert "no longer exists" not in out
 
-    # Nothing to land is not a failure (a zero-commit branch says the same).
+    # Nothing to merge is not a failure (a zero-commit branch says the same).
     assert main(["sessions", "merge", "nocommit1"]) == 0
     assert "nothing to merge: this run committed nothing" in capsys.readouterr().out
 
@@ -324,7 +324,7 @@ def test_runs_prune_delete_squashed_keeps_a_branch_that_advanced_after_the_merge
     _git(tmp_path, "merge", "--squash", "agent6/resmd33")
     _git(tmp_path, "commit", "-q", "-m", "squash resmd33")
     _manifest(tmp_path, "resmd33", base, merged=True, merged_tip=merged_tip)
-    # The operator resumes the run: a new commit lands on the run branch only.
+    # The operator resumes the run: only the run branch gains a commit.
     _git(tmp_path, "checkout", "-q", "agent6/resmd33")
     (tmp_path / "after.txt").write_text("post-merge work\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
@@ -619,9 +619,9 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     _git(tmp_path, "commit", "-q", "-m", "init")
     base = _git(tmp_path, "rev-parse", "HEAD")
 
-    # merged-reachable: work committed on main itself (a merge landed it).
+    # merged-reachable: work committed on main itself (reachable after a merge).
     _make_branch(tmp_path, "run-RCH111", "a.txt")
-    _git(tmp_path, "merge", "-q", "--no-ff", "-m", "land", "agent6/run-RCH111")
+    _git(tmp_path, "merge", "-q", "--no-ff", "-m", "merge", "agent6/run-RCH111")
     _git(tmp_path, "update-ref", git_read.chain_ref_for("run-RCH111"), "agent6/run-RCH111")
     _manifest(tmp_path, "run-RCH111", base, merged=True)
     # squash-merged: content in main via squash; the ref is unreachable.
@@ -677,7 +677,7 @@ def test_prune_reaches_chain_refs_with_no_run_branches(
     base = _git(tmp_path, "rev-parse", "HEAD")
     # A merged run whose branch is already gone: the chain ref is all that is left.
     _make_branch(tmp_path, "run-NOBR11", "a.txt")
-    _git(tmp_path, "merge", "-q", "--no-ff", "-m", "land", "agent6/run-NOBR11")
+    _git(tmp_path, "merge", "-q", "--no-ff", "-m", "merge", "agent6/run-NOBR11")
     _git(tmp_path, "update-ref", git_read.chain_ref_for("run-NOBR11"), "agent6/run-NOBR11")
     _git(tmp_path, "branch", "-D", "agent6/run-NOBR11")
     _manifest(tmp_path, "run-NOBR11", base, merged=True)
@@ -1156,7 +1156,7 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
 ) -> None:
     """Prune removes a worktree whose uncommitted-looking content the run committed to the chain.
 
-    A fork's worktree stays detached at its fork point, so `git status` there reports the landed
+    A fork's worktree stays detached at its fork point, so `git status` there reports the merged
     run.
     """
     monkeypatch.chdir(tmp_path)
@@ -1164,7 +1164,7 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
-    worktree = _fork_with_worktree(tmp_path, "fork-landed11", merged=True)
+    worktree = _fork_with_worktree(tmp_path, "fork-merged11", merged=True)
     # The run's own work: in the worktree, and committed on its chain.
     (worktree / "README.md").write_text("the run's edit\n", encoding="utf-8")
     (worktree / "new.md").write_text("added by the run\n", encoding="utf-8")
@@ -1172,12 +1172,12 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
     tip = git_ops.chain_commit(
         worktree,
         "the run's commit",
-        ref=git_read.chain_ref_for("fork-landed11"),
+        ref=git_read.chain_ref_for("fork-merged11"),
         fallback_parent=base,
         identity=git_read.CommitIdentity(name="t", email="t@t"),
     )
     layout = sessions_layout.SessionLayout(
-        state_dir=paths.state_dir(tmp_path), session_id="fork-landed11"
+        state_dir=paths.state_dir(tmp_path), session_id="fork-merged11"
     )
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
@@ -1187,7 +1187,7 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
 
     out = capsys.readouterr().out
     assert not worktree.exists(), "a worktree holding only committed work was kept"
-    assert "removed fork-landed11's worktree (merged)" in out
+    assert "removed fork-merged11's worktree (merged)" in out
 
 
 def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
@@ -1514,7 +1514,7 @@ def _recorded_merge(repo: pathlib.Path, session_id: str) -> dict[str, str] | Non
     return json.loads(layout.manifest_path.read_text(encoding="utf-8")).get("merged")
 
 
-def test_prune_records_a_run_landed_by_hand_as_merged(
+def test_prune_records_a_manual_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run whose base already holds its content is recorded as merged, then pruned as one.

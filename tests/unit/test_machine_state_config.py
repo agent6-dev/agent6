@@ -224,7 +224,7 @@ def test_run_state_requires_commits_at_resolution_and_check(
     capsys: pytest.CaptureFixture[str],
     layer_name: str,
 ) -> None:
-    """A run state's clone can land work only through its committed chain."""
+    """A run state's clone can merge work only through its committed chain."""
     from agent6.ui import cli
 
     monkeypatch.chdir(tmp_path)

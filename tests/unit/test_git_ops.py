@@ -420,7 +420,7 @@ def test_create_branch_at_is_additive_no_checkout(tmp_path: pathlib.Path) -> Non
     """create_branch_at points a new branch at a sha WITHOUT moving HEAD."""
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    # Advance HEAD so base != current; the fork branch must land on base.
+    # Advance HEAD so base != current; the fork branch must start at base.
     (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "second"], check=True)
@@ -962,7 +962,7 @@ def _commit_file(repo: pathlib.Path, name: str, content: str, msg: str) -> str:
     return git_read.status(repo).head_sha
 
 
-def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: pathlib.Path) -> None:
+def test_plumb_merge_preserves_the_checkout_medium(tmp_path: pathlib.Path) -> None:
     """A no-ff merge is pure ref plumbing: a two-parent commit and the index brought forward.
 
     A worktree already holding the run's files is no obstacle, and `git status` shows no phantom
@@ -1210,7 +1210,7 @@ def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: path
     ).stdout.split()
     assert parents == [base]  # ONE commit, single parent
     assert git_read.status(tmp_path).is_clean
-    # Landing the same rev again is a clean no-op returning the unchanged tip.
+    # Merging the same rev again is a clean no-op returning the unchanged tip.
     again = git_ops.plumb_merge(tmp_path, "main", step2, method="squash", message="again")
     assert again.merged_sha == res.merged_sha and not again.conflicted
 
@@ -1223,7 +1223,7 @@ def test_plumb_merge_preserves_the_operators_own_staging(tmp_path: pathlib.Path)
     (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("operator wip\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "README.md"], check=True)
-    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="squash", message="land")
+    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="squash", message="merge")
     assert not res.conflicted
     staged = subprocess.run(
         ["git", "-C", str(tmp_path), "diff", "--cached", "--name-only"],
@@ -1257,11 +1257,11 @@ def _sparse_checkout_with_a_file_put_back(path: pathlib.Path, patterns: list[str
 def test_plumb_merge_on_a_sparse_checkout_moves_only_the_files_it_changed(
     tmp_path: pathlib.Path, patterns: list[str]
 ) -> None:
-    """A landing on a sparse checkout deleted a tracked file present outside the patterns."""
+    """A merge on a sparse checkout deleted a tracked file present outside the patterns."""
     base = _sparse_checkout_with_a_file_put_back(tmp_path, patterns)
     theirs = _child_commit(tmp_path, base, "README.md", "run edit\n")
 
-    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="squash", message="land")
+    res = git_ops.plumb_merge(tmp_path, "main", theirs, method="squash", message="merge")
 
     assert res.left_behind == ()
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "run edit\n"
@@ -1312,7 +1312,7 @@ def test_clone_repo_raises_on_existing_dest(tmp_path: pathlib.Path) -> None:
         git_ops.clone_repo(origin, dest)
 
 
-def test_fetch_branch_lands_branch_from_path(tmp_path: pathlib.Path) -> None:
+def test_fetch_branch_imports_the_branch_from_the_path(tmp_path: pathlib.Path) -> None:
     origin = tmp_path / "origin"
     origin.mkdir()
     _init_repo(origin)
@@ -1553,7 +1553,7 @@ def _rev(path: pathlib.Path, ref: str) -> str:
 def test_chain_commit_touches_no_head_index_or_checkout(tmp_path: pathlib.Path) -> None:
     """The detached chain records commits without moving HEAD, the shared index or the checkout.
 
-    The run's commits land on refs/agent6/<id> while the operator's staged change survives
+    The run commits to refs/agent6/<id> while the operator's staged change survives
     byte-for-byte.
     """
     _init_repo(tmp_path)
@@ -1608,7 +1608,7 @@ def test_chain_commit_brings_a_checked_out_run_branch_index_forward(tmp_path: pa
     assert git_read.status(tmp_path).is_clean
 
 
-def test_chain_merge_lands_a_child_on_a_checked_out_run_branch(tmp_path: pathlib.Path) -> None:
+def test_chain_merge_adds_a_child_to_a_checked_out_run_branch(tmp_path: pathlib.Path) -> None:
     """Merging a child onto the checked-out run branch leaves a clean status.
 
     The worktree sync runs before the branch's index and worktree move, or it refuses to overwrite
@@ -1673,7 +1673,7 @@ def test_chain_commit_skips_identical_trees_and_survives_branch_switches(
 
 
 def test_chain_commit_root_and_trailer(tmp_path: pathlib.Path) -> None:
-    """No ref and no fallback makes a root commit, and the identity trailer lands once."""
+    """No ref and no fallback makes a root commit, and the identity trailer appears once."""
     _init_repo(tmp_path)
     (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
     sha = git_ops.chain_commit(
@@ -1722,7 +1722,7 @@ def _child_commit(path: pathlib.Path, parent: str, name: str, content: str) -> s
 
 
 def test_chain_merge_records_the_child_and_syncs_the_worktree(tmp_path: pathlib.Path) -> None:
-    """A clean child merge lands as a two-parent chain commit with the child's files checked out.
+    """A clean child merge creates a two-parent chain commit with the child's files checked out.
 
     HEAD and the operator's checkout stay untouched; an already-contained rev is a no-op returning
     the tip.
@@ -1753,7 +1753,7 @@ def test_chain_merge_records_the_child_and_syncs_the_worktree(tmp_path: pathlib.
 
 
 def test_chain_merge_syncs_a_file_the_child_modified(tmp_path: pathlib.Path) -> None:
-    """A child that edits an existing file merges and the edit lands in the worktree.
+    """A child that edits an existing file merges and the worktree shows the edit.
 
     The temp index carries no stat data, and `read-tree -m -u` refuses an entry it cannot prove up
     to date.
@@ -1765,11 +1765,11 @@ def test_chain_merge_syncs_a_file_the_child_modified(tmp_path: pathlib.Path) -> 
         tmp_path, "agent6 turn 1", ref="refs/agent6/t5", fallback_parent=head0
     )
     assert s1 is not None
-    child = _child_commit(tmp_path, head0, "README.md", "hi\nlane edit\n")
+    child = _child_commit(tmp_path, head0, "README.md", "hi\nchild edit\n")
 
     merged = git_ops.chain_merge(tmp_path, child, "merge child", ref="refs/agent6/t5")
     assert merged is not None
-    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\nlane edit\n"
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\nchild edit\n"
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "two\n"
 
 
@@ -1810,7 +1810,7 @@ def test_merge_conflicts_names_the_paths_and_moves_nothing(tmp_path: pathlib.Pat
 def test_chain_merge_with_markers_commits_the_conflict_for_the_run_to_resolve(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A kept conflict lands as a two-parent commit whose tree carries git's markers."""
+    """A kept conflict creates a two-parent commit whose tree carries git's markers."""
     _init_repo(tmp_path)
     head0 = _rev(tmp_path, "HEAD")
     (tmp_path / "b.txt").write_text("ours\n", encoding="utf-8")
@@ -1852,7 +1852,7 @@ def test_a_chain_merge_moves_no_ref_when_the_worktree_cannot_follow(
         tmp_path, "agent6 turn 1", ref="refs/agent6/t7", fallback_parent=head0, also_branch="run"
     )
     assert s1 is not None
-    child = _child_commit(tmp_path, head0, "README.md", "hi\nlane\n")
+    child = _child_commit(tmp_path, head0, "README.md", "hi\nchild\n")
     (tmp_path / "README.md").write_text("hi\nuncommitted\n", encoding="utf-8")
     with pytest.raises(errors.GitError):
         git_ops.chain_merge_with_markers(
@@ -2188,7 +2188,7 @@ def test_the_dirty_tree_lists_name_each_file_on_one_line() -> None:
 
 
 def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: pathlib.Path) -> None:
-    """A merge over a worktree record whose directory is gone lands and returns."""
+    """A missing worktree directory does not block a merge."""
     import shutil
 
     repo = tmp_path / "repo"

@@ -431,10 +431,10 @@ def test_review_worktree_keeps_the_model_git_refusal(
     assert world_tests.git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
 
 
-def test_a_reviewed_commit_has_no_branch_to_land_on(
+def test_a_reviewed_commit_has_no_target_branch(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A review started on main must not make main the landing branch of the reviewed work."""
+    """A review started on main must not make main the merge target of the reviewed work."""
     head = world_tests.git(repo, "rev-parse", "feature-x")
     world_tests.git(repo, "switch", "-q", "main")
     install(monkeypatch, ScriptedReview())

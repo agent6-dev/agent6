@@ -189,7 +189,7 @@ def test_resume_from_the_checkout_continues_in_the_clone(
     assert "more.txt" in git_read.tree_paths(repo, tip)
 
 
-def test_merge_lands_the_work_and_prune_removes_the_clone(
+def test_prune_removes_the_clone_after_its_work_merges(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions merge` reads the repository's own refs; prune then deletes the clone."""
@@ -237,10 +237,10 @@ def test_remove_deletes_the_clone_with_the_record(
     assert git_read.chain_tip(repo, git_read.chain_ref_for("cl-REMO01")) is None
 
 
-def test_auto_merge_lands_on_the_repositorys_branch_not_the_clones(
+def test_auto_merge_targets_the_repositorys_branch_not_the_clones(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A clone has a `main` of its own: merged there, the run read merged and nothing landed."""
+    """A merge into the clone's own `main` left the repository unchanged."""
     repo = _repo(tmp_path, monkeypatch, "\n[git]\nauto_merge = true\n")
     _git(repo, "checkout", "-q", "--", "a.py")
     seed = _git(repo, "rev-parse", "HEAD")

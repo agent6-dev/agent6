@@ -195,7 +195,7 @@ def test_permission_values_refuse_old_spellings(
 
 
 def test_auto_merge_works_without_branch_per_run(tmp_path: pathlib.Path) -> None:
-    """auto_merge without branch_per_run is valid: it lands the hidden chain ref."""
+    """auto_merge without branch_per_run is valid: it merges the hidden chain ref."""
     body = "[git]\nauto_merge = true\nbranch_per_run = false\n"
     cfg = load_config(_write(tmp_path, body))
     assert cfg.git.auto_merge and not cfg.git.branch_per_run

@@ -1140,14 +1140,14 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     _git(repo, "checkout", "-q", "main")
     _git(repo, "merge", "-q", "--squash", "agent6/run-PPPP77")
     _git(repo, "commit", "-q", "-m", "squash p")
-    landed = _git(repo, "rev-parse", "HEAD")
+    merged_sha = _git(repo, "rev-parse", "HEAD")
     _git(repo, "branch", "-D", "agent6/run-PPPP77")
     state = paths.state_dir(repo)
     manifest = sessions_layout.SessionLayout(
         state_dir=state, session_id="run-PPPP77", subdir="runs"
     ).manifest_path
     data = json.loads(manifest.read_text(encoding="utf-8"))
-    data["merged"] = {"into": "main", "sha": landed, "tip": tip}
+    data["merged"] = {"into": "main", "sha": merged_sha, "tip": tip}
     manifest.write_text(json.dumps(data), encoding="utf-8")
     _setup_run(repo, "run-QQQQ88", base_sha=base, commits=[("q.txt", "q\n", "add q")])
     assert main(["sessions", "compare", "run-PPPP77", "run-QQQQ88"]) == 0

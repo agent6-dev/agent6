@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 resume` after the run's work landed, and after an operator commit on its branch.
+"""`agent6 resume` after the run's work merged, and after an operator commit on its branch.
 
 Every resume here runs in the base checkout, the way a real one does: the run branch is never
 checked out.
@@ -152,55 +152,55 @@ def _changed(repo: pathlib.Path, old: str, new: str) -> list[str]:
 def test_a_resume_after_a_squash_merge_continues_from_head(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """A resumed run whose work landed commits, diffs and merges only its new work.
+    """After a squash merge, a resumed run commits, diffs and merges only new work.
 
     The resume parented on the old chain tip and committed the checkout's whole tree, so its
     next commit took the commits the base gained since, `sessions diff` showed work that had
-    already landed, and the note called committed content "changes no commit has".
+    already merged, and the note called committed content "changes no commit has".
     """
     repo = _setup(tmp_path, monkeypatch)
-    run = ["run", "--session-id", "land-SQUASH", "t"]
+    run = ["run", "--session-id", "merge-SQUASH", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    assert cli_main(["sessions", "merge", "land-SQUASH"]) == 0
+    assert cli_main(["sessions", "merge", "merge-SQUASH"]) == 0
     _commit_on_main(repo, "r.md")
     head = _git(repo, "rev-parse", "HEAD")
     capfd.readouterr()
 
-    resume = ["resume", "land-SQUASH", "--steer", "more"]
+    resume = ["resume", "merge-SQUASH", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
 
     assert "holds changes no commit has" not in capfd.readouterr().err
-    base = _manifest(repo, "land-SQUASH").base_sha
-    chain = git_read.chain_ref_for("land-SQUASH")
+    base = _manifest(repo, "merge-SQUASH").base_sha
+    chain = git_read.chain_ref_for("merge-SQUASH")
     assert _git(repo, "rev-parse", f"{base}^{{tree}}") == _git(
         repo, "rev-parse", f"{head}^{{tree}}"
     )
     assert _changed(repo, base, chain) == ["y.txt"]
-    assert cli_main(["sessions", "diff", "land-SQUASH", "--stat"]) == 0
+    assert cli_main(["sessions", "diff", "merge-SQUASH", "--stat"]) == 0
     shown = capfd.readouterr().out
     assert "y.txt" in shown and "r.md" not in shown and "z.txt" not in shown
-    assert cli_main(["sessions", "merge", "land-SQUASH"]) == 0
+    assert cli_main(["sessions", "merge", "merge-SQUASH"]) == 0
     assert _changed(repo, head, "main") == ["y.txt"]
 
 
-def test_a_conflicting_landing_is_resolved_by_a_resume_that_merges_the_branch_in(
+def test_a_resume_resolves_a_conflict_by_merging_the_target_branch_in(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     """`resume --merge main` merges main into the run's chain in its worktree, markers and all.
 
-    The model hears the conflicted path at its first turn, resolves it, and the next landing
+    The model hears the conflicted path at its first turn, resolves it, and the next merge
     squashes only the resolved work: the chain now descends from main's tip.
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # the worktree's home
     repo = _setup(tmp_path, monkeypatch)
-    run = ["run", "--worktree", "--session-id", "land-MERGEIN", "t"]
+    run = ["run", "--worktree", "--session-id", "merge-MERGEIN", "t"]
     assert _play(monkeypatch, run, [_edit("a.py", "x = 2\n"), _finish()]) == 0
     (repo / "a.py").write_text("x = 3\n", encoding="utf-8")
     _git(repo, "commit", "-qam", "main moved the same line")
     main_tip = _git(repo, "rev-parse", "HEAD")
-    assert cli_main(["sessions", "merge", "land-MERGEIN"]) == 1
+    assert cli_main(["sessions", "merge", "merge-MERGEIN"]) == 1
     err = capfd.readouterr().err
-    assert "CONFLICT" in err and "    agent6 resume land-MERGEIN --merge main" in err
+    assert "CONFLICT" in err and "    agent6 resume merge-MERGEIN --merge main" in err
 
     prov = _Recording([_edit("a.py", "x = 23\n"), _finish()])
 
@@ -208,18 +208,18 @@ def test_a_conflicting_landing_is_resolved_by_a_resume_that_merges_the_branch_in
         return prov
 
     monkeypatch.setattr(role_providers, "build_role_provider", factory)
-    assert cli_main(["resume", "land-MERGEIN", "--merge", "main"]) == 0
+    assert cli_main(["resume", "merge-MERGEIN", "--merge", "main"]) == 0
     seen = prov.seen
     out = capfd.readouterr().err
     assert "merged main into the run's work" in out and "conflicts left in a.py" in out
     first = seen[0]
     assert "main was merged into this run's work" in first and "left in: a.py" in first
     assert "CONFLICT (content): Merge conflict in a.py" in first
-    chain = git_read.chain_ref_for("land-MERGEIN")
+    chain = git_read.chain_ref_for("merge-MERGEIN")
     log = _git(repo, "rev-list", "--parents", chain).splitlines()
     merge_commit = next(line for line in log if len(line.split()) == 3)
     assert main_tip in merge_commit.split()[1:]
-    assert cli_main(["sessions", "merge", "land-MERGEIN"]) == 0
+    assert cli_main(["sessions", "merge", "merge-MERGEIN"]) == 0
     assert _git(repo, "show", "main:a.py") == "x = 23"
     assert _changed(repo, main_tip, "main") == ["a.py"]
 
@@ -227,48 +227,48 @@ def test_a_conflicting_landing_is_resolved_by_a_resume_that_merges_the_branch_in
 def test_a_resumed_run_merges_cleanly_after_prune_delete_squashed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run resumed after its refs were pruned starts its chain on HEAD and lands cleanly.
+    """A run resumed after its refs were pruned starts its chain on HEAD and merges cleanly.
 
     With the chain ref gone the resume parented on the run's original base, so the new chain
-    held the landed work a second time and its merge conflicted with the squash on the base.
+    held the merged work a second time and its merge conflicted with the squash on the base.
     """
     repo = _setup(tmp_path, monkeypatch)
-    run = ["run", "--session-id", "land-PRUNED", "t"]
+    run = ["run", "--session-id", "merge-PRUNED", "t"]
     assert _play(monkeypatch, run, [_edit("a.py", "x = 2\n"), _finish()]) == 0
-    assert cli_main(["sessions", "merge", "land-PRUNED"]) == 0
+    assert cli_main(["sessions", "merge", "merge-PRUNED"]) == 0
     _commit_on_main(repo, "r.md")
     assert cli_main(["sessions", "prune", "--delete-squashed"]) == 0
-    assert git_read.chain_tip(repo, git_read.chain_ref_for("land-PRUNED")) is None
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("merge-PRUNED")) is None
     head = _git(repo, "rev-parse", "HEAD")
 
-    resume = ["resume", "land-PRUNED", "--steer", "more"]
+    resume = ["resume", "merge-PRUNED", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("a.py", "x = 3\n"), _finish()]) == 0
     capsys.readouterr()
 
-    assert _manifest(repo, "land-PRUNED").base_sha == head
-    assert cli_main(["sessions", "merge", "land-PRUNED"]) == 0
+    assert _manifest(repo, "merge-PRUNED").base_sha == head
+    assert cli_main(["sessions", "merge", "merge-PRUNED"]) == 0
     assert "CONFLICT" not in capsys.readouterr().err
     assert _changed(repo, head, "main") == ["a.py"]
     assert _git(repo, "show", "main:a.py") == "x = 3"
 
 
-def test_a_resume_keeps_its_chain_when_the_checkout_lacks_the_landing_commit(
+def test_a_resume_keeps_its_chain_when_the_checkout_lacks_the_merge_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Merged into a branch that is not checked out, the run continues on its own chain."""
     repo = _setup(tmp_path, monkeypatch)
     _git(repo, "branch", "other")
-    run = ["run", "--session-id", "land-OTHER1", "t"]
+    run = ["run", "--session-id", "merge-OTHER1", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    base = _manifest(repo, "land-OTHER1").base_sha
-    tip = git_read.chain_tip(repo, git_read.chain_ref_for("land-OTHER1"))
-    assert cli_main(["sessions", "merge", "land-OTHER1", "--into", "other"]) == 0
+    base = _manifest(repo, "merge-OTHER1").base_sha
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("merge-OTHER1"))
+    assert cli_main(["sessions", "merge", "merge-OTHER1", "--into", "other"]) == 0
 
-    resume = ["resume", "land-OTHER1", "--steer", "more"]
+    resume = ["resume", "merge-OTHER1", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
 
-    assert _manifest(repo, "land-OTHER1").base_sha == base
-    chain = git_read.chain_ref_for("land-OTHER1")
+    assert _manifest(repo, "merge-OTHER1").base_sha == base
+    chain = git_read.chain_ref_for("merge-OTHER1")
     assert _git(repo, "rev-parse", f"{chain}~1") == tip
 
 
@@ -287,131 +287,131 @@ def test_resume_refuses_when_the_run_branch_holds_a_commit_the_chain_lacks(
     """A commit made on `agent6/<id>` refuses the resume, which would leave it behind.
 
     The resume read only the chain ref, so it committed past the operator's commit and the
-    run's merge then landed without it, with no word at either step.
+    run's merge then omitted it, with no word at either step.
     """
     repo = _setup(tmp_path, monkeypatch)
-    run = ["run", "--session-id", "land-BRANCH", "t"]
+    run = ["run", "--session-id", "merge-BRANCH", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    chain = git_read.chain_ref_for("land-BRANCH")
+    chain = git_read.chain_ref_for("merge-BRANCH")
     tip = git_read.chain_tip(repo, chain)
-    theirs = _commit_on_the_run_branch(repo, "land-BRANCH")
+    theirs = _commit_on_the_run_branch(repo, "merge-BRANCH")
     capsys.readouterr()
 
-    resume = ["resume", "land-BRANCH", "--steer", "more"]
+    resume = ["resume", "merge-BRANCH", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 2
 
     err = capsys.readouterr().err
-    assert "agent6/land-BRANCH" in err and theirs[:12] in err
-    assert "agent6 sessions merge land-BRANCH" in err and "--force" in err
+    assert "agent6/merge-BRANCH" in err and theirs[:12] in err
+    assert "agent6 sessions merge merge-BRANCH" in err and "--force" in err
     assert git_read.chain_tip(repo, chain) == tip
-    assert git_read.branch_tip_sha(repo, "agent6/land-BRANCH") == theirs
+    assert git_read.branch_tip_sha(repo, "agent6/merge-BRANCH") == theirs
 
     forced = [*resume, "--force"]
     assert _play(monkeypatch, forced, [_edit("y.txt", "1\n"), _finish()]) == 0
-    assert "agent6/land-BRANCH stays at" in capsys.readouterr().err
-    assert git_read.branch_tip_sha(repo, "agent6/land-BRANCH") == theirs
+    assert "agent6/merge-BRANCH stays at" in capsys.readouterr().err
+    assert git_read.branch_tip_sha(repo, "agent6/merge-BRANCH") == theirs
     assert _git(repo, "rev-parse", f"{chain}~1") == tip
 
 
-def test_a_resume_after_landing_an_operator_commit_on_the_run_branch_continues_from_head(
+def test_a_resume_after_merging_an_operator_commit_on_the_run_branch_continues_from_head(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The refusal's first way out works: merge the branch with the commit, then resume."""
     repo = _setup(tmp_path, monkeypatch)
-    run = ["run", "--session-id", "land-BOTH01", "t"]
+    run = ["run", "--session-id", "merge-BOTH01", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    _commit_on_the_run_branch(repo, "land-BOTH01")
-    assert cli_main(["sessions", "merge", "land-BOTH01"]) == 0
+    _commit_on_the_run_branch(repo, "merge-BOTH01")
+    assert cli_main(["sessions", "merge", "merge-BOTH01"]) == 0
     head = _git(repo, "rev-parse", "HEAD")
 
-    resume = ["resume", "land-BOTH01", "--steer", "more"]
+    resume = ["resume", "merge-BOTH01", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
 
-    chain = git_read.chain_ref_for("land-BOTH01")
-    assert _changed(repo, _manifest(repo, "land-BOTH01").base_sha, chain) == ["y.txt"]
-    assert git_read.branch_tip_sha(repo, "agent6/land-BOTH01") == git_read.chain_tip(repo, chain)
-    assert cli_main(["sessions", "merge", "land-BOTH01"]) == 0
+    chain = git_read.chain_ref_for("merge-BOTH01")
+    assert _changed(repo, _manifest(repo, "merge-BOTH01").base_sha, chain) == ["y.txt"]
+    assert git_read.branch_tip_sha(repo, "agent6/merge-BOTH01") == git_read.chain_tip(repo, chain)
+    assert cli_main(["sessions", "merge", "merge-BOTH01"]) == 0
     assert _changed(repo, head, "main") == ["y.txt"]
 
 
-def test_a_fork_from_a_turn_before_the_source_landed_starts_at_that_turn(
+def test_a_fork_from_a_turn_before_the_source_merged_starts_at_that_turn(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A fork cut before its source's base moved does not inherit the moved base.
 
-    The source's base is the commit it continued from after landing; a fork of an earlier turn
+    The source's base is the commit it continued from after the merge; a fork of an earlier turn
     does not descend from it, so its diff against that base would read backwards.
     """
     repo = _setup(tmp_path, monkeypatch)
-    run = ["run", "--session-id", "land-FORK01", "t"]
+    run = ["run", "--session-id", "merge-FORK01", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    start = _manifest(repo, "land-FORK01").base_sha
-    assert cli_main(["sessions", "merge", "land-FORK01"]) == 0
+    start = _manifest(repo, "merge-FORK01").base_sha
+    assert cli_main(["sessions", "merge", "merge-FORK01"]) == 0
     _commit_on_main(repo, "r.md")
-    resume = ["resume", "land-FORK01", "--steer", "more"]
+    resume = ["resume", "merge-FORK01", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
-    assert _manifest(repo, "land-FORK01").base_sha != start
+    assert _manifest(repo, "merge-FORK01").base_sha != start
 
-    fork = ["fork", "land-FORK01", "--at-turn", "1", "--no-run", "--session-id", "land-FORK02"]
+    fork = ["fork", "merge-FORK01", "--at-turn", "1", "--no-run", "--session-id", "merge-FORK02"]
     assert cli_main(fork) == 0
 
-    child = _manifest(repo, "land-FORK02")
+    child = _manifest(repo, "merge-FORK02")
     assert child.base_sha == child.forked_from_sha == start
 
 
 def test_a_resumed_fork_of_a_squash_merged_run_shows_only_its_own_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """A fork resumed after its source landed diffs and lands only the fork's own work.
+    """After the source merges, the fork's diff and merge include only the fork's own work.
 
-    The fork kept its source's base, so `sessions diff` showed the source's landed file
-    while the fork's merge landed only its own.
+    The fork kept its source's base, so `sessions diff` showed the source's merged file
+    while the merge included only the fork's work.
     """
     repo = _setup(tmp_path, monkeypatch)
-    run = ["run", "--session-id", "land-SRC001", "t"]
+    run = ["run", "--session-id", "merge-SRC001", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    fork = ["fork", "land-SRC001", "--no-run", "--session-id", "land-SRC002"]
+    fork = ["fork", "merge-SRC001", "--no-run", "--session-id", "merge-SRC002"]
     assert cli_main(fork) == 0
-    assert cli_main(["sessions", "merge", "land-SRC001"]) == 0
-    landed = _git(repo, "rev-parse", "main")
+    assert cli_main(["sessions", "merge", "merge-SRC001"]) == 0
+    merged_tip = _git(repo, "rev-parse", "main")
 
-    resume = ["resume", "land-SRC002", "--steer", "more"]
+    resume = ["resume", "merge-SRC002", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
     capfd.readouterr()
 
-    assert cli_main(["sessions", "diff", "land-SRC002", "--stat"]) == 0
+    assert cli_main(["sessions", "diff", "merge-SRC002", "--stat"]) == 0
     shown = capfd.readouterr().out
     assert "y.txt" in shown and "z.txt" not in shown
-    assert cli_main(["sessions", "merge", "land-SRC002"]) == 0
-    assert _changed(repo, landed, "main") == ["y.txt"]
+    assert cli_main(["sessions", "merge", "merge-SRC002"]) == 0
+    assert _changed(repo, merged_tip, "main") == ["y.txt"]
 
 
 def test_a_run_merged_into_another_branch_continues_there_once_it_is_checked_out(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The base branch follows the merge only onto the branch it landed on.
+    """The base branch follows the merge only onto the target branch.
 
-    A checkout on any other branch that holds the landing commit keeps the recorded base
+    A checkout on any other branch that holds that commit keeps the recorded base
     branch, so the run's next merge does not target a branch nothing was merged into.
     """
     repo = _setup(tmp_path, monkeypatch)
     _git(repo, "branch", "other")
-    run = ["run", "--session-id", "land-INTO01", "t"]
+    run = ["run", "--session-id", "merge-INTO01", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    assert cli_main(["sessions", "merge", "land-INTO01", "--into", "other"]) == 0
+    assert cli_main(["sessions", "merge", "merge-INTO01", "--into", "other"]) == 0
     (repo / "z.txt").unlink()
     _git(repo, "switch", "-q", "other")
 
-    resume = ["resume", "land-INTO01", "--steer", "more"]
+    resume = ["resume", "merge-INTO01", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
 
-    manifest = _manifest(repo, "land-INTO01")
+    manifest = _manifest(repo, "merge-INTO01")
     assert manifest.base_branch == "other"
-    assert _changed(repo, manifest.base_sha, git_read.chain_ref_for("land-INTO01")) == ["y.txt"]
+    assert _changed(repo, manifest.base_sha, git_read.chain_ref_for("merge-INTO01")) == ["y.txt"]
 
-    assert cli_main(["sessions", "merge", "land-INTO01"]) == 0
+    assert cli_main(["sessions", "merge", "merge-INTO01"]) == 0
     _git(repo, "switch", "-q", "-c", "side")
     assert _play(monkeypatch, resume, [_edit("x.txt", "1\n"), _finish()]) == 0
-    manifest = _manifest(repo, "land-INTO01")
+    manifest = _manifest(repo, "merge-INTO01")
     assert manifest.base_branch == "other"
-    assert _changed(repo, manifest.base_sha, git_read.chain_ref_for("land-INTO01")) == ["x.txt"]
+    assert _changed(repo, manifest.base_sha, git_read.chain_ref_for("merge-INTO01")) == ["x.txt"]

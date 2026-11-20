@@ -7853,7 +7853,7 @@ def test_dispatch_returns_what_started_and_settle_tells_the_rest(tmp_path: pathl
     """`dispatch` returns the children it started and leaves delivery to its caller.
 
     The conversation gains nothing until `settle` runs at a turn boundary: then the child's end
-    and its task's landing. The journal row names the source the caller gave.
+    and its task's merge outcome. The journal row names the source the caller gave.
     """
     from agent6 import directive
 
@@ -9577,7 +9577,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
             original_task="t",
         )
     assert result.reason == "finish_session"
-    assert commit.call_count >= 1  # the edit landed as a checkpoint
+    assert commit.call_count >= 1  # the edit was committed as a checkpoint
 
 
 def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Path) -> None:

@@ -79,7 +79,7 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
 ) -> None:
     """The chain is the run's record and the branch a view of it, so a merge follows the chain.
 
-    An operator's commit on the run branch takes it off the chain; every later chain commit lands on
+    An operator's commit on the run branch takes it off the chain; every later chain commit goes on
     the chain alone.
     """
     monkeypatch.chdir(tmp_path)
@@ -138,10 +138,10 @@ def test_commits_follows_the_chain_when_the_visible_branch_diverged(
     assert chain in captured.err
 
 
-def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
+def test_a_fork_of_a_squash_merged_run_merges_only_its_own_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fork of a squash-merged run merges from A's landed tip, so only its own line lands.
+    """After the parent squash-merges, the fork's merge adds only the fork's line.
 
     git relates the squash to nothing, so the commit before A would conflict on the file both sides
     added.
@@ -185,10 +185,10 @@ def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
 
     assert main(["sessions", "merge", "fork-run1"]) == 0, capsys.readouterr().out
 
-    landed = _git(tmp_path, "show", "main:f.py")
-    assert '"""Zero for empty."""' in landed and "return 0" in landed
+    merged_file = _git(tmp_path, "show", "main:f.py")
+    assert '"""Zero for empty."""' in merged_file and "return 0" in merged_file
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "2"
-    # The message names the fork's own step; the parent's landed with the parent.
+    # The message names the fork's own step; the parent already merged its own step.
     assert _git(tmp_path, "log", "-1", "--format=%B", "main").splitlines() == [
         "add the docstring",
         "",
@@ -264,7 +264,7 @@ def test_runs_merge_refuses_while_the_worker_is_alive(
     """`sessions merge` refuses while the worker is alive; a stale pid restores the merge.
 
     A merge switches the shared checkout to the base branch, where the worker's next auto-commit
-    would land mid-run WIP; every other guard passes on a run's clean tree.
+    would merge unfinished work; every other guard passes on a run's clean tree.
     """
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-LIVE11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
@@ -277,7 +277,7 @@ def test_runs_merge_refuses_while_the_worker_is_alive(
     rc = main(["sessions", "merge", "run-LIVE11"])
     assert rc == 2
     assert "still live" in capsys.readouterr().err
-    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"  # nothing landed
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"  # nothing merged
 
     # dead pid -> a finished/crashed run merges
     process.write_worker_pid(layout.session_dir, 999_999_999)
@@ -293,7 +293,7 @@ def test_runs_merge_method_merge_keeps_history(
     _setup_run(tmp_path, "run-MERG11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     rc = main(["sessions", "merge", "run-MERG11", "--method", "merge"])
     assert rc == 0
-    assert (tmp_path / "a.txt").exists()  # the merge landed the work on main
+    assert (tmp_path / "a.txt").exists()  # main holds the work
     log = _git(tmp_path, "log", "--oneline")
     assert "agent6 turn 1: add a" in log  # --no-ff keeps the per-turn commit reachable
 
@@ -320,10 +320,10 @@ def test_runs_merge_refuses_when_no_branch_recorded(
     assert "this run recorded no commits" in err
 
 
-def test_runs_merge_lands_over_a_worktree_carrying_the_run(
+def test_runs_merge_accepts_a_worktree_carrying_the_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The merge is ref plumbing, so it lands over a worktree holding the run's uncommitted work."""
+    """The merge is ref plumbing, so it works with a worktree holding the run's uncommitted work."""
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-DIRT11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")  # the run's work, uncommitted
@@ -332,7 +332,7 @@ def test_runs_merge_lands_over_a_worktree_carrying_the_run(
     assert rc == 0
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
     assert (tmp_path / "wip.txt").read_text(encoding="utf-8") == "operator wip\n"
-    # Only the operator's own file remains as dirt; the landed work is clean.
+    # Only the operator's own file remains as dirt; the merged work is clean.
     assert _git(tmp_path, "status", "--porcelain").split() == ["??", "wip.txt"]
 
 
@@ -443,7 +443,7 @@ def test_runs_merge_restores_original_checkout(
     rc = main(["sessions", "merge", "run-REST11", "--into", "main"])
     assert rc == 0
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "feature"  # restored
-    assert "a.txt" in _git(tmp_path, "show", "--stat", "main")  # merge still landed on main
+    assert "a.txt" in _git(tmp_path, "show", "--stat", "main")  # main still holds the merge
 
 
 def test_runs_merge_never_switches_the_checkout(
@@ -631,7 +631,7 @@ def test_ff_only_merge_of_a_diverged_base_refuses_with_a_reason(
     assert "Not possible to fast-forward" not in err  # no raw git spew
 
 
-def test_ff_only_merge_lands_when_the_base_has_not_moved(
+def test_ff_only_merge_succeeds_when_the_base_has_not_moved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Pins is_ancestor's argument order: an unmoved base is an ancestor of the run branch.
@@ -704,7 +704,7 @@ def test_merging_a_pruned_run_reports_its_recorded_merge(
     *,
     branch_per_run: bool,
 ) -> None:
-    """A repeated merge after prune names the landing, not a run that committed nothing."""
+    """A repeated merge after prune names the recorded merge, not a run that committed nothing."""
     monkeypatch.chdir(tmp_path)
     _setup_run(
         tmp_path,
@@ -716,7 +716,7 @@ def test_merging_a_pruned_run_reports_its_recorded_merge(
     if not branch_per_run:
         _git(tmp_path, "branch", "-D", "agent6/pruned11")
     assert main(["sessions", "merge", "pruned11", "--method", method]) == 0
-    landed = _git(tmp_path, "rev-parse", "main")
+    merged_tip = _git(tmp_path, "rev-parse", "main")
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="pruned11"
     )
@@ -730,9 +730,9 @@ def test_merging_a_pruned_run_reports_its_recorded_merge(
 
     out = capsys.readouterr().out
     assert "already merged into main" in out
-    assert landed[:12] in out
+    assert merged_tip[:12] in out
     assert "committed nothing" not in out
-    assert _git(tmp_path, "rev-parse", "main") == landed
+    assert _git(tmp_path, "rev-parse", "main") == merged_tip
     assert layout.manifest_path.read_text(encoding="utf-8") == record
 
 
@@ -758,7 +758,7 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     assert main(["sessions", "merge", "run-SAME11"]) == 0
     out = capsys.readouterr().out
     assert "main already has its content" in out and "recorded as merged into main" in out
-    assert _git(tmp_path, "rev-parse", "main") == main_tip  # nothing landed
+    assert _git(tmp_path, "rev-parse", "main") == main_tip  # nothing merged
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-SAME11"
     )
@@ -1215,7 +1215,7 @@ def test_model_squash_uses_the_whole_run(
     conventions: str,
     oversized: bool,
 ) -> None:
-    """A review execution must not replace the landed diff or the original finish context.
+    """A review execution must not replace the merged diff or the original finish context.
 
     The request names the manifest's continuation as `Continued:`.
     """
@@ -1299,7 +1299,7 @@ def test_model_squash_uses_the_whole_run(
     assert _head_message(tmp_path).startswith("fix(models): resolve minor model context windows")
 
 
-def test_merge_squash_trailer_lands_once(
+def test_merge_squash_trailer_appears_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -1412,7 +1412,7 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
 def test_merge_adopts_an_orphaned_group_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions merge` adopts an orphaned child from its clone and lands it like any run.
+    """`sessions merge` adopts an orphaned child from its clone and merges it like any run.
 
     A parent death leaves a finished child's branch only in its clone; `sessions prune` then
     sweeps the clone dir.
@@ -1501,10 +1501,10 @@ def test_diff_explains_an_ask_the_same_way_merge_does(
     assert "base_sha" not in captured.err
 
 
-def test_a_resumed_run_merges_again_from_its_own_landed_tip(
+def test_a_resumed_run_merges_again_from_its_own_merged_tip(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A resumed run merges again from its own landed tip.
+    """A resumed run merges again from its own merged tip.
 
     The second execution's commits sit on the chain above a tip git relates to nothing on the base.
     """
@@ -1524,10 +1524,10 @@ def test_a_resumed_run_merges_again_from_its_own_landed_tip(
 
     assert main(["sessions", "merge", "resume-run1"]) == 0, capsys.readouterr().out
 
-    landed = _git(tmp_path, "show", "main:f.py")
-    assert '"""Zero for empty."""' in landed and "return 0" in landed
+    merged_file = _git(tmp_path, "show", "main:f.py")
+    assert '"""Zero for empty."""' in merged_file and "return 0" in merged_file
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "2"
-    # The message names what this merge lands; the first step landed with the first merge.
+    # The message names only new work. The first merge already included the first step.
     assert _git(tmp_path, "log", "-1", "--format=%B", "main").splitlines()[1:] == [
         "",
         "- docstring",
@@ -1561,16 +1561,16 @@ def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
         (None, ""),
     ],
 )
-def test_merge_warns_before_landing_a_tree_the_gate_did_not_certify(
+def test_merge_warns_before_merging_a_tree_the_gate_did_not_certify(
     verification: str | None,
     warning: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`sessions merge` landed a stopped run's unverified tree without a word.
+    """`sessions merge` merged a stopped run's unverified tree without a word.
 
-    The merge still lands and exits 0; a green, gateless or unworded end draws no warning.
+    The merge still succeeds and exits 0; a green, gateless or unworded end draws no warning.
     """
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-VVVV11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
@@ -1619,7 +1619,7 @@ def test_merge_says_a_timed_out_gate_timed_out(
 def test_runs_merge_refuses_a_run_undo_took_back(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The taken-back work landed on main under a generic warning, and main's tests failed."""
+    """The taken-back work merged into main under a generic warning, and main's tests failed."""
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-UNDO11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(

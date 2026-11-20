@@ -381,10 +381,10 @@ def test_staging_runs_no_filter_whose_name_holds_an_equals_sign(tmp_path: pathli
     assert _git(root, "show", ":f.txt").stdout == "v2\n"
 
 
-def test_a_landing_runs_no_merge_driver_whose_name_holds_an_equals_sign(
+def test_a_merge_runs_no_merge_driver_whose_name_holds_an_equals_sign(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A landing's `merge-tree` ran a merge driver named `a=b`; blanked, the merge conflicts."""
+    """A merge's `merge-tree` ran a merge driver named `a=b`; blanked, the merge conflicts."""
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     target = _git(root, "branch", "--show-current").stdout.strip()
@@ -400,9 +400,9 @@ def test_a_landing_runs_no_merge_driver_whose_name_holds_an_equals_sign(
     _git(root, "commit", "-qam", "target")
     _git(root, "checkout", "-q", "--detach")
     git_policy.set_policy(git_policy.GitPolicy())
-    landed = git_ops.plumb_merge(root, target, "run", method="merge", message="land")
+    outcome = git_ops.plumb_merge(root, target, "run", method="merge", message="merge")
     assert not marker.exists(), "the repo's merge driver ran a host command"
-    assert landed.conflicted and landed.conflicts == ("f.txt",)
+    assert outcome.conflicted and outcome.conflicts == ("f.txt",)
 
 
 def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(

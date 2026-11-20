@@ -598,7 +598,7 @@ def test_the_refusal_notice_paints_ansi_red(
     asyncio.run(scenario())
 
 
-def test_the_hub_merge_lands_the_run_in_this_process(
+def test_the_hub_merges_the_run_in_this_process(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The hub's merge runs `sessions merge`'s own code and reports what it said, mark dropped."""

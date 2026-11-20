@@ -339,7 +339,7 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     parked = capsys.readouterr().err
     assert "PARKED" in parked and "agent6 sessions merge prior-run-AAAAAA" in parked, parked
 
-    # A commit that landed on the base since (another file) does not hide the
+    # A commit added to the base since (another file) does not hide the
     # match: the comparison is per modified file, not whole-tree.
     (repo / "other.txt").write_text("later\n", encoding="utf-8")
     _git(repo, "add", "other.txt")

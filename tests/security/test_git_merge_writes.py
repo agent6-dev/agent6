@@ -3,7 +3,7 @@
 """A merge onto a checked-out branch writes inside that checkout, and nowhere else.
 
 `sessions merge` runs on the host, in a checkout a jailed command may have written to, and
-lands a tree a session's commands may have built. git writes the merged files: it follows
+merges a tree a session's commands may have built. git writes the merged files: it follows
 no link a command left in the checkout and checks out no `..` or `.git` tree entry.
 """
 

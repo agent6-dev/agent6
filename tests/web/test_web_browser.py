@@ -770,7 +770,7 @@ def test_the_git_toolbar_fetches_a_pull_request_and_offers_it_for_review(
     tmp_path: pathlib.Path,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """Fetch PR lands `<remote>/pr/<n>`, leaves it selected, and Review names it; Switch is off."""
+    """Fetch PR selects `<remote>/pr/<n>`, Review names it and Switch is off."""
     from playwright.sync_api import expect
 
     upstream = tmp_path_factory.mktemp("upstream")

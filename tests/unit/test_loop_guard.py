@@ -504,7 +504,7 @@ def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path)
 
 
 def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
-    """A fatal provider error is a harness-initiated end too: the run's edits land in git."""
+    """A fatal provider error is a harness-initiated end too: git records the run's edits."""
     from agent6.providers import ProviderError
 
     repo = tmp_path / "repo"

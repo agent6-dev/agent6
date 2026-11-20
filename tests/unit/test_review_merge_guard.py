@@ -227,7 +227,7 @@ def test_merge_rechecks_dispositions_after_taking_the_writer_lock(
     assert result.status == "error" and "f1" in result.error
 
 
-def test_auto_merge_keeps_its_worker_lock_until_landing_finishes(
+def test_auto_merge_keeps_its_worker_lock_until_the_merge_finishes(
     tmp_path: pathlib.Path, run: layout.SessionLayout, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _resolve_all(run)
@@ -262,7 +262,7 @@ def test_auto_merge_keeps_its_worker_lock_until_landing_finishes(
         lock.release_single_writer(fd)
 
 
-def test_moving_source_ref_cannot_land_or_stamp_an_unchecked_tip(
+def test_moving_source_ref_cannot_merge_or_stamp_an_unchecked_tip(
     tmp_path: pathlib.Path, run: layout.SessionLayout, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _resolve_all(run)

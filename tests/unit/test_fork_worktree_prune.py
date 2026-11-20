@@ -27,7 +27,7 @@ def _git(repo: pathlib.Path, *args: str) -> str:
 def merged_fork(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> tuple[pathlib.Path, sessions_layout.SessionLayout]:
-    """Fork a committed checkpoint, commit on its chain, and land it through the CLI."""
+    """Fork a committed checkpoint, commit on its chain, and merge it through the CLI."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")

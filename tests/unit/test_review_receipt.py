@@ -20,7 +20,7 @@ from tests.unit import test_cli_sessions_merge as merge_tests
 def test_merge_records_bounds_for_reversal(
     tmp_path: pathlib.Path, method: Literal["ff_only", "merge", "squash"]
 ) -> None:
-    """All landing methods retain the target's old tip and the actual method."""
+    """All merge methods retain the target's old tip and the actual method."""
     base = merge_tests._setup_run(
         tmp_path, "receipt", commits=[("a", "one", "one"), ("b", "two", "two")]
     )
@@ -37,7 +37,7 @@ def test_merge_records_bounds_for_reversal(
         method=method,
         cfg=Config(),
         identity=git_read.CommitIdentity(),
-        message="land",
+        message="merge",
     )
     assert outcome.status == "merged"
     stamp = manifest.read_manifest(layout.session_dir).merged
@@ -71,7 +71,7 @@ def test_failed_stamp_does_not_claim_the_merge_failed(tmp_path: pathlib.Path) ->
             method="merge",
             cfg=Config(),
             identity=git_read.CommitIdentity(),
-            message="land",
+            message="merge",
         )
     assert outcome.status == "merged" and outcome.stamp_error == "disk full"
     assert manifest.read_manifest(layout.session_dir).merged is None
@@ -90,15 +90,17 @@ def test_reversal_uses_objects_even_after_source_ref_pruning(
     source = merge_tests._git(tmp_path, "rev-parse", "agent6/receipt")
     from agent6.vcs.git import ops as git_ops
 
-    landed = git_ops.plumb_merge(tmp_path, "main", source, method=method, message="land").merged_sha
+    merged = git_ops.plumb_merge(
+        tmp_path, "main", source, method=method, message="merge"
+    ).merged_sha
     merge_tests._git(tmp_path, "update-ref", "-d", "refs/heads/agent6/receipt")
     stamp = manifest.MergeStamp.model_validate(
-        {"method": method, "sha": landed, "target_before": base, "tip": source}
+        {"method": method, "sha": merged, "target_before": base, "tip": source}
     )
     plan = receipt.revert_plan(tmp_path, stamp)
     assert plan.kind == method
     assert plan.mainline == (1 if method == "merge" else None)
-    assert plan.commits[0] == landed
+    assert plan.commits[0] == merged
     assert len(plan.commits) == (2 if method == "ff_only" else 1)
 
 
@@ -122,15 +124,15 @@ def test_reversal_refuses_missing_objects_and_unverified_parents(tmp_path: pathl
 
 
 def test_fast_forward_with_merges_requires_a_manual_plan(tmp_path: pathlib.Path) -> None:
-    """Fast-forward reversal never guesses a mainline for a landed merge."""
+    """Fast-forward reversal never guesses a mainline for a two-parent commit."""
     from agent6.vcs.git import ops as git_ops
     from agent6.viewmodel import receipt
 
     base = merge_tests._setup_run(tmp_path, "receipt", commits=[("a", "one", "one")])
-    landed = git_ops.plumb_merge(
-        tmp_path, "main", "agent6/receipt", method="merge", message="land"
+    merged = git_ops.plumb_merge(
+        tmp_path, "main", "agent6/receipt", method="merge", message="merge"
     ).merged_sha
-    stamp = manifest.MergeStamp(sha=landed, method="ff_only", target_before=base)
+    stamp = manifest.MergeStamp(sha=merged, method="ff_only", target_before=base)
     plan = receipt.revert_plan(tmp_path, stamp)
     assert plan.kind == "manual" and plan.mainline is None and not plan.commits
 
@@ -320,12 +322,12 @@ def test_revert_request_carries_recorded_facts(tmp_path: pathlib.Path, method: s
     base = merge_tests._setup_run(tmp_path, "receipt", commits=[("a", "one", "one")])
     saved = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "receipt")
     tip = merge_tests._git(tmp_path, "rev-parse", "agent6/receipt")
-    landed = git_ops.plumb_merge(tmp_path, "main", tip, method=method or "merge", message="land")
+    merged = git_ops.plumb_merge(tmp_path, "main", tip, method=method or "merge", message="merge")
     stamped = manifest.read_manifest(saved.session_dir).model_copy(
         update={
             "merged": manifest.MergeStamp.model_validate(
                 {
-                    "sha": landed.merged_sha,
+                    "sha": merged.merged_sha,
                     "method": method,
                     "target_before": base,
                     "tip": tip,
@@ -337,7 +339,7 @@ def test_revert_request_carries_recorded_facts(tmp_path: pathlib.Path, method: s
     stamps.write_manifest(saved.manifest_path, stamped)
     view = receipt.read_receipt(saved.session_dir, tmp_path)
     task = receipt.revert_request(view)
-    assert base in task and landed.merged_sha in task and tip in task
+    assert base in task and merged.merged_sha in task and tip in task
     assert "main" in task and (method or "not recorded") in task
     if method:
         assert "Commits to revert in order: " + ", ".join(view.revert.commits) in task

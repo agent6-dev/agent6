@@ -129,8 +129,8 @@ def test_undo_of_a_model_controlled_run_refuses_before_committing(
     """A `git.control = "model"` run has no agent6 chain.
 
     The refusal sat in the fork step, after the undo commit, so a chain ref holding the tree was
-    left behind: `auto_merge` landed it on the base, and the next run's dirty-tree question named a
-    merge that refuses.
+    left behind: `auto_merge` merged it into the base, and the next run offered a merge that
+    refuses.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -214,7 +214,7 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     """The source reads `undone` on every surface, as it does after a live run's own `/undo`.
 
     A finished run undone from the TUI or the web kept reading `passed · unmerged` with a
-    merge line, and `sessions merge` landed the work the operator took back.
+    merge line, and `sessions merge` merged the work the operator took back.
     """
     repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
@@ -373,7 +373,7 @@ def test_undo_puts_back_a_name_git_quotes_and_prints_it_on_one_line(
     assert not [line for line in lines if line.startswith("[agent6] the checkout already")]
 
 
-def test_undo_of_a_run_whose_work_landed_refuses_and_names_the_merge(
+def test_undo_of_a_run_whose_work_merged_refuses_and_names_the_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The rewind deleted other sessions' merged work from the checkout.
@@ -571,7 +571,7 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     assert not (state / "lineage.jsonl").exists()
 
     # Pruned after a merge (branch gone): the refusal points at the merge that
-    # landed the commits, as `sessions commits` does, never at the gone branch.
+    # merged the commits, as `sessions commits` does, never at the gone branch.
     manifest["merged"] = {"into": "main", "sha": _c2, "tip": _c2}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     _git(repo, "branch", "-D", "agent6/run-AAAA11")
