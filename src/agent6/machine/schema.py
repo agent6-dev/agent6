@@ -450,7 +450,13 @@ StateSpec = Annotated[
 
 # The operator-only policy no overlay may carry; the loader and `config set --machine-file`
 # both refuse off this one set, and each leaf says why.
-PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("mcp", "presets", "providers", "telemetry")
+PROTECTED_OVERLAY_TABLES: tuple[str, ...] = (
+    "container",
+    "mcp",
+    "presets",
+    "providers",
+    "telemetry",
+)
 PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "notify.on_event": "the notify hook runs an operator argv on the host outside the jail",
     "git.run_repo_hooks": (
@@ -492,8 +498,8 @@ def protected_overlay_key_error(key: str, state: str = "") -> str | None:
         if key == table or key.startswith(f"{table}."):
             return (
                 f"{where} must not set {table}.*:"
-                " connections/secrets, strategy presets, MCP servers and telemetry export"
-                " are operator-only (global/repo config)"
+                " connections/secrets, strategy presets, MCP servers, telemetry export and"
+                " the container's host commands are operator-only (global/repo config)"
             )
     for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
         if key == dotted or key.startswith(f"{dotted}."):

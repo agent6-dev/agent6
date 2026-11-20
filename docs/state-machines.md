@@ -603,8 +603,8 @@ Unset keys read straight through to the lower layers, so a machine only states w
 
 **Operator-only keys.** Refused in both tables, each a load-time error:
 
-- `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, `agent6.preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.pass_env`, `notify.on_event`, `git.worktree.base_dir`, `harness.prompt.system_prompt_file`, `skills.extra_dirs`
-    - endpoints, key-env names, and secrets live in the global/repo config and the secrets store; presets, MCP servers, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
+- `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, `container.*`, `agent6.preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.pass_env`, `notify.on_event`, `git.worktree.base_dir`, `harness.prompt.system_prompt_file`, `skills.extra_dirs`
+    - endpoints, key-env names, and secrets live in the global/repo config and the secrets store; presets, MCP servers, the container and its host commands, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
 - a state's table also refuses `machine.*`, `harness.parallel.*`, `git.worktree.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
 
 **Sandbox keys: never wider than your own config.** An overlay may set any `sandbox` key, bounded by your own layers alone (defaults, global, repo, preset, `--config FILE`).

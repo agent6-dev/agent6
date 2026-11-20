@@ -725,6 +725,16 @@ def test_machine_overlay_cannot_define_a_preset(tmp_path: pathlib.Path) -> None:
     assert any("presets" in p for p in problems)
 
 
+def test_machine_overlay_cannot_set_the_containers_host_commands(tmp_path: pathlib.Path) -> None:
+    """`container.start`, `exec`, `runtime` and `stop` are argv agent6 runs on the host.
+
+    A machine file set them, and `sandbox.isolation = "container"` with them.
+    """
+    body = VALID_MACHINE + '\n[config.container]\nstart = ["sh", "-c", "echo up"]\n'
+    problems = _problems(tmp_path, body)
+    assert any("must not set container.*" in p for p in problems)
+
+
 def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: pathlib.Path) -> None:
     # git.run_repo_hooks runs host code on auto-commit: a knob a machine file must not flip.
     body = VALID_MACHINE + "\n[config.git]\nrun_repo_hooks = true\n"
