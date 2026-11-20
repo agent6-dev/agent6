@@ -142,6 +142,7 @@ def mark_child(
     notes: tuple[str, ...] = (),
     operator_task: str | None = None,
     record_state: pathlib.Path | None = None,
+    checkout: pathlib.Path | None = None,
 ) -> pathlib.Path:
     """Write a child launch file under `where` and set `AGENT6_LAUNCH` and `AGENT6_CHILD`.
 
@@ -156,6 +157,7 @@ def mark_child(
         notes: The snapshot's loss notes.
         operator_task: The operator's task before composition.
         record_state: Where the child's record goes; the child's own state when None.
+        checkout: The checkout to bind for tests that start the child.
 
     Returns:
         The launch file's path.
@@ -163,7 +165,8 @@ def mark_child(
     path = child_launch.write(
         where,
         child_launch.ChildLaunch(
-            worktree=where / f"child-{number}",
+            worktree=checkout or where / f"child-{number}",
+            clone=child_launch.CloneReceipt.capture(checkout) if checkout is not None else None,
             record_state=record_state or paths.state_dir(where / f"child-{number}"),
             session_id=f"{group}-l{number}",
             task="task",

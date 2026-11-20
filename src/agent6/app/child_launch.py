@@ -18,7 +18,7 @@ import sys
 
 import pydantic
 
-from agent6 import budget, child_records, kinds
+from agent6 import budget, child_records, kinds, paths
 from agent6.config import Config, ConfigError
 from agent6.sessions import ipc, manifest
 
@@ -34,6 +34,38 @@ class LaunchError(ConfigError):
     """A launch file or its directory is missing, malformed, foreign-owned or exposed."""
 
 
+class CloneReceipt(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """The independent checkout and state the parent granted at first launch."""
+
+    state: pathlib.Path
+    directory: tuple[int, int]
+    git: tuple[int, int]
+
+    @classmethod
+    def capture(cls, root: pathlib.Path) -> CloneReceipt:
+        """Identify a plain clone without accepting links in place of it or its git dir.
+
+        Returns:
+            The clone's state and directory identities.
+
+        Raises:
+            LaunchError: The checkout is missing or is not an independent clone.
+        """
+        try:
+            directory, git = root.lstat(), (root / ".git").lstat()
+        except OSError as exc:
+            raise LaunchError(f"child clone is missing: {root}") from exc
+        if not (stat.S_ISDIR(directory.st_mode) and stat.S_ISDIR(git.st_mode)) or (
+            paths.project_root(root) != root.resolve()
+        ):
+            raise LaunchError(f"not an independent child clone: {root}")
+        return cls(
+            state=paths.state_base() / paths.repo_id(root),
+            directory=(directory.st_dev, directory.st_ino),
+            git=(git.st_dev, git.st_ino),
+        )
+
+
 class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     """What a child needs to start, and what it knows about itself that no config layer holds.
 
@@ -41,6 +73,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     Attributes:
         worktree: The child's clone, the run's cwd.
+        clone: The receipt from first launch; an unbound launch cannot drive a checkout.
         record_state: The state dir of the repository that dispatched the child, where the
             child's record lives from its first event.
         session_id: The child's session id.
@@ -66,6 +99,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     """
 
     worktree: pathlib.Path
+    clone: CloneReceipt | None = None
     record_state: pathlib.Path
     session_id: str = pydantic.Field(min_length=1)
     task: str = pydantic.Field(min_length=1)
@@ -85,6 +119,20 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     limits: child_records.ChildLimits | None = None
     contract: kinds.ConversationContract | None = None
     continuation: str = ""
+
+    def checked_clone(self, root: pathlib.Path) -> CloneReceipt:
+        """Return the original grant, never a state dir selected by a replacement checkout.
+
+        Raises:
+            LaunchError: The launch is unbound or its checkout changed.
+        """
+        if (
+            self.clone is None
+            or root.resolve() != self.worktree.resolve()
+            or (CloneReceipt.capture(root) != self.clone)
+        ):
+            raise LaunchError(f"child clone does not match its private launch: {root}")
+        return self.clone
 
 
 def is_child() -> bool:

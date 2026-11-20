@@ -98,6 +98,7 @@ def main() -> int:
     """
     try:
         launch = trusted_launch()
+        launch.checked_clone(launch.worktree)
     except ConfigError as exc:
         common.error(f"{exc}")
         return 2

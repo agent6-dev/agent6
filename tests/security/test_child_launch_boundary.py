@@ -80,6 +80,7 @@ def _launch_files(
     )
     launch = child_launch.ChildLaunch(
         worktree=spec.worktree,
+        clone=child_launch.CloneReceipt.capture(spec.worktree),
         record_state=paths.state_dir(spec.worktree),
         session_id=spec.session_id,
         task=TASK,

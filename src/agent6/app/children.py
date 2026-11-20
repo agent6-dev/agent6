@@ -241,12 +241,15 @@ def bridge_spawner(
     private = child_launch.launch_dir(paths.state_dir(origin), group_id)
     try:
         if continuation:
-            child_resume.check_workspace(spec, private, parent=parent, record_state=record_state)
+            clone = child_resume.check_workspace(
+                spec, private, parent=parent, record_state=record_state
+            )
         else:
             child_repo.clone_worktree(origin, spec.worktree)
             if at is not None:
                 # A local clone hardlinks the whole odb, so the chain's commits are present.
                 git_ops.checkout_detached(spec.worktree, at)
+            clone = child_launch.CloneReceipt.capture(spec.worktree)
     except (child_launch.LaunchError, child_repo.ChildRepoError, errors.GitError) as exc:
         return child_records.ChildResult(
             spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error=str(exc)
@@ -261,6 +264,7 @@ def bridge_spawner(
             private,
             child_launch.ChildLaunch(
                 worktree=spec.worktree,
+                clone=clone,
                 record_state=record_state,
                 session_id=spec.session_id,
                 task=task,
@@ -287,7 +291,7 @@ def bridge_spawner(
             spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error=str(exc)
         )
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
-    memory.seed_store(paths.state_dir(origin), paths.state_dir(spec.worktree))
+    memory.seed_store(paths.state_dir(origin), clone.state)
     # The child's record lives in the origin's state from its first event.
     child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
     reader = tail.LogTail(child_dir / sessions_layout.LOGS_NAME)

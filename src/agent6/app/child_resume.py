@@ -47,7 +47,7 @@ def check_workspace(
     *,
     parent: str,
     record_state: pathlib.Path,
-) -> None:
+) -> child_launch.CloneReceipt:
     """Refuse a missing, live or foreign child before replacing its launch file.
 
     Args:
@@ -58,6 +58,9 @@ def check_workspace(
 
     Raises:
         LaunchError: The clone, ownership or saved conversation cannot support continuation.
+
+    Returns:
+        The receipt to carry forward without rebinding the checkout.
     """
     previous = child_launch.read_file(private / f"child-{spec.number}.json")
     child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
@@ -73,9 +76,9 @@ def check_workspace(
         raise child_launch.LaunchError(
             "the retained launch does not belong to this child and parent"
         )
-    if not (spec.worktree / ".git").is_dir():
-        raise child_launch.LaunchError(f"child clone is missing: {spec.worktree}")
+    clone = previous.checked_clone(spec.worktree)
     if not (child_dir / "loop_state.json").is_file():
         raise child_launch.LaunchError(f"child conversation snapshot is missing: {child_dir}")
     if process.worker_is_alive(child_dir):
         raise child_launch.LaunchError(f"child {spec.session_id} still has a live worker")
+    return clone

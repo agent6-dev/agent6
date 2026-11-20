@@ -227,9 +227,16 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     """
     repo = cwd if cwd is not None else pathlib.Path.cwd()
     launch = child_launch.read()
-    state = agent6_paths.state_dir(repo)
     # A continued child writes to its bound record but executes with its clone's state.
-    record = launch.record_state if launch is not None and launch.continuation else state
+    if launch is not None and launch.continuation:
+        try:
+            state = launch.checked_clone(repo).state
+        except child_launch.LaunchError as exc:
+            reporter.refuse(str(exc))
+            return 2
+        record = launch.record_state
+    else:
+        record = state = agent6_paths.state_dir(repo)
     if steer.strip() and (problem := directive.steer_problem(steer)) is not None:
         reporter.error(problem)
         return 2

@@ -391,6 +391,7 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
             into,
             child_launch.ChildLaunch(
                 worktree=clone,
+                clone=child_launch.CloneReceipt.capture(clone),
                 record_state=paths.state_dir(clone),
                 session_id="leaf-l1",
                 task="review",

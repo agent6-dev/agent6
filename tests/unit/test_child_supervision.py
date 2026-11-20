@@ -476,6 +476,7 @@ def test_a_real_child_ends_by_its_deadline(
             into,
             child_launch.ChildLaunch(
                 worktree=clone,
+                clone=child_launch.CloneReceipt.capture(clone),
                 record_state=paths.state_dir(clone),
                 session_id="deadline-l1",
                 task="keep running",

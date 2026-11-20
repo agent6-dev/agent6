@@ -213,19 +213,6 @@ def write_session_manifest(
     write_manifest(layout.manifest_path, m)
 
 
-def child_record_state() -> pathlib.Path | None:
-    """Return the state dir this child's record lives under, or None outside a child.
-
-    Returns:
-        The state dir of the repository whose run dispatched the child.
-
-    Raises:
-        ConfigError: The child's envelope is missing or malformed.
-    """
-    envelope = child_launch.read()
-    return envelope.record_state if envelope is not None else None
-
-
 def child_gate_source() -> manifest.GateSource:
     """Return the origin of the gate a child's config carries, or "" outside a child.
 

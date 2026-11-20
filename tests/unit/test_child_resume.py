@@ -216,6 +216,38 @@ def test_a_private_launch_cannot_continue_another_child(
     )
 
 
+@pytest.mark.parametrize("redirect", [True, False], ids=["redirected", "recreated"])
+def test_a_changed_clone_cannot_continue_the_bound_child(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, redirect: bool
+) -> None:
+    repo, clone = tmp_path / "repo", tmp_path / "clone"
+    child_env.init_repo(repo)
+    with launch_env.scripted_provider() as (url, calls):
+        path, _ = child_env.launch_worker(repo, clone, child_env.config(url), monkeypatch)
+        argv = child_launch.bootstrap_argv()
+        first = subprocess.run(
+            argv, cwd=clone, capture_output=True, text=True, timeout=90, check=False
+        )
+        assert first.returncode == 0, first.stdout + first.stderr
+        launch = child_launch.read_file(path)
+        child_launch.write(path.parent, launch.model_copy(update={"continuation": "continue"}))
+        clone.rename(tmp_path / "retired")
+        target = tmp_path / "other" if redirect else clone
+        child_repo.clone_worktree(repo, target)
+        if redirect:
+            clone.symlink_to(target, target_is_directory=True)
+        child = subprocess.run(
+            argv, cwd=clone, capture_output=True, text=True, timeout=90, check=False
+        )
+        assert child.returncode == 2 and "clone" in child.stderr, child.stdout + child.stderr
+        assert len(calls) == 1
+        directory = launch.record_state / "sessions" / "runs" / launch.session_id
+        assert not any(
+            json.loads(row)["type"] == "session.resume"
+            for row in (directory / "logs.jsonl").read_text().splitlines()
+        )
+
+
 @pytest.fixture
 def retained_child(tmp_path: pathlib.Path) -> child_records.ChildSpec:
     """Keep the stopped child's clone, private launch and journal for a continuation."""
@@ -227,6 +259,7 @@ def retained_child(tmp_path: pathlib.Path) -> child_records.ChildSpec:
     private = child_launch.launch_dir(state, "root-p1")
     launch = child_launch.ChildLaunch(
         worktree=spec.worktree,
+        clone=child_launch.CloneReceipt.capture(spec.worktree),
         record_state=state,
         session_id=spec.session_id,
         task="work",
@@ -260,6 +293,36 @@ def retained_child(tmp_path: pathlib.Path) -> child_records.ChildSpec:
     )
     sink.emit(journal.SessionStop(execution_id="earlier", reason="interrupted", turns=1))
     return spec
+
+
+def test_parent_does_not_rebind_a_continuation_to_a_replaced_clone(
+    tmp_path: pathlib.Path, retained_child: child_records.ChildSpec
+) -> None:
+    repo = tmp_path / "repo"
+    state = paths.state_dir(repo)
+    private = child_launch.launch_dir(state, "root-p1") / "child-1.json"
+    before = private.read_bytes()
+    retained_child.worktree.rename(tmp_path / "original")
+    child_repo.clone_worktree(repo, retained_child.worktree)
+
+    def unexpected_spawn(*_args: object, **_kwargs: object) -> tuple[None, int, str]:
+        pytest.fail("a replaced clone cannot start")
+
+    result = app_children.bridge_spawner(
+        retained_child,
+        "work",
+        cfg=Config(),
+        explicit_leaves=frozenset(),
+        origin=repo,
+        record_state=state,
+        max_usd=None,
+        group_id="root-p1",
+        parent="root",
+        continuation="finish",
+        runtime=app_children.ChildRuntime(spawn=unexpected_spawn),
+    )
+    assert not result.ok and "clone" in result.error
+    assert private.read_bytes() == before
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])

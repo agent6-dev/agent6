@@ -159,6 +159,7 @@ def _child_snapshot(
         config=snapshot,
         gate_source=gate_source,
         record_state=paths.state_dir(repo),
+        checkout=repo,
     )
     return snapshot
 
@@ -554,6 +555,7 @@ def test_a_budget_stopped_child_continues_with_the_fork_command_its_record_names
                 group="capped-fan",
                 number=spec.number,
                 record_state=state,
+                checkout=spec.worktree,
             )
             argv = ["run", "--config", str(snapshot), "--session-id", spec.session_id]
             assert cli_main([*argv, "--max-tokens-fallback", "1", task]) == 3, (

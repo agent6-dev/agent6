@@ -18,6 +18,7 @@ from collections.abc import Callable, Sequence
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, pack, paths
 from agent6.app import (
+    child_launch,
     execution,
     finalize,
     fork_worktrees,
@@ -225,10 +226,18 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         )
         return 2
 
-    state = paths.state_dir(repo)
     # A child's record goes under the state of the repository that dispatched it, so its
     # listings read the child from its first event; its memory and rulings stay with its clone.
-    record = stamps.child_record_state() or state
+    launch = child_launch.read()
+    if launch is not None:
+        try:
+            state = launch.checked_clone(repo).state
+        except child_launch.LaunchError as exc:
+            reporter.refuse(str(exc))
+            return 2
+        record = launch.record_state
+    else:
+        record = state = paths.state_dir(repo)
     bucket = kinds.session_bucket(mode)
     # Same-bucket reuse is the resume or park flow below; another bucket's id is a collision.
     if session_id and (held := id.session_id_bucket(record, session_id)) not in (None, bucket):

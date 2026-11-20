@@ -165,6 +165,7 @@ def launch_worker(
     config = worktrees.write_child_config(cfg, spec, explicit_leaves=frozenset(), into=into)
     launch = child_launch.ChildLaunch(
         worktree=clone,
+        clone=child_launch.CloneReceipt.capture(clone),
         record_state=paths.state_dir(repo),
         session_id=sid,
         task="worker",
