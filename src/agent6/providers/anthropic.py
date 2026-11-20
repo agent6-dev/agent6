@@ -163,7 +163,9 @@ def _history_options(
         and isinstance(thinking, dict)
         and thinking.get("type") in ("enabled", "adaptive")
     ):
-        body["thinking"] = {**thinking, "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+        # The operator's own choice in extra_body stands.
+        binding = {"block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+        body["thinking"] = {**binding, **thinking}
         betas.append("thinking-binding-controls-2026-08-01")
     return tuple(betas)
 

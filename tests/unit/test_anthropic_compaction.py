@@ -116,6 +116,21 @@ def test_prefix_net_follows_model_and_thinking(
     assert "compaction" not in bodies[0] and "context_management" not in bodies[0]
 
 
+def test_an_operator_prefix_setting_stands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the operator's refusal: the net replaced `error` with `drop_block`."""
+    bodies: list[dict[str, Any]] = []
+    wire._capture_body(monkeypatch, bodies)
+    strict = {"block_binding": {"prefix_mismatch_behavior": "error"}}
+    provider = anthropic.AnthropicProvider(
+        api_key="test",
+        model="claude-haiku-5-5",
+        effort="high",
+        extra_body={"thinking": {"type": "adaptive", **strict}},
+    )
+    provider.call(system="system", messages=[{"role": "user", "content": "go"}])
+    assert bodies[0]["thinking"]["block_binding"] == strict["block_binding"]
+
+
 @pytest.mark.parametrize("sample", ["compact", "own-restart-drop_block", "clearing-strict"])
 def test_stream_reports_the_same_history_and_cost(
     monkeypatch: pytest.MonkeyPatch, sample: str
