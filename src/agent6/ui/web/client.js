@@ -1107,7 +1107,9 @@ function sessionsCard() {
   const card = listCard('', 'no sessions yet (describe a task below to start one)', r => rows(r, 0));
   const show = card.show;
   card.show = (sessions, hold) => { shown = sessions; show(sessions, hold); };
-  // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
+  // Maintenance stays folded on phones until opened.
+  const maintenance = el('details', 'maintenance');
+  maintenance.appendChild(el('summary', 'chevron', 'Maintenance'));
   const toolbar = el('div', 'toolbar');
   // OS notifications for a session that starts waiting or ends need a granted permission.
   toolbar.appendChild(notificationsButton('mini quiet'));
@@ -1127,7 +1129,8 @@ function sessionsCard() {
     try { const d = await postJSON('/api/sessions/rm_asks', {}); toast(d.message || 'cleared'); route(); }
     catch (e) { toast(e.message, true); }
   });
-  card.insertBefore(toolbar, card.firstChild);
+  maintenance.appendChild(toolbar);
+  card.insertBefore(maintenance, card.firstChild);
   return card;
 }
 
