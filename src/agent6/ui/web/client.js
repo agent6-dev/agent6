@@ -1387,13 +1387,13 @@ function makeConv(url, box, body, empty = {}) {
       if (note) { note.textContent = emptyNote(); note.style.display = dead ? 'none' : ''; } // re-tense if already painted
       return;
     }
-    if (s.status === 'waiting') {
-      // Blocked on the operator (the prompt boxes below): no thinking, no tool
-      // running, so neither pulse may say so, nor "appears as the run
-      // streams" over a run that has not started its first turn.
-      liveHost.style.display = '';
+    // Blocked on the operator (the prompt boxes below), a state neither thinks nor runs a tool: no pulse may say so, nor "appears as the run streams" before a first turn.
+    // A run's status names how it waits; a machine's agent state has no word for it, and shows no line.
+    if (s.operator_blocked) {
+      const waiting = s.status === 'waiting';
+      liveHost.style.display = waiting ? '' : 'none';
       if (note) note.style.display = 'none';
-      liveHost.appendChild(el('div', 'muted', '· ' + runState(s)));
+      if (waiting) liveHost.appendChild(el('div', 'muted', '· ' + runState(s)));
       return;
     }
     if (!r) {

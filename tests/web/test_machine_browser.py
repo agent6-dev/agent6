@@ -303,6 +303,31 @@ def test_a_machines_prompt_waits_at_its_conversations_end(
     assert not errors
 
 
+@pytest.mark.parametrize("streamed", [False, True])
+def test_a_state_waiting_on_the_operator_shows_no_live_line(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path, *, streamed: bool
+) -> None:
+    """A state blocked on an approval showed a live line under a rule, over its prompt.
+
+    The heartbeat goes quiet while the operator is asked, so the line stood empty; a thought the
+    last call streamed showed as "thinking…" beside a prompt that blocked every next step.
+    """
+    from playwright.sync_api import expect
+
+    call = {"role": "worker", "model_call_id": "c9"}
+    log = [*_talk(2), {"type": "model.call", "model": "m", "provider": "p", **call}]
+    if streamed:
+        log.append({"type": "model.thinking_delta", "text": "I will run the check.", **call})
+    log.append({"type": "model.result", "ok": True, **call})
+    log.append({"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"})
+    _machine(tmp_path, "asking", LOOP, [], log, alive=True)
+    page, errors = _open(open_page, port, "asking")
+    expect(page.locator(".conv-box .prompt-box")).to_be_visible()
+    expect(page.locator(".conv-card h2")).to_contain_text("Current state")  # the first frame
+    expect(page.locator(".conv-live")).to_be_hidden()
+    assert not errors
+
+
 def test_a_poll_that_answers_a_prompt_and_streams_on_leaves_the_conversation_at_its_tail(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
