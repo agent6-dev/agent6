@@ -124,6 +124,8 @@ agent6 run --metric 'minimize -- python3 elapsed.py' "Reduce elapsed time"
 agent6 run --metric "maximize 'score: ([0-9.]+)' -- python3 bench.py" "Improve the score"
 ```
 
+The metric uses UTF-8 text without carriage returns so its command and arguments survive a journal or queue read.
+
 The flag and the live `/metric` directive take the same spec: `maximize|minimize ["capture pattern"] -- command`.
 Quote the whole spec on the command line so the shell passes one argument.
 The command is an argument list, not a shell script.

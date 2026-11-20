@@ -68,6 +68,12 @@ def parse_metric_spec(text: str) -> MetricSpec:
     Raises:
         DirectiveError: The spec, capture pattern or argv is invalid.
     """
+    if "\r" in text:
+        raise DirectiveError("metric commands cannot contain a carriage return")
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise DirectiveError("the metric must be UTF-8 text") from exc
     refusal = f"metric expects: {METRIC_SYNTAX}"
     parts = text.strip().split(maxsplit=1)
     if len(parts) != 2 or parts[0] not in ("maximize", "minimize"):

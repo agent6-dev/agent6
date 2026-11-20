@@ -34,6 +34,8 @@ def test_run_metric_preserves_capture_and_command_arguments() -> None:
         "maximize '(x{4294967296})' -- true",
         "minimize unquoted(1) -- true",
         "maximize -- 'broken",
+        "minimize -- 'cost\rcommand'",
+        "minimize -- cost\udcff",
     ],
 )
 def test_invalid_metric_is_not_queued_or_steered(tmp_path: pathlib.Path, spec: str) -> None:
