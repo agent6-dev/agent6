@@ -830,12 +830,46 @@ def mirror_session(
     specs = [f"+HEAD:{ref}"] if head else [f"+{space}/*:{space}/*"]
     if branch and git_read.branch_exists(clone, branch):
         specs.append(f"+refs/heads/{branch}:refs/heads/{branch}")
-    git_command.run(path, "fetch", "--quiet", "--update-head-ok", str(clone), *specs)
+    _fetch_local(path, clone, specs, "--quiet", "--update-head-ok")
 
 
 def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) -> None:
     """Fetch a refspec from another repository's path, without adding a remote."""
-    git_command.run(path, "fetch", str(remote_path), refspec)
+    _fetch_local(path, remote_path, [refspec])
+
+
+# A fetch between two repositories on this machine. git refuses every transport but a local
+# path, whatever `url.<base>.insteadOf` rewrites the source to, and lists an alternate's refs
+# with `true` (none) in place of the receiving config's `core.alternateRefsCommand`.
+_LOCAL_FETCH_ENV = {
+    "GIT_ALLOW_PROTOCOL": "file",
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "core.alternateRefsCommand",
+    "GIT_CONFIG_VALUE_0": "true",
+}
+
+
+def _fetch_local(
+    path: pathlib.Path, source: pathlib.Path, refspecs: Sequence[str], *options: str
+) -> None:
+    """Fetch from a repository on this machine, running no program the receiving config names.
+
+    Args:
+        path: The repository fetched into.
+        source: The repository fetched from.
+        refspecs: What to fetch.
+        *options: Further `git fetch` options.
+    """
+    git_command.run(
+        path,
+        "fetch",
+        "--no-recurse-submodules",
+        *options,
+        # Absolute: git reads no `remote.<name>` section whose name starts with `/`.
+        str(source.absolute()),
+        *refspecs,
+        env_extra=_LOCAL_FETCH_ENV,
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

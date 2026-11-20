@@ -75,9 +75,12 @@ def unsupported_note() -> str:
     return f"unsupported git version {found}: agent6 needs git {floor} or newer"
 
 
-# Repo-config keys that run a repo-controlled command on the host, blanked with `-c` (highest
-# precedence): fsmonitor on every index refresh, diff.external on every diff, gpg.program on
-# every commit. None costs correctness: agent6's per-turn commits are unsigned by design.
+# Repo-config keys that run a repo-controlled command on the host, overridden with `-c` (highest
+# precedence): fsmonitor on every index refresh, diff.external on every diff, a gpg program on
+# a commit (commit.gpgsign) and on a log, show or stash list (log.showSignature),
+# gc.recentObjectsHook after a commit or a fetch (maintenance.auto), and a credential helper
+# on a fetch's bundle download (fetch.bundleURI). None costs correctness: agent6 signs and
+# verifies nothing, and the operator's own git still runs maintenance.
 # Content drivers (filter.*, merge.*.driver) have no blanket switch; `repo_driver_overrides`
 # blanks each by name. The prefix keys pin the `a/` and `b/` headers every cited path reads.
 _GIT_HARDENING: tuple[str, ...] = (
@@ -87,6 +90,12 @@ _GIT_HARDENING: tuple[str, ...] = (
     "diff.external=",
     "-c",
     "commit.gpgsign=false",
+    "-c",
+    "log.showSignature=false",
+    "-c",
+    "maintenance.auto=false",
+    "-c",
+    "fetch.bundleURI=",
     "-c",
     "diff.noprefix=false",
     "-c",
@@ -262,10 +271,13 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
     # `pager.<cmd>`, which a jailed command can write into .git/config under `partial`.
     pager = os.environ.get("GIT_PAGER") or os.environ.get("PAGER") or "less"
     # Disable terminal credential prompts; stable Git prose keeps the stash rescue parseable.
+    # No lazy fetch: a promisor remote in .git/config would fetch a missing object through
+    # the repository's own transport keys (`core.sshCommand`, a credential helper).
     return child_env.without_provider_keys(
         {
             **inherited,
             "GIT_TERMINAL_PROMPT": "0",
+            "GIT_NO_LAZY_FETCH": "1",
             "GIT_PAGER": pager,
             "LC_ALL": "C",
             **(extra or {}),

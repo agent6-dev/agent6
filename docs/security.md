@@ -580,7 +580,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - the package spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
     - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags.
-      By default, these flags switch off the repository's hooks, fsmonitor, external diff, textconv, commit signing, and filter and merge drivers.
+      By default, these flags switch off the repository's hooks, fsmonitor, external diff, textconv, commit signing, signature verification, automatic maintenance, and filter and merge drivers.
     - `sessions diff` and `ask` read only.
     - `skills install` clones with fixed argv.
 - The web Git page's writes go through the same package, under the sign-in: stage and unstage by file, restore one tracked file from the index after a confirm, commit the index under the repository's own identity, create a branch at HEAD, switch branches.
@@ -625,6 +625,12 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 **Repo-controlled host code in a poisoned `.git/config`**
 
 - `core.fsmonitor`, `diff.external` and `diff.<d>.textconv` are always off.
+- `gpg.program` and the other signing programs never run: agent6's git signs no commit (`commit.gpgSign`) and verifies no signature (`log.showSignature`).
+- `gc.recentObjectsHook` never runs: agent6's git starts no automatic maintenance (`maintenance.auto`).
+- `core.sshCommand`, `core.gitProxy` and a credential helper never run.
+    - a fetch between the repository and a session's clone takes a local path only (`GIT_ALLOW_PROTOCOL`), whatever `url.<base>.insteadOf` rewrites the path to
+    - that fetch downloads no bundle (`fetch.bundleURI`), runs no `core.alternateRefsCommand` and fetches no submodule
+    - a missing object is never fetched from a promisor remote (`GIT_NO_LAZY_FETCH`): in a partial clone, agent6's git fails on an object the clone lacks
 - `core.pager` and `pager.<cmd>` never run: every agent6 git call carries `GIT_PAGER`, set to your `GIT_PAGER`, else your `PAGER`, else `less`.
 - `blame.ignoreRevsFile` is honoured for a repository-relative regular file, which blame reads as a private copy in a private work tree, since git opens the configured path itself after any check; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
     - Finding line-origin classification uses the same bounded blame reader and records an unknown reason on refusal.
