@@ -83,12 +83,18 @@ function gitDiffViewer(body) {
     const narrow = window.matchMedia('(width <= 48.75em)').matches;
     const splitWanted = narrow && mode === 'split';
     if (splitWanted) mode = 'inline';
+    // A deleted file has no new side and an added one no old side, handled as split is on a phone.
+    const [absent, gone] = f.status === 'D' ? ['new', 'the file was deleted, so it has no new side']
+      : f.status === 'A' ? ['old', 'the file was added, so it has no old side'] : ['', ''];
+    const sideWanted = mode === absent;
+    if (sideWanted) mode = 'inline';
     if (!f.binary) {
       const modes = el('span', 'gview');
       for (const m of DIFF_MODES) {
         const b = el('button', 'mini', m); b.setAttribute('aria-pressed', String(m === mode));
         b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
         if (m === 'split' && narrow) { b.disabled = true; b.title = 'split needs a wider screen'; }
+        if (m === absent) { b.disabled = true; b.title = gone; }
         b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole, fullContext); };
         modes.appendChild(b);
       }
@@ -151,6 +157,7 @@ function gitDiffViewer(body) {
       if (!parsed.length) parsed.push(file);
     }
     if (splitWanted) patch.appendChild(el('div', 'muted gf-note', 'split needs a wider screen: showing inline'));
+    if (sideWanted) patch.appendChild(el('div', 'muted gf-note', gone + ': showing inline'));
     let sideText = null;
     if (mode === 'inline') patch.appendChild(renderUnified(parsed, true, d.old_spans, d.new_spans));
     else if (mode === 'split') patch.appendChild(renderSplit(file, d.old_spans, d.new_spans));
@@ -228,10 +235,6 @@ function gitDiffViewer(body) {
   // The file at one side of a diff, its changed lines marked: the deletions on the old
   // side, the additions on the new. The text comes highlighted from /api/git/text.
   const showSide = async (host, ctx, f, file, side, current, whole, openWhole) => {
-    if ((side === 'old' && f.status === 'A') || (side === 'new' && f.status === 'D')) {
-      host.appendChild(el('div', 'muted gf-note', 'no ' + side + ' side: the file ' + (side === 'old' ? 'was added' : 'was deleted')));
-      return;
-    }
     const rev = side === 'old' ? ctx.base : ctx.head, path = side === 'old' ? (f.old_path || f.path) : f.path;
     host.appendChild(el('div', 'muted', 'loading…'));
     let t;

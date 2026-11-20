@@ -544,6 +544,31 @@ def test_the_diff_tools_keep_their_places_in_every_text_mode(
     assert errors == [], errors
 
 
+@pytest.mark.parametrize(("path", "absent"), [("d.txt", "new"), ("dir/f.txt", "old")])
+def test_a_deleted_or_added_file_offers_no_side_it_lacks(
+    open_page: OpenPage, git_port: int, path: str, absent: str
+) -> None:
+    """A deleted file offered its new side (an added one its old), and blame there read failed."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.add_init_script(f"localStorage.setItem('a6-diff-mode', '{absent}')")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/v1..main?path={path}")
+    side = page.get_by_role("button", name=absent, exact=True)
+    expect(side).to_be_disabled()
+    reason = "deleted, so it has no new" if absent == "new" else "added, so it has no old"
+    expect(side).to_have_attribute("title", f"the file was {reason} side")
+    expect(page.get_by_role("button", name="inline", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    expect(page.locator(".git-diff-body")).to_contain_text(f"{reason} side: showing inline")
+    page.get_by_role("button", name="blame", exact=True).click()
+    expect(page.locator(".git-diff .blame-cell").first).to_be_visible()
+    expect(page.locator(".blame-note")).to_have_count(0)
+    assert page.evaluate("localStorage.getItem('a6-diff-mode')") == absent
+    assert errors == [], errors
+
+
 def test_open_in_files_wears_the_mini_buttons_skin(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:
