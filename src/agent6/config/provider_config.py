@@ -425,8 +425,8 @@ class AnthropicProviderEntry(_ProviderBase):
     prompt_caching: bool = pydantic.Field(
         default=True,
         description=(
-            'mark the system prompt and last tool for caching on `backend = "anthropic"`; '
-            "only local compaction also moves cache marks through the messages"
+            'prompt caching for `backend = "anthropic"` only; system prompt, tools and '
+            "growing conversation re-read at 0.1x the input price"
         ),
     )
     server_compaction: bool = pydantic.Field(

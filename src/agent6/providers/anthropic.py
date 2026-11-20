@@ -438,7 +438,8 @@ class AnthropicProvider:
         )
         version_placement, version_value = _anthropic_version(self.deployment)
 
-        # Local compaction can use the other two cache breakpoints in messages.
+        # Of the four cache breakpoints, this marks the system block and the last tool; the harness
+        # places the other two in `messages`.
         system_blocks: list[dict[str, Any]] = [{"type": "text", "text": system}]
         if self.prompt_caching:
             system_blocks[0]["cache_control"] = {"type": "ephemeral"}

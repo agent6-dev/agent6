@@ -240,6 +240,8 @@ def test_size_repeats_the_successful_worker_request_before_adopting_its_reply() 
     assert calls[0]["compaction"] == provider_types.ClearToolResults(2, ("ask_user",))
     assert isinstance(calls[1]["compaction"], provider_types.Summarise)
     assert all(calls[0][key] == calls[1][key] for key in ("system", "tools", "messages"))
+    # The cache mark moves to the newest user block on this route too.
+    assert "cache_control" in calls[0]["messages"][-1]["content"][-1]
     assistant = conv.assistant(got.raw["content"])
     tu = assistant.tool_uses[0]
     conv.results([loop_conversation.ToolResultItem(tu.id, "result", tu)])

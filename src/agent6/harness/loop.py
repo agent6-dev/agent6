@@ -704,11 +704,12 @@ class Harness:
         endpoint = self.compaction.endpoint.writes_summary
         for call_id, reason in conversation.limit_attachments(append_only=endpoint):
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
-        restarted = False
-        if not endpoint:
-            conversation.roll_cache_marks()
-            assert self.compactor is not None
-            restarted = self.compactor.compact(self.compaction_context(conversation, state, tools))
+        conversation.roll_cache_marks()
+        assert self.compactor is not None
+        # An endpoint summary covers a request already sent, so it follows the reply instead.
+        restarted = not endpoint and self.compactor.compact(
+            self.compaction_context(conversation, state, tools)
+        )
         if self.contract is not None:
             # A reviewer reads which reply this is, and on the last that it decides now.
             # Said after compaction: a restart's kept tail would otherwise repeat it.
@@ -720,7 +721,7 @@ class Harness:
             if parked is not None:
                 return parked
             self._maybe_surface_current_task(conversation, state)
-        if not endpoint and (restarted or self.contract is not None):
+        if restarted or self.contract is not None:
             conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
