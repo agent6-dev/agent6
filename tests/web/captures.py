@@ -14,4 +14,4 @@ def save(page: Page, name: str) -> None:
         target = pathlib.Path(directory)
         target.mkdir(parents=True, exist_ok=True)
         width = page.evaluate("innerWidth")
-        page.screenshot(path=str(target / f"{name}-{width}.png"))
+        page.screenshot(path=str(target / f"{name}-{width}.png"), animations="disabled")

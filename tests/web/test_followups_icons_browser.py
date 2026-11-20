@@ -38,5 +38,9 @@ def test_control_icons_use_labelled_svg_not_font_glyphs(
         button = page.get_by_role("button", name=name, exact=True)
         expect(button.locator("svg[aria-hidden=true]")).to_have_count(1)
         assert button.locator("svg").get_attribute("stroke") == "currentColor"
+        if route == "/git":
+            expect(page.locator(".gc-row").first).to_be_visible()
+        elif route.startswith("/git/compare/"):
+            expect(page.locator(".gf-open").first).to_be_visible()
         captures.save(page, "icons-" + name.replace(" ", "-"))
     assert not errors

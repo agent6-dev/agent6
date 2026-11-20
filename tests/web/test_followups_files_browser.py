@@ -45,5 +45,7 @@ def test_refresh_reads_worktree_changes_and_keeps_the_filter(
     expect(page.locator('.files-tree [data-path="dir/new.txt"]')).to_be_visible()
     expect(page.locator('.files-tree [data-path="dir/f.txt"]')).to_have_count(0)
     expect(search).to_have_value("dir/")
+    if width == 1440:
+        expect(page.locator(".files-view [data-line='1']")).to_contain_text("fresh bytes")
     captures.save(page, "files-refresh-tree")
     assert not errors
