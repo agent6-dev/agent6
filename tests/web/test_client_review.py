@@ -18,7 +18,7 @@ def _run(scenario: str) -> None:
     if node is None:
         pytest.skip("node is needed to exercise findings")
     scripts = client_assets.script(
-        "controls", "router", "layout", "source", "review", "git_diff", "git", "files"
+        "controls", "router", "docks", "layout", "source", "review", "git_diff", "git", "files"
     )
     dom = (
         _DOM.replace(
@@ -46,7 +46,8 @@ postJSON = async (url, body) => {
 };
 const paintRun = () => {};
 Element.prototype.focus = function() { this.focused = true; };
-window.matchMedia = () => ({matches: false});
+const matchMedia = () => ({matches: false, addEventListener() {}});
+window.matchMedia = matchMedia;
 const entry = (side = 'base', line = 2, path = 'old.txt') => ({
   session_id: 'run', version: 1, matches: true,
   panel: {panel_id: 'panel', target: {base_tree: 'bt', head_tree: 'ht'}},
