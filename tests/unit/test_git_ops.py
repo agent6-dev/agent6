@@ -2185,6 +2185,37 @@ def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: pathlib.Pa
         held.chmod(0o700)
 
 
+def test_remove_worktree_ignores_the_pointer_the_worktree_holds(tmp_path: pathlib.Path) -> None:
+    """A worktree's `.git` file naming another worktree's record had that record deleted."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    base = _rev(repo, "HEAD")
+    fork, other = tmp_path / "fork", tmp_path / "other"
+    git_ops.add_worktree(repo, fork, base)
+    git_ops.add_worktree(repo, other, base)
+    (other / "staged.txt").write_text("kept\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(other), "add", "staged.txt"], check=True)
+    records = repo / ".git" / "worktrees"
+    (fork / ".git").write_text(f"gitdir: {records / 'other'}\n", encoding="utf-8")
+
+    assert git_ops.remove_worktree(repo, fork) is True
+    assert not fork.exists()
+    assert sorted(p.name for p in records.iterdir()) == ["other"]
+    assert git_read.porcelain_entries(other) == [("A ", "staged.txt")]
+
+
+def test_remove_worktree_keeps_a_locked_worktree(tmp_path: pathlib.Path) -> None:
+    """A locked worktree was deleted, where git refuses to remove one."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    wt = tmp_path / "wt"
+    git_ops.add_worktree(repo, wt, _rev(repo, "HEAD"))
+    subprocess.run(["git", "-C", str(repo), "worktree", "lock", str(wt)], check=True)
+
+    assert git_ops.remove_worktree(repo, wt) is False
+    assert (wt / "README.md").is_file()
+
+
 def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pathlib.Path) -> None:
     """The operator's diff prefix settings do not change the headers agent6 reads.
 

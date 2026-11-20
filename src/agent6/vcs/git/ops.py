@@ -235,6 +235,8 @@ def add_worktree(path: pathlib.Path, dest: pathlib.Path, sha: str) -> None:
 def remove_worktree(path: pathlib.Path, dest: pathlib.Path) -> bool:
     """Delete a linked worktree of the repository and git's record of it.
 
+    git lists its linked worktrees and drops the record it holds for this one: the
+    worktree's own `.git` pointer, which a jailed command there can write, is never read.
     Only that entry goes: a repo-wide `worktree prune` would also drop the record of an
     operator's worktree whose directory is missing for the moment.
 
@@ -243,27 +245,23 @@ def remove_worktree(path: pathlib.Path, dest: pathlib.Path) -> bool:
         dest: The worktree.
 
     Returns:
-        True when deleted; False when the directory is not a worktree of this repository
-        or could not be removed.
+        True when deleted; False when git lists no such linked worktree, lists it locked,
+        or the directory could not be removed.
     """
-    pointer = dest / ".git"
-    if not pointer.is_file():
-        return False
-    text = pointer.read_text(encoding="utf-8", errors="replace").strip()
-    if not text.startswith("gitdir:"):
-        return False
-    admin = pathlib.Path(text[len("gitdir:") :].strip())
-    if not admin.is_absolute():
-        admin = dest / admin
-    admin = admin.resolve()
-    if admin.parent != git_read.git_common_dir(path) / "worktrees":
+    fields = git_command.nul_fields(path, "worktree", "list", "--porcelain", "-z", check=False)
+    # One record per worktree, an empty field after each; record 0 is the main checkout.
+    name = f"worktree {dest.resolve()}"
+    start = fields.index(name) if name in fields else 0
+    if not start or any(
+        field.split(" ")[0] == "locked" for field in fields[start : fields.index("", start)]
+    ):
         return False
     try:
         shutil.rmtree(dest)
     except OSError:
         return False  # what stayed keeps its record, so git and the caller still see it
-    shutil.rmtree(admin, ignore_errors=True)
-    return True
+    # With the directory gone, git removes only its record of the path.
+    return git_command.run(path, "worktree", "remove", str(dest), check=False).ok
 
 
 def create_branch_at(path: pathlib.Path, name: str, sha: str) -> None:
