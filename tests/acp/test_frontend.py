@@ -37,6 +37,7 @@ def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
         return reply
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=_ask,
         capabilities=frontend.FrontendCapabilities(can_ask=can_ask),
         agent6_exe=lambda: "agent6",
@@ -222,11 +223,11 @@ def test_the_steer_seam_is_inert() -> None:
     steer.reset_stage()
 
 
-def test_parallel_children_are_not_spawned_into_a_single_pane(tmp_path: pathlib.Path) -> None:
-    """`/parallel` fans out sibling runs.
-
-    An ACP client renders ONE session, so children would run invisibly.
-    """
+def test_a_child_cannot_dispatch_work_through_acp(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The parent spawner does not grant work dispatch in a child."""
+    monkeypatch.setenv("AGENT6_CHILD", "1")
     from agent6.config import Config
 
     front, _asked = _frontend()
@@ -300,6 +301,7 @@ def test_a_request_names_the_call_the_prompt_carries(tmp_path: pathlib.Path) -> 
         return options[0]
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=_ask,
         capabilities=frontend.FrontendCapabilities(can_ask=True),
         agent6_exe=lambda: "agent6",
@@ -342,6 +344,7 @@ def test_a_multi_question_ask_shares_one_deadline(
         return None
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=_ask,
         capabilities=frontend.FrontendCapabilities(can_ask=True),
         agent6_exe=lambda: "agent6",

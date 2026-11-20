@@ -90,6 +90,11 @@ def is_child() -> bool:
     return bool(os.environ.get("AGENT6_CHILD"))
 
 
+def can_dispatch_work(mode: str) -> bool:
+    """Return whether this execution can start child work outside a review panel."""
+    return mode == "run" and not is_child() and not os.environ.get(ENV)
+
+
 def dispatch_authority(
     cfg: Config, *, mode: str, session_id: str, root: pathlib.Path
 ) -> child_records.DispatchAuthority:
@@ -117,7 +122,7 @@ def dispatch_authority(
         )
     deadline = launch.limits.deadline_at if launch is not None and launch.limits else None
     return child_records.DispatchAuthority(
-        work=worker and not in_child,
+        work=can_dispatch_work(mode),
         panels=(worker or (not in_child and mode in ("ask", "plan")))
         and cfg.review.when != "never",
         deadline_at=deadline,

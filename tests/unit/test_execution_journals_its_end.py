@@ -342,6 +342,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
     monkeypatch.setattr(paths, "chown_to_real_user", _chown)
     frontend = dataclasses.replace(
         acp_frontend.acp_frontend(
+            say=lambda _line: None,
             ask=lambda _p, _o, _s, _c, _u=None: None,
             capabilities=app_frontend.FrontendCapabilities(can_ask=False),
             agent6_exe=lambda: "agent6",
@@ -430,6 +431,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
 
     frontend = dataclasses.replace(
         acp_frontend.acp_frontend(
+            say=lambda _line: None,
             ask=lambda _p, _o, _s, _c, _u=None: None,
             capabilities=app_frontend.FrontendCapabilities(can_ask=False),
             agent6_exe=lambda: "agent6",
@@ -559,6 +561,7 @@ def _wired_frontend(
         )
 
     frontend = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=app_frontend.FrontendCapabilities(can_ask=False),
         agent6_exe=lambda: "agent6",

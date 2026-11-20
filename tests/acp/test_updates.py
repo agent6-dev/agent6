@@ -12,6 +12,8 @@ import json
 import pathlib
 from typing import Any, cast
 
+import pytest
+
 from agent6 import directive
 from agent6.ui.acp import updates as acp_updates
 from agent6.viewmodel import transcript, transcript_items
@@ -511,6 +513,18 @@ def test_the_pin_directive_is_advertised_when_the_run_starts() -> None:
     assert pin["name"] == "pin"
     assert pin["description"] == directive.STEER_COMMANDS["/pin"]
     assert pin["input"] == {"type": "text", "hint": "<text>"}
+
+
+def test_an_editor_cannot_offer_work_dispatch_from_a_child(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A child cannot dispatch operator work even when its config permits a review panel."""
+    monkeypatch.setenv("AGENT6_CHILD", "1")
+    start = {"type": "session.start", "user_task": "x", "mode": "run"}
+    commands = next(
+        u
+        for u in _updates_of(_info(), [start])
+        if u["sessionUpdate"] == "available_commands_update"
+    )
+    assert all(c["name"] != "parallel" for c in commands["availableCommands"])
 
 
 def test_review_is_advertised_as_a_session_directive() -> None:

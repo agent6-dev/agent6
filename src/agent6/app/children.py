@@ -12,7 +12,7 @@ import os
 import pathlib
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Protocol
 
 from agent6 import budget as agent6_budget
@@ -81,9 +81,48 @@ class ChildRuntime:
 
     Attributes:
         spawn: Launches a detached agent6 run and locates its session dir.
+        observe: Opens a reader before launch with the child, its record dir and whether it resumes.
+            The watch calls the reader on each poll and once before it returns the result.
     """
 
     spawn: SpawnRun
+    observe: Callable[[child_records.ChildSpec, pathlib.Path, bool], Callable[[], None]] | None = (
+        None
+    )
+
+    @contextlib.contextmanager
+    def observing(
+        self,
+        spec: child_records.ChildSpec,
+        state: pathlib.Path,
+        continuing: bool,
+        watch: Callable[[pathlib.Path, str, str], bool] | None,
+    ) -> Iterator[Callable[[pathlib.Path, str, str], bool] | None]:
+        """Give the observer a last read before the parent can join the child.
+
+        Args:
+            spec: The child to watch.
+            state: The origin's record state.
+            continuing: The child resumes in the same directory.
+            watch: Count spend and relay prompts while the child runs.
+
+        Yields:
+            The watch for this execution of the child.
+        """
+        if self.observe is None:
+            yield watch
+            return
+        directory = child_wait.child_dir(state, spec.session_id, mode=spec.mode)
+        drain = self.observe(spec, directory, continuing)
+
+        def poll(directory: pathlib.Path, label: str, status: str) -> bool:
+            drain()
+            return watch(directory, label, status) if watch is not None else False
+
+        try:
+            yield poll
+        finally:
+            drain()
 
 
 def child_settings(
@@ -1086,36 +1125,39 @@ def build_child_spawner(
                     or ipc.stop_request_is_now(parent_dir)
                 )
 
-            return run_child_to_completion(
-                spec,
-                child.task,
-                pins=child.pins,
-                at=at,
-                cfg=cfg,
-                gate_source=gate_source,
-                explicit_leaves=explicit_leaves,
-                origin=origin,
-                record_state=record_state,
-                group=group_id,
-                parent=parent_session_id,
-                runtime=runtime,
-                max_usd=max_usd,
-                auto_approve=auto_approve,
-                child_away=child_away,
-                import_lock=import_lock,
-                reporter=reporter,
-                should_stop=should_stop,
-                stop_is_now=stop_is_now,
-                hard_stop=hard_stop,
-                limits=child.limits,
-                allowance=child.allowance,
-                contract=child.contract,
-                continuation=child.continuation.instruction
-                if child.continuation is not None
-                else "",
-                watch=watch,
-                parent_events=parent_events,
-            )
+            with runtime.observing(
+                spec, record_state, child.continuation is not None, watch
+            ) as poll:
+                return run_child_to_completion(
+                    spec,
+                    child.task,
+                    pins=child.pins,
+                    at=at,
+                    cfg=cfg,
+                    gate_source=gate_source,
+                    explicit_leaves=explicit_leaves,
+                    origin=origin,
+                    record_state=record_state,
+                    group=group_id,
+                    parent=parent_session_id,
+                    runtime=runtime,
+                    max_usd=max_usd,
+                    auto_approve=auto_approve,
+                    child_away=child_away,
+                    import_lock=import_lock,
+                    reporter=reporter,
+                    should_stop=should_stop,
+                    stop_is_now=stop_is_now,
+                    hard_stop=hard_stop,
+                    limits=child.limits,
+                    allowance=child.allowance,
+                    contract=child.contract,
+                    continuation=child.continuation.instruction
+                    if child.continuation is not None
+                    else "",
+                    watch=poll,
+                    parent_events=parent_events,
+                )
 
         started: list[child_records.StartedChild] = []
         for spec, child in zip(specs, children, strict=True):

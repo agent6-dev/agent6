@@ -36,13 +36,24 @@ Inspect persisted [line-origin evidence](usage.md#session-findings) with `/findi
 Three more updates ride the journal.
 
 - `session_info_update`: the task's headline as the session title, the line `agent6 sessions list` shows
-- `available_commands_update`: `/pin <text>` and the [review commands](#review-findings).
+- `available_commands_update`: `/pin <text>`, `/parallel [SPEC --] TASK` and the [review commands](#review-findings).
   `/pin` reaches the run as steering text; review commands are handled by the front end, not the model.
-  The composer's other directives (`/compact`, `/btw`, `/task`, ...) are refused, except `/parallel` and `/undo`.
-  `/parallel` starts no children through ACP.
+  The editor refuses composer commands such as `/compact`, `/btw` and `/task`.
   `abort`, `exit`, `detach` and `/undo` are task text over ACP, not terminal commands.
   The editor cancels through `session/cancel`.
 - `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
+
+## Parallel work
+
+`/parallel [SPEC --] TASK` starts child attempts on the [same terms as a run](usage.md#parallel-directive).
+Repeat `/parallel` in the prompt to start another task.
+A first prompt can dispatch these tasks without a parent model call.
+The model can dispatch work only when `[harness.parallel].tool` is on.
+
+Child steps appear as labelled messages in the parent conversation while the children run.
+The parent relays a child's approval request with the child id in the title.
+The children run in their own clones under the run's budget and sandbox settings.
+They get no editor filesystem, terminal or connection.
 
 ## Review findings
 

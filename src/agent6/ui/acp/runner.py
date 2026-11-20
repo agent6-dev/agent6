@@ -20,7 +20,7 @@ import traceback
 from collections.abc import Callable
 from typing import Any, BinaryIO
 
-from agent6 import errors, kinds
+from agent6 import directive, errors, kinds
 from agent6 import paths as agent6_paths
 from agent6.app import finalize, frontend, resume
 from agent6.app import reporter as app_reporter
@@ -367,6 +367,7 @@ class RunBridge:
     ) -> frontend.SessionFrontend:
         """Return the front-end for one turn."""
         return acp_frontend.acp_frontend(
+            say=lambda line: self.server.notify_raw(updates.message_update(session.acp_id, line)),
             ask=lambda prompt, options, standing, call_id, until=None: self.ask(
                 session, announced, prompt, options, standing, call_id, until
             ),
@@ -583,9 +584,15 @@ class RunBridge:
                 effective = session_setup.load_session_config(
                     session.cwd, self.config_paths, mode=acp_session.ACP_MODE
                 )
+                try:
+                    opening = directive.parse_directive(text)
+                except directive.DirectiveError as exc:
+                    reporter.error(str(exc))
+                    return "refusal"
                 code = app_run.run_task(
                     effective.config,
                     text,
+                    opening=tuple(opening or ()),
                     frontend=self._frontend(session, announced),
                     cwd=session.cwd,
                     started_at=started_at,

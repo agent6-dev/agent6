@@ -100,6 +100,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     from agent6.ui.acp import frontend as acp_frontend
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
@@ -243,6 +244,7 @@ def test_the_route_preflight_precedes_isolation(
     monkeypatch.setattr(session_runtime, "select_isolation", _isolation)
     monkeypatch.chdir(tmp_path)
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",

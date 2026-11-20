@@ -36,6 +36,7 @@ def _frontend(calls: list[tuple[str, Any]], *, spawn_err: str = "") -> frontend.
         calls.append(("ask", scopes))
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
@@ -265,6 +266,7 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
     layout.ensure()
     said: list[str] = []
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
@@ -337,6 +339,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
         saved.append((question, answer))
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
@@ -408,6 +411,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
         saved.append((question, answer))
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
@@ -484,6 +488,7 @@ def test_an_answer_streamed_to_the_terminal_is_not_printed_on_it_again(
 
     front = dataclasses.replace(
         acp_frontend.acp_frontend(
+            say=lambda _line: None,
             ask=lambda _p, _o, _s, _c, _u=None: None,
             capabilities=frontend.FrontendCapabilities(),
             agent6_exe=lambda: "agent6",

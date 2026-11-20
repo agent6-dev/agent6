@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent6 import directive, evidence
+from agent6.app import child_launch
 from agent6.sessions import journal
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import receipt, transcript, transcript_items
@@ -93,6 +94,12 @@ ANSWER_COMMAND: dict[str, Any] = {
     "input": {"hint": "<question-id> <text>..."},
 }
 
+_PARALLEL_COMMAND = {
+    "name": "parallel",
+    "description": directive.STEER_COMMANDS["/parallel"],
+    "input": {"hint": "[SPEC --] TASK"},
+}
+
 _COMMANDS: tuple[dict[str, Any], ...] = (
     {
         "name": "pin",
@@ -147,7 +154,7 @@ class RunInfo:
         """
         match str(event.get("type", "")):
             case "session.start":
-                return self._start(str(event.get("user_task", "")))
+                return self._start(str(event.get("user_task", "")), str(event.get("mode", "")))
             case "verify.end":
                 try:
                     self._verification = evidence.from_event(event)
@@ -196,7 +203,7 @@ class RunInfo:
                 pass
         return []
 
-    def _start(self, user_task: str) -> list[dict[str, Any]]:
+    def _start(self, user_task: str, mode: str) -> list[dict[str, Any]]:
         """Return the title, when the task has a headline, and the commands."""
         out: list[dict[str, Any]] = []
         if title := printable(session_status.task_snippet(user_task)):
@@ -207,7 +214,9 @@ class RunInfo:
             )
         commands = {
             "sessionUpdate": "available_commands_update",
-            "availableCommands": list(_COMMANDS),
+            "availableCommands": [*_COMMANDS, _PARALLEL_COMMAND]
+            if child_launch.can_dispatch_work(mode)
+            else list(_COMMANDS),
         }
         out.append(_update(self.acp_session_id, commands))
         return out

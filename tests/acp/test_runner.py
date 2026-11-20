@@ -449,6 +449,7 @@ def _acp_front(*, reply: str | None):
         return reply
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=_ask,
         capabilities=frontend.FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
@@ -1814,6 +1815,7 @@ def test_an_answer_file_ends_the_editors_pending_request(tmp_path: pathlib.Path)
         pytest.fail("the wait never looked at the answer file")
 
     front = acp_frontend.acp_frontend(
+        say=lambda _line: None,
         ask=_editor_never_replies,
         capabilities=frontend.FrontendCapabilities(can_ask=True),
         agent6_exe=lambda: "agent6",

@@ -10,6 +10,7 @@ A client that declared it cannot be asked gets the cautious default instead.
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import pathlib
 import time
@@ -23,6 +24,7 @@ from agent6.harness import loop, loop_snapshot
 from agent6.sessions import event_log, ipc, layout, process
 from agent6.tools import operator_prompts
 from agent6.ui import keymap, steer
+from agent6.ui.acp import child_stream
 
 # Silence past the wait is the cautious answer: an approval denies, a question has none.
 PERMISSION_TIMEOUT_S = 300.0
@@ -59,6 +61,7 @@ class Asker(Protocol):
 def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one place
     *,
     ask: Asker,
+    say: Callable[[str], None],
     capabilities: frontend.FrontendCapabilities,
     agent6_exe: Callable[[], str],
     spawn_detached_resume: Callable[[pathlib.Path, str, Sequence[str]], str],
@@ -67,6 +70,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
     Args:
         ask: Asks the editor one prompt.
+        say: Sends labelled child activity to the editor.
         capabilities: What the client said it can do.
         agent6_exe: The agent6 executable a spawn uses.
         spawn_detached_resume: Spawns a detached resume.
@@ -254,23 +258,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         build_repl_hook=_no_repl,
         run_ask_repl=_no_ask_repl,
         save_ask_transcript=lambda _layout, _question, _answer: None,
-        build_parent_spawner=_no_parent,
+        build_parent_spawner=functools.partial(child_stream.parent_spawner, say=say),
         agent6_exe=agent6_exe,
         spawn_detached_resume=spawn_detached_resume,
     )
-
-
-def _no_parent(
-    _cfg: Config,
-    _explicit_leaves: frozenset[str],
-    _cwd: pathlib.Path,
-    _state_dir: pathlib.Path,
-    _mode: str,
-    _session_id: str,
-    _max_usd: float | None,
-    _auto_approve: bool,
-    _events: event_log.EventSink,
-    _watch: Callable[[pathlib.Path, str, str], bool],
-) -> None:
-    """Refuse `/parallel`: an ACP client renders one session, so children would run unseen."""
-    return None
