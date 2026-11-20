@@ -4,6 +4,7 @@
    Light values reach 4.5:1 for small text on every surface and on a pressed toggle's tint. */
 :root {
   color-scheme: light dark;
+  --shadow: 0 8px 24px light-dark(rgb(0 0 0 / .12), rgb(0 0 0 / .45));
   --bg: light-dark(#f6f8fa, #0e1116); --surface: light-dark(#ffffff, #161b22);
   --surface2: light-dark(#eef1f5, #1c2230); --border: light-dark(#d5dae1, #2a3140);
   --text: light-dark(#1b2028, #d7dde5); --muted: light-dark(#5a6472, #8b95a5);
@@ -272,7 +273,7 @@ button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 .ac-pop { position: fixed; /* a dock that scrolls never clips it */ position-anchor: --entry; left: anchor(left); bottom: anchor(top);
   margin-bottom: 0.25rem; z-index: 40;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 15rem; overflow-y: auto;
+  box-shadow: var(--shadow); max-height: 15rem; overflow-y: auto;
   min-width: 16.25rem; max-width: anchor-size(width); padding: 0.25rem; }
 .ac-item { padding: 0.3125rem 0.625rem; border-radius: 6px; cursor: pointer; font-size: var(--fs-m);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -386,7 +387,7 @@ dialog > #toasts { bottom: 0; } /* the backdrop covers the dock: the messages ke
 .toast {
   display: flex; align-items: flex-start; gap: 0.75rem; max-width: min(100%, 40rem); flex: none; max-height: 100%;
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
-  padding: 0.625rem 1rem; box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: auto;
+  padding: 0.625rem 1rem; box-shadow: var(--shadow); pointer-events: auto;
   white-space: pre-wrap; overflow-wrap: anywhere; /* CLI-captured messages (merge, prune) keep their lines */
 }
 .toast > div { align-self: stretch; overflow-y: auto; } /* a long text scrolls beside its Dismiss button */
@@ -406,7 +407,7 @@ button.x-btn:hover { background-color: color-mix(in srgb, var(--text) 10%, trans
 dialog.card {
   width: 35rem; max-width: calc(100% - 2rem); max-height: calc(100% - 2rem); overflow: auto; padding-top: 0;
   color: var(--text); background: var(--surface); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+  border-radius: 12px; box-shadow: var(--shadow);
 }
 /* While a dialog is open the page behind holds still under a wheel, a swipe or a key, in Firefox too. */
 html:has(dialog[open]) { overflow: hidden; }

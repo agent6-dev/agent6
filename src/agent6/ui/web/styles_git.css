@@ -139,7 +139,7 @@
   position-anchor: --git-refs; position-area: block-end span-inline-end;
   position-try-fallbacks: flip-block, flip-inline; inset: auto; margin: 0.375rem 0; padding: 0.625rem;
   width: min(27.5rem, calc(100vw - 2rem)); color: var(--text); background: var(--surface);
-  border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
 }
 .gfilter-groups { gap: 0.375rem 0.875rem; margin-bottom: 0.5rem; font-size: var(--fs-m); }
 .gfilter-group, .gfilter-item { display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; }

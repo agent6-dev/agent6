@@ -88,7 +88,7 @@
 .gpick-list {
   position: absolute; top: 0; left: 0; right: 0; z-index: 40; margin-top: 2px; padding: 0.25rem;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 18.75rem; overflow-y: auto;
+  box-shadow: var(--shadow); max-height: 18.75rem; overflow-y: auto;
 }
 .gpick-list .ac-item { display: flex; align-items: center; gap: 0.25rem; }
 /* A note row (no match, more, an error) wraps, so its whole text shows. */
@@ -131,7 +131,7 @@ pre:is(.src, .diff):has(.blame-cell) { container: source / inline-size; }
   position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
   inset: auto; margin: 2px 0; width: max-content; max-width: min(27.5rem, calc(100vw - 2rem)); /* the page's gutter on each side */
   display: flex; flex-direction: column; gap: 0.375rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: var(--fs-s)/1.5 system-ui, sans-serif;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow); white-space: normal; overflow-wrap: anywhere; font: var(--fs-s)/1.5 system-ui, sans-serif;
   user-select: text; /* the cell under it is unselectable; the sha and subject are for copying */
 }
 .blame-card:not(:popover-open) { display: none; }

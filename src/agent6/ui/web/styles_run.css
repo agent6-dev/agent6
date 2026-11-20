@@ -187,7 +187,7 @@
     max-height: calc(100dvh - var(--hdr-h) - env(safe-area-inset-top) - 1rem);
     display: flex; flex-direction: column; background: var(--surface);
     border: 1px solid var(--border); border-radius: 10px; overflow: auto;
-    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    box-shadow: var(--shadow);
   }
   .wmenu button { border: 0; border-radius: 0; text-align: left; background: none; }
   .wmenu button[aria-current] { color: var(--accent); }
