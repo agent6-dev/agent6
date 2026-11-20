@@ -428,12 +428,10 @@ def test_dirty_model_git_dispatch_names_the_caller_and_leaves_the_tree_alone(
     )
     assert not answer.children and not children.results
     assert d.chain.head_sha() == children.base and d.chain.is_dirty()
-    assert 'git.control = "model"' in answer.message and "Commit" in answer.message
-    assert "auto-commit" not in answer.message
-    assert (
-        "/parallel" not in answer.message and "parallel tool" in answer.message
-        if source == "model"
-        else "/parallel" in answer.message
+    entry = "the parallel tool" if source == "model" else "/parallel"
+    assert answer.message == (
+        f"[parallel] {entry} requires a committed working tree under git.control = "
+        '"model". Nothing dispatched.'
     )
 
 

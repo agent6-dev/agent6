@@ -1024,7 +1024,9 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
 
     assert spawner.calls == []  # refused: nothing dispatched
     texts = _user_texts(_final_messages(provider))
-    assert any("could not be" in t and "auto-committed" in t for t in texts)
+    assert any(
+        "/parallel could not checkpoint the working tree. Nothing dispatched." in t for t in texts
+    )
 
 
 # The run.py and resume.py wiring gate (depth 1 by construction).

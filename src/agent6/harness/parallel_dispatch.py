@@ -182,17 +182,16 @@ class ParallelDispatcher:
         if not self.ensure_clean(turn, f"{entry} dispatch"):
             if self.chain.ref is None:
                 return self.refused(
-                    f'git.control = "model": children start from committed HEAD. '
-                    f"Commit the working tree, then retry {entry}. Nothing dispatched."
+                    f'{entry} requires a committed working tree under git.control = "model".'
+                    " Nothing dispatched."
                 )
             if not self.chain.per_turn:
                 return self.refused(
-                    "the working tree is not clean and git.commit_per_turn = false."
-                    f" Commit or discard your changes, then retry {entry}. Nothing dispatched."
+                    f"{entry} requires a clean working tree when git.commit_per_turn = false."
+                    " Nothing dispatched."
                 )
             return self.refused(
-                "refusing to dispatch: the working tree is not clean and could not be"
-                f" auto-committed. Commit or discard your changes, then retry {entry}."
+                f"{entry} could not checkpoint the working tree. Nothing dispatched."
             )
         if self.session_dir is None:
             return self.refused(
