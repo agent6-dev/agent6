@@ -112,8 +112,12 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - an open diff hides the repository toolbar, and the unselected graph has no empty details pane
     - split diffs fall back to inline when the diff pane is too narrow, keeping the saved split choice
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; several lines queue up before you write and start the run
-- **Files page**: the files at one revision; a symlink shows its target, a link when the revision lists it; it reads the repository `agent6 web` was started in and writes nothing
+- **Files page**: the files at one revision in the repository `agent6 web` was started in; a symlink shows its target, a link when the revision lists it
     - a markdown file opens rendered, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
+    - **Edit** opens working-tree text in a dialog with **Save** and **Cancel**; it loads the complete file, up to 20 MiB, even when the source preview is cut
+    - the editor checks the disk every two seconds and the server checks again at Save; a change keeps your draft and shows the disk version with **Load new file**, **Overwrite with mine**, and **Save as new file** beside the original
+    - Overwrite acknowledges only the disk version shown; another change refuses it again; Save as new file never replaces an existing file
+    - hidden paths, symlinks, hardlinks, binary files and invalid UTF-8 cannot be edited; saves preserve CRLF line endings and neither stage nor commit
     - the tree keeps the folders you open and opens the ones holding a linked file; ↑ and ↓ move through it, → and ← open and close a folder
     - Back and Forward move between the files opened, and the tree keeps its filter and folds
     - **Refresh** rereads the tree and the open file at the selected revision, keeping the filter and folder folds

@@ -1,12 +1,100 @@
 // --- files -------------------------------------------------------------------
 // The Files tab: the files at one revision (HEAD to start, the working tree, or any
-// revision the picker finds) as a folder tree with a filter, and one file read-only: text
+// revision the picker finds) as a folder tree with a filter, and one file: text
 // with line numbers and highlighting, an image, or a binary file's size and kind. The
 // picked revision and the folders opened outlive a visit to another tab; the tree is fetched
 // again on return.
 // The picker's { rev, label }; each folder path → open; the page's in-place opener, if any.
 const filesState = { rev: null, folders: new Map(), open: null };
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
+
+async function editFileText(path, afterSave) {
+  const dialog = openDialog('Edit ' + path, 'wide files-editor');
+  if (!dialog) return;
+  dialog.setAttribute('closedby', 'closerequest');
+  const field = (name, control, parent = dialog) => {
+    const label = el('label', null, name); label.appendChild(control); parent.appendChild(label); return control;
+  };
+  const text = field('File text', el('textarea', 'field file-text')); text.spellcheck = false; text.disabled = true;
+  const conflict = el('section', 'files-conflict'); conflict.hidden = true; dialog.appendChild(conflict);
+  conflict.appendChild(el('p', null, 'The file changed on disk.'));
+  const disk = field('Disk version', el('textarea', 'field file-disk'), conflict); disk.readOnly = true; disk.rows = 3;
+  const choices = el('div', 'row wrap'); conflict.appendChild(choices);
+  const load = el('button', null, 'Load new file'), overwrite = el('button', null, 'Overwrite with mine');
+  choices.append(load, overwrite);
+  const name = field('New file name', el('input', 'field'), conflict); name.placeholder = 'copy.txt';
+  const copy = el('button', null, 'Save as new file'); conflict.appendChild(copy);
+  const row = el('div', 'row wrap'), save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
+  row.append(save, cancel); dialog.appendChild(row);
+  const error = el('p', 'err'); error.setAttribute('role', 'status'); dialog.appendChild(error);
+  let loaded = null, latest = null, busy = false, timer;
+  const read = () => getJSON('/api/files/text?path=' + encodeURIComponent(path));
+  const buttons = () => {
+    save.disabled = busy || !loaded || !conflict.hidden;
+    load.disabled = busy || latest?.text == null;
+    overwrite.disabled = copy.disabled = busy;
+    text.readOnly = busy;
+  };
+  const changed = snapshot => {
+    latest = snapshot;
+    disk.value = snapshot.text ?? 'The file was removed.';
+    conflict.hidden = false; buttons();
+  };
+  const poll = async () => {
+    try {
+      if (!busy && loaded && conflict.hidden) {
+        const snapshot = await read();
+        if (dialog.open && !busy && snapshot.digest !== loaded.digest) changed(snapshot);
+      }
+    } catch (e) { if (dialog.open) error.textContent = e.message; }
+    if (dialog.open) timer = setTimeout(poll, 2000);
+  };
+  const write = async (destination, digest) => {
+    busy = true; buttons(); error.textContent = '';
+    try {
+      const response = await serverFetch('/api/files/text', {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: destination, text: text.value, digest})});
+      const result = await response.json();
+      if (!dialog.open) return;
+      if (!response.ok) {
+        if (response.status === 409 && destination === path) changed(await read());
+        throw new Error(result.error || 'Save failed');
+      }
+      dialog.close();
+      await afterSave(destination);
+    } catch (e) { if (dialog.open) error.textContent = e.message; else toast(e.message, true); }
+    finally { busy = false; buttons(); }
+  };
+  load.onclick = () => {
+    loaded = latest; text.value = loaded.text; conflict.hidden = true; error.textContent = ''; buttons(); text.focus();
+  };
+  overwrite.onclick = () => write(path, latest.digest);
+  copy.onclick = () => {
+    const value = name.value;
+    if (!value || value.startsWith('.') || /[/\\\x00-\x1f\x7f]/.test(value)) {
+      error.textContent = 'Use a new file name in this folder, without slashes or a leading dot.'; name.focus(); return;
+    }
+    return write(path.slice(0, path.lastIndexOf('/') + 1) + value, null);
+  };
+  save.onclick = () => write(path, loaded.digest);
+  cancel.onclick = () => { if (!busy) dialog.close(); };
+  dialog.addEventListener('cancel', e => {
+    if (busy || (loaded && text.value !== loaded.text)) {
+      e.preventDefault(); error.textContent = busy ? 'Saving…' : 'Unsaved edits. Save or Cancel to discard them.';
+    }
+  });
+  dialog.querySelector('.dialog-head button').onclick = cancel.onclick;
+  dialog.addEventListener('close', () => clearTimeout(timer));
+  buttons();
+  try {
+    loaded = await read();
+    if (!dialog.open) return;
+    if (loaded.text === null) throw new Error('The file was removed. Close the editor and refresh the tree.');
+    text.value = loaded.text; text.disabled = false; buttons(); text.focus();
+    timer = setTimeout(poll, 2000);
+  } catch (e) { if (dialog.open) { loaded = null; buttons(); error.textContent = e.message; } }
+}
+
 async function renderFiles(gen, revision = '', path = '', query = new URLSearchParams()) {
   if (query.has('panel')) return renderReviewedFile(gen, path, query);
   // A hash at the revision listed, or naming none, moves within the page: the tree keeps its state.
@@ -258,6 +346,11 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       // Blame stays, disabled, so the head keeps the shape it had while the file loaded.
       blame.title = 'a binary file has no lines to blame'; modes.remove(); blame.hidden = false;
       note.textContent = facts.join(' · '); box.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return;
+    }
+    if (rev === GIT_WORKTREE && !f.path.split('/').some(part => part.startsWith('.'))) {
+      const edit = el('button', 'mini', 'Edit'); edit.setAttribute('aria-haspopup', 'dialog');
+      edit.onclick = () => editFileText(f.path, savedPath => current() && loadTree(savedPath));
+      head.insertBefore(edit, note);
     }
     facts.push(t.lines === 1 ? '1 line' : t.lines + ' lines');
     note.textContent = facts.join(' · ');
