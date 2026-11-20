@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -19,7 +20,6 @@ import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6 import kinds
-from agent6.models import anthropic as anthropic_models
 from agent6.providers import (
     anthropic_parse,
     provider_types,
@@ -90,11 +90,29 @@ _SUMMARISE_DISPLAY_MARKERS = (
 )
 
 
+_PREFIX_CHECK_MODELS = frozenset(
+    {
+        "claude-fable-5-1",
+        "claude-fable-5-2",
+        "claude-haiku-5-5",
+        "claude-mythos-5-1",
+        "claude-mythos-5-2",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+    }
+)
+
+
+def _model_id(model: str) -> str:
+    """Return the model id without a direct or Vertex release date."""
+    return re.sub(r"[-@][0-9]{8}$", "", model)
+
+
 def endpoint_compaction(
     model: str, *, server_compaction: bool
 ) -> provider_types.EndpointCompaction:
     """Return the compaction operations enabled on this Messages route."""
-    enabled = server_compaction and anthropic_models.has_signed_compaction(model)
+    enabled = server_compaction and _model_id(model) in _PREFIX_CHECK_MODELS
     return provider_types.EndpointCompaction(clears_tool_results=enabled, writes_summary=enabled)
 
 
@@ -140,7 +158,7 @@ def _history_options(
     thinking = body.get("thinking")
     if (
         deployment in ("direct", "vertex")
-        and anthropic_models.has_signed_compaction(model)
+        and _model_id(model) in _PREFIX_CHECK_MODELS
         and isinstance(thinking, dict)
         and thinking.get("type") in ("enabled", "adaptive")
     ):

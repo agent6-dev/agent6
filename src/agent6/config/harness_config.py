@@ -612,7 +612,8 @@ class CompactionConfig(pydantic.BaseModel):
             The model unchanged.
 
         Raises:
-            ValueError: One threshold set without the other, or tier 2 at or below tier 1.
+            ValueError: One threshold set without the other, tier 2 at or below tier 1, or tier 2
+                at or below the verbatim tail.
         """
         drop, summarise = self.drop_at_chars, self.summarise_at_chars
         if (drop is None) != (summarise is None):
@@ -629,6 +630,12 @@ class CompactionConfig(pydantic.BaseModel):
                 f" ({summarise}) must be greater than"
                 f" drop_at_chars ({drop}): tier-2"
                 " summarise must escalate above tier-1 elision."
+            )
+        if summarise is not None and summarise <= self.keep_recent_chars:
+            raise ValueError(
+                f"compaction.summarise_at_chars ({summarise}) must be greater than"
+                f" keep_recent_chars ({self.keep_recent_chars}): the verbatim tail"
+                " alone would re-trigger tier 2 after every restart."
             )
         return self
 
