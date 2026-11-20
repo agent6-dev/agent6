@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import shlex
 import sys
 from collections.abc import Callable, Sequence
 
@@ -137,16 +138,28 @@ def build_approver(
         """Return one approval's answer: the front-end's, the away-mode's, or the terminal's."""
         # A run with no terminal says on stderr what it waits on and how it was answered.
         headless = not portable.has_controlling_tty()
-        tool = approval_parts(request.prompt)[0].removeprefix("Allow ")
         parked = False
 
         def park() -> None:
             nonlocal parked
-            if not parked:
-                _note(
-                    f"waiting on {request.id} ({tool}); answer it with:"
-                    f" agent6 attach {session_dir.name}"
-                )
+            if parked:
+                return
+            head, payload = approval_parts(request.prompt)
+            requester, _, tool = head.rpartition("Allow ")
+            label = (requester or f"[session {session_dir.name}] ") + tool
+            target = ""
+            if tool == "fetch":
+                # Checked.prompt() supplies the vetted host and path, then the private query.
+                target = payload.partition("?")[0]
+            elif request.scope == ipc.COMMAND_SCOPE and payload:
+                target = shlex.split(payload)[0]
+            # An MCP tool's qualified name already names its server. Keep its arguments private.
+            if target:
+                label += f": {terminal.line_preview(target)}"
+            _note(
+                f"waiting on {request.id} ({label}); answer it with:"
+                f" agent6 attach {session_dir.name}"
+            )
             parked = True
 
         def answered(

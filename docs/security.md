@@ -622,7 +622,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - A tool name matching no configured server is refused, not prompted.
 - The `fetch` off-list host prompt and the sandbox-off gate take no standing answer; both say so, and no front-end shows the button
 - `sandbox.isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue? [y/N]` interactively, a warning in CI and `machine run`.
-- A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope).
+- A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every standing scope).
+  Under `approve`, a fetch outside `sandbox.fetch_approved_hosts` still waits for an answer.
   An unattended machine auto-denies.
 - A child or reviewer a run dispatched puts its approval, or the question it waits on, to that run's operator: the prompt shows on the run, named for the child, and the answer goes back over the session's file bridge, which no jail can reach.
   An "allow all" or "deny all" given on the run covers its children for that scope.

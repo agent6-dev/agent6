@@ -23,9 +23,11 @@ from typing import Any
 import pytest
 
 from agent6 import portable
+from agent6.app import child_watch, frontend
+from agent6.config import Config
+from agent6.sessions import event_log, journal, process
 from agent6.sessions import ipc as sessions_ipc
-from agent6.sessions import journal, process
-from agent6.tools import operator_prompts, schema
+from agent6.tools import dispatch, fetch, operator_prompts, schema, tool_errors
 from agent6.ui.cli import interact, steer_tty
 
 pytestmark = pytest.mark.filterwarnings(
@@ -189,7 +191,7 @@ def _approve(session_dir: pathlib.Path) -> bool:
         approver=interact.build_approver(session_dir),
         journal=_Events().emit,
         session_dir=session_dir,
-    ).approve("Allow run_command: ls", scope=None)
+    ).approve("Allow run_command: ls -l", scope=sessions_ipc.COMMAND_SCOPE)
 
 
 def test_a_headless_park_names_the_prompt_and_the_attach_command_on_stderr(
@@ -211,11 +213,59 @@ def test_a_headless_park_names_the_prompt_and_the_attach_command_on_stderr(
 
     err = capsys.readouterr().err.splitlines()
     assert err == [
-        f"[agent6] waiting on approval-1 (run_command); answer it with: agent6 attach"
-        f" {tmp_path.name}",
+        f"[agent6] waiting on approval-1 ([session {tmp_path.name}] run_command: ls);"
+        f" answer it with: agent6 attach {tmp_path.name}",
         "[agent6] approval-1 approved (await-frontend)",
     ]
     assert tty_lines == []
+
+
+@pytest.mark.parametrize("relayed", [False, True], ids=["session", "reviewer"])
+def test_a_headless_fetch_wait_names_the_requester_and_target(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    relayed: bool,
+) -> None:
+    """A fetch still parks under approve, naming the requester and path without the query."""
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
+    cfg = Config()
+    frontend.settle_away_mode(tmp_path, cfg, can_ask=False)
+
+    def decline_fetch(event: journal.Event) -> None:
+        if isinstance(event, journal.ApprovalPrompt):
+            sessions_ipc.write_answer(tmp_path, event.id, "no")
+
+    prompts = operator_prompts.OperatorPrompts(
+        approver=interact.build_approver(tmp_path), session_dir=tmp_path, journal=decline_fetch
+    )
+    path = "/guide/" + ("p" * 300 if relayed else "index")
+    url = f"https://docs.example:8443{path}?token=private#fragment"
+    if relayed:
+        child = tmp_path / "run-p1-l1"
+        event_log.EventSink(child / "logs.jsonl").emit(
+            journal.ApprovalPrompt(
+                id="approval-1",
+                prompt=f"Allow fetch: {fetch.check_url(url).prompt()}",
+                standing=False,
+            )
+        )
+        child_watch.ChildWatch(prompts, tmp_path)(child, "reviewer 1 run-p1-l1", "waiting")
+        requester = "[reviewer 1 run-p1-l1]"
+    else:
+        with pytest.raises(tool_errors.ToolDeniedError, match="fetch not approved"):
+            dispatch.ToolDispatcher(root=tmp_path, config=cfg, prompts=prompts).dispatch(
+                "fetch", {"url": url}
+            )
+        requester = f"[session {tmp_path.name}]"
+
+    waiting, answer = capsys.readouterr().err.splitlines()
+    assert f"waiting on approval-1 ({requester} fetch: docs.example:8443 /guide/" in waiting
+    assert waiting.endswith(f"); answer it with: agent6 attach {tmp_path.name}")
+    assert ("…);" if relayed else "index);") in waiting
+    assert "p" * 120 not in waiting and "?" not in waiting and "private" not in waiting
+    assert answer == "[agent6] approval-1 denied (await-frontend)"
 
 
 def test_a_headless_park_behind_a_live_front_end_prints_too(
@@ -236,7 +286,8 @@ def test_a_headless_park_behind_a_live_front_end_prints_too(
     assert _approve(tmp_path) is False
 
     err = capsys.readouterr().err.splitlines()
-    assert len(err) == 2 and "waiting on approval-1 (run_command)" in err[0]
+    assert len(err) == 2
+    assert f"waiting on approval-1 ([session {tmp_path.name}] run_command: ls)" in err[0]
     assert err[1] == "[agent6] approval-1 denied (frontend)"
 
 

@@ -164,7 +164,7 @@ agent6 forward ID 8000        # reach a port inside the run's network; --local-p
 ## Unattended chains
 
 Development briefs follow the [unattended-chain rule](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md#dev-environment-and-session-practice).
-`AGENT6_DETACHED_AWAY=approve` grants approvals; it does not answer questions.
+`AGENT6_DETACHED_AWAY=approve` grants every standing scope; a fetch outside `sandbox.fetch_approved_hosts` still waits for an answer.
 A headless run still waits on `ask_user(wait=true)` unless away mode is `deny`.
 
 An external chain driver polls `agent6 attach ID --json`, as well as watching child exit.

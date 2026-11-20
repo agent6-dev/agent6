@@ -196,6 +196,8 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
     note = app_preflight.headless_parking_note(allowed, tui_enabled=False, away="", can_ask=False)
     assert note is not None
     assert "parks the run" in note and "AGENT6_DETACHED_AWAY=deny" in note
+    assert "=approve grants every standing scope" in note
+    assert "fetch approval still waits for an answer" in note
     assert (
         app_preflight.headless_parking_note(_ask_cfg(), tui_enabled=False, away="", can_ask=False)
         is None

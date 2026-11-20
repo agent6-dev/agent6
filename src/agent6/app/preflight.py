@@ -526,8 +526,9 @@ def headless_parking_note(
         return None
     return (
         "no terminal, no front-end and no away-mode: a fetch outside sandbox.fetch_approved_hosts"
-        " or an MCP call parks the run at its approval until `agent6 attach` answers it"
-        " (AGENT6_DETACHED_AWAY=deny auto-denies, =approve grants every scope)."
+        " or an MCP call parks the run at its approval until `agent6 attach` answers it."
+        " AGENT6_DETACHED_AWAY=deny auto-denies. AGENT6_DETACHED_AWAY=approve grants every"
+        " standing scope, but a fetch approval still waits for an answer."
     )
 
 
