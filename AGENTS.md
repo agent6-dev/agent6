@@ -24,6 +24,7 @@
   Learning one command teaches its siblings: positional core args, `--repo`/`--machine-file` target flags, completion over every valid input.
 - **The explanation is the test.** Explain a change in a sentence before writing it; a paragraph of conditions means the shape is wrong.
 - **Explicit.** Defaults are real values `agent6 config show` prints with their origin; behaviour follows visible state; errors are loud.
+  A value agent6 has to infer is such a default: a key the user can read and correct.
 - **Surfaces tell the truth.** A failed run reads failed, a dead pane reads dead, a truncated answer reads truncated, an error keeps its reason.
   Every surface shows state the system actually holds; invented or hidden state is a bug.
 - **State, not opinion.** agent6 sets, enforces and shows the state of the world: who is attached, the away mode, what is pending, what a command returned.
