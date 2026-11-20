@@ -23,6 +23,7 @@ DOCS = [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]
 _NOT_OURS = {
     "--link-mode",
     "--allow-empty",
+    "--config-env",
     "--ignore-submodules",
     "--no-ext-diff",
     "--no-textconv",

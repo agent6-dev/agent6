@@ -100,8 +100,11 @@ def verify_git_identity(path: pathlib.Path, identity: CommitIdentity) -> tuple[s
 
 
 def is_git_repo(path: pathlib.Path) -> bool:
-    """Return whether the path is inside a git work tree."""
-    res = git_command.run(path, "rev-parse", "--is-inside-work-tree", check=False)
+    """Return whether the path is inside a git work tree that git can read."""
+    try:
+        res = git_command.run(path, "rev-parse", "--is-inside-work-tree", check=False)
+    except errors.UnreadableRepositoryError:
+        return False  # a `.git` file that names no git dir, a config git cannot parse
     return res.ok and res.stdout.strip() == "true"
 
 
@@ -167,8 +170,11 @@ def is_ignored(path: pathlib.Path, name: str) -> bool:
 
 
 def toplevel(path: pathlib.Path) -> pathlib.Path | None:
-    """Return the enclosing work tree's root, or None outside a repo or inside `.git`."""
-    res = git_command.run(path, "rev-parse", "--show-toplevel", check=False)
+    """Return the enclosing work tree's root; None outside a readable repo or inside `.git`."""
+    try:
+        res = git_command.run(path, "rev-parse", "--show-toplevel", check=False)
+    except errors.UnreadableRepositoryError:
+        return None
     if not res.ok:
         return None
     text = res.stdout.strip()

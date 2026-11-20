@@ -289,7 +289,9 @@ def hardening(cwd: pathlib.Path) -> Hardening:
     )
     # git exits 1 when no key matches.
     if proc.returncode not in (0, 1):
-        error = _refusal(cwd, unlisted, proc.stderr.strip() or f"exit {proc.returncode}")
+        refusal = _refusal(cwd, unlisted, proc.stderr.strip() or f"exit {proc.returncode}")
+        # git's own answer, which a probe reads as "no repository agent6 can use".
+        error = errors.UnreadableRepositoryError(str(refusal), safe_message=refusal.safe_message)
         raise error
     sets_work_tree = False
     # A filter with both clean and smudge yields two keys for one driver.

@@ -354,11 +354,26 @@ def test_a_probe_outside_a_repository_answers(tmp_path: pathlib.Path) -> None:
     assert git_read.branch_exists(tmp_path, "main") is False
 
 
-def test_a_probe_of_a_missing_directory_says_no_git_runs_there(tmp_path: pathlib.Path) -> None:
-    """A probe of a directory that does not exist raised the `FileNotFoundError` of its spawn."""
+def test_a_probe_of_a_missing_directory_answers_and_a_command_there_refuses(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A probe of a directory that does not exist raised the `FileNotFoundError` of its spawn.
+
+    A `.git` file that names no git dir made the same probe raise, ahead of the run
+    preflight's own refusal.
+    """
     missing = tmp_path / "missing"
-    with pytest.raises(errors.GitError, match=re.escape(f"agent6 runs no git in {missing}: ")):
-        git_read.is_git_repo(missing)
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / ".git").write_text("gitdir: /etc\n", encoding="utf-8")
+    for directory in (missing, broken):
+        assert git_read.is_git_repo(directory) is False
+        assert git_read.toplevel(directory) is None
+        with pytest.raises(errors.GitError, match=re.escape(f"Not a git repository: {directory}")):
+            git_read.status(directory)
+        refusal = re.escape(f"agent6 runs no git in {directory}: ")
+        with pytest.raises(errors.GitError, match=refusal):
+            git_read.untracked_paths(directory)
 
 
 def test_init_repo_creates_repository(tmp_path: pathlib.Path) -> None:

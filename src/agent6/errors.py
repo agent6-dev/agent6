@@ -38,6 +38,10 @@ class GitError(Exception):
         self.safe_message = message if safe_message is None else safe_message
 
 
+class UnreadableRepositoryError(GitError):
+    """git answered that it cannot read a directory's repository: a broken pointer or config."""
+
+
 def read_operator_file(path: pathlib.Path) -> str:
     """Read a file the operator named, the one reader for operator-supplied files.
 
