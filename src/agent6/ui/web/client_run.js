@@ -115,7 +115,13 @@ async function renderRun(id, opts, gen) {
       finally { reviewBtn.removeAttribute('aria-disabled'); }
     };
     cards._review_btn = reviewBtn; // paintRun gates it: the CLI refuses a live run's review
-    for (const b of [stopBtn, turnBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn]) actions.appendChild(b);
+    actions.appendChild(stopBtn);
+    const more = el('details', 'run-more');
+    more.appendChild(el('summary', null, 'More'));
+    const menu = el('div', 'run-more-items');
+    menu.append(turnBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn);
+    menu.addEventListener('click', e => { if (e.target.closest('button')) more.open = false; });
+    more.appendChild(menu); actions.appendChild(more);
     cards._stop_btn = stopBtn; cards._turn_btn = turnBtn; // paintRun shows these only while the run is live
     cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
     cards._plan_btn = planBtn;
