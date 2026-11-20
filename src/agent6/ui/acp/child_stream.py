@@ -6,12 +6,13 @@ from __future__ import annotations
 
 import pathlib
 from collections.abc import Callable
+from typing import Any
 
 from agent6 import child_records, config
 from agent6.app import children, reporter
-from agent6.sessions import event_log, layout
+from agent6.sessions import event_log
 from agent6.ui import spawn
-from agent6.viewmodel import tail, transcript
+from agent6.viewmodel import transcript
 
 
 def parent_spawner(
@@ -47,27 +48,25 @@ def parent_spawner(
         The observed spawner, or None when this session cannot dispatch children.
     """
 
-    def observe(
-        spec: child_records.ChildSpec, directory: pathlib.Path, continuing: bool
-    ) -> Callable[[], None]:
-        reader = tail.LogTail(directory / layout.LOGS_NAME)
-        if continuing:
-            reader.read()  # The next execution appends to the same journal.
+    def observe(spec: child_records.ChildSpec) -> Callable[[dict[str, Any]], None]:
         fold = transcript.TranscriptFold()
         label = (
             f"{'reviewer' if spec.mode == 'reviewer' else 'child'} {spec.number} {spec.session_id}"
         )
 
-        def drain() -> None:
-            for row in reader.read():
-                if row.get("type") == "model.call":
-                    say(f"{label}: calling {row.get('provider')}/{row.get('model')}")
-                for item in fold.feed(row):
-                    detail = " ".join(filter(None, (item.name, item.arg, item.detail, item.body)))
-                    action = "failed" if item.ok is False else item.kind
-                    say(f"{label}: {action}: {' '.join(detail.splitlines())}")
+        def report(row: dict[str, Any]) -> None:
+            kind = row.get("type")
+            if kind == "model.call":
+                say(f"{label}: calling {row.get('provider')}/{row.get('model')}")
+            for item in fold.feed(row):
+                # The parent's own activity reports each steer and end.
+                if kind in ("session.stop", "steer.injected", "steer.parent"):
+                    continue
+                detail = " ".join(filter(None, (item.name, item.arg, item.detail, item.body)))
+                action = "failed" if item.ok is False else item.kind
+                say(f"{label}: {action}: {' '.join(detail.splitlines())}")
 
-        return drain
+        return report
 
     return children.build_parent_spawner(
         cfg,

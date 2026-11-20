@@ -68,7 +68,7 @@ def test_parallel_prompt_streams_the_child_before_its_permission_is_answered(
                 if isinstance(content, dict):
                     texts.append(content["text"])
             assert message["result"]["stopReason"] == "end_turn", texts
-            assert any(child in t and "Local child completed." in t for t in texts), texts
+            assert sum(child in t and "Local child completed." in t for t in texts) == 1, texts
             assert len(calls) == 2
             tools = {t["function"]["name"] for t in calls[0]["tools"]}
             assert not tools.intersection({"parallel", "steer_child", "merge_child"})

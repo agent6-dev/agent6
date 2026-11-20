@@ -13,7 +13,7 @@ import pathlib
 import threading
 import time
 from collections.abc import Callable, Generator, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, errors, kinds, paths
@@ -81,14 +81,11 @@ class ChildRuntime:
 
     Attributes:
         spawn: Launches a detached agent6 run and locates its session dir.
-        observe: Opens a reader before launch with the child, its record dir and whether it resumes.
-            The watch calls the reader on each poll and once before it returns the result.
+        observe: Builds a listener for the new journal events of one child execution.
     """
 
     spawn: SpawnRun
-    observe: Callable[[child_records.ChildSpec, pathlib.Path, bool], Callable[[], None]] | None = (
-        None
-    )
+    observe: Callable[[child_records.ChildSpec], Callable[[dict[str, Any]], None]] | None = None
 
     @contextlib.contextmanager
     def observing(
@@ -96,6 +93,7 @@ class ChildRuntime:
         spec: child_records.ChildSpec,
         state: pathlib.Path,
         continuing: bool,
+        parent_events: event_log.EventSink | None,
         watch: Callable[[pathlib.Path, str, str], bool] | None,
     ) -> Generator[Callable[[pathlib.Path, str, str], bool] | None]:
         """Give the observer a last read before the parent can join the child.
@@ -104,16 +102,33 @@ class ChildRuntime:
             spec: The child to watch.
             state: The origin's record state.
             continuing: The child resumes in the same directory.
+            parent_events: The parent journal where operator steers are reported.
             watch: Count spend and relay prompts while the child runs.
 
         Yields:
             The watch for this execution of the child.
         """
-        if self.observe is None:
+        if self.observe is None and parent_events is None:
             yield watch
             return
         directory = child_wait.child_dir(state, spec.session_id, mode=spec.mode)
-        drain = self.observe(spec, directory, continuing)
+        listener = self.observe(spec) if self.observe is not None else None
+        reader = tail.LogTail(directory / sessions_layout.LOGS_NAME)
+        if continuing:
+            reader.read()  # The next execution appends to the same journal.
+
+        def drain() -> None:
+            for row in reader.read():
+                if parent_events is not None and row.get("type") == journal.SteerInjected.TYPE:
+                    parent_events.emit(
+                        journal.ParallelChildActivity(
+                            child=spec.session_id,
+                            activity="steered",
+                            detail=str(row.get("text", "")),
+                        )
+                    )
+                if listener is not None:
+                    listener(row)
 
         def poll(directory: pathlib.Path, label: str, status: str) -> bool:
             drain()
@@ -395,10 +410,6 @@ def run_child_to_completion(
             continuation=continuation,
             runtime=runtime,
         )
-    child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
-    updates = tail.LogTail(child_dir / sessions_layout.LOGS_NAME)
-    if continuation and parent_events is not None:
-        updates.read()  # The previous execution's steers belong to that execution.
     res = spawner(spec, task)
     if not res.ok:
         # A child that never reported its session dir is still a process of ours.
@@ -416,21 +427,8 @@ def run_child_to_completion(
     overdue = over_budget = False
     label = f"{'reviewer' if contract is not None else 'child'} {spec.number} {spec.session_id}"
 
-    def report_steers() -> None:
-        if parent_events is not None:
-            for row in updates.read():
-                if row.get("type") == journal.SteerInjected.TYPE:
-                    parent_events.emit(
-                        journal.ParallelChildActivity(
-                            child=spec.session_id,
-                            activity="steered",
-                            detail=str(row.get("text", "")),
-                        )
-                    )
-
     def on_poll(status: str) -> bool:
         nonlocal over_budget
-        report_steers()
         over_budget = watch is not None and watch(res.session_dir, label, status)
         return over_budget
 
@@ -474,8 +472,6 @@ def run_child_to_completion(
                 " (its clone keeps its work)",
                 pid=res.pid,
             )
-    # A child can consume its last steer and finish between polls.
-    report_steers()
     try:
         imported = parallel_results.import_child(
             res, origin, import_lock, continuing=bool(continuation)
@@ -1126,7 +1122,7 @@ def build_child_spawner(
                 )
 
             with runtime.observing(
-                spec, record_state, child.continuation is not None, watch
+                spec, record_state, child.continuation is not None, parent_events, watch
             ) as poll:
                 return run_child_to_completion(
                     spec,
