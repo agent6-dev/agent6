@@ -743,7 +743,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   const more = pickerRow([['from plan', seed], ['max USD', cap]]);
   const advanced = el('button', 'fold', 'advanced');
   const fold = (open) => { advanced.setAttribute('aria-expanded', String(open)); more.hidden = !open; };
-  advanced.onclick = () => fold(more.hidden);
+  advanced.onclick = () => fold(more.hidden || !capOk()); // an unreadable cap stays in view: it holds Start
   // A worktree and a seed are run options: the other modes grey them.
   const followMode = () => { worktree.disabled = seed.disabled = mode.value !== 'run'; };
   const preset = el('select', 'field');

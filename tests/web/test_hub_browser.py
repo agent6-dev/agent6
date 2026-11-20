@@ -911,6 +911,7 @@ def test_a_spend_cap_the_page_cannot_read_holds_start_back(
     """A cap of 5,50 started a run capped at $550 in Chromium, and at the config's cap in Firefox.
 
     The cap is a plain decimal number; the field and a phone's summary line say when it is not.
+    Closing the advanced fold hid the field, and with it the reason Start was held.
     """
     from playwright.sync_api import Route, expect
 
@@ -923,7 +924,8 @@ def test_a_spend_cap_the_page_cannot_read_holds_start_back(
 
     page.route("**/api/new", capture)
     page.goto(f"http://127.0.0.1:{port}/#/")
-    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    advanced = page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True)
+    advanced.click()
     cap = page.locator(".dock .pick", has_text="max USD").locator("input")
     start = page.locator(".dock button.primary")
     page.locator(".dock textarea").fill("probe")
@@ -936,6 +938,8 @@ def test_a_spend_cap_the_page_cannot_read_holds_start_back(
         expect(cap).to_have_attribute("aria-invalid", "true")
         expect(start).to_be_disabled()
         assert cap.evaluate(error)
+    advanced.click()
+    expect(cap).to_be_visible()
     page.set_viewport_size({"width": 390, "height": 844})
     expect(page.locator(".dock .picker-summary")).to_contain_text("max USD: abc (not a number)")
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -945,6 +949,8 @@ def test_a_spend_cap_the_page_cannot_read_holds_start_back(
     start.click()
     expect(page.locator(".toast")).to_have_count(1)
     assert posted == [-1]
+    advanced.click()
+    expect(cap).to_be_hidden()
     assert not errors
 
 
