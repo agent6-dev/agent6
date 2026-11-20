@@ -643,9 +643,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": str(exc)}, status=500)
 
     def _send_metrics(self) -> None:
-        """Serve a fresh Prometheus reading only with both opt-ins and a bearer secret."""
+        """Serve a fresh Prometheus reading with the web opt-in and a bearer secret."""
         config = layer.load_effective(self.cwd, self.config_paths).config
-        if not config.web.metrics_route or config.telemetry.metrics != "prometheus":
+        if not config.web.metrics_route:
             self._send_json({"error": "not found: /metrics"}, status=404)
             return
         scheme, _, secret = (self.headers.get("Authorization") or "").strip().partition(" ")

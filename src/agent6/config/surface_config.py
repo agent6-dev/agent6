@@ -151,7 +151,7 @@ class WebConfig(pydantic.BaseModel):
     metrics_route: bool = pydantic.Field(
         default=False,
         description=(
-            'Serve `/metrics` when `telemetry.metrics = "prometheus"`; requires the web secret '
+            "Serve `/metrics` on the web listener. Scrapes require the web secret "
             "as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token."
         ),
     )
@@ -215,14 +215,13 @@ class TelemetryConfig(pydantic.BaseModel):
             "choice_meanings": {
                 "none": "Do not export metrics",
                 "otlp": "Post metrics to telemetry endpoint",
-                "prometheus": "Write textfile metrics and permit authenticated web scraping",
+                "prometheus": "Write textfile metrics",
             }
         },
         default="none",
         description=(
             "Metrics export destination; prometheus writes `prometheus_file` for "
-            "node_exporter's textfile collector; web scraping also requires "
-            "`web.metrics_route` enabled."
+            "node_exporter's textfile collector."
         ),
     )
     logs: Literal["none", "otlp"] = pydantic.Field(

@@ -469,7 +469,7 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 ## `[telemetry]`
 
 What `agent6 telemetry export` sends, and where ([Telemetry export](cli.md#telemetry-export)).
-The web scrape route requires `metrics = "prometheus"` and the [`web.metrics_route`](#web) opt-in.
+The web scrape route uses its own switch, [`web.metrics_route`](#web).
 Off by default: no signal is selected, nothing is dialled, no socket is opened.
 Header values live in `secrets.toml` under `[telemetry.headers]`, never in config.
 The [`--secret` target](#creating-and-inspecting) writes and removes them; `[telemetry].headers` selects which names the exporter sends.

@@ -637,12 +637,12 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 | `host` | `"127.0.0.1"` | Address `agent6 web` binds; a non-loopback address also needs `allow_non_loopback = true`. |
 | `port` | `7658` | Port `agent6 web` listens on. |
 | `allow_non_loopback` | `false` | Allow `host` to be a non-loopback address, so a typo can never silently expose the write surface (approvals, steers, config writes) beyond this machine. |
-| `metrics_route` | `false` | Serve `/metrics` when `telemetry.metrics = "prometheus"`; requires the web secret as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token. |
+| `metrics_route` | `false` | Serve `/metrics` on the web listener. Scrapes require the web secret as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token. |
 
 ## `[telemetry]`
 
 What `agent6 telemetry export` sends, and where ([Telemetry export](cli.md#telemetry-export)).
-The web scrape route requires `metrics = "prometheus"` and the [`web.metrics_route`](#web) opt-in.
+The web scrape route uses its own switch, [`web.metrics_route`](#web).
 Off by default: no signal is selected, nothing is dialled, no socket is opened.
 Header values live in `secrets.toml` under `[telemetry.headers]`, never in config.
 The [`--secret` target](#creating-and-inspecting) writes and removes them; `[telemetry].headers` selects which names the exporter sends.
@@ -650,7 +650,7 @@ The [`--secret` target](#creating-and-inspecting) writes and removes them; `[tel
 | Field | Default | Meaning |
 |---|---|---|
 | `traces` | `"none"` | Trace export destination.<ul><li><code>none</code>: Do not export traces</li><li><code>otlp</code>: Post traces to telemetry endpoint</li></ul> |
-| `metrics` | `"none"` | Metrics export destination; prometheus writes `prometheus_file` for node_exporter's textfile collector; web scraping also requires `web.metrics_route` enabled.<ul><li><code>none</code>: Do not export metrics</li><li><code>otlp</code>: Post metrics to telemetry endpoint</li><li><code>prometheus</code>: Write textfile metrics and permit authenticated web scraping</li></ul> |
+| `metrics` | `"none"` | Metrics export destination; prometheus writes `prometheus_file` for node_exporter's textfile collector.<ul><li><code>none</code>: Do not export metrics</li><li><code>otlp</code>: Post metrics to telemetry endpoint</li><li><code>prometheus</code>: Write textfile metrics</li></ul> |
 | `logs` | `"none"` | Export destination for significant events as log records.<ul><li><code>none</code>: Do not export log records</li><li><code>otlp</code>: Post log records to telemetry endpoint</li></ul> |
 | `endpoint` | `""` | The OTLP/HTTP base URL; `/v1/traces`, `/v1/metrics` and `/v1/logs` are appended; `https://`, or `http://` to a loopback host |
 | `headers` | `[]` | Header names sent with every export; each value comes from `[telemetry.headers]` in `secrets.toml`, written by `agent6 config set --secret telemetry.headers.<name> <value>`. |

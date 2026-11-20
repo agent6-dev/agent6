@@ -63,17 +63,22 @@ def _configure(
     [
         ("", "prometheus"),
         ("metrics_route = false", "prometheus"),
-        ("metrics_route = true", "none"),
-        ("metrics_route = true", "otlp"),
     ],
 )
-def test_metrics_is_404_unless_both_settings_enable_it(
+def test_metrics_is_404_without_the_web_opt_in(
     port: int, tmp_path: pathlib.Path, web: str, metrics: str
 ) -> None:
-    """Neither a selected exporter nor the web opt-in alone exposes the route."""
+    """An exporter does not expose the route."""
     _configure(tmp_path, web, metrics)
     for headers in ({}, {"Authorization": f"Bearer {signin.SECRET}"}):
         assert _get(port, headers)[0] == 404
+
+
+@pytest.mark.parametrize("metrics", ["none", "otlp", "prometheus"])
+def test_web_metrics_needs_no_exporter(port: int, tmp_path: pathlib.Path, metrics: str) -> None:
+    """The web switch alone enables a scrape with the secret."""
+    _configure(tmp_path, metrics=metrics)
+    assert _get(port, {"Authorization": f"Bearer {signin.SECRET}"})[0] == 200
 
 
 def test_metrics_requires_the_secret_not_a_cookie_or_login_token(
