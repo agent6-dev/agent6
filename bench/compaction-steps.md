@@ -1,29 +1,41 @@
 # Tier-1 size replay
 
-**The recorded-session comparison is blocked by missing transcript objects.**
-Every worker request input item is a `$object` reference, and none of the three exports contains its `objects/` directory.
-Journal previews and file byte counts do not recover complete tool-result character counts.
-The replay refuses these exports instead of substituting estimates.
+**Dropping to half the bound cut tier-1 drops from 21 to 4 across three recorded sessions.**
+The stepped rule held 6% to 25% fewer tool-result characters on average.
 
 ## Recorded inputs
 
 All three sessions are the evaluation set; no threshold was tuned on them.
+They ran on the ChatGPT plan backend with `compaction.drop_at_chars` resolved to 489,600.
 There are 709 worker request transcripts in total.
-The recorded drops below count `compact.dropped` events, not individual elided results or tier-2 restarts.
+The recorded drops count `compact.dropped` events, not individual elided results or tier-2 restarts.
 
 | session | worker requests | recorded drops | replay old drops | replay stepped drops | old mean chars | stepped mean chars |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| cache-review | 19 | 12 | unavailable | unavailable | unavailable | unavailable |
-| children-merge | 368 | 7 | unavailable | unavailable | unavailable | unavailable |
-| web-followups | 322 | 7 | unavailable | unavailable | unavailable | unavailable |
+| cache-review | 19 | 12 | 11 | 2 | 403,501 | 300,860 |
+| children-merge | 368 | 7 | 6 | 1 | 289,309 | 271,103 |
+| web-followups | 322 | 7 | 4 | 1 | 306,265 | 275,591 |
 
-No comparison completed, so there is neither a measured improvement nor a measured null result.
 The children-merge recording was still running when exported.
+The replay's old-rule counts differ from the recorded ones because it leaves out dedup and gists.
+
+## What a drop costs
+
+From the same sessions' journals (`model.result` rows of the worker with a prompt over 20,000 tokens; `input_tokens` is the uncached part):
+
+| session | calls | first call after a `compact.*` event | uncached input in those | uncached input in the others |
+| --- | ---: | ---: | ---: | ---: |
+| cache-review | 17 | 12 | 1,466k of 1,563k (94%) | 114k of 497k (23%) |
+| children-merge | 366 | 12 | 1,107k of 1,245k (89%) | 890k of 38,766k (2.3%) |
+| web-followups | 320 | 9 | 1,184k of 1,268k (93%) | 898k of 37,885k (2.4%) |
+
+The `compact.*` events include tier-2 restarts, whose next request is small.
+A call with no compaction since the one before read from the provider's cache in 902 of 908 cases, idle gaps up to 9.6 minutes included.
 
 ## Reproduction
 
-Restore each session's `objects/` beside `transcripts/`, or supply hydrated transcript JSON.
-Use the recording's resolved `compaction.drop_at_chars` as `BOUND`; the export does not include that setting.
+Each session directory holds its `transcripts/` and `objects/`.
+`BOUND` is the recording's resolved `compaction.drop_at_chars`, which the run prints at its start.
 
 ```sh
 uv run python bench/compaction_replay.py RECORDINGS --drop-at-chars BOUND
@@ -32,7 +44,6 @@ uv run python bench/compaction_replay.py RECORDINGS --drop-at-chars BOUND
 The input directory contains one directory per session.
 The script reads Responses worker requests only and makes no model calls.
 Missing objects produce `unavailable` cells, a diagnostic naming the object and exit status 1.
-The three supplied exports each produced that diagnostic before any size could be measured.
 
 ## Method
 
