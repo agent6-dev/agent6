@@ -2,6 +2,9 @@
    lane SVG is exactly one row tall and rows stack with no gap, so a lane's line runs
    unbroken from row to row. Below 781px the side panel opens over the graph. --- */
 .git-bar { margin-bottom: var(--page-top); }
+.git-app:has(> .git-body.diffing) > .git-bar { display: none; }
+.git-body:has(> .git-side > .empty:only-child) > :is(.git-side, .resize-handle) { display: none; }
+.git-body:has(> .git-side > .empty:only-child) > .git-graph { width: 100%; max-width: none; }
 /* The toolbar's controls share one height. A select fits its value between a floor and a cap, a
    text field keeps one width while you type, and a group (a field and the buttons acting on it)
    wraps whole; a long branch name shrinks first. */

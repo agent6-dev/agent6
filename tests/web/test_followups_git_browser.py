@@ -56,3 +56,26 @@ def test_compare_fields_have_visible_labels(
         page.keyboard.press("Escape")
     captures.save(page, "compare-labels")
     assert not errors
+
+
+@pytest.mark.parametrize("width", [390, 1440])
+def test_git_uses_the_page_for_the_graph_and_the_open_diff(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, width: int
+) -> None:
+    """An unselected graph has no empty side pane, and a diff hides the repository toolbar."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    expect(page.locator(".gc-row").first).to_be_visible()
+    expect(page.locator(".git-side")).to_be_hidden()
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/HEAD")
+    page.locator(".gf-open").first.click()
+    expect(page.locator(".git-diff-body")).to_be_visible()
+    expect(page.locator(".git-bar")).to_be_hidden()
+    captures.save(page, "git-diff-page")
+    page.locator(".git-diff-head").get_by_role("button", name="Files", exact=True).click()
+    if width == 1440:
+        expect(page.locator(".git-bar")).to_be_visible()
+    assert not errors
