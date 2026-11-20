@@ -667,6 +667,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `submodule.recurse`, `diff.submodule` and `status.submoduleSummary` are off on every call: no checkout recurses into a submodule, no diff renders inside one, no status summarises one.
 - A directory laid out as a git dir is a repository only as a `.git` (`safe.bareRepository=explicit`): agent6 started below any other finds no repository.
 - Review asks each selected submodule for its status with that submodule's hooks and drivers off, whatever `git.run_repo_hooks` and `git.run_repo_drivers` say.
+    - that is two steps, a listing of the submodule's drivers and then the status: a jailed command that rewrites the submodule's config between them can make the status run a program on the host
 
 ### 8. Secrets and `connect`
 
