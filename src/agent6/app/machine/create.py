@@ -339,7 +339,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 timeout_s=_CREATE_TIMEOUT_S,
                 mode="run",
                 effort="off",
-                max_usd=remaining,
+                remaining_usd=remaining,
                 max_plan_points=remaining_plan,
             ),
             events_log,

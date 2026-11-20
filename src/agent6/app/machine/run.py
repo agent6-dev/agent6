@@ -25,7 +25,7 @@ from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError
+from agent6.config import ConfigError
 from agent6.harness import child_repo
 from agent6.machine import (
     AgentExecResult,
@@ -374,7 +374,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             auto_approve=auto_approve,
             no_commands=no_commands,
         )
-    except state_configs.SandboxWidenedError as exc:
+    except state_configs.ConfigWidenedError as exc:
         for problem in exc.problems:
             reporter.refuse(problem)
         return 2
@@ -465,24 +465,10 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
     clone_root = worktrees.child_worktree_root(cfg, cwd, f"machine-{spec.machine}")
 
-    def agent_config(name: str, state: AgentState) -> Config:
-        """Return an agent state's config with its spend cap applied.
-
-        Args:
-            name: The state's name, which selects its resolved config.
-            state: The state, whose `max_usd`, when set, tightens `budget.max_usd`.
-
-        Returns:
-            The config, revalidated.
-        """
-        return configs.states[name].config.with_machine_agent_overrides(
-            max_usd=state.max_usd, remaining_usd=spec.budget.max_usd
-        )
-
     if agent_states or has_tool_state:
         try:
-            for name, state in agent_states.items():
-                agent_config(name, state).require_runnable("worker")
+            for name in agent_states:
+                configs.states[name].config.require_runnable("worker")
         except (ConfigError, pydantic.ValidationError) as exc:
             reporter.error(str(exc))
             return 2
@@ -504,8 +490,10 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 return 2
         if agent_states:
             # A state can inherit roles besides its worker; the ceiling itself makes no calls.
-            for name, state in agent_states.items():
-                state_cfg = agent_config(name, state)
+            for name in agent_states:
+                state_cfg = state_configs.agent_config(
+                    configs.states[name].config, remaining_usd=spec.budget.max_usd
+                )
                 missing = session_setup.check_provider_keys(state_cfg)
                 if missing is not None:
                     reporter.err(missing)

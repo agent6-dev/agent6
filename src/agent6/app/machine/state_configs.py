@@ -23,8 +23,8 @@ from agent6.tools import policy as tools_policy
 from agent6.tools import target_policy
 
 
-class SandboxWidenedError(ConfigError):
-    """An overlay's sandbox cannot be honoured.
+class ConfigWidenedError(ConfigError):
+    """A machine config exceeds an operator bound.
 
     A key set wider than the operator's config, or a grant the machine cannot bind safely: one
     below a region another state writes, or reached through a link inside one.
@@ -167,14 +167,14 @@ def _grant(verb: str, leaf: str, values: Iterable[str]) -> str:
 
     Args:
         verb: The `agent6 config` verb: `set` for a scalar key, `add` for list entries.
-        leaf: The key under `[sandbox]`.
+        leaf: The dotted config key.
         values: The values to grant, spelled as `agent6 config` takes them.
 
     Returns:
         The remedy, unfinished: the caller appends where to drop it from.
     """
     commands = ", ".join(
-        f"`agent6 config {verb} --repo sandbox.{leaf} {shlex.quote(value)}`" for value in values
+        f"`agent6 config {verb} --repo {leaf} {shlex.quote(value)}`" for value in values
     )
     return (
         f"Grant it in your own config ({commands}, or `agent6 --config FILE machine run` for"
@@ -182,13 +182,13 @@ def _grant(verb: str, leaf: str, values: Iterable[str]) -> str:
     )
 
 
-def sandbox_widening(
+def config_widening(
     operator: Config,
     operator_isolation: kinds.IsolationLevel,
     state: Config,
     state_isolation: kinds.IsolationLevel,
 ) -> dict[str, str]:
-    """Return the problem with each sandbox key a config sets wider than the operator's.
+    """Return the problem with each sandbox or budget key a config sets wider than the operator's.
 
     Each problem gives both values as TOML and the remedy: the config command that grants
     the value, or for `hide_paths` the entries the overlay has to keep. `protect_git` is
@@ -211,7 +211,7 @@ def sandbox_widening(
         if theirs == ours:
             continue
         shown = io.format_toml_value(theirs)
-        remedy = _grant("set", leaf, [theirs if isinstance(theirs, str) else shown])
+        remedy = _grant("set", f"sandbox.{leaf}", [theirs if isinstance(theirs, str) else shown])
         if covers := _COVERS.get(leaf):
             hide = leaf == "hide_paths"
             bound, entries = (st.sandbox, ours) if hide else (op.sandbox, theirs)
@@ -222,23 +222,37 @@ def sandbox_widening(
             remedy = (
                 f"Keep {kept} in that list, or drop the key"
                 if hide
-                else _grant("add", leaf, outside)
+                else _grant("add", f"sandbox.{leaf}", outside)
             )
         elif (within := _WITHIN.get(leaf)) is not None and within(op, st):
             continue
-        problems[leaf] = (
+        problems[f"sandbox.{leaf}"] = (
             f"sandbox.{leaf} = {shown}, wider than your config's {io.format_toml_value(ours)}."
             f" {remedy} from the machine file."
         )
-    if "protect_git" not in problems and op.config.protects_git and not st.config.protects_git:
+    if (
+        "sandbox.protect_git" not in problems
+        and op.config.protects_git
+        and not st.config.protects_git
+    ):
         # The same word on both sides, resolved off by the overlay's git.control.
-        problems["protect_git"] = (
+        problems["sandbox.protect_git"] = (
             f"git.control = {io.format_toml_value(st.config.git.control)} resolves"
             f" sandbox.protect_git = {io.format_toml_value(st.sandbox.protect_git)} to off, wider"
             " than your config's on. Grant it in your own config (`agent6 config set --repo"
             " git.control model`, or `agent6 --config FILE machine run` for this machine alone),"
             " or drop it from the machine file."
         )
+    for leaf in ("max_usd", "max_tokens_fallback", "max_plan_points"):
+        ceiling = getattr(operator.budget, leaf)
+        value = getattr(state.budget, leaf)
+        if ceiling != -1 and (value == -1 or value > ceiling):
+            key = f"budget.{leaf}"
+            remedy = _grant("set", key, [str(value)])
+            problems[key] = (
+                f"{key} = {value}, wider than your config's {ceiling}."
+                f" {remedy} from the machine file."
+            )
     return problems
 
 
@@ -254,7 +268,7 @@ def resolve_configs(
 ) -> MachineConfigs:
     """Resolve the operator's config, the machine's and each state's, and check the bounds.
 
-    The three flags land in every resolved config, so each agent state's overlay and each
+    The three flags apply in every resolved config, so each agent state's overlay and each
     tool state's policy carry them; the supervisor's own environment stays as it was.
 
     Args:
@@ -271,7 +285,7 @@ def resolve_configs(
 
     Raises:
         ConfigError: A layer or an overlay is invalid; the message names the overlay.
-        SandboxWidenedError: An overlay sets a sandbox key wider than the operator's; it
+        ConfigWidenedError: An overlay sets a sandbox or budget key wider than the operator's; it
             carries every table's problems.
         IsolationUnavailableError: An explicit isolation level is unavailable on this host.
     """
@@ -297,7 +311,7 @@ def resolve_configs(
         cfg = with_flags(eff.config)
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         resolved = StateConfig(cfg, isolation)
-        return resolved, sandbox_widening(operator, operator_isolation, eff.config, isolation)
+        return resolved, config_widening(operator, operator_isolation, eff.config, isolation)
 
     machine, machine_wide = one(None, "the machine's [config]")
     widened = [f"the machine's [config] sets {problem}" for problem in machine_wide.values()]
@@ -310,7 +324,12 @@ def resolve_configs(
             continue
         where = f"[states.{name}.config]"
         states[name], wide = one(dict(state.config), where)
-        own = state.config.get("sandbox", {})
+        own = {
+            f"{table}.{leaf}"
+            for table, values in state.config.items()
+            if isinstance(values, dict)
+            for leaf in values
+        }
         # A key the state's table leaves alone carries the machine's value, reported there.
         widened.extend(
             f"{where} sets {problem}"
@@ -318,7 +337,7 @@ def resolve_configs(
             if leaf in own or machine_wide.get(leaf) != problem
         )
     if widened:
-        raise SandboxWidenedError(widened)
+        raise ConfigWidenedError(widened)
     for name, resolved in states.items():
         state = spec.states[name]
         if (
@@ -336,7 +355,7 @@ def resolve_configs(
         states,
     )
     if unsafe := unsafe_grants(configs, cwd):
-        raise SandboxWidenedError(unsafe)
+        raise ConfigWidenedError(unsafe)
     return configs
 
 
@@ -402,3 +421,37 @@ def unsafe_grants(configs: MachineConfigs, cwd: pathlib.Path) -> list[str]:
             resolved.config, cwd, shared_writes=shared
         ).dropped
     ]
+
+
+def agent_config(
+    config: Config,
+    *,
+    effort: str | None = None,
+    remaining_usd: float | None = None,
+    max_plan_points: float | None = None,
+) -> Config:
+    """Return a copy with a machine agent's effort and spend caps applied.
+
+    Args:
+        config: The resolved config for this state.
+        effort: The worker's effort, or None to keep the config's.
+        remaining_usd: The machine's unspent budget, or None when uncapped.
+        max_plan_points: The `budget.max_plan_points` cap, or None to keep the config's.
+
+    Returns:
+        The config, revalidated.
+    """
+    data = config.model_dump(mode="python")
+    if effort is not None:
+        worker = data.setdefault("models", {}).get("worker")
+        if worker is None:
+            worker = {}
+            data["models"]["worker"] = worker
+        worker["effort"] = effort
+    caps = (config.budget.max_usd, remaining_usd)
+    data.setdefault("budget", {})["max_usd"] = min(
+        (cap for cap in caps if cap is not None and cap != -1), default=-1.0
+    )
+    if max_plan_points is not None:
+        data.setdefault("budget", {})["max_plan_points"] = max_plan_points
+    return Config.model_validate(data)

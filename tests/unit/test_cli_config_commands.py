@@ -383,7 +383,7 @@ def test_config_show_reads_through_a_machine_overlay(
     assert _refuse(["config", "show", "--machine-file", str(iso / "missing.asm.toml")]) == 2
 
 
-def test_machine_overlay_refuses_a_sandbox_widening_as_check_does(
+def test_machine_overlay_refuses_a_config_widening_as_check_does(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A value `machine check` would refuse is refused at the write, which leaves the file."""

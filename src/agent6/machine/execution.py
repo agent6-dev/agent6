@@ -407,7 +407,6 @@ def execute(
             contracts.AgentRequest(
                 prompt=prompt,
                 timeout_s=float(state.timeout_s),
-                max_usd=state.max_usd,
                 remaining_usd=remaining_usd,
                 mode=state.mode,
                 state_name=state_name,

@@ -44,7 +44,6 @@ class AgentRequest(pydantic.BaseModel):
         timeout_s: The wall-clock cap.
         effort: The reasoning effort the `machine create` authoring agent runs at, or None; a
             state sets its own in its `config` table.
-        max_usd: The slice's spend cap, or None to inherit the config's.
         remaining_usd: The machine's unspent budget, or None when uncapped.
         max_plan_points: The slice's plan-points cap, or None.
         mode: The nested loop's mode: `read_only` (a read-only structured judge) or `run`.
@@ -60,7 +59,6 @@ class AgentRequest(pydantic.BaseModel):
     timeout_s: float
     operator_task: str | None = None
     effort: str | None = None
-    max_usd: float | None = None
     remaining_usd: float | None = None
     max_plan_points: float | None = None
     mode: str = "read_only"

@@ -27,29 +27,29 @@ from agent6.app.machine.scriptcheck import (  # re-export
     run_offline_tests,
 )
 from agent6.app.machine.state_configs import (  # re-export
+    ConfigWidenedError,
     MachineConfigs,
-    SandboxWidenedError,
     StateConfig,
+    config_widening,
     resolve_configs,
-    sandbox_widening,
 )
 
 # `create` and `run` are not re-exported: both import `agent`, which imports `crash_spend`.
 __all__ = [
+    "ConfigWidenedError",
     "MachineConfigs",
     "MachineFileSummary",
     "OfflineTestOutcome",
-    "SandboxWidenedError",
     "StateConfig",
     "available_tools",
     "book_crashed_attempt",
     "build_machine_notify_hook",
+    "config_widening",
     "lint_and_typecheck",
     "machine_pass_env_refusal",
     "machine_protect_paths",
     "resolve_configs",
     "run_offline_tests",
-    "sandbox_widening",
     "summarize_machine_file",
     "validate_bundle",
 ]

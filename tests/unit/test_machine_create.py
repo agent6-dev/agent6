@@ -300,7 +300,7 @@ def test_create_takes_the_budget_flags_run_takes(
         budget = layer.load_effective_with_overlay(root, overlays[""].overlay).config.budget
 
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            seen.append((budget.max_plan_points, request.max_usd, request.max_plan_points))
+            seen.append((budget.max_plan_points, request.remaining_usd, request.max_plan_points))
             _write_draft(root, _draft(VALID_MACHINE))
             return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
@@ -1009,7 +1009,7 @@ def test_create_attempts_share_one_budget_ledger(
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            caps.append(request.max_usd)
+            caps.append(request.remaining_usd)
             return AgentExecResult(payload=None, reason="finish_session", usd=6.0)
 
         return run

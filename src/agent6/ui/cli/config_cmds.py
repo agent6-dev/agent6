@@ -12,7 +12,7 @@ import tomllib
 
 from agent6 import errors, paths, portable
 from agent6.app import confine
-from agent6.app.machine import sandbox_widening
+from agent6.app.machine import config_widening
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, notices, write
 from agent6.machine import (
     MachineError,
@@ -270,7 +270,7 @@ def _leaf_problems(text: str) -> str:
     return "\n".join(leaves) if leaves else text
 
 
-def _sandbox_problems(
+def _overlay_problems(
     overlay: dict[str, object], config_paths: tuple[pathlib.Path, ...]
 ) -> dict[str, str]:
     """Return the problem `machine check` reports per sandbox key of a machine's `[config]`.
@@ -290,7 +290,7 @@ def _sandbox_problems(
     operator = layer.load_effective(cwd, config_paths).config
     machine = layer.load_effective_with_overlay(cwd, overlay, explicit_paths=config_paths).config
     try:
-        return sandbox_widening(
+        return config_widening(
             operator,
             detect.resolve_isolation(operator.sandbox.isolation, env),
             machine,
@@ -303,7 +303,7 @@ def _sandbox_problems(
 def _added_widening(
     prior_text: str, overlay: dict[str, object], config_paths: tuple[pathlib.Path, ...]
 ) -> str | None:
-    """Return the refusal for each sandbox widening an edit adds to a machine's `[config]`.
+    """Return the sandbox and budget refusals added by a machine config edit.
 
     Compared before and after the edit, so no spelling of the key slips past, and a widening
     the file already held is left for `machine check`.
@@ -319,12 +319,12 @@ def _added_widening(
     Raises:
         ConfigError: A layer does not load.
     """
-    after = _sandbox_problems(overlay, config_paths)
+    after = _overlay_problems(overlay, config_paths)
     if not after:
         return None
     try:
         prior = tomllib.loads(prior_text).get("config", {})
-        before = _sandbox_problems(prior if isinstance(prior, dict) else {}, config_paths)
+        before = _overlay_problems(prior if isinstance(prior, dict) else {}, config_paths)
     except (tomllib.TOMLDecodeError, ConfigError):
         before = {}
     added = [

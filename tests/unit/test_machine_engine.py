@@ -1292,17 +1292,17 @@ def test_agent_ok_captures_payload_and_routes(tmp_path: pathlib.Path) -> None:
     assert world.agent_calls[0].prompt == "Review the change."
 
 
-def test_an_agent_request_carries_the_cap_and_no_model_knob(tmp_path: pathlib.Path) -> None:
-    """A state's model knobs live in its `config` table: the request carries its cap alone."""
+def test_an_agent_request_carries_the_machine_remainder(tmp_path: pathlib.Path) -> None:
+    """A state reads its cap and model from config."""
     body = REVIEWER.replace(
-        'prompt = "Review the change."', 'prompt = "Review the change."\nmax_usd = 2.5'
+        'prompt = "Review the change."',
+        'prompt = "Review the change."\nconfig.budget.max_usd = 2.5',
     ) + ('\n[states.review.config.models.worker]\neffort = "high"\ntemperature = 0.3\n')
     journal, f = _load(tmp_path, body)
     spec = semantics.load_machine(f)
     world = FakeWorld({}, agent_results=[_agent("finish_session", {"approved": True})])
     machine_engine.drive(spec, journal, world, live=True)
     req = world.agent_calls[0]
-    assert req.max_usd == 2.5
     assert req.remaining_usd == 1.0
     assert req.effort is None
     assert not {"model", "provider", "temperature", "max_tokens_fallback"} & set(
@@ -1417,7 +1417,7 @@ def test_the_agent_request_keeps_the_state_cap_and_remaining_budget_separate(
     tmp_path: pathlib.Path,
 ) -> None:
     """The remainder shrinks between states without replacing the state's own cap."""
-    body = _SPENDER.replace('prompt = "do"', 'prompt = "do"\nmax_usd = 0.10')
+    body = _SPENDER.replace('prompt = "do"', 'prompt = "do"\nconfig.budget.max_usd = 0.10')
     journal, f = _load(tmp_path, body)
     spec = semantics.load_machine(f)
     world = FakeWorld(
@@ -1429,7 +1429,6 @@ def test_the_agent_request_keeps_the_state_cap_and_remaining_budget_separate(
     )
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed" and "max_usd" in result.reason
-    assert [req.max_usd for req in world.agent_calls] == [0.10, 0.10]
     remaining = [req.remaining_usd for req in world.agent_calls]
     assert remaining == pytest.approx([0.05, 0.01])
 

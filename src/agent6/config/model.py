@@ -526,40 +526,6 @@ class Config(pydantic.BaseModel):
             sandbox["run_commands"] = "deny"
         return Config.model_validate(data)
 
-    def with_machine_agent_overrides(
-        self,
-        *,
-        effort: str | None = None,
-        max_usd: float | None = None,
-        remaining_usd: float | None = None,
-        max_plan_points: float | None = None,
-    ) -> Config:
-        """Return a copy with a machine agent's effort and spend caps applied.
-
-        Args:
-            effort: The worker's effort, or None to keep the config's.
-            max_usd: The state's dollar cap, which can only tighten the config's.
-            remaining_usd: The machine's unspent budget, or None when uncapped.
-            max_plan_points: The `budget.max_plan_points` cap, or None to keep the config's.
-
-        Returns:
-            The config, revalidated.
-        """
-        data = self.model_dump(mode="python")
-        if effort is not None:
-            worker = data.setdefault("models", {}).get("worker")
-            if worker is None:
-                worker = {}
-                data["models"]["worker"] = worker
-            worker["effort"] = effort
-        caps = (self.budget.max_usd, max_usd, remaining_usd)
-        data.setdefault("budget", {})["max_usd"] = min(
-            (cap for cap in caps if cap is not None and cap != -1), default=-1.0
-        )
-        if max_plan_points is not None:
-            data.setdefault("budget", {})["max_plan_points"] = max_plan_points
-        return Config.model_validate(data)
-
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:
         """Return a copy whose `harness.verify.command` is the argv, `()` for a gateless run.
 

@@ -306,8 +306,6 @@ class AgentState(pydantic.BaseModel):
         capture: How the payload is written to the blackboard.
         timeout_s: The wall-clock cap.
         on: The destination per outcome label.
-        max_usd: The slice's spend cap, or None to inherit the config's; the config cap and
-            the machine's remaining budget also bind.
         config: The state's own config layer, above the machine's `[config]`: the model
             (`models.default` and the role overrides) and every other knob of the state.
     """
@@ -322,25 +320,7 @@ class AgentState(pydantic.BaseModel):
     capture: Capture
     timeout_s: int = pydantic.Field(gt=0)
     on: dict[str, str]
-    max_usd: float | None = pydantic.Field(default=None, gt=0.0)
     config: dict[str, Any] = pydantic.Field(default_factory=dict)
-
-    @pydantic.model_validator(mode="after")
-    def _one_spelling_for_the_cap(self) -> AgentState:
-        """Return the state, refusing a `max_usd` that its `config` table also sets.
-
-        Returns:
-            The state unchanged.
-
-        Raises:
-            ValueError: The cap is set both ways.
-        """
-        budget = self.config.get("budget")
-        if self.max_usd is not None and isinstance(budget, dict) and "max_usd" in budget:
-            raise ValueError(
-                "`max_usd` and `config.budget.max_usd` both set this state's spend cap; keep one"
-            )
-        return self
 
 
 class ToolState(pydantic.BaseModel):

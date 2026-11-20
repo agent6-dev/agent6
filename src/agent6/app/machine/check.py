@@ -60,7 +60,7 @@ def check_bundle(
         configs = state_configs.resolve_configs(
             spec, cwd, detect.probed_environment(), config_paths=config_paths
         )
-    except state_configs.SandboxWidenedError as exc:
+    except state_configs.ConfigWidenedError as exc:
         raise CheckError(exc.problems, "config") from exc
     except (ConfigError, detect.IsolationUnavailableError) as exc:
         raise CheckError([str(exc)], "config") from exc

@@ -801,16 +801,15 @@ def test_initial_must_exist(tmp_path: pathlib.Path) -> None:
 
 
 def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.Path) -> None:
-    """The state's `config` table sets the model knobs; `max_usd` is a field of the state."""
+    """The state's `config` table sets the model knobs."""
     body = VALID_MACHINE.replace(
         'kind  = "agent"',
-        'kind  = "agent"\nmax_usd = 1.5\n'
+        'kind  = "agent"\n'
         'config = { models = { worker = { model = "anthropic/claude-sonnet-4-5", '
         'effort = "high" } } }',
     )
     state = semantics.load_machine(_write(tmp_path, body)).states["classify"]
     assert isinstance(state, schema.AgentState)
-    assert state.max_usd == 1.5
     assert state.config == {
         "models": {"worker": {"model": "anthropic/claude-sonnet-4-5", "effort": "high"}}
     }
@@ -823,7 +822,6 @@ def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.
         "capture",
         "timeout_s",
         "on",
-        "max_usd",
         "config",
     }
 
@@ -850,14 +848,6 @@ def test_a_model_knob_set_on_an_agent_state_fails_the_load_naming_its_config_lea
     assert f"`{field}` is not a field of an agent state" in problems[0]
     assert f"[states.classify.config.{leaf.rsplit('.', maxsplit=1)[0]}]" in problems[0]
     assert f"{leaf.rsplit('.', maxsplit=1)[1]} = " in problems[0]
-
-
-def test_max_usd_set_as_a_field_and_in_the_config_table_is_refused(tmp_path: pathlib.Path) -> None:
-    """The cap has one spelling per state: the field and `config.budget.max_usd` together fail."""
-    body = VALID_MACHINE.replace(
-        'kind  = "agent"', 'kind  = "agent"\nmax_usd = 1.0\nconfig = { budget = { max_usd = 2.0 } }'
-    )
-    assert any("`max_usd` and `config.budget.max_usd`" in p for p in _problems(tmp_path, body))
 
 
 def test_machine_config_overlay_parses(tmp_path: pathlib.Path) -> None:
@@ -914,12 +904,6 @@ def test_budget_max_usd_is_optional(tmp_path: pathlib.Path) -> None:
 def test_budget_max_usd_rejects_non_finite(tmp_path: pathlib.Path) -> None:
     # TOML inf passes gt=0.0 and never binds, disabling the cap; refused at load.
     body = VALID_MACHINE.replace("max_usd         = 25.0", "max_usd         = inf")
-    problems = _problems(tmp_path, body)
-    assert any("finite" in p for p in problems)
-
-
-def test_agent_state_max_usd_rejects_non_finite(tmp_path: pathlib.Path) -> None:
-    body = VALID_MACHINE.replace('kind  = "agent"', 'kind  = "agent"\nmax_usd = inf')
     problems = _problems(tmp_path, body)
     assert any("finite" in p for p in problems)
 

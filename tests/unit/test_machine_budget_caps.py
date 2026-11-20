@@ -10,7 +10,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import preflight, reporter
-from agent6.app.machine import agent, run
+from agent6.app.machine import agent, run, state_configs
 from agent6.app.session import setup as session_setup
 from agent6.config import model
 from agent6.machine import contracts
@@ -45,7 +45,6 @@ reason = "done"
         (0.0, None, 25.0, "state", 0.0),
         (-1.0, None, 25.0, "state", 25.0),
         (30.0, None, 25.0, "operator", 25.0),
-        (1.0, 5.0, 25.0, "operator", 1.0),
         (10.0, 2.0, 25.0, "operator", 2.0),
         (-1.0, 2.0, None, "operator", 2.0),
         (-1.0, None, None, "operator", -1.0),
@@ -68,14 +67,18 @@ def test_preflight_and_runtime_preserve_every_spend_cap(
     config.write_text(
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9"\n'
         '[models.default]\nmodel = "p/unpriced-test-model"\n'
-        + (f"[budget]\nmax_usd = {config_cap}\n" if source == "operator" else ""),
+        + (
+            f"[budget]\nmax_usd = {config_cap}\n"
+            if source == "operator"
+            else "[budget]\nmax_usd = -1\n"
+        ),
         encoding="utf-8",
     )
     body = _MACHINE
     if machine_cap is not None:
         body = body.replace("[budget]", f"[budget]\nmax_usd = {machine_cap}")
     if state_cap is not None:
-        body = body.replace('kind = "agent"', f'kind = "agent"\nmax_usd = {state_cap}')
+        body += f"\n[states.judge.config.budget]\nmax_usd = {state_cap}\n"
     if source == "state":
         body += f"\n[states.judge.config.budget]\nmax_usd = {config_cap}\n"
     path = tmp_path / "caps.asm.toml"
@@ -130,28 +133,18 @@ def test_preflight_and_runtime_preserve_every_spend_cap(
     ), said
     assert runtime_caps == [expected]
     assert [call.args[0].budget.max_usd for call in preflight_spy.call_args_list] == [expected]
-    assert len(requests) == 1 and requests[0].max_usd == state_cap
+    assert len(requests) == 1
     assert requests[0].remaining_usd == machine_cap
 
 
 @pytest.mark.parametrize(
-    "config_cap,state_cap,remaining,expected",
-    [
-        (1.0, 5.0, 25.0, 1.0),
-        (0.0, 5.0, 25.0, 0.0),
-        (-1.0, None, 0.0, 0.0),
-        (5.0, 0.0, 25.0, 0.0),
-        (5.0, -1.0, None, 5.0),
-        (-1.0, None, None, -1.0),
-        (-1.0, 2.0, 0.5, 0.5),
-    ],
+    "cap,remaining,expected",
+    [(0.0, 25.0, 0.0), (-1.0, 0.0, 0.0), (5.0, None, 5.0), (-1.0, None, -1.0)],
 )
-def test_spend_clamp_honors_zero_and_unlimited(
-    config_cap: float, state_cap: float | None, remaining: float | None, expected: float
+def test_state_config_applies_the_remainder(
+    cap: float, remaining: float | None, expected: float
 ) -> None:
-    """Zero refuses metered calls, while an unlimited cap never widens another bound."""
-    cfg = model.Config.model_validate({"budget": {"max_usd": config_cap}})
-    assert (
-        cfg.with_machine_agent_overrides(max_usd=state_cap, remaining_usd=remaining).budget.max_usd
-        == expected
-    )
+    cfg = model.Config.model_validate({"budget": {"max_usd": cap}})
+    out = state_configs.agent_config(cfg, effort="high", remaining_usd=remaining)
+    assert out.budget.max_usd == expected
+    assert out.models.worker and out.models.worker.effort == "high"

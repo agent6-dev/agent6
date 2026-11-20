@@ -792,17 +792,6 @@ def test_argv_rejects_blank_element(tmp_path: pathlib.Path) -> None:
             load_config(_write(tmp_path, body))
 
 
-def test_with_machine_agent_overrides(tmp_path: pathlib.Path) -> None:
-    cfg = load_config(_write(tmp_path, _VALID_TOML))
-    out = cfg.with_machine_agent_overrides(effort="high", max_usd=2.0)
-    assert out.models.worker is not None
-    assert out.models.worker.effort == "high"
-    assert out.budget.max_usd == 2.0
-    # The model and its provider are the config's own.
-    assert (out.models.worker.provider, out.models.worker.model) == ("anthropic", "claude-x")
-    assert cfg.with_machine_agent_overrides() == cfg
-
-
 def _with_openai_provider(block: str) -> str:
     return _VALID_TOML.replace("[models.worker]", f"{block}\n\n[models.worker]")
 

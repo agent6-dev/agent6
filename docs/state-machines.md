@@ -236,7 +236,7 @@ timeout_s = 600
 on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
 
 # mode = "read_only"                   # "read_only" (default, read-only) | "run"
-# max_usd = 1.5                    # this agent slice's metered-spend cap
+# config.budget.max_usd = 1.5      # this state's metered-spend cap
 
 # [states.classify.config.models.default]  # this state's baseline for all roles
 # model = "anthropic/claude-haiku-4-5"
@@ -309,10 +309,7 @@ The state's `config` table tunes how that loop runs.
 - Legacy state-level `model`, `effort` and `temperature` keys refuse with a remedy pointing to `config.models.default`.
 - `[states.<name>.config.budget]` sets `max_tokens_fallback`; most other config keys work the same way.
 - a key the table leaves out falls back through the effective config ([Machine config overlay](#machine-config-overlay-config))
-- `max_usd` bounds this agent slice; omit it to inherit the resolved config cap.
-  The config cap, state cap and machine remainder all bind.
-  The smallest nonnegative cap wins; zero refuses metered calls and `-1` is unlimited.
-  Setting `max_usd` and `config.budget.max_usd` together is a load error.
+- `config.budget.max_usd` bounds this state. The machine's remaining budget also applies.
 - secrets are never expressed here, only a `provider` name that must exist in the effective config
 
 #### `tool`
@@ -594,7 +591,7 @@ A machine file may carry a top-level `[config]` table, and each `agent` or `tool
 command = ["uv", "run", "pytest", "-q"]
 
 [config.budget]
-max_usd = 50.0
+max_usd = 5.0
 
 [states.review.config.review]       # this state only
 when = "verify_fail"
@@ -607,6 +604,11 @@ Unset keys read straight through to the lower layers, so a machine only states w
 - `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, `container.*`, `agent6.preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.pass_env`, `notify.on_event`, `git.worktree.base_dir`, `harness.prompt.system_prompt_file`, `skills.extra_dirs`
     - endpoints, key-env names, and secrets live in the global/repo config and the secrets store; presets, MCP servers, the container and its host commands, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
 - a state's table also refuses `machine.*`, `harness.parallel.*`, `git.worktree.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
+
+**Budget caps.** A machine or state may lower `budget.max_usd`, `budget.max_tokens_fallback` and `budget.max_plan_points`.
+A state may raise its cap back to the operator's limit.
+Zero refuses calls on that meter.
+`-1` means unlimited and requires an unlimited operator cap.
 
 **Sandbox keys: never wider than your own config.** An overlay may set any `sandbox` key, bounded by your own layers alone (defaults, global, repo, preset, `--config FILE`).
 

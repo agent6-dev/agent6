@@ -34,6 +34,7 @@ from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, paths
 from agent6.app import confine, role_providers, worktree_setup
 from agent6.app import reporter as app_reporter
+from agent6.app.machine import state_configs
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
@@ -386,11 +387,9 @@ def run_one(
     r = req.request
     # A config error becomes an error result, not a traceback the host must salvage.
     try:
-        cfg = layer.load_effective_with_overlay(
-            req.cwd, req.overlay
-        ).config.with_machine_agent_overrides(
+        cfg = state_configs.agent_config(
+            layer.load_effective_with_overlay(req.cwd, req.overlay).config,
             effort=r.effort,
-            max_usd=r.max_usd,
             remaining_usd=r.remaining_usd,
             max_plan_points=r.max_plan_points,
         )

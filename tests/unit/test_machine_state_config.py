@@ -17,13 +17,13 @@ import pytest
 from agent6 import kinds, paths
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import (
-    SandboxWidenedError,
+    ConfigWidenedError,
     StateConfig,
     agent,
+    config_widening,
     machine_protect_paths,
     resolve_configs,
     run,
-    sandbox_widening,
     state_configs,
 )
 from agent6.config import Config, ConfigError, SandboxConfig
@@ -191,7 +191,7 @@ def _cfg(**sandbox: Any) -> Config:
 
 
 def _widening(operator: Config, state: Config, isolation: kinds.IsolationLevel = "full") -> str:
-    return "; ".join(sandbox_widening(operator, isolation, state, isolation).values())
+    return "; ".join(config_widening(operator, isolation, state, isolation).values())
 
 
 @pytest.fixture
@@ -358,13 +358,23 @@ def test_a_state_table_cannot_select_a_preset(
         resolve_configs(spec, tmp_path, detect.probed_environment())
 
 
-def test_the_cap_and_its_config_leaf_are_one_spelling(tmp_path: pathlib.Path) -> None:
-    """`max_usd` set as a field and in the state's table is refused, never ordered."""
-    budget = MACHINE.replace('prompt = "judge"', 'prompt = "judge"\nmax_usd = 1.0') + (
-        "\n[states.judge.config.budget]\nmax_usd = 2.0\n"
-    )
-    with pytest.raises(MachineError, match=r"`max_usd` and `config\.budget\.max_usd`"):
+def test_state_cap_is_not_a_field_of_an_agent_state(tmp_path: pathlib.Path) -> None:
+    """The schema rejects a cap outside the budget table."""
+    budget = MACHINE.replace('prompt = "judge"', 'prompt = "judge"\nmax_usd = 1.0')
+    with pytest.raises(MachineError, match="max_usd"):
         load_machine(_write(tmp_path, budget))
+
+
+@pytest.mark.parametrize("key", ["max_usd", "max_tokens_fallback", "max_plan_points"])
+@pytest.mark.parametrize("where", ["config", "states.judge.config"])
+def test_machine_cannot_raise_an_operator_budget_cap(
+    tmp_path: pathlib.Path, key: str, where: str
+) -> None:
+    """An unlimited allowance in a machine file cannot cancel an operator cap."""
+    _operator(OPERATOR + f"\n[budget]\n{key} = 3\n")
+    spec = load_machine(_write(tmp_path, MACHINE + f"\n[{where}.budget]\n{key} = -1\n"))
+    with pytest.raises(ConfigError, match=rf"budget\.{key} = -1.*wider than your config's 3"):
+        resolve_configs(spec, tmp_path, detect.probed_environment())
 
 
 # --- the bound, key by key --------------------------------------------------------------------
@@ -545,18 +555,18 @@ def test_a_path_is_compared_by_where_it_really_is(tmp_path: pathlib.Path) -> Non
 
 def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:
     op, st = _cfg(isolation="full"), _cfg(isolation="auto")
-    assert sandbox_widening(op, "full", st, "full") == {}
-    assert "isolation" in sandbox_widening(op, "full", st, "partial")
-    assert "isolation" in sandbox_widening(_cfg(), "full", _cfg(isolation="none"), "none")
+    assert config_widening(op, "full", st, "full") == {}
+    assert "sandbox.isolation" in config_widening(op, "full", st, "partial")
+    assert "sandbox.isolation" in config_widening(_cfg(), "full", _cfg(isolation="none"), "none")
 
 
 def test_protect_git_is_compared_by_what_it_resolves_to() -> None:
     """A machine's `git.control = "model"` under the operator's `auto` turned protection off."""
     state = Config.model_validate({"git": {"control": "model"}})
-    problems = sandbox_widening(_cfg(), "full", state, "full")
-    assert "protect_git" in problems and "git.control" in problems["protect_git"]
-    assert sandbox_widening(_cfg(protect_git="off"), "full", state, "full") == {}
-    assert sandbox_widening(state, "full", Config(), "full") == {}
+    problems = config_widening(_cfg(), "full", state, "full")
+    assert "sandbox.protect_git" in problems and "git.control" in problems["sandbox.protect_git"]
+    assert config_widening(_cfg(protect_git="off"), "full", state, "full") == {}
+    assert config_widening(state, "full", Config(), "full") == {}
 
 
 def test_network_is_compared_by_what_it_resolves_to() -> None:
@@ -597,7 +607,7 @@ def test_a_state_wider_than_the_operator_is_refused_by_name(
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
     spec = load_machine(_write(tmp_path, MACHINE))
-    with pytest.raises(SandboxWidenedError) as refused:
+    with pytest.raises(ConfigWidenedError) as refused:
         resolve_configs(spec, tmp_path, detect.probed_environment())
     said = str(refused.value)
     assert said.startswith('[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"]')
@@ -646,7 +656,7 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
     nested = MACHINE.replace(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox/in"]'
     )
-    with pytest.raises(SandboxWidenedError) as refused:
+    with pytest.raises(ConfigWidenedError) as refused:
         resolve_configs(load_machine(_write(tmp_path, nested)), tmp_path, env)
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /srv/outbox/in")
@@ -676,7 +686,7 @@ def test_a_grant_under_the_hosts_tmp_is_refused_when_any_state_writes_it(
         'extra_read_paths = ["/srv/inbox"]',
         'isolation = "full"\nextra_read_paths = ["/tmp/handoff"]',
     )
-    with pytest.raises(SandboxWidenedError) as refused:
+    with pytest.raises(ConfigWidenedError) as refused:
         resolve_configs(load_machine(_write(tmp_path, mixed)), tmp_path, env)
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /tmp/handoff")
@@ -694,7 +704,7 @@ def test_the_ceiling_is_the_operators_layers_alone(
         '[config.sandbox]\nextra_read_paths = ["/srv/inbox"]',
     )
     with pytest.raises(
-        SandboxWidenedError, match=r"the machine's \[config\] sets sandbox\.extra_read_paths"
+        ConfigWidenedError, match=r"the machine's \[config\] sets sandbox\.extra_read_paths"
     ):
         resolve_configs(
             load_machine(_write(tmp_path, widened)), tmp_path, detect.probed_environment()
