@@ -97,6 +97,39 @@ def test_allow_is_an_approvals_one_filled_answer(
     assert not errors
 
 
+def test_each_answer_reads_within_its_question_or_command(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A prompt's answer fields were named by their placeholders alone, its buttons by nothing more.
+
+    Each question names its field and the group of its options and field; the approval box is a
+    group named by its question and the command under judgment, with no "?" read out.
+    """
+    from playwright.sync_api import expect
+
+    approval = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: make"}
+    ask = {
+        "type": "question.prompt",
+        "id": "question-1",
+        "wait": True,
+        "questions": [
+            {"question": "Should a lone CR also end a row?", "options": ["yes", "no, raise"]},
+            {"question": "Keep the strict dialect?", "options": []},
+        ],
+    }
+    session_logs.write_run(tmp_path, "names-AAA111", [approval, ask], live=True)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/names-AAA111")
+    command = page.get_by_role("group", name="Allow run_command: make", exact=True)
+    expect(command.get_by_role("button")).to_have_text(["Allow", "Allow all", "Deny", "Deny all"])
+    first, second = "1. Should a lone CR also end a row?", "2. Keep the strict dialect?"
+    options = page.get_by_role("group", name=first, exact=True)
+    expect(options.get_by_role("button")).to_have_text(["yes", "no, raise"])
+    expect(options.get_by_role("textbox", name=first, exact=True)).to_be_visible()
+    expect(page.get_by_role("textbox", name=second, exact=True)).to_be_visible()
+    assert not errors
+
+
 @pytest.mark.parametrize("width", [1280, 390])
 def test_the_action_bar_stands_under_the_top_bar_while_a_prompt_waits(
     open_page: Callable[[int], tuple[Page, list[str]]],

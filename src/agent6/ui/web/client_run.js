@@ -248,6 +248,8 @@ async function postPrompt(box, url, body) {
   catch (error) { setPromptBusy(box, false); throw error; }
 }
 
+// Numbers the question and command lines that name a prompt's fields and groups.
+let promptLines = 0;
 // Render the run's unanswered approval / ask_user prompts as actionable boxes.
 // Reconcile by id: keep existing boxes so a repaint (any SSE frame) never wipes a
 // half-typed free-text answer or drops focus; only add new prompts and remove
@@ -270,16 +272,24 @@ function paintPrompts(cards, s) {
   for (const ap of (s.approvals || [])) {
     if (ap.answered || ap.id !== s.open_approval) continue;
     build[pfx + 'ap:' + ap.id] = () => {
+      // A group named by its question and the command under judgment, so each answer reads within them.
       const box = el('div', 'prompt-box');
+      box.setAttribute('role', 'group');
       const head = ap.head || ap.prompt || 'Approve this action?';
-      box.appendChild(el('div', 'q', '? ' + head + (ap.payload ? ':' : '')));
+      const q = box.appendChild(el('div', 'q'));
+      q.append(glyph('?'), ' ' + head + (ap.payload ? ':' : ''));
+      q.id = 'prompt-line-' + ++promptLines;
+      const names = [q.id];
       if (ap.payload) {
         // The command under judgment: fixed width, lexically marked (strings,
         // flags, pipes/redirects); no language detection, just a scanning aid.
         const pre = el('pre', 'cmd');
         pre.innerHTML = highlightCmd(ap.payload);
+        pre.id = 'prompt-line-' + ++promptLines;
+        names.push(pre.id);
         box.appendChild(pre);
       }
+      box.setAttribute('aria-labelledby', names.join(' '));
       const row = el('div', 'form-row');
       const yes = el('button', 'primary', 'Allow');
       const no = el('button', 'danger', 'Deny');
@@ -319,9 +329,13 @@ function paintPrompts(cards, s) {
       const inputs = [];
       qs.forEach((sub, qi) => {
         const label = (qs.length > 1 ? (qi + 1) + '. ' : '') + (sub.question || 'The agent asked a question');
-        box.appendChild(el('div', 'q', label));
+        const line = box.appendChild(el('div', 'q', label));
+        line.id = 'prompt-line-' + ++promptLines;
+        // The question names its field, and the group of its options and field.
         const row = el('div', 'form-row');
+        row.setAttribute('role', 'group'); row.setAttribute('aria-labelledby', line.id);
         const inp = el('input', 'field');
+        inp.setAttribute('aria-labelledby', line.id);
         inp.placeholder = (sub.options || []).length ? 'pick or type an answer…' : 'type an answer…';
         for (const opt of (sub.options || [])) {
           const b = el('button', null, opt);
