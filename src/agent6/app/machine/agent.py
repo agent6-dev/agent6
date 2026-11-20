@@ -676,8 +676,8 @@ def build_machine_agent_runner(
     a temp file (the prompt never rides the command line) and enforces the timeout
     by killing the whole process group. With `machine_id` and `clone_root` set,
     every state executes in a fresh clone checked out at the machine chain's tip,
-    and a run-mode state's commits land back on the chain ref and the visible
-    machine branch; the operator's checkout is never touched.
+    and the runner copies a run-mode state's commits back to the chain ref and the
+    visible machine branch. The operator's checkout is never touched.
 
     Args:
         overlays: Each state's config and isolation level, by state name; a request naming
@@ -790,7 +790,7 @@ def build_machine_agent_runner(
                             # A malformed result file counts as missing.
                             result = salvaged("error")
         if clone is not None and chain is not None and machine_id is not None:
-            result = _land_machine_clone(
+            result = _import_machine_clone(
                 cwd, clone, chain, git_read.machine_branch_for(machine_id), result
             )
         return result
@@ -823,16 +823,16 @@ def clone_at_machine_chain(origin: pathlib.Path, dest: pathlib.Path, chain_ref: 
         git_ops.checkout_detached(dest, tip)
 
 
-def _land_machine_clone(
+def _import_machine_clone(
     origin: pathlib.Path, clone: pathlib.Path, chain_ref: str, branch: str, result: AgentExecResult
 ) -> AgentExecResult:
-    """Land the state's work back in the origin on every outcome, and drop the clone.
+    """Import the state's commits into the origin on every outcome, then drop the clone.
 
     Serial states make both ref updates fast-forwards. An import failure keeps the
     clone, the only copy, and routes the state as failed with no payload.
 
     Args:
-        origin: The repository the work lands in.
+        origin: The repository that receives the commits.
         clone: The state's clone.
         chain_ref: The machine's chain ref.
         branch: The visible machine branch.

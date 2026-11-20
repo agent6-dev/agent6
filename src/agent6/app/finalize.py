@@ -35,8 +35,8 @@ _EXIT_BUDGET_EXHAUSTED = 3
 # The agent finished but the gate was red, or unverified under a harness gate; the group and a
 # BLOCK verdict too.
 EXIT_VERIFY_FAILED = 4
-# The agent finished green but no commit landed and the edits sit uncommitted.
-EXIT_NO_COMMIT_LANDED = 5
+# The run finished with edits in the working tree but made no commit.
+EXIT_NO_COMMIT = 5
 # The operator stopped the run: Ctrl-C, `agent6 stop`, the pause menu, the commit hook.
 EXIT_OPERATOR_STOP = 130
 
@@ -56,7 +56,7 @@ def session_exit_code(
     Args:
         result: The session's result.
         harness_gate: Whether the harness runs the gate (`harness.verify.when` is not `never`).
-        stranded: Whether the edits sit uncommitted with no commit landed.
+        stranded: Whether the run left edits in the working tree without making a commit.
 
     Returns:
         0 for a green, gateless or unjudged finish, 130 an operator stop, 3 budget, 4 red or
@@ -72,7 +72,7 @@ def session_exit_code(
             result.verification == "unverified" and harness_gate
         ):
             return EXIT_VERIFY_FAILED
-        return EXIT_NO_COMMIT_LANDED if stranded else 0
+        return EXIT_NO_COMMIT if stranded else 0
     if result.reason == "budget_exhausted":
         return _EXIT_BUDGET_EXHAUSTED
     return 1
@@ -84,7 +84,7 @@ def stranded_edits(
     cwd: pathlib.Path,
     hidden: frozenset[str] = frozenset(),
 ) -> bool:
-    """Tell whether a completed run left its edits uncommitted with no commit landed.
+    """Tell whether a completed run left edits in the working tree without making a commit.
 
     A run with no chain to commit to, or one configured never to commit, leaves the
     tree as it is by design. The exit code and the end banner read this one predicate.
@@ -314,7 +314,7 @@ def _print_unverified(
     if _left_no_tree_of_its_own(manifest, layout, cwd, hidden):
         return
     reporter.out(
-        "\nnothing verified the final tree: no verify ran this execution, or edits landed"
+        "\nnothing verified the final tree: no verify ran this execution, or the tree changed"
         " after the last green."
     )
     if result.completed:
@@ -525,7 +525,7 @@ def _print_run_branch_footer(
     if result.completed and manifest is not None and manifest.git_control == "model":
         _print_model_git_footer(manifest, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
     elif result.completed and merged_into:
-        # auto_merge landed it, and auto_prune may have deleted the branch.
+        # The merge stamp survives pruning of the run branch.
         reporter.out(f"\nchanges merged into {merged_into}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
     elif result.completed and manifest is not None and (where := wire.commits_ref(manifest, cwd)):
@@ -663,7 +663,7 @@ def _print_no_commit_footer(
     reporter: app_reporter.Reporter,
     hidden: frozenset[str] = frozenset(),
 ) -> None:
-    """Print the footer for a run whose commit never landed.
+    """Print the footer for a run that recorded no commit.
 
     Stranded edits are a failure, a clean tree means the run recorded nothing, and a
     tree git cannot read gets an honest unknown.
@@ -752,13 +752,13 @@ def finalize_auto_merge(
     events: event_log.EventSink | None = None,
     worker_lock_fd: int | None = None,
 ) -> None:
-    """Land the run branch on its base with `git.merge_method`, best-effort.
+    """Merge the run branch into its base with `git.merge_method`, best-effort.
 
     Ref plumbing only: the checkout is never switched. On a conflict or error the
     run's refs stay intact and the note says how to merge by hand.
 
     Args:
-        cwd: The repository whose base branch the run lands on: the checkout, or the
+        cwd: The repository holding the target branch: the checkout, or the
             repository a session's clone belongs to.
         layout: The session's layout.
         cfg: The run's config.
@@ -772,7 +772,7 @@ def finalize_auto_merge(
     except sessions_manifest.ManifestError:
         return
     base_branch = manifest.base_branch
-    # The visible branch, else the chain ref; an unborn ref has nothing to land.
+    # The visible branch, else the chain ref; an unborn ref has nothing to merge.
     run_branch = manifest.run_branch or git_read.chain_ref_for(manifest.session_id)
     if not base_branch or git_read.chain_tip(cwd, run_branch) is None:
         return
@@ -825,8 +825,8 @@ def finalize_auto_merge(
             " `sessions prune` will call this branch unmerged"
         )
     # auto_prune is a branch verb: the chain ref stays as the run's record.
-    landed = outcome.status == "merged" or outcome.recorded
-    if landed and cfg.git.auto_prune and manifest.run_branch:
+    merged = outcome.status == "merged" or outcome.recorded
+    if merged and cfg.git.auto_prune and manifest.run_branch:
         if git_ops.delete_branch_if_merged(cwd, run_branch):
             reporter.note(f"auto_pruned {run_branch}")
         else:
@@ -938,7 +938,7 @@ def finalize_auto_stash(
     try:
         restored = git_ops.restore_stash(cwd, entry)
     except errors.GitError as exc:
-        # The apply landed; putting back a concurrent stash the drop displaced failed.
+        # The stash applied, but restoring a concurrent stash displaced by the drop failed.
         reporter.note(f"restored your pre-run changes {where}, but {exc}")
         return
     if restored:

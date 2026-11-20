@@ -357,10 +357,8 @@ def _plan_fork(
         # A fork's checkpoint 0 is its seed: it holds the source's turn, not turn 0.
         from_seed=at_turn == 0 and checkpoint.next_turn != 0,
         forked_from_sha=forked_from_sha,
-        # A source whose work landed moved its base to where it continued from; a turn from
-        # before that predates the base, and the fork's own work starts at the turn. Ancestry
-        # alone decides: a second merge moves the stamp's tip before its continuation moves
-        # the base.
+        # If the source resumed after a merge, its base may be newer than the fork turn.
+        # Check ancestry: a second merge updates the stamp before a resume moves the base.
         base_sha=(
             forked_from_sha
             if sm.merged is not None and not git_read.is_ancestor(cwd, sm.base_sha, forked_from_sha)

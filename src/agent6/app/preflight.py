@@ -264,7 +264,7 @@ def unmerged_run_holding_the_tree(
 
     A run's edits sit uncommitted on the checkout until its branch is merged; naming
     that run points the dirty-tree question at the merge. The match is per file, so a
-    commit that landed on the base since does not hide it.
+    later commit on the base does not hide it.
 
     Args:
         cwd: The workspace.
@@ -349,7 +349,8 @@ def dirty_tree_question(paths: Sequence[str], *, unmerged_run: str = "") -> sche
         The question; the answer's first word is the choice, anything else cancels.
     """
     merge_hint = (
-        f"cancel: park the run; `agent6 sessions merge {unmerged_run}` lands them, then resume it"
+        f"cancel: park this run, merge the changes with `agent6 sessions merge {unmerged_run}`,"
+        " then resume this run"
         if unmerged_run
         else "cancel: park the run; resume it once they are committed or stashed"
     )
@@ -394,7 +395,7 @@ def dirty_tree_refusal(paths: Sequence[str], *, unmerged_run: str = "") -> str:
         The refusal text.
     """
     settle = (
-        f" `agent6 sessions merge {unmerged_run}` lands them; or"
+        f" Merge the changes with `agent6 sessions merge {unmerged_run}`, or"
         if unmerged_run
         else " Commit or stash them first, or"
     )

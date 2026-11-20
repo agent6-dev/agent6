@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Land a run's branch, for `sessions merge` and `git.auto_merge`.
+"""Merge a run's branch for `sessions merge` and `git.auto_merge`.
 
-Landing is ref plumbing (`git_ops.plumb_merge`): no checkout and no clean-tree requirement,
+The merge uses ref plumbing (`git_ops.plumb_merge`): no checkout and no clean-tree requirement,
 so the worktree carrying the run's own work is never an obstacle. Both callers share the
 method dispatch and the manifest record.
 """
@@ -47,7 +47,7 @@ class MergeOutcome:
         merged_sha: The target's tip after the merge; on a noop, its own tip.
         conflicts: The conflicting paths.
         error: Why the merge did not happen.
-        stamp_error: Why the manifest stamp did not land; the merge happened either way.
+        stamp_error: Why the merge could not be recorded; it happened either way.
         recorded: This call stamped a noop as merged, with NO_MERGE_COMMIT for the sha.
         left_behind: Paths the checkout kept its own version of (`left_behind_line`).
         target_before: The target's tip before the merge, the base of those versions.
@@ -109,12 +109,12 @@ def record_merge_in_manifest(
         merged_tip: The run-branch tip merged; `prune --delete-squashed` deletes only a branch
             still pointing there.
         into_tip: The target's tip a merge that added nothing saw.
-        via: The run whose merge landed this one, "" for its own.
-        method: The landing method, None when unrecorded.
-        target_before: The target tip before landing, None when unrecorded.
+        via: The run whose merge included this one, "" for this run's own merge.
+        method: The merge method, None when unrecorded.
+        target_before: The target tip before the merge, None when unrecorded.
 
     Returns:
-        "" when the stamp landed, else why it did not.
+        "" on a successful stamp write, otherwise the error.
     """
     try:
         m = sessions_manifest.read_manifest(layout.session_dir)
@@ -164,16 +164,15 @@ def dispatch_merge(
     """Run the method on the target through `plumb_merge`.
 
     A squash builds its message per `[git.commit].squash_message`; an operator message
-    overrides any style. `tasks` lands one squash per consecutive range of checkpoints
-    that worked on one subtask: under the `model` style the model names the range's work
-    and the subtask's title and acceptance follow as the body, under every other style the
-    title is the subject and the acceptance the body; a range outside any subtask takes
-    the squash style's message, and an operator message lands one squash.
+    overrides any style. `tasks` squashes each consecutive range of checkpoints for one
+    subtask. With `model`, the subtask's title and acceptance follow the model's message.
+    Other styles use the title as the subject and the acceptance as the body. A range outside
+    any subtask takes the squash style's message. An operator message squashes all ranges together.
 
     Args:
         cwd: The repository.
-        method: ff_only, merge or squash.
-        target: The branch to land on.
+        method: ff_only, merge, squash or tasks.
+        target: The target branch.
         run_branch: The run's branch or chain ref.
         base_sha: The commit the run started from.
         manifest: The run's manifest.
@@ -194,7 +193,7 @@ def dispatch_merge(
     """
 
     def style_message(range_base: str, range_tip: str) -> str | None:
-        # The message names what this squash lands: the commits after its base.
+        # The message describes only the commits after this range's base.
         return merge_message.squash_message(
             cwd,
             cfg,
@@ -233,7 +232,7 @@ def dispatch_merge(
         return f"{written.rstrip()}\n\n{record}" if written else record
 
     if method == "tasks" and message is None:
-        return land_tasks(
+        return merge_tasks(
             cwd,
             target,
             run_branch,
@@ -259,7 +258,7 @@ def dispatch_merge(
     )
 
 
-def land_tasks(
+def merge_tasks(
     cwd: pathlib.Path,
     target: str,
     tip: str,
@@ -269,38 +268,37 @@ def land_tasks(
     identity: git_read.CommitIdentity,
     range_message: Callable[[str, str, graph_models.TaskNode | None], str | None],
 ) -> git_ops.MergeResult:
-    """Land the chain as one squash per task range, in chain order.
+    """Merge the chain as one squash per task range, in chain order.
 
     Each range's squash is parented on the previous one, with the previous range's tip as
     its merge base, so a target that moved since the run started merges once per range.
-    The squashes are made off the target and it moves once at the end: a conflict in a
-    later range lands nothing.
+    The target moves only after all ranges succeed, so a conflict leaves it unchanged.
 
     Args:
         cwd: The repository.
-        target: The branch to land on.
+        target: The target branch.
         tip: The chain's tip.
-        base_sha: Where the un-landed part of the chain starts.
-        tasks: The task graph's nodes by id; a range naming a node lands under its title.
+        base_sha: The base of the first unmerged range.
+        tasks: The task graph's nodes by id, used to build each range's message.
         identity: The committer.
         range_message: Builds a range's message from its base, its tip and the task node it
             worked on (None outside any subtask).
 
     Returns:
-        The target's move, or the first conflict, with nothing landed.
+        The merge result, or the first conflict with the target unchanged.
 
     Raises:
         GitError: The target moved while the squashes were made.
     """
     ranges = git_read.chain_task_ranges(cwd, base_sha, tip) or [("", tip)]
-    landed = git_read.branch_tip_sha(cwd, target) or ""
-    start, previous = landed, base_sha
+    squash_tip = git_read.branch_tip_sha(cwd, target) or ""
+    start, previous = squash_tip, base_sha
     for task_id, range_tip in ranges:
         node = tasks.get(task_id) if task_id else None
         message = range_message(previous, range_tip, node)
         made = git_ops.merge_commit(
             cwd,
-            landed,
+            squash_tip,
             range_tip,
             method="squash",
             message=message or f"Merge {range_tip}",
@@ -309,10 +307,10 @@ def land_tasks(
         )
         if made.conflicted:
             return made
-        landed, previous = made.merged_sha, range_tip
-    if landed == start:
+        squash_tip, previous = made.merged_sha, range_tip
+    if squash_tip == start:
         return git_ops.MergeResult(start, False, ())
-    return git_ops.plumb_merge(cwd, target, landed, method="ff_only", identity=identity)
+    return git_ops.plumb_merge(cwd, target, squash_tip, method="ff_only", identity=identity)
 
 
 def task_commit_message(node: graph_models.TaskNode) -> str:
@@ -322,7 +320,7 @@ def task_commit_message(node: graph_models.TaskNode) -> str:
     return f"{subject}\n\n{body}" if body else subject
 
 
-def landed_base(
+def merged_base(
     cwd: pathlib.Path,
     layout: sessions_layout.SessionLayout,
     manifest: sessions_manifest.SessionManifest,
@@ -339,7 +337,7 @@ def landed_base(
         cwd: The repository.
         layout: The run's directory layout.
         manifest: The run's manifest; its stamp, or an ancestor's, names the merged tip.
-        target: The branch to land on.
+        target: The target branch.
         tip: The run's chain tip.
 
     Returns:
@@ -368,12 +366,12 @@ def landed_base(
     return None
 
 
-def record_if_landed(
+def record_if_merged(
     cwd: pathlib.Path, layout: sessions_layout.SessionLayout, tip: str, *, fallback: str
 ) -> sessions_manifest.MergeStamp | None:
     """Record an unrecorded run as merged when a branch already holds its content.
 
-    Work landed by hand (a squash, a cherry-pick, a rebase, a merge of the ref) leaves no
+    Work merged by hand (a squash, a cherry-pick, a rebase, a merge of the ref) leaves no
     record, so every listing reads it unmerged. The record is the one a `sessions merge`
     that adds nothing writes.
 
@@ -400,7 +398,7 @@ def record_if_landed(
             and tip != manifest.base_sha
             and target_tip is not None
             and git_ops.holds_content(
-                cwd, target_tip, tip, merge_base=landed_base(cwd, layout, manifest, target, tip)
+                cwd, target_tip, tip, merge_base=merged_base(cwd, layout, manifest, target, tip)
             )
         )
         if not held or record_merge_in_manifest(
@@ -439,20 +437,20 @@ def execute_merge(
     warn: Callable[[str], None] = lambda _m: None,
     worker_lock_fd: int | None = None,
 ) -> MergeOutcome:
-    """Land the run's branch on the target and record the merge.
+    """Merge the run's branch into the target and record the result.
 
     Ref plumbing only: the checkout is never switched and the worktree is never required
     clean. The existing writer lock serializes review dispositions and this mutation.
-    A pack whose `pack.json` the landing writes into the repository is set aside.
+    A pack whose `pack.json` the merge writes into the repository is set aside.
 
     Args:
         cwd: The repository.
         layout: The run's directory layout.
         manifest: The run's manifest.
         run_branch: The run's branch or chain ref.
-        target: The branch to land on.
+        target: The target branch.
         base_sha: The commit the run started from.
-        method: ff_only, merge or squash.
+        method: ff_only, merge, squash or tasks.
         message: The operator's message, else the style's.
         cfg: The resolved config.
         identity: The committer.
@@ -514,7 +512,7 @@ def execute_merge(
                     ),
                 )
             target_tip_before = git_read.branch_tip_sha(cwd, target) or ""
-            merge_base = landed_base(cwd, layout, manifest, target, tip)
+            merge_base = merged_base(cwd, layout, manifest, target, tip)
             # A merge holds no workspace lease: a pack there before it may be `agent6 pack`'s.
             root = paths.project_root(cwd, allow_pack=True)
             if not os.path.lexists(root / ".agent6" / "pack.json"):
@@ -558,7 +556,7 @@ def execute_merge(
                     target_before=target_tip_before,
                 )
             if not noop:
-                _land_included_run(cwd, layout, manifest, target, result.merged_sha)
+                _stamp_included_run(cwd, layout, manifest, target, result.merged_sha)
             return MergeOutcome(
                 "noop" if noop else "merged",
                 merged_sha=result.merged_sha,
@@ -571,7 +569,7 @@ def execute_merge(
         return MergeOutcome("error", error=f"merge failed: {exc}")
 
 
-def _land_included_run(
+def _stamp_included_run(
     cwd: pathlib.Path,
     layout: sessions_layout.SessionLayout,
     manifest: sessions_manifest.SessionManifest,
@@ -580,13 +578,13 @@ def _land_included_run(
 ) -> None:
     """Stamp the run this one took in under `dirty_tree = "include"` as merged with it.
 
-    Only a run still at the tip this one started on: later commits of its own did not land.
+    Stamp only a run still at the included tip: the merge did not include its later commits.
 
     Args:
         cwd: The repository.
-        layout: The landed run's directory layout.
-        manifest: The landed run's manifest.
-        target: The branch it landed on.
+        layout: The merged run's directory layout.
+        manifest: The merged run's manifest.
+        target: The branch it merged into.
         merged_sha: Its merge commit.
     """
     included = manifest.includes
@@ -610,10 +608,10 @@ def _land_included_run(
 
 
 def merge_command(session_id: str, base_branch: str) -> str:
-    """Return the command that lands a run, as a hint prints it.
+    """Return the command to merge a run.
 
     Args:
-        session_id: The run to land.
+        session_id: The run to merge.
         base_branch: The run's base branch; "" for a detached HEAD.
 
     Returns:
@@ -629,11 +627,11 @@ def left_behind_line(target: str, outcome: MergeOutcome) -> str:
     The plumbing brings the checkout forward only where a file still matches what the branch
     held, so an operator's edit is never overwritten; the tree they then test holds the older
     content. Committed as it is, such a file would undo the merged change, so the line carries
-    the two commands that merge the edit with what landed.
+    the two commands that reapply the edit to the merged files.
 
     Args:
-        target: The branch the run landed on.
-        outcome: The landed merge.
+        target: The branch the run merged into.
+        outcome: The merge result.
 
     Returns:
         The line, "" when the checkout kept no file of its own.
@@ -647,7 +645,7 @@ def left_behind_line(target: str, outcome: MergeOutcome) -> str:
     paths = " ".join(shlex.quote(p) for p in outcome.left_behind)
     return (
         f"{kept}\n"
-        "  to merge your edits with what landed (a conflict leaves its markers in the file):\n"
+        "  to reapply your edits to the merged files (a conflict leaves its markers in the file):\n"
         f"    git diff --binary {outcome.target_before[:12]} -- {paths} > your-edits.patch\n"
         f"    git checkout HEAD -- {paths} && git apply --3way your-edits.patch"
     )

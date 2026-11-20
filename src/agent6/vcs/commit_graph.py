@@ -28,8 +28,8 @@ def parents(root: pathlib.Path, commit: str) -> tuple[str, ...]:
     return tuple(result.stdout.strip().split())
 
 
-def landed_commits(root: pathlib.Path, before: str, after: str) -> tuple[str, ...]:
-    """Return the landed range in reverse topological order.
+def merged_commits(root: pathlib.Path, before: str, after: str) -> tuple[str, ...]:
+    """Return the commits the merge added, children before parents.
 
     Args:
         root: The repository.

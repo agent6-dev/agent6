@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Plan and land a run's work on a branch: the one merge every surface calls.
+"""Plan and run the branch merge shared by every front-end.
 
 The CLI passes its reporter; the TUI and the web call `merge_session_dir` and show what it
 returns. Nothing here prints by itself.
@@ -39,7 +39,7 @@ class MergePlan:
         layout: The run.
         manifest: Its manifest.
         run_branch: The branch or chain ref holding the work.
-        target: The branch to land on.
+        target: The target branch.
         base_sha: The commit the run was cut from.
         method: The merge method.
         identity: The committer identity.
@@ -136,8 +136,8 @@ def not_mergeable_now(layout: sessions_layout.SessionLayout, session_id: str) ->
     """
     if process.worker_is_alive(layout.session_dir):
         return (
-            f"run {session_id!r} is still live; a merge now lands only the"
-            " commits so far (its later ones need another merge) and moves your"
+            f"run {session_id!r} is still live; merging now would include only the"
+            " commits so far (its later ones need another merge) and move your"
             " index while the worker still edits. Stop it first:\n"
             f"    agent6 stop {session_id}"
         )
@@ -180,7 +180,7 @@ def plan_merge(  # noqa: PLR0911
         not ref.head_ref or git_read.chain_tip(cwd, ref.head_ref) is None
     ):
         already = "already " if stamp.commit else ""
-        reporter.out(f"[agent6] {already}{stamp.landed()} (run refs were pruned).")
+        reporter.out(f"[agent6] {already}{stamp.description()} (run refs were pruned).")
         return 0
     # execute_merge refuses a missing base_sha too; here it is a refusal before anything moves.
     unmergeable = (
@@ -218,7 +218,7 @@ def plan_merge(  # noqa: PLR0911
     # chain_tip resolves both shapes of head_ref: a branch name and the hidden chain ref.
     if git_read.chain_tip(cwd, run_branch) is None:
         if git_read.chain_tip(cwd, git_read.chain_ref_for(manifest.session_id)) is None:
-            # Not a failure: there is no work to land.
+            # Not a failure: there is no work to merge.
             reporter.out("[agent6] nothing to merge: this run committed nothing.")
             return 0
         reporter.error(
@@ -268,7 +268,7 @@ def manual_merge_cmd(cwd: pathlib.Path, plan: MergePlan) -> str:
             steps.append("git stash")
         if st.branch != plan.target:
             steps.append(f"git checkout {plan.target}")
-    # A by-hand landing of a `tasks` merge is one squash: the task ranges need the chain.
+    # A manual `tasks` merge is one squash: the task ranges need the chain.
     squash = " --squash" if plan.method in ("squash", "tasks") else ""
     steps.append(f"git merge{squash} {plan.run_branch}")
     return " && ".join(steps)
@@ -300,7 +300,7 @@ def run_merge(
     config_paths: tuple[pathlib.Path, ...],
     reporter: app_reporter.Reporter,
 ) -> MergeEnd:
-    """Land a run's work on a target branch with the chosen method.
+    """Merge a run's work into the target branch with the chosen method.
 
     Ref plumbing only: the checkout, index and worktree are never the medium, so a worktree
     still carrying the run's work is no obstacle.
@@ -327,7 +327,7 @@ def run_merge(
         # A success line here would be indistinguishable from a real merge.
         reporter.out(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
         return MergeEnd(0)
-    # The merge lands whatever the gate said; the operator hears it first.
+    # A red or missing gate warns the operator but does not block the merge.
     if unverified := UNVERIFIED_WARNINGS.get(scan_session_log(plan.layout.logs_path).gate_word()):
         reporter.note(f"warning: {unverified}; merging it.")
     outcome = merge.execute_merge(
@@ -423,7 +423,7 @@ def merge_session_dir(
 def same_paths_note(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
     """Return the line naming the unmerged runs that changed paths this run changed.
 
-    A merge says it after landing, and a front-end's confirm before the click.
+    The merge command prints it after merging. Front-ends show it before confirmation.
 
     Args:
         cwd: The repo.

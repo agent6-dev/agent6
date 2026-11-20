@@ -78,8 +78,8 @@ def restore_stash(path: pathlib.Path, stash: git_read.StashEntry) -> bool:
         True on a clean apply; False when the apply failed and everything stays put.
 
     Raises:
-        GitError: A raced drop took a concurrent stash and putting it back failed; the
-            apply has landed and the message carries the recovery command.
+        GitError: The stash applied but the drop displaced a concurrent stash that could
+            not be restored. The error includes the recovery command.
     """
     # Quiet: the `git status` an apply ends with asks each nested repository for its own.
     if not git_command.run(path, "stash", "apply", "--quiet", stash.sha, check=False).ok:
@@ -731,7 +731,7 @@ def chain_continue_from(
     identity: git_read.CommitIdentity | None = None,
     also_branch: str | None = None,
 ) -> str:
-    """Make the chain continue from a commit that already holds its landed work.
+    """Make the chain continue from a commit that already holds its merged work.
 
     Refs only move forward: a tip the commit descends from fast-forwards to it, and any other
     tip gets a commit with the head's tree and both as parents, so the run's earlier commits
@@ -740,9 +740,9 @@ def chain_continue_from(
     Args:
         path: The repository.
         head: The commit to continue from.
-        message: The joining commit's message.
+        message: The two-parent commit's message, if one is needed.
         ref: The chain ref, moved to the result.
-        tip: The run's tip that landed.
+        tip: The run's merged tip.
         identity: The author and committer overrides.
         also_branch: A visible branch moved with the ref.
 
@@ -827,7 +827,7 @@ def tree_with_paths_from(path: pathlib.Path, tree: str, rev: str, paths: Sequenc
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MergeResult:
-    """The outcome of landing a run branch on a target.
+    """The outcome of merging a run branch into a target.
 
     Attributes:
         merged_sha: The target's new tip; "" on a conflict, where nothing moved.
@@ -980,8 +980,8 @@ def _merge_tree(path: pathlib.Path, ours: str, theirs: str, merge_base: str | No
     return MergedTree(lines[0].strip(), False)
 
 
-def _landed_tree(path: pathlib.Path, ours: str, theirs: str, merge_base: str | None) -> MergedTree:
-    """Return the tree that landing one commit on another makes; a fast-forward is theirs."""
+def _merged_tree(path: pathlib.Path, ours: str, theirs: str, merge_base: str | None) -> MergedTree:
+    """Return the tree for merging theirs into ours; a fast-forward takes their tree."""
     if git_read.is_ancestor(path, ours, theirs):
         return MergedTree(git_read.tree_sha(path, theirs), False)
     return _merge_tree(path, ours, theirs, merge_base)
@@ -990,7 +990,7 @@ def _landed_tree(path: pathlib.Path, ours: str, theirs: str, merge_base: str | N
 def holds_content(
     path: pathlib.Path, target: str, rev: str, *, merge_base: str | None = None
 ) -> bool:
-    """Return whether landing a rev on a commit would leave that commit's tree as it is.
+    """Return whether merging a rev into the target would leave its tree unchanged.
 
     True for a rev the target contains, and for work the target took in by hand (a squash,
     a cherry-pick, a rebase). A later change of the same lines on the target conflicts.
@@ -1002,12 +1002,12 @@ def holds_content(
         merge_base: The base instead of the one git would find.
 
     Returns:
-        False on a conflict and when the landing would change a file.
+        False on a conflict or when the merge would change a file.
 
     Raises:
         GitError: A commit is missing, or git cannot merge trees.
     """
-    merged = _landed_tree(path, target, rev, merge_base)
+    merged = _merged_tree(path, target, rev, merge_base)
     return not merged.conflicted and merged.tree == git_read.tree_sha(path, target)
 
 
@@ -1021,16 +1021,16 @@ def plumb_merge(
     identity: git_read.CommitIdentity | None = None,
     merge_base: str | None = None,
 ) -> MergeResult:
-    """Land a rev on a branch with plumbing only: no checkout, no clean-tree requirement.
+    """Merge a rev into a branch with plumbing only: no checkout, no clean-tree requirement.
 
     The operator's worktree is never the medium, so a worktree carrying the run's own
-    work does not block the landing. When the target is checked out, the index entries
+    work does not block the merge. When the target is checked out, the index entries
     the merge changed and the operator did not are brought forward.
 
     Args:
         path: The repository.
-        target: The branch to land on.
-        merge_rev: The commit to land.
+        target: The target branch.
+        merge_rev: The commit to merge.
         method: "merge" (a two-parent commit), "squash" (a single-parent commit) or
             "ff_only" (the ref moves to the rev).
         message: The merge commit's message.
@@ -1086,15 +1086,15 @@ def merge_commit(
     identity: git_read.CommitIdentity | None = None,
     merge_base: str | None = None,
 ) -> MergeResult:
-    """Make the commit that lands one commit on another, moving no ref.
+    """Make a squash or two-parent merge commit without moving any ref.
 
-    `land_tasks` chains these off the target and moves it once at the end, so a conflict
-    in a later range lands nothing.
+    `merge_tasks` chains these commits off the target and moves it once at the end, so
+    a conflict in a later range leaves the target unchanged.
 
     Args:
         path: The repository.
-        ours: The commit to land on.
-        theirs: The commit to land.
+        ours: The target commit.
+        theirs: The commit to merge into it.
         method: "squash" (one parent) or "merge" (two parents).
         message: The commit message.
         identity: The author and committer overrides.
@@ -1104,12 +1104,12 @@ def merge_commit(
         The new commit as `merged_sha`; `ours` when theirs adds nothing to it; or the
         conflict, which lists its paths.
     """
-    merged = _landed_tree(path, ours, theirs, merge_base)
+    merged = _merged_tree(path, ours, theirs, merge_base)
     if merged.conflicted:
         return MergeResult("", True, merged.paths)
     tree = merged.tree
     if tree == git_read.tree_sha(path, ours):
-        return MergeResult(ours, False, ())  # content-identical: nothing to land
+        return MergeResult(ours, False, ())  # Same content: no new commit.
     text = message
     trailer = identity.trailer if identity else None
     if trailer and trailer not in text:

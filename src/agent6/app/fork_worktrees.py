@@ -3,7 +3,7 @@
 """Manage a session's linked git worktree: a fork's or a `run --worktree` run's.
 
 Adding one, the dirt check before one is removed, the sessions that still own one, and the
-sweep `sessions prune` runs over the worktrees of sessions with no work left to land.
+sweep `sessions prune` runs over the worktrees of sessions with no work left to merge.
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ def mirror_origin(repo: pathlib.Path, worktree: pathlib.Path) -> pathlib.Path | 
 def remove_fork_worktree(
     repo: pathlib.Path, worktree: pathlib.Path, tips: tuple[str, ...]
 ) -> tuple[bool, str]:
-    """Delete a fork's worktree and its checkout lock unless it holds unlanded work.
+    """Delete a fork's worktree and its checkout lock unless removal would lose work.
 
     The dirt check is git's own rule for `worktree remove`: a merged fork's tree can still
     carry an uncommitted edit or a file never added, which `rmtree` would take with no way back.
@@ -111,7 +111,7 @@ def remove_fork_worktree(
     Args:
         repo: The repository the worktree is linked to.
         worktree: The worktree to remove.
-        tips: The commits its sessions landed, and the ones they started from.
+        tips: The sessions' chain tips and starting commits to check before removal.
 
     Returns:
         Whether it was removed, and the reason when not ("" on success).
@@ -156,7 +156,7 @@ def uncommitted_in_worktree(worktree: pathlib.Path, tips: tuple[str, ...]) -> st
 
     Args:
         worktree: The worktree to inspect.
-        tips: The commits its sessions landed.
+        tips: The session commits to compare the worktree against.
 
     Returns:
         The keep-line phrase, or "" when HEAD or a tip covers it or it is unreadable.
@@ -230,7 +230,8 @@ def _still_needs_worktree(
         manifest: The session's manifest.
 
     Returns:
-        "live", HEAD's unmerged commit count, "unmerged" for an unlanded chain, or "".
+        "live", HEAD's unmerged commit count, "unmerged" for a chain without a covering
+        merge stamp, or "".
     """
     if process.worker_is_alive(session_dir):
         return "live"
@@ -258,10 +259,10 @@ def _still_needs_worktree(
     return "" if merged else "unmerged"
 
 
-def _landed_tips(
+def _worktree_tips(
     repo: pathlib.Path, sessions: Sequence[tuple[pathlib.Path, sessions_manifest.SessionManifest]]
 ) -> tuple[str, ...]:
-    """Return the commits the sessions landed or started from.
+    """Return the chain tips and starting commits for sessions sharing a worktree.
 
     Each chain tip, else its merge stamp's tip (`--delete-squashed` deletes the ref in the same
     sweep, and the commit outlives it), plus each session's base and fork point: a worktree
@@ -276,17 +277,17 @@ def _landed_tips(
     """
     tips: list[str] = []
     for d, m in sessions:
-        landed = git_read.chain_tip(repo, git_read.chain_ref_for(d.name)) or (
+        chain_tip = git_read.chain_tip(repo, git_read.chain_ref_for(d.name)) or (
             m.merged.tip if m.merged else ""
         )
-        tips += [tip for tip in (landed, m.base_sha, m.forked_from_sha or "") if tip]
+        tips += [tip for tip in (chain_tip, m.base_sha, m.forked_from_sha or "") if tip]
     return tuple(dict.fromkeys(tips))
 
 
 def sweep_fork_worktrees(
     repo: pathlib.Path, state: pathlib.Path
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-    """Remove every session worktree whose sessions have no work left to land; keep the rest.
+    """Remove worktrees with no live session and no work left to merge or commit.
 
     Args:
         repo: The repository the worktrees are linked to.
@@ -306,7 +307,7 @@ def sweep_fork_worktrees(
             kept.extend((d.name, needs.get(d.name, f"shared with {first}")) for d, _ in sessions)
             continue
         head = git_read.status(worktree).head_sha
-        gone, note = remove_fork_worktree(repo, worktree, _landed_tips(repo, sessions))
+        gone, note = remove_fork_worktree(repo, worktree, _worktree_tips(repo, sessions))
         if gone:
             removed.extend(
                 (d.name, "merged" if m.merged or head != m.base_sha else "committed nothing")

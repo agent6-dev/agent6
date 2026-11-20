@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions prune`: clean up what landed.
-
-Prune removes merged branches and chain refs, imported clones and merged fork worktrees.
-"""
+"""`agent6 sessions prune`: remove merged refs, imported clones and merged fork worktrees."""
 
 from __future__ import annotations
 
@@ -59,7 +56,7 @@ def _stamp_or_record(
     tip: str | None,
     current: str,
 ) -> tuple[sessions_manifest.MergeStamp | None, str]:
-    """Return a session's merge record, writing one first for a run landed by hand.
+    """Return a session's merge record, writing one first for a run merged by hand.
 
     A run with no record whose base branch already holds its content is recorded as merged,
     and a line says so.
@@ -77,7 +74,7 @@ def _stamp_or_record(
     stamp, why = _session_stamp(layout)
     if layout is None or stamp is not None or why or tip is None:
         return stamp, why
-    stamp = merge.record_if_landed(cwd, layout, tip, fallback=current)
+    stamp = merge.record_if_merged(cwd, layout, tip, fallback=current)
     if stamp is not None:
         print(
             f"[agent6] {ref}: {stamp.into} already has its content;"
@@ -124,7 +121,7 @@ def _squash_unconfirmed(cwd: pathlib.Path, stamp: sessions_manifest.MergeStamp) 
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Landed:
+class PruneState:
     """How a run's commits stand against its merge stamp, for both prune loops.
 
     Attributes:
@@ -137,13 +134,13 @@ class Landed:
     why: str = ""
 
 
-def landed(
+def prune_state(
     cwd: pathlib.Path,
     stamp: sessions_manifest.MergeStamp,
     tip: str | None,
     *,
     delete_squashed: bool,
-) -> Landed:
+) -> PruneState:
     """Return the one classification of a run with a recorded merge.
 
     Args:
@@ -156,15 +153,15 @@ def landed(
         The verdict, with the keep reason when it is `keep`.
     """
     if not git_read.branch_exists(cwd, stamp.into):
-        return Landed("keep", _base_gone(stamp.into))
+        return PruneState("keep", _base_gone(stamp.into))
     if tip is not None and git_read.is_ancestor(cwd, tip, stamp.into):
-        return Landed("merged")
+        return PruneState("merged")
     if tip is not None and stamp.tip and stamp.tip != tip:
         # A resumed run committed on after the merge: those commits are in no other ref.
-        return Landed("keep", "advanced since the merge")
+        return PruneState("keep", "advanced since the merge")
     if why := _squash_unconfirmed(cwd, stamp):
-        return Landed("keep", why)
-    return Landed("squashed") if delete_squashed else Landed("keep", "squash-merged")
+        return PruneState("keep", why)
+    return PruneState("squashed") if delete_squashed else PruneState("keep", "squash-merged")
 
 
 def _keep_branch_line(br: str, stamp: sessions_manifest.MergeStamp, why: str) -> str:
@@ -182,7 +179,7 @@ def _keep_branch_line(br: str, stamp: sessions_manifest.MergeStamp, why: str) ->
 
 
 def _prune_branch(
-    cwd: pathlib.Path, br: str, stamp: sessions_manifest.MergeStamp, state: Landed, current: str
+    cwd: pathlib.Path, br: str, stamp: sessions_manifest.MergeStamp, state: PruneState, current: str
 ) -> bool:
     """Act on one run branch's classification.
 
@@ -270,7 +267,7 @@ def cmd_prune(*, delete_squashed: bool = False, config_paths: tuple[pathlib.Path
             kept_why[label] += 1
             print(f"[agent6] kept {br} ({label}; review, then: git branch -D {br})")
             continue
-        state = landed(
+        state = prune_state(
             cwd, stamp, git_read.branch_tip_sha(cwd, br), delete_squashed=delete_squashed
         )
         if _prune_branch(cwd, br, stamp, state, current):
@@ -385,7 +382,7 @@ def _prune_chain_refs(
         if stamp is None or not stamp.sha:
             kept["unmerged"] += 1
             continue
-        state = landed(cwd, stamp, sha, delete_squashed=delete_squashed)
+        state = prune_state(cwd, stamp, sha, delete_squashed=delete_squashed)
         if state.verdict == "keep":
             kept[state.why] += 1
             continue

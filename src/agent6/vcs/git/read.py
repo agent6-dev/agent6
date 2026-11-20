@@ -509,7 +509,7 @@ def run_branch_for(session_id: str) -> str:
 
 
 def machine_branch_for(machine_id: str) -> str:
-    """Return the visible branch a machine's `mode="run"` states land on."""
+    """Return the visible branch a machine's `mode="run"` states advance."""
     return f"{BRANCH_PREFIX}machine-{machine_id}"
 
 

@@ -326,7 +326,7 @@ def _pruned_branch_note(
         return None
     stamp = resume.covering_stamp(cwd, manifest)
     if stamp is not None:
-        note = f"[agent6] run branch {run_branch} was pruned; {stamp.landed()}"
+        note = f"[agent6] run branch {run_branch} was pruned; {stamp.description()}"
         if stamp.commit:
             note += f"\n  see: git show {stamp.commit}"
         return note
@@ -583,8 +583,8 @@ def _cmd_sessions_remove(*, session_id: str, asks: bool, yes: bool) -> int:
         if worktree is not None
         else []
     )
-    landed = git_read.chain_tip(cwd, git_read.chain_ref_for(layout.session_id)) or ""
-    tips = (landed,) if landed else ()
+    chain_tip = git_read.chain_tip(cwd, git_read.chain_ref_for(layout.session_id)) or ""
+    tips = (chain_tip,) if chain_tip else ()
     reason = _remove_refusal(layout, worktree if not sharing else None, tips)
     if not reason and not yes:
         if not steer_tty.delete_confirmed(_remove_preview(cwd, layout), "Delete it?"):

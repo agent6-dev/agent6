@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Build squash messages from the landed diff and the run's execution summaries."""
+"""Build squash messages from the base-to-tip diff and the run's execution summaries."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def model_squash_message(
     events: event_log.EventSink | None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> str | None:
-    """Write the squash message from the landed diff and the run's context.
+    """Write the squash message from the base-to-tip diff and the run's context.
 
     Args:
         cwd: The repository.
@@ -150,7 +150,7 @@ def model_squash_message(
             diff += f"\n[diff truncated after {len(diff.splitlines())} lines]"
         conventions = harness.agents_md_text(cwd, cfg.sandbox.hide_paths)
         system = (
-            "Write a git commit message describing the entire base-to-tip diff being landed,"
+            "Write a git commit message describing the entire base-to-tip diff being merged,"
             " not just the latest execution or review feedback. The diff is authoritative;"
             " the task, its continuation, finish summaries and commit subjects are context only."
             " Use only"

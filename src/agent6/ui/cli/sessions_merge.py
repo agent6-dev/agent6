@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions merge`: land a run's chain on its base."""
+"""`agent6 sessions merge`: merge a run's chain into its base."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _cmd_merge(
     message: str | None,
     config_paths: tuple[pathlib.Path, ...],
 ) -> int:
-    """Land a run's work on a target branch with the chosen method.
+    """Merge a run's work into the target branch with the chosen method.
 
     Args:
         session_id: The run, or "" for the newest.
@@ -29,7 +29,7 @@ def _cmd_merge(
         config_paths: The `--config` files in command-line order, if any.
 
     Returns:
-        The exit code: 0 landed or nothing to land, 1 a conflict, 2 a refusal.
+        The exit code: 0 merged or nothing to merge, 1 a conflict or failed merge, 2 a refusal.
     """
     cwd = pathlib.Path.cwd()
     res = sessions_cmds._resolve_session_manifest(cwd, session_id)

@@ -128,14 +128,14 @@ def commits_note(repo: pathlib.Path, manifest: sessions_manifest.SessionManifest
         manifest: The session's manifest.
 
     Returns:
-        The run branch, the merge that landed them, the chain ref, or "it recorded
+        The run branch, the merge that included them, the chain ref, or "it recorded
         no commits".
     """
     if manifest.run_branch and git_read.branch_exists(repo, manifest.run_branch):
         return f"its commits are on {manifest.run_branch}"
     stamp = covering_stamp(repo, manifest)
     if stamp is not None:
-        return f"its commits are {stamp.landed()}"
+        return f"its commits are {stamp.description()}"
     chain = git_read.chain_ref_for(manifest.session_id)
     if git_read.chain_tip(repo, chain) is not None:
         return f"its commits are on {chain}"
@@ -460,13 +460,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 reporter.err("REFUSING to resume. Re-run with --force to override.")
                 return 2
 
-        # A run whose work landed continues from HEAD; any other run's next commits would
-        # leave behind a commit the operator made on its branch.
-        landed: resume_chain.LandedStart | None = None
+        # A merged run can continue from HEAD. Otherwise, check for commits off the chain.
+        merged: resume_chain.MergedStart | None = None
         if mode == "run":
             try:
-                landed = resume_chain.landed_start(cwd, manifest)
-                off = None if landed else resume_chain.branch_off_the_chain(cwd, manifest)
+                merged = resume_chain.merged_start(cwd, manifest)
+                off = None if merged else resume_chain.branch_off_the_chain(cwd, manifest)
             except errors.GitError as exc:
                 reporter.error(str(exc))
                 return 2
@@ -623,9 +622,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 or None
             )
             written = _paths_the_run_wrote(layout.logs_path)
-            if landed is not None:
+            if merged is not None:
                 # The run's work is in HEAD, so what differs from HEAD is the operator's.
-                end_tree, seed = f"{landed.head}^{{tree}}", landed.head
+                end_tree, seed = f"{merged.head}^{{tree}}", merged.head
             try:
                 stopped_paths = git_read.tree_paths(cwd, end_tree) if end_tree else frozenset()
                 arrived = (
@@ -729,26 +728,26 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if settled is None:
             return 2
         stashed = settled
-        if landed is not None:
+        if merged is not None:
             try:
-                resume_base_sha = resume_chain.continue_from_head(cwd, landed, manifest, identity)
+                resume_base_sha = resume_chain.continue_from_head(cwd, merged, manifest, identity)
             except errors.GitError as exc:
                 reporter.error(f"cannot continue this run from HEAD: {exc}")
                 return 2
-            stamps.stamp_continued_from(layout.session_dir, resume_base_sha, landed.branch)
+            stamps.stamp_continued_from(layout.session_dir, resume_base_sha, merged.branch)
             reporter.note(
-                f"this run's earlier work landed on {landed.into}; continuing from HEAD"
-                f" ({landed.head[:12]})"
+                f"this run's earlier work was merged into {merged.into}; continuing from HEAD"
+                f" ({merged.head[:12]})"
             )
-        elif mode == "run" and (moved := resume_chain.unlanded_base(cwd, layout, manifest)):
+        elif mode == "run" and (moved := resume_chain.unmerged_base(cwd, layout, manifest)):
             resume_base_sha = moved
-            # The run's base moves to where its unlanded work starts; its chain stays.
+            # The run's base moves to where its unmerged work starts; its chain stays.
             current = sessions_manifest.read_manifest(layout.session_dir)
             stamps.write_manifest(
                 layout.manifest_path, current.model_copy(update={"base_sha": moved})
             )
             reporter.note(
-                f"this run's earlier work landed on {manifest.base_branch}; its diff and"
+                f"this run's earlier work was merged into {manifest.base_branch}; its diff and"
                 f" next merge start at {moved[:12]}"
             )
         merged_in: git_ops.ChainMerge | None = None
