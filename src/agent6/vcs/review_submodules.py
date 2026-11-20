@@ -6,6 +6,7 @@ import pathlib
 
 from agent6 import errors, path_safety
 from agent6.vcs.git import command as git_command
+from agent6.vcs.git import policy as git_policy
 
 
 def dirty_paths(
@@ -41,18 +42,21 @@ def dirty_paths(
                 for denied in sorted(set(workspace.denied))
                 if path_safety.path_within(denied, directory)
             ]
-            # Each repository needs its own driver overrides; Git's recursion bypasses them.
-            if git_command.run(
-                directory,
-                "status",
-                "--porcelain",
-                "--ignore-submodules=dirty",
-                "--untracked-files=normal",
-                "--",
-                ":/",
-                *exclusions,
-                env_extra={"GIT_OPTIONAL_LOCKS": "0"},
-            ).stdout:
+            # Each repository needs its own driver overrides, so the runner keeps git's status
+            # out of nested repositories and this loop visits each one. The operator's hook and
+            # driver opt-ins name the project's repository: a nested one runs under neither.
+            with git_policy.use(git_policy.GitPolicy()):
+                changed = git_command.run(
+                    directory,
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=normal",
+                    "--",
+                    ":/",
+                    *exclusions,
+                    env_extra={"GIT_OPTIONAL_LOCKS": "0"},
+                ).stdout
+            if changed:
                 dirty.add(owner)
                 continue
         for entry in git_command.nul_fields(directory, "ls-files", "--stage", "-z"):

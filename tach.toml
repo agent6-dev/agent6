@@ -615,7 +615,7 @@ depends_on = ["agent6.errors", "agent6.path_safety", "agent6.review_records", "a
 
 [[modules]]
 path = "agent6.vcs.review_submodules"
-depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git.command"]
+depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git.command", "agent6.vcs.git.policy"]
 
 [[modules]]
 # The package __init__ re-exports the models as the public API.

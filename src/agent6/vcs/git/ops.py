@@ -74,7 +74,8 @@ def restore_stash(path: pathlib.Path, stash: git_read.StashEntry) -> bool:
         GitError: A raced drop took a concurrent stash and putting it back failed; the
             apply has landed and the message carries the recovery command.
     """
-    if not git_command.run(path, "stash", "apply", stash.sha, check=False).ok:
+    # Quiet: the `git status` an apply ends with asks each nested repository for its own.
+    if not git_command.run(path, "stash", "apply", "--quiet", stash.sha, check=False).ok:
         return False
     _drop_by_sha(path, stash.sha)
     return True

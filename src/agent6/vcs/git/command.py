@@ -46,11 +46,11 @@ def spawn(
     # Split temporary indexes otherwise write sharedindex files into the real git directory.
     if env_extra and "GIT_INDEX_FILE" in env_extra:
         hardening += ("-c", "core.splitIndex=false")
-    # git 2.53 dies rc=128 on the empty `diff.external` override, so every verb that renders
-    # a diff forces the builtin renderer by flag; `blame` runs textconv too.
+    # Each verb carries its own flags: git 2.53 dies rc=128 on the empty `diff.external`
+    # override, so a verb that renders a diff forces the builtin renderer by flag.
     argv = list(args)
-    if argv and argv[0] in ("blame", "diff", "diff-tree", "log", "show"):
-        argv[1:1] = git_policy.DIFF_SAFETY_FLAGS
+    if argv:
+        argv[1:1] = git_policy.VERB_FLAGS.get(argv[0], ())
     # Drivers are blanked on every op: a list of driver-running verbs would enumerate badness.
     full_argv = (git_policy.git(), *hardening, *argv)
     index_lock = (repo or cwd) / ".git" / "index.lock"

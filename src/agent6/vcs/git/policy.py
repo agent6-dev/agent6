@@ -75,6 +75,21 @@ def unsupported_note() -> str:
     return f"unsupported git version {found}: agent6 needs git {floor} or newer"
 
 
+# A nested repository (a submodule, a repository a command made in the workspace) has a config,
+# attributes and hooks of its own, all workspace content, and git runs its commands inside one
+# under them. These keep git out: no diff renders inside one, no status summarises one, no
+# checkout recurses, and a directory laid out as a git dir is a repository only as a `.git`.
+_NESTED_REPOSITORY_HARDENING: tuple[str, ...] = (
+    "-c",
+    "diff.submodule=short",
+    "-c",
+    "safe.bareRepository=explicit",
+    "-c",
+    "status.submoduleSummary=false",
+    "-c",
+    "submodule.recurse=false",
+)
+
 # Repo-config keys that run a repo-controlled command on the host, overridden with `-c` (highest
 # precedence): fsmonitor on every index refresh, diff.external on every diff, a gpg program on
 # a commit (commit.gpgsign) and on a log, show or stash list (log.showSignature),
@@ -104,6 +119,7 @@ _GIT_HARDENING: tuple[str, ...] = (
     "diff.srcPrefix=a/",
     "-c",
     "diff.dstPrefix=b/",
+    *_NESTED_REPOSITORY_HARDENING,
 )
 
 
@@ -233,6 +249,25 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
 # `diff.external` and per-file `diff.<d>.textconv` run host commands the `-c` overrides do not
 # cover. Placed after the subcommand.
 DIFF_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
+
+# A worktree comparison asks each nested repository whether its files changed by running
+# `git status` inside it, under its own config. This compares the commit it is at and no more;
+# `diff.ignoreSubmodules` says the same and loses to a `.gitmodules` entry.
+_NO_NESTED_STATUS = "--ignore-submodules=dirty"
+
+# The flags each verb carries, placed after the subcommand. `checkout` and `switch` make the
+# worktree comparison for the list of local changes that `--quiet` leaves out.
+VERB_FLAGS: dict[str, tuple[str, ...]] = {
+    "blame": DIFF_SAFETY_FLAGS,
+    "checkout": ("--quiet",),
+    "diff": (*DIFF_SAFETY_FLAGS, _NO_NESTED_STATUS),
+    "diff-files": (_NO_NESTED_STATUS,),
+    "diff-tree": DIFF_SAFETY_FLAGS,
+    "log": DIFF_SAFETY_FLAGS,
+    "show": DIFF_SAFETY_FLAGS,
+    "status": (_NO_NESTED_STATUS,),
+    "switch": ("--quiet",),
+}
 
 
 def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:

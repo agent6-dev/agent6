@@ -644,6 +644,20 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - the clean filter runs on the auto-commit's `git add`, the merge driver on the chain merge's `merge-tree`: a cloned poisoned repo fires one without any model action
     - `true` honors them (the Git-LFS opt-in)
 
+**A nested repository's own config**
+
+- A repository inside the workspace (a vendored one, a submodule, one a command made) has a `.git/config`, attributes and hooks of its own, which a jailed command can write at every isolation level.
+- agent6's own status, diff, branch switch and stash restore run no git inside one.
+    - a status or a diff compares the commit the nested repository is at (`--ignore-submodules=dirty`), so one whose own files changed reads unchanged
+    - `checkout`, `switch` and `stash apply` run quiet, without their list of local changes
+- `submodule.recurse`, `diff.submodule` and `status.submoduleSummary` are off on every call: no checkout recurses into a submodule, no diff renders inside one, no status summarises one.
+- A directory laid out as a git dir is a repository only as a `.git` (`safe.bareRepository=explicit`): agent6 started below any other finds no repository.
+- Review asks each selected submodule for its status with that submodule's hooks and drivers off, whatever `git.run_repo_hooks` and `git.run_repo_drivers` say.
+- **Staging runs git inside a nested repository the project records.**
+  `git add` (the per-turn commit, a run's diff, the Git page's stage), `git stash push` (the auto-stash) and a `git commit` with nothing to commit run `git status` there to ask whether its files changed, and git has no switch for it.
+    - that status carries agent6's overrides: the nested repository's fsmonitor stays off, and its hooks unless `git.run_repo_hooks` is set
+    - its clean filter runs on the host: agent6 blanks a filter by name, and lists the names in the project's config alone
+
 ### 8. Secrets and `connect`
 
 `agent6 pack` copies credentials into the workspace at `.agent6/config/secrets.toml`.
