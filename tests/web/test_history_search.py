@@ -14,7 +14,7 @@ def test_composer_intercepts_ctrl_r_only() -> None:
     # The intercept lives in the composer's own keydown and requires the bare Ctrl chord.
     assert "e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey" in page.CLIENT_JS
     # A new ctrlKey site changes this count: read it for whether it takes the browser's Ctrl+R.
-    assert page.CLIENT_JS.count("ctrlKey") == 9
+    assert page.CLIENT_JS.count("ctrlKey") == 10
     assert "openHistorySearch" in page.CLIENT_JS
 
 
