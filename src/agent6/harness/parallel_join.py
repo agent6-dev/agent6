@@ -32,8 +32,8 @@ def join_child_result(
     """Join one returned child's branch onto the parent's chain.
 
     `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the child's
-    files. Never raises; the DAG stamp is the segment's (`segment_stamp`). A stopped child
-    never comes here: the dispatcher records it `stopped` and merges nothing.
+    files. Never raises; the DAG stamp is the segment's (`segment_stamp`). Stopped work
+    reaches this helper only through an explicit `merge_child` request.
 
     Args:
         root: The repository root.
