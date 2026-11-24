@@ -547,6 +547,21 @@ def _dirty_tree(
     return DirtyTree(modified=tuple(modified), hidden=hidden, unmerged_run=unmerged_run)
 
 
+def _seed_steer(
+    layout: sessions_layout.SessionLayout, steer: str, *, reporter: app_reporter.Reporter
+) -> None:
+    """Queue the steer a parked resume hands the start, with the images sent with it.
+
+    Raises:
+        preflight.SessionRefusedError: The steer could not be written.
+    """
+    # The images a front-end stored for this steer before it launched the resume.
+    images = ipc.take_launch_images(layout.session_dir, steer)
+    if not ipc.submit_steer(layout.session_dir, steer.strip(), images=images):
+        reporter.error("could not write the initial steer request")
+        raise preflight.SessionRefusedError(2)
+
+
 def open_run(
     start: RunStart,
     isolation: kinds.IsolationLevel,
@@ -591,9 +606,8 @@ def open_run(
     layout, cfg, mode = start.layout, start.cfg, start.mode
     # A reused dir carries the previous execution's bridge state.
     ipc.clear_pending_answers(layout.session_dir, started_at=started_at)
-    if initial_steer.strip() and not ipc.submit_steer(layout.session_dir, initial_steer.strip()):
-        reporter.error("could not write the initial steer request")
-        raise preflight.SessionRefusedError(2)
+    if initial_steer.strip():
+        _seed_steer(layout, initial_steer, reporter=reporter)
     app_frontend.settle_away_mode(layout.session_dir, cfg, can_ask=frontend.capabilities.can_ask)
     # A run that would have to ask about tracked changes but cannot refuses here, before the
     # manifest.
@@ -1045,7 +1059,8 @@ def run_task(
         sandbox_overrides: The sandbox flags the lifecycle re-reads.
         preset: The `--preset` flag's value.
         initial_steer: An operator follow-up queued for the loop's first boundary,
-            seeded after the stale-state clear so it survives it.
+            seeded after the stale-state clear so it survives it, with the images a
+            front-end recorded for it.
         pins: The pinned paths.
         preset_stamp: `(name, from_flag)` to stamp in place of deriving from `agent6.preset`,
             so a parked resume replays the original submission's precedence.

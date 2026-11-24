@@ -443,8 +443,8 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
 ) -> None:
     """`resume --steer` on a PARKED run.
 
-    The bridge files resume seeds are wiped by run_task's own stale-state clear, so the follow-up
-    must ride the delegation (initial_steer) instead of dying on the floor.
+    The resume seeds no steer for a parked run: run_task resets the bridge itself, so the
+    follow-up must ride the delegation (initial_steer) instead of dying on the floor.
     """
     from agent6.app import resume as resume_mod
     from agent6.app import stamps
@@ -481,6 +481,96 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     )
     assert rc == 0
     assert called["initial_steer"] == "also update the docs"
+
+
+def _parked_run(repo: pathlib.Path, session_id: str) -> sessions_layout.SessionLayout:
+    """Write a run parked at submission, as a busy checkout leaves one."""
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
+    layout.ensure()
+    stamps.write_session_manifest(
+        layout,
+        session_id=session_id,
+        user_task="do the saved thing",
+        base_sha="",
+        base_branch="main",
+        run_branch=None,
+        cfg=_load_cfg(),
+        mode="run",
+    )
+    stamps.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
+    return layout
+
+
+def _full_isolation(*_a: object, **_k: object) -> str:
+    return "full"
+
+
+def _ended(*_a: object, **_k: object) -> execution.ExecutionEnd:
+    return execution.ExecutionEnd(0)
+
+
+def test_a_parked_resume_queues_its_steer_once(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resume --steer` on a parked run queued the steer twice.
+
+    The resume seeded the slot, and `run_task` then queued its own copy behind it: the
+    stale-state clear keeps what was written since the execution began. The run would read
+    the follow-up at its first boundary and again at its second.
+    """
+    from agent6.app import resume as resume_mod
+    from agent6.sessions import ipc
+
+    layout = _parked_run(repo, "run-PONCE")
+    monkeypatch.setattr(session_runtime, "select_isolation", _full_isolation)
+    monkeypatch.setattr(execution, "run_execution", _ended)
+
+    rc = resume_mod.resume_task(
+        (),
+        "run-PONCE",
+        started_at=time.time(),
+        frontend=mock.MagicMock(),
+        force=False,
+        steer="also update the docs",
+    )
+
+    assert rc == 0
+    assert ipc.read_steer_answer(layout.session_dir) == "also update the docs"
+    assert ipc.queued_steers(layout.session_dir) == ()
+
+
+def test_a_parked_resume_queues_its_steer_with_the_images_sent_with_it(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A steer with images reached a parked run twice, once without its images.
+
+    A front-end records the images before it launches the resume. The resume queued them with
+    the steer, and `run_task` put a second copy of the words alone in the slot.
+    """
+    from agent6 import operator_input
+    from agent6.app import resume as resume_mod
+    from agent6.sessions import ipc
+
+    layout = _parked_run(repo, "run-PIMG")
+    image = operator_input.ImageRef(media_type="image/png", byte_size=4, sha256="0" * 64)
+    message = operator_input.OperatorInput(parts=("match this screenshot", image))
+    ipc.write_launch_input(layout.session_dir, message)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full_isolation)
+    monkeypatch.setattr(execution, "run_execution", _ended)
+
+    rc = resume_mod.resume_task(
+        (),
+        "run-PIMG",
+        started_at=time.time(),
+        frontend=mock.MagicMock(),
+        force=False,
+        steer=message.text,
+    )
+
+    assert rc == 0
+    assert not ipc.steer_request_pending(layout.session_dir)
+    (queued,) = ipc.queued_steers(layout.session_dir)
+    assert (queued.text, queued.images) == (message.text, (image,))
 
 
 def test_run_task_seeds_initial_steer_on_the_bridge(repo: pathlib.Path) -> None:

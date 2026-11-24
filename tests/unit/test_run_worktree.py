@@ -930,7 +930,7 @@ def test_a_refusal_before_the_manifest_removes_the_worktree(
     """A start refused after the worktree is added, before a manifest names it, removes it."""
     repo = _repo(tmp_path, monkeypatch)
 
-    def _unwritable(_session_dir: pathlib.Path, _text: str) -> bool:
+    def _unwritable(_session_dir: pathlib.Path, _text: str, **_images: object) -> bool:
         return False
 
     monkeypatch.setattr(ipc, "submit_steer", _unwritable)

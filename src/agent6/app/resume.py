@@ -310,29 +310,22 @@ def _require_worktree(
 
 
 def reopen_record(
-    target: ResumeTarget,
-    *,
-    steer: str,
-    merge_from: str,
-    started_at: float,
-    reporter: app_reporter.Reporter,
-) -> tuple[session_log.LogScan, resume_questions.CarriedQuestions]:
-    """Bring the record up to date under the writer lock, and seed this execution's steer.
+    target: ResumeTarget, *, steer: str, merge_from: str, reporter: app_reporter.Reporter
+) -> session_log.LogScan:
+    """Bring the record up to date under the writer lock, and read how the session ended.
 
     Args:
         target: The session.
         steer: The `--steer` text.
         merge_from: The `--merge` branch.
-        started_at: The instant this execution began; the stale-state clear keeps bridge
-            markers written since.
         reporter: Receives the refusal.
 
     Returns:
-        The scan of the journal, and the questions it carries over.
+        The scan of the journal.
 
     Raises:
-        preflight.SessionRefusedError: The clone lacks the run's commits, the session has
-            nothing to resume, or the steer could not be written.
+        preflight.SessionRefusedError: The clone lacks the run's commits, or the session
+            has nothing to resume.
     """
     layout, manifest, session_id = target.layout, target.manifest, target.layout.session_id
     if fork_worktrees.mirror_origin(target.repo, target.cwd) is not None:
@@ -367,6 +360,34 @@ def reopen_record(
     if not steer.strip() and not merge_from and new_work:
         reporter.refuse(listing.needs_new_work_refusal(session_id))
         raise preflight.SessionRefusedError(2)
+    return scan
+
+
+def reset_bridge(
+    target: ResumeTarget,
+    scan: session_log.LogScan,
+    *,
+    steer: str,
+    started_at: float,
+    reporter: app_reporter.Reporter,
+) -> resume_questions.CarriedQuestions:
+    """Drop the bridge state the last execution left, and seed this execution's steer.
+
+    Args:
+        target: The session.
+        scan: The scan of the journal.
+        steer: The `--steer` text.
+        started_at: The instant this execution began; the stale-state clear keeps bridge
+            markers written since.
+        reporter: Receives the refusal.
+
+    Returns:
+        The questions the journal carries over.
+
+    Raises:
+        preflight.SessionRefusedError: The steer could not be written.
+    """
+    layout = target.layout
     carried = resume_questions.carried_questions(layout.logs_path)
     # Approval ids reset on resume, so their stale answers go; a pending question's stays.
     ipc.clear_pending_answers(
@@ -380,7 +401,7 @@ def reopen_record(
     if steer.strip() and not ipc.submit_steer(layout.session_dir, steer, images=images):
         reporter.error("could not write the initial steer request")
         raise preflight.SessionRefusedError(2)
-    return scan, carried
+    return carried
 
 
 def _load_config(
@@ -501,7 +522,7 @@ def start_parked(
             if (not preset and manifest.harness.preset_from_flag)
             else None
         ),
-        # run_task seeds its own initial steer over the files `reopen_record` seeded.
+        # run_task resets the bridge and seeds the steer itself, with the steer's images.
         initial_steer=steer,
         reporter=reporter,
     )
@@ -1114,11 +1135,10 @@ def resume_task(
         with session_prepare.hold(layout, frontend=frontend, reporter=reporter) as held:
             # One writer per session dir, taken before any shared state is touched.
             held.worker_lock_fd = session_prepare.take_single_writer(layout, reporter=reporter)
-            scan, carried = reopen_record(
-                target, steer=steer, merge_from=merge_from, started_at=started_at, reporter=reporter
-            )
-            held.in_session = True
+            scan = reopen_record(target, steer=steer, merge_from=merge_from, reporter=reporter)
             if target.manifest.parked_task:
+                # Before the bridge reset: a steer seeded here would stay beside run_task's own.
+                held.in_session = True
                 return start_parked(
                     target,
                     held,
@@ -1131,6 +1151,10 @@ def resume_task(
                     effort=effort,
                     reporter=reporter,
                 )
+            carried = reset_bridge(
+                target, scan, steer=steer, started_at=started_at, reporter=reporter
+            )
+            held.in_session = True
             held.repo_lock_fd = take_checkout(target, reporter=reporter)
             snapshot = read_snapshot(target, reporter=reporter)
             merged = check_chain(target, force=force, reporter=reporter)
