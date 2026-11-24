@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -13,11 +14,31 @@ from typing import Any
 import pytest
 
 from agent6 import paths
+from agent6.app import child_launch
 from agent6.config import Config, layer
 from agent6.sessions import child_dispatch
+from agent6.ui.cli import entry
 from tests import launch_env
 from tests.unit import test_children_background as background
 from tests.unit import test_children_cli as cli
+
+
+def _run_parent(args: list[str], *, child_budget: bool) -> None:
+    """Cap only the first child's launch at two tokens in the budget case."""
+    task = ["--auto-approve", "PARENT: send work"]
+    if not child_budget:
+        subprocess.run([*args, "run", *task], check=True, timeout=120)
+        return
+    write = child_launch.write
+
+    def write_launch(directory: pathlib.Path, launch: child_launch.ChildLaunch) -> pathlib.Path:
+        assert launch.allowance is not None
+        allowance = dataclasses.replace(launch.allowance, tokens=2)
+        return write(directory, launch.model_copy(update={"allowance": allowance}))
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(child_launch, "write", write_launch)
+        assert entry.cli_main([*args[1:], "run", "--max-tokens-fallback", "6", *task]) == 3
 
 
 def _remove_evidence(ending: str, repo: pathlib.Path, record: pathlib.Path, ref: str) -> None:
@@ -140,13 +161,14 @@ def test_parent_resumes_then_steers_its_ended_child(
                     "spec": "2" if ending == "ranked" else "1",
                 },
             )
-            # One parent call waits while the child spends its own allowance.
-            return [start, ("read_background", {"wait_s": 30})] if ending == "budget" else start
-        return (
-            ("read_background", {"id": sid, "wait_s": 30})
-            if "[parallel] group" not in json.dumps(body["messages"])
-            else launch_env.FINISH
-        )
+            return [start, ("read_background", {"wait_s": 120})] if ending == "budget" else start
+        complete = "[parallel] group" in json.dumps(body["messages"])
+        after_end = launch_env.FINISH
+        if ending == "budget":
+            # The parent spends its last two tokens only after the child's result arrives.
+            assert complete
+            after_end = ("read_file", {"path": "README.md"})
+        return after_end if complete else ("read_background", {"id": sid, "wait_s": 30})
 
     def reply(body: dict[str, Any]) -> launch_env.Reply:
         if "PARENT:" in cli._first_task(body):
@@ -192,11 +214,7 @@ def test_parent_resumes_then_steers_its_ended_child(
         config = tmp_path / "config.toml"
         config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
         args = [str(pathlib.Path(sys.executable).with_name("agent6")), "--config", str(config)]
-        caps = ["--max-tokens-fallback", "4"] if ending == "budget" else []
-        ran = subprocess.run(
-            [*args, "run", *caps, "--auto-approve", "PARENT: send work"], check=False, timeout=120
-        )
-        assert ran.returncode == (3 if ending == "budget" else 0)
+        _run_parent(args, child_budget=ending == "budget")
         (parent,) = [d for d in runs.iterdir() if not cli._CHILD_ID.search(d.name)]
         sid = parent.name + "-p1-l1"
         (original,) = child_dispatch.read_records(parent)
@@ -207,8 +225,6 @@ def test_parent_resumes_then_steers_its_ended_child(
         selected = sid
         record = runs / sid
         ref = f"refs/agent6/{sid}/head" if control == "model" else f"agent6/{sid}"
-        unmeasured_dirt = control == "model" and ending == "killed"
-        assert bool(list(clones.rglob("child-*"))) is unmeasured_dirt
         if ending in ("budget", "turn limit", "provider error"):
             stops = [
                 row["reason"]
@@ -222,6 +238,12 @@ def test_parent_resumes_then_steers_its_ended_child(
                     "provider error": "provider_error",
                 }[ending]
             ]
+        if ending == "budget":
+            merge = original.child(sid).merge
+            assert merge is not None and merge.status == "failed"
+            assert merge.detail == f"no result (failed · budget exhausted); {ref} holds 1 commit"
+        unmeasured_dirt = control == "model" and ending == "killed"
+        assert bool(list(clones.rglob("child-*"))) is unmeasured_dirt
         if ending == "provider error":
             assert f"{ref} holds 1 commit" in json.dumps(parent_calls[-1]["messages"])
         if ending == "parent merged":
