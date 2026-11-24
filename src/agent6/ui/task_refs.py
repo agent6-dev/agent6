@@ -9,7 +9,7 @@ import dataclasses
 import os
 import pathlib
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from agent6 import errors, path_safety
 from agent6.config import layer
@@ -25,6 +25,17 @@ _REF_PATH_RE = re.compile(rf"{_REF_CHAR}+")
 
 TASK_FILE_REF_MAX_BYTES = 64 * 1024  # per file; a bigger read needs an explicit tool call
 REF_SUGGESTIONS_MAX = 8  # the paths one completion offers
+
+
+def common_prefix(texts: Sequence[str]) -> str:
+    """Return the leading characters every text shares, as a completion extends to."""
+    if not texts:
+        return ""
+    low, high = min(texts), max(texts)
+    for at, char in enumerate(low):
+        if char != high[at]:
+            return low[:at]
+    return low
 
 
 def expand_task_file_refs(task: str, root: pathlib.Path, hide: Iterable[str] = ()) -> str:
@@ -165,5 +176,5 @@ def suggest_refs(
     matches = starts + [
         name for name in names if wanted in name.lower() and not name.lower().startswith(wanted)
     ]
-    common = os.path.commonprefix(starts) if starts else fragment  # noqa: RUF071 - a character prefix
+    common = common_prefix(starts) if starts else fragment
     return RefSuggestions(tuple(matches[:limit]), max(len(matches) - limit, 0), common)

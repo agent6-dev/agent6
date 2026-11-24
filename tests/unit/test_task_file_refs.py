@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+import warnings
 
 import pytest
 
@@ -308,6 +309,17 @@ def test_suggestions_put_prefix_matches_first_and_stop_at_the_cap(tmp_path: path
     assert task_refs.suggest_refs(repo, (), "notes").paths == ("docs/src-notes.md",)
     assert task_refs.suggest_refs(repo, (), "ignored").paths == ()
     assert task_refs.suggest_refs(repo, (), "", limit=100).more == 0
+
+
+def test_a_completions_common_prefix_is_counted_in_characters(tmp_path: pathlib.Path) -> None:
+    """`os.path.commonprefix` did the count and warns as deprecated on Python 3.15."""
+    repo = _repo(tmp_path, {"src/main.py": "", "src/map.py": ""})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        assert task_refs.suggest_refs(repo, (), "src").common == "src/ma"
+    assert task_refs.common_prefix(["/parallel", "/pin", "/plan"]) == "/p"
+    assert task_refs.common_prefix(["ab", "abc"]) == "ab"
+    assert task_refs.common_prefix(["x", "y"]) == task_refs.common_prefix([]) == ""
 
 
 def test_suggestions_leave_out_what_the_expander_cannot_read(tmp_path: pathlib.Path) -> None:

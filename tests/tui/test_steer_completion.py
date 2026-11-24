@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import subprocess
+import warnings
 
 import pytest
 
@@ -69,7 +70,9 @@ def test_tab_completes_unique_and_stalls_ambiguous() -> None:
     assert composer.complete_steer("/pa", mode="steer") == "/parallel "
     assert composer.complete_steer("/pin", mode="steer") == "/pin "
     # Ambiguous with no common-prefix progress: consumed but unchanged, so Tab never yanks focus.
-    assert composer.complete_steer("/p", mode="steer") == "/p"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)  # os.path.commonprefix warns on 3.15
+        assert composer.complete_steer("/p", mode="steer") == "/p"
     assert composer.complete_steer("q", mode="steer") is None
 
 
