@@ -72,7 +72,7 @@ SCROLL_ITEMS: tuple[MenuItem, ...] = (
 
 def menu_bindings(
     screen: str, menus: tuple[Menu, ...], *, footer: tuple[tuple[str, str], ...] = ()
-) -> list[textual_binding.Binding]:
+) -> list[textual_binding.BindingType]:
     """Return a screen's bindings from its menus and `SCREEN_KEYS[screen]`.
 
     A comma in the key table joins an action's aliases: the first key carries the
@@ -91,7 +91,7 @@ def menu_bindings(
     keys = keymap.SCREEN_KEYS[screen]
     shown = dict(footer)
     items = {it.action: it for m in menus for it in m.items}
-    binds: list[textual_binding.Binding] = []
+    binds: list[textual_binding.BindingType] = []
     for action in shown:
         assert action in keys, f"{screen}: footer action {action!r} has no key"
     for action in (*shown, *(a for a in keys if a not in shown)):
