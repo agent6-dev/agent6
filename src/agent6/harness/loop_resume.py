@@ -234,6 +234,7 @@ def save_resume_snapshot(
         root_task_id=state.root_task_id,
         original_task=state.original_task,
         operator_task=state.operator_task,
+        last_steer=state.last_steer,
         base_sha=harness.chain.base_sha,
         verify_command=harness.gate.command(state.verify),
         review_rejections_total=state.gates.review_rejections,

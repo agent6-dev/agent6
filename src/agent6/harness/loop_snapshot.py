@@ -182,6 +182,7 @@ class SessionSnapshot(pydantic.BaseModel):
         next_turn: The turn the snapshot's provider call runs.
         root_task_id: The task graph's root, when the run has one.
         original_task: The composed task.
+        last_steer: The delivery number and text used to locate an undo checkpoint.
         operator_task: The words before composition; absent in old snapshots.
         base_sha: The base the run's work starts from, which `baseline_ok` describes; a resume
             whose work merged moves it.
@@ -262,6 +263,7 @@ class SessionSnapshot(pydantic.BaseModel):
     head_sha: str = ""
     graph_version: int = 0
     operator_task: str = ""
+    last_steer: tuple[int, str] = (0, "")
     base_sha: str = ""
 
 

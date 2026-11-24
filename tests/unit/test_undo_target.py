@@ -39,9 +39,21 @@ def _layout(tmp_path: pathlib.Path, sid: str) -> sessions_layout.SessionLayout:
 
 
 def _checkpoint(
-    layout: sessions_layout.SessionLayout, turn: int, messages: list[dict[str, Any]]
+    layout: sessions_layout.SessionLayout,
+    turn: int,
+    messages: list[dict[str, Any]],
+    *,
+    delivery: tuple[int, str] | None = None,
 ) -> None:
+    steers = [
+        b["text"].removeprefix(_WRAP)
+        for m in messages
+        if isinstance(m["content"], list)
+        for b in m["content"]
+        if b.get("text", "").startswith(_WRAP)
+    ]
     snap = loop_snapshot.SessionSnapshot(
+        last_steer=delivery or (len(steers), steers[-1] if steers else ""),
         system="s",
         messages=messages,
         tool_calls=0,
@@ -97,6 +109,7 @@ def test_undo_finds_the_last_message_across_a_compacted_checkpoint(tmp_path: pat
             _assistant("working"),
             _steer("second steer"),
         ],
+        delivery=(2, "second steer"),
     )
 
     target = undo.undo_target(tmp_path, "run-compacted")
@@ -183,3 +196,25 @@ def test_a_cyclic_lineage_does_not_crash(tmp_path: pathlib.Path) -> None:
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
     assert undo.undo_target(tmp_path, "cyclic-run", reporter=reporter) is None
     assert any("nothing to undo" in line for line in said)
+
+
+def test_undo_uses_the_last_delivery_even_after_a_restart(tmp_path: pathlib.Path) -> None:
+    from agent6.harness import loop_conversation, loop_resume
+    from tests.unit import test_harness, test_restart_retention
+
+    layout = _layout(tmp_path, "compacted")
+    wf = test_harness._wf(root=tmp_path, resume_state_path=layout.session_dir / "loop_state.json")
+    conv = loop_conversation.Conversation()
+    conv.notice("task", origin="operator")
+    state = test_harness._state(original_task="task")
+    for n, text in enumerate(("", "check one", "check two", ""), start=1):
+        if text:
+            wf.steering.operator_steer(conv, n, state, text, heading="OPERATOR STEERING:")
+        if n == 4:
+            test_restart_retention._restart(conv, keep_recent_turns=0, keep_recent_chars=1000)
+        loop_resume.save_resume_snapshot(
+            wf, state, conv.to_wire(snapshot=True), next_turn=n, write_checkpoint=True
+        )
+        conv.assistant([{"type": "text", "text": "done"}])
+    target = undo.undo_target(tmp_path, "compacted")
+    assert target is not None and (target.at_turn, target.undone_text) == (2, "check two")

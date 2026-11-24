@@ -40,6 +40,7 @@ class LoopState:
 
     Attributes:
         original_task: The task text the run started with.
+        last_steer: The number and words of the most recent operator steer delivered.
         operator_task: The operator's words as given; "" in a state built without them.
         tool_calls: Dispatches so far.
         ok_tool_calls: Dispatches that executed without a ToolError; the standing
@@ -88,6 +89,7 @@ class LoopState:
     root_task_id: str | None = None
     system: str = ""
     operator_task: str = ""
+    last_steer: tuple[int, str] = (0, "")
     parallel_groups_dispatched: int = 0
     pins: list[str] = dataclasses.field(default_factory=list)
     # The queued questions whose answers the model has read; a resume never repeats one.
@@ -133,6 +135,7 @@ def restore_completion_state(state: LoopState, snap: loop_snapshot.SessionSnapsh
     state.memory.written = snap.memory_written
     state.memory.flip_nudged = snap.memory_flip_nudged
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
+    state.last_steer = snap.last_steer
     state.pins = list(snap.pins)
     state.delivered_questions = list(snap.delivered_questions)
     if snap.metric_at_ceiling or snap.metric_best_score is not None:

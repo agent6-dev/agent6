@@ -15,7 +15,6 @@ import contextlib
 import dataclasses
 import os
 import pathlib
-from typing import Any
 
 from agent6 import errors, task_text, terminal
 from agent6 import paths as agent6_paths
@@ -30,46 +29,6 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
-
-_STEER_NOTICE = "OPERATOR STEERING"
-
-
-def _text_of(content: object) -> str:
-    """Return the plain text of a message content, a string or content blocks."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = [
-            str(block.get("text", ""))
-            for block in content  # pyright: ignore[reportUnknownVariableType]
-            if isinstance(block, dict) and block.get("type") == "text"
-        ]
-        return "\n".join(part for part in parts if part)
-    return ""
-
-
-def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
-    """Return the operator's words in a restored conversation: the task, then each steer.
-
-    Args:
-        messages: The conversation, the task first.
-
-    Returns:
-        The words, each steer without its notice line.
-    """
-    out: list[str] = []
-    for i, message in enumerate(messages):
-        if message.get("role") != "user":
-            continue
-        text = _text_of(message.get("content"))
-        if not text:
-            continue
-        if i == 0:
-            out.append(text)
-        elif text.startswith(_STEER_NOTICE):
-            body = text.partition("\n")[2].strip()
-            out.append(body or text)
-    return out
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -149,8 +108,8 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
     except (OSError, ValueError) as exc:
         reporter.error(f"cannot read checkpoint {newest} of {src.session_id}: {exc}")
         return None
-    ops = _operator_messages(snap.messages)
-    if len(ops) <= 1:
+    count, last_text = snap.last_steer
+    if not count:
         if len(turns) < 2:
             reporter.err(f"nothing to undo: {src.session_id} is at its opening message.")
             return None
@@ -161,47 +120,36 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
         try:
             task = sessions_manifest.read_manifest(src.session_dir).user_task
         except sessions_manifest.ManifestError:
-            task = task_text.operator_task_text(ops[0]) if ops else ""
+            task = snap.operator_task or task_text.operator_task_text(snap.original_task)
         return UndoTarget(src, src.session_id, turns[0], first.next_turn, task)
-    target = _newest_checkpoint_below(src, len(ops), ops[-1])
+    target = _newest_checkpoint_below(src, count)
     if target is None:
         reporter.err(f"nothing to undo: no state before the last message of {src.session_id}.")
         return None
-    return UndoTarget(src, target.session_id, target.at_turn, target.turn, ops[-1])
+    return UndoTarget(src, target.session_id, target.at_turn, target.turn, last_text)
 
 
 def _newest_checkpoint_below(
     layout: sessions_layout.SessionLayout,
-    current_ops: int,
-    last_message: str,
+    delivery: int,
     *,
     seen: frozenset[str] = frozenset(),
 ) -> _Checkpoint | None:
     """Return the checkpoint before the last message first appeared, following fork lineage.
 
-    Compaction shrinks conversations, so the operator-message count is not monotonic: the
-    append transition decides first, the count second. A fork carries one seed checkpoint, so
-    walking past it resolves in the parent.
+    A fork carries one seed checkpoint, so walking past it resolves in the parent.
 
     Args:
         layout: The session to search.
-        current_ops: The operator-message count at the newest checkpoint.
-        last_message: The message being taken back.
+        delivery: The number of the last steer delivered to the session.
         seen: The sessions already walked; a revisited id (a corrupt lineage) ends the walk.
 
     Returns:
         The checkpoint, or None when no ancestor holds one.
     """
-    snapshots = [
-        (at_turn, snap, _operator_messages(snap.messages))
-        for at_turn in sorted(storage.list_checkpoint_turns(layout))
-        if (snap := _snapshot_at(layout, at_turn)) is not None
-    ]
-    for previous, current in zip(reversed(snapshots[:-1]), reversed(snapshots[1:]), strict=True):
-        if current[2].count(last_message) > previous[2].count(last_message):
-            return _Checkpoint(layout.session_id, previous[0], previous[1].next_turn)
-    for at_turn, snap, messages in reversed(snapshots):
-        if len(messages) < current_ops:
+    for at_turn in sorted(storage.list_checkpoint_turns(layout), reverse=True):
+        snap = _snapshot_at(layout, at_turn)
+        if snap is not None and snap.last_steer[0] < delivery:
             return _Checkpoint(layout.session_id, at_turn, snap.next_turn)
     try:
         parent = sessions_manifest.read_manifest(layout.session_dir).parent_session_id
@@ -214,9 +162,7 @@ def _newest_checkpoint_below(
     )
     if not parent_layout.session_dir.is_dir():
         return None
-    return _newest_checkpoint_below(
-        parent_layout, current_ops, last_message, seen=seen | {layout.session_id}
-    )
+    return _newest_checkpoint_below(parent_layout, delivery, seen=seen | {layout.session_id})
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

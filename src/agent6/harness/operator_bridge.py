@@ -245,6 +245,31 @@ class Steering:
         Returns:
             The verb's name when the steer was one; None otherwise.
         """
+        before = len(conversation)
+        verb = self._route_steer(conversation, turn, state, text, heading=heading)
+        if len(conversation) > before:
+            last = conversation.messages[-1]
+            if isinstance(last, loop_conversation.UserMessage) and any(
+                isinstance(item, loop_conversation.Notice) and item.origin == "operator"
+                for item in last.items
+            ):
+                state.last_steer = (state.last_steer[0] + 1, text)
+        return verb
+
+    def _route_steer(
+        self,
+        conversation: loop_conversation.Conversation,
+        turn: int,
+        state: loop_state.LoopState,
+        text: str,
+        *,
+        heading: str,
+    ) -> str | None:
+        """Route an operator verb, directive or message.
+
+        Returns:
+            The verb ending the turn, or None to continue.
+        """
         steer_text = text.strip()
         if verb := STEER_VERBS.get(steer_text.lower()):
             name, record, line = verb

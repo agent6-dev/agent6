@@ -60,6 +60,7 @@ def _checkpoint(
         original_task="do the thing",
         verify_command=(),
         head_sha=head_sha,
+        last_steer=(ops - 1, f"steer {ops - 1}" if ops > 1 else ""),
     )
     layout.checkpoint_path(turn if at is None else at).write_text(
         snap.model_dump_json(), encoding="utf-8"
