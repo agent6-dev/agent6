@@ -127,6 +127,10 @@ def _providers(credential: oauth.OAuthCredential) -> dict[str, Any]:
     }
 
 
+def _ignore(_piece: str) -> None:
+    """Take a streamed piece, which opts the call into streaming."""
+
+
 def _call(
     monkeypatch: pytest.MonkeyPatch,
     provider: Any,
@@ -157,7 +161,7 @@ def _call(
         system="sys",
         messages=messages or [{"role": "user", "content": "what changed?"}],
         tools=_TOOLS,
-        text_delta_callback=(lambda _piece: None) if streamed else None,
+        text_delta_callback=_ignore if streamed else None,
         **options,
     )
     return response, bodies[-1]

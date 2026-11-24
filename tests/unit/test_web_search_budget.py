@@ -86,8 +86,14 @@ def test_a_listed_rate_prices_each_search(
     cfg = _cfg()
     _list_prices(monkeypatch, cfg, "0.01")
     tracker = _tracker(cfg)
-    usage = {"input_tokens": 1000, "output_tokens": 0, "cache_read_tokens": 0}
-    tracker.record(route=_ROUTE, **usage, cache_write_tokens=0, web_searches=2)
+    tracker.record(
+        route=_ROUTE,
+        input_tokens=1000,
+        output_tokens=0,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+        web_searches=2,
+    )
     snap = tracker.snapshot()
     assert snap.web_searches == 2
     assert snap.usd_total == pytest.approx(0.003 + 0.02)
@@ -139,6 +145,10 @@ def test_a_reported_cost_already_holds_the_fee(cache_home: pathlib.Path) -> None
     assert (snap.web_searches, snap.usd_total, snap.usd_partial) == (1, 0.5, False)
 
 
+def _ignore(_piece: str) -> None:
+    """Take a streamed piece, which opts the call into streaming."""
+
+
 def _messages_provider(tracker: agent6_budget.BudgetTracker) -> AnthropicProvider:
     return AnthropicProvider(
         api_key="k", model="claude-x", provider_name="anthropic", budget=tracker
@@ -167,7 +177,7 @@ def test_each_attempt_bills_its_own_search_once(
     call: dict[str, Any] = {
         "system": "s",
         "messages": [{"role": "user", "content": "q"}],
-        "text_delta_callback": lambda _piece: None,
+        "text_delta_callback": _ignore,
         "web_search": True,
     }
 
@@ -203,7 +213,7 @@ def test_a_responses_stream_bills_its_distinct_search_calls(
     call: dict[str, Any] = {
         "system": "s",
         "messages": [{"role": "user", "content": "q"}],
-        "text_delta_callback": lambda _piece: None,
+        "text_delta_callback": _ignore,
         "web_search": True,
     }
     if complete:

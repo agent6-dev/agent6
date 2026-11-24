@@ -39,6 +39,10 @@ class _Recorder:
         return golden._resp(text="The answer.")  # pyright: ignore[reportPrivateUsage]
 
 
+def _drop(_event: object) -> None:
+    """Take a journal event and write nothing."""
+
+
 def _caller(provider: _Recorder) -> provider_call.ProviderCaller:
     return provider_call.ProviderCaller(
         provider=provider,
@@ -49,7 +53,7 @@ def _caller(provider: _Recorder) -> provider_call.ProviderCaller:
         should_abort=lambda: False,
         should_interrupt=lambda: False,
         log=lambda _msg: None,
-        emit=lambda _event: None,
+        emit=_drop,
     )
 
 
