@@ -150,18 +150,17 @@ async function editFileText(path, afterSave) {
   const conflict = el('section', 'files-conflict'); conflict.hidden = true; dialog.appendChild(conflict);
   conflict.appendChild(el('p', null, 'The file changed on disk.'));
   const disk = field('Disk version', el('textarea', 'field file-disk'), conflict); disk.readOnly = true; disk.rows = 3;
-  const choices = el('div', 'row wrap'); conflict.appendChild(choices);
   const load = el('button', null, 'Load new file'), overwrite = el('button', null, 'Overwrite with mine');
-  choices.append(load, overwrite);
-  const name = field('New file name', el('input', 'field'), conflict); name.placeholder = 'copy.txt';
-  const copy = el('button', null, 'Save as new file'); conflict.appendChild(copy);
-  const row = el('div', 'row wrap'), save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
+  const copyAs = el('div', 'row wrap files-copy');
+  const name = field('New file name', el('input', 'field'), copyAs); name.placeholder = 'copy.txt';
+  const copy = el('button', null, 'Save as new file'); copyAs.appendChild(copy);
+  const row = el('footer', 'row wrap'), save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
   row.append(save, cancel); dialog.appendChild(row);
   const error = el('p', 'err'); error.setAttribute('role', 'status'); dialog.appendChild(error);
   let loaded = null, latest = null, busy = false, timer;
   const read = () => getJSON('/api/files/text?path=' + encodeURIComponent(path));
   const buttons = () => {
-    save.disabled = busy || !loaded || !conflict.hidden;
+    save.disabled = busy || !loaded;
     load.disabled = busy || latest?.text == null;
     overwrite.disabled = copy.disabled = busy;
     text.readOnly = busy;
@@ -169,7 +168,7 @@ async function editFileText(path, afterSave) {
   const changed = snapshot => {
     latest = snapshot;
     disk.value = snapshot.text ?? 'The file was removed.';
-    conflict.hidden = false; buttons();
+    conflict.hidden = false; row.replaceChildren(load, overwrite, copyAs, cancel); buttons();
   };
   const poll = async () => {
     try {
@@ -197,7 +196,8 @@ async function editFileText(path, afterSave) {
     finally { busy = false; buttons(); }
   };
   load.onclick = () => {
-    loaded = latest; text.value = loaded.text; conflict.hidden = true; error.textContent = ''; buttons(); text.focus();
+    loaded = latest; text.value = loaded.text; conflict.hidden = true; error.textContent = '';
+    row.replaceChildren(save, cancel); buttons(); text.focus();
   };
   overwrite.onclick = () => write(path, latest.digest);
   copy.onclick = () => {
@@ -211,7 +211,7 @@ async function editFileText(path, afterSave) {
   cancel.onclick = () => { if (!busy) dialog.close(); };
   dialog.addEventListener('cancel', e => {
     if (busy || (loaded && text.value !== loaded.text)) {
-      e.preventDefault(); error.textContent = busy ? 'Saving…' : 'Unsaved edits. Save or Cancel to discard them.';
+      e.preventDefault(); error.textContent = busy ? 'Saving…' : 'Unsaved edits. Cancel discards them.';
     }
   });
   dialog.querySelector('.dialog-head button').onclick = cancel.onclick;

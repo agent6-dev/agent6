@@ -92,17 +92,21 @@ def test_editor_grows_with_the_viewport_and_keeps_actions_visible(
     assert large and large["height"] - small["height"] > 200
     editor.fill("# My plan\n\n- [ ] Review the result\n" + "More details\n" * 80)
     captures.save(page, "files-edit-tall")
-    (repo / "plan.md").write_text("# Disk version\n")
+    (repo / "plan.md").write_text("# Disk version\n" + "Other edits\n" * 80)
     sync_api.expect(dialog.get_by_text("The file changed on disk.", exact=True)).to_be_visible(
         timeout=8000
     )
-    page.set_viewport_size({"width": width, "height": 650})
-    for name in ("Save", "Cancel"):
+    page.set_viewport_size({"width": width, "height": 480})
+    for name in ("Load new file", "Overwrite with mine", "Save as new file", "Cancel"):
         sync_api.expect(dialog.get_by_role("button", name=name, exact=True)).to_be_in_viewport(
             ratio=1
         )
+    sync_api.expect(dialog.get_by_role("textbox", name="New file name")).to_be_in_viewport(ratio=1)
+    sync_api.expect(dialog.get_by_role("button", name="Save", exact=True)).to_be_hidden()
     captures.save(page, "files-edit-tall-conflict")
     assert editor.input_value().startswith("# My plan\n")
+    page.keyboard.press("Escape")
+    sync_api.expect(dialog.get_by_text("Unsaved edits. Cancel discards them.")).to_be_visible()
     dialog.get_by_role("button", name="Cancel", exact=True).click()
     assert not errors
 

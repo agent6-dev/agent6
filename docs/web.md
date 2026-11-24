@@ -153,7 +153,10 @@ When the server stops answering, the Sessions and State machines lists, a sessio
       **Save** changes only that mark if the file still matches the displayed version.
       Checkboxes at a commit are read-only.
     - **Edit** opens working-tree text in a dialog with **Save** and **Cancel**; it loads the complete file, up to 20 MiB, even when the source preview is cut
-    - the editor checks the disk every two seconds and the server checks again at Save; a change keeps your draft and shows the disk version with **Load new file**, **Overwrite with mine**, and **Save as new file** beside the original
+    - the editor checks the disk every two seconds and the server checks again at Save
+    - a conflict keeps your draft and shows the disk version.
+      The footer offers **Load new file**, **Overwrite with mine**, and **Save as new file**.
+      Enter a new name to save a copy beside the original.
     - Overwrite acknowledges only the disk version shown; another change refuses it again; Save as new file never replaces an existing file
     - hidden paths, symlinks, hardlinks, binary files and invalid UTF-8 cannot be edited; saves preserve CRLF line endings and neither stage nor commit
     - the tree keeps the folders you open and opens the ones holding a linked file; ↑ and ↓ move through it, → and ← open and close a folder
