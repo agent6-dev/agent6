@@ -749,14 +749,8 @@ class Harness:
             loop_resume.report_cold_start(
                 self, state, action, before - compaction_window.context_chars(conversation)
             )
-        if self.contract is None:
-            # No roll follows the line: a second roll would drop the previous call's cache mark.
-            self._show_budget(conversation, ctx)
-        else:
-            # Every reviewer request gets this notice, regardless of compaction.
-            conversation.notice(
-                review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
-            )
+        # No roll follows the line: a second roll would drop the previous call's cache mark.
+        self._show_budget(conversation, ctx)
         if local_cold or restarted or self.contract is not None:
             conversation.roll_cache_marks()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -826,11 +820,17 @@ class Harness:
         """Show the worker what the execution has used of each cap, when the line changed.
 
         The history holds the last line shown, so a line a restart replaced shows again.
+        A reviewer reads its reply count on every request instead.
 
         Args:
             conversation: The conversation the line enters.
             ctx: This turn's context.
         """
+        if self.contract is not None:
+            conversation.notice(
+                review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
+            )
+            return
         line = nudges.budget_line(
             self.budget.snapshot() if self.budget is not None else None,
             turn=ctx.turn - ctx.execution_start + 1,
