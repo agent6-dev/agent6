@@ -82,8 +82,10 @@ function makeComposer(id) {
   let refused = '';
   let busy = false;
   let modelGit = false;
-  const offeredCommands = STEER_COMMANDS.map(([command]) => command);
-  const suggest = attachCommandSuggest(ta, root, () => finished === false, offeredCommands);
+  const suggest = attachCommandSuggest(ta, root, () => {
+    const rows = finished === false ? composerCommands.steer : composerCommands.resume;
+    return modelGit ? rows.filter(([command]) => command !== '/undo') : rows;
+  });
   const models = attachParallelSuggest(ta, root);
   const refs = attachRefSuggest(ta, root, () => id);
   const attached = attachImages(ta, root, () => sendBtn.sync());
@@ -219,7 +221,6 @@ function makeComposer(id) {
   root.setState = (s) => {
     if (busy) return;
     modelGit = s.git_control === 'model';
-    offeredCommands.splice(0, offeredCommands.length, ...STEER_COMMANDS.map(([command]) => command).filter(command => !modelGit || command !== '/undo'));
     needsWork = s.needs_new_work === true;
     refused = s.unreadable || s.manifest_resume_blocker || '';
     if (typeof s.live === 'boolean') { finished = !s.live; apply(); }

@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The web composer's slash completion mirrors directive.STEER_COMMANDS verbatim.
-
-The client is static JS, so the shared table is pinned, not imported; /compact, /btw and
-/now stay live-session offers. An `@path` completes from the server's list of the files
-the reference can read.
-"""
+"""Web completion offers the registered commands and only the files a composer can read."""
 
 from __future__ import annotations
 
@@ -20,18 +15,12 @@ from agent6.ui.web import page, server
 from tests.web import session_logs, signin
 
 
-def test_client_mirrors_the_steer_commands_verbatim() -> None:
-    for cmd, help_ in directive.STEER_COMMANDS.items():
-        assert f"['{cmd}', '{help_}']" in page.CLIENT_JS, f"the web client drifted from {cmd}"
-
-
-def test_compact_is_gated_on_live() -> None:
-    """The resume composer withholds exactly `LIVE_RUN_COMMANDS`, spelled by hand in the JS."""
-    gate = next(line for line in page.CLIENT_JS.splitlines() if "liveNow() ||" in line)
-    assert gate.count("c !== '") == len(directive.LIVE_RUN_COMMANDS)
-    for cmd in directive.LIVE_RUN_COMMANDS:
-        assert f"c !== '{cmd}'" in gate, cmd
-    assert "() => finished === false" in page.CLIENT_JS  # the composer's live truth feeds the gate
+def test_the_served_page_offers_the_registered_commands_for_each_composer() -> None:
+    encoded = page.CLIENT_JS.split("const composerCommands = ", 1)[1].split(";\n", 1)[0]
+    assert json.loads(encoded) == {
+        mode: [[c.name, c.help] for c in directive.commands_for(mode)]
+        for mode in ("start", "plan/ask", "steer", "resume")
+    }
 
 
 def test_a_typed_stop_posts_the_one_stop() -> None:

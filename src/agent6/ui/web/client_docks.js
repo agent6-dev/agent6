@@ -101,7 +101,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   };
   root.addEventListener('input', save); root.addEventListener('change', save);
   const ac = attachParallelSuggest(task, root);
-  const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
+  const commands = attachCommandSuggest(task, root, () => mode.value === 'run' ? composerCommands.start : composerCommands['plan/ask']);
   const refs = attachRefSuggest(task, root);
   task.onkeydown = (e) => {
     if (composing(e)) return;

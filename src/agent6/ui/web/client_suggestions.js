@@ -262,24 +262,7 @@ function attachRefSuggest(ta, root, session = () => '') {
   } };
 }
 
-// Completion mirrors agent6.directive, including which commands need a live run.
-const STEER_COMMANDS = [
-  ['/pin', 'pin an instruction that survives compaction: /pin <text>'],
-  ['/compact', 'compact the context now; /compact <focus> steers the summary'],
-  ['/parallel', 'dispatch children: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)'],
-  ['/restate', 'restate the conversation since your last message (local, no model call)'],
-  ['/review', 'review changes in this session: /review [TARGET] (a ref or A..B or A...B)'],
-  ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
-  ['/btw', 'ask a question beside the run: /btw <question> (answers inline, later)'],
-  ['/task', 'queue work into the task graph: /task <text> (worked when the queue drains)'],
-  ['/metric', 'Show the metric, set maximize|minimize ["capture pattern"] [target NUMBER] -- command, or use /metric off. The metric can refuse a finish up to three times while more than a quarter of the budget remains. A plateau can end the run. Once the best score reaches or passes the target, the metric allows a finish or a plateau stop at any budget.'],
-  ['/standing', 'set the goal the run returns to when the queue drains: /standing <text>'],
-  ['/retire', 'drop a task from the graph: /retire <task id>, the number the task tree shows'],
-  ['/now', 'steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)'],
-  ['/stop', 'stop the run now, as `agent6 stop` does (resumable)'],
-  ['/shells', 'background commands this run started, and how they ended'],
-];
-function attachCommandSuggest(ta, root, liveNow, offered = null) {
+function attachCommandSuggest(ta, root, offered) {
   let box = null, items = [], active = -1;
   ta.setAttribute('aria-autocomplete', 'list');
   const word = () => {
@@ -297,7 +280,7 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
   const render = () => {
     const w = word();
     if (w === null) { close(); return; }
-    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now' && c !== '/stop' && c !== '/task' && c !== '/metric' && c !== '/standing' && c !== '/retire')) && (!offered || offered.includes(c)) && c.startsWith(w));
+    items = offered().filter(([command]) => command.startsWith(w));
     if (!items.length) { close(); return; }
     if (active >= items.length) active = -1;
     if (!box) {

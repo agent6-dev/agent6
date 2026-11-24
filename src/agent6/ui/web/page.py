@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from importlib import resources
 
+from agent6 import directive
 from agent6.ui import keymap
 
 _ASSETS = resources.files(__package__)
@@ -56,6 +57,13 @@ def client_script(name: str) -> str:
         The script as served in the page.
     """
     source = _ASSETS.joinpath(name).read_text(encoding="utf-8")
+    if name == "client_suggestions.js":
+        commands = {
+            mode: [(c.name, c.help) for c in directive.commands_for(mode)]
+            for mode in ("start", "plan/ask", "steer", "resume")
+        }
+        encoded = json.dumps(commands).replace("<", r"\u003c")
+        return f"const composerCommands = {encoded};\n" + source
     if name == "client_review.js":
         labels = {value: label for label, value in keymap.REVIEW_DISPOSITIONS}
         return (

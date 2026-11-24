@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from agent6 import directive
 from agent6.sessions import event_log, ipc, journal
 from tests import task_runs
 from tests.web import session_logs, test_files_preview_browser, test_web_browser
@@ -19,6 +20,22 @@ browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 OpenPage = Callable[[int], tuple["Page", list[str]]]
+
+
+def test_new_work_offers_only_the_selected_modes_commands(open_page: OpenPage, port: int) -> None:
+    from playwright import sync_api
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    names = page.get_by_role("listbox", name="Directives").locator("[role=option] span:first-child")
+    mode = page.locator(".dock select").first
+    for value, surface in (("run", "start"), ("plan", "plan/ask"), ("ask", "plan/ask")):
+        mode.select_option(value)
+        entry.fill("/")
+        sync_api.expect(names).to_have_text([c.name for c in directive.commands_for(surface)])
+        entry.press("Escape")
+    assert not errors
 
 
 def test_directives_fit_a_short_viewport(
