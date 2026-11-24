@@ -77,6 +77,7 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
 ## Foreground runs
 
 `agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
+For [`@` path completion](usage.md#path-completion), use the TUI or web composer.
 
 - Tab completes the pause menu's [slash commands](slash-commands.md).
   Up recalls past messages and Ctrl-R searches them.

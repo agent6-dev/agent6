@@ -34,7 +34,7 @@ The footer and `?` help list these keys.
 Opening a run lands on its conversation: the task, the model's reasoning and every tool call, following live.
 `Esc` or `Ctrl+K` returns to the hub, the TUI's session switcher.
 The composer takes [slash commands](slash-commands.md).
-After `@` in a session's composer or the new-session one, the line above it lists the workspace's matching files, and Tab completes the path as a [file reference](usage.md#file-references).
+Tab accepts a [path completion](usage.md#path-completion) in the session and new-session composers.
 On an ended child, and on an ended run whose worktree is gone or whose manifest cannot be read, the composer says why, as `agent6 sessions show` does; Enter resumes nothing and **Run > Resume this session** is dimmed.
 **Run > Fork this session** continues a child in a worktree of its own.
 When the manifest cannot be read, **Run > Fork this session** is dimmed too, as is the hub's **Merge selected run** for it.

@@ -90,10 +90,16 @@ The CLI start line summarizes non-default settings, the execution target and the
 It gives each role's recorded route and effort under `models`; an empty `effort_source` means the record did not capture effort.
 The web run page also reads the recorded roles, not the live config.
 
-## File references
+## Path completion
 
-An `@path` in a message stays as typed.
-The web and TUI composers offer matching workspace paths after `@`.
+In the TUI or web composer, type `@` and part of a filename to see up to eight matching paths.
+Paths are relative to the session's workspace, or to the repository for new work.
+The list leaves out ignored files and [hidden paths](config.md#sandbox).
+
+Choosing `src/parser.py` replaces `@par` with `src/parser.py`.
+If you send `@par` without choosing a path, it stays as typed.
+Neither spelling copies file contents into the message.
+The model reads the file itself if needed.
 
 ## Images with a message
 
