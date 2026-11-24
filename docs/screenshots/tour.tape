@@ -6,7 +6,7 @@
 # Drives hub -> config -> search -> help -> log -> findings -> receipt ->
 # conversation -> dashboard
 # and writes one PNG per stop. Requires `vhs`, `ttyd`, `ffmpeg`, and `agent6` on
-# PATH. generate.sh exports XDG_STATE_HOME / XDG_CONFIG_HOME /
+# PATH. generate.sh exports XDG_STATE_HOME / XDG_CONFIG_HOME / XDG_CACHE_HOME /
 # AGENT6_DEMO_REPO (seeded, isolated) before invoking vhs; the tape inherits
 # them. Hub stops use its direct key bindings (Enter/l/c/?/q and /); inside the
 # run app the composer bar owns plain letters, so only its priority chords

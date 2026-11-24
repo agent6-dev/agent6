@@ -40,6 +40,8 @@ DEMO_REPO="/tmp/acme-temps"
 trap 'kill "${PROXY_PID:-0}" 2>/dev/null || true; rm -rf "$TMP" "$DEMO_REPO"' EXIT
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
+# Model listings are cached under the cache home.
+export XDG_CACHE_HOME="$TMP/cache"
 export AGENT6_DEMO_REPO="$DEMO_REPO"
 mkdir -p "$XDG_CONFIG_HOME/agent6"
 

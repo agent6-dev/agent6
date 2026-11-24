@@ -58,7 +58,10 @@ tour() {
   python3 docs/screenshots/seed.py >/dev/null
 
   echo "web_demo: starting agent6 web on :$PORT"
-  ( cd "$AGENT6_DEMO_REPO" && exec agent6 web --host 127.0.0.1 --port "$PORT" ) > "$home/web.log" 2>&1 &
+  # Model listings are cached under the cache home. Only the server gets a throwaway one:
+  # Playwright looks for its browser under the real one.
+  ( cd "$AGENT6_DEMO_REPO" && XDG_CACHE_HOME="$home/cache" exec agent6 web --host 127.0.0.1 --port "$PORT" ) \
+    > "$home/web.log" 2>&1 &
   SERVER=$!
   for _ in $(seq 1 40); do
     curl -sf "http://127.0.0.1:$PORT/" >/dev/null 2>&1 && break

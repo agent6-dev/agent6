@@ -28,6 +28,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
+# Model listings are cached under the cache home.
+export XDG_CACHE_HOME="$TMP/cache"
 # The tours run in a clone of this checkout: the Git and Files pages show its history, and
 # the seeded runs' reviewed trees come from the stats demo repository's bundle.
 DEMO="$TMP/demo"
