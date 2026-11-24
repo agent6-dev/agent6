@@ -22,6 +22,8 @@ import sys
 from collections.abc import Callable
 from typing import IO, Any
 
+import pydantic
+
 from agent6 import __version__, paths
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
@@ -478,7 +480,15 @@ class MCPServer:
         try:
             layout = id.resolve_session(self._agent6_dir, session_id)
             nodes = storage.with_holds(storage.load_graph(layout), layout)
-        except (id.SessionIdError, child_dispatch.DispatchRecordError) as exc:
+        except id.SessionIdError as exc:
+            raise tool_errors.ToolError(str(exc)) from exc
+        except child_dispatch.DispatchRecordError as exc:
+            if isinstance(exc.__cause__, pydantic.ValidationError):
+                error = exc.__cause__.errors(include_input=False, include_url=False)[0]
+                field = ".".join(str(part) for part in error["loc"]) or "record"
+                raise tool_errors.ToolError(
+                    f"invalid dispatch record: {field}: {error['msg']}"
+                ) from exc
             raise tool_errors.ToolError(str(exc)) from exc
         return {
             "session_id": session_id,

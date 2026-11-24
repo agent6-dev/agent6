@@ -378,6 +378,42 @@ def test_query_dag_reports_a_newer_dispatch_without_closing_stdio(tmp_path: path
     assert following["id"] == 2 and following["result"]["tools"]
 
 
+def test_query_dag_reports_the_invalid_field_without_its_child_report(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A graph-only client gets the field and reason, not the stored report value."""
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="r1")
+    layout.ensure()
+    record = child_dispatch.DispatchRecord(
+        identity="r1-p1",
+        source="model",
+        owner="parent",
+        turn=1,
+        base="",
+        children=(child_dispatch.ChildRecord(session_id="r1-p1-l1", number=1, task="Count"),),
+    )
+    raw = record.model_dump(mode="json")
+    raw["children"][0]["report"] = ["Counted twelve pears"]
+    path = child_dispatch.record_path(layout.session_dir, record.identity)
+    path.parent.mkdir()
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    (refused,) = _roundtrip(
+        _server(tmp_path),
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "get_task_graph", "arguments": {"session_id": "r1"}},
+            }
+        ],
+    )
+    assert refused["result"]["isError"] is True
+    text = refused["result"]["content"][0]["text"]
+    assert "children.0.report" in text and "string" in text
+    assert "Counted twelve pears" not in text
+
+
 def test_query_dag_reads_persisted_nodes(tmp_path: pathlib.Path) -> None:
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="r1")
     layout.ensure()
