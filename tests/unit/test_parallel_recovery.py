@@ -210,8 +210,8 @@ def _no_children(group: str, children: Sequence[str]) -> list[child_records.Chil
     return []
 
 
-def _tracker() -> agent6_budget.BudgetTracker:
-    return agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+def _tracker(cap: float = 10.0) -> agent6_budget.BudgetTracker:
+    return agent6_budget.BudgetTracker(max_usd=cap, max_tokens_fallback=-1, max_plan_points=-1)
 
 
 def _resume(parent: pathlib.Path, execution: str) -> None:
@@ -228,22 +228,33 @@ def _resume(parent: pathlib.Path, execution: str) -> None:
     )
 
 
-def _balance(meter: agent6_budget.BudgetTracker, at: int, dollars: int) -> None:
+def _balance(
+    meter: agent6_budget.BudgetTracker, at: int, dollars: float, *, provider: str = "p"
+) -> None:
     meter.record_plan_preflight(
-        "p",
+        provider,
         agent6_budget.PlanUsage.single(0, 300, 0, observed_ns=at, credits_balance=f"${dollars}"),
     )
 
 
-def _running_panel(repo: pathlib.Path, parent: pathlib.Path, group: str) -> pathlib.Path:
-    child = child_env.create_record(repo, f"{group}-l1", parent=parent.name, mode="reviewer")
+def _running_child(
+    repo: pathlib.Path,
+    parent: pathlib.Path,
+    group: str,
+    *,
+    owner: str = "first",
+    work: bool = False,
+) -> pathlib.Path:
+    child = child_env.create_record(
+        repo, f"{group}-l1", parent=parent.name, mode="run" if work else "reviewer"
+    )
     child_dispatch.write_record(
         parent,
         child_dispatch.DispatchRecord(
             identity=group,
-            source="panel",
-            merge_policy="record_only",
-            owner="first",
+            source="operator" if work else "panel",
+            merge_policy="merge" if work else "record_only",
+            owner=owner,
             turn=1,
             base="",
             state="running",
@@ -300,7 +311,7 @@ def test_resume_settles_only_credit_movement_missing_from_the_parent_journal(
         _balance(before, 10, 10)
         budget_events.emit_budget_update(before, parent_sink.emit)
         _resume(parent, "first")
-    child = _running_panel(repo, parent, "parent-r1")
+    child = _running_child(repo, parent, "parent-r1")
     meter = _tracker()
     child_sink = event_log.EventSink(child / "logs.jsonl")
 
@@ -357,7 +368,7 @@ def test_interrupted_recovery_counts_only_what_the_remaining_child_adds(
     _balance(first, 10, 10)
     budget_events.emit_budget_update(first, event_log.EventSink(parent / "logs.jsonl").emit)
     for group, final in [("parent-r1", 8), ("parent-r2", 7)]:
-        child = _running_panel(repo, parent, group)
+        child = _running_child(repo, parent, group)
         meter = _tracker()
         _balance(meter, 10, 10)
         _balance(meter, 20, 8)
@@ -371,6 +382,116 @@ def test_interrupted_recovery_counts_only_what_the_remaining_child_adds(
     assert second.available().usd == 8
     _resume(parent, "third")
     fresh = _tracker()
+    _reconcile(repo, parent, fresh)
+    usage = children.child_usage(parent)
+    assert usage is not None
+    assert (usage.usd, fresh.available().usd) == (3, 9)
+
+
+def test_recovery_settles_each_work_child_in_its_parent_execution(short_repo: pathlib.Path) -> None:
+    """Neither parent observed the gap between $8 and $6."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    for owner, group, at, balance in (("first", "p1", 10, 10), ("second", "p2", 30, 6)):
+        _resume(parent, owner)
+        before = _tracker()
+        _balance(before, at, balance)
+        budget_events.emit_budget_update(before, event_log.EventSink(parent / "logs.jsonl").emit)
+        child = _running_child(repo, parent, f"parent-{group}", owner=owner, work=True)
+        meter = _tracker()
+        _balance(meter, at, balance)
+        _balance(meter, at + 10, balance - 2)
+        budget_events.emit_budget_update(meter, event_log.EventSink(child / "logs.jsonl").emit)
+
+    _resume(parent, "recovery")
+    fresh = _tracker()
+    _reconcile(repo, parent, fresh)
+    usage = children.child_usage(parent)
+    assert usage is not None
+    assert (usage.usd, fresh.available().usd) == (4, 6)
+
+
+@pytest.mark.parametrize(("provider", "cap", "baseline"), [("p", 2.0, 5), ("q", 0.05, 0.05)])
+def test_fresh_credit_cap_starts_at_the_first_live_balance(
+    short_repo: pathlib.Path, provider: str, cap: float, baseline: float
+) -> None:
+    """Banked declines neither charge the first live balance nor dilute its next decline."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    _resume(parent, "first")
+    child = _running_child(repo, parent, "parent-p1", work=True)
+    meter = _tracker()
+    _balance(meter, 10, 10)
+    _balance(meter, 20, 8)
+    budget_events.emit_budget_update(meter, event_log.EventSink(child / "logs.jsonl").emit)
+    first = _tracker()
+    first.note_running(child.name, child_watch.running_usage(child))
+    budget_events.emit_budget_update(first, event_log.EventSink(parent / "logs.jsonl").emit)
+
+    _resume(parent, "recovery")
+    fresh = _tracker(cap)
+    _reconcile(repo, parent, fresh)
+    _balance(fresh, 30, baseline, provider=provider)
+    fresh.check()
+    assert fresh.available().usd == cap
+    _balance(fresh, 40, baseline - cap, provider=provider)
+    with pytest.raises(agent6_budget.BudgetExceededError, match="USD budget exhausted"):
+        fresh.check()
+    assert fresh.available().usd == 0
+
+
+@pytest.mark.parametrize("notice", [True, False], ids=["journaled", "unknown"])
+def test_ownerless_continuation_needs_its_launch_execution(
+    short_repo: pathlib.Path, notice: bool
+) -> None:
+    """An interrupted reconciliation did not start the continuation it has yet to settle."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    sink = event_log.EventSink(parent / "logs.jsonl")
+    _resume(parent, "first")
+    child = _running_child(repo, parent, "parent-p1", work=True)
+    (record,) = _records(parent)
+    initial = child_dispatch.UsageRecord(usd=0)
+    continued = child_dispatch.ContinuationRecord(
+        sequence=1, instruction="finish", usage_before=initial
+    )
+    running = record.with_child(
+        record.child(child.name).model_copy(update={"continuation": continued, "usage": initial})
+    )
+    path = child_dispatch.record_path(parent, record.identity)
+    data = running.model_dump(mode="json")
+    del data["children"][0]["continuation"]["owner"]
+    path.write_text(json.dumps(data))
+    _resume(parent, "continuing")
+    if notice:
+        sink.emit(
+            journal.ParallelChildContinued(group=record.identity, child=child.name, sequence=1)
+        )
+    _resume(child, "continued-child")
+    meter = _tracker()
+    _balance(meter, 10, 10)
+    _balance(meter, 20, 8)
+    child_sink = event_log.EventSink(child / "logs.jsonl")
+    budget_events.emit_budget_update(meter, child_sink.emit)
+    before = _tracker()
+    before.note_running(child.name, child_watch.running_usage(child))
+    budget_events.emit_budget_update(before, sink.emit)
+    _balance(meter, 30, 7)
+    budget_events.emit_budget_update(meter, child_sink.emit)
+
+    _resume(parent, "interrupted-recovery")
+    with pytest.raises(_Crash):
+        _reconcile(repo, parent, _tracker(), stop_at=record.identity)
+    _resume(parent, "recovery")
+    fresh = _tracker()
+    if not notice:
+        with pytest.raises(child_dispatch.DispatchRecordError, match="parent-p1-l1:1"):
+            _reconcile(repo, parent, fresh)
+        assert not _records(parent)[0].child(child.name).settled
+        return
     _reconcile(repo, parent, fresh)
     usage = children.child_usage(parent)
     assert usage is not None
