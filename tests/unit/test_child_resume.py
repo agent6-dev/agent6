@@ -106,7 +106,8 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     with launch_env.scripted_provider(reply_for=reply) as (url, _calls):
         cfg = Config.model_validate(
             {
-                "providers": {"p": {"backend": "openai", "base_url": url}},
+                "providers": {"p": {"backend": "openai", "base_url": url, "idle_compact_s": 0.001}},
+                "compaction": {"cold_start": "truncate"},
                 "models": {"default": {"model": "p/m"}},
                 "git": {"control": control, "worktree": {"base_dir": str(tmp_path / "clones")}},
                 "sandbox": {"isolation": "none", "run_commands": "allow"},
@@ -136,6 +137,13 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     assert "conversation at last call: 1 tokens; last ran" in stopped
     assert "last ran: unknown" not in stopped
     assert children_cli._turn(continued[0]) > 0
+    assert "earlier history was left out" in json.dumps(continued[0]["messages"])
+    (cold,) = [
+        row
+        for line in (runs / child.session_id / "logs.jsonl").read_text().splitlines()
+        if (row := json.loads(line))["type"] == "compact.cold_start"
+    ]
+    assert (cold["reason"], cold["action"]) == ("idle", "truncate")
     assert "original work" in json.dumps(continued[-1])
     assert (repo / "continued.txt").exists() is (control == "agent6")
     assert "continued" in background._git(repo, "show", f"{child.merge.branch}:continued.txt")
