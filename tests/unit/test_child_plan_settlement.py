@@ -111,6 +111,25 @@ def _call(tracker: budget.BudgetTracker, dollars: float) -> None:
     )
 
 
+def test_credit_journal_distinguishes_accounts_without_publishing_their_header_values(
+    tmp_path: pathlib.Path,
+) -> None:
+    tracker = budget.BudgetTracker(max_usd=2, max_tokens_fallback=-1, max_plan_points=-1)
+    first, second = "billing-account-123", "billing-account-456"
+    _balance(tracker, "p", first, 10, 10)
+    _balance(tracker, "q", second, 20, 2)
+    _balance(tracker, "alias", first, 30, 9)
+    path = tmp_path / "logs.jsonl"
+    event_log.EventSink(path).emit(
+        journal.BudgetUpdate(**budget_events.budget_update_fields(tracker))
+    )
+    wire = path.read_text()
+    assert first not in wire and second not in wire
+    usage = children.child_usage(tmp_path)
+    assert usage is not None and usage.usd_observed_credits == 1
+    assert len({r.account for r in usage.credit_readings}) == 2
+
+
 def test_running_and_settled_children_fold_credit_by_account_and_observation_time(
     tmp_path: pathlib.Path,
 ) -> None:

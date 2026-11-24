@@ -442,7 +442,7 @@ A flag's value is recorded with the run: a resume without that flag runs under i
 Priced calls and observed credit declines share the USD ceiling.
 The cap counts each call once, including calls made by children.
 Parent and child readings of the same credit balance form one series in observation order.
-The account ID identifies that series, or the provider entry if the backend gives no ID.
+A fingerprint of the account ID identifies that series, or the provider entry if the backend gives no ID.
 A top-up raises the balance for the next reading.
 The declines include other users of the account; they are not attributed to calls.
 Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.

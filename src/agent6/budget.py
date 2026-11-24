@@ -21,6 +21,7 @@ plan readings folded through the same high-water rule as the parent's own.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import math
 import threading
 import time
@@ -757,7 +758,9 @@ class BudgetTracker:
             self._plan_last_window[key] = w
         balance = plan.credits_usd
         if balance is not None:
-            account = f"account:{plan.account_id}" if plan.account_id else f"provider:{route}"
+            account = f"provider:{route}"
+            if plan.account_id:
+                account = "account:" + hashlib.sha256(plan.account_id.encode()).hexdigest()
             self._credits.observe((credit_usage.Reading(account, plan.observed_ns, balance),))
         self._plans.pop(route, None)
         self._plans[route] = plan

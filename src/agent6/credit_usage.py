@@ -15,7 +15,7 @@ class Reading:
     """A purchased-credit balance when it was observed, before any child settlement.
 
     Attributes:
-        account: The issuing account, or the provider entry when the backend names none.
+        account: A fingerprint of the account ID, or the provider entry if the ID is absent.
         observed_ns: When the observer received the reading, in Unix nanoseconds.
         balance_usd: The balance in dollars.
     """
