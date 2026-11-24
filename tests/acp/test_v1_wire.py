@@ -38,7 +38,12 @@ def _normal(frames: list[dict[str, Any]], names: dict[str, str]) -> list[dict[st
     text = json.dumps(frames, ensure_ascii=False)
     for value, name in names.items():
         text = text.replace(json.dumps(value)[1:-1], name)
-    return json.loads(text)
+    stable: list[dict[str, Any]] = json.loads(text)
+    for frame in stable:
+        # The release number changes with every release; the frame's shape is what is pinned.
+        if "agentInfo" in frame.get("result", {}):
+            frame["result"]["agentInfo"]["version"] = "<version>"
+    return stable
 
 
 def _load_frames(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
