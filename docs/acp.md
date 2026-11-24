@@ -24,16 +24,26 @@ An editor sees what `agent6 attach` shows: reasoning, each tool call and its out
 ACP carries a tool call as two messages.
 
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
-- a call names its tool (`name`) beside the call's title; built-in calls carry their ACP kind, and an edit result carries each journaled path as an absolute follow-along location
+- a call names its tool (`name`) beside the call's title; built-in calls carry their ACP kind, and an edit result carries each written or deleted path as an absolute follow-along location, without a line
 - a call waiting on an approval or an `ask_user` answer is updated to `pending` while its prompt is open, and back to `in_progress` once answered
 - a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.stop` is written, or when the tail ends without one (a worker killed mid-call)
 - `toolCallId` is `<run id>:<execution id>:<call>`, unique for the life of the session; the dispatcher numbers each execution's calls from 1
+
+An edit shows as a diff.
+
+- the `tool_call_update` of a successful `apply_edit` or `apply_patch` carries its text summary, then one `diff` entry per file: the absolute `path`, `oldText` and `newText`
+- a created file has `oldText: null`; a deleted file has `newText: ""`, and the summary says `deleted`
+- both texts are recorded when the tool writes, so two edits to one file in a turn each show their own diff, and `session/load` replays the diffs the live run showed
+- the budget is 64 KiB of UTF-8 per call, both sides of all its files together.
+  A call over it carries no diff, and its summary ends `(diff omitted for size)`; a side is never cut to fit.
+- a preview, a failed call, a command and an MCP tool carry no diff
+- after `sessions prune` removed a run's stored texts, a replayed edit carries its summary and `diff unavailable: its stored text is gone`
 
 Worker text and thinking arrive as they stream; output from side calls stays out of the conversation.
 
 Inspect persisted [line-origin evidence](usage.md#session-findings) with `/findings`, `agent6 sessions findings <id>` or the web Findings card.
 
-Three more updates ride the journal.
+Four more updates ride the journal.
 
 - `session_info_update`: the task's headline as the session title, the line `agent6 sessions list` shows
 - `available_commands_update`: `/pin <text>`, `/parallel [SPEC --] TASK` and the [review commands](#review-findings).
@@ -42,6 +52,12 @@ Three more updates ride the journal.
   `abort`, `exit`, `detach` and `/undo` are task text over ACP, not terminal commands.
   The editor cancels through `session/cancel`.
 - `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
+- `plan`: the run's task list, in the depth-first order every other surface shows it.
+  Each change of the task graph sends the complete list, an empty one included; so does the run's end, which clears the focus, and `session/load` replays them.
+    - the content is the task's title, and every entry is `medium` priority
+    - a pending task reads `pending`; a task in progress, or the one the worker is on, reads `in_progress`; a passed task reads `completed`
+    - a failed task reads `pending` with ` (failed)` after its title, since ACP has no failed status
+    - skipped and obsolete tasks are left out
 
 ## Parallel work
 
@@ -120,6 +136,23 @@ A session is one conversation in one directory.
   A prompt still queued answers `cancelled` at once.
   Cancellation releases an open permission wait without waiting for the client's reply.
   A late permission reply is ignored and cannot grant permission to a later prompt.
+
+## Model and effort
+
+`session/new`, `session/load` and `session/resume` answer with `configOptions`: two selects an editor shows as pickers.
+
+- `model` (category `model`): the routes the configured providers offer, the list every other front-end's picker offers.
+  Its current value is the route the next prompt runs: the picked one, else the one the run recorded, else the config's.
+- `effort` (category `thought_level`): `inherit`, which takes the config's effort, then `off`, `low`, `medium`, `high`, `xhigh` and `max`
+- `session/set_config_option` picks a value for that session alone and answers with the complete list.
+  The pick applies from the next prompt, a prompt that resumes the run included.
+  It changes no running turn and writes no config file.
+- a set is refused while a prompt runs on the session, and for an id or a value the session does not offer; the error says which
+- `config_option_update` carries the complete list when agent6 changes it: a run cached a provider's listing, or recorded another route
+- there is no `mode` option and no `modes`: an ACP session only opens runs
+- a session with no route to run offers no option: its config does not load or names no model, and no run is recorded.
+  The first prompt says why it cannot run.
+- a run another front-end detaches to the background keeps the picked model and takes the config's effort
 
 ## Not implemented
 
