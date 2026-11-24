@@ -535,26 +535,37 @@ class CompactionConfig(pydantic.BaseModel):
             "minus a 16k-token reserve; required above `compaction.drop_at_chars`"
         ),
     )
+    keep_operator_messages: int = pydantic.Field(
+        ge=-1,
+        default=-1,
+        description=(
+            "Local restart: reserve the newest N operator messages within the character cap; "
+            "-1: no count limit; 0: reserve none outside kept turns"
+        ),
+    )
+    keep_recent_turns: int = pydantic.Field(
+        ge=-1,
+        default=-1,
+        description=(
+            "Local restart: keep up to N whole turns, newest first; -1: no count limit; "
+            "0: keep no optional turns"
+        ),
+    )
     keep_recent_chars: int = pydantic.Field(
         ge=0,
         default=80_000,
         description=(
-            "Local compaction only: "
-            "characters of newest history kept verbatim after the summary on a tier-2 restart; "
-            "`compaction.keep_recent_chars = 0`: none"
+            "Local restart: shared character cap on operator messages and recent turns; "
+            "0: keep nothing optional; adaptive thresholds limit the cap to half of "
+            "`compaction.summarise_at_chars`"
         ),
     )
     keep_thinking_turns: validation.NoLimitOrPositive = pydantic.Field(
         default=-1,
         description=(
-            "Local compaction only: "
-            "thinking retained when tier 1 rewrites tool results for the newest N assistant "
-            "turns with "
-            "`compaction.keep_thinking_turns = N` (`N >= 1`); "
-            "`compaction.keep_thinking_turns = -1`: "
-            "all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking "
-            "block needed by an in-flight tool call; less replay for Anthropic's signed blocks "
-            "and ChatGPT's reasoning items; no thinking re-sent on the OpenAI wire"
+            "Local compaction: keep thinking on the newest N assistant turns when rewriting "
+            "results or restarting; -1: keep all; minimum otherwise: 1, to keep signed "
+            "thinking with an in-flight tool call"
         ),
     )
     summary_max_tokens: int = pydantic.Field(

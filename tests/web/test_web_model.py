@@ -11,9 +11,9 @@ import pathlib
 import pytest
 
 from agent6 import paths
+from agent6.app import confine
 from agent6.config import layer
 from agent6.models import cache as models_cache
-from agent6.models import registry
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.web import model
@@ -519,7 +519,7 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: path
     )
     payload = model.config_payload(tmp_path, (cfg,))
     eff = layer.load_effective(tmp_path, (cfg,))
-    resolved = registry.resolved_adaptive_values(eff.config)
+    resolved = confine.resolved_config_values(eff.config)
     shown = json.loads(config_view.render_show(eff, as_json=True, resolved=resolved))
     for key in (
         "harness.prompt.decompose",

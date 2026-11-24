@@ -198,7 +198,7 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
         cfg: The effective config.
 
     Returns:
-        The compaction thresholds, the auto decompose decision and each role's unset effort,
+        The auto decompose decision and each role's unset effort,
         by leaf; empty when nothing resolves.
     """
     out: dict[str, object] = {}
@@ -211,14 +211,6 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
     rm = cfg.models.resolve("worker")
     if rm is None:
         return out
-    drop, summarise = compaction_thresholds(
-        rm.provider,
-        rm.model,
-        drop_override=cfg.compaction.drop_at_chars,
-        summarise_override=cfg.compaction.summarise_at_chars,
-    )
-    out["compaction.drop_at_chars"] = drop
-    out["compaction.summarise_at_chars"] = summarise
     if cfg.harness.prompt.decompose == "auto":
         out["harness.prompt.decompose"] = "on" if decompose_default(rm.model) else "off"
     return out

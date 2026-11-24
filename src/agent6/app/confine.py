@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from agent6 import errors, kinds, pack, pack_manifest, paths
 from agent6.app import reporter as app_reporter
+from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, MCPServerEntry
 from agent6.models import registry
@@ -817,6 +818,11 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
         this host resolves them. With no jail binary to probe, the two stay `auto`.
     """
     out = registry.resolved_adaptive_values(cfg)
+    if (worker := cfg.models.resolve("worker")) is not None:
+        drop, summarise, keep = role_providers.resolve_compaction_thresholds(cfg, worker)
+        out["compaction.drop_at_chars"] = drop
+        out["compaction.summarise_at_chars"] = summarise
+        out["compaction.keep_recent_chars"] = keep
     if cfg.sandbox.isolation == "container":
         return out  # nothing is probed or started for a listing; the start block says what runs
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":

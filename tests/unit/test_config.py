@@ -649,6 +649,18 @@ def test_compaction_threshold_must_be_positive(tmp_path: pathlib.Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+@pytest.mark.parametrize("key", ["keep_operator_messages", "keep_recent_turns"])
+def test_compaction_count_accepts_zero_but_not_negative_two_or_a_bool(
+    tmp_path: pathlib.Path, key: str
+) -> None:
+    body = _VALID_TOML + f"\n[compaction]\n{key} = "
+    for value in (0, 3, -1):
+        assert getattr(load_config(_write(tmp_path, body + str(value))).compaction, key) == value
+    for invalid in ("-2", "true", '"2"'):
+        with pytest.raises(ConfigError, match=key):
+            load_config(_write(tmp_path, body + invalid))
+
+
 def test_compaction_summarise_must_exceed_drop(tmp_path: pathlib.Path) -> None:
     # Inverted ordering (tier-2 <= tier-1) makes tier-2 unreachable; the loader rejects it.
     body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 300000\nsummarise_at_chars = 200000\n"

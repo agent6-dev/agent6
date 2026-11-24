@@ -657,6 +657,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 summarise_at_chars=tools.compact_summarise_at_chars,
                 tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, role),
                 keep_recent_chars=tools.keep_recent_chars,
+                keep_operator_messages=cfg.compaction.keep_operator_messages,
+                keep_recent_turns=cfg.compaction.keep_recent_turns,
                 keep_thinking_turns=cfg.compaction.keep_thinking_turns,
                 elision_gists=cfg.compaction.elision_gists,
                 summary_max_tokens=cfg.compaction.summary_max_tokens,

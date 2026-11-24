@@ -595,6 +595,8 @@ def _drive_state(
             summarise_at_chars=compact_summarise,
             tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, "worker"),
             keep_recent_chars=keep_recent,
+            keep_operator_messages=cfg.compaction.keep_operator_messages,
+            keep_recent_turns=cfg.compaction.keep_recent_turns,
             keep_thinking_turns=cfg.compaction.keep_thinking_turns,
             elision_gists=cfg.compaction.elision_gists,
             summary_max_tokens=cfg.compaction.summary_max_tokens,

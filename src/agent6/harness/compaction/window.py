@@ -155,9 +155,10 @@ class CompactionSettings:
         summarise_at_chars: Tier 2 summarises and restarts past this.
         tool_result_cap_bytes: The bound on one result before it enters the
             conversation.
-        keep_recent_chars: The verbatim tail a restart keeps.
-        keep_thinking_turns: At tier-1 moments, keep thinking for the newest N
-            assistant messages (N >= 1); -1 keeps all.
+        keep_operator_messages: How many recent operator messages to reserve, -1 for all.
+        keep_recent_turns: How many recent turns to replay, -1 for all that fit.
+        keep_recent_chars: The shared character cap on local replay.
+        keep_thinking_turns: How many recent turns keep thinking during a rewrite, -1 for all.
         elision_gists: A large read decays through a model-written gist first.
         summary_max_tokens: The summariser's output cap.
         summariser: The writer selected for tier 2.
@@ -170,6 +171,8 @@ class CompactionSettings:
     drop_at_chars: int = DROP_BLOCKS_AT_CHARS
     summarise_at_chars: int = SUMMARISE_AT_CHARS
     tool_result_cap_bytes: int = compaction_elision.TOOL_RESULT_CAP_BYTES
+    keep_operator_messages: int = -1
+    keep_recent_turns: int = -1
     keep_recent_chars: int = KEEP_RECENT_CHARS
     keep_thinking_turns: int = -1
     elision_gists: bool = True

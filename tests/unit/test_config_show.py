@@ -42,10 +42,29 @@ def test_config_show_uses_compaction_keys(
     settings = json.loads(capsys.readouterr().out)
     assert settings["compaction.summary_max_tokens"]["value"] == 2048
     assert settings["compaction.summary_max_tokens"]["source"] == "default"
+    for key in ("compaction.keep_operator_messages", "compaction.keep_recent_turns"):
+        assert (settings[key]["value"], settings[key]["source"]) == (-1, "default")
     assert not any(key.startswith("context.") for key in settings)
 
     assert main(["config", "show"]) == 0
     assert "[compaction]" in capsys.readouterr().out
+
+
+def test_config_show_prints_the_clamped_local_restart_cap(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The configured cap remains editable when a small worker window lowers it."""
+    path = tmp_path / "small.toml"
+    path.write_text('[providers.o]\nbackend = "openai"\n[models.worker]\nmodel = "o/small"\n')
+    monkeypatch.setattr(registry, "context_window", lambda *_: 32768)
+    monkeypatch.chdir(tmp_path)
+    assert main(["--config", str(path), "config", "show"]) == 0
+    row = next(
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if "compaction.keep_recent_chars" in line
+    )
+    assert row.split() == ["compaction.keep_recent_chars", "32768", "(adaptive)", "default"]
 
 
 def test_provider_idle_compaction_defaults_and_origins(tmp_path: pathlib.Path) -> None:
