@@ -211,7 +211,7 @@ A resumed run opens with the verify fact: the last full verification's command, 
 
 Every listing row says what stands before a clean merge, derived from the journal on each read and never stored:
 
-- `open findings: 2 block, 1 warn`: the run's open findings by severity; `sessions merge` refuses on an open `block`, and `agent6 sessions findings <id>` lists them
+- `open findings: 2 block, 1 warn`: the run's open findings by severity; `agent6 sessions findings <id>` lists them
 
 The status beside the note carries the rest: what a waiting run waits on, the gate's word, `unmerged`, and the questions pending or the answers saved for the resume.
 Every listing orders sessions by last activity, newest first.
@@ -235,9 +235,9 @@ The verify command is the success gate.
 
 ## Session findings
 
-Every agent6 merge path refuses open grounded `block` findings and unreadable review evidence.
-Resolve each blocking finding with a reason before merging, including findings you decide not to fix.
-This rule is separate from `review.block_on`, which decides whether a panel rejects the worker's finish.
+With `review.block_on = "none"`, a merge reports the open `block` count and proceeds.
+With any other value, resolve every open `block` with a reason before merging.
+Every agent6 merge path refuses unreadable review evidence.
 A missing or stale review does not prevent a merge; legacy counts are not reconstructed findings.
 The web [Findings card](web.md#finding-actions-api) offers the same actions and links each finding to its reviewed diff and file version.
 In a run, the worker lists its own findings with the read-only `list_findings` tool; recording a response stays with the commands below.
@@ -373,8 +373,12 @@ Snapshotting does not checkpoint the run or move HEAD, the index or visible bran
 `sessions remove <id>` deletes the session's review snapshot refs, its children's records and its reviewers' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
 The snapshot certifies only its recorded trees and path coverage, not later parent edits.
 Under `git.control = "model"` a panel compares the base recorded at the start with the checkout's HEAD and its uncommitted edits, since the model's commits are the record.
-An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
+A reviewer returns a summary and findings, with no separate vote.
+Each finding carries the reviewer's category and may include a suggested fix as text or a patch.
+The suggestion is evidence for the worker and the operator, not an edit.
+A repeat on the same cited blob keeps its finding ID across rounds and resumes, even under a different label or suggested fix.
 The worker receives each finding once unless the feedback notice cut it.
+If a suggestion alone would hide the first finding, the notice marks the cut and `list_findings` keeps the full suggestion.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
 A panel asked to review trees a complete panel already reviewed with the same paths and reviewers is not sat again: the journal records `review.reused` naming that panel, whose findings stand, and the worker hears that nothing new was raised.
 `agent6 attach --json` includes structured review evidence, open counts, action history and completion state.

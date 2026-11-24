@@ -377,7 +377,8 @@ Historical symlinks resolve within the same base tree, through at most eight lin
 Current checkout links do not redirect a historical read.
 A present file that cannot be read safely makes the review incomplete; missing optional files do not.
 
-`AGENTS.md` cannot grant tools, network access or operator permissions, and cannot alter the aggregator's severity restrictions.
+`AGENTS.md` cannot grant tools, network access or operator permissions.
+It cannot change the grounding check or `review.block_on`.
 Model obedience is not a security boundary.
 
 Review text notices escape control characters in rule paths and refusal reasons.
@@ -578,10 +579,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - A live worker is the only journal writer for finding actions.
   `sessions.ipc` publishes whole request and reply files under the private session's `review-actions/`; request IDs cannot escape that directory.
   Without a live worker, the action path acquires the `worker.lock` and rechecks liveness and the review version before appending.
-- `app.merge.execute_merge()` refuses to merge a run into a checkout branch while it has open grounded block findings, independent of browser controls and `review.block_on`.
+- `app.merge.execute_merge()` refuses to merge a run into a checkout branch on unreadable review evidence or, unless `review.block_on = "none"`, on open grounded block findings.
   The session writer lock excludes dispositions and concurrent session writers until the pinned source commit is merged and its merge stamp is recorded.
   Git's conditional target-ref update still refuses a concurrently moved target.
-  Resolve-with-reason is the only finding bypass; unreadable evidence refuses with its reason.
+  With a blocking merge policy, each open block needs a resolution with a reason.
 - Review comparison and file routes read Git objects by recorded tree ID.
   Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
   Finding text and resolution reasons enter the browser as text, not HTML.

@@ -517,7 +517,7 @@ Headless surfaces without a dispatcher answer "not available".
 |---|---|---|
 | `when` | `"never"` | In-loop panel over a run's diff so far, with findings sent to the model; only finish-time review can gate finish; periodic review uses `review.interval_turns`; without `review.reviewers`, one reviewer uses `[models.reviewer]`; each reviewer runs as a child with its own session.<ul><li><code>never</code>: Do not run in-loop review</li><li><code>verify_fail</code>: Review after each failed verification</li><li><code>finish</code>: Review when model requests finish</li><li><code>periodic</code>: Review every configured interval of turns</li></ul> |
 | `interval_turns` | `10` | Turns between panels when `when = "periodic"`. |
-| `block_on` | `"none"` | Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` distinct provider/model routes; abstentions do not block; gating applies only to finish-time review; panels at other moments are advisory.<ul><li><code>none</code>: Treat blocking verdicts as guidance</li><li><code>any</code>: One blocking reviewer rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every reviewer to block</li></ul> |
+| `block_on` | `"none"` | Rule for new grounded block findings at finish. Quorum counts `review.min_blocking_models` distinct provider/model routes. Open blocks prevent a merge unless this is `none`.<ul><li><code>none</code>: Keep block findings advisory at finish and merge</li><li><code>any</code>: One blocking reviewer rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every reviewer to block</li></ul> |
 | `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two reviewers on one route counted once, even with different focus or effort |
 | `max_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
@@ -558,7 +558,9 @@ reviewers = [
 ```
 
 A finding grounds on the path, side and lines it cites against the diff; an ungrounded finding is dropped.
-A `block` holds only when its reviewer's verdict is `block` and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness` (the last only when verify passed); otherwise it reads as `warn`, which cannot stall the run.
+A reviewer blocks when it reports a new grounded `block` finding.
+The reviewer's category is a label, not a gate.
+`warn` and `nit` findings never reject finish or stop a merge.
 Findings injected in an earlier round or execution neither repeat nor count toward a later panel's gate while the blob they cite is unchanged.
 
 ## `[compaction]`

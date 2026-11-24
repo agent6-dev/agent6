@@ -86,7 +86,7 @@ A run keeps one message history with one provider and one model.
 - `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `review.start` records the paths, blob IDs, byte counts and completeness for the panel
 - under `backend = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
-An in-loop panel records the run base and reviewed head's tree IDs, full grounded reviewer verdicts, and findings with durable IDs in `loop.review.*` events.
+An in-loop panel records the run base and reviewed head's tree IDs, each reviewer's grounded findings or abstention, and findings with durable IDs in `review.*` events.
 Panel preparation retains the exact comparison under `refs/agent6/<session>/review/<base-tree>-<head-tree>`, including uncommitted work after failed verification or with `git.commit_per_turn = false`.
 The snapshot commit retains the base history as well as the head tree; an existing head commit is reused when it already retains both.
 Before creating or reusing a snapshot, git checks the trees, retained history and every file object they reference.
@@ -96,7 +96,7 @@ The current reviewer executor consumes that context; child execution is not enab
 Unreadable targets or failed retention skip the panel with `target_unreadable`, never substitute the chain tip for unreadable worktree content.
 The refs survive chain pruning and are removed with their owning session record (`sessions remove`, including `--asks`).
 `harness/review/history.py` restores those records on resume.
-Only exact normalized finding content, location and the cited blob identify a repeat.
+A repeat matches on severity, title, detail, location and the cited blob.
 The journal keeps repeated observations even when the worker feedback omits them.
 Findings cut from the feedback notice remain eligible for a later notice.
 
@@ -560,7 +560,8 @@ Legacy counts carry an unknown-evidence notice; an unreadable journal or structu
 `app.merge.execute_merge()` enforces the guard for CLI, web, TUI and auto-merge, and runs its git under the hook and driver policy of the config it was given (`git_policy.use`), so a merge inside the web server leaves the server's policy as it was.
 It holds the existing session writer lock while re-reading the review fold, merging a pinned source commit, and recording that tip.
 Auto-merge uses the lock its lifecycle already holds; live dispositions wait in the IPC queue.
-An open grounded block or unreadable evidence refuses the merge with its reason.
+Unreadable evidence refuses the merge with its reason.
+An open grounded block refuses the merge unless the merge config sets `review.block_on = "none"`.
 Missing, stale and legacy count-only reviews do not block a merge.
 
 `app/review/actions.py` owns Fix, Resolve and Reopen for every front-end.

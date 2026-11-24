@@ -70,7 +70,8 @@ The input state stays unchanged.
 Replay calls write no provider transcripts or object store.
 
 The first table on stderr counts outcomes, block findings by category and blocks naming a reader for each review and arm.
-`pass` and `block` come from the panel's reply parser **before** diff grounding or voting.
+`pass` and `block` reflect the severities in the reply **before** diff grounding or panel aggregation.
+A `verdict` field in a reply does not count.
 `asked for a tool`, `invalid reply` and `truncated` have no verdict.
 
 - **Reader:** `names_reader` is a text measure on each block's title and detail.
@@ -84,7 +85,7 @@ The first table on stderr counts outcomes, block findings by category and blocks
 - **Kept and lost blocks:** Match recorded-arm block occurrences to tree-arm blocks by category and exact location (path, side and inclusive lines), once per occurrence per comparable pair.
   Count matched occurrences as kept and unmatched recorded occurrences as lost.
   A tool request or invalid reply cannot establish that a block was lost.
-  A changed citation can count as a loss, and distinct defects at the same citation can match.
+  A changed category or citation can count as a loss, and distinct defects at the same citation can match.
 
 These are sample counts, not judgments of correctness or evidence that the prompt caused a change.
 Read the arm distributions and the number of comparable pairs alongside the totals.

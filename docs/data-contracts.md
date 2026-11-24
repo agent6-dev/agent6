@@ -121,9 +121,9 @@ Define immutable review evidence and validate review boundary payloads.
 
 **Finding** &mdash; Hold one review finding at a structured location.
 
-**ReviewerReply** &mdash; Validate the verdict and findings returned by a reviewer.
+**ReviewerReply** &mdash; Validate the summary and findings returned by a reviewer.
 
-**ReviewVerdict** &mdash; Hold one indexed reviewer's verdict, including an explicit abstention on failure.
+**ReviewVerdict** &mdash; Hold one reviewer's findings or the reason it abstained.
 
 **LineOrigin** &mdash; Record byte-level evidence without dating a defect or changing its severity.
 

@@ -1258,7 +1258,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### review.verdict
 
-**Support: public.** A reviewer returned a grounded verdict or abstained.
+**Support: public.** A reviewer reported grounded findings or abstained with an error.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1269,7 +1269,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `reviewer_index` | `int` | Zero-based reviewer index. |
 | `focus` | `str` | The requested summary or review focus. |
 | `model_route` | `str` | The reviewer's configured model route. |
-| `verdict` | `str` | Reviewer verdict: pass, block or abstain. |
 | `findings` | `list` | Grounded findings or panel observations. |
 | `summary` | `str` | The result or outcome in words. |
 | `error` | `str, optional` | The failure diagnostic. |
@@ -2993,7 +2992,7 @@ Source: [`agent6.viewmodel.review.MergeReviewGuard`](https://github.com/agent6-d
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `open_block_ids` | `tuple[str, ...]` | The open grounded findings that block a merge. |
+| `open_block_ids` | `tuple[str, ...]` | The IDs of open grounded block findings. |
 | `read_failure` | `str \| None` | The evidence-read diagnostic that blocks a merge, or null. |
 
 ### ReceiptView
@@ -4487,7 +4486,7 @@ Source: [`agent6.review_records.ReviewerAssignment`](https://github.com/agent6-d
 
 ### ReviewVerdict
 
-**Support: public.** Hold one indexed reviewer's verdict, including an explicit abstention on failure.
+**Support: public.** Hold one reviewer's findings or the reason it abstained.
 
 Source: [`agent6.review_records.ReviewVerdict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
 
@@ -4496,7 +4495,6 @@ Source: [`agent6.review_records.ReviewVerdict`](https://github.com/agent6-dev/ag
 | `reviewer_index` | `int` | The reviewer's zero-based position in the roster. |
 | `focus` | `str` | The reviewer's assigned review focus. |
 | `model_route` | `str` | The provider/model route that reviewed. |
-| `verdict` | `Literal['pass', 'block', 'abstain']` | The reviewer's pass, block or abstention decision. |
 | `findings` | `tuple[Finding, ...]` | The grounded findings from this reviewer. |
 | `summary` | `str` | The reviewer's closing summary. |
 | `error` | `str \| None` | The failure diagnostic for an abstention, or null. |
@@ -4593,11 +4591,12 @@ Source: [`agent6.review_records.Finding`](https://github.com/agent6-dev/agent6/b
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `category` | `str` | The finding's issue category. |
+| `category` | `str` | The reviewer's label, one word of up to 64 characters. |
 | `severity` | `Literal['block', 'warn', 'nit']` | The grounded block, warn or nit severity. |
 | `title` | `str` | The short finding title. |
 | `detail` | `str` | The supporting explanation and evidence. |
 | `location` | `ReviewLocation` | The path, side and optional line range. |
+| `suggestion` | `str \| None` | An optional fix as text or a patch, up to 2,000 characters. |
 
 ### LineOrigin
 

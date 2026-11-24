@@ -1,6 +1,6 @@
-# Adversarial review panel: validation
+# Review panel validation
 
-agent6 runs reviewer subagents over a diff and aggregates their verdicts through the in-loop `[review]` config.
+agent6 runs reviewer subagents over a diff and counts reviewers with new grounded block findings through the in-loop `[review]` config.
 The `review` preset enables a three-reviewer `finish` panel.
 The configuration reference documents its triggers, roster and blocking rules.
 With the panel off, `agent6 ask "/review TARGET"` returns the worker's Markdown review.
@@ -8,13 +8,16 @@ With the panel on, reviewers record findings on the target before the worker ans
 
 [Recorded review replay](replay.md) compares a panel reviewer's first reply under two system prompts.
 
-These runs tested whether the panel blocks correct work.
+The measurements below used the prompt with a reviewer vote and fixed categories.
+They do not measure the prompt with free labels and no vote.
 
 ## Which findings can block finish
 
 The pre-0.0.4 `reviewer.py` blocked correct work that passed verification despite its instruction not to block on speculation.
 The panel drops findings that do not cite the diff.
-A block outside the allowed categories (`security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness`) becomes a warning before votes are counted.
+A reviewer blocks on a new grounded `block` finding, regardless of its category or the verify result.
+Each finding may include a suggested fix for the worker and the operator.
+With `review.block_on = "none"`, block findings prevent neither finish nor merge.
 A finding that passes these checks can still be wrong.
 
 ## Validation
