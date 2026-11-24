@@ -18,11 +18,10 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
 - Runs commands in a [Linux sandbox](#security); you set file and network access.
 - Routes each role to a hosted, local or subscription model.
 - Resumes or forks a saved session from an earlier turn.
-- Runs your verification command and marks an unverified tree.
+- Runs your verification command, marks an unverified tree, and tracks a score you name.
 - Reviews the diff with a model panel; blocking findings stop a merge into the checkout branch.
-- Runs in a worktree, or as ranked [parallel attempts][parallel-runs] in clones.
-  When agent6 controls git, it merges the winner into the parent's chain, not into the checkout branch.
-  A top-level run may dispatch children itself when `harness.parallel.tool` is on.
+- Runs children in clones while the parent keeps working; you steer or stop each one.
+- Shows the work in a browser: read the diff, edit a file, stage and commit, fetch a pull request.
 - Defines workflows as [TOML state machines][state-machines] with recovery and replay.
 - Follows `AGENTS.md` and [SKILL.md packs][skills]; [MCP servers][mcp] are opt-in.
 - No telemetry unless you [export it][telemetry], and no automatic updates.
@@ -134,7 +133,6 @@ On Ubuntu, `full` under Docker also needs the host to allow the jail launcher to
 [installation]: https://agent6.dev/installation/
 [mcp]: https://agent6.dev/config/#mcp-and-mcpserversname-optional
 [oauth]: https://agent6.dev/config/#configured-oauth
-[parallel-runs]: https://agent6.dev/architecture/#parallel-runs
 [security]: https://agent6.dev/security/
 [skills]: https://agent6.dev/config/#skills
 [state-machines]: https://agent6.dev/state-machines/
