@@ -121,7 +121,8 @@ The model receives each as an image, as it does one `read_file` reads.
 
 ## Follow and steer a run
 
-Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).
+See [Command line](cli.md#follow-and-steer-a-run) to follow a run or send an instruction from a script.
+[Slash commands](slash-commands.md) lists what each composer accepts and what `agent6 steer` refuses.
 Plain and immediate steers end a `read_background` wait with the output collected so far.
 The run reads the instruction at its next turn boundary, if it takes another turn.
 
@@ -133,21 +134,17 @@ The tokens and the points against `max_plan_points` on `sessions show` are the l
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
 
-The steer directives work from every composer, the pause menu, and `agent6 steer ID "/task ..."` from a script.
+### Undo the last message
 
-- `/task <text>` adds work to the task graph (the turn in flight never sees it); `/retire <id>` drops a task, by the number `sessions graph` prints
-- `/metric` shows, changes or retires [the run's score](#measure-a-run)
-- `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
-- `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
-- `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` dispatches children ([parallel](config.md#harnessparallel))
-- `/review [TARGET]` reviews changes in the session ([targets and worktrees](#plan-review-and-ask))
-- `/undo` is available in the TUI, web, a `run -i` prompt, or a live run's pause menu (Ctrl-C), so `agent6 steer` refuses it:
-  - it takes back the last message
-  - the tree is committed on the run's chain
-  - every tracked path the run changed since the checkpoint before that message is put back (one changed since the run ended stays, named in the notice)
-  - the run ends `undone` and an unstarted fork in the same checkout continues it (`agent6 resume <fork> --steer "<the message, edited>"`)
-  - `resume` and `sessions merge` refuse the undone run and name the fork
-  - it is refused while another live run drives the checkout
+`/undo` takes back the last message and creates an unstarted fork in the same checkout.
+It refuses while another live run drives the checkout.
+
+- The tree is committed on the run's chain.
+- Undo restores each tracked path the run changed since the checkpoint before that message.
+  A path changed since the run ended stays as it is and appears in the notice.
+- The run ends `undone`.
+  `resume` and `sessions merge` refuse it and name the fork.
+- Continue with `agent6 resume <fork> --steer "<the message, edited>"`.
 
 ## Answer a parked prompt
 

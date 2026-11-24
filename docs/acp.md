@@ -46,10 +46,9 @@ Inspect persisted [line-origin evidence](usage.md#session-findings) with `/findi
 Four more updates ride the journal.
 
 - `session_info_update`: the task's headline as the session title, the line `agent6 sessions list` shows
-- `available_commands_update`: `/pin <text>`, `/parallel [SPEC --] TASK` and the [review commands](#review-findings).
-  `/pin` reaches the run as steering text; review commands are handled by the front end, not the model.
-  The editor refuses composer commands such as `/compact`, `/btw` and `/task`.
-  `abort`, `exit`, `detach` and `/undo` are task text over ACP, not terminal commands.
+- `available_commands_update`: the [slash commands](slash-commands.md) the editor can offer for this run's mode.
+  The front end handles [finding actions](#review-findings) without sending their text to the model.
+  `abort`, `exit` and `detach` are task text over ACP, not terminal commands.
   The editor cancels through `session/cancel`.
 - `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
 - `plan`: the run's task list, in the depth-first order every other surface shows it.
@@ -84,14 +83,14 @@ They get no editor filesystem, terminal or connection.
 ## Review findings
 
 Findings and dispositions appear as `[agent6]` transcript notices, not native review threads.
-The advertised commands act on the conversation's recorded run:
+Commands act on the conversation's recorded run.
+An answer to a queued question reaches the run at its next turn.
+An ended run receives the answer on its next prompt, which resumes it.
 
-- `/findings [--all]` lists open findings, or also resolved findings with `--all`.
-- `/answer <question-id> <text>...` answers a pending question, with options or without; a queued question's answer reaches the run at its next turn, and an ended run's is delivered by the next prompt, which resumes it.
-- `/fix ID [ID...] --resume` confirms **Resume to fix** as a follow-up prompt when the session is idle; `/fix --all --resume` takes every open finding without a queued Fix.
-  It uses the stored reports, leaves the findings open, and refuses a missing resume point rather than starting a new run.
-- `/resolve ID --as DISPOSITION --reason "TEXT" [--duplicate-of ID]` records the operator's conclusion.
-- `/reopen ID --reason "TEXT"` reopens a finding.
+Use `/fix` with `--resume` to confirm **Resume to fix** when the session is idle.
+`--all` selects every open finding without a queued Fix.
+Fix uses the stored reports and leaves the findings open.
+It refuses a missing resume point rather than starting a new run.
 
 Live disposition actions use the worker's IPC queue; their notices arrive when recorded.
 Fix does not support mid-run steering through ACP.

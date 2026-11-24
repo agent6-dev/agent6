@@ -15,7 +15,7 @@ The new-work composer (`n`) picks the mode, the checkout (this one or a new work
 A plan's **Run this plan** opens the same composer with the plan chosen.
 On a terminal 140 columns wide or more the table adds a run's branch; `R` opens the composer with `/review <branch>` for the selected run, and `m` merges it after a confirm that names the unmerged runs that changed some of the same paths.
 On a conflict in a run with its own worktree, the hub offers **Resume and resolve**: `agent6 resume <id> --merge <branch>`, which merges the base into the run's work for the run to resolve.
-The composer accepts `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
+The run composer accepts `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 A session that starts waiting on an answer or ends is announced with a toast and a desktop notification (`notify-send`, when present).
 
 ![The hub](screenshots/out/01-hub.png)
@@ -33,7 +33,7 @@ The footer and `?` help list these keys.
 
 Opening a run lands on its conversation: the task, the model's reasoning and every tool call, following live.
 `Esc` or `Ctrl+K` returns to the hub, the TUI's session switcher.
-The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
+The composer takes [slash commands](slash-commands.md).
 After `@` in a session's composer or the new-session one, the line above it lists the workspace's matching files, and Tab completes the path as a [file reference](usage.md#file-references).
 On an ended child, and on an ended run whose worktree is gone or whose manifest cannot be read, the composer says why, as `agent6 sessions show` does; Enter resumes nothing and **Run > Resume this session** is dimmed.
 **Run > Fork this session** continues a child in a worktree of its own.

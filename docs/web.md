@@ -117,7 +117,11 @@ When the server stops answering, the Sessions and State machines lists, a sessio
       **Send** messages the live child.
       **Stop** asks before stopping that child and its live descendants.
       These controls also work on a live reviewer.
-    - the composer steers a live run or resumes an ended one under the preset and model picked above it (on a phone, behind one line that names them), and takes the [steer directives](usage.md#follow-and-steer-a-run); its button, **Send** on a live run and **Resume** on an ended one, does what Enter does, and a phone shows it as a send icon; Ctrl+Enter sends a live steer as `/now`, Ctrl+R searches past messages
+    - The composer takes [slash commands](slash-commands.md) for a live or ended run.
+      To resume, choose the preset and model above it (on a phone, open the line that names them).
+      Enter sends the message, as does **Send** or **Resume** (the send icon on a phone).
+      Ctrl+Enter sends a live steer as `/now`.
+      Ctrl+R searches past messages.
     - an ended child, and an ended run whose worktree is gone or whose manifest cannot be read, closes the composer; the line under it says why, as `agent6 sessions show` does, and **Fork** continues a child in a worktree of its own
     - an ended run whose manifest cannot be read also dims **Fork** and **Merge**, whose tooltips say why
     - **?** outside a field lists the keyboard shortcuts; `>` typed into Ctrl+K's box opens the command palette: the pages, the switcher, the theme, new work and the controls the current page shows, each by name

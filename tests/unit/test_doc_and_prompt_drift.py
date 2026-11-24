@@ -12,6 +12,7 @@ import ast
 import os
 import pathlib
 import re
+import runpy
 import subprocess
 import tomllib
 
@@ -137,13 +138,22 @@ def test_every_tool_mention_in_the_prompts_is_a_registered_tool() -> None:
             )
 
 
-def test_usage_says_which_listed_directives_a_scripted_steer_refuses() -> None:
-    """usage.md listed `/undo` among the directives `agent6 steer` sends, which refuses it."""
-    usage = (REPO / "docs" / "usage.md").read_text(encoding="utf-8").splitlines()
-    listed = [ln for ln in usage if any(ln.startswith(f"- `{c}`") for c in directive.VIEW_COMMANDS)]
-    assert listed, "usage.md no longer lists a view directive"
-    for line in listed:
-        assert "`agent6 steer` refuses it" in line, line
+def test_slash_command_page_matches_the_registry() -> None:
+    docs = REPO / "docs"
+    generate = runpy.run_path(str(docs / "gen_slash_commands.py"))["build_markdown"]
+    assert (docs / "slash-commands.md").read_bytes() == generate().encode("utf-8"), (
+        "Regenerate with .venv/bin/python docs/gen_slash_commands.py"
+    )
+    for page in ("usage.md", "cli.md", "acp.md"):
+        assert "(slash-commands.md)" in (docs / page).read_text(encoding="utf-8")
+
+
+def test_slash_command_table_marks_the_views_a_scripted_steer_refuses() -> None:
+    """The command reference must not offer local views to `agent6 steer`."""
+    table = (REPO / "docs/slash-commands.md").read_text(encoding="utf-8").splitlines()
+    for name in directive.VIEW_COMMANDS:
+        (row,) = [line for line in table if line.startswith(f"| <code>{name}</code> |")]
+        assert "script" in row.split("|")[-2].strip().split(", ")
 
 
 def test_usage_documents_both_state_transfer_commands() -> None:

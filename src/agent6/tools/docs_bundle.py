@@ -12,6 +12,7 @@ AGENT6_DOC_FILES = (
     "README.md",
     "AGENTS.md",
     "USAGE.md",
+    "SLASH-COMMANDS.md",
     "CLI.md",
     "INSTALLATION.md",
     "CONFIG.md",

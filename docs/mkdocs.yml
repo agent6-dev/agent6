@@ -22,6 +22,7 @@ exclude_docs: |
   gen_config.py
   gen_diagrams.py
   gen_formats.py
+  gen_slash_commands.py
   config_template.md
   architecture_template.md
   screenshots/*.tape
@@ -137,6 +138,7 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Usage: usage.md
+  - Slash commands: slash-commands.md
   - Command line: cli.md
   - Terminal UI: terminal.md
   - Web UI: web.md

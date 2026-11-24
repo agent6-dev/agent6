@@ -78,11 +78,15 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
 
 `agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
 
-- the menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages; a steer sent from another surface while it is open is taken as the answer
-    - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/answer`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
+- Tab completes the pause menu's [slash commands](slash-commands.md).
+  Up recalls past messages and Ctrl-R searches them.
+  A steer from another surface answers the open prompt.
 - `/detach` hands the run to the background after its current turn (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it
 - `/exit` leaves the run resumable; `/stop`, or Ctrl-C at the pause prompt, stops it now, as `agent6 stop ID` does
-- `run -i` prompts after every commit: `/continue` (bare Enter), [`/parallel` (preview before sending)](usage.md#parallel-directive), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
+- `run -i` prompts after every commit.
+  Enter continues the run.
+  A [`/parallel` line](usage.md#parallel-directive) previews first.
+  Repeat it to send.
 - hub-started runs run detached; `agent6 attach` follows them (conversation by default; `--tui`, `--raw`)
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">

@@ -49,6 +49,7 @@ exclude = ["src/agent6/jail"]
 "docs/formats.md" = "agent6/_docs/FORMATS.md"
 "docs/installation.md" = "agent6/_docs/INSTALLATION.md"
 "docs/security.md" = "agent6/_docs/SECURITY.md"
+"docs/slash-commands.md" = "agent6/_docs/SLASH-COMMANDS.md"
 "docs/state-machines.md" = "agent6/_docs/STATE-MACHINES.md"
 "docs/terminal.md" = "agent6/_docs/TERMINAL.md"
 "docs/usage.md" = "agent6/_docs/USAGE.md"
@@ -75,6 +76,7 @@ include = [
     "/docs/formats.md",
     "/docs/installation.md",
     "/docs/security.md",
+    "/docs/slash-commands.md",
     "/docs/state-machines.md",
     "/docs/terminal.md",
     "/docs/usage.md",
@@ -227,7 +229,7 @@ banned-from = [
 "tests/**" = ["ANN", "B017", "D1", "D401", "DOC", "PLC0415", "PLR0915", "PLR2004", "S"]
 
 [tool.pyrefly]
-project-includes = ["docs/gen_contracts.py", "docs/gen_formats.py", "src", "tests"]
+project-includes = ["docs/gen_contracts.py", "docs/gen_formats.py", "docs/gen_slash_commands.py", "src", "tests"]
 python-version = "3.13"
 # `src` comes first, so its modules are `agent6.*`; the tree root resolves `tests.*` and `bench.*`.
 search-path = ["src", "."]
