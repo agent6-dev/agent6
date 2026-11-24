@@ -84,10 +84,14 @@ class ChildContinuation:
     Attributes:
         number: The child's original number in its group.
         instruction: Its next instruction.
+        fresh: Restore a new clone rather than reuse the stopped child's clone.
+        commits: Commits beyond the base on the retained ref.
     """
 
     number: int
     instruction: str
+    fresh: bool = False
+    commits: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -240,11 +244,13 @@ class StartedChild:
             never ran.
         stop: Asks the child to stop now; its result still resolves, with its work imported
             and never merged.
+        workspace: Where a continued child resumed, empty on first launch.
     """
 
     session_id: str
     result: concurrent.futures.Future[ChildResult]
     stop: Callable[[], None] = _no_stop
+    workspace: str = ""
 
 
 class GroupChildSpawner(Protocol):
@@ -354,7 +360,7 @@ class ChildMerge:
             what stopped a stopped child (`stopped by its parent`); else "".
         report: What the child said at its end, its finish summary; "" when it gave none.
         context: Its last measured conversation size and activity.
-        commits: The commits a stopped child's branch holds beyond its base; 0 otherwise.
+        commits: The commits on the retained ref beyond the child's base, or 0 without a count.
     """
 
     session_id: str

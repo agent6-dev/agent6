@@ -200,6 +200,7 @@ def bridge_spawner(
     allowance: agent6_budget.BudgetAllowance | None = None,
     contract: kinds.ConversationContract | None = None,
     continuation: str = "",
+    workspace: child_resume.Workspace | None = None,
     runtime: ChildRuntime,
     stop_reason: Callable[[child_watch.ChildStartup], str] = lambda _: "",
 ) -> child_records.ChildResult:
@@ -229,7 +230,8 @@ def bridge_spawner(
         allowance: What the parent had left when the child started, which sets every
             cap; None for the config's.
         contract: The harness-owned read-only conversation; None for work.
-        continuation: The next instruction in a retained child clone; empty starts a new child.
+        continuation: The next instruction for the child; empty starts a new child.
+        workspace: The parent-validated checkout for the continuation.
         runtime: The front-end's spawn primitive.
         stop_reason: Why to end the child before its start report, empty to keep waiting.
 
@@ -241,8 +243,12 @@ def bridge_spawner(
     private = child_launch.launch_dir(paths.state_dir(origin), group_id)
     try:
         if continuation:
-            clone = child_resume.check_workspace(
-                spec, private, parent=parent, record_state=record_state
+            clone = (
+                workspace.checked(spec.worktree)
+                if workspace
+                else child_resume.check_workspace(
+                    spec, private, parent=parent, record_state=record_state
+                )
             )
         else:
             child_repo.clone_worktree(origin, spec.worktree)
@@ -368,6 +374,7 @@ def run_child_to_completion(
     allowance: agent6_budget.BudgetAllowance | None = None,
     contract: kinds.ConversationContract | None = None,
     continuation: str = "",
+    workspace: child_resume.Workspace | None = None,
     clock: Callable[[], float] = time.time,
     watch: PollChild | None = None,
     parent_events: event_log.EventSink | None = None,
@@ -412,7 +419,8 @@ def run_child_to_completion(
         allowance: What the parent had left when the child started, as the child's caps;
             None for the config's caps.
         contract: The harness-owned read-only conversation; None for work.
-        continuation: The next instruction in a retained child clone; empty starts a new child.
+        continuation: The next instruction for the child; empty starts a new child.
+        workspace: The parent-validated checkout for the continuation.
         clock: The wall clock the deadline is read against.
         parent_events: The parent execution's sink for child activity.
         watch: The parent's side of the wait, called on each poll with the child's dir,
@@ -466,6 +474,7 @@ def run_child_to_completion(
             allowance=allowance,
             contract=contract,
             continuation=continuation,
+            workspace=workspace,
             runtime=runtime,
             stop_reason=stop_before_start,
         )
@@ -805,7 +814,11 @@ def recover_children(
                 )
             )
             continue
-        manifest = sessions_manifest.read_manifest(child_dir)
+        try:
+            manifest = sessions_manifest.read_manifest(child_dir)
+        except sessions_manifest.ManifestError as exc:
+            results.append(child_records.ChildResult(spec, child_dir, branch, False, str(exc)))
+            continue
         ref = git_read.chain_ref_for(session_id) if manifest.git_control == "model" else branch
         tip = git_read.chain_tip(origin, ref) or ""
         ref = ref if tip else ""
@@ -1135,16 +1148,24 @@ def build_child_spawner(
             )
             for i in (child.continuation.number if child.continuation is not None else position,)
         ]
+        workspaces: dict[int, child_resume.Workspace] = {}
         try:
             for spec, child in zip(specs, children, strict=True):
                 if child.continuation is not None:
-                    child_resume.check_workspace(
+                    workspaces[spec.number] = child_resume.prepare(
                         spec,
-                        child_launch.launch_dir(paths.state_dir(origin), group_id),
+                        child.continuation,
+                        origin=origin,
+                        private=child_launch.launch_dir(paths.state_dir(origin), group_id),
                         parent=parent_session_id,
                         record_state=record_state,
                     )
-        except child_launch.LaunchError as exc:
+        except (
+            child_launch.LaunchError,
+            child_repo.ChildRepoError,
+            errors.GitError,
+            OSError,
+        ) as exc:
             raise ParallelError(str(exc)) from exc
         paths.mkdir_for_real_user(sessions_layout.bucket_dir(record_state, "runs"))
         parent_dir = (
@@ -1210,6 +1231,7 @@ def build_child_spawner(
                     continuation=child.continuation.instruction
                     if child.continuation is not None
                     else "",
+                    workspace=workspaces.get(spec.number),
                     watch=poll,
                     parent_events=parent_events,
                 )
@@ -1232,7 +1254,12 @@ def build_child_spawner(
                 name=f"agent6-child-{spec.session_id}",
                 daemon=True,
             ).start()
-            started.append(child_records.StartedChild(spec.session_id, result, asked.set))
+            workspace = workspaces.get(spec.number)
+            started.append(
+                child_records.StartedChild(
+                    spec.session_id, result, asked.set, workspace.notice if workspace else ""
+                )
+            )
         return started
 
     return GroupSpawner(dispatch, hard_stop)

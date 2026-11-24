@@ -119,7 +119,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
             # A wait has something to wait for: the child itself, or the judges ranking it.
             running = state in ("starting", "running", "in review", "stopping", "being ranked")
-            mergeable = child.merge is not None and child.merge.status == "stopped"
+            mergeable = child_merge.available(child, model_git=not dispatcher.chain.ref)
             if child_merge.pending(child):
                 state = "merge requested"
             commits = (
@@ -182,7 +182,7 @@ def stop(dispatcher: parallel_dispatch.ParallelDispatcher, child: str) -> None:
 
 
 def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: str) -> str:
-    """Steer a running child or continue a stopped child under its parent.
+    """Steer a running child or continue an unmerged child under its parent.
 
     A child taking another turn reads it under `operator_bridge.PARENT_STEERING`:
     text for its model, never a steer verb or a directive.
@@ -196,8 +196,7 @@ def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: st
         The confirmation of submission, not delivery.
 
     Raises:
-        ToolError: The id names no child of this run, a child that has ended, or one that
-            has not started; nothing was sent.
+        ToolError: No child in this run can take that instruction.
     """
     state = next(
         (
@@ -215,12 +214,7 @@ def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: st
                 f"no child {child} in this run; read_background with no id lists this run's"
                 " children."
             )
-        if ended.mergeable:
-            return child_continue.start(dispatcher, child, text)
-        raise tool_errors.ToolError(
-            f"child {child} has ended ({ended.state}); nothing was sent."
-            " parallel starts another child."
-        )
+        return child_continue.start(dispatcher, child, text)
     if state == "stopping":
         raise tool_errors.ToolError(f"child {child} is stopping; nothing was sent.")
     assert dispatcher.session_dir is not None
@@ -288,7 +282,7 @@ class ChildWork:
             stop(dispatcher, child)
 
     def steer(self, child: str, text: str) -> str:
-        """Steer a running child or continue a stopped child with the instruction.
+        """Steer a running child or continue an unmerged child with the instruction.
 
         Args:
             child: The child's session id.
@@ -308,7 +302,7 @@ class ChildWork:
         return steer(dispatcher, child, text)
 
     def merge(self, child: str) -> str:
-        """Request a stopped child's merge at the next boundary.
+        """Request a child's merge at the next boundary.
 
         Args:
             child: The child's session id.

@@ -1,4 +1,4 @@
-"""Parent-owned continuations of stopped children, recorded before they start."""
+"""Parent-owned continuations of unmerged children, recorded before they start."""
 
 from __future__ import annotations
 
@@ -6,12 +6,13 @@ from agent6 import budget, child_records
 from agent6.harness import child_merge, parallel_dispatch
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import tool_errors
+from agent6.vcs.git import read as git_read
 
 
 def start(  # noqa: PLR0912  # each refusal precedes the durable state change
     dispatcher: parallel_dispatch.ParallelDispatcher, session_id: str, instruction: str
 ) -> str:
-    """Continue a stopped child in its own clone under this run's watch.
+    """Continue an unmerged child under this run's watch.
 
     Args:
         dispatcher: The parent, whose dispatch record owns the child.
@@ -40,20 +41,22 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
     if found is None:
         raise tool_errors.ToolError(f"no child {session_id} in this run")
     record, child = found
-    if child.merge is None or child.merge.status != "stopped":
-        raise tool_errors.ToolError(f"child {session_id} is not stopped and unmerged")
     if record.state != "complete":
         raise tool_errors.ToolError("the task's other attempts have not ended; nothing continued")
-    if any(
-        c.merge and c.merge.status in ("merged", "no_changes", "retained") for c in record.children
-    ):
-        raise tool_errors.ToolError("an attempt already completed this task; nothing continued")
+    merge = child.merge
+    if merge is None:
+        raise tool_errors.ToolError(f"child {session_id} has no recorded result")
+    if already_merged(dispatcher, record, child):
+        raise tool_errors.ToolError(
+            f"child {session_id} already merged; its work is in the parent's tree."
+            " parallel starts a new child from there."
+        )
     if any(child_merge.pending(c) for c in record.children):
         raise tool_errors.ToolError("the task has a pending merge; nothing continued")
     if dispatcher.running() >= dispatcher.max_children:
         raise tool_errors.ToolError("the run is at parallel.max_children; nothing continued")
     if not child.settled or child.usage is None:
-        raise tool_errors.ToolError("the stopped child's usage is unknown; nothing continued")
+        raise tool_errors.ToolError("the child's usage is unknown; nothing continued")
     if dispatcher.budget is not None and dispatcher.budget.is_exhausted():
         raise tool_errors.ToolError("the run's budget is exhausted; nothing continued")
     continuation = child_dispatch.ContinuationRecord(
@@ -73,7 +76,7 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         }
     )
     running = record.with_child(resumed).model_copy(
-        update={"state": "running", "ranking": None, "message": "", "delivered": False}
+        update={"state": "running", "message": "", "delivered": False}
     )
     dispatcher.write(running)
     if dispatcher.budget is not None:
@@ -95,7 +98,9 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         model=child.model,
         limits=child_records.ChildLimits(),
         allowance=dispatcher.budget.available() if dispatcher.budget is not None else None,
-        continuation=child_records.ChildContinuation(child.number, instruction),
+        continuation=child_records.ChildContinuation(
+            child.number, instruction, fresh=merge.status != "stopped", commits=merge.commits
+        ),
     )
     started: list[child_records.StartedChild] = []
     try:
@@ -105,7 +110,7 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         if [c.session_id for c in started] != [session_id]:
             raise tool_errors.ToolError("the continuation did not start the requested child")
     except Exception as exc:
-        # The injected spawner's failures leave the stopped record available for retry.
+        # The injected spawner's failures leave the completed record available for retry.
         for child in started:
             child.stop()
         dispatcher.write(record)
@@ -117,4 +122,20 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
             group=record.identity, child=session_id, sequence=continuation.sequence
         )
     )
-    return f"[parallel] child {session_id} continues in its own clone; read_background follows it."
+    workspace = started[0].workspace or "its kept clone"
+    return f"[parallel] child {session_id} continues in {workspace}; read_background follows it."
+
+
+def already_merged(
+    dispatcher: parallel_dispatch.ParallelDispatcher,
+    record: child_dispatch.DispatchRecord,
+    child: child_dispatch.ChildRecord,
+) -> bool:
+    """Return whether agent6 recorded the merge or the parent chain contains the child's work."""
+    merge, chain = child.merge, dispatcher.chain
+    if merge is None or not chain.ref:
+        return False
+    if merge.status == "merged":
+        return True
+    tip = git_read.chain_tip(chain.root, merge.branch) if merge.branch else None
+    return bool(tip and tip != record.base and git_read.is_ancestor(chain.root, tip, chain.ref))

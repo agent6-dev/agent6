@@ -16,7 +16,7 @@ from agent6 import child_records, kinds
 from agent6 import directive as agent6_directive
 from agent6.context import skills
 from agent6.harness import loop_conversation, nudges
-from agent6.sessions import ipc, journal
+from agent6.sessions import child_dispatch, ipc, journal
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state, parallel_dispatch
@@ -78,6 +78,7 @@ class OperatorBridge:
         child_authority: Work and harness-panel permissions, resolved from trusted launch data.
         child_spawner: The shared executor for work and harness-panel batches; None refuses
             dispatch. `child_authority` controls which entry point may use it.
+        child_recoverable: Checks the saved workspace and record before offering continuation.
         child_recoverer: Finds an interrupted dispatch's children on resume: stops what runs,
             imports what finished; None leaves such a dispatch diagnosed from its record.
         rank_recorder: Stamps, journals and prints the order a dispatch's attempts were
@@ -105,6 +106,7 @@ class OperatorBridge:
     )
     child_spawner: child_records.GroupChildSpawner | None = None
     child_recoverer: child_records.ChildRecoverer | None = None
+    child_recoverable: Callable[[str, child_dispatch.ChildRecord], bool] = lambda _g, _c: True
     rank_recorder: child_records.RankRecorder | None = None
     review_preparer: Callable[[str], tuple[bool, str]] | None = None
 

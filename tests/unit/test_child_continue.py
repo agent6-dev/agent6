@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 from agent6 import child_records, directive
-from agent6.harness import child_work, loop_conversation, loop_state
+from agent6.harness import child_merge, child_work, loop_conversation, loop_state
 from agent6.sessions import child_dispatch
 from agent6.tools import tool_errors
 from tests.unit import test_children_background as background
@@ -64,13 +64,17 @@ def test_a_parent_continues_its_stopped_child(tmp_path: pathlib.Path, control: s
     future.set_result(dataclasses.replace(previous, stopped_by="", report="test complete"))
     dispatcher.settle(conversation, 3)
     assert not child_work.unmerged(dispatcher)
-    assert (repo / "child.txt").exists() is (control == "agent6")
+    assert not (repo / "child.txt").exists()
+    if control == "agent6":
+        child_merge.request(dispatcher, sid)
+        dispatcher.settle(conversation, 4)
+        assert (repo / "child.txt").exists()
     assert "test complete" in str(conversation.to_wire())
     assert not dispatcher.settle(conversation, 4)
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])
-@pytest.mark.parametrize("blocked", ["pending merge", "winner", "cap", "usage"])
+@pytest.mark.parametrize("blocked", ["pending merge", "sibling running", "cap", "usage"])
 def test_continuation_refuses_before_start(
     tmp_path: pathlib.Path, control: str, blocked: str
 ) -> None:
@@ -95,15 +99,9 @@ def test_continuation_refuses_before_start(
     if blocked == "pending merge":
         child = child.model_copy(update={"merge_request": child_dispatch.MergeRequest()})
         match = "pending merge"
-    elif blocked == "winner":
-        winner = child.model_copy(
-            update={
-                "session_id": "parent-p1-l2",
-                "merge": child_dispatch.MergeRecord(status="merged"),
-            }
-        )
-        record = record.model_copy(update={"children": (*record.children, winner)})
-        match = "already completed"
+    elif blocked == "sibling running":
+        record = record.model_copy(update={"state": "running"})
+        match = "other attempts have not ended"
     elif blocked == "cap":
         dispatcher.max_children = 0
         match = "max_children"
@@ -143,7 +141,7 @@ def test_a_second_attempt_keeps_its_number_on_continuation(
     def start(
         children: list[child_records.ChildTask], group: str, *, at: str | None = None
     ) -> list[child_records.StartedChild]:
-        assert children[0].continuation == child_records.ChildContinuation(2, "continue")
+        assert children[0].continuation == child_records.ChildContinuation(2, "continue", commits=1)
         return [child_records.StartedChild(second, future)]
 
     dispatcher.child_spawner = start
@@ -154,7 +152,11 @@ def test_a_second_attempt_keeps_its_number_on_continuation(
     future.set_result(dataclasses.replace(children.results[second].result(), stopped_by=""))
     dispatcher.settle(conversation, 3)
     assert not child_work.unmerged(dispatcher)
-    assert (repo / f"{second}.txt").exists() is (control == "agent6")
+    assert not (repo / f"{second}.txt").exists()
+    if control == "agent6":
+        child_merge.request(dispatcher, second)
+        dispatcher.settle(conversation, 4)
+        assert (repo / f"{second}.txt").exists()
     assert not (repo / f"{first}.txt").exists()
 
 

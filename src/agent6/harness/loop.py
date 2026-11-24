@@ -2111,6 +2111,7 @@ class Harness:
                 self.resume_state_path.parent if self.resume_state_path is not None else None
             ),
             child_recoverer=self.bridge.child_recoverer,
+            child_recoverable=self.bridge.child_recoverable,
             judges=parallel_rank.configured_judges(self.config, log=self.log),
             reviewer_turns=self.review.max_turns,
             # A judge inherits the state of the world its parent has now, tools included.

@@ -771,6 +771,12 @@ def chain_continue_from(
     return sha
 
 
+def restore_child_trees(path: pathlib.Path, end: str, index: str) -> None:
+    """Put a saved working tree and index over the fresh checkout without moving HEAD."""
+    git_command.run(path, "read-tree", "--no-sparse-checkout", "-m", "-u", "HEAD", end)
+    git_command.run(path, "read-tree", index or "HEAD")
+
+
 def sync_worktree(path: pathlib.Path, from_rev: str, to_rev: str) -> None:
     """Move the worktree's files from one tree to another through a temp index.
 

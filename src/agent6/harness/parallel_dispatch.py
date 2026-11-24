@@ -86,6 +86,7 @@ class ParallelDispatcher:
         execution_id: This execution's id, the owner of its grants and records.
         budget: The run's meter; None without one.
         session_dir: Where the dispatch records live; None for a harness without a session dir.
+        child_recoverable: Checks the saved workspace and record before offering continuation.
         child_recoverer: Finds an interrupted dispatch's children on resume; None when none can.
         judges: The reviewers that rank a task's attempts, `[harness.parallel].judges`
             resolved; empty for the mechanical order alone.
@@ -115,6 +116,7 @@ class ParallelDispatcher:
     budget: agent6_budget.BudgetTracker | None = None
     session_dir: pathlib.Path | None = None
     child_recoverer: child_records.ChildRecoverer | None = None
+    child_recoverable: Callable[[str, child_dispatch.ChildRecord], bool] = lambda _g, _c: True
     judges: Sequence[parallel_rank.Judge] = ()
     reviewer_turns: int = 20
     reviewer_tools: Callable[[], Sequence[str]] = tuple
@@ -689,6 +691,15 @@ class ParallelDispatcher:
                 continue
             if res is not None and res.ok and res.stopped_by:
                 merge = parallel_merge.stopped_merge(res)
+            elif child.continuation is not None and self.chain.ref and res is not None and res.ok:
+                merge = child_records.ChildMerge(
+                    child.session_id,
+                    res.imported_ref,
+                    "retained" if res.has_commits else "no_changes",
+                    "",
+                    "",
+                    commits=res.commits,
+                )
             elif (
                 res is not None
                 and res.ok

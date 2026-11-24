@@ -1097,7 +1097,7 @@ class ParallelChildActivity(Event):
 
 
 class ParallelChildContinued(Event):
-    """A parent started another execution of its stopped child."""
+    """A parent started another execution of its child."""
 
     TYPE: ClassVar[str] = "parallel.child_continued"
     group: str = pydantic.Field(description="The child's dispatch group.")
@@ -1106,11 +1106,11 @@ class ParallelChildContinued(Event):
 
 
 class ParallelChildMerged(Event):
-    """An explicit request to merge a stopped child completed."""
+    """An explicit request to merge a child completed."""
 
     TYPE: ClassVar[str] = "parallel.child_merged"
     group: str = pydantic.Field(description="The child's dispatch group.")
-    child: str = pydantic.Field(description="The stopped child's session id.")
+    child: str = pydantic.Field(description="The requested child's session id.")
     status: str = pydantic.Field(description="The requested merge's outcome.")
     ref: str = pydantic.Field(description="The ref that holds the child's work.")
     sha: str = pydantic.Field(description="The merge commit, or empty when nothing merged.")

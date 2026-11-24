@@ -30,7 +30,7 @@ class ChildLine:
         state: Where the child stands, including its review, ranking or recorded result.
         task: The first line of its task.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
-        mergeable: Whether the child's recorded merge status is `stopped`.
+        mergeable: Whether the child stopped or its continued work awaits an explicit merge.
         commits: Its measured commits beyond start, None when unknown.
     """
 
@@ -76,11 +76,11 @@ class Children(Protocol):
         ...
 
     def steer(self, child: str, text: str) -> str:
-        """Steer a running child or continue a stopped child; a refusal raises."""
+        """Steer a running child or continue an unmerged child; a refusal raises."""
         ...
 
     def merge(self, child: str) -> str:
-        """Request a stopped child's merge at the next boundary; a refusal raises."""
+        """Request a child's merge at the next boundary; a refusal raises."""
         ...
 
 

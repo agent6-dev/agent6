@@ -24,6 +24,7 @@ from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, pack, paths, review_records
 from agent6.app import (
     child_launch,
+    child_resume,
     child_watch,
     conversation_state,
     finalize,
@@ -618,6 +619,13 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     cfg, mode=mode, session_id=inputs.session_id, root=cwd
                 ),
                 child_spawner=spawner,
+                child_recoverable=functools.partial(
+                    child_resume.recoverable,
+                    cfg=cfg,
+                    origin=cwd,
+                    record_state=layout.state_dir,
+                    parent=inputs.session_id,
+                ),
                 child_recoverer=app_children.build_child_recoverer(
                     cfg, cwd, layout.state_dir, mode=mode, reporter=reporter
                 ),

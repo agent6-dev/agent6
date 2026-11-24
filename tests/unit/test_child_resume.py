@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, paths
-from agent6.app import child_launch, child_resume, child_wait, child_watch
+from agent6.app import child_launch, child_resume, child_wait, child_watch, worktrees
 from agent6.app import children as app_children
 from agent6.config import Config, layer
 from agent6.harness import child_repo
@@ -50,14 +50,17 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
             sid = ids[0] if ids else ""
             if turn == 1:
                 assert ready.wait(120)
+            if turn == 3:
+                assert worktrees.sweep_group_clones(repo, cfg) == (0, 1)
             return [
                 [("parallel", {"task": "CHILD: start the work"})],
                 [("stop_background", {"id": sid})],
                 [("read_background", {"id": sid, "wait_s": 120})],
                 [("steer_child", {"id": sid, "text": "CONTINUE-OWNED: finish"})],
                 [("read_background", {"id": sid, "wait_s": 120})],
+                *([[("merge_child", {"id": sid})]] if control == "agent6" else []),
                 [("finish_session", {"summary": "child continued"})],
-            ][min(turn, 5)]
+            ][min(turn, 6 if control == "agent6" else 5)]
         seen.append(body)
         text = json.dumps(body["messages"])
         if "CONTINUE-OWNED" in text:
@@ -128,6 +131,7 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     assert child.merge.status == ("merged" if control == "agent6" else "retained")
     continued = [b for b in seen if "CONTINUE-OWNED" in json.dumps(b["messages"])]
     assert continued
+    assert "its kept clone" in json.dumps(parents[4]["messages"])
     stopped = json.dumps(parents[3]["messages"])
     assert "conversation at last call: 1 tokens; last ran" in stopped
     assert "last ran: unknown" not in stopped

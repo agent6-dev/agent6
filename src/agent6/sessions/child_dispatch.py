@@ -66,7 +66,7 @@ class MergeRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         sha: The merge commit, "" when none.
         detail: The failure's reason, a conflict's files, a ranked child's place, or what
             stopped a stopped child; "" when none.
-        commits: The count beyond start on a stopped, ranked or retained ref, or 0 without a count.
+        commits: The commits beyond the base on the retained ref, or 0 without a count.
         context: The child's last measured conversation size and activity.
         target_before: The chain tip before the merge.
         target_after: The chain tip after it; equal to `target_before` when nothing merged.
@@ -83,7 +83,7 @@ class MergeRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
 
 class MergeRequest(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """A stopped child's requested merge and its delivery state.
+    """A child's requested merge and its delivery state.
 
     Attributes:
         result: The merge outcome; None while the request awaits a turn boundary.
@@ -163,7 +163,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         reported: Whether its parent's conversation holds the notice of its end.
         usage: What it used, None until settled with known usage.
         settled: Whether its usage was charged; False while it is unknown.
-        merge_request: The explicit request to merge stopped work; None before one.
+        merge_request: The explicit request to merge retained work; None before one.
         continuation: The latest continuation, or None for the initial execution.
     """
 

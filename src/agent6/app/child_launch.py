@@ -35,7 +35,7 @@ class LaunchError(ConfigError):
 
 
 class CloneReceipt(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """The independent checkout and state the parent granted at first launch.
+    """The independent checkout and state the parent granted for this execution.
 
     Attributes:
         state: The clone's project state directory.
@@ -90,7 +90,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     Attributes:
         worktree: The child's clone, the run's cwd.
-        clone: The receipt from first launch; an unbound launch cannot drive a checkout.
+        clone: The receipt for this checkout; an unbound launch cannot drive a checkout.
         record_state: The state dir of the repository that dispatched the child, where the
             child's record lives from its first event.
         session_id: The child's session id.
@@ -144,7 +144,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
             root: The checkout the child would use.
 
         Returns:
-            The receipt recorded at first launch.
+            The receipt recorded for this checkout.
 
         Raises:
             LaunchError: The launch is unbound or its checkout changed.

@@ -334,7 +334,7 @@ class ToolDispatcher:
         )
 
     def merge_child_available(self) -> bool:
-        """Return whether this parent has stopped work agent6 may merge."""
+        """Return whether this parent has child work awaiting an explicit merge."""
         return (
             self._mode == "run"
             and not os.environ.get("AGENT6_CHILD")
@@ -360,7 +360,7 @@ class ToolDispatcher:
     def _tool_refusal(self, name: str) -> str | None:
         """Return why a built-in tool is withheld right now, or None when it is offered."""
         if name == schema.MergeChildInput.TOOL_NAME and not self.merge_child_available():
-            return "not available (requires stopped unmerged work and git.control = agent6)"
+            return "not available (requires unmerged child work and git.control = agent6)"
         if name in _CHILD_TOOLS and (why := self._parallel_refusal()):
             return why
         if why := self._policy_refusal(name):
@@ -1163,7 +1163,7 @@ class ToolDispatcher:
         return self.children.start(request.task, request.spec)
 
     def _merge_child(self, raw: dict[str, Any]) -> results.RawResult:
-        """Request a stopped child's merge through the loop.
+        """Request a child's merge through the loop.
 
         Args:
             raw: The model's arguments.

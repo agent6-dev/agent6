@@ -325,7 +325,7 @@ class ParallelInput(_ToolInput):
         " `provider/model` runs with the worker's. A notice arrives when a child ends,"
         " with its summary, and when its task completes. `read_background` reads a child"
         " or waits for the next to end; `steer_child` sends an instruction to a running"
-        " child or continues a stopped child; `stop_background` stops one. `finish_session`"
+        " child or continues an unmerged child; `stop_background` stops one. `finish_session`"
         " is refused while a child runs or its task awaits completion at a turn boundary."
     )
 
@@ -345,10 +345,9 @@ class MergeChildInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "merge_child"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Merge a stopped child's commits into this run's work at the next turn boundary,"
-        " by the id `parallel` returned. The task must have completed without another attempt"
-        " merged. A notice reports the result; a conflict merges nothing and names the files"
-        " and the ref that holds the work. Available only when agent6 manages git."
+        "Merge a stopped child's commits or a continued child's retained commits into this run"
+        " at the next turn boundary. The id is the child's session id. A conflict merges nothing"
+        " and names the files and the ref holding the work. Available only when agent6 manages git."
     )
 
     id: str = pydantic.Field(min_length=1)
@@ -359,10 +358,10 @@ class SteerChildInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "steer_child"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Send an instruction to a child, by the id `parallel` returned. A running child's"
-        " instruction queues for its next turn, if it takes one. A stopped child continues"
-        " in its own clone under this run's budget and approvals, with the text as its next"
-        " instruction. The call returns at once; `read_background` shows what the child has done."
+        "Send an instruction to a running child or continue an unmerged child by id. A stopped"
+        " child uses its kept clone. A failed or finished child uses a fresh clone restored"
+        " from its saved work. The same conversation continues under this run's budget and"
+        " approvals. With model-owned git the parent decides whether the work was merged."
     )
 
     id: str = pydantic.Field(min_length=1)

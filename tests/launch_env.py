@@ -21,7 +21,7 @@ from agent6.sessions import manifest
 FINISH: tuple[str, dict[str, Any]] = ("finish_session", {"summary": "Local child completed."})
 
 # One turn's answer: a tool call, several in order, or the turn's text.
-type Reply = tuple[str, dict[str, Any]] | Sequence[tuple[str, dict[str, Any]]] | str
+type Reply = tuple[str, dict[str, Any]] | Sequence[tuple[str, dict[str, Any]]] | str | int
 
 
 @contextlib.contextmanager
@@ -68,6 +68,9 @@ def scripted_provider(
                 if reply_for is not None
                 else replies[min(len(calls) - 1, len(replies) - 1)]
             )
+            if isinstance(reply, int):
+                self.send_error(reply)
+                return
             message: dict[str, Any] = {"role": "assistant", "content": reply}
             if not isinstance(reply, str):
                 # One `(name, arguments)` pair is one call; a sequence of pairs is a turn's calls.

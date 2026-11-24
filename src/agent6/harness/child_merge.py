@@ -1,4 +1,4 @@
-"""Queue and complete explicit merges of a parent's stopped children."""
+"""Queue and complete explicit merges of a parent's stopped or continued children."""
 
 from __future__ import annotations
 
@@ -20,11 +20,19 @@ def pending(child: child_dispatch.ChildRecord) -> bool:
     return child.merge_request is not None and not child.merge_request.delivered
 
 
+def available(child: child_dispatch.ChildRecord, *, model_git: bool) -> bool:
+    """Return whether this result is stopped work or a continuation awaiting a merge."""
+    return child.merge is not None and (
+        child.merge.status == "stopped"
+        or (not model_git and child.merge.status == "retained" and child.continuation is not None)
+    )
+
+
 def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> str:
-    """Record a stopped child's requested merge before answering its parent.
+    """Record a child's requested merge before answering its parent.
 
     Args:
-        dispatcher: The parent that owns the stopped child.
+        dispatcher: The parent that owns the child.
         child_id: The child's session id, never a model-supplied git ref.
 
     Returns:
@@ -39,11 +47,13 @@ def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> 
         for child in record.children if record.source != "panel" else ():
             if child.session_id != child_id:
                 continue
-            if record.state != "complete" or child.merge is None or child.merge.status != "stopped":
+            if record.state != "complete" or not available(child, model_git=False):
                 raise tool_errors.ToolError(
-                    f"child {child_id} is not stopped with a completed task and unmerged work"
+                    f"child {child_id} has no completed task with work awaiting a merge"
                 )
-            if any(c.merge and c.merge.status in ("merged", "no_changes") for c in record.children):
+            if child.continuation is None and any(
+                c.merge and c.merge.status in ("merged", "no_changes") for c in record.children
+            ):
                 raise tool_errors.ToolError(
                     "another attempt already completed this task; nothing merged"
                 )
@@ -141,12 +151,12 @@ def merge(
     child: child_dispatch.ChildRecord,
     turn: int,
 ) -> child_records.ChildMerge:
-    """Merge the stopped ref through the same chain operation as a finished child.
+    """Merge the retained ref through the same chain operation as a finished child.
 
     Args:
         dispatcher: The parent whose chain receives the work.
         record: The child's task record.
-        child: The stopped child with a pending request.
+        child: The child with a pending request.
         turn: The turn the merge follows.
 
     Returns:
@@ -157,7 +167,7 @@ def merge(
     refusal = ""
     if not dispatcher.chain.ref:
         refusal = "git.control is model; merge the ref with git"
-    elif not dispatcher.ensure_clean(turn, "merging a stopped child"):
+    elif not dispatcher.ensure_clean(turn, "merging a child"):
         refusal = "the working tree holds uncommitted work; commit it before retrying"
     if refusal:
         return child_records.ChildMerge(child.session_id, ref, "failed", "", refusal)

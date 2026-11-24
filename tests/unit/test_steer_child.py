@@ -121,16 +121,13 @@ def test_steer_child_is_offered_where_parallel_is_and_refused_everywhere_else(
     on = _tools(tmp_path, _config(tool=True), work=work)
     assert _names(on).index("steer_child") == _names(on).index("parallel") + 1
     (steer,) = [t for t in toolset.tool_definitions(on) if t.name == "steer_child"]
-    assert steer.description == (
-        "Send an instruction to a child, by the id `parallel` returned. A running child's"
-        " instruction queues for its next turn, if it takes one. A stopped child continues"
-        " in its own clone under this run's budget and approvals, with the text as its next"
-        " instruction. The call returns at once; `read_background` shows what the child has done."
-    )
+    assert "stopped child uses its kept clone" in steer.description
+    assert "fresh clone" in steer.description
+    assert "model-owned git" in steer.description
     assert steer.input_schema["required"] == ["id", "text"]
     (parallel,) = [t for t in toolset.tool_definitions(on) if t.name == "parallel"]
     assert (
-        "`steer_child` sends an instruction to a running child or continues a stopped child;"
+        "`steer_child` sends an instruction to a running child or continues an unmerged child;"
         in parallel.description
     )
     assert "a worker with this run's tools, guards and limits" in parallel.description
@@ -326,10 +323,7 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
     children.end(two, tmp_path / "state")
     with pytest.raises(tool_errors.ToolError) as ended:
         child_work.steer(dispatcher, two, "one more thing")
-    assert str(ended.value) == (
-        f"child {two} has ended (ended, task pending); nothing was sent."
-        " parallel starts another child."
-    )
+    assert str(ended.value) == ("the task's other attempts have not ended; nothing continued")
     assert not (runs / two / ipc.STEER_ANSWER_FILE).exists()
     (runs / "other-run").mkdir()
     for stranger in ("other-run", "root", "root-p9-l1", "bg1"):

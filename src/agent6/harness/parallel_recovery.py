@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, credit_usage, token_usage
-from agent6.harness import parallel_dispatch, parallel_merge
+from agent6.harness import child_continue, child_merge, parallel_dispatch, parallel_merge
 from agent6.sessions import child_dispatch, journal
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import events, tail
@@ -291,11 +291,20 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
             continue
         dispatcher.open[record.identity] = reopened(record, results)
     dispatcher.settle(conversation, turn)
-    stopped = [
+    available = [
         f"  - {child.session_id}: {parallel_merge.merge_words(parallel_merge.merge_of(child))}"
         for record in child_dispatch.read_records(dispatcher.session_dir)
+        if record.source != "panel"
+        and record.state == "complete"
+        and not any(child_merge.pending(c) for c in record.children)
         for child in record.children
-        if record.source != "panel" and child.merge is not None and child.merge.status == "stopped"
+        if child.merge is not None
+        and child.settled
+        and child.usage is not None
+        and not child_continue.already_merged(dispatcher, record, child)
+        and dispatcher.child_recoverable(record.identity, child)
     ]
-    if stopped:
-        conversation.notice("[parallel] stopped children:\n" + "\n".join(stopped))
+    if available:
+        conversation.notice(
+            "[parallel] children this run can continue with steer_child:\n" + "\n".join(available)
+        )

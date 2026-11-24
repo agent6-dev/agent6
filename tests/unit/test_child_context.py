@@ -60,7 +60,7 @@ def test_stopped_context_survives_completion_and_resume(
     resumed = loop_conversation.Conversation()
     parallel_recovery.reconcile(dispatcher, state, resumed, turn=3)
     text = json.dumps(resumed.to_wire())
-    assert "stopped children" in text
+    assert "can continue with steer_child" in text
     assert "last ran 10m ago" in text
     assert "1234 tokens" in text and f"agent6/{sid} holds 1 commit(s)" in text
     assert "cache" not in text
