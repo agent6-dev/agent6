@@ -27,7 +27,7 @@ from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
 from agent6.graph import storage
 from agent6.sandbox import detect, jail
-from agent6.sessions import id, manifest
+from agent6.sessions import child_dispatch, id, manifest
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch, tool_errors
 from agent6.viewmodel import listing, session_dirs
@@ -462,7 +462,7 @@ class MCPServer:
             The session id and its nodes.
 
         Raises:
-            ToolError: The session id is unsafe or unknown, or there is no session.
+            ToolError: No session matches, the id is unsafe, or a dispatch record is unreadable.
         """
         session_id_arg = args.get("session_id")
         if isinstance(session_id_arg, str) and session_id_arg:
@@ -477,9 +477,9 @@ class MCPServer:
             session_id = resolved
         try:
             layout = id.resolve_session(self._agent6_dir, session_id)
-        except id.SessionIdError as exc:
+            nodes = storage.with_holds(storage.load_graph(layout), layout)
+        except (id.SessionIdError, child_dispatch.DispatchRecordError) as exc:
             raise tool_errors.ToolError(str(exc)) from exc
-        nodes = storage.with_holds(storage.load_graph(layout), layout)
         return {
             "session_id": session_id,
             "nodes": {nid: node.model_dump(mode="json") for nid, node in nodes.items()},

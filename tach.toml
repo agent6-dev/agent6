@@ -939,6 +939,7 @@ depends_on = [
   "agent6.paths",
   "agent6.sandbox",
   "agent6.sandbox.detect",
+  "agent6.sessions.child_dispatch",
   "agent6.sessions.id",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",

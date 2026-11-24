@@ -15,8 +15,8 @@ import pytest
 from agent6 import paths
 from agent6.config import Config, layer, load_config
 from agent6.graph import models, storage
+from agent6.sessions import child_dispatch, manifest, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import manifest, process
 from agent6.tools import results, tool_errors
 from agent6.ui import mcp_server as ui_mcp_server
 
@@ -343,6 +343,39 @@ def test_query_dag_rejects_traversing_run_id(tmp_path: pathlib.Path, bad: str) -
     )
     assert resps[0]["result"]["isError"] is True
     assert "invalid session_id" in resps[0]["result"]["content"][0]["text"]
+
+
+def test_query_dag_reports_a_newer_dispatch_without_closing_stdio(tmp_path: pathlib.Path) -> None:
+    """A graph read can refuse the dispatch version and still answer the next request."""
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="r1")
+    layout.ensure()
+    record = child_dispatch.DispatchRecord(
+        version=child_dispatch.RECORD_VERSION + 1,
+        identity="r1-p1",
+        source="model",
+        owner="parent",
+        turn=1,
+        base="",
+        children=(),
+    )
+    path = child_dispatch.record_path(layout.session_dir, record.identity)
+    path.parent.mkdir()
+    path.write_text(record.model_dump_json())
+    refused, following = _roundtrip(
+        _server(tmp_path),
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "get_task_graph", "arguments": {"session_id": "r1"}},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        ],
+    )
+    assert refused["id"] == 1 and refused["result"]["isError"] is True
+    assert f"is version {record.version}" in refused["result"]["content"][0]["text"]
+    assert following["id"] == 2 and following["result"]["tools"]
 
 
 def test_query_dag_reads_persisted_nodes(tmp_path: pathlib.Path) -> None:
