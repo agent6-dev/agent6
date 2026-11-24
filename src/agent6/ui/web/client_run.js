@@ -705,7 +705,10 @@ function paintCommits(cards, s) {
       const selected = sel.value, sha = selected || commits[0].sha;
       // The log holds the latest commit's diff; a picked commit's is a fetch away.
       const loading = el('div', 'muted', 'loading the diff…');
-      cards._commitState = null; paintDetails(cards, cards._frame, null);
+      // The task and budget snapshot belongs to the commit, not to the diff mode.
+      if (cards._commitState?.as_of?.sha !== selected) {
+        cards._commitState = null; paintDetails(cards, cards._frame, null);
+      }
       if (!selected) {
         body.appendChild(renderDiff({patch: s.latest_diff || ''}));
       } else body.appendChild(loading);
@@ -716,7 +719,7 @@ function paintCommits(cards, s) {
         if (!current()) return;
         if (cum.checked && d.cumulative === false) { cum.checked = false; cards._diffPick.cumulative = false; toast('this run has no base to accumulate from; showing the single commit'); }
         body.innerHTML = ''; body.appendChild(renderDiff(d));
-        if (!selected) return;
+        if (!selected || cards._commitState) return;
         const st = await getJSON(cards._base + '?commit=' + encodeURIComponent(selected));
         if (!current()) return;
         cards._commitState = st; paintDetails(cards, st, st.as_of);

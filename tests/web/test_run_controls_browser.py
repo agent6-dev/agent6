@@ -166,3 +166,33 @@ def test_the_task_graph_for_a_commit_offers_no_retirement(
     commit.select_option("")
     sync_api.expect(tree.get_by_role("button", name="Retire task")).to_be_disabled()
     assert not errors
+
+
+def test_a_cumulative_diff_failure_keeps_the_selected_commits_graph(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """Changing diff mode does not replace the selected commit's tasks with the live graph."""
+    from playwright import sync_api
+
+    run = task_runs.live_graph(tmp_path)
+    sha = "a" * 40
+    events = event_log.EventSink(run.logs_path)
+    events.emit(journal.CheckpointCommitted(sha=sha, turn=1, subject="Add index"))
+    events.emit(journal.GraphUpdate(nodes={}, cursor=None))
+    page, errors = open_page(port)
+    page.route("**/diff?*", lambda route: route.fulfill(json={"patch": ""}))
+    page.route(
+        "**/diff?*cumulative=1",
+        lambda route: route.fulfill(status=503, json={"error": "Diff unavailable"}),
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/session/{run.session_id}")
+    tree = page.locator(".card-tasks")
+    sync_api.expect(tree).to_contain_text("no task graph yet")
+    page.get_by_role("combobox", name="Commit", exact=True).select_option(sha)
+    sync_api.expect(tree).to_contain_text("as of turn 1")
+    sync_api.expect(tree).to_contain_text("Link pages")
+    page.get_by_label("cumulative").check()
+    sync_api.expect(page.locator(".card-diff")).to_contain_text("Diff unavailable")
+    sync_api.expect(tree).to_contain_text("as of turn 1")
+    sync_api.expect(tree).to_contain_text("Link pages")
+    assert not [e for e in errors if not e.startswith("Failed to load resource")]
