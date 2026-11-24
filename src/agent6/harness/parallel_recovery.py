@@ -96,6 +96,8 @@ class _CreditHistory:
                             readings.setdefault(series, {}).setdefault(reading.account, set()).add(
                                 reading
                             )
+                case _:
+                    continue
         return cls(executions, continuations, readings)
 
     def restore(
