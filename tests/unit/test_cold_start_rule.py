@@ -66,16 +66,23 @@ def test_unknown_facts_do_not_supply_a_trigger(
     assert (trigger.reason if trigger else None) == reason
 
 
+@pytest.mark.parametrize(
+    "confirmation", ["model.attempt", "model.text_delta", "model.thinking_delta"]
+)
 def test_a_process_reply_confirms_the_opening_time_not_the_reply_time(
     tmp_path: pathlib.Path,
+    confirmation: str,
 ) -> None:
     log = tmp_path / "logs.jsonl"
     rows = [
         request(type="model.call", ts="1970-01-01T00:00:10Z"),
-        request(type="model.attempt", ts="1970-01-01T00:00:30Z", ok=True, request_id=None),
+        request(type=confirmation, ts="1970-01-01T00:00:30Z", ok=True, request_id=None, text="x"),
         {"type": "compact.summarise.call", "model_call_id": "summary"},
         request(type="model.call", model_call_id="summary", model="other"),
+        request(type="model.text_delta", model_call_id="summary", text="summary"),
         request(type="model.attempt", model_call_id="summary", ok=True, request_id=None),
+        request(type="model.call", model_call_id="unissued", model="other"),
+        request(type="model.text_delta", model_call_id="side", actor="helper:summariser", text="x"),
     ]
     log.write_text("".join(json.dumps(row) + "\n" for row in rows))
     trigger = cold_start.detect(

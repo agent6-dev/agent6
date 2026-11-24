@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import pathlib
@@ -186,8 +187,14 @@ def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None
     assert row["action"] == "summary_failed" and row["chars_not_sent"] == 0
 
 
-def test_resume_from_a_process_worker_uses_its_last_issued_call(tmp_path: pathlib.Path) -> None:
-    binary, _ = claude._install(tmp_path, {"turns": [[{"text": "ok"}]]})
+@pytest.mark.parametrize("fails_after_text", [False, True])
+def test_resume_from_a_process_worker_uses_its_last_issued_call(
+    tmp_path: pathlib.Path, fails_after_text: bool
+) -> None:
+    scenario: dict[str, Any] = {"turns": [[{"text": "part of a reply"}]]}
+    if fails_after_text:
+        scenario["result"] = {"subtype": "error_during_execution", "is_error": True}
+    binary, _ = claude._install(tmp_path, scenario)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     worker = role_providers.InstrumentedProvider(
         inner=claude._provider(binary),
@@ -196,8 +203,16 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(tmp_path: pathli
         provider_name="process",
         events=sink,
         budget=claude._budget(),
+        stream_text=fails_after_text,
     )
-    try:
+    with (
+        contextlib.closing(worker),
+        (
+            pytest.raises(provider_types.ProviderError, match="error_during_execution")
+            if fails_after_text
+            else contextlib.nullcontext()
+        ),
+    ):
         worker.call(
             system="s",
             messages=_history().to_wire(),
@@ -206,9 +221,9 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(tmp_path: pathli
                 "user", call_context=kinds.CallContext(execution_id="previous")
             ),
         )
-    finally:
-        worker.close()
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    if fails_after_text:
+        assert any(r["type"] == "model.text_delta" and r["text"] for r in rows)
     for call_id, actor, ok in (("side", "helper:summariser", True), ("not_sent", "worker", False)):
         rows.extend(
             [

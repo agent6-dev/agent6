@@ -80,13 +80,14 @@ def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
         b'"model.attempt"',
         b'"compact.summarise.call"',
     )
+    with_deltas = (*types, b'"model.text_delta"', b'"model.thinking_delta"')
     try:
         stream = path.open("rb")
     except FileNotFoundError:
         return last
     with stream:
         for line in stream:
-            if not any(tag in line for tag in types):
+            if not any(tag in line for tag in (with_deltas if opening else types)):
                 continue
             try:
                 row = json.loads(line)
@@ -108,13 +109,15 @@ def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
             elif kind == "provider.request" and row.get("target") == "inference":
                 last = row
                 opening = {}
-            elif (
-                kind == "model.attempt"
-                and row.get("ok") is True
-                and row.get("request_id") is None
-                and call_id == opening.get("model_call_id")
+            elif call_id == opening.get("model_call_id") and (
+                (
+                    kind == "model.attempt"
+                    and row.get("ok") is True
+                    and row.get("request_id") is None
+                )
+                or (kind in ("model.text_delta", "model.thinking_delta") and row.get("text"))
             ):
-                # A process has no HTTP row. Its reply confirms the call was issued at its opening.
+                # A partial reply confirms a process request even if the process later fails.
                 last = opening
                 opening = {}
     return last

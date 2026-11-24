@@ -216,7 +216,8 @@ A resume after a death there runs none of the turn's calls again: the model gets
 The harness selects `Endpoint` or `Tiered` once from those facts.
 Both strategies use the same size, manual and idle triggers and the same growth floor.
 On resume, `compaction.cold_start` compares the last ordinary worker request's journal route and timestamp with the current route and its idle limit.
-An HTTP request records its own start; a process-backed worker's successful attempt confirms its `model.call` opening.
+An HTTP request records its own start.
+A process-backed worker's streamed output or successful attempt confirms its `model.call` opening.
 A changed provider or model takes precedence over age.
 A positive limit fires at or beyond the limit; `-1` disables age.
 `compact.cold_start` records the cause, action and net reduction in context characters before the first worker request.
