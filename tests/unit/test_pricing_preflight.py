@@ -231,6 +231,7 @@ def test_plan_metered_routes_skip_the_fallback_note(
     out = capsys.readouterr().err
     assert "fallback tokens" not in out
     assert "draws on a subscription plan" in out
+    assert "Observed credit declines count toward max_usd" in out
 
     refused = Config.model_validate(
         {
@@ -455,3 +456,4 @@ def test_missing_reference_warns_once_even_with_zero_usd(
     assert "providers.paid.price_from = 'openrouter'" in text
     assert ("no matching price" if configured else "not configured") in text
     assert "fallback tokens" in text
+    assert "Reported costs count toward max_usd" in text

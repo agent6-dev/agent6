@@ -139,8 +139,8 @@ def budget_preflight(
         bound = "unlimited tokens" if fb == -1 else f"{fb:,} fallback tokens"
         reporter.note(
             f"{', '.join(unpriced)} ha"
-            f"{'s' if len(unpriced) == 1 else 've'} no price data: that spend is not"
-            f" metered by max_usd and is bounded by {bound} instead.{detail}"
+            f"{'s' if len(unpriced) == 1 else 've'} no price data.{detail}"
+            f" Reported costs count toward max_usd. Without a reported cost: {bound}."
         )
     if plan_models:
         pct = cfg.budget.max_plan_points
@@ -155,7 +155,7 @@ def budget_preflight(
         reporter.note(
             f"{', '.join(plan_models)} draw"
             f"{'s' if len(plan_models) == 1 else ''} on a subscription plan"
-            f" (no dollars; bounded by {bound}).{tick}"
+            f" (bounded by {bound}).{tick} Observed credit declines count toward max_usd."
         )
     return None
 

@@ -275,9 +275,9 @@ agent6 model default chatgpt/gpt-5.6-sol
 - An `unsupported_value` refusal naming `reasoning.effort` and listing accepted levels, over HTTP 400 or a stream error frame, silently retries once at the lowest listed effort.
   Later calls on that provider instance keep the accepted levels; they are not persisted.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
-- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit windows.
+- Calls are plan-metered: every response carries the account's rate-limit windows.
   `[budget].max_plan_points` caps the plan movement observed during one run (`--max-plan-points` per run).
-  Dollar figures stay an authoritative $0.
+  Each call records $0 in call costs, but an observed decline in purchased credits counts toward `[budget].max_usd`.
 
 ### Claude Code subscription (`backend = "claude_code"`)
 
