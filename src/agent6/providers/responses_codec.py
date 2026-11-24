@@ -456,11 +456,10 @@ def stream_error(
     if not isinstance(err, dict):
         err = {"message": str(err or evt.get("message") or "unknown stream error")}
     code = str(err.get("code") or "")
-    status = 429 if code in usage_limit_codes else None
+    # The frame's own class, as for every provider's stream: a refused request is permanent.
+    status = 429 if code in usage_limit_codes else transport.envelope_status(err)
     detail = str(err.get("message") or code or "unknown error")
-    tier_refused = provider_types.refuses_service_tier(
-        err, status or transport.envelope_status(err)
-    )
+    tier_refused = provider_types.refuses_service_tier(err, status)
     if tier_refused:
         status = 400
     if err.get("param") == "service_tier":

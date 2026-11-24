@@ -493,6 +493,63 @@ def test_failed_event_raises_with_usage_limit_status(
     assert exc.value.status_code == 429 and "plus plan" in str(exc.value)
 
 
+def test_a_policy_refusal_in_the_stream_ends_the_call_at_once(
+    signed_in: oauth.OAuthCredential,
+) -> None:
+    """A refusal by policy was retried thirty times over ten minutes.
+
+    Its frame carries no numeric status, and the stream's errors took none from the frame's
+    `type`, so the retry read a request the provider will never accept as a transient fault.
+    """
+    from agent6.harness import provider_call
+
+    refusal = "This content was flagged for possible cybersecurity risk."
+    lines = _evt(
+        {
+            "type": "error",
+            "sequence_number": 3,
+            "error": {
+                "message": refusal,
+                "type": "invalid_request",
+                "param": None,
+                "code": "cyber_policy",
+            },
+        }
+    )
+    requests: list[str] = []
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        del method, kwargs
+        requests.append(url)
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    said: list[str] = []
+
+    def _journal(*_events: object) -> None:
+        """Take the retry wrapper's journal rows."""
+
+    caller = provider_call.ProviderCaller(
+        provider=_provider(signed_in),
+        retry_count=30,
+        retry_delay_s=0.0,
+        retry_max_delay_s=0.0,
+        temperature=None,
+        should_abort=lambda: False,
+        should_interrupt=lambda: False,
+        log=said.append,
+        emit=_journal,
+    )
+    with (
+        mock.patch("httpx2.stream", side_effect=stream),
+        pytest.raises(ProviderError, match=f"cyber_policy: {refusal}") as exc,
+    ):
+        caller.call("s", [{"role": "user", "content": "x"}], [], 1024)
+
+    assert len(requests) == 1
+    assert exc.value.status_code == 400
+    assert said == ["LOOP: provider error 400 is permanent; not retrying"]
+
+
 def test_failed_event_usage_is_recorded(signed_in: oauth.OAuthCredential) -> None:
     lines = _evt(
         {

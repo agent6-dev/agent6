@@ -201,6 +201,7 @@ State is snapshotted before each model call and checkpointed per turn.
 Every end has one reason and a headline every surface shows; [Exit codes and end reasons](cli.md#exit-codes-and-end-reasons) lists them with the exit codes scripts branch on.
 
 A transient provider error (a 5xx, a 429, a dropped connection) is retried 30 times, with about ten minutes of backoff in all, before the run ends `failed · provider error`.
+A request the provider refuses (a 4xx other than 408, 409, 425 and 429, as a status or in a stream's error frame) ends the call at once with the provider's reason.
 A `Retry-After` header sets the least wait, up to 120 s.
 A stop or a `/now` steer ends the wait between two attempts.
 

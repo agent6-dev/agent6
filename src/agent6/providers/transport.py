@@ -167,6 +167,8 @@ _ERROR_CODE_STATUS: dict[str, int] = {
     "insufficient_quota": 402,
     "invalid_api_key": 401,
     "model_not_found": 404,
+    # The Responses stream's `type`
+    "invalid_request": 400,
     # Anthropic `type`
     "invalid_request_error": 400,
     "authentication_error": 401,
