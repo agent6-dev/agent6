@@ -8,17 +8,24 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
+
 pytestmark = pytest.mark.needs_namespaces
 
 
-def _policy(tmp_path: pathlib.Path, level: str, argv: tuple[str, ...], devices: tuple[str, ...]):
+def _policy(
+    tmp_path: pathlib.Path,
+    level: kinds.IsolationLevel,
+    argv: tuple[str, ...],
+    devices: tuple[str, ...],
+):
     from agent6.config import Config
     from agent6.tools import policy
 
     base = policy.jail_policy(
         tmp_path,
         Config(),
-        level,  # pyrefly: ignore[bad-argument-type]
+        level,
         argv,
         network="none",
     )
@@ -28,7 +35,9 @@ def _policy(tmp_path: pathlib.Path, level: str, argv: tuple[str, ...], devices: 
 
 
 @pytest.mark.parametrize("level", ["full", "partial"])
-def test_a_granted_device_node_is_openable(tmp_path: pathlib.Path, level: str) -> None:
+def test_a_granted_device_node_is_openable(
+    tmp_path: pathlib.Path, level: kinds.IsolationLevel
+) -> None:
     """A device grant proves the whole path: the node is present and writable.
 
     /dev/tty is a char device neither level grants by default. Granting it exercises the bind
@@ -47,7 +56,9 @@ def test_a_granted_device_node_is_openable(tmp_path: pathlib.Path, level: str) -
 
 
 @pytest.mark.parametrize("level", ["full", "partial"])
-def test_a_non_device_grant_refuses_loudly(tmp_path: pathlib.Path, level: str) -> None:
+def test_a_non_device_grant_refuses_loudly(
+    tmp_path: pathlib.Path, level: kinds.IsolationLevel
+) -> None:
     """A path under /dev that is absent, or not a char or block device, refuses the launch by name.
 
     Never a silent skip that leaves the operator's GPU task failing later.

@@ -10,11 +10,15 @@ from typing import Any
 
 import pytest
 
+from agent6 import kinds
+
 pytestmark = pytest.mark.needs_namespaces
 
 
 @pytest.mark.parametrize("level", ["partial", "full"])
-def test_a_jailed_command_cannot_create_a_device_node(tmp_path: pathlib.Path, level: str) -> None:
+def test_a_jailed_command_cannot_create_a_device_node(
+    tmp_path: pathlib.Path, level: kinds.IsolationLevel
+) -> None:
     """A jailed command cannot mknod a block device for the host disk.
 
     Under `sudo agent6` on a profile with no user namespace the child holds real CAP_MKNOD
@@ -31,7 +35,7 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: pathlib.Path, le
         policy.jail_policy(
             tmp_path,
             Config(),
-            level,  # pyrefly: ignore[bad-argument-type]
+            level,
             ("sh", "-c", "mknod disk b 8 0; mknod tty c 5 0; ls disk tty 2>&1"),
             network="none",
         )
@@ -665,7 +669,9 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize("level", ["partial", "full"])
-def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: pathlib.Path, level: str) -> None:
+def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(
+    tmp_path: pathlib.Path, level: kinds.IsolationLevel
+) -> None:
     """pidfd_getfd is EPERM at both levels; pidfd_open, the harmless handle, is not denied.
 
     pidfd_getfd steals an open fd out of another process's table, gated only by
@@ -699,7 +705,7 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: pathlib.Path, lev
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", probe),
-            isolation=level,  # pyrefly: ignore[bad-argument-type]
+            isolation=level,
             timeout_s=20.0,
         )
     )
@@ -716,7 +722,9 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: pathlib.Path, lev
 
 
 @pytest.mark.parametrize("level", ["partial", "full"])
-def test_io_uring_and_userfaultfd_are_denied(tmp_path: pathlib.Path, level: str) -> None:
+def test_io_uring_and_userfaultfd_are_denied(
+    tmp_path: pathlib.Path, level: kinds.IsolationLevel
+) -> None:
     """io_uring_setup and userfaultfd are EPERM at both levels; memfd_create stays allowed.
 
     io_uring's ops run in kernel worker threads seccomp never sees, so denying setup is the
@@ -750,7 +758,7 @@ def test_io_uring_and_userfaultfd_are_denied(tmp_path: pathlib.Path, level: str)
         kinds.JailPolicy(
             cwd=tmp_path,
             argv=("python3", "-c", probe),
-            isolation=level,  # pyrefly: ignore[bad-argument-type]
+            isolation=level,
             timeout_s=20.0,
         )
     )

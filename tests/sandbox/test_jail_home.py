@@ -18,7 +18,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
@@ -64,7 +64,7 @@ def _operator_home_probe() -> str:
     [("full", Config(sandbox=SandboxConfig(home="cache"))), ("partial", Config())],
 )
 def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
-    tmp_path: pathlib.Path, cache_home: pathlib.Path, isolation: str, cfg: Config
+    tmp_path: pathlib.Path, cache_home: pathlib.Path, isolation: kinds.IsolationLevel, cfg: Config
 ) -> None:
     """`touch ~/probe` lands on the host cache dir; the operator's own home stays out of reach.
 
@@ -83,7 +83,7 @@ def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
         f"{_operator_home_probe()} >/dev/null 2>&1 && exit 5; "
         "echo ok"
     )
-    policy = tools_policy.jail_policy(ws, cfg, isolation, ("/bin/sh", "-c", script), network="none")  # pyrefly: ignore[bad-argument-type]
+    policy = tools_policy.jail_policy(ws, cfg, isolation, ("/bin/sh", "-c", script), network="none")
     assert stat.S_IMODE(home.lstat().st_mode) == 0o700
     res = jail.run_in_jail(policy)
     assert res.returncode == 0 and "ok" in res.stdout, (res.returncode, res.stdout, res.stderr)

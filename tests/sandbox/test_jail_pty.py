@@ -8,6 +8,7 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.tools import policy
@@ -31,12 +32,12 @@ _OPEN_PTMX = (
 )
 
 
-def _run(tmp_path: pathlib.Path, level: str, script: str) -> str:
+def _run(tmp_path: pathlib.Path, level: kinds.IsolationLevel, script: str) -> str:
     result = jail.run_in_jail(
         policy.jail_policy(
             tmp_path,
             Config(),
-            level,  # pyrefly: ignore[bad-argument-type]
+            level,
             ("python3", "-c", script),
             network="none",
         )
