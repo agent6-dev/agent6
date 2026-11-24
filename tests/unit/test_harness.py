@@ -841,6 +841,33 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
     assert sleep_calls[3] == pytest.approx(5.0)  # min(2.0 * 2**3, 5.0) capped
 
 
+@pytest.mark.parametrize("status", [429, 503])
+def test_default_retry_waits_about_ten_minutes_on_a_transient_status(status: int) -> None:
+    """The default schedule retries a 429 or a 503 for ten minutes on average: 31 attempts."""
+    provider = mock.MagicMock()
+    provider.call.side_effect = ProviderError(f"API error {status}", status_code=status)
+    wf = _wf(provider=provider, call=provider_call.CallSettings())
+    sleep_calls: list[float] = []
+    with (
+        mock.patch("time.sleep", side_effect=sleep_calls.append),
+        mock.patch("random.uniform", return_value=0.75),
+        pytest.raises(ProviderError, match=str(status)) as raised,
+    ):
+        wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
+    assert raised.value.attempts == provider.call.call_count == 31
+    assert sleep_calls[:5] == [1.5, 3.0, 6.0, 12.0, 22.5]  # 2, 4, 8, 16, 30 at the mean jitter
+    assert sum(sleep_calls) == pytest.approx(607.5)
+
+
+def test_default_retry_re_asks_an_empty_tool_call_response_within_five_attempts() -> None:
+    """An empty tool-call response is re-asked within five attempts, not the error retry's 31."""
+    provider = mock.MagicMock()
+    provider.call.return_value = _empty_tool_call_resp()
+    out = _wf(provider=provider).caller.call(system="s", messages=[], tools=[], max_tokens=16384)
+    assert out.stop_reason == "tool_calls" and not out.tool_uses
+    assert provider.call.call_count == 5
+
+
 def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
     """A permanent status re-raises at once with no sleep, whatever provider_retry_count allows."""
     provider = mock.MagicMock()

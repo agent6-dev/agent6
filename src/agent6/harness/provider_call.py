@@ -38,6 +38,9 @@ RETRY_AFTER_CEILING_S = 120.0
 # The stop reasons that promise a tool call.
 TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
 
+# The attempts of one call within which an empty tool-call response is re-asked, a paid call.
+EMPTY_TOOL_CALL_ATTEMPTS = 5
+
 
 def provider_error_hint(status_code: int | None, provider: str = "") -> str:
     """Return the next step for a credential or quota status, "" for any other.
@@ -87,7 +90,8 @@ def closes_call(exc: BaseException, context: request_headers.RequestContext) -> 
 def settles_call(resp: Any, context: request_headers.RequestContext) -> bool:
     """Return whether a returned response is its logical call's result.
 
-    An empty tool-call response with attempts left is retried instead.
+    An empty tool-call response is retried instead, within the call's first
+    `EMPTY_TOOL_CALL_ATTEMPTS` attempts.
 
     Args:
         resp: The provider response.
@@ -96,7 +100,8 @@ def settles_call(resp: Any, context: request_headers.RequestContext) -> bool:
     Returns:
         True when the caller takes the response.
     """
-    return context.attempt >= context.attempts or not is_empty_tool_call_response(resp)
+    last = min(context.attempts, EMPTY_TOOL_CALL_ATTEMPTS)
+    return context.attempt >= last or not is_empty_tool_call_response(resp)
 
 
 def is_empty_tool_call_response(resp: Any) -> bool:
@@ -337,6 +342,7 @@ class CallSettings:
 
     Attributes:
         retry_count: Retries of a transient provider error; 0 disables retrying.
+            The defaults wait 405 to 810 s in all, ten minutes on average.
         retry_delay_s: The first backoff delay, doubled per attempt with full jitter.
         retry_max_delay_s: The backoff cap.
         temperature: The sampling temperature for every call; None leaves each provider its own.
@@ -344,7 +350,7 @@ class CallSettings:
         metric_task_max_tokens: The output cap on a metric run, whose single-turn edits are large.
     """
 
-    retry_count: int = 4
+    retry_count: int = 30
     retry_delay_s: float = 2.0
     retry_max_delay_s: float = 30.0
     temperature: float | None = 0.0
@@ -373,8 +379,9 @@ class ProviderCaller:
 
     A transient `ProviderError` backs off with full jitter, waiting at least the upstream
     Retry-After; a permanent one re-raises at once. An empty tool-call response is re-asked
-    after a short delay, and when every attempt is empty the last is returned for the
-    went-quiet handler. An abort, an interrupt and `BudgetExceededError` are never retried.
+    after a short delay within the first `EMPTY_TOOL_CALL_ATTEMPTS` attempts, and the last
+    empty one is returned for the went-quiet handler. An abort, an interrupt and
+    `BudgetExceededError` are never retried.
 
     Attributes:
         provider: The provider called.
@@ -491,7 +498,8 @@ class ProviderCaller:
                 # Model flakiness, not rate limiting: a short fixed delay.
                 delay = min(self.retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311
                 self.log(
-                    f"LOOP: empty tool-call response attempt {attempt}/{attempts}"
+                    f"LOOP: empty tool-call response attempt {attempt}"
+                    f"/{min(attempts, EMPTY_TOOL_CALL_ATTEMPTS)}"
                     f" (stop_reason={resp.stop_reason!r}, no tool_use/text);"
                     f" retrying in {delay:.2f}s"
                 )
@@ -525,6 +533,7 @@ class ProviderCaller:
 
 
 __all__ = [
+    "EMPTY_TOOL_CALL_ATTEMPTS",
     "NON_RETRYABLE_HTTP_STATUSES",
     "RETRY_AFTER_CEILING_S",
     "TOOL_CALL_STOP_REASONS",
