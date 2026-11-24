@@ -544,20 +544,41 @@ The pending label clears when the worker consumes the last steer.
 **Who compacts.** The threshold line at startup names `agent6` or `endpoint`.
 With [Anthropic server compaction](anthropic.md), the endpoint clears old tool output and writes a signed summary.
 The size settings, `/compact [focus]` and idle limits still apply.
-The summary writer, gists and history retention settings apply only when agent6 compacts by itself.
+The cold-start mode, summary writer, gists and history retention settings apply only when agent6 compacts by itself.
 
-**What a local summary restart keeps.** `compaction.keep_operator_messages` reserves the newest task, steers and answers word for word.
+**Resume with a cold cache.** A resume is cold if the provider or model differs from the last ordinary worker request in the journal.
+It is also cold if the time since that request began reaches the current provider's `idle_compact_s`.
+A helper call, summary or session stop does not reset that clock.
+Set the limit to `-1` to disable the age rule but still detect a route change; `0` is not valid.
+The wait setting `idle_compact_min_chars` does not apply at resume.
+
+`compaction.cold_start` decides what to do before the first worker call, without a question, including when a parent continues its child:
+
+- `drop` (default): replace every eligible old tool result, even below `drop_at_chars`.
+  The newest two results, unread results, operator answers and reads of recently edited files stay whole.
+  Only `elision_gists` can call the helper during the drop.
+- `resend`: keep the saved conversation for the usual size and manual compaction checks.
+- `summarize`: ask the helper for a summary and restart with it and the retained history.
+  An unusable summary leaves the history intact.
+- `truncate`: restart with the retained history and no summary call.
+  The notice states what was left out and points to `read_session` when that tool is available.
+
+The start line and `compact.cold_start` journal entry report the route change or the gap and limit, the action, and the net context characters the cold step did not send to the worker.
+This is not a token count or evidence that the endpoint evicted the cache.
+On an endpoint that writes signed summaries, the line reports that the local mode does not apply.
+
+**What a local restart keeps.** `compaction.keep_operator_messages` reserves the newest task, steers and answers word for word.
 `compaction.keep_recent_turns` keeps an unbroken run of recent replies with their inputs and tool results.
 Both counts default to `-1` (no count limit).
 Set either to `0` to reserve no messages or keep no optional turns, respectively.
 A kept turn still includes the operator text it received.
-Older reserved messages appear in time order before the pins and summary, including answers without their tool calls.
+Older reserved messages appear in time order before the pins and any summary, including answers without their tool calls.
 The opening task has no special place.
 
 `compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
 After reserving the operator's words, the newest eligible turn stays whole even if it exceeds the space left.
 At `0`, only work the worker has yet to read or finish survives beside the restart notice.
-`compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a summary restarts the conversation.
+`compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a local restart keeps turns.
 
 **Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
 The timer starts when the worker starts its model request.

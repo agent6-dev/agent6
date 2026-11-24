@@ -215,8 +215,13 @@ A resume after a death there runs none of the turn's calls again: the model gets
 **Context compaction.** The driving route reports whether the endpoint clears tool results, writes summaries or keeps its own session.
 The harness selects `Endpoint` or `Tiered` once from those facts.
 Both strategies use the same size, manual and idle triggers and the same growth floor.
+On resume, `compaction.cold_start` compares the last ordinary worker request's journal route and timestamp with the current route and its idle limit.
+A changed provider or model takes precedence over age.
+A positive limit fires at or beyond the limit; `-1` disables age.
+`compact.cold_start` records the cause, action and net reduction in context characters before the first worker request.
 
 `Endpoint` leaves earlier messages intact.
+It reports the cold decision without applying the local mode.
 On ordinary requests over the drop threshold it asks the endpoint to clear the oldest results, in steps down to half the threshold, without removing any local results.
 A route that does not write summaries reads an adopted block as a text notice.
 For a summary it replays the worker request without clearing.
@@ -231,7 +236,9 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
 - the newest two results, undelivered results and operator answers stay whole; reads of recently-edited files elide last
 - dedup runs in the same tier-1 pass; `keep_thinking_turns` strips old thinking only when that pass rewrites results, avoiding separate cache breaks
 - a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
-- Tier 2 checks `summarise_at_chars` before tier 1 rewrites any messages.
+- On a cold start, `resend` leaves the history alone and `drop` replaces all eligible results without touching reads of recently edited files.
+  `summarize` uses the helper directly; `truncate` uses no writer.
+- Outside the cold step, tier 2 checks `summarise_at_chars` before tier 1 rewrites any messages.
 - With `summariser = "worker"` (default), the driving model receives its prepared conversation and tools with a final instruction to write the summary.
   A summary tool call is never run.
 - With `summariser = "helper"`, the helper reads the part being replaced, including operator answers but not other tool output.
@@ -240,8 +247,8 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
   The `claude_code` backend uses the helper directly because its worker process owns the session.
   Stop, budget and sign-in failures do not start another attempt.
 - Only a complete text summary without a tool call or refusal replaces the history.
-- `retention.select` applies the same operator, turn and character caps to size, manual and idle restarts.
-  The restart notice holds the pointers, older reserved operator messages, pins, rulings, verify fact, metric and summary in that order.
+- `retention.select` applies the same operator, turn and character caps to size, manual, idle and cold restarts.
+  The restart notice holds the pointers, older reserved operator messages, pins, rulings, verify fact, metric and any summary in that order.
   Recent turns follow with calls and results paired, followed by any unread inputs.
   A reviewer's opening is its contract, not operator text. Each local restart keeps it once and the next request supplies the current reply count.
   `keep_thinking_turns` limits replayed thinking by assistant turn.
@@ -275,6 +282,7 @@ Neither the deadline nor the callback changes the command check-in.
 Keep tool calls with their results.
 Keep signed reasoning with its assistant message.
 Use `conversation.restart(context.restart_notice(quotes) + summary, keep=tail, quotes=quotes)` with the tuple of older operator messages, or `()` for no quotes.
+Pass `truncated=True` to `restart_notice` when no summary follows.
 The tail must not start with a tool result.
 Return `True` after a restart so the loop restores focus notices.
 Return `False` for edits in place or no change.

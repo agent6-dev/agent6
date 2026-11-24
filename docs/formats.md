@@ -188,6 +188,22 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `handle` | `str` | Launcher-instance-scoped job handle. |
 | `elapsed_s` | `float` | Elapsed command time in seconds at handback. |
 
+### compact.cold_start
+
+**Support: public.** The history decision before a cold resume's first worker call.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `reason` | `Literal['route_changed', 'idle']` | The rule that fired. |
+| `previous_route` | `str` | Last ordinary request's provider/model, or empty if unknown. |
+| `route` | `str` | The resumed provider/model. |
+| `gap_s` | `float` | Seconds since that request, null if unknown. |
+| `idle_compact_s` | `float` | The resumed provider's idle limit, or -1. |
+| `mode` | `Literal['resend', 'drop', 'summarize', 'truncate']` | The configured cold-start mode. |
+| `action` | `Literal['resend', 'drop', 'summarize', 'truncate', 'endpoint', 'summary_failed']` | What happened to the history. |
+| `chars_not_sent` | `int` | Net conversation characters removed by the cold-start step, or zero. |
+| `message` | `str` | The start line shown to the operator. |
+
 ### compact.deduped
 
 **Support: public.** Repeated tool results were removed from context.
@@ -288,7 +304,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `reason` | `Literal['size', 'requested', 'idle', ''], optional` | What triggered the restart, empty when not recorded. |
+| `reason` | `Literal['size', 'requested', 'idle', 'cold_start', ''], optional` | What triggered the restart, empty when not recorded. |
 | `gap_s` | `float, optional` | Seconds from the worker request start to the idle summary call. |
 | `writer` | `Literal['worker', 'helper', 'endpoint'], optional` | The summary writer. |
 | `fallback_reason` | `str, optional` | Why the helper wrote the summary instead. |
