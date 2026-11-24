@@ -49,7 +49,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
         ),
     )
     # Gate presence reads the command policy first: a gate someone may run.
-    wf.dispatcher = types.SimpleNamespace(
+    wf.dispatcher = types.SimpleNamespace(  # pyrefly: ignore[bad-assignment]
         last_verification=None, verify_withheld=False, command_policy=lambda: "allow"
     )
     return wf
@@ -337,7 +337,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             ),
         ),
     )
-    wf.dispatcher = types.SimpleNamespace(
+    wf.dispatcher = types.SimpleNamespace(  # pyrefly: ignore[bad-assignment]
         last_verification=None, verify_withheld=False, command_policy=lambda: "allow"
     )
     state = _state()

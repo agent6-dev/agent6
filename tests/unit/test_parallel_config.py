@@ -38,9 +38,9 @@ def test_parallel_max_children_bounds() -> None:
     # le=1024: the cap itself is capped, or a huge max_children re-opens the
     # huge-count allocation the spec grammar refuses against.
     with pytest.raises(ValueError):
-        ParallelConfig(max_children=0)
+        ParallelConfig(max_children=0)  # pyrefly: ignore[bad-argument-type]
     with pytest.raises(ValueError):
-        ParallelConfig(max_children=1025)
+        ParallelConfig(max_children=1025)  # pyrefly: ignore[bad-argument-type]
     assert ParallelConfig(max_children=1024).max_children == 1024
 
 

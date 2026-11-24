@@ -135,7 +135,7 @@ def test_concurrent_reviewers_each_name_their_own_call(tmp_path: pathlib.Path) -
         both_stamped.wait(timeout=10)
         return policy()
 
-    d.command_policy = _rendezvous  # read after the stamp, before the gate
+    d.command_policy = _rendezvous  # pyrefly: ignore[method-assign]  # read after the stamp, before the gate
     with futures.ThreadPoolExecutor(max_workers=2) as pool:
         reviewers = [pool.submit(d.dispatch, "run_command", {"argv": ["ls", arg]}) for arg in "ab"]
         for reviewer in reviewers:

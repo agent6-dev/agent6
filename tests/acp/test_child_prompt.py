@@ -67,7 +67,7 @@ def test_parallel_prompt_streams_the_child_before_its_permission_is_answered(
                 content = message["params"]["update"].get("content")
                 if isinstance(content, dict):
                     texts.append(content["text"])
-            assert message["result"]["stopReason"] == "end_turn", texts
+            assert message["result"]["stopReason"] == "end_turn", texts  # pyrefly: ignore[unbound-name]
             assert any(f"attempt 1 {child}: calling" in t for t in texts), texts
             assert sum(child in t and "Local child completed." in t for t in texts) == 1, texts
             assert len(calls) == 2

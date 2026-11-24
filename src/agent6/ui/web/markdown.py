@@ -162,7 +162,7 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
         HTML with heading ids, Files links, confined paths and remote resource addresses.
     """
     parser = markdown_it.MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
-    parser.validateLink = _valid_link
+    parser.validateLink = _valid_link  # pyrefly: ignore[method-assign]
     # The parser finds raw HTML so these rules can show it as escaped source.
     parser.add_render_rule("html_block", _raw_block)
     parser.add_render_rule("html_inline", _raw_inline)

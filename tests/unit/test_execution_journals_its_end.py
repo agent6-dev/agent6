@@ -1056,7 +1056,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
 
     def _tools(*args: Any, **kwargs: Any) -> Any:
         tools = stubbed_build(*args, **kwargs)
-        tools.dispatcher.settle_background = _boom
+        tools.dispatcher.settle_background = _boom  # pyrefly: ignore[method-assign]
         return tools
 
     monkeypatch.setattr(session_runtime, "prepare_local_execution", _returning(mock.MagicMock()))

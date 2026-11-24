@@ -361,7 +361,7 @@ class CompactSummarizeDone(Event):
     )
 
 
-ColdStartAction = Literal[kinds.ColdStart, "endpoint", "summary_failed"]
+ColdStartAction = Literal[kinds.ColdStart, "endpoint", "summary_failed"]  # pyrefly: ignore[invalid-literal]
 
 
 class CompactColdStart(Event):
