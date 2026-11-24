@@ -194,7 +194,7 @@ def atomic_write(path: pathlib.Path, data: str | bytes, *, mode: int | None = No
     """
     _ensure_parent_dirs(path.parent)
     fd = -1
-    tmp_name = ""
+    tmp_name: str = ""
     try:
         fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
         wanted = mode if mode is not None else _existing_mode(path)

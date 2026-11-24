@@ -95,7 +95,7 @@ def test_typing_slash_shows_hints_and_tab_completes(tmp_path: pathlib.Path) -> N
             await pilot.press("p", "i", "tab")
             await pilot.pause()
             assert app.screen.query_one("#conv-input", composer.SteerInput).text == "/pin "
-            assert sug.display is False  # a space follows the word: hints gone
+            assert not sug.display  # a space follows the word: hints gone
 
     asyncio.run(scenario())
 

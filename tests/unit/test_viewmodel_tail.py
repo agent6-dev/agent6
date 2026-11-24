@@ -399,7 +399,7 @@ def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: pathlib.Path) -> N
     with log.open("a", encoding="utf-8") as fh:
         fh.write('{"type":"d"}\n')
     assert [e["type"] for e in tail.read()] == ["d"]
-    assert tail.rewound is False
+    assert not tail.rewound
 
 
 def test_tail_lines_hands_over_malformed_lines_raw_and_withholds_a_torn_tail(

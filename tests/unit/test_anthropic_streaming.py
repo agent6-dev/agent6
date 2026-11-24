@@ -531,7 +531,7 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
 
     resp = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "ok"
-    assert stream_called is False
+    assert not stream_called
 
 
 def test_streaming_refreshes_token_command_on_401(

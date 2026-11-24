@@ -802,7 +802,7 @@ def test_menu_bar_opens_and_dispatches(repo: pathlib.Path) -> None:
             dd.highlighted = idx
             await pilot.press("enter")
             await pilot.pause()
-            assert screen._modified_only is True
+            assert screen._modified_only
 
     asyncio.run(scenario())
 

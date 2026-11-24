@@ -319,8 +319,8 @@ def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(
     tool_effects.note(
         wf, state, turn, "run_command", _exec(0), {"argv": ["sed", "-i"]}, tree_before=before
     )
-    assert state.verify.green_and_untouched is False
-    assert turn.edit_since_verify_pass is True
+    assert not state.verify.green_and_untouched
+    assert turn.edit_since_verify_pass
 
 
 def _git_seed(tmp_path: pathlib.Path) -> str:
@@ -911,7 +911,7 @@ def test_a_full_green_from_the_models_own_gate_unarms_scoping(
     assert state.verify.scoped is True
     turn = _turn()
     tool_effects.note(wf, state, turn, "run_verify_command", _exec(0), {})
-    assert state.verify.scoped is False
+    assert not state.verify.scoped
     assert turn.verify_just_passed is True
     dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
 

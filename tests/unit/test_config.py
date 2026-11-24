@@ -1045,7 +1045,7 @@ def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
     from agent6.providers import oauth_chatgpt
 
     assert oauth_chatgpt.CHATGPT_ISSUER == "https://auth.openai.com"
-    assert oauth_chatgpt.CHATGPT_CLIENT_ID
+    assert oauth_chatgpt.CHATGPT_CLIENT_ID != ""
     with pytest.raises(ValueError, match="oauth_issuer"):
         ChatGPTProviderEntry.model_validate(
             {"backend": "chatgpt", "oauth_issuer": "https://auth.example.com"}
