@@ -199,10 +199,11 @@ def panel_rows(
     """Return a complete panel's start and completion rows with the given open findings."""
     target = review_records.ReviewTarget("b", "bt", "h", head, "h", (), "revisions")
     observations = []
-    for index, severity in enumerate(["block"] * block + ["warn"] * warn):
+    severities: list[review_records.Severity] = [*["block"] * block, *["warn"] * warn]
+    for index, severity in enumerate(severities):
         finding = review_records.Finding(
             category="correctness",
-            severity=severity,  # type: ignore[arg-type]
+            severity=severity,
             title=f"f{index}",
             location=review_records.ReviewLocation(
                 path="a.py", side="head", start_line=1, end_line=1

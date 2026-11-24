@@ -124,12 +124,12 @@ def run_panel(
                     root=repo, config=cfg, isolation="none", mode="reviewer", session_dir=child
                 )
                 if dispatch is not None:
-                    dispatcher.dispatch = dispatch  # type: ignore[method-assign]
+                    dispatcher.dispatch = dispatch  # pyrefly: ignore[bad-assignment, method-assign]
                 harness = loop.Harness(
                     chain=run_chain.RunChain(repo, ref=None, fallback_parent=None, per_turn=False),
                     config=cfg,
                     provider=ResponseAdapter(provider),
-                    dispatcher=dispatcher,  # type: ignore[arg-type]
+                    dispatcher=dispatcher,
                     logger=lambda _m: None,
                     events=event_log.EventSink(child / "logs.jsonl"),
                     resume_state_path=child / "loop_state.json",
