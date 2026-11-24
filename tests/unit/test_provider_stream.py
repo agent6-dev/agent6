@@ -10,9 +10,11 @@ stop/steer classification, 4xx surfacing, and transcript records.
 
 from __future__ import annotations
 
+import http.server
 import json
 import pathlib
 import threading
+import time
 from collections.abc import Callable, Iterator
 from typing import Any, ClassVar, override
 from unittest import mock
@@ -64,6 +66,7 @@ class _ParkedResponse:
     """
 
     def __init__(self, lead_lines: list[str] | None = None) -> None:
+        self.extensions: dict[str, object] = {}
         self.status_code = 200
         self.headers: dict[str, str] = {}
         self._lead = lead_lines or []
@@ -212,6 +215,50 @@ def test_idle_kill_in_thinking_reports_mid_thinking(monkeypatch: pytest.MonkeyPa
         ),
     ):
         _call(api_label="Anthropic", backend="anthropic").run(consume)
+
+
+@pytest.mark.parametrize(
+    ("poll", "error"),
+    [
+        ("should_abort", provider_types.ProviderAborted),
+        ("should_interrupt", provider_types.ProviderInterrupted),
+    ],
+)
+def test_a_cancel_wakes_a_silent_stream(poll: str, error: type[Exception]) -> None:
+    """A blocked socket read must end without waiting for a heartbeat or the read timeout."""
+    release = threading.Event()
+
+    class Silent(http.server.BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            release.wait(4)
+
+    with http.server.HTTPServer(("127.0.0.1", 0), Silent) as server:
+        worker = threading.Thread(target=server.handle_request)
+        worker.start()
+        reading = 0.0
+
+        def drain(resp: httpx2.Response, clock: stream_lifecycle.StreamClock) -> None:
+            nonlocal reading
+            reading = time.monotonic()
+            _drain(resp, clock)
+
+        def cancel() -> bool:
+            return reading != 0 and time.monotonic() - reading >= 0.1
+
+        try:
+            with pytest.raises(error):
+                _call(
+                    url=f"http://127.0.0.1:{server.server_port}/",
+                    should_abort=cancel if poll == "should_abort" else None,
+                    should_interrupt=cancel if poll == "should_interrupt" else None,
+                ).run(drain)
+            assert time.monotonic() - reading < 1.0
+        finally:
+            release.set()
+            worker.join()
 
 
 def test_abort_classifies_as_provider_aborted(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import socket
 import threading
 import time
 from collections.abc import Callable, Generator, Mapping
@@ -381,18 +382,20 @@ class SseCall:
                     continue
                 if safe_poll(self.should_abort):
                     aborted.set()
-                    with contextlib.suppress(Exception):
-                        resp.close()
-                    return
-                if safe_poll(self.should_interrupt):
+                elif safe_poll(self.should_interrupt):
                     interrupted.set()
-                    with contextlib.suppress(Exception):
-                        resp.close()
-                    return
-                timeout, _ = clock.idle_budget()
-                if time.monotonic() - clock.last_data_at <= timeout:
-                    continue
-                idle_killed.set()
+                else:
+                    timeout, _ = clock.idle_budget()
+                    if time.monotonic() - clock.last_data_at <= timeout:
+                        continue
+                    idle_killed.set()
+                # Closing the response alone leaves a read blocked in another thread.
+                stream = resp.extensions.get("network_stream")
+                if stream is not None and isinstance(
+                    sock := stream.get_extra_info("socket"), socket.socket
+                ):
+                    with contextlib.suppress(OSError):
+                        sock.shutdown(socket.SHUT_RDWR)
                 with contextlib.suppress(Exception):
                     resp.close()
                 return
