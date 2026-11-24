@@ -878,6 +878,22 @@ def mirror_session(
     _fetch_local(path, clone, specs, sender=sender, update_head_ok=True)
 
 
+def fetch_session_refs(
+    path: pathlib.Path, clone: pathlib.Path, session_id: str, *, sender: kinds.JailPolicy
+) -> None:
+    """Fetch the session's retained refs in one transfer, without forcing an update.
+
+    Args:
+        path: The receiving repository.
+        clone: The workspace that holds the refs.
+        session_id: The owner of the retained refs.
+        sender: The clone's command policy.
+    """
+    refs = git_read.session_refs(clone, session_id)
+    if refs:
+        _fetch_local(path, clone, [f"{ref}:{ref}" for ref in refs], sender=sender)
+
+
 def fetch_branch(
     path: pathlib.Path,
     remote_path: pathlib.Path,

@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -41,9 +42,10 @@ from agent6.sessions import (
 from agent6.sessions import manifest as session_manifest
 from agent6.tools import dispatch, tool_errors
 from agent6.ui.cli import parallel
+from agent6.vcs.git import fetch as git_fetch
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing, receipt
-from tests import child_env, launch_env, review_traces
+from tests import child_env, jail_env, launch_env, review_traces
 
 
 @pytest.mark.parametrize("panel_cost", [None, 2.0])
@@ -432,6 +434,26 @@ def test_review_leaf_and_unproven_child_have_no_dispatch_authority(
         )
         is None
     )
+
+
+def test_retained_refs_share_one_jailed_fetch_per_session(short_repo: pathlib.Path) -> None:
+    origin, clone = short_repo / "origin", short_repo / "worker"
+    child_env.init_repo(origin)
+    session = child_env.create_record(origin, "worker")
+    child_repo.clone_worktree(origin, clone)
+    sender = jail_env.clone_jail(clone)
+    space = git_read.chain_ref_for(session.name).rsplit("/", 1)[0]
+    for index in range(3):
+        child_env.git(clone, "update-ref", f"{space}/target-{index}", "HEAD")
+    child_env.git(clone, "update-ref", git_read.chain_ref_for("other"), "HEAD")
+
+    with mock.patch.object(git_fetch, "scratch_fetch", wraps=git_fetch.scratch_fetch) as fetch:
+        child_repo.fetch_retained_refs(origin, clone, session, sender)
+
+    fetch.assert_called_once()
+    assert fetch.call_args.kwargs["sender"] is sender
+    assert git_read.session_refs(origin, session.name) == git_read.session_refs(clone, session.name)
+    assert not git_read.session_refs(origin, "other")
 
 
 def test_import_retains_descendant_records_receipts_and_target_objects(

@@ -151,10 +151,7 @@ def fetch_retained_refs(
         raise ChildRepoError("a descendant is still running; its worker clone must be retained")
     try:
         for session in (child_session_dir, *descendants):
-            for retained in git_read.session_refs(child_worktree, session.name):
-                git_ops.fetch_branch(
-                    origin, child_worktree, f"{retained}:{retained}", sender=sender
-                )
+            git_ops.fetch_session_refs(origin, child_worktree, session.name, sender=sender)
     except errors.GitError as exc:
         raise ChildRepoError(
             f"import retained session targets from {child_worktree} failed: {exc}"
