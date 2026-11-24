@@ -15,6 +15,7 @@ The sending side of a fetch from a workspace's clone runs under that workspace's
 from __future__ import annotations
 
 import dataclasses
+import errno
 import os
 import pathlib
 import re
@@ -315,10 +316,10 @@ def scratch_fetch(
 
 
 def _copy_shallow(source: pathlib.Path, target: pathlib.Path, hashes: str) -> None:
-    """Copy a shallow file's object ids, and refuse a file that holds anything else.
+    """Copy a shallow file's object ids, and refuse a link or a file that holds anything else.
 
-    A jailed command that can write `.git` can link the file to any other, and git quotes a
-    line it cannot read as an object id.
+    A jailed command that can write `.git` can link the file to any other. Git writes the
+    file itself, never a link, and quotes a line it cannot read as an object id.
 
     Args:
         source: The repository's shallow file.
@@ -326,11 +327,18 @@ def _copy_shallow(source: pathlib.Path, target: pathlib.Path, hashes: str) -> No
         hashes: The repository's object format, which sets an id's length.
 
     Raises:
-        GitError: A line is no object id; the reason does not quote it.
+        GitError: The file is a link, or a line is no object id; the reason quotes no line.
+        OSError: The file cannot be opened for another reason.
     """
     width = 40 if hashes == "sha1" else 64
     object_id = re.compile(rb"[0-9a-f]{%d}\n?" % width)
-    with source.open("rb") as lines, target.open("wb") as copy:
+    try:
+        opened = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        if exc.errno != errno.ELOOP:
+            raise
+        raise errors.GitError(f"{source} is a link; nothing was fetched") from exc
+    with os.fdopen(opened, "rb") as lines, target.open("wb") as copy:
         # At most one id and its newline per read: no other line is ever held whole.
         while line := lines.readline(width + 2):
             if object_id.fullmatch(line) is None:

@@ -262,18 +262,37 @@ def test_a_fetch_works_from_a_linked_worktree_and_in_a_shallow_clone(
     assert _git(shallow, "fsck", "--no-dangling") == ""
 
 
+def test_a_linked_shallow_file_is_refused(tmp_path: pathlib.Path) -> None:
+    """A `.git/shallow` linked to a file of id-like lines was copied for the sender to read.
+
+    A command that can write `.git` makes the link; a 40-character hex secret on a line of
+    its own passes for an object id.
+    """
+    secret = tmp_path / "token"
+    secret.write_text("a" * 40 + "\n", encoding="utf-8")
+    link = tmp_path / "shallow"
+    link.symlink_to(secret)
+    copy = tmp_path / "copy"
+
+    with pytest.raises(errors.GitError, match="is a link"):
+        git_fetch._copy_shallow(link, copy, "sha1")
+
+    assert not copy.exists()
+
+
 def test_a_shallow_file_that_is_no_list_of_object_ids_is_refused_unquoted(
     pair: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """A `.git/shallow` linked to another file put that file's first line in the failure.
+    """A `.git/shallow` that held anything but object ids put its first line in the failure.
 
-    A command that can write `.git` makes the link. The scratch repository got a copy of
-    what the link names, and git dies on a line that is no object id, quoting it.
+    A command that can write `.git` writes the file. The scratch repository got a copy,
+    and git dies on a line that is no object id, quoting it.
     """
     _, work = pair
-    private = tmp_path / "private"
-    private.write_text("MARKER the first line of another file\nits second\n", encoding="utf-8")
-    (work / ".git" / "shallow").symlink_to(private)
+    del tmp_path
+    (work / ".git" / "shallow").write_text(
+        "MARKER the first line of the file\nits second\n", encoding="utf-8"
+    )
 
     with pytest.raises(errors.GitError, match="shallow") as caught:
         git_fetch.scratch_fetch(
