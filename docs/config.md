@@ -547,15 +547,18 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 ## `[compaction]`
 
 Both writers use the size thresholds (about four characters per token).
-Only local compaction uses `summariser`, `keep_recent_chars`, `keep_thinking_turns` and `elision_gists`.
+Only local compaction uses `summariser`, `elision_gists` and the `keep_` settings.
+The [usage guide](usage.md) explains which messages survive a summary restart.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `summariser` | `"worker"` | Local compaction only: tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history without tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back<ul><li><code>worker</code>: Worker continues its own request</li><li><code>helper</code>: Helper reads history without tool output</li></ul> |
 | `drop_at_chars` | _adaptive_ | Accumulated tool-result characters before the endpoint clears old results or agent6 replaces them with short, re-fetchable placeholders down to half the threshold where result protections allow; unset: about 45% of the model's context window; explicit thresholds: both `compaction.drop_at_chars` and `compaction.summarise_at_chars` required |
 | `summarise_at_chars` | _adaptive_ | Whole-context character threshold for a summary by the endpoint or agent6; an accepted summary restarts the conversation and preserves the task DAG; unset: model's window minus a 16k-token reserve; required above `compaction.drop_at_chars` |
-| `keep_recent_chars` | `80000` | Local compaction only: characters of newest history kept verbatim after the summary on a tier-2 restart; `compaction.keep_recent_chars = 0`: none |
-| `keep_thinking_turns` | `-1` | Local compaction only: thinking retained when tier 1 rewrites tool results for the newest N assistant turns with `compaction.keep_thinking_turns = N` (`N >= 1`); `compaction.keep_thinking_turns = -1`: all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking block needed by an in-flight tool call; less replay for Anthropic's signed blocks and ChatGPT's reasoning items; no thinking re-sent on the OpenAI wire |
+| `keep_operator_messages` | `-1` | Local restart: reserve the newest N operator messages within the character cap; -1: no count limit; 0: reserve none outside kept turns |
+| `keep_recent_turns` | `-1` | Local restart: keep up to N whole turns, newest first; -1: no count limit; 0: keep no optional turns |
+| `keep_recent_chars` | `80000` | Local restart: shared character cap on operator messages and recent turns; 0: keep nothing optional; adaptive thresholds limit the cap to half of `compaction.summarise_at_chars` |
+| `keep_thinking_turns` | `-1` | Local compaction: keep thinking on the newest N assistant turns when rewriting results or restarting; -1: keep all; minimum otherwise: 1, to keep signed thinking with an in-flight tool call |
 | `summary_max_tokens` | `2048` | Output-token cap for either summary writer and for gist distillation; smaller caps overridden by a reasoning model's per-call floor for reasoning tokens; no cap accepted by the chatgpt backend |
 | `elision_gists` | `true` | Local compaction only: large `read_file` results replaced at tier 1 by model-written gists before bare placeholders; gists also dropped under continued pressure to keep the byte bound; `compaction.elision_gists = false`: bare placeholders directly |
 

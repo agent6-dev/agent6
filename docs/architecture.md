@@ -281,14 +281,16 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
 - Tier 2 checks `summarise_at_chars` before tier 1 rewrites any messages.
 - With `summariser = "worker"` (default), the driving model receives its prepared conversation and tools with a final instruction to write the summary.
   A summary tool call is never run.
-- With `summariser = "helper"`, the helper reads the part being replaced without tool output.
+- With `summariser = "helper"`, the helper reads the part being replaced, including operator answers but not other tool output.
   When that history exceeds the helper's known window, it reads the newest end with a notice that the beginning is missing.
 - A rejected worker request or unusable reply gives the helper one attempt.
   The `claude_code` backend uses the helper directly because its worker process owns the session.
   Stop, budget and sign-in failures do not start another attempt.
 - Only a complete text summary without a tool call or refusal replaces the history.
-  The restart keeps the task, pins, decisions and verify fact.
-  Size and manual restarts also keep recent whole exchanges (`keep_recent_chars`, default 80000).
+- `retention.select` applies the same operator, turn and character caps to size, manual and idle restarts.
+  The restart notice holds the pointers, older reserved operator messages, pins, rulings, verify fact, metric and summary in that order.
+  Recent turns follow with calls and results paired, followed by any unread inputs.
+  `keep_thinking_turns` limits replayed thinking by assistant turn.
 - An idle restart uses the driving provider's `idle_compact_s` and `idle_compact_min_chars`.
   The limit counts from the start of the last worker request, including time spent generating the reply.
   The floor counts system text, tools and the whole conversation.
@@ -316,9 +318,10 @@ Only a blocking wait arms the callback.
 The wait joins a callback in progress before delivering its result.
 Neither the deadline nor the callback changes the command check-in.
 
-Keep the original task and complete tool exchanges.
+Keep tool calls with their results.
 Keep signed reasoning with its assistant message.
-Use `conversation.restart(context.restart_notice() + summary, keep=tail)` with a tail that does not start with a tool result.
+Use `conversation.restart(context.restart_notice(quotes) + summary, keep=tail, quotes=quotes)` with the tuple of older operator messages, or `()` for no quotes.
+The tail must not start with a tool result.
 Return `True` after a restart so the loop restores focus notices.
 Return `False` for edits in place or no change.
 The strategy is supplied by Python code, not loaded from a configuration file.

@@ -274,7 +274,20 @@ When the check-in ends a wait, the result names the interval and lists the work 
 **Who compacts.** The threshold line at startup names `agent6` or `endpoint`.
 With [Anthropic server compaction](anthropic.md), the endpoint clears old tool output and writes a signed summary.
 The size settings, `/compact [focus]` and idle limits still apply.
-`summariser`, `keep_recent_chars`, `elision_gists` and `keep_thinking_turns` apply only when agent6 compacts by itself.
+The summary writer, gists and history retention settings apply only when agent6 compacts by itself.
+
+**What a local summary restart keeps.** `compaction.keep_operator_messages` reserves the newest task, steers and answers word for word.
+`compaction.keep_recent_turns` keeps an unbroken run of recent replies with their inputs and tool results.
+Both counts default to `-1` (no count limit).
+Set either to `0` to reserve no messages or keep no optional turns, respectively.
+A kept turn still includes the operator text it received.
+Older reserved messages appear in time order before the pins and summary, including answers without their tool calls.
+The opening task has no special place.
+
+`compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
+The newest eligible turn stays whole even if it exceeds the cap.
+At `0`, only work the worker has yet to read or finish survives beside the restart notice.
+`compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a summary restarts the conversation.
 
 **Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
 The timer starts when the worker starts its model request.

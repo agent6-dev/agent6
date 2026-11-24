@@ -408,7 +408,8 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 ## `[compaction]`
 
 Both writers use the size thresholds (about four characters per token).
-Only local compaction uses `summariser`, `keep_recent_chars`, `keep_thinking_turns` and `elision_gists`.
+Only local compaction uses `summariser`, `elision_gists` and the `keep_` settings.
+The [usage guide](usage.md) explains which messages survive a summary restart.
 
 <!-- config-table: compaction -->
 
