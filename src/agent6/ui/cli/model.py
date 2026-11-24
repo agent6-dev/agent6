@@ -43,7 +43,7 @@ def _models_for(config_paths: tuple[pathlib.Path, ...], provider: str) -> list[s
     except ConfigError:
         return []
     _warn_unusable_provider(config_paths, provider)
-    return choices.provider_model_choices(eff.config, provider)
+    return choices.provider_model_choices(eff.config, provider, on_error=common.warn)
 
 
 def _prompt_for_provider(config_paths: tuple[pathlib.Path, ...]) -> str:
@@ -95,7 +95,7 @@ def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> 
             common.error(f"no model {choice}: the list has {len(options)}.")
             return None
         return choice
-    print(f"No known models for {provider} (couldn't reach its API or none configured).")
+    print(f"No known models for {provider}.")
     return common.safe_input("Model: ") or ""
 
 
@@ -147,7 +147,7 @@ def _print_catalog(config_paths: tuple[pathlib.Path, ...], role: str, provider: 
     options = _models_for(config_paths, provider)
     if not options:
         common.error(
-            f"no known models for {provider}: no listing reached and no role names one."
+            f"no known models for {provider}: none listed or configured for a role."
             f" Set one with: agent6 model {role} {provider}/<model>"
         )
         return 2

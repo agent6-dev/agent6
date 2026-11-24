@@ -15,6 +15,7 @@ import dataclasses
 import json
 import pathlib
 import time
+from collections.abc import Callable
 from typing import Any, Literal
 from urllib import parse
 
@@ -470,6 +471,7 @@ def list_models(
     *,
     ttl_s: int = _CACHE_TTL_S,
     timeout_s: float = _FETCH_TIMEOUT_S,
+    on_error: Callable[[str], None] | None = None,
 ) -> list[str]:
     """Return the model ids the entry offers; never raises.
 
@@ -479,6 +481,7 @@ def list_models(
         api_key: The key, or None for a keyless attempt.
         ttl_s: How old a cache may be before a live fetch.
         timeout_s: The fetch timeout.
+        on_error: Receives the reason a live listing failed.
 
     Returns:
         A fresh, bound listing, else the live listing, else cached model ids or [].
@@ -496,7 +499,11 @@ def list_models(
         and data.get("binding") == listing_store.binding(entry)
     ):
         return cached
-    return fetch_models_live(provider_name, entry, api_key, timeout_s=timeout_s) or cached or []
+    return (
+        fetch_models_live(provider_name, entry, api_key, timeout_s=timeout_s, on_error=on_error)
+        or cached
+        or []
+    )
 
 
 def fetch_models_live(
@@ -505,6 +512,7 @@ def fetch_models_live(
     api_key: str | None,
     *,
     timeout_s: float = _FETCH_TIMEOUT_S,
+    on_error: Callable[[str], None] | None = None,
 ) -> list[str] | None:
     """Fetch the entry's live listing now, TTL ignored; never raises.
 
@@ -515,13 +523,28 @@ def fetch_models_live(
         entry: The provider entry.
         api_key: The key, or None for a keyless attempt.
         timeout_s: The fetch timeout.
+        on_error: Receives the reason a live listing failed.
 
     Returns:
         The ids, with the cache rewritten, or None on any failure or an empty listing.
     """
     try:
         listing = _fetch(provider_name, entry, api_key, timeout_s)
-    except (httpx2.HTTPError, ValueError, OSError, provider_types.ProviderError):
+    except httpx2.HTTPStatusError as exc:
+        if on_error is not None:
+            resp = exc.response
+            detail = resp.text
+            with contextlib.suppress(ValueError):
+                payload = resp.json()
+                error = payload.get("error", payload) if isinstance(payload, dict) else None
+                if isinstance(error, dict) and isinstance(error.get("message"), str):
+                    detail = error["message"]
+            safe = provider_types.scrub_secret_values(detail, dict(exc.request.headers))
+            on_error(f"{provider_name} model listing: HTTP {resp.status_code}: {safe[:500]}")
+        return None
+    except (httpx2.HTTPError, ValueError, OSError, provider_types.ProviderError) as exc:
+        if on_error is not None:
+            on_error(f"{provider_name} model listing: {exc}")
         return None
     if not listing.models:
         return None

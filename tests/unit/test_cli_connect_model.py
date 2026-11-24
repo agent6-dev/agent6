@@ -22,6 +22,7 @@ from agent6.models import cache
 from agent6.providers import oauth, oauth_chatgpt, oauth_protocol, provider_types, transport
 from agent6.ui.cli import common, connect_oauth, main
 from agent6.ui.cli import model as modelmod
+from tests import provider_endpoint
 
 _REAL_PROBE = cache.probe_provider_key
 
@@ -678,6 +679,23 @@ def _key_stub(key: str | None) -> Callable[..., str | None]:
         return key
 
     return _resolve
+
+
+def test_a_refused_model_listing_prints_the_status_and_reason(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The operator sees the scope the provider requires, not a network failure."""
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    reason = "Missing scope: api.models.read"
+    with provider_endpoint.serve({"error": {"message": reason}}, status=403) as (url, calls):
+        gc = paths.global_config_path()
+        gc.parent.mkdir(parents=True)
+        gc.write_text(f'[providers.work]\nbackend = "responses"\nbase_url = "{url}"\n')
+        assert main(["model", "worker", "work"]) == 2
+    error = capsys.readouterr().err
+    assert len(calls) == 1
+    assert "HTTP 403" in error and reason in error
+    assert "no listing reached" not in error
 
 
 def test_model_piped_without_model_lists_the_catalog(

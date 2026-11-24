@@ -10,6 +10,7 @@ same lists.
 from __future__ import annotations
 
 import pathlib
+from collections.abc import Callable
 
 from agent6 import kinds
 from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, secret_store
@@ -17,7 +18,9 @@ from agent6.models import cache, validate
 from agent6.sessions import manifest as sessions_manifest
 
 
-def provider_model_choices(cfg: Config, provider: str) -> list[str]:
+def provider_model_choices(
+    cfg: Config, provider: str, *, on_error: Callable[[str], None] | None = None
+) -> list[str]:
     """Return the model ids a provider serves: the roles' models plus its listing.
 
     The listing is cache-first, refreshed live when stale. A broken secrets file degrades
@@ -27,6 +30,7 @@ def provider_model_choices(cfg: Config, provider: str) -> list[str]:
     Args:
         cfg: The effective config.
         provider: The provider's config name.
+        on_error: Receives a live listing failure when the caller displays one.
 
     Returns:
         The ids, sorted.
@@ -47,7 +51,7 @@ def provider_model_choices(cfg: Config, provider: str) -> list[str]:
         api_key = secret_store.resolve_api_key(
             provider, getattr(entry, "api_key_env", None), secrets=secrets
         )
-        out.update(cache.list_models(provider, entry, api_key))
+        out.update(cache.list_models(provider, entry, api_key, on_error=on_error))
     return sorted(out)
 
 
