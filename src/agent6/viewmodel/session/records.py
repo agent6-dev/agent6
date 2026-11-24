@@ -186,14 +186,12 @@ class SessionUsage:
     Attributes:
         usd: The USD cap readings banked across executions.
         usd_observed_credits: The account balance declines inside those readings.
-        credit_readings: Balance observations from the subtree, with their original times.
         usd_partial: Some execution's model had no price, so `usd` is a lower bound.
         plan_observed_points: The plan movement observed across every execution, in points.
         unmetered_tokens: Fallback tokens across every execution, including settled descendants.
         settled_children: Child sessions whose spend is durably included in the journal.
     """
 
-    credit_readings: tuple[credit_usage.Reading, ...] = ()
     usd_observed_credits: float = 0.0
     usd: float = 0.0
     usd_partial: bool = False
@@ -343,10 +341,13 @@ class SessionCore:
     Attributes:
         lifecycle: Where the session stands.
         budget: Its usage, each amount with one lifetime.
+        credit_readings: The subtree's balance observations a parent settles, as
+            `credit_usage.merge` keeps them; no surface payload carries them.
     """
 
     lifecycle: Lifecycle = dataclasses.field(default_factory=Lifecycle)
     budget: BudgetView = dataclasses.field(default_factory=BudgetView)
+    credit_readings: tuple[credit_usage.Reading, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

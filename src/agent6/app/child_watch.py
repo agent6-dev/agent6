@@ -257,7 +257,8 @@ def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
         Its cumulative cap reading including running children, the balance observations,
         its fallback tokens and its latest plan reading.
     """
-    usage = session_log.scan_session_log(child_dir / layout.LOGS_NAME).budget
+    scan = session_log.scan_session_log(child_dir / layout.LOGS_NAME)
+    usage = scan.budget
     account = usage.account
     readings: tuple[tuple[str, agent6_budget.PlanUsage], ...] = ()
     if account is not None and account.provider and account.windows:
@@ -265,7 +266,7 @@ def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
     return agent6_budget.UsageSettlement(
         usd=usage.usd_so_far,
         usd_observed_credits=usage.session.usd_observed_credits,
-        credit_readings=usage.session.credit_readings,
+        credit_readings=scan.credit_readings,
         usd_partial=usage.session.usd_partial,
         tokens=usage.session.unmetered_tokens + usage.execution.tokens_running_children,
         plan_readings=readings,

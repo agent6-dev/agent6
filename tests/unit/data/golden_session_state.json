@@ -103,7 +103,6 @@
   "environment": null,
   "budget": {
     "session": {
-      "credit_readings": [],
       "usd_observed_credits": 0.0,
       "usd": 0.004841036,
       "usd_partial": false,

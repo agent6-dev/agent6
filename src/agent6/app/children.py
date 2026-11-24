@@ -747,7 +747,7 @@ def child_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | No
     return agent6_budget.UsageSettlement(
         usd=scan.budget.session.usd,
         usd_observed_credits=scan.budget.session.usd_observed_credits,
-        credit_readings=scan.budget.session.credit_readings,
+        credit_readings=scan.credit_readings,
         usd_partial=scan.budget.session.usd_partial,
         tokens=scan.budget.session.unmetered_tokens,
         model_tokens=scan.budget.model_tokens.total,

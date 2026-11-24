@@ -13,7 +13,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import Any
 
-from agent6 import budget, kinds, token_usage
+from agent6 import budget, credit_usage, kinds, token_usage
 from agent6.sessions import journal
 from agent6.viewmodel import events
 from agent6.viewmodel.session import records as state_types
@@ -82,7 +82,7 @@ def apply(  # noqa: PLR0911, PLR0912  # one branch per family
                 else core.budget.prior_model_tokens,
                 execution=state_types.ExecutionUsage(),
             )
-            return state_types.SessionCore(lifecycle=begun, budget=usage)
+            return dataclasses.replace(core, lifecycle=begun, budget=usage)
         case journal.SessionStop(
             verification=verification, reason=reason, summary=summary, scoped=scoped
         ):
@@ -148,7 +148,11 @@ def apply(  # noqa: PLR0911, PLR0912  # one branch per family
             )
             return dataclasses.replace(core, lifecycle=dataclasses.replace(life, environment=view))
         case journal.BudgetUpdate():
-            return dataclasses.replace(core, budget=_usage(core.budget, event, raw))
+            return dataclasses.replace(
+                core,
+                budget=_usage(core.budget, event, raw),
+                credit_readings=credit_usage.merge(core.credit_readings, event.credit_readings),
+            )
         case _:
             return core
 
@@ -261,11 +265,6 @@ def _usage(
             prior.session.usd_observed_credits
             - prior.execution.usd_observed_credits
             + row.usd_observed_credits
-        ),
-        credit_readings=(
-            tuple(dict.fromkeys((*prior.session.credit_readings, *row.credit_readings)))
-            if row.credit_readings
-            else prior.session.credit_readings
         ),
         usd_partial=bool(row.usd_partial) or prior.session.usd_partial,
         plan_observed_points=banked_points + (row.plan_observed_points or 0.0),

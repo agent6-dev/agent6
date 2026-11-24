@@ -12,7 +12,7 @@ import pathlib
 from collections.abc import Iterator
 from typing import Any
 
-from agent6 import evidence, kinds, terminal
+from agent6 import credit_usage, evidence, kinds, terminal
 from agent6.sessions import event_log, journal
 from agent6.viewmodel import cache_usage as vm_cache_usage
 from agent6.viewmodel import events, format, review
@@ -52,6 +52,7 @@ class LogScan:
         provider_error: The last failed driving call's error, the reason behind a
             `provider_error` end; "" when none failed.
         budget: The usage, each amount with one lifetime, as the viewers' fold holds it.
+        credit_readings: The subtree's balance observations, for a parent's settlement.
         budget_seen: A budget.update was read.
         cache_usage: Session-wide worker cache use and post-compaction input.
         executions: One plus the completed resume executions.
@@ -109,6 +110,7 @@ class LogScan:
     undone_to: str = ""
     provider_error: str = ""
     budget: state_types.BudgetView = dataclasses.field(default_factory=state_types.BudgetView)
+    credit_readings: tuple[credit_usage.Reading, ...] = ()
     cache_usage: vm_cache_usage.CacheUsage = dataclasses.field(
         default_factory=vm_cache_usage.CacheUsage
     )
@@ -561,6 +563,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         undone_to=life.undone_to,
         provider_error=life.provider_error,
         budget=core.budget,
+        credit_readings=core.credit_readings,
         cache_usage=cache.usage,
         budget_seen=saw_budget,
         executions=life.executions,

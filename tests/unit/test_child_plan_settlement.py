@@ -13,6 +13,8 @@ import pytest
 from agent6 import budget, kinds, paths
 from agent6.app import child_watch, children
 from agent6.sessions import budget_events, child_dispatch, event_log, journal, layout
+from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import view
 
 
 def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
@@ -192,6 +194,32 @@ def test_a_retried_append_confirms_only_its_own_readings(
     parent = budget.BudgetTracker(max_usd=3, max_tokens_fallback=-1, max_plan_points=-1)
     parent.settle_child("child", usage)
     assert parent.available().usd == 1
+
+
+def test_an_unchanged_balance_stays_two_readings_through_the_journal_and_the_session_payload(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Each reply's balance stayed in the meter, the fold and every session payload."""
+    child = budget.BudgetTracker(max_usd=10, max_tokens_fallback=-1, max_plan_points=-1)
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    for at in range(1, 41):
+        _balance(child, "p", "shared", at, 10)
+        budget_events.emit_budget_update(child, sink.emit)
+    _balance(child, "p", "shared", 41, 7)
+    budget_events.emit_budget_update(child, sink.emit)
+    assert child.snapshot().credit_reading_count == 3
+    scan = session_log.scan_session_log(sink.path)
+    assert [(r.observed_ns, r.balance_usd) for r in scan.credit_readings] == [
+        (1, 10),
+        (40, 10),
+        (41, 7),
+    ]
+    assert "credit_readings" not in json.dumps(view.budget_dict(scan.budget))
+    parent = budget.BudgetTracker(max_usd=10, max_tokens_fallback=-1, max_plan_points=-1)
+    _balance(parent, "p", "shared", 20, 10)
+    parent.note_running("child", child_watch.running_usage(tmp_path))
+    parent.settle_child("child", children.child_usage(tmp_path))
+    assert parent.snapshot().usd_observed_credits == 3 and parent.available().usd == 7
 
 
 def test_credit_journal_distinguishes_accounts_without_publishing_their_header_values(

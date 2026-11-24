@@ -348,7 +348,7 @@ class BudgetSnapshot:
         usd_partial: Unpriced calls make the USD reading a lower bound.
         usd_observed_credits: The credit declines charged to this execution's cap.
         credits: The unpublished balance observations and their parent executions.
-        credit_reading_count: How many distinct balances the subtree has observed.
+        credit_reading_count: How many balance readings the credit ledger keeps.
         usd_running_children: The running children's USD outside the credit series. The cap
             holds it until settlement.
         tokens_running_children: Their fallback tokens so far, the same way.

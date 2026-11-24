@@ -25,8 +25,8 @@ Read `children[].outcome` for the parent's decision, or an empty string for none
 See [CLI JSON](formats.md#cli-json) for the session and receipt payloads that carry these fields.
 Child rows in `ps --json` and `/api/hub` have no `outcome` field.
 
-**Credit balances in session snapshots:** `budget.session.credit_readings` holds distinct account balances with their observation times.
-`usd_observed_credits` is the part of the execution or session USD total due to balance declines.
+**Credit balances in session snapshots:** `usd_observed_credits` is the part of the execution or session USD total due to balance declines.
+The balance readings stay in the journal's `budget.update` rows.
 See [SessionUsage](formats.md#sessionusage) and [ExecutionUsage](formats.md#executionusage).
 
 ## CLI listing rows
@@ -323,4 +323,4 @@ Public fields: [Formats](formats.md#session-snapshots).
 
 - **Written by:** viewmodel/machine/state, viewmodel/session/view
 - **Read by:** ui/acp/updates, ui/cli/{sessions_show, steer_menu}, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (14 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (15 test files exercise it)

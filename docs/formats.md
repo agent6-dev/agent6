@@ -3679,6 +3679,7 @@ Source: [`agent6.viewmodel.session.records.SessionCore`](https://github.com/agen
 | --- | --- | --- |
 | `lifecycle` | `Lifecycle` | Where the session stands. |
 | `budget` | `BudgetView` | Its usage, each amount with one lifetime. |
+| `credit_readings` | `tuple[Reading, ...]` | The subtree's balance observations a parent settles, as `credit_usage.merge` keeps them; no surface payload carries them. |
 
 ### TaskNodeView
 
@@ -4248,6 +4249,18 @@ Source: [`agent6.viewmodel.session.records.Lifecycle`](https://github.com/agent6
 | `pins` | `tuple[str, ...]` | The operator's pinned instructions in force, most recent last. |
 | `environment` | `EnvironmentView \| None` | The container this execution holds; None outside one. |
 
+### Reading
+
+**Support: public.** A purchased-credit balance when it was observed, before any child settlement.
+
+Source: [`agent6.credit_usage.Reading`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/credit_usage.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `account` | `str` | A fingerprint of the account ID, or the provider entry if the ID is absent. |
+| `observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
+| `balance_usd` | `float` | The balance in dollars. |
+
 ### PanelView
 
 **Support: public.** Keep a panel's roster, grounded verdicts and completion evidence.
@@ -4305,7 +4318,6 @@ Source: [`agent6.viewmodel.session.records.SessionUsage`](https://github.com/age
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `credit_readings` | `tuple[Reading, ...]` | Balance observations from the subtree, with their original times. |
 | `usd_observed_credits` | `float` | The account balance declines inside those readings. |
 | `usd` | `float` | The USD cap readings banked across executions. |
 | `usd_partial` | `bool` | Some execution's model had no price, so `usd` is a lower bound. |
@@ -4412,18 +4424,6 @@ Source: [`agent6.child_records.ChildContext`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `tokens` | `int \| None` | Full provider input at its last measured call; None when unknown. |
 | `last_run_at` | `float \| None` | Epoch of its last journal activity when it ended; None when unknown. |
-
-### Reading
-
-**Support: public.** A purchased-credit balance when it was observed, before any child settlement.
-
-Source: [`agent6.credit_usage.Reading`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/credit_usage.py).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `account` | `str` | A fingerprint of the account ID, or the provider entry if the ID is absent. |
-| `observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
-| `balance_usd` | `float` | The balance in dollars. |
 
 ### ReviewerAssignment
 

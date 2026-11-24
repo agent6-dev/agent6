@@ -603,8 +603,8 @@ Read `children[].outcome` for the parent's decision, or an empty string for none
 See [CLI JSON](formats.md#cli-json) for the session and receipt payloads that carry these fields.
 Child rows in `ps --json` and `/api/hub` have no `outcome` field.
 
-**Credit balances in session snapshots:** `budget.session.credit_readings` holds distinct account balances with their observation times.
-`usd_observed_credits` is the part of the execution or session USD total due to balance declines.
+**Credit balances in session snapshots:** `usd_observed_credits` is the part of the execution or session USD total due to balance declines.
+The balance readings stay in the journal's `budget.update` rows.
 See [SessionUsage](formats.md#sessionusage) and [ExecutionUsage](formats.md#executionusage).
 """
 
