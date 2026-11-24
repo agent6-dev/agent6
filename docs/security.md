@@ -726,6 +726,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - a sender that gives no answer in 120 s ends with its fetch, and the import fails
     - under `none` `sandbox.isolation` nothing confines it; under `container` it runs on the host, outside the container
     - seeding reads the repository on the host: the `git clone` that makes a clone, and a fetch from the repository into its clone
+    - agent6's own git writes where such a `.git` points: a fetch into a session's clone whose `commondir` names another repository writes the fetched commits and refs there
     - a clone shares its repository's object files by hard link, so a command that can write the clone's `.git` can rewrite a stored object.
       The repository then shows the written content under the stored id, and only `git fsck` reports it
     - agent6 records the write access for the checkout before commands get it, in its own state (`$XDG_STATE_HOME/agent6/<checkout-id>/git-writable`); a later config that protects `.git` leaves the record.
