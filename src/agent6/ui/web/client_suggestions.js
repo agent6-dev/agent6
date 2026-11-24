@@ -11,7 +11,7 @@ function fillAsEdit(ta, text) {
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
-// POST keeps the operator’s task out of URLs.
+// POST keeps the operator's task out of URLs.
 function attachParallelPreview(field, root, options) {
   const box = el('div', 'parallel-preview');
   box.setAttribute('role', 'status');
@@ -41,7 +41,7 @@ function attachParallelPreview(field, root, options) {
   return refresh;
 }
 
-// The command and model popups share one entry and must not clear each other’s selection.
+// The command and model popups share one entry and must not clear each other's selection.
 let suggestLists = 0;
 function unpointPopup(entry, box) {
   if (entry.getAttribute('aria-controls') !== box.id) return;

@@ -199,7 +199,7 @@ Exit `0` also covers harness-declared and gateless ends, including a run that ch
 [`git.auto_merge`](config.md#git) can merge a completed `finish_session` or `children_ranked` run into the checkout when the run passed its own gate or had no gate.
 A child's gate pass is evidence about the tree, not permission to merge it into the checkout.
 
-The status label prints a stop code such as `max_turns` as “max turns” and keeps names, paths and other detail as written.
+The status label prints a stop code such as `max_turns` as "max turns" and keeps names, paths and other detail as written.
 Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `sessions list --json`), and each reason one row:
 
 | End reason | Headline | Exit code |
@@ -299,7 +299,7 @@ agent6 check [section]                               # sandbox (isolation, bound
 agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify command, .gitignore, AGENTS.md
 agent6 memory add|list|show|remove                   # the index renders each fact's first non-empty line
 agent6 memory list --json                           # prints a JSON array with name, first_line, written_by, written_at, edited_by, edited_at, reads and last_read_by (unknown provenance is null).
-agent6 memory show NAME --json                      # prints that fact’s object from memory list --json.
+agent6 memory show NAME --json                      # prints that fact's object from memory list --json.
 agent6 memory decisions                              # the operator rulings the harness recorded
 agent6 skills install|update|list                    # skills from a repo, a directory or a SKILL.md URL
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove

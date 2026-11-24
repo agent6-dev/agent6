@@ -765,7 +765,7 @@ These [job states](architecture.md#jail-job-ownership) are separate from the wor
 - Current local execution records `not_applicable`: agent6 does not manage the host's lifecycle.
 - A job-settlement observation grants no environment stop authority and cannot imply that an environment stopped.
 - `session.stop` ends the workflow; later teardown observations may follow it in the journal.
-- Receipt replay keeps these facts separate: “Run jobs settled” and “Environment left running” can both be true.
+- Receipt replay keeps these facts separate: "Run jobs settled" and "Environment left running" can both be true.
 - An absent lifecycle observation stays unknown; a successful verification cannot supply it.
 
 ## CLI surface

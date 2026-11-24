@@ -296,3 +296,10 @@ def test_architecture_event_table_has_one_generated_owner() -> None:
     assert "[Formats](formats.md#journal)" in template
     assert "<!-- generated: journal-events -->" not in template
     assert "| Event |" not in template
+
+
+def test_documentation_and_web_copy_use_straight_quotes() -> None:
+    curly = re.compile("[\u2018\u2019\u201c\u201d]")
+    web = REPO / "src" / "agent6" / "ui" / "web"
+    files = [REPO / "README.md", *(REPO / "docs").rglob("*.md"), *web.glob("*.js")]
+    assert not [p.relative_to(REPO) for p in files if curly.search(p.read_text(encoding="utf-8"))]

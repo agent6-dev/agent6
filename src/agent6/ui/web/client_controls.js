@@ -13,7 +13,7 @@ function icon(name) {
   path.setAttribute('d', paths[name]); svg.appendChild(path);
   return svg;
 }
-// Keep both the row and the tooltip in a repeated button’s accessible description.
+// Keep both the row and the tooltip in a repeated button's accessible description.
 let titleIds = 0;
 function describedBy(title, control) {
   title.id ||= 'title-' + ++titleIds;

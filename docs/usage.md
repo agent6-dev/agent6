@@ -280,16 +280,16 @@ This notice appears once per execution and only for reported cache counts.
   An edit after a pass or a command that changes the tree leaves the final tree uncertified.
   A different commit with the same tree content does not invalidate the observation.
 - **Output:** each journal stream keeps its last 2,000 characters, with truncation marked.
-  Historical or incomplete captures read “capture completeness unknown”.
+  Historical or incomplete captures read "capture completeness unknown".
 - **Missing checks:** denial, inability to execute and interruption are not passes.
-  Baseline failures stay marked separately; a run without a gate says “No verification recorded”.
+  Baseline failures stay marked separately; a run without a gate says "No verification recorded".
   Other commands are not verification evidence.
 - **Review:** the receipt shows recorded panel state and names each reviewer's session.
 - **How to revert:** recorded merge bounds determine the explanation.
   A squash names its commit on the target; a merge verifies its target parent; a fast-forward lists the merged commits in reverse order.
   Fast-forwards containing merges need an explicit plan.
   Missing stamps or objects do not produce guessed commands.
-  “No merge recorded” does not claim that no merge occurred if recording failed.
+  "No merge recorded" does not claim that no merge occurred if recording failed.
 
 Git commands in a receipt are explanations only.
 **Ask a run to revert** in the web or TUI opens the new-work composer with a proposed task; inspect it before submitting.

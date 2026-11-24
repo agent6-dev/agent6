@@ -9,7 +9,7 @@ function fileContentSearch(revision) {
     const dialog = openDialog('File content matches', 'wide files-matches');
     if (!dialog) return;
     const where = rev === GIT_WORKTREE ? 'working tree (ignored files excluded)' : rev;
-    dialog.appendChild(el('p', null, `“${q}” in ${where}`));
+    dialog.appendChild(el('p', null, `"${q}" in ${where}`));
     const note = el('p', 'muted', 'Searching…'); note.setAttribute('role', 'status'); dialog.appendChild(note);
     try {
       const d = await getJSON('/api/git/grep?' + new URLSearchParams({rev, q}));
