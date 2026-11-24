@@ -1082,6 +1082,24 @@ def test_usage_body_does_not_treat_string_false_as_unlimited_credits() -> None:
         budget.check()
 
 
+def test_fractional_credit_units_exhaust_the_exact_dollar_cap() -> None:
+    """A decline of 1.25 purchased credits is exactly five cents."""
+    meter = agent6_budget.BudgetTracker(max_usd=0.05, max_tokens_fallback=-1, max_plan_points=-1)
+    for balance in ("1.70", "0.45"):
+        meter.check()
+        plan = chatgpt.plan_usage_from_usage_body(
+            {
+                "rate_limit": {"primary_window": {"used_percent": 10}},
+                "credits": {"has_credits": True, "balance": balance},
+            }
+        )
+        assert plan is not None
+        meter.record_plan_preflight("chatgpt", plan)
+    with pytest.raises(agent6_budget.BudgetExceededError, match="USD budget exhausted"):
+        meter.check()
+    assert meter.estimate_usd()[0] == 0.05
+
+
 def test_secondary_window_header_rides_into_the_reading() -> None:
     plan = chatgpt._plan_usage_of(
         {"x-codex-primary-used-percent": "12", "x-codex-secondary-used-percent": "100"}

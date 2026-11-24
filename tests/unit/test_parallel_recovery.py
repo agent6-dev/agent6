@@ -443,6 +443,51 @@ def test_a_budget_row_keeps_live_and_recovered_balances_apart(short_repo: pathli
     assert (usage.usd, fresh.available().usd) == (3, 9)
 
 
+@pytest.mark.parametrize("conflict", [False, True], ids=["recorded-series", "ambiguous"])
+def test_recovery_respects_an_account_wide_origin(short_repo: pathlib.Path, conflict: bool) -> None:
+    """The launching execution can have used another execution's series for one account."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    sink = event_log.EventSink(parent / "logs.jsonl")
+    first = _tracker()
+    _balance(first, 10, 10)
+    _balance(first, 10, 50, provider="q")
+    budget_events.emit_budget_update(first, sink.emit)
+
+    _resume(parent, "second")
+    second = _tracker()
+    _balance(second, 20, 6, provider="q")
+    if conflict:
+        _balance(second, 20, 10)
+    budget_events.emit_budget_update(second, sink.emit)
+    # The scalar applies to p's whole account, including its $8 live reading after settlement.
+    first.mark_settled(("parent-p1-l1",))
+    for at, balance in ((30, 9), (40, 8)):
+        _balance(first, at, balance)
+        budget_events.emit_budget_update(
+            first,
+            lambda row: sink.emit(row.model_copy(update={"credit_origins": {"provider:p": 1}})),
+        )
+    child = _running_child(repo, parent, "parent-p2", owner="second", work=True)
+    meter = _tracker()
+    for provider in ("p", "q"):
+        _balance(meter, 50, 6, provider=provider)
+    budget_events.emit_budget_update(meter, event_log.EventSink(child / "logs.jsonl").emit)
+
+    _resume(parent, "recovery")
+    fresh = _tracker(2)
+    if conflict:
+        with pytest.raises(child_dispatch.DispatchRecordError, match=r"ambiguous.*parent-p2-l1"):
+            _reconcile(repo, parent, fresh)
+        assert not _records(parent)[0].child(child.name).settled
+        return
+    _reconcile(repo, parent, fresh)
+    assert fresh.estimate_usd()[0] == 2
+    with pytest.raises(agent6_budget.BudgetExceededError, match="USD budget exhausted"):
+        fresh.check()
+
+
 @pytest.mark.parametrize(("provider", "cap", "baseline"), [("p", 2.0, 5), ("q", 0.05, 0.05)])
 def test_fresh_credit_cap_starts_at_the_first_live_balance(
     short_repo: pathlib.Path, provider: str, cap: float, baseline: float
