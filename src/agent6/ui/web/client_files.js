@@ -171,10 +171,12 @@ async function editFileText(path, afterSave) {
     overwrite.disabled = copy.disabled = busy;
     text.readOnly = busy;
   };
-  const changed = snapshot => {
+  const changed = (snapshot, held = document.activeElement === save) => {
     latest = snapshot;
     disk.value = snapshot.text ?? 'The file was removed.';
     conflict.hidden = false; row.replaceChildren(load, overwrite, copyAs, cancel); buttons();
+    // Save left the footer: the focus it held goes to the disk version, where a repeated Enter changes nothing.
+    if (held) disk.focus();
   };
   const poll = async () => {
     try {
@@ -194,17 +196,13 @@ async function editFileText(path, afterSave) {
       const result = await response.json();
       if (!dialog.open) return;
       if (!response.ok) {
-        if (response.status === 409 && destination === path) changed(await read());
+        if (response.status === 409 && destination === path) changed(await read(), held);
         throw new Error(result.error || 'Save failed');
       }
       dialog.close();
       await afterSave(destination);
     } catch (e) { if (dialog.open) error.textContent = e.message; else toast(e.message, true); }
-    finally {
-      busy = false; buttons();
-      // A conflict took Save out of the footer: the focus it held goes to the first enabled action.
-      if (held && !save.isConnected) row.querySelector('button:enabled').focus();
-    }
+    finally { busy = false; buttons(); }
   };
   load.onclick = () => {
     loaded = latest; text.value = loaded.text; conflict.hidden = true; error.textContent = '';

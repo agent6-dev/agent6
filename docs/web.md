@@ -189,7 +189,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - the editor checks the disk every two seconds and the server checks again at Save
     - a conflict keeps your draft and shows the disk version.
       The footer offers **Load new file**, **Overwrite with mine**, and **Save as new file**.
-      When a Save meets a conflict, the focus **Save** held moves to the first enabled action.
+      The focus **Save** held moves to the disk version, where a repeated Enter changes nothing.
       Enter a new name to save a copy beside the original.
     - Overwrite acknowledges only the disk version shown; another change refuses it again; Save as new file never replaces an existing file
     - hidden paths, symlinks, hardlinks, binary files and invalid UTF-8 cannot be edited; saves preserve CRLF line endings and neither stage nor commit
