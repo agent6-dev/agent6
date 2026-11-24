@@ -77,13 +77,6 @@ OVERLAY_INIT_SCRIPT = r"""
       + 'border:1px solid rgba(110,168,254,0.55);box-shadow:0 10px 28px rgba(0,0,0,0.5);'
     );
     document.documentElement.appendChild(toast);
-    const sty = document.createElement('style');
-    sty.textContent = (
-      '@keyframes __a6Ripple { '
-      + '0% { width:22px; height:22px; opacity:0.85; border-width:2px; } '
-      + '100% { width:90px; height:90px; opacity:0; border-width:1px; } }'
-    );
-    document.head.appendChild(sty);
     window.__a6MoveCursor = (x, y) => { cursor.style.left = x + 'px'; cursor.style.top = y + 'px'; };
     window.__a6Ripple = () => {
       const r = document.createElement('div');
@@ -92,10 +85,12 @@ OVERLAY_INIT_SCRIPT = r"""
         + ';top:' + (cursor.style.top || '50%')
         + ';border-radius:50%;border:2px solid #6ea8fe;pointer-events:none;'
         + 'z-index:2147483645;transform:translate(-50%,-50%);'
-        + 'animation:__a6Ripple 0.7s ease-out forwards;'
       );
       document.documentElement.appendChild(r);
-      setTimeout(() => r.remove(), 750);
+      r.animate([
+        {width:'22px', height:'22px', opacity:0.85},
+        {width:'90px', height:'90px', opacity:0, borderWidth:'1px'},
+      ], {duration:700, easing:'ease-out', fill:'forwards'}).onfinish = () => r.remove();
     };
     let toastTimer;
     window.__a6Toast = (msg, ms) => {

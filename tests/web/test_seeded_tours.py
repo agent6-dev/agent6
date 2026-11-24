@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import pathlib
 import re
+import time
+import types
 from typing import TYPE_CHECKING
 
 import pytest
+
+from tests.unit import test_web_demo
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -160,3 +164,23 @@ def test_resume_offers_recorded_model(tour_page: Page) -> None:
     expect(model.locator("option:checked")).to_have_text(
         "openrouter/openai/gpt-4.1-mini (as recorded)"
     )
+
+
+web_demo = test_web_demo.web_demo
+
+
+@pytest.mark.parametrize("mode", ["desktop", "phone"])
+def test_recorded_tour_returns_to_the_hub(
+    tour_page: Page, web_demo: types.ModuleType, mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every stop in the recorded tour must still exist in the seeded web UI."""
+    from playwright.sync_api import expect
+
+    page = tour_page
+    page.set_viewport_size(web_demo.VIEWPORTS[mode])
+    page.add_init_script(web_demo.OVERLAY_INIT_SCRIPT)
+    page.set_default_timeout(5000)
+    # Skip the pauses for the viewer, not the waits for the page.
+    monkeypatch.setattr(page, "wait_for_timeout", lambda _ms: None)
+    web_demo.drive(page, page.url, mode, time.monotonic())
+    expect(page.locator(".item")).to_have_count(7)
