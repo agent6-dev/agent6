@@ -15,16 +15,16 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
   </tr>
 </table>
 
-- Runs commands in a [Linux sandbox](#security); you set file and network access.
-- Routes each role to a hosted, local or subscription model.
-- Resumes or forks a saved session from an earlier turn.
-- Runs your verification command, marks an unverified tree, and tracks a score you name.
-- Reviews the diff with a model panel; blocking findings stop a merge into the checkout branch.
-- Runs children in clones while the parent keeps working; you steer or stop each one.
-- Shows the work in a browser: read the diff, edit a file, stage and commit, fetch a pull request.
-- Defines workflows as [TOML state machines][state-machines] with recovery and replay.
-- Follows `AGENTS.md` and [SKILL.md packs][skills]; [MCP servers][mcp] are opt-in.
-- No telemetry unless you [export it][telemetry], and no automatic updates.
+- **Safety by default:** commands run in a [sandbox](#security), and you set file and network access
+- **Web UI for desktop or mobile:** orchestrate agents, read diffs, edit files, commit, and fetch pull requests
+- **Several agents at once:** a run can start children in clones and keep working
+- **Review when you want it:** a panel of models reads the diff, and you set whether a blocking finding stops the merge
+- **A score you name:** a run can track a number from your own command, such as benchmark runtime
+- **Work you can check and pick up again:** sessions resume or fork from an earlier turn, and a result your verify command did not cover is marked unverified
+- **Workflows as state machines:** steps in [TOML][state-machines] that you write, or that agent6 drafts for you to review
+- **Your models:** hosted, local or a subscription, chosen per role
+- **Your project's rules:** it follows `AGENTS.md` and [SKILL.md packs][skills]; [MCP servers][mcp] stay off until you turn them on
+- **Privacy:** no telemetry unless you [export it][telemetry], and no automatic updates
 
 Also available as a [streaming CLI][cli-demo] and through [ACP editor integration][acp].
 
