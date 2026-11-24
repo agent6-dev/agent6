@@ -70,6 +70,7 @@ const document = {
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }};
 const innerWidth = 0;
+const ResizeObserver = class { observe() {} };
 const view = document.body.appendChild(el('main'));
 let routeGen = 0, token = '';
 const writes = [], notices = [];

@@ -118,6 +118,8 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - an ended machine replaces its composer controls with the reason it ended
 - **Config page**: every setting with value and source, one collapsible section per table in the order every surface shares (`[agent6]`, `[providers]`, `[models]`, then the rest by name), filterable; click a row to set it, with the choices an enum or a provider's model listing offers, or to add or remove an entry of its table (a provider, an MCP server, a skill, a reviewer) from the same popup; **Preset: name** sets `preset`, and the page edits the selected preset's table, as a line under the bar says ([Presets](config.md#presets)); secrets never shown
 
+    - Tab and Shift+Tab keep the focused setting below the sticky toolbar when its buttons wrap.
+
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
     - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge
     - your own hands, file by file: the working-tree panel stages and unstages a file, discards one tracked file's unstaged edits after a confirm (restored from the index; no untracked file is ever deleted), and commits the index with the message you type under the repository's own identity; the toolbar switches branches, creates one at HEAD, and **Review** fills the new-work composer with `/review <branch>`

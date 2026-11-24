@@ -23,7 +23,7 @@ from agent6.ui.web import page
 from tests.web import client_assets
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "e23bf993d5b977426ce8401d3409e79f0f11c36d9e2314fdfea339f5304f9470"
+PAGE_SHA256 = "b341a8f6001e2dbd1768a4e265580ab97820f225ccd8e60163b70b7d15013eee"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -442,6 +442,7 @@ const document = {
   documentElement: {clientWidth: 0, classList: {toggle() {}}},
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo() {}}, innerWidth = 0;
+const ResizeObserver = class { observe() {} };
 const view = el('div'); document.body.appendChild(view);
 const boot = () => {}, setCrumb = () => {}, esc = String, toast = () => {};
 const withCode = text => el('text', null, text);

@@ -5,12 +5,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.web import captures, test_web_browser
+from tests.web import captures, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page, Route
 
 pytestmark = pytest.mark.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 
@@ -29,6 +30,30 @@ def test_config_keeps_its_filter_and_names_its_preset(
     page.locator(".cfg-section").last.scroll_into_view_if_needed()
     expect(page.locator(".cfg-bar input.filter")).to_be_in_viewport()
     captures.save(page, "config-sticky")
+    assert not errors
+
+
+def test_config_focus_clears_the_wrapped_toolbar(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Shift+Tab keeps the focused row below the toolbar as the buttons wrap."""
+    from playwright import sync_api
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    rows = page.locator(".cfg-section", has=page.locator("#cfg-section-sandbox")).locator(
+        "tr[data-key]"
+    )
+    current = rows.nth(3).get_by_role("button")
+    for width, height in [(1280, 960), (640, 480)]:  # the CSS viewport at 100% and 200% zoom
+        page.set_viewport_size({"width": width, "height": height})
+        current.focus()
+        rows.nth(3).evaluate("""r => window.scrollBy(0, r.getBoundingClientRect().top
+            - document.querySelector('.cfg-bar').getBoundingClientRect().bottom - 2)""")
+        page.keyboard.press("Shift+Tab")
+        sync_api.expect(rows.nth(2).get_by_role("button")).to_be_focused()
+        assert rows.nth(2).evaluate("""r => r.getBoundingClientRect().top >=
+            document.querySelector('.cfg-bar').getBoundingClientRect().bottom""")
     assert not errors
 
 

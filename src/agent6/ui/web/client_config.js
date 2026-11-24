@@ -146,6 +146,11 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     none.textContent = shown.size ? '' : q ? `no ${modified ? 'modified ' : ''}setting matches` : 'no modified settings';
   };
   view.appendChild(card);
+  const barHeight = new ResizeObserver(([entry]) => {
+    if (!bar.isConnected) { barHeight.disconnect(); return; }
+    document.documentElement.style.setProperty('--cfg-bar-h', entry.borderBoxSize[0].blockSize + 'px');
+  });
+  barHeight.observe(bar, {box: 'border-box'});
   filter.oninput();
   if (state.y !== undefined) window.scrollTo(state.x, state.y);
   // The focus goes back where the write started: the row (scrolled into view), the filter or the bar.
