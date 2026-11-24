@@ -117,16 +117,33 @@ def test_reference_quote_names_the_matched_listing(
     )
 
 
+@pytest.mark.parametrize("model", ["x", "claude-x"])
 def test_gateway_reference_does_not_choose_between_vendors(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    model: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     providers = {
         **price_env.PROVIDERS,
         "local": price_env.ENTRY.model_copy(update={"price_from": "testprovider"}),
     }
-    price_env.write({"one/x": [0, 1], "two/x": [1, 2]})
-    assert models_pricing.lookup_price(kinds.ModelRoute("local", "x"), providers) is None
+    price_env.write({f"one/{model}": [0, 1], f"anthropic/{model}": [1, 2]})
+    assert models_pricing.lookup_price(kinds.ModelRoute("local", model), providers) is None
+
+
+def test_vendor_prefixed_id_precedes_a_normalized_claude_alias(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    model = "claude-haiku-4-5-20251001"
+    providers = {
+        **price_env.PROVIDERS,
+        "direct": config.AnthropicProviderEntry(backend="anthropic", price_from="testprovider"),
+    }
+    price_env.write({f"anthropic/{model}": [1, 2], "anthropic/claude-haiku-4.5": [3, 4]})
+    quote = models_pricing.lookup_price(kinds.ModelRoute("direct", model), providers)
+    assert quote == models_pricing.Quote(
+        models_pricing.Price(1, 2), kinds.ModelRoute("testprovider", f"anthropic/{model}")
+    )
 
 
 def test_a_listing_that_publishes_cache_rates_prices_them(

@@ -448,7 +448,8 @@ The declines include other users of the account; they are not attributed to call
 Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
 Listing refreshes do not run `token_command` or substitute a static key for it.
 For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default reference is the configured `openrouter` entry.
-A reference listing matches the exact model id first, then its vendor-prefixed id (for example, `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`).
+A reference listing matches the exact model id first, then its vendor-prefixed id.
+For direct Anthropic calls it also accepts the catalog spelling, such as `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`, if neither literal id matches.
 A gateway model without a known vendor needs an unambiguous match.
 A missing reference or price leaves the route unpriced.
 A cached price under `$XDG_CACHE_HOME/agent6/models/` must match the current provider entry.

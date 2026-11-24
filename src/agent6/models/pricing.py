@@ -104,11 +104,11 @@ def lookup_price(
     prices = _prices(source, listing)
     model = route.model
     if model not in prices and source != route.provider and "/" not in model:
-        alias = _openrouter_alias(model)
-        if alias and alias in prices:
-            model = alias
-        elif entry.direct_vendor:
-            model = f"{entry.direct_vendor}/{model}"
+        if vendor := entry.direct_vendor:
+            prefixed = f"{vendor}/{model}"
+            if vendor == "anthropic" and prefixed not in prices:
+                prefixed = _openrouter_alias(model) or prefixed
+            model = prefixed
         else:
             # Two vendors can publish the same bare id. Do not guess which one bills.
             matches = [key for key in prices if key.partition("/")[2] == model]
