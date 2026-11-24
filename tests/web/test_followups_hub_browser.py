@@ -49,5 +49,5 @@ def test_machine_files_have_names_paths_and_aligned_run_buttons(
     )
     captures.save(page, "machine-files-list")
     rows.first.get_by_role("button").click()
-    expect(page.get_by_role("alertdialog")).to_contain_text("paid machine run")
+    expect(page.get_by_role("alertdialog")).to_contain_text("The run can spend against your provider.")
     assert not errors
