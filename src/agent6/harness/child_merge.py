@@ -6,7 +6,7 @@ import pathlib
 from typing import TYPE_CHECKING
 
 from agent6 import child_records
-from agent6.harness import parallel_merge
+from agent6.harness import child_tasks, parallel_merge
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import tool_errors
 from agent6.vcs.git import read as git_read
@@ -62,11 +62,14 @@ def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> 
             if dispatcher.chain.dirty() and not dispatcher.chain.per_turn:
                 raise tool_errors.ToolError("commit the working tree before requesting a merge")
             if not pending(child):
+                target = child_tasks.followup(dispatcher, record)
                 dispatcher.write(
-                    record.with_child(
+                    target.with_child(
                         child.model_copy(update={"merge_request": child_dispatch.MergeRequest()})
                     )
                 )
+                if target.node_id:
+                    dispatcher.emit_graph_snapshot()
             return f"[parallel] child {child_id} will be merged at the next turn boundary."
     raise tool_errors.ToolError(f"no child {child_id} in this run")
 

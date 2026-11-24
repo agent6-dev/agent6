@@ -308,7 +308,7 @@ The task-graph nodes and the intents that mutate them.
 | `held_by` | `tuple[str, ...]` | `()` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** app/merge, graph/{order, replay}, harness/{advice, dag_focus, guards, loop, operator_tasks, parallel_merge}, harness/compaction/driver, tools/{dag_tools, schema}, viewmodel/session/state
+- **Read by:** app/merge, graph/{order, replay}, harness/{advice, child_tasks, dag_focus, guards, loop, operator_tasks, parallel_merge}, harness/compaction/driver, tools/{dag_tools, schema}, viewmodel/session/state
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (24 test files exercise it)
 
 ## Run/machine wire snapshot

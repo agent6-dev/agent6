@@ -1105,6 +1105,101 @@ def test_handoff_resets_the_stuck_count_and_refuses_a_second_owner(tmp_path: pat
     assert graph.nodes()["0002"].held_by == (retry,)
 
 
+def test_a_text_dispatch_keeps_its_place_under_an_unheld_parent(tmp_path: pathlib.Path) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+    (text,) = work.start("Read the inventory", "").children
+    refused = work.start("", "", task_id="0002")
+    children.end(text, path="inventory")
+    assert wf.tool_turn
+    wf.parallel.settle(wf.tool_turn[0], 2)
+    (nested,) = graph.get("0002").children
+    assert graph.get(nested).status == "passed"
+    assert not refused.children and "pending" in refused.message
+    assert work.start("", "", task_id="0002").children
+
+
+def test_a_child_can_continue_without_reopening_its_passed_task(tmp_path: pathlib.Path) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    wf.parallel.chain = dataclasses.replace(wf.parallel.chain, ref=None, model_git=True)
+    work = child_work.ChildWork(wf)
+    assert wf.tool_turn
+    conversation = wf.tool_turn[0]
+    (sid,) = work.start("", "", task_id="0002").children
+    children.end(sid, path="first")
+    wf.parallel.settle(conversation, 2)
+    before = graph.nodes()["0002"]
+    assert before.status == "passed"
+    assert "continues" in work.steer(sid, "Check the count again")
+    assert graph.nodes()["0002"] == before and not work.roster()[0].holds_task
+    children.stop(sid, path="")
+    wf.parallel.settle(conversation, 3)
+    assert graph.nodes()["0002"] == before
+
+
+def test_close_reports_only_children_whose_tasks_await_resume(tmp_path: pathlib.Path) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    (sid,) = child_work.ChildWork(wf).start("", "", task_id="0002").children
+    children.stop(sid)
+    assert wf.parallel.close(1) == ((), ())
+    assert graph.get("0002").status == "failed"
+
+
+def test_a_refusal_interrupted_before_return_can_be_retried(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+
+    def refuse(
+        children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.StartedChild]:
+        raise OSError("no clone")
+
+    def interrupt(*args: Any, **kwargs: Any) -> None:
+        raise InterruptedError("before complete")
+
+    wf.parallel.child_spawner = refuse
+    with monkeypatch.context() as patch:
+        patch.setattr(parallel_dispatch.ParallelDispatcher, "record_return", interrupt)
+        with pytest.raises(InterruptedError):
+            work.start("", "", task_id="0002")
+    assert wf.tool_turn
+    conversation, state, turn = wf.tool_turn
+    wf.parallel.child_spawner = children
+    wf.parallel.child_recoverer = lambda group, children: []
+    parallel_recovery.reconcile(wf.parallel, state, conversation, turn=turn)
+    assert not children.tasks
+    assert graph.nodes()["0002"].status == "pending" and not graph.nodes()["0002"].held_by
+    assert work.start("", "", task_id="0002").children == ("run-p2-l1",)
+
+
+@pytest.mark.parametrize("merge_first", [False, True])
+def test_a_retry_and_a_merge_cannot_own_one_task(tmp_path: pathlib.Path, merge_first: bool) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+    assert wf.tool_turn
+    conversation = wf.tool_turn[0]
+    (old,) = work.start("", "", task_id="0002").children
+    children.stop(old)
+    wf.parallel.settle(conversation, 2)
+    graph.update_status(models.UpdateStatusIntent(id="0002", new_status="pending"))
+    if merge_first:
+        assert "next turn boundary" in work.merge(old)
+        assert not work.start("", "", task_id="0002").children
+        assert graph.nodes()["0002"].held_by == (old,)
+        wf.parallel.settle(conversation, 3)
+        node = graph.nodes()["0002"]
+        assert not node.held_by and node.status == "passed" and node.commit_sha
+    else:
+        (retry,) = work.start("", "", task_id="0002").children
+        with pytest.raises(tool_errors.ToolError, match=f"held by {retry}"):
+            work.merge(old)
+        wf.parallel.settle(conversation, 3)
+        node = graph.nodes()["0002"]
+        assert node.held_by == (retry,) and not node.commit_sha
+
+
 def test_a_merge_at_the_runs_last_boundary_is_in_the_snapshot_a_resume_reads(
     tmp_path: pathlib.Path,
 ) -> None:

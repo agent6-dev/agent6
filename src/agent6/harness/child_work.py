@@ -15,8 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
-from agent6.graph import order
-from agent6.harness import child_continue, child_merge, operator_bridge, parallel_merge
+from agent6.harness import child_continue, child_merge, child_tasks, operator_bridge, parallel_merge
 from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
@@ -271,21 +270,10 @@ class ChildWork:
             raise tool_errors.ToolError("not available: no turn in progress")
         conversation, state, turn = self.harness.tool_turn
         if task_id:
-            curator = self.harness.curator
-            nodes = curator.nodes() if curator else {}
-            node = nodes.get(task_id)
-            if node is None:
-                return results.StartedResult((), f"[parallel] no listed task {task_id}.")
-            if node.held_by:
-                return results.StartedResult(
-                    (), f"[parallel] task {task_id} is held by {', '.join(node.held_by)}."
-                )
-            if not order.is_focusable_subtask(nodes, node) or order.unresolved_children(
-                nodes, node
-            ):
-                return results.StartedResult(
-                    (), f"[parallel] task {task_id} is not a ready ordinary subtask."
-                )
+            try:
+                node = child_tasks.listed(self.harness.parallel, task_id)
+            except tool_errors.ToolError as exc:
+                return results.StartedResult((), f"[parallel] {exc}.")
             task = node.title
             if node.rationale:
                 task += f"\nRationale: {node.rationale}"

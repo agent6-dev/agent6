@@ -2886,7 +2886,7 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `base` | `str` | The chain tip the children were cut from. |
 | `spec` | `str` | The task's child spec as given; "" for one default child and for a panel. |
 | `parent_node` | `str \| None` | The DAG node the task was dispatched under; None without a graph and for a panel. |
-| `node_id` | `str \| None` | The listed task held before launch, or the node added for a text task's outcome. None for a panel or without a graph. |
+| `node_id` | `str \| None` | The listed task held before launch, or the node added for a text task's outcome. None for a panel, without a graph or for a follow-up to a final task. |
 | `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
 | `state` | `Literal['prepared', 'running', 'settling', 'ranking', 'merging', 'complete']` | How far the dispatch got; `ranking` while a task's judges run. |
 | `message` | `str` | The notice of what merged, "" until complete. |
@@ -3692,7 +3692,7 @@ Source: [`agent6.viewmodel.session.records.TaskNodeView`](https://github.com/age
 | `is_cursor` | `bool` | The worker is on this task. |
 | `created_by` | `str` | Who added the task; "" for a session dir written before the field existed. |
 | `standing` | `bool` | The task is the standing goal. |
-| `note` | `str` | The operator's mark beside a task they own ("queued by you", "standing goal"), or "". |
+| `note` | `str` | The operator's mark ("queued by you", "standing goal") and any child ids holding the task, or "". |
 | `short_id` | `str` | The id as the operator reads and types it. |
 | `glyph` | `str` | The status as every surface draws it; the cursor's task draws as in progress. |
 

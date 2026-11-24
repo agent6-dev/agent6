@@ -357,6 +357,7 @@ class ParallelDispatcher:
         """
         identity = record.identity
         self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
+        listed = record.node_id is not None
         record = self.fail_nodes(record, f"dispatch failed: {exc}")
         for child in record.children:
             if child.session_id not in submitted:
@@ -368,7 +369,9 @@ class ParallelDispatcher:
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
         message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was merged."
         by_id = {res.spec.session_id: res for res in reviewers}
-        record = self.settled(record, by_id)
+        # A listed task's prelaunch refusal has no work to settle on resume.
+        if not listed or by_id:
+            record = self.settled(record, by_id)
         merges: list[child_records.ChildMerge] = []
         for child in record.children:
             if res := by_id.get(child.session_id):
@@ -513,7 +516,6 @@ class ParallelDispatcher:
         for task in self.open.values():
             for child in task.children:
                 if child.result.done():
-                    ended.append(child.session_id)
                     continue
                 child.stop()
                 stopped.append(child.session_id)
@@ -525,6 +527,7 @@ class ParallelDispatcher:
                 # No work can merge. Release the listed task even if the parent never resumes.
                 self.complete(task.record, results, turn=turn)
             else:
+                ended.extend(c.session_id for c in task.children if c.session_id not in stopped)
                 self.settled(task.record, {res.spec.session_id: res for res in results}, turn=turn)
             if (judging := task.judging) is not None:
                 self.settled(
@@ -856,8 +859,7 @@ class ParallelDispatcher:
     def noded(self, record: child_dispatch.DispatchRecord) -> child_dispatch.DispatchRecord:
         """Give a task its DAG node, now that its outcome is known.
 
-        While its children run a task is theirs: an open node in the graph would read as the
-        parent's own next work.
+        A text dispatch adds its node under the task it was started from.
 
         Args:
             record: The task's record.
@@ -867,6 +869,9 @@ class ParallelDispatcher:
             already names one.
         """
         if record.source == "panel" or record.node_id is not None or not record.children:
+            return record
+        if any(c.continuation for c in record.children):
+            # A continuation detached from its final task creates no replacement node.
             return record
         node_id = parallel_merge.add_parallel_node(
             self.curator,
