@@ -56,8 +56,6 @@ def continue_session(
     s: claude_code_session.Session,
     tail: claude_code_session.Tail,
     watch: claude_code_session.Watch,
-    *,
-    model: str,
 ) -> None:
     """Send the continuing call: each pending result as its answer, the texts on the last.
 
@@ -65,7 +63,6 @@ def continue_session(
         s: The live session.
         tail: The results and texts the new history adds.
         watch: The wait loop's checks.
-        model: The requested model.
 
     Raises:
         ProviderError: A result with its notices is over the CLI's persist threshold
@@ -87,7 +84,7 @@ def continue_session(
             # The CLI answered it with its own error and the loop recorded the same.
             del s.refused[tool_use_id]
             continue
-        call = await_call(s, tool_use_id, watch, model=model)
+        call = await_call(s, tool_use_id, watch)
         content = list(tail.results[tool_use_id])
         if tool_use_id == answered[-1]:
             content.extend({"type": "text", "text": text} for text in tail.texts)
@@ -115,8 +112,6 @@ def await_call(
     s: claude_code_session.Session,
     tool_use_id: str,
     watch: claude_code_session.Watch,
-    *,
-    model: str,
 ) -> claude_code_session.ToolCall:
     """Return the `tools/call` for a tool_use id, stashed or the next one the CLI sends.
 
@@ -124,7 +119,6 @@ def await_call(
         s: The session.
         tool_use_id: The id of one of the last round's pending calls.
         watch: The wait loop's checks.
-        model: The configured model, used when init reports none.
 
     Returns:
         The `tools/call`, taken out of the session's stash.
@@ -139,7 +133,7 @@ def await_call(
                 f"claude refused tool call {tool_use_id} itself and moved on"
                 f" ({s.refused[tool_use_id]}); agent6's result for it is undeliverable"
             )
-        line = next_line(s, watch, model=model)
+        line = next_line(s, watch)
         if line.get("type") in ("stream_event", "assistant", "result"):
             raise provider_types.ProviderError(
                 f"claude moved on while tool call {tool_use_id} was unanswered"
@@ -259,15 +253,12 @@ def check_result(s: claude_code_session.Session, line: Mapping[str, Any]) -> Non
 def next_line(
     s: claude_code_session.Session,
     watch: claude_code_session.Watch,
-    *,
-    model: str,
 ) -> dict[str, Any]:
     """Return the next meaningful line, ticking the watch while waiting.
 
     Args:
         s: The session to read; a pushed-back line comes first.
         watch: The wait loop's checks; a returned line resets its idle clock.
-        model: The configured model, used when init reports none.
 
     Returns:
         The line; a plan reading is absorbed and a ping skipped, so neither comes

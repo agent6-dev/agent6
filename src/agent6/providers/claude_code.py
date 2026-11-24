@@ -202,10 +202,24 @@ class ClaudeCodeProvider:
                 # The worker's session, blocked on its tools/call, is untouched.
                 s = self._spawn(system, [], messages, watch)
             s.consumed = claude_code_wire.history_skeleton(messages)
-            resp = self._read_round(s, watch, text_delta_callback, thinking_delta_callback)
-            self._record_transcript(
-                s, system, messages, resp, context.call_context if context is not None else None
-            )
+            r = claude_code_stream.Round(serving=kinds.Serving(model=s.resolved_model or None))
+            transcript = self._open_transcript(s, system, messages, context)
+            with transcript.capture():
+                try:
+                    resp = self._read_round(
+                        s, r, watch, text_delta_callback, thinking_delta_callback
+                    )
+                finally:
+                    transcript.serving = r.serving
+                    transcript.request_body["stdin"] = list(s.stdin_log)
+                    s.stdin_log.clear()
+                transcript.response_status = 200
+                transcript.response_body = {
+                    **resp.raw,
+                    "role": "assistant",
+                    "stop_reason": resp.stop_reason,
+                }
+                transcript.usage = resp.usage
         except BaseException:
             if s is not None:
                 self._close(s)  # no half-consumed process survives an exceptional exit
@@ -256,7 +270,7 @@ class ClaudeCodeProvider:
         ):
             tail = claude_code_session.continuation(s, messages)
             if tail is not None:
-                claude_code_protocol.continue_session(s, tail, watch, model=self.model)
+                claude_code_protocol.continue_session(s, tail, watch)
                 return s
         self.close()
         s = self._cell[0] = self._spawn(system, tools, messages, watch)
@@ -341,16 +355,13 @@ class ClaudeCodeProvider:
                 },
                 log=False,
             )
-            while (
-                claude_code_protocol.next_line(s, watch, model=self.model).get("type")
-                != "_agent6_handshake_done"
-            ):
+            while claude_code_protocol.next_line(s, watch).get("type") != "_agent6_handshake_done":
                 pass
             claude_code_session.write(
                 s, claude_code_wire.user_line(claude_code_wire.render_history(messages))
             )
             while True:
-                line = claude_code_protocol.next_line(s, watch, model=self.model)
+                line = claude_code_protocol.next_line(s, watch)
                 if line.get("type") == "system" and line.get("subtype") == "init":
                     claude_code_protocol.audit_init(s, line)
                     return s
@@ -364,6 +375,7 @@ class ClaudeCodeProvider:
     def _read_round(
         self,
         s: claude_code_session.Session,
+        r: claude_code_stream.Round,
         watch: claude_code_session.Watch,
         text_cb: Callable[[str], None] | None,
         thinking_cb: Callable[[str], None] | None,
@@ -372,6 +384,7 @@ class ClaudeCodeProvider:
 
         Args:
             s: The session.
+            r: The state of this round.
             watch: The wait loop's checks.
             text_cb: Receives visible text as it streams.
             thinking_cb: Receives reasoning text as it streams.
@@ -379,11 +392,10 @@ class ClaudeCodeProvider:
         Returns:
             The round's response.
         """
-        r = claude_code_stream.Round(serving=kinds.Serving(model=s.resolved_model or None))
         plan_before = s.plan
         watch.limit = stream_lifecycle.STREAM_FIRST_DATA_TIMEOUT_S
         while not r.ended:
-            line = claude_code_protocol.next_line(s, watch, model=self.model)
+            line = claude_code_protocol.next_line(s, watch)
             kind = line.get("type")
             if kind == "stream_event":
                 claude_code_stream.stream_event(
@@ -466,7 +478,7 @@ class ClaudeCodeProvider:
         """
         watch.limit = stream_lifecycle.STREAM_IDLE_TIMEOUT_S
         while True:
-            line = claude_code_protocol.next_line(s, watch, model=self.model)
+            line = claude_code_protocol.next_line(s, watch)
             if line.get("type") == "result":
                 claude_code_protocol.check_result(s, line)
                 return
@@ -564,21 +576,19 @@ class ClaudeCodeProvider:
                 " provider usage accounting"
             )
 
-    def _record_transcript(
+    def _open_transcript(
         self,
         s: claude_code_session.Session,
         system: str,
         messages: list[dict[str, Any]],
-        resp: provider_types.ProviderResponse,
-        call_context: kinds.CallContext | None,
-    ) -> None:
-        """Record the round as one transcript entry, then clear the stdin log."""
+        context: request_headers.RequestContext | None,
+    ) -> provider_types.TranscriptAttempt:
+        """Return the round's transcript, including the session id from the handshake."""
         if self.transcript_sink is None:
-            s.stdin_log.clear()
-            return
-        self.transcript_sink.record(
+            return provider_types.TranscriptAttempt()
+        return self.transcript_sink.open(
             url=f"claude-code://{s.session_id}",
-            call_context=call_context,
+            call_context=context.call_context if context is not None else None,
             request_headers={},
             request_body={
                 "model": self.model,
@@ -586,14 +596,4 @@ class ClaudeCodeProvider:
                 "messages": messages,
                 "stdin": list(s.stdin_log),
             },
-            response_status=200,
-            response_body={
-                "id": resp.raw.get("id", ""),
-                "role": "assistant",
-                **resp.serving.wire_fields(),
-                "content": resp.raw.get("content", []),
-                "stop_reason": resp.stop_reason,
-                "usage": resp.raw.get("usage", {}),
-            },
         )
-        s.stdin_log.clear()

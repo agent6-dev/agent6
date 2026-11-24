@@ -310,7 +310,28 @@ def test_local_transcript_keeps_the_call_id_without_an_http_request_id(
     assert transcript["actor"] == call["actor"] == "worker"
     assert transcript["model_call_id"] == call["model_call_id"]
     assert transcript["request_id"] == ""
+    assert transcript["response"]["model"] == "claude-haiku-4-5-20251001"
+    assert all(
+        row["served_model"] == "claude-haiku-4-5-20251001"
+        for row in rows
+        if row["type"] in ("model.attempt", "model.result")
+    )
     assert not any(row["type"] == "provider.request" for row in rows)
+
+
+def test_a_cut_process_round_keeps_the_model_from_message_start(tmp_path: pathlib.Path) -> None:
+    binary, _ = _install(
+        tmp_path,
+        {"init": {"model": "init-alias"}, "turns": [[_round(text="ok")]], "die_in_round": 1},
+    )
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    with pytest.raises(ProviderError, match="exited") as exc:
+        _provider(binary, transcript_sink=sink).call(system="s", messages=USER0)
+    assert exc.value.serving.model == "claude-haiku-4-5-20251001"
+    (path,) = (tmp_path / "transcripts").glob("*.json")
+    record = json.loads(path.read_text())
+    assert record["request"]["body"]["model"] == "claude-haiku-4-5"
+    assert record["outcome"] == "failed" and record["response"]["model"] == exc.value.serving.model
 
 
 def test_system_init_audit_refuses_a_foreign_tool_or_an_api_key(tmp_path: pathlib.Path) -> None:
@@ -919,7 +940,7 @@ def test_transcript_round_is_anthropic_shaped(tmp_path: pathlib.Path) -> None:
 def test_transcript_failure_reaps_the_completed_child(tmp_path: pathlib.Path) -> None:
     binary, cap = _install(tmp_path, {"turns": [[_round(text="hello")]]})
     sink = mock.MagicMock()
-    sink.record.side_effect = OSError("disk full")
+    sink.open.return_value.capture.return_value.__exit__.side_effect = OSError("disk full")
 
     with pytest.raises(OSError, match="disk full"):
         _provider(binary, transcript_sink=sink).call(system="s", messages=USER0, tools=None)

@@ -1438,6 +1438,27 @@ def test_an_explicit_effort_refusal_keeps_the_reason_without_retry(
     assert [body["reasoning"]["effort"] for body in calls] == ["none"]
 
 
+def test_chatgpt_records_the_created_models_snapshot(
+    signed_in: oauth.OAuthCredential, tmp_path: pathlib.Path
+) -> None:
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    with provider_endpoint.serve(
+        [
+            {"type": "response.created", "response": {"model": "codex-snapshot"}},
+            {"type": "response.completed", "response": {"status": "completed", "usage": _USAGE}},
+        ]
+    ) as (url, calls):
+        provider = dataclasses.replace(_provider(signed_in), base_url=url, transcript_sink=sink)
+        reply = provider.call(system="s", messages=[])
+    assert [c["model"] for c in calls] == ["gpt-5-codex"]
+    (record,) = (tmp_path / "transcripts").glob("*.json")
+    assert (
+        json.loads(record.read_text())["response"]["model"]
+        == reply.serving.model
+        == "codex-snapshot"
+    )
+
+
 @pytest.mark.parametrize("param", [None, "temperature"])
 def test_a_stream_refusal_without_the_effort_param_is_not_adapted(
     signed_in: oauth.OAuthCredential, param: str | None
