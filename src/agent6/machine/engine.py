@@ -187,15 +187,6 @@ _STATE_FACT_KINDS: dict[type[schema.StateSpec], type[machine_journal.Fact]] = {
 }
 
 
-def _declared_gotos(state: schema.StateSpec) -> frozenset[str]:
-    """Return every destination the state can legally journal."""
-    if isinstance(state, schema.BranchState):
-        return frozenset(clause.goto for clause in state.when)
-    if isinstance(state, schema.ToolState | schema.AgentState | schema.WaitState):
-        return frozenset(state.on.values())
-    return frozenset()
-
-
 def _validate_recorded_route(
     state: schema.StateSpec,
     event: machine_journal.StepEvent,
@@ -213,25 +204,17 @@ def _validate_recorded_route(
     Raises:
         EngineError: The recorded clause, label or goto disagrees with the fact.
     """
-    if isinstance(state, schema.BranchState) and isinstance(event.fact, machine_journal.BranchFact):
-        clause_index, expected_label, expected_goto = execution.route_branch(state, blackboard)
-        if event.fact.clause_index != clause_index:
-            raise contracts.EngineError(
-                f"journal branch fact selects clause {event.fact.clause_index} at seq"
-                f" {event.seq}, but the replayed blackboard selects clause {clause_index}."
-                f"{remedy}"
-            )
-    elif isinstance(state, schema.ToolState) and isinstance(event.fact, machine_journal.ToolFact):
-        expected_label = execution.tool_outcome(event.fact)
-        expected_goto = state.on[expected_label]
-    elif isinstance(state, schema.AgentState) and isinstance(event.fact, machine_journal.AgentFact):
-        expected_label = event.fact.outcome
-        expected_goto = state.on[expected_label]
-    elif isinstance(state, schema.WaitState) and isinstance(event.fact, machine_journal.WaitFact):
-        expected_label = event.fact.woke_by
-        expected_goto = state.on[expected_label]
-    else:  # the caller's fact-kind check makes this unreachable
-        raise contracts.EngineError(f"journal fact at seq {event.seq} cannot be routed")
+    expected_label, expected_goto, fact = execution.next_state(state, blackboard, event.fact)
+    if (
+        isinstance(fact, machine_journal.BranchFact)
+        and isinstance(event.fact, machine_journal.BranchFact)
+        and event.fact.clause_index != fact.clause_index
+    ):
+        raise contracts.EngineError(
+            f"journal branch fact selects clause {event.fact.clause_index} at seq"
+            f" {event.seq}, but the replayed blackboard selects clause {fact.clause_index}."
+            f"{remedy}"
+        )
     if event.label != expected_label:
         raise contracts.EngineError(
             f"journal records label {event.label!r} at seq {event.seq}, but its fact"
@@ -264,6 +247,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     transitions = eng.transitions
     spent_usd = eng.spent_usd
     remedy = f" {machine_journal.fresh_start_remedy(eng.journal.root)}"
+    declared = {(edge.src, edge.dst) for edge in schema.edges(spec)}
     for event in events:
         if isinstance(event, machine_journal.AttemptSpend):
             spent_usd += event.usd  # a crashed attempt's slice counts; it moves no position
@@ -293,7 +277,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
                 f"journal fact at seq {event.seq} is {type(event.fact).__name__},"
                 f" which state {state!r} cannot produce.{remedy}"
             )
-        if event.goto not in _declared_gotos(state_spec):
+        if (state, event.goto) not in declared:
             raise contracts.EngineError(
                 f"journal goto {event.goto!r} at seq {event.seq} is not an edge"
                 f" state {state!r} declares.{remedy}"
@@ -403,30 +387,29 @@ def _run_live_loop(eng: _EngineState) -> contracts.MachineResult:  # noqa: C901,
         remaining_usd = None if usd_limit is None else max(usd_limit - spent_usd, 0.0)
 
         try:
+            observed: machine_journal.Fact | None = None
             if exit_on_wait and isinstance(current, schema.WaitState):
-                fired = execution.fire_persisted_wait(
+                observed = execution.fire_persisted_wait(
                     current, blackboard, journal, world, state, transitions
                 )
-                if fired is None:
+                if observed is None:
                     pending = journal.read_pending_wait()
                     if pending is not None and pending.wake_epoch is not None:
                         detail = f"until {pending.wake_at}"
                     else:
                         detail = "until a signal poke"
                     return contracts.MachineResult("waiting", detail, state, transitions)
-                label, goto, fact = fired
             elif isinstance(current, schema.WaitState):
-                blocked = execution.block_on_wait(
+                observed = execution.block_on_wait(
                     current, blackboard, journal, world, state, transitions
                 )
-                if blocked is None:
+                if observed is None:
                     machine_journal.clear_stop_request(journal.root)
                     return contracts.MachineResult(
                         "stopped", "stop requested by the operator", state, transitions
                     )
-                label, goto, fact = blocked
-            else:
-                label, goto, fact = execution.execute(
+            elif not isinstance(current, schema.BranchState):
+                observed = execution.execute(
                     spec,
                     current,
                     blackboard,
@@ -435,6 +418,7 @@ def _run_live_loop(eng: _EngineState) -> contracts.MachineResult:  # noqa: C901,
                     state_name=state,
                     remaining_usd=remaining_usd,
                 )
+            label, goto, fact = execution.next_state(current, blackboard, observed)
         except execution.STATE_RUNTIME_ERRORS as exc:
             return _end_failed(journal, world, state, transitions, exc)
         if isinstance(fact, machine_journal.WaitFact) and fact.woke_by == "signal":

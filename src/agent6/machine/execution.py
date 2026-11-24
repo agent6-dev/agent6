@@ -252,7 +252,7 @@ def block_on_wait(
     world: contracts.World,
     state_name: str,
     seq: int,
-) -> tuple[str, str, machine_journal.Fact] | None:
+) -> machine_journal.WaitFact | None:
     """Block on a wait in the foreground.
 
     The driver clears the pending record once the transition is journaled: a stale one would
@@ -267,19 +267,15 @@ def block_on_wait(
         seq: The transition this visit belongs to.
 
     Returns:
-        The (label, goto, fact) of the wake, or None when a stop request interrupted the
+        The wake fact, or None when a stop request interrupted the
         sleep, leaving the wait armed and nothing journaled.
     """
     pending = arm_pending_wait(state, blackboard, journal, world, state_name, seq)
     woke = world.sleep_until(pending.wake_epoch)
     if woke.woke_by == "stop":
         return None
-    return (
-        woke.woke_by,
-        state.on[woke.woke_by],
-        machine_journal.WaitFact(
-            wake_epoch=pending.wake_epoch, woke_by=woke.woke_by, payload=woke.payload
-        ),
+    return machine_journal.WaitFact(
+        wake_epoch=pending.wake_epoch, woke_by=woke.woke_by, payload=woke.payload
     )
 
 
@@ -290,7 +286,7 @@ def fire_persisted_wait(
     world: contracts.World,
     state_name: str,
     seq: int,
-) -> tuple[str, str, machine_journal.Fact] | None:
+) -> machine_journal.WaitFact | None:
     """Arm or fire a wait without blocking (`--exit-on-wait`).
 
     Args:
@@ -302,30 +298,22 @@ def fire_persisted_wait(
         seq: The transition this visit belongs to.
 
     Returns:
-        The (label, goto, fact) when a poke arrived or the instant has passed, or None when
+        The wake fact when a poke arrived or the instant has passed, or None when
         the wait is not ready, its record persisted for the caller to yield on.
     """
     pending = arm_pending_wait(state, blackboard, journal, world, state_name, seq)
     signaled, payload = journal.take_signal()
     if signaled:
-        return (
-            "signal",
-            state.on["signal"],
-            machine_journal.WaitFact(
-                wake_epoch=pending.wake_epoch, woke_by="signal", payload=payload
-            ),
+        return machine_journal.WaitFact(
+            wake_epoch=pending.wake_epoch, woke_by="signal", payload=payload
         )
     if pending.wake_epoch is not None and world.now() >= pending.wake_epoch:
-        return (
-            "tick",
-            state.on["tick"],
-            machine_journal.WaitFact(wake_epoch=pending.wake_epoch, woke_by="tick"),
-        )
+        return machine_journal.WaitFact(wake_epoch=pending.wake_epoch, woke_by="tick")
     return None
 
 
 def tool_outcome(
-    fact: machine_journal.ToolFact | contracts.ToolExecResult,
+    fact: machine_journal.ToolFact,
 ) -> Literal["ok", "nonzero", "timeout"]:
     """Return the label a tool result routes on."""
     if fact.timed_out:
@@ -352,17 +340,49 @@ def agent_outcome(
     return "failed"
 
 
+def next_state(
+    state: schema.StateSpec,
+    blackboard: Mapping[str, object],
+    fact: machine_journal.Fact | None,
+) -> tuple[str, str, machine_journal.Fact]:
+    """Select the outcome label and destination without consulting the world.
+
+    Args:
+        state: The state to leave.
+        blackboard: The values before the step.
+        fact: The observed result. A branch needs no observation.
+
+    Returns:
+        The label, destination and fact. A branch computes its fact from the blackboard.
+
+    Raises:
+        EngineError: The state cannot produce this fact or has no matching branch clause.
+    """
+    if isinstance(state, schema.BranchState):
+        index, label, goto = route_branch(state, blackboard)
+        return label, goto, machine_journal.BranchFact(clause_index=index)
+    if isinstance(state, schema.ToolState) and isinstance(fact, machine_journal.ToolFact):
+        label = tool_outcome(fact)
+    elif isinstance(state, schema.AgentState) and isinstance(fact, machine_journal.AgentFact):
+        label = fact.outcome
+    elif isinstance(state, schema.WaitState) and isinstance(fact, machine_journal.WaitFact):
+        label = fact.woke_by
+    else:
+        raise contracts.EngineError(f"cannot route {fact!r} from {state.kind!r}")
+    return label, state.on[label], fact
+
+
 def execute(
     spec: schema.MachineSpec,
-    state: schema.StateSpec,
+    state: schema.ToolState | schema.AgentState,
     blackboard: Mapping[str, object],
     world: contracts.World,
     *,
     seq: int = 0,
     state_name: str = "",
     remaining_usd: float | None = None,
-) -> tuple[str, str, machine_journal.Fact]:
-    """Execute one tool, branch or agent state against the world.
+) -> machine_journal.ToolFact | machine_journal.AgentFact:
+    """Execute one tool or agent state against the world.
 
     Args:
         spec: The machine.
@@ -374,10 +394,7 @@ def execute(
         remaining_usd: The machine's unspent budget, or None when uncapped.
 
     Returns:
-        The label, the goto and the fact to journal.
-
-    Raises:
-        EngineError: The state is a terminal.
+        The observed fact.
     """
     if isinstance(state, schema.ToolState):
         argv = machine_template.render_command(state.command, blackboard, where="command")
@@ -388,47 +405,36 @@ def execute(
             pass_env=state.pass_env,
             step_seq=seq,
         )
-        label = tool_outcome(result)
-        fact: machine_journal.Fact = machine_journal.ToolFact(
+        return machine_journal.ToolFact(
             exit_code=result.exit_code,
             stdout=result.stdout,
             timed_out=result.timed_out,
             stderr=result.stderr,
         )
-        return label, state.on[label], fact
-    if isinstance(state, schema.BranchState):
-        index, label, goto = route_branch(state, blackboard)
-        return label, goto, machine_journal.BranchFact(clause_index=index)
-    if isinstance(state, schema.AgentState):
-        prompt = machine_template.render_string(
-            machine_template.parse_template(state.prompt), blackboard, where="agent prompt"
+    prompt = machine_template.render_string(
+        machine_template.parse_template(state.prompt), blackboard, where="agent prompt"
+    )
+    result = world.run_agent(
+        contracts.AgentRequest(
+            prompt=prompt,
+            timeout_s=float(state.timeout_s),
+            remaining_usd=remaining_usd,
+            mode=state.mode,
+            state_name=state_name,
+            step_seq=seq,
+            output_schema=state.output_schema,
+            schemas=spec.schemas,
         )
-        result = world.run_agent(
-            contracts.AgentRequest(
-                prompt=prompt,
-                timeout_s=float(state.timeout_s),
-                remaining_usd=remaining_usd,
-                mode=state.mode,
-                state_name=state_name,
-                step_seq=seq,
-                output_schema=state.output_schema,
-                schemas=spec.schemas,
-            )
-        )
-        outcome = agent_outcome(spec, state, result)
-        payload = result.payload if outcome == "ok" else None
-        return (
-            outcome,
-            state.on[outcome],
-            machine_journal.AgentFact(
-                outcome=outcome,
-                reason=result.reason,
-                payload=payload,
-                usd=result.usd,
-                usd_own_calls=result.usd_own_calls,
-                usd_partial=result.usd_partial,
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-            ),
-        )
-    raise contracts.EngineError(f"cannot execute terminal state directly: {state!r}")
+    )
+    outcome = agent_outcome(spec, state, result)
+    payload = result.payload if outcome == "ok" else None
+    return machine_journal.AgentFact(
+        outcome=outcome,
+        reason=result.reason,
+        payload=payload,
+        usd=result.usd,
+        usd_own_calls=result.usd_own_calls,
+        usd_partial=result.usd_partial,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+    )

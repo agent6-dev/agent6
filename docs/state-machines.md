@@ -656,16 +656,16 @@ extra_read_paths = ["/srv/inbox"]
 load(file) -> Machine            # pydantic, extra=forbid, frozen
 blackboard = Machine.initial_vars()
 state = Machine.initial
-loop:
-    event   = execute(state, blackboard)     # the only impure step
-    blackboard = reduce(blackboard, event)   # pure; a fact that cannot reduce halts
-    journal.append(event)                    # append-only, fsync
-    state   = next_state(Machine, state, event, blackboard)  # pure
-    snapshot(state, blackboard)              # atomic temp+rename
-    if state is terminal: break
+while state is not terminal:
+    observed = observe(state, blackboard)    # tool, agent or wait; no observation for a branch
+    label, goto, fact = next_state(state, blackboard, observed)
+    updated = reduce(blackboard, fact)       # a fact that cannot reduce halts
+    journal.append(step(state, label, goto, fact))
+    state, blackboard = goto, updated
+    snapshot(state, blackboard)
 ```
 
-- `execute` is the only place the world is touched (run an agent, run a tool, read the clock)
+Replay checks the recorded route with the same `next_state` before applying `reduce`.
 
 ### Determinism guarantees and the predicate evaluator
 
