@@ -875,7 +875,8 @@ def test_child_setup_output_survives_import_and_a_failed_one_reaches_the_operato
     assert (command in shown) is (exit_code != 0)
     assert shown.count("setup-out\n") == shown.count("setup-err\n") == (2 if exit_code else 0)
     for child in children:
-        assert not child.worktree.exists()
+        # Failed setup left a file and no end tree. Its clone is the only copy.
+        assert child.worktree.exists() is bool(exit_code)
         imported = state / "sessions" / "runs" / child.session_id
         events = [json.loads(line) for line in (imported / "logs.jsonl").read_text().splitlines()]
         assert sum(event["type"] == "worktree.setup" for event in events) == 1

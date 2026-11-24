@@ -12,7 +12,7 @@ import shutil
 from collections.abc import Callable
 
 from agent6 import child_records, errors, kinds, paths
-from agent6.app import child_launch
+from agent6.app import child_launch, child_trees
 from agent6.config import Config, child_snapshot
 from agent6.harness import child_repo
 from agent6.sessions import layout as sessions_layout
@@ -319,6 +319,9 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
                     )
                     if why:
                         break
+                records = () if machine_id else clone_sessions(paths.state_dir(origin), clone)
+                if records and (why := child_trees.preserve(origin, clone, records[0], cfg)):
+                    break
                 tips = list(git_read.commit_tips(clone))
                 # Reachability, not existence: a loose object is one `git gc` from gone.
                 if any(
@@ -445,6 +448,9 @@ def cleanup(
                 continue
         except errors.GitError as exc:
             note_keep(spec.worktree, f"git could not check its commits: {exc}")
+            continue
+        if records and (why := child_trees.preserve(origin, spec.worktree, records[0], cfg)):
+            note_keep(spec.worktree, why)
             continue
         shutil.rmtree(paths.state_dir(spec.worktree), ignore_errors=True)
         shutil.rmtree(paths.jail_cache_home(spec.worktree), ignore_errors=True)
