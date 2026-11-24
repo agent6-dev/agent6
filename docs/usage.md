@@ -117,7 +117,7 @@ The model receives each as an image, as it does one `read_file` reads.
 - the message's text names each image, as `[image image/png, 34 KiB, sha256 1a2b3c4d5e6f]`; the journal, `sessions transcript` and every conversation view show that label
 - the bytes are stored in the session directory, outside the workspace ([security](security.md#images-an-operator-sends)); a resume reloads them, a fork copies them, and a workspace pack carries them with the rest of the session
 - when the model is not shown an image, its message gains a line that says why, and the conversation shows the same line: a model route without image input, a provider's rejection, a missing or changed file, an image older than the newest four of a request
-- the CLI and the TUI send no image: name the file's workspace path and the model reads it with `read_file`
+- the CLI and the TUI send no image: name the file's path and the model reads it with `read_file`, from the workspace or from a folder in `sandbox.extra_read_paths`
 
 ## Follow and steer a run
 
