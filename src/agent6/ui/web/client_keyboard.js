@@ -1,5 +1,5 @@
 // A listbox option cannot contain buttons; a picker with row actions uses a grid.
-function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '', initial = '', prefix = null, limit = 12, typed = false, actions = null }) {
+function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '', initial = '', prefixes, listStatus, limit = 12, typed = false, actions = null }) {
   const dialog = openDialog(title, 'wide picker');
   if (!dialog) return;
   const name = dialog.getAttribute('aria-labelledby');
@@ -51,7 +51,8 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
     });
     mark(true);
     const more = all.length - items.length;
-    note.textContent = !loaded ? 'loading…' : !items.length ? (loaded.length ? '(no match)' : empty) : more ? '… ' + more + ' more (type to narrow)' : '';
+    const status = listStatus ? listStatus(all.length) : items.length ? '' : loaded?.length ? '(no match)' : empty;
+    note.textContent = !loaded ? 'loading…' : [status, more && '… ' + more + ' more (type to narrow)'].filter(Boolean).join(' · ');
   };
   const move = (step) => { if (items.length) { active = (active + step + items.length) % items.length; mark(true); } };
   // Leave Enter and Space to a focused row button.
@@ -62,7 +63,8 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
     else if (e.key === 'Enter') { e.preventDefault(); if (loaded && (items.length || typed)) choose(items.length ? items[active] : field.value); }
   };
   field.oninput = () => {
-    if (prefix && field.value.startsWith(prefix.key)) { const rest = field.value.slice(prefix.key.length); close(); prefix.open(rest); return; }
+    const open = prefixes?.[field.value[0]];
+    if (open) { const rest = field.value.slice(1); close(); open(rest); return; }
     active = 0; render();
   };
   field.focus();
@@ -76,10 +78,10 @@ function openSwitcher() {
   const flatten = (r) => [r, ...(r.children || []).flatMap(flatten)];
   openPicker({
     title: 'Switch session',
-    placeholder: 'narrow, or > for commands',
+    placeholder: '/ for files, > for commands',
     rows: () => getJSON('/api/hub').then(data => (data.sessions || []).flatMap(flatten)),
     empty: '(no sessions yet)',
-    prefix: { key: '>', open: (rest) => openPalette(rest) },
+    prefixes: { '>': openPalette, '/': openFilePicker },
     haystack: (r) => [r.session_id, r.mode, r.status_label, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase(),
     pick: (r) => { location.hash = '#/session/' + encodeURIComponent(r.session_id); },
     paint: (r, o) => {
@@ -106,6 +108,26 @@ function openSwitcher() {
         acts.appendChild(merge);
       }
       return acts;
+    },
+  });
+}
+
+function openFilePicker(initial) {
+  let cut = false;
+  openPicker({
+    title: 'Go to file: working tree', placeholder: 'part of a file path', initial,
+    rows: async () => {
+      const d = filesState.workingTree?.() || await readFileTree(GIT_WORKTREE);
+      cut = d.truncated;
+      return d.files;
+    },
+    listStatus: count => [cut && 'file list is cut', !count && 'no match in the listed files'].filter(Boolean).join(' · '),
+    haystack: f => f.path.toLowerCase(),
+    paint: (f, o) => { o.textContent = f.path + (f.path.isWellFormed() ? '' : ' (path is not UTF-8)'); },
+    pick: f => {
+      if (!f.path.isWellFormed()) { toast('This path is not UTF-8 and has no Files link.', true); return; }
+      const hash = fileHash(GIT_WORKTREE, f.path);
+      if (location.hash === hash) route(); else location.hash = hash;
     },
   });
 }
@@ -150,7 +172,7 @@ function inField(e) { const t = e.target; return !!t && (t.isContentEditable || 
 function enterSends(e) { return e.key === 'Enter' && !e.shiftKey && !composing(e) && (e.ctrlKey || !matchMedia('(pointer: coarse)').matches); }
 function enterHint(keys, touch) { return [el('span', 'on-keys', keys), el('span', 'on-touch', touch)]; }
 const KEYS = [
-  { label: 'Ctrl+K', where: 'Anywhere', does: 'switch session (> for commands)', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
+  { label: 'Ctrl+K', where: 'Anywhere', does: 'switch session (/ for working-tree files, > for commands)', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
   { label: '?', where: 'Outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
   { label: 'Esc', where: 'In a dialog or popup', does: 'close it' },
   // Let a nonempty search field consume Escape to clear itself.

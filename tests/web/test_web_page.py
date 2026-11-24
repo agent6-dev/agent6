@@ -23,7 +23,7 @@ from agent6.ui.web import page
 from tests.web import client_assets
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "74e583bc74a8a3954f3d69a78b9d75839b94493bffa57b1607bec1ccae6a56b3"
+PAGE_SHA256 = "d1f0058e3c4541a362de34d1978e9333e85dfa080c0883bbcc8917774b01f556"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -549,7 +549,7 @@ def test_the_phone_widget_menu_can_show_the_run_review() -> None:
 
 
 def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
-    """The handler and the `?` list read one KEYS table; both pickers share one shape."""
+    """The handler and the `?` list read one KEYS table."""
     client = page.CLIENT_JS
     keys = client[
         client.index("const KEYS = [") : client.index(
@@ -562,8 +562,6 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
     assert "Shift-P" not in client
     assert keys.count("run: () =>") == 3  # the global bindings; the rest are listed only
     assert "for (const k of KEYS) if (k.run && k.match(e))" in client
-    assert client.count("\n  openPicker({") == 3  # the switcher, the palette, history search
-    assert "prefix: { key: '>', open: (rest) => openPalette(rest) }" in client
     assert "function openKeys()" in client and "el('table', 'keys')" in client
 
 

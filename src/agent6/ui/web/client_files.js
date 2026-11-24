@@ -2,8 +2,15 @@
 // Files opens on the working tree unless the link names a revision.
 // Folder choices outlive a visit to another page.
 // The picker's { rev, label }; each folder path → open; the page's in-place opener, if any.
-const filesState = { rev: null, folders: new Map(), open: null, closePreview: null, previewScroll: null };
+const filesState = { rev: null, folders: new Map(), open: null, workingTree: null, closePreview: null, previewScroll: null };
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
+
+function readFileTree(rev, showIgnored = recall('a6-files-ignored', 'off') === 'on') {
+  return getJSON('/api/git/tree?rev=' + encodeURIComponent(rev) + (showIgnored && rev === GIT_WORKTREE ? '&ignored=1' : ''));
+}
+function fileHash(rev, path = '') {
+  return '#/files/' + encodeURIComponent(rev) + (path && '/' + path.split('/').map(encodeURIComponent).join('/'));
+}
 
 function closeFilePreview() { filesState.closePreview?.(); }
 
@@ -242,7 +249,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
   }
   // The hash names the revision picked, so a reload keeps HEAD or a branch; the reads use the
   // commit its listing resolved to.
-  const filesHash = (file = '') => '#/files/' + encodeURIComponent(filesState.rev.rev) + (file && '/' + file.split('/').map(encodeURIComponent).join('/'));
+  const filesHash = file => fileHash(filesState.rev.rev, file);
 
   // -- toolbar: the revision picker, the filter, the count ---------------------------
   const bar = el('div', 'files-bar page-pad row wrap'); app.appendChild(bar);
@@ -289,6 +296,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
 
   // -- the tree ----------------------------------------------------------------------
   let entries = [], truncated = false, rev = '', ignored = false, loading = 0, shown = null;
+  filesState.workingTree = () => app.isConnected && rev === GIT_WORKTREE && {files: entries, truncated};
   // The count heads the tree it counts, so its arrival neither moves nor narrows a field on the bar.
   const counts = el('div', 'muted files-counts');
   // A working-tree row's mark says how it differs from HEAD: M modified, A untracked, I ignored. A
@@ -359,7 +367,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     if (!relisting) closeFile();
     tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…'));
     try {
-      const d = await getJSON('/api/git/tree?rev=' + encodeURIComponent(filesState.rev.rev) + (showIgnored && !ignoredToggle.hidden ? '&ignored=1' : ''));
+      const d = await readFileTree(filesState.rev.rev, showIgnored);
       if (n !== loading || !app.isConnected) return;
       entries = d.files; truncated = d.truncated; rev = d.rev; ignored = !!d.ignored;
     } catch (e) { if (n === loading && app.isConnected) { closeFile(); tree.innerHTML = ''; tree.appendChild(failure('empty err', e, () => loadTree(openPath, relisting))); } return; }

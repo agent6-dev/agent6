@@ -119,6 +119,9 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - an ended child, and an ended run whose worktree is gone or whose manifest cannot be read, closes the composer; the line under it says why, as `agent6 sessions show` does, and **Fork** continues a child in a worktree of its own
     - an ended run whose manifest cannot be read also dims **Fork** and **Merge**, whose tooltips say why
     - **?** outside a field lists the keyboard shortcuts; `>` typed into Ctrl+K's box opens the command palette: the pages, the switcher, the theme, new work and the controls the current page shows, each by name
+    - Type `/` in Ctrl+K on any page, then part of a path to find a file in the working tree.
+      Enter opens the highlighted file on the Files page.
+      If the tree listing is cut, the picker searches only the listed files and says so.
     - Ctrl+K on any page opens the session switcher: live and recent sessions newest first, narrowed as you type by id, task, branch or worktree; each row names its checkout and the ref holding its commits; Enter opens the highlighted one, **Review** and **Merge** act as the Sessions page's row buttons do; a draft typed in a composer waits for the way back, the new-work composer's with its picks
     - a click on a line number in the diff card quotes that line into the composer, with its path, side and commit; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; write your words beneath the quote and send it
 - **Machine view**: the state overview with the status and its reason, as the list words them, the path taken and when a parked machine wakes, and the conversation of the agent state the machine is in, or last ran; the entry submits as **Steer** (into the current state) or **Message** (a `poke` a waiting machine's next tool reads), and Enter sends the filled one; **Stop** parks the instance at its next transition and `machine run` resumes it
