@@ -430,8 +430,8 @@ def updates_for(
             update = {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)}
         else:
             content = _tool_content(item, cwd, objects_dir)
-            # A deleted file is in no journaled path, and its diff still names it.
-            located = (*paths, *(change.path for change in item.changes))
+            # The changes name every file, a deleted one and one outside the workspace too.
+            located = tuple(change.path for change in item.changes) or paths
             update = {
                 "sessionUpdate": "tool_call_update",
                 "toolCallId": wire_id,
@@ -567,11 +567,9 @@ def _tool_content(
         diff, and the text says so.
     """
     parts = [item.detail, item.tail]
-    diffs = (
-        _diffs(item.changes, cwd, objects_dir)
-        if cwd is not None and objects_dir is not None
-        else []
-    )
+    diffs: list[dict[str, Any]] | None = []
+    if cwd is not None and objects_dir is not None:
+        diffs = _diffs(item.changes, cwd, objects_dir)
     if diffs is None:
         parts.append("diff unavailable: its stored text is gone")
     body = "\n".join(part for part in parts if part)

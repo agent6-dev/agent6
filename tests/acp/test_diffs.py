@@ -24,14 +24,14 @@ _RUN = "run-x"
 class _Run:
     """A recorded run: a workspace, and a session dir a real dispatcher journals into."""
 
-    def __init__(self, tmp_path: pathlib.Path) -> None:
+    def __init__(self, tmp_path: pathlib.Path, config: Config | None = None) -> None:
         self.repo, self.session_dir = tmp_path / "repo", tmp_path / "session"
         self.repo.mkdir()
         self.session_dir.mkdir()
         self.logs, self.objects = self.session_dir / "logs.jsonl", self.session_dir / "objects"
         sink = event_log.EventSink(self.logs)
         self.tools = dispatch.ToolDispatcher(
-            root=self.repo, config=Config(), session_dir=self.session_dir, events=sink
+            root=self.repo, config=config or Config(), session_dir=self.session_dir, events=sink
         )
         sink.emit(
             journal.SessionStart(mode="run", user_task="t", execution_id=self.tools.execution_id)
@@ -123,6 +123,22 @@ def test_a_patch_sends_one_diff_per_file_with_a_create_and_a_delete(
     assert "deleted" in _text(update)
     # The locations name the diffs' paths: the deleted file is in no journaled `paths`.
     assert sorted(loc["path"] for loc in update["locations"]) == sorted([new, keep, gone])
+
+
+def test_a_write_outside_the_workspace_shows_the_file_it_wrote(tmp_path: pathlib.Path) -> None:
+    """A write under a grant journals a path relative to the grant; the diff names the file."""
+    granted = tmp_path / "granted"
+    granted.mkdir()
+    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    run = _Run(tmp_path, config)
+    (run.repo / "note.txt").write_text("the workspace's own\n", encoding="utf-8")
+    run.edit(str(granted / "note.txt"), kind="create", new_string="x\n")
+
+    (update,) = run.live()
+
+    path = str((granted / "note.txt").resolve())
+    assert _diffs(update) == [{"type": "diff", "path": path, "oldText": None, "newText": "x\n"}]
+    assert update["locations"] == [{"path": path}]
 
 
 def test_a_call_over_the_budget_sends_its_summary_and_no_diff(tmp_path: pathlib.Path) -> None:

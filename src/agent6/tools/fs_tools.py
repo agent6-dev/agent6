@@ -345,6 +345,22 @@ def _preview(
     )
 
 
+def _change_path(ws: path_safety.Workspace, sp: path_safety.SafePath) -> str:
+    """Return the path a file change is recorded under.
+
+    A path under a write grant is relative to that grant, so only its absolute form names
+    the file.
+
+    Args:
+        ws: The workspace.
+        sp: The contained path.
+
+    Returns:
+        The workspace-relative path, or the absolute path of a file outside the workspace.
+    """
+    return str(sp.rel_path) if sp.base == ws.root else str(sp.abs_path)
+
+
 def apply_edit(
     ws: path_safety.Workspace,
     config: Config,
@@ -423,7 +439,7 @@ def apply_edit(
     path_safety.write_contained(sp, new_content)
     if index is not None:
         index.mark_changed(sp.abs_path)
-    changes = (results.FileChange(str(sp.rel_path), existing, new_content),)
+    changes = (results.FileChange(_change_path(ws, sp), existing, new_content),)
     fits = results.within_diff_budget(changes)
     return results.EditResult(
         applied=tuple(applied),
@@ -556,7 +572,7 @@ def apply_patch(
                 )
             )
             continue
-        staged.append((sp, results.FileChange(str(sp.rel_path), existing, new_content)))
+        staged.append((sp, results.FileChange(_change_path(ws, sp), existing, new_content)))
     if (dupe := _first_repeated(seen_paths)) is not None:
         # Each section stages from disk, so over one file the last write would win silently.
         count = sum(1 for path in seen_paths if path == dupe)
@@ -588,7 +604,7 @@ def apply_patch(
                 if index is not None:
                     index.mark_deleted(sp.abs_path)
             else:
-                written[change.path] = path_safety.write_contained(sp, change.after)
+                written[str(sp.rel_path)] = path_safety.write_contained(sp, change.after)
                 if index is not None:
                     index.mark_changed(sp.abs_path)
         except (OSError, path_safety.ContainmentError) as exc:
@@ -600,10 +616,10 @@ def apply_patch(
     changes = tuple(change for _sp, change in staged)
     fits = results.within_diff_budget(changes)
     return results.PatchResult(
-        path=changes[0].path,
+        path=str(staged[0][0].rel_path),
         bytes_written=sum(b for _p, b in rows),
         files=rows if len(staged) > 1 else (),
-        deleted=tuple(change.path for change in changes if change.after is None),
+        deleted=tuple(str(sp.rel_path) for sp, change in staged if change.after is None),
         healed=tuple(healed_all),
         changes=changes if fits else (),
         diff_omitted=not fits,

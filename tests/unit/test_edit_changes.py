@@ -112,6 +112,28 @@ def test_multibyte_text_is_measured_in_utf8_bytes(tmp_path: pathlib.Path) -> Non
     assert "changes" not in _results(session_dir)[0]
 
 
+def test_a_write_under_a_grant_outside_the_workspace_records_its_absolute_path(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A grant's path is relative to the grant: against the workspace it names another file."""
+    root, session_dir, granted = tmp_path / "repo", tmp_path / "session", tmp_path / "granted"
+    for directory in (root, session_dir, granted):
+        directory.mkdir()
+    (root / "note.txt").write_text("the workspace's own\n", encoding="utf-8")
+    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    sink = event_log.EventSink(session_dir / "logs.jsonl")
+    d = dispatch.ToolDispatcher(root=root, config=config, session_dir=session_dir, events=sink)
+
+    d.dispatch(
+        "apply_edit", _edit(str(granted / "note.txt"), {"kind": "create", "new_string": "x"})
+    )
+    d.dispatch("apply_edit", _edit("note.txt", {"kind": "overwrite", "new_string": "y"}))
+
+    outside, inside = _results(session_dir)
+    assert [change["path"] for change in outside["changes"]] == [str(granted / "note.txt")]
+    assert [change["path"] for change in inside["changes"]] == ["note.txt"]
+
+
 def test_a_preview_and_a_failed_edit_record_no_change(tmp_path: pathlib.Path) -> None:
     d, session_dir = _dispatcher(tmp_path)
     d.dispatch("apply_edit", {**_edit("a.py", {"kind": "create", "new_string": "x"}), "preview": 1})
@@ -125,8 +147,8 @@ def test_a_preview_and_a_failed_edit_record_no_change(tmp_path: pathlib.Path) ->
 def test_the_fold_carries_a_settled_edits_changes_and_reads_an_older_journal() -> None:
     """A `tool.result` written before the field folds as it always did."""
     ref = {"$object": "a" * 64}
-    call = {"type": "tool.call", "name": "apply_edit", "call_id": 1, "args_preview": {}}
-    result = {"type": "tool.result", "name": "apply_edit", "call_id": 1, "ok": True}
+    call: dict[str, Any] = {"type": "tool.call", "name": "apply_edit", "call_id": 1}
+    result: dict[str, Any] = {"type": "tool.result", "name": "apply_edit", "call_id": 1, "ok": True}
 
     def settled(extra: dict[str, Any]) -> transcript_items.TranscriptItem:
         return transcript.fold_transcript([call, {**result, **extra}])[-1]

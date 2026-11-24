@@ -1531,7 +1531,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `exec_failed` | `bool, optional` | Whether the command could not be started. |
 | `background_id` | `str, optional` | The background job the command continues as, when handed back. |
 | `paths` | `list, optional` | Affected repository-relative paths. |
-| `changes` | `list, optional` | Each file an edit or patch wrote: its `path`, and `before` and `after` as references to the `objects/` values holding its text. `before` is null for a created file and `after` for a deleted one. Absent when the texts exceed 64 KiB together, and in a journal written before the field. |
+| `changes` | `list, optional` | Each file an edit or patch wrote: its `path` (workspace-relative, or absolute outside the workspace), and `before` and `after` as references to the `objects/` values holding its text. `before` is null for a created file and `after` for a deleted one. Absent when the texts exceed 64 KiB together, and in a journal written before the field. |
 | `stdout_tail` | `str, optional` | Capped standard-output tail. |
 | `stderr_tail` | `str, optional` | Capped standard-error tail. |
 | `stdout_truncated` | `bool, optional` | Whether stdout_tail is a cut of the output; null when its end is unknown. |

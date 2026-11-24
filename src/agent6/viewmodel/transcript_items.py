@@ -23,7 +23,7 @@ class StoredChange:
     """One file a tool call wrote, naming the session objects that hold its text.
 
     Attributes:
-        path: The workspace-relative path.
+        path: The workspace-relative path; absolute for a file outside the workspace.
         before: The object holding the text before the call; None for a created file.
         after: The object holding the text after the call; None for a deleted file.
     """

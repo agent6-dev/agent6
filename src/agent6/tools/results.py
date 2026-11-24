@@ -55,7 +55,7 @@ class FileChange:
     """One file's text before and after a write.
 
     Attributes:
-        path: The workspace-relative path.
+        path: The workspace-relative path; absolute for a file outside the workspace.
         before: The text before the write; None for a file the write created.
         after: The text after the write; None for a file the write deleted.
     """
