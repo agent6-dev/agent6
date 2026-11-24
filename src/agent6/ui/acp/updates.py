@@ -245,6 +245,7 @@ def replay(
     *,
     acp_session_id: str,
     cwd: pathlib.Path,
+    objects_dir: pathlib.Path,
     notify: Callable[[dict[str, Any]], None],
 ) -> None:
     """Replay a recorded run through the shared fold and ACP projection.
@@ -253,6 +254,7 @@ def replay(
         rows: The run's events in emission order.
         acp_session_id: The conversation id, also the recorded run's id.
         cwd: The working directory for tool locations.
+        objects_dir: The run's object directory, holding the text of each edit's diff.
         notify: Sends each notification before load returns.
     """
     fold = transcript.TranscriptFold()
@@ -268,6 +270,7 @@ def replay(
             announced=wire_id in announced,
             cwd=cwd,
             paths=paths,
+            objects_dir=objects_dir,
         ):
             notify(body)
         if item.kind in ("tool", "verify"):
@@ -309,6 +312,7 @@ def updates_for(
     cwd: pathlib.Path | None = None,
     paths: tuple[str, ...] = (),
     streamed: bool = False,
+    objects_dir: pathlib.Path | None = None,
 ) -> list[dict[str, Any]]:
     """Return the `session/update` notifications one fold item becomes.
 
@@ -320,9 +324,10 @@ def updates_for(
         acp_session_id: The conversation the notifications address.
         wire_id: The call's `toolCallId`; "" takes the execution's own stamp.
         announced: The editor already has the call.
-        cwd: The working directory the locations resolve against.
+        cwd: The working directory the locations and diffs resolve against.
         paths: The paths the tool result named.
         streamed: The item is one delta of a message in flight, sent whole.
+        objects_dir: The run's object directory; None sends an edit without its diffs.
 
     Returns:
         The notifications, in sending order; none for a blank message.
@@ -351,12 +356,15 @@ def updates_for(
         if item.ok is None and not announced:
             update = {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)}
         else:
+            content = _tool_content(item, cwd, objects_dir)
+            # A deleted file is in no journaled path, and its diff still names it.
+            located = (*paths, *(change.path for change in item.changes))
             update = {
                 "sessionUpdate": "tool_call_update",
                 "toolCallId": wire_id,
                 "status": _tool_status(item),
-                **({"content": _tool_content(item)} if _tool_content(item) else {}),
-                **({"locations": _tool_locations(paths, cwd)} if paths and cwd else {}),
+                **({"content": content} if content else {}),
+                **({"locations": _tool_locations(located, cwd)} if located and cwd else {}),
             }
         return [_update(acp_session_id, update)]
     if item.kind == "marker":
@@ -425,6 +433,7 @@ def printable(text: str) -> str:
 
     Every model-authored string on the wire goes through here: content blocks,
     tool titles, and the permission request an operator reads before granting.
+    A diff's file text is the one exception.
 
     Args:
         text: A string bound for the wire.
@@ -447,7 +456,11 @@ def _tool_status(item: transcript_items.TranscriptItem) -> str:
     return "completed" if item.ok else "failed"
 
 
-def _tool_content(item: transcript_items.TranscriptItem) -> list[dict[str, Any]]:
+def _tool_content(
+    item: transcript_items.TranscriptItem,
+    cwd: pathlib.Path | None = None,
+    objects_dir: pathlib.Path | None = None,
+) -> list[dict[str, Any]]:
     """Return what the tool produced, in ACP's tagged shape.
 
     A bare content-block array makes a strict client reject the notification, and
@@ -456,12 +469,46 @@ def _tool_content(item: transcript_items.TranscriptItem) -> list[dict[str, Any]]
 
     Args:
         item: A tool item of the fold.
+        cwd: The working directory a diff's path resolves against.
+        objects_dir: The run's object directory.
 
     Returns:
-        One `content` entry holding the item's detail and tail; empty when neither is set.
+        One `content` entry holding the item's detail and tail, when either is set, then one
+        `diff` entry per file the call changed: `oldText` null for a created file, `newText`
+        empty for a deleted one. A call whose stored text is gone (pruned history) sends no
+        diff, and the text says so.
     """
-    body = "\n".join(part for part in (item.detail, item.tail) if part)
-    return [{"type": "content", "content": _text(body)}] if body else []
+    parts = [item.detail, item.tail]
+    diffs = (
+        _diffs(item.changes, cwd, objects_dir)
+        if cwd is not None and objects_dir is not None
+        else []
+    )
+    if diffs is None:
+        parts.append("diff unavailable: its stored text is gone")
+    body = "\n".join(part for part in parts if part)
+    return [*([{"type": "content", "content": _text(body)}] if body else []), *(diffs or [])]
+
+
+def _diffs(
+    changes: tuple[transcript_items.StoredChange, ...], cwd: pathlib.Path, objects_dir: pathlib.Path
+) -> list[dict[str, Any]] | None:
+    """Return one ACP diff per changed file, or None when a stored text is gone."""
+    diffs: list[dict[str, Any]] = []
+    for change in changes:
+        texts = transcript_items.change_texts(change, objects_dir)
+        if texts is None:
+            return None
+        # The text is the file's, sent whole: a scrubbed side would differ from the file.
+        diffs.append(
+            {
+                "type": "diff",
+                "path": str((cwd / change.path).resolve()),
+                "oldText": texts[0],
+                "newText": texts[1] or "",
+            }
+        )
+    return diffs
 
 
 def _tool_locations(paths: tuple[str, ...], cwd: pathlib.Path) -> list[dict[str, str]]:

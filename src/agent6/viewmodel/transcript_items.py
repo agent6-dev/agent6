@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 import shlex
 from collections.abc import Mapping
 from typing import Any, Literal
 
 from agent6 import terminal
+from agent6.sessions import objects
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import log_line, transcript_text
 
@@ -50,6 +52,33 @@ def stored_changes(raw: Any) -> tuple[StoredChange, ...]:
         if all(side is None or isinstance(ref, str) for side, ref in zip(sides, ids, strict=True)):
             out.append(StoredChange(entry["path"], ids[0], ids[1]))
     return tuple(out)
+
+
+def change_texts(
+    change: StoredChange, objects_dir: pathlib.Path
+) -> tuple[str | None, str | None] | None:
+    """Return a file's text before and after the call, read from the session's objects.
+
+    Args:
+        change: The stored change.
+        objects_dir: The session's object directory.
+
+    Returns:
+        The two texts, each None where the change names no object; None in place of both
+        when a named object is missing, unreadable or not text (pruned history).
+    """
+    texts: list[str | None] = []
+    for object_id in (change.before, change.after):
+        stored = None
+        if object_id is not None:
+            try:
+                stored = objects.materialize({"$object": object_id}, objects_dir)
+            except objects.ObjectStoreError:
+                return None
+            if not isinstance(stored, str):
+                return None
+        texts.append(stored)
+    return texts[0], texts[1]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

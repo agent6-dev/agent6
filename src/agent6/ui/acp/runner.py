@@ -561,7 +561,7 @@ class RunBridge:
         tail = threading.Thread(
             target=self._stream,
             args=(session, layout.logs_path, _stop, start_at, announced, order),
-            kwargs={"info": info, "prompt": text},
+            kwargs={"info": info, "prompt": text, "objects_dir": layout.objects_dir},
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -626,6 +626,7 @@ class RunBridge:
         order: ProseOrder | None = None,
         info: updates.RunInfo | None = None,
         prompt: str = "",
+        objects_dir: pathlib.Path | None = None,
     ) -> None:
         """Project the run's journal into `session/update` as it is written.
 
@@ -642,6 +643,7 @@ class RunBridge:
             order: The lifecycle's queued lines.
             info: The title, commands and usage projection; None sends none.
             prompt: The prompt this execution runs; the journal's echo of it is not sent back.
+            objects_dir: The run's object directory; None sends an edit without its diffs.
         """
         fold = transcript.TranscriptFold()
         streamed: set[str] = set()
@@ -686,7 +688,9 @@ class RunBridge:
                         self.server.notify_raw(body)
                 for item in items:
                     if item.kind not in streamed:
-                        self._send_item(session, item, announced, paths, "".join(spoken), prompt)
+                        self._send_item(
+                            session, item, announced, paths, "".join(spoken), prompt, objects_dir
+                        )
                 if event_type == "model.result":
                     streamed.clear()
                 if order is not None:
@@ -714,6 +718,7 @@ class RunBridge:
         paths: tuple[str, ...],
         spoken: str,
         prompt: str,
+        objects_dir: pathlib.Path | None = None,
     ) -> None:
         """Send one fold item's updates; the ending also goes to stderr.
 
@@ -726,6 +731,7 @@ class RunBridge:
                 again, and the status line keeps its own paragraph.
             prompt: The prompt this execution runs; the editor shows it already, so its
                 echo as steering is not sent, while a steer from another front-end is.
+            objects_dir: The run's object directory; None sends an edit without its diffs.
         """
         if item.kind == "task" or (item.kind == "operator" and item.body.strip() == prompt.strip()):
             return
@@ -753,6 +759,7 @@ class RunBridge:
             announced=within in announced,
             cwd=session.cwd,
             paths=paths,
+            objects_dir=objects_dir,
         ):
             self.server.notify_raw(body)
         if within:

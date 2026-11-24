@@ -233,6 +233,7 @@ class Sessions:
             tail.tail_events(saved.logs_path, follow=False),
             acp_session_id=session.acp_id,
             cwd=session.cwd,
+            objects_dir=saved.objects_dir,
             notify=notify,
         )
         return {}
