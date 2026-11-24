@@ -26,11 +26,11 @@ from agent6.harness import (
     loop_conversation,
     loop_state,
     operator_bridge,
-    parallel_dispatch,
-    parallel_recovery,
     provider_call,
     run_chain,
 )
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import recovery as parallel_recovery
 from agent6.providers import ProviderResponse
 from agent6.sessions import budget_events, child_dispatch, event_log, journal
 from agent6.tools import results as tools_results

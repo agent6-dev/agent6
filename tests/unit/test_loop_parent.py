@@ -25,7 +25,8 @@ from agent6 import child_records, directive, kinds
 from agent6.app import children, finalize
 from agent6.config import Config
 from agent6.graph import curator, models
-from agent6.harness import loop, operator_bridge, parallel_merge, provider_call, run_chain
+from agent6.harness import loop, operator_bridge, provider_call, run_chain
+from agent6.harness.parallel import merge as parallel_merge
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import results as tools_results

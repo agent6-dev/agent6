@@ -9,7 +9,7 @@ from agent6.sessions import child_dispatch
 from agent6.tools import tool_errors
 
 if TYPE_CHECKING:
-    from agent6.harness import parallel_dispatch
+    from agent6.harness.parallel import dispatch as parallel_dispatch
 
 
 def listed(

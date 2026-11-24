@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The Harness-free child bookkeeping behind `/parallel` dispatch (`harness/parallel_dispatch`)."""
+"""The Harness-free child bookkeeping behind `/parallel` dispatch (`harness/parallel/dispatch`)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ import pytest
 
 from agent6 import child_records, directive, errors
 from agent6.app import children
-from agent6.harness import parallel_dispatch, parallel_merge
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import merge as parallel_merge
 from agent6.vcs.git import ops as git_ops
 
 

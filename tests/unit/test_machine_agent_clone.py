@@ -405,7 +405,7 @@ def test_tool_clone_host_failure_aborts_the_machine(
     """A failed clone is a host failure, not the tool state's nonzero edge."""
     from agent6 import kinds, machine
     from agent6.app.machine import run as machine_run
-    from agent6.harness import child_repo
+    from agent6.harness.parallel import repo as child_repo
 
     origin = _origin(tmp_path)
 

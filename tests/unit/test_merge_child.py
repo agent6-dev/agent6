@@ -7,7 +7,9 @@ import pytest
 
 from agent6 import directive
 from agent6.graph import curator as graph_curator
-from agent6.harness import child_work, loop_conversation, loop_state, parallel_recovery, toolset
+from agent6.harness import loop_conversation, loop_state, toolset
+from agent6.harness.parallel import recovery as parallel_recovery
+from agent6.harness.parallel import work as child_work
 from agent6.sessions import child_dispatch
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import tool_errors

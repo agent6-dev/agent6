@@ -236,7 +236,7 @@ The pieces they share sit in their own layers.
 - `review_records.py` owns the findings, verdicts, targets and observations ([Review records](data-contracts.md#review-records)).
 - `viewmodel/review.py` folds panel evidence and finding history for the live state and for `scan_session_log`.
 - `vcs/review.py` owns diff hunk ranges and line-origin classification.
-- A panel's reviewers are children, dispatched through `harness/parallel_panel.py`.
+- A panel's reviewers are children, dispatched through `harness/parallel/panel.py`.
 - Panel preparation retains the exact comparison under `refs/agent6/<session>/review/<base-tree>-<head-tree>`.
 - Retention never moves the operator's index, HEAD, visible branches or run chain.
 - `app/review/actions.py` owns Fix, Resolve and Reopen for every front-end, and live requests cross `sessions.ipc`.
@@ -256,10 +256,10 @@ Four entries start children: `run --parallel`, the composers' `/parallel` direct
 All of them share `parse_spec` in `directive.py`, a stdlib leaf both `harness` and `ui` import.
 
 - `child_records.py` holds the `ChildSpawner` and `GroupChildSpawner` protocols, and `app/children.py` implements them over the front-end's `ChildRuntime`.
-- `harness/child_repo.py` is the git plumbing: `clone_worktree` and `import_run`, with no LLM and no process spawning.
-- `ParallelDispatcher` in `harness/parallel_dispatch.py` starts a task's children and settles them at turn boundaries.
-- `harness/parallel_rank.py` ranks a task's attempts: a judge is a reviewer child whose verdict is an order.
-- `harness/parallel_recovery.py` settles the dispatches an earlier execution left behind, before a resumed one's first provider call.
+- `harness/parallel/repo.py` is the git plumbing: `clone_worktree` and `import_run`, with no LLM and no process spawning.
+- `ParallelDispatcher` in `harness/parallel/dispatch.py` starts a task's children and settles them at turn boundaries.
+- `harness/parallel/rank.py` ranks a task's attempts: a judge is a reviewer child whose verdict is an order.
+- `harness/parallel/recovery.py` settles the dispatches an earlier execution left behind, before a resumed one's first provider call.
 - `app/child_launch.py` writes the child's launch file (`AGENT6_LAUNCH`, mode `0600`): its task, pins, caps, away mode and lineage.
 - `app/parallel_results.py` imports a finished child and carries its memory and rulings back.
 - `app/worktrees.py` places the clones (`[git.worktree].base_dir`) and removes imported ones.

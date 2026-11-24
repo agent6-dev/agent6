@@ -9,15 +9,9 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import directive, terminal
-from agent6.harness import (
-    loop_conversation,
-    loop_resume,
-    loop_snapshot,
-    loop_state,
-    metric_rules,
-    parallel_merge,
-    parallel_recovery,
-)
+from agent6.harness import loop_conversation, loop_resume, loop_snapshot, loop_state, metric_rules
+from agent6.harness.parallel import merge as parallel_merge
+from agent6.harness.parallel import recovery as parallel_recovery
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import operator_prompts, tool_errors, waits
 from agent6.vcs.git import ops as git_ops

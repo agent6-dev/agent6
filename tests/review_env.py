@@ -9,7 +9,8 @@ from typing import Any, Protocol
 
 from agent6 import budget, child_records, kinds, media, review_records
 from agent6.config import Config
-from agent6.harness import loop, operator_bridge, parallel_dispatch, provider_call, run_chain
+from agent6.harness import loop, operator_bridge, provider_call, run_chain
+from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.providers import ProviderResponse

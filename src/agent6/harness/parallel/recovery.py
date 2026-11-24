@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, credit_usage, token_usage
-from agent6.harness import child_continue, child_merge, parallel_dispatch, parallel_merge
+from agent6.harness.parallel import continuation as child_continue
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import merge as parallel_merge
+from agent6.harness.parallel import merge_request as child_merge
 from agent6.sessions import child_dispatch, journal
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import events, tail

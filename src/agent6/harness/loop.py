@@ -40,7 +40,6 @@ from agent6.graph import curator as graph_curator
 from agent6.graph import models, order
 from agent6.harness import (
     advice,
-    child_work,
     finish_gates,
     guards,
     loop_conversation,
@@ -51,8 +50,6 @@ from agent6.harness import (
     metric_sampler,
     nudges,
     operator_bridge,
-    parallel_dispatch,
-    parallel_rank,
     provider_call,
     quiet_turns,
     run_chain,
@@ -64,6 +61,9 @@ from agent6.harness import compaction as harness_compaction
 from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import rank as parallel_rank
+from agent6.harness.parallel import work as child_work
 from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.harness.prompt import repo_context
 from agent6.harness.review import gate as harness_review_gate

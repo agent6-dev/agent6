@@ -13,7 +13,7 @@ from agent6.app import child_wait, finalize, stamps
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.context import memory
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
 
@@ -57,7 +57,7 @@ def stamp_compare_outcomes(
     Args:
         candidates: The ranked children.
         outcome: The ranking.
-        winner: The child the ranking crowns (`parallel_rank.winner`), or "".
+        winner: The child the ranking crowns (`harness.parallel.rank.winner`), or "".
         record_state: The state dir the run's and its children's records live under.
         parent_dir: The manifest owner for the group's ranking and judge spend.
         group: The comparison group id.

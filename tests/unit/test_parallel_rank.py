@@ -18,16 +18,12 @@ from agent6 import budget, child_records, directive, kinds, paths
 from agent6.app import children as app_children
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
-from agent6.harness import (
-    child_work,
-    loop_conversation,
-    loop_state,
-    parallel_dispatch,
-    parallel_merge,
-    parallel_rank,
-    parallel_recovery,
-    run_chain,
-)
+from agent6.harness import loop_conversation, loop_state, run_chain
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import merge as parallel_merge
+from agent6.harness.parallel import rank as parallel_rank
+from agent6.harness.parallel import recovery as parallel_recovery
+from agent6.harness.parallel import work as child_work
 from agent6.sessions import child_dispatch, completion, event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest

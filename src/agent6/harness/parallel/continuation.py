@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from agent6 import budget, child_records
-from agent6.harness import child_merge, child_tasks, parallel_dispatch
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import merge_request as child_merge
+from agent6.harness.parallel import tasks as child_tasks
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import tool_errors
 from agent6.vcs.git import read as git_read

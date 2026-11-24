@@ -4,8 +4,8 @@
 
 `ParallelDispatcher` owns the policy: when to cut children, the DAG stamps, the events, the
 injected group spawner. A work dispatch starts its children in the background and returns;
-`settle` merges what finished at a turn boundary. `parallel_merge` projects child results into
-ordered merges, DAG stamps and notices; `parallel_panel` runs a panel's record-only batches
+`settle` merges what finished at a turn boundary. `merge` projects child results into
+ordered merges, DAG stamps and notices; `panel` runs a panel's record-only batches
 through the same executor. Only the first-ranked child merges into the parent chain.
 """
 
@@ -21,7 +21,11 @@ from typing import TYPE_CHECKING
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, errors, token_usage
 from agent6.graph import curator as graph_curator
-from agent6.harness import child_merge, child_repo, parallel_merge, parallel_rank, run_chain
+from agent6.harness import run_chain
+from agent6.harness.parallel import merge as parallel_merge
+from agent6.harness.parallel import merge_request as child_merge
+from agent6.harness.parallel import rank as parallel_rank
+from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import budget_events, child_dispatch, journal
 from agent6.vcs.git import read as git_read
 
@@ -144,7 +148,7 @@ class ParallelDispatcher:
         """Start each segment's task in the background and return what started.
 
         A segment is one task and one dispatch record, written before any launch.
-        Several children are attempts `parallel_rank` orders. Each starts on a clone of the
+        Several children are attempts `rank` orders. Each starts on a clone of the
         parent's committed HEAD under the parent's config and remaining budget, with no
         turn cap or deadline of its own. `settle` completes the task at a turn boundary;
         agent6-owned git merges the work, and model-owned git retains its ref.

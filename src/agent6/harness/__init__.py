@@ -7,7 +7,7 @@ Harness is the loop plus every primitive it calls in a turn.
 What spans executions belongs to `app`, which composes executions into lifecycles.
 Harness imports `tools`, `sandbox` and the shared packages, never `app` or `ui`.
 `system_prompt_for` and `model_exchange_for` give `agent6 prompt show` the run's first exchange.
-Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel_dispatch`, `run_chain`.
+Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel`, `run_chain`.
 """
 
 from __future__ import annotations

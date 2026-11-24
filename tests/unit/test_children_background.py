@@ -26,17 +26,17 @@ from agent6.config import Config
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import (
-    child_work,
     guards,
     loop,
     loop_conversation,
     loop_state,
     operator_bridge,
-    parallel_dispatch,
-    parallel_recovery,
     provider_call,
     run_chain,
 )
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import recovery as parallel_recovery
+from agent6.harness.parallel import work as child_work
 from agent6.harness.tasks import focus as dag_focus
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, event_log, ipc

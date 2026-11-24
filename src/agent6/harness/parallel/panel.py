@@ -12,11 +12,12 @@ import dataclasses
 from typing import TYPE_CHECKING
 
 from agent6 import child_records
-from agent6.harness import child_repo, parallel_merge
+from agent6.harness.parallel import merge as parallel_merge
+from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch
 
 if TYPE_CHECKING:
-    from agent6.harness import parallel_dispatch
+    from agent6.harness.parallel import dispatch as parallel_dispatch
 
 # The window one batch of a panel's reviewers runs in; a work child has no deadline of its own.
 PANEL_BATCH_DEADLINE_S = 1800.0

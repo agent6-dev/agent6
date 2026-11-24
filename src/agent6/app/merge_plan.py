@@ -16,7 +16,7 @@ from agent6 import errors, kinds, terminal
 from agent6.app import merge, resume, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process

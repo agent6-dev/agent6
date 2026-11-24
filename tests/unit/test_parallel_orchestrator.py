@@ -41,7 +41,7 @@ from agent6.app import (
 from agent6.app import children as app_children
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, ipc, process
 from agent6.sessions import manifest as sessions_manifest

@@ -36,7 +36,7 @@ from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest

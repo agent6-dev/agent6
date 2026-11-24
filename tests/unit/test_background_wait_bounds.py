@@ -10,7 +10,8 @@ from typing import Any
 
 import pytest
 
-from agent6.harness import child_work, toolset
+from agent6.harness import toolset
+from agent6.harness.parallel import work as child_work
 from agent6.sessions import ipc
 from agent6.tools import dispatch
 from tests.sandbox import test_command_checkin as command_env

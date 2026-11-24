@@ -17,7 +17,8 @@ from typing import TYPE_CHECKING
 
 from agent6 import child_records, errors, kinds, llm_json
 from agent6.config import Config, ConfigError
-from agent6.harness import child_repo, parallel_panel
+from agent6.harness.parallel import panel as parallel_panel
+from agent6.harness.parallel import repo as child_repo
 from agent6.harness.review import verdict as review_verdict
 from agent6.prompts import review
 from agent6.sessions import child_dispatch, completion
@@ -26,7 +27,7 @@ from agent6.tools import schema as tools_schema
 from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
-    from agent6.harness import parallel_dispatch
+    from agent6.harness.parallel import dispatch as parallel_dispatch
 
 # Each attempt's diff in a judge's opening; a cut is marked, and the judge's clone holds the rest.
 DIFF_CAP = 60_000

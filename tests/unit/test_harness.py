@@ -34,7 +34,6 @@ from agent6.harness import (
     loop_steer,
     metric_rules,
     operator_bridge,
-    parallel_merge,
     provider_call,
     quiet_turns,
     run_chain,
@@ -42,6 +41,7 @@ from agent6.harness import (
 )
 from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import window as compaction_window
+from agent6.harness.parallel import merge as parallel_merge
 from agent6.harness.review import gate as review_gate
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.providers import (

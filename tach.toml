@@ -174,7 +174,7 @@ depends_on = [
 ]
 
 [[modules]]
-# review.gate uses parallel_dispatch and parallel_panel; toolset has no reviewer coupling.
+# review.gate uses parallel.dispatch and parallel.panel; toolset has no reviewer coupling.
 # review.verdict parses bound completion artifacts with review.panel and llm_json.
 # review.gate and loop use review.history to restore durable panel evidence.
 # compaction.driver uses compaction.elision, compaction.rules and compaction.window.
@@ -182,8 +182,8 @@ depends_on = [
 # reads review.panel and verify.gate notice sizes within this harness boundary.
 # The package re-exports prompt.preview; it uses tasks.focus, prompt.blocks,
 # prompt.repo_context and toolset within this boundary.
-# parallel_dispatch shares one executor and budget reservation path for work and panels.
-# parallel_merge owns merge/DAG projections; child_repo retains descendant session records.
+# parallel.dispatch shares one executor and budget reservation path for work and panels.
+# parallel.merge owns merge/DAG projections; parallel.repo retains descendant session records.
 path = "agent6.harness"
 depends_on = [
   "agent6.budget",  # loop harness needs BudgetExceededError

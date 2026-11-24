@@ -20,7 +20,8 @@ from agent6.harness import loop_conversation, nudges
 from agent6.sessions import attachments, child_dispatch, ipc, journal
 
 if TYPE_CHECKING:
-    from agent6.harness import loop_state, parallel_dispatch
+    from agent6.harness import loop_state
+    from agent6.harness.parallel import dispatch as parallel_dispatch
     from agent6.tools import dispatch
 
 # `/pin` instructions are re-injected after every tier-2 restart, so their total is capped.

@@ -31,7 +31,7 @@ from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.models import validate
 from agent6.sessions import child_dispatch, event_log, ipc, journal, lineage, process
 from agent6.sessions import layout as sessions_layout

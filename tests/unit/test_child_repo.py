@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.harness.child_repo on temporary git repositories."""
+"""Tests for agent6.harness.parallel.repo on temporary git repositories."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 

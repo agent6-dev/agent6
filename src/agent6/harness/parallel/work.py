@@ -15,7 +15,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
-from agent6.harness import child_continue, child_merge, child_tasks, operator_bridge, parallel_merge
+from agent6.harness import operator_bridge
+from agent6.harness.parallel import continuation as child_continue
+from agent6.harness.parallel import merge as parallel_merge
+from agent6.harness.parallel import merge_request as child_merge
+from agent6.harness.parallel import tasks as child_tasks
 from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
@@ -23,7 +27,8 @@ from agent6.viewmodel import children as vm_children
 from agent6.viewmodel.session import log as session_log
 
 if TYPE_CHECKING:
-    from agent6.harness import loop, parallel_dispatch
+    from agent6.harness import loop
+    from agent6.harness.parallel import dispatch as parallel_dispatch
 
 
 def standing(

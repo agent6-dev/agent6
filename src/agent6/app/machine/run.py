@@ -26,7 +26,7 @@ from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
 from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,

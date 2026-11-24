@@ -18,14 +18,8 @@ from agent6 import budget as agent6_budget
 from agent6 import child_records
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
-from agent6.harness import (
-    loop,
-    operator_bridge,
-    parallel_merge,
-    provider_call,
-    run_chain,
-    toolset,
-)
+from agent6.harness import loop, operator_bridge, provider_call, run_chain, toolset
+from agent6.harness.parallel import merge as parallel_merge
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
 from agent6.sessions import layout as sessions_layout

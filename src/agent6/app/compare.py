@@ -5,7 +5,7 @@
 Shared by a run's rank merge and `sessions compare`. Each of `[harness.parallel].judges` is a
 reviewer child that ranks once, and the lowest sum of ranks wins; with no order from a judge
 the order is the mechanical one. A run starts its judges through its dispatcher
-(`harness.parallel_rank`); `rank` here starts them for a command that has no run, and waits.
+(`harness.parallel.rank`); `rank` here starts them for a command that has no run, and waits.
 The caller injects the child spawner and the in-flight status (`contextlib.nullcontext`
 shows nothing), so `app` never imports `ui`.
 """
@@ -23,7 +23,8 @@ from agent6 import budget as agent6_budget
 from agent6 import child_records, kinds
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
-from agent6.harness import parallel_panel, parallel_rank
+from agent6.harness.parallel import panel as parallel_panel
+from agent6.harness.parallel import rank as parallel_rank
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format, listing
 from agent6.viewmodel.session import status as session_status

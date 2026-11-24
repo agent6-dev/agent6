@@ -17,7 +17,7 @@ from agent6 import child_records, paths
 from agent6.app import child_launch, child_resume, child_wait, child_watch, worktrees
 from agent6.app import children as app_children
 from agent6.config import Config, layer
-from agent6.harness import child_repo
+from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, event_log, ipc, journal, lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts

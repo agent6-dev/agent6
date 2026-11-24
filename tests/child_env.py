@@ -24,14 +24,10 @@ from agent6.app import (
     worktrees,
 )
 from agent6.config import Config
-from agent6.harness import (
-    child_repo,
-    loop_conversation,
-    loop_state,
-    parallel_dispatch,
-    parallel_panel,
-    run_chain,
-)
+from agent6.harness import loop_conversation, loop_state, run_chain
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import panel as parallel_panel
+from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import (
     child_dispatch,
     event_log,

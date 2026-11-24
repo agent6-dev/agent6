@@ -10,7 +10,8 @@ import tempfile
 from agent6 import child_records, errors, paths
 from agent6.app import child_launch, child_trees, child_wait, stamps, worktrees
 from agent6.config import Config
-from agent6.harness import child_repo, loop_snapshot
+from agent6.harness import loop_snapshot
+from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, manifest, process
 from agent6.sessions import layout as sessions_layout
 from agent6.vcs.git import ops as git_ops

@@ -7,7 +7,8 @@ import pytest
 
 from agent6 import budget, child_records, kinds, review_records
 from agent6.app import role_providers
-from agent6.harness import parallel_panel, toolset
+from agent6.harness import toolset
+from agent6.harness.parallel import panel as parallel_panel
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import verdict as review_verdict
 from agent6.sessions import completion

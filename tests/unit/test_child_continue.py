@@ -7,7 +7,9 @@ import pathlib
 import pytest
 
 from agent6 import child_records, directive
-from agent6.harness import child_merge, child_work, loop_conversation, loop_state
+from agent6.harness import loop_conversation, loop_state
+from agent6.harness.parallel import merge_request as child_merge
+from agent6.harness.parallel import work as child_work
 from agent6.sessions import child_dispatch
 from agent6.tools import tool_errors
 from tests.unit import test_children_background as background

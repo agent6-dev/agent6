@@ -100,11 +100,15 @@ Each entry is the package's docstring.
     - What spans executions belongs to `app`, which composes executions into lifecycles.
     - Harness imports `tools`, `sandbox` and the shared packages, never `app` or `ui`.
     - `system_prompt_for` and `model_exchange_for` give `agent6 prompt show` the run's first exchange.
-    - Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel_dispatch`, `run_chain`.
+    - Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel`, `run_chain`.
 - **[`harness/compaction`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/compaction)**: Context compaction: its driver, the elision of old tool results, its rules and its window.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
     - `default_strategy` picks the built-in strategy for the driving route.
     - Main modules: `driver`, `strategy`, `rules`, `elision`, `window`, `retention`, `cold_start`.
+- **[`harness/parallel`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/parallel)**: The children a run dispatches: their dispatch, merge, ranking, panels and recovery.
+    - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
+    - `[harness.parallel]` configures it.
+    - Main modules: `dispatch`, `merge`, `rank`, `panel`, `recovery`, `work`.
 - **[`harness/prompt`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/prompt)**: The run's system prompt and first message: the block fillers, the repo context and the preview.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
     - The text the fillers render is the leaf package `agent6.prompts`.
@@ -444,7 +448,7 @@ The pieces they share sit in their own layers.
 - `review_records.py` owns the findings, verdicts, targets and observations ([Review records](data-contracts.md#review-records)).
 - `viewmodel/review.py` folds panel evidence and finding history for the live state and for `scan_session_log`.
 - `vcs/review.py` owns diff hunk ranges and line-origin classification.
-- A panel's reviewers are children, dispatched through `harness/parallel_panel.py`.
+- A panel's reviewers are children, dispatched through `harness/parallel/panel.py`.
 - Panel preparation retains the exact comparison under `refs/agent6/<session>/review/<base-tree>-<head-tree>`.
 - Retention never moves the operator's index, HEAD, visible branches or run chain.
 - `app/review/actions.py` owns Fix, Resolve and Reopen for every front-end, and live requests cross `sessions.ipc`.
@@ -464,10 +468,10 @@ Four entries start children: `run --parallel`, the composers' `/parallel` direct
 All of them share `parse_spec` in `directive.py`, a stdlib leaf both `harness` and `ui` import.
 
 - `child_records.py` holds the `ChildSpawner` and `GroupChildSpawner` protocols, and `app/children.py` implements them over the front-end's `ChildRuntime`.
-- `harness/child_repo.py` is the git plumbing: `clone_worktree` and `import_run`, with no LLM and no process spawning.
-- `ParallelDispatcher` in `harness/parallel_dispatch.py` starts a task's children and settles them at turn boundaries.
-- `harness/parallel_rank.py` ranks a task's attempts: a judge is a reviewer child whose verdict is an order.
-- `harness/parallel_recovery.py` settles the dispatches an earlier execution left behind, before a resumed one's first provider call.
+- `harness/parallel/repo.py` is the git plumbing: `clone_worktree` and `import_run`, with no LLM and no process spawning.
+- `ParallelDispatcher` in `harness/parallel/dispatch.py` starts a task's children and settles them at turn boundaries.
+- `harness/parallel/rank.py` ranks a task's attempts: a judge is a reviewer child whose verdict is an order.
+- `harness/parallel/recovery.py` settles the dispatches an earlier execution left behind, before a resumed one's first provider call.
 - `app/child_launch.py` writes the child's launch file (`AGENT6_LAUNCH`, mode `0600`): its task, pins, caps, away mode and lineage.
 - `app/parallel_results.py` imports a finished child and carries its memory and rulings back.
 - `app/worktrees.py` places the clones (`[git.worktree].base_dir`) and removes imported ones.

@@ -15,15 +15,9 @@ import pytest
 
 from agent6 import child_records, directive
 from agent6.config import Config
-from agent6.harness import (
-    child_work,
-    loop_conversation,
-    loop_state,
-    operator_bridge,
-    parallel_dispatch,
-    run_chain,
-    toolset,
-)
+from agent6.harness import loop_conversation, loop_state, operator_bridge, run_chain, toolset
+from agent6.harness.parallel import dispatch as parallel_dispatch
+from agent6.harness.parallel import work as child_work
 from agent6.sessions import ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, dispatch, schema, sessions, tool_errors

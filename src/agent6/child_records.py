@@ -3,8 +3,8 @@
 """The child records every group shares: what a child runs, what it returned, how it merged.
 
 `run --parallel`, the `/parallel` steer and the import plumbing read and write these; the
-code that clones, spawns and merges lives in `harness.child_repo`, `app.children` and
-`harness.parallel_dispatch`.
+code that clones, spawns and merges lives in `harness.parallel.repo`, `app.children` and
+`harness.parallel.dispatch`.
 """
 
 from __future__ import annotations

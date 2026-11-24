@@ -38,8 +38,9 @@ from agent6.app.machine import state_configs
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer, layer_data
-from agent6.harness import child_repo, loop, operator_bridge, run_chain
+from agent6.harness import loop, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
+from agent6.harness.parallel import repo as child_repo
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail

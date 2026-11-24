@@ -21,7 +21,7 @@ import pytest
 
 from agent6 import paths
 from agent6.config import Config, layer
-from agent6.harness import parallel_merge
+from agent6.harness.parallel import merge as parallel_merge
 from agent6.sessions import child_dispatch
 from agent6.tools import schema
 from agent6.ui.cli import cli_main

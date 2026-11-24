@@ -150,7 +150,7 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** app/fork, harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, tool_effects}, harness/compaction/{calls, retention, rules, strategy, window, writers}, harness/tasks/standing, harness/verify/gate
+- **Read by:** app/fork, harness/{loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, provider_call, quiet_turns, tool_effects}, harness/compaction/{calls, retention, rules, strategy, window, writers}, harness/parallel/{dispatch, merge_request, recovery}, harness/tasks/standing, harness/verify/gate
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (56 test files exercise it)
 
 ## SessionManifest
@@ -229,7 +229,7 @@ Typed tool-handler results.
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `StartedResult`, `SteeredResult`, `BackgroundRosterResult`, `BackgroundReadResult`, `SessionsResult`, `SessionEntriesResult`, `FindingsResult`
 
 - **Written by:** tools/{child_tools, command_tools, control_tools, dag_tools, dispatch, edit_diag, fetch, fs_tools, nav_tools, sessions, skill_tools}
-- **Read by:** app/review/actions, harness/{child_work, guards, memory_touch, metric_sampler, tool_effects}, harness/verify/gate, tools/result_format
+- **Read by:** app/review/actions, harness/{guards, memory_touch, metric_sampler, tool_effects}, harness/parallel/work, harness/verify/gate, tools/result_format
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (43 test files exercise it)
 
 ## Event union
@@ -241,7 +241,7 @@ Read logs.jsonl rows into the journal's records, with the coercions old session 
 Public fields: [Formats](formats.md#journal).
 
 - **Written by:** viewmodel/events
-- **Read by:** app/children, app/review/recap, harness/parallel_recovery, ui/acp/updates, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, telemetry, transcript, transcript_items, transcript_text}, viewmodel/session/{core, log, state}
+- **Read by:** app/children, app/review/recap, harness/parallel/recovery, ui/acp/updates, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, telemetry, transcript, transcript_items, transcript_text}, viewmodel/session/{core, log, state}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (8 test files exercise it)
 
 ## MachineSpec
@@ -308,7 +308,7 @@ The task-graph nodes and the intents that mutate them.
 | `held_by` | `tuple[str, ...]` | `()` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** app/merge, graph/{order, replay}, harness/{advice, child_tasks, guards, loop, parallel_merge}, harness/compaction/driver, harness/tasks/{focus, operator_tasks}, tools/{dag_tools, schema}, viewmodel/session/state
+- **Read by:** app/merge, graph/{order, replay}, harness/{advice, guards, loop}, harness/compaction/driver, harness/parallel/{merge, tasks}, harness/tasks/{focus, operator_tasks}, tools/{dag_tools, schema}, viewmodel/session/state
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (24 test files exercise it)
 
 ## Run/machine wire snapshot
