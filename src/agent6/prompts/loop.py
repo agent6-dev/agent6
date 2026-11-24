@@ -296,6 +296,9 @@ model input, but old results may be compacted.
 </budget-awareness>
 """
 
+# Appended when the worker's turns offer the provider's hosted web search.
+WEB_SEARCH_LINE = "The provider's web search is available.\n"
+
 # Fills {plan_line} when a role rides a subscription provider: those calls meter in plan percent.
 PLAN_BUDGET_LINE = " Subscription-plan calls meter in plan percent ({percent_cap})."
 

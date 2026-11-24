@@ -480,6 +480,7 @@ class InstrumentedProvider:
         should_interrupt: Callable[[], bool] | None = None,
         compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
+        web_search: bool = False,
     ) -> ProviderResponse:
         """Call the inner provider and emit the model and budget events around it.
 
@@ -497,6 +498,7 @@ class InstrumentedProvider:
             compaction: The endpoint operation, if requested.
             context: The caller's context; one without a conversation id names the initiator
                 only, and the conversation supplies the rest; None is an agent-initiated call.
+            web_search: Whether the call offers the provider's hosted web search.
 
         Returns:
             The inner provider's response.
@@ -562,7 +564,11 @@ class InstrumentedProvider:
             nonlocal process_reply
             process_reply = True
 
-        options: dict[str, Any] = {"compaction": compaction} if compaction is not None else {}
+        # Only an option the caller set is named: not every provider takes each one.
+        options: dict[str, Any] = {
+            **({"compaction": compaction} if compaction is not None else {}),
+            **({"web_search": True} if web_search else {}),
+        }
         if isinstance(self.inner, ClaudeCodeProvider) and events is not None:
             options["on_reply"] = on_reply
         try:
@@ -599,17 +605,7 @@ class InstrumentedProvider:
             self._emit_budget()
             raise
         self.conversations.completed(self.actor, self.provider_name, call_context=call_context)
-        if self.events is not None:
-            for search in resp.web_searches:
-                self.events.emit(
-                    journal.ModelWebSearch(
-                        **self._identity(call_context),
-                        search_id=search.id,
-                        query=search.query,
-                        urls=search.urls,
-                        **({"status": search.status} if search.status else {}),
-                    )
-                )
+        self._record_searches(call_context, resp)
         self._record_attempt(
             call_context,
             context,
@@ -627,6 +623,21 @@ class InstrumentedProvider:
         )
         self._emit_budget()
         return resp
+
+    def _record_searches(self, call_context: kinds.CallContext, resp: ProviderResponse) -> None:
+        """Journal each hosted web search the response holds, ahead of its attempt's row."""
+        if self.events is None:
+            return
+        for search in resp.web_searches:
+            self.events.emit(
+                journal.ModelWebSearch(
+                    **self._identity(call_context),
+                    search_id=search.id,
+                    query=search.query,
+                    urls=search.urls,
+                    **({"status": search.status} if search.status else {}),
+                )
+            )
 
     def _record_attempt(
         self,

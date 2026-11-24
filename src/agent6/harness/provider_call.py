@@ -358,6 +358,7 @@ class ProviderCaller:
         compaction: provider_types.CompactionRequest | None = None,
         initiator: str = "agent",
         call_context: kinds.CallContext | None = None,
+        web_search: bool = False,
     ) -> ProviderResponse:
         """Call the provider under the retry.
 
@@ -371,6 +372,8 @@ class ProviderCaller:
                 attempt of this logical call carries it.
             call_context: The logical call's identity, shared by every attempt; a fresh one
                 when the caller names none.
+            web_search: Whether the call offers the provider's hosted web search; a call
+                that does not names nothing to the provider.
 
         Returns:
             The first usable response, or the last empty one.
@@ -383,6 +386,8 @@ class ProviderCaller:
             ProviderInterrupted: An operator steer.
         """
         options: dict[str, Any] = {"compaction": compaction} if compaction is not None else {}
+        if web_search:
+            options["web_search"] = True
         attempts = max(1, self.retry_count + 1)
         attempt = 1
         # One logical call: its retries share the call id, each attempt with its own request id.

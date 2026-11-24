@@ -144,6 +144,8 @@ class Harness:
             checkout's; None outside a review.
         interactive: An operator is watching and can steer live, so a quiet turn parks for a
             steer instead of ending.
+        web_search: Whether the worker's own turns offer the provider's hosted web search;
+            a summary call never does.
         mode: The mode; `plan` uses the planning prompt and tool list, never auto-commits,
             and writes `plan_markdown` to `plan_output_path` on finish_planning.
         plan_output_path: Where a plan is written; required when `mode="plan"`.
@@ -199,6 +201,7 @@ class Harness:
     # The gate a resumed execution carried from the last one, set before the state is built.
     adopted_on_resume: tuple[str, ...] = ()
     interactive: bool = False
+    web_search: bool = False
     mode: kinds.LoopMode = "run"
     plan_output_path: pathlib.Path | None = None
     contract: kinds.ConversationContract | None = None
@@ -302,6 +305,7 @@ class Harness:
             protected_paths=bool(self.dispatcher.extra_protect_paths),
             dag_available=self.dispatcher.dag_available,
             container_roots=self._container_roots(),
+            web_search=self.web_search,
         )
 
         # The root task is what `add_task` with `parent_id=None` attaches under.
@@ -949,6 +953,7 @@ class Harness:
                     if isinstance(self.compactor, strategy.ClearingStrategy)
                     else None
                 ),
+                web_search=self.web_search,
             )
 
         try:

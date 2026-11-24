@@ -243,6 +243,7 @@ def build_system_prompt(
     protected_paths: bool = False,
     dag_available: bool = True,
     container_roots: tuple[str, str] | None = None,
+    web_search: bool = False,
 ) -> str:
     """Assemble the system prompt from the static blocks and the run's context.
 
@@ -265,6 +266,7 @@ def build_system_prompt(
         dag_available: Whether the run has a curator.
         container_roots: The command root inside the container and the host root, when the
             commands run in a container; None otherwise.
+        web_search: Whether the worker's turns offer the provider's hosted web search.
 
     Returns:
         The prompt text.
@@ -385,6 +387,8 @@ def build_system_prompt(
             plan_line=_plan_budget_line(config),
         )
     )
+    if web_search:
+        parts.append(loop.WEB_SEARCH_LINE)
 
     parts.append(repo_priors_block(repo))
 

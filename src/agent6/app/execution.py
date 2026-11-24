@@ -598,6 +598,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             review_target=inputs.review_target,
             standing_goal=inputs.standing_goal,
             interactive=inputs.interactive and mode == "run",
+            web_search=cfg.offers_web_search(mode),
             initial_pins=inputs.pins,
             max_turns=cfg.harness.max_turns,
             provider=session.provider,

@@ -50,6 +50,7 @@ def system_prompt_for(
         decisions=memory.decisions_text(recall) if recall is not None else "",
         skills=_installed_skills(root, config, mode),
         isolation=_shown_isolation(config),
+        web_search=config.offers_web_search(mode),
     )
 
 
