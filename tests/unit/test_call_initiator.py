@@ -271,7 +271,7 @@ def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
     assert rows[1]["ok"] is True and rows[3]["text"] == "ok"
 
 
-def test_a_model_assignment_is_not_an_operator_quote() -> None:
+def test_a_model_assignment_is_the_task_and_not_an_operator_quote() -> None:
     from tests.unit import test_restart_retention
 
     wf = test_harness._wf(task_source="model", curator=None)
@@ -279,5 +279,9 @@ def test_a_model_assignment_is_not_an_operator_quote() -> None:
         wf.run("model assignment")
     conv = drive.call_args.kwargs["conversation"]
     conv.assistant([{"type": "text", "text": "done"}])
-    test_restart_retention._restart(conv, keep_recent_chars=100, keep_recent_turns=0)
-    assert "model assignment" not in test_restart_retention._notice(conv)
+    test_restart_retention._restart(
+        conv, task="model assignment", keep_recent_chars=100, keep_recent_turns=0
+    )
+    notice = test_restart_retention._notice(conv)
+    assert "TASK (the goal, verbatim):\nmodel assignment" in notice
+    assert "Operator message:" not in notice

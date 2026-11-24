@@ -588,18 +588,20 @@ The planner reads `plan.md` again after local compaction on a cold start, includ
 It parks if the file becomes unreadable or disappears during compaction.
 On an endpoint that writes signed summaries, the line reports that the local mode does not apply.
 
-**What a local restart keeps.** `compaction.keep_operator_messages` reserves the operator's newest messages (task, steers and answers) word for word.
+**What a local restart keeps.** `compaction.keep_operator_messages` reserves the newest messages the run was given, word for word: the operator's steers and answers, and the task as the oldest.
 `compaction.keep_recent_turns` keeps an unbroken run of recent replies with their inputs and tool results.
 Both counts default to `-1` (no count limit).
 Set either to `0` to reserve no messages or keep no optional turns, respectively.
 A kept turn still includes the operator text it received.
 Older reserved messages appear in time order before the pins and any summary, including answers without their tool calls.
-The opening task has no special place, and a model assignment or rendered machine prompt is not an operator message.
+The task is the whole task the worker received: the typed words with any inlined file, a plan's body, a parent's task for a child, or a machine state's prompt.
+Every restart counts it as the oldest message and charges it to the cap like the others.
+A restart states it once, under `TASK (the goal, verbatim)` when no kept turn holds it.
 The local helper reads operator answers in the replaced history, including full answers to capped `ask_user` calls, but no other tool output.
 The helper fallback for a signed endpoint summary omits those tool answers.
 
 `compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
-After reserving the operator's words, the newest eligible turn stays whole even if it exceeds the space left.
+After reserving those messages, the newest eligible turn stays whole even if it exceeds the space left.
 At `0`, no optional history survives; the restart still carries pending work and any required plan or contract notice.
 `compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a local restart keeps turns.
 

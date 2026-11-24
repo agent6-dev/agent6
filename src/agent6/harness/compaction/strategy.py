@@ -17,11 +17,12 @@ from agent6.tools import waits
 class RestartNotice(Protocol):
     """Build the header for a local restart."""
 
-    def __call__(self, quotes: Sequence[str], /, *, truncated: bool = False) -> str:
-        """State the run facts and the retained operator messages.
+    def __call__(self, quotes: Sequence[str], /, *, task: str = "", truncated: bool = False) -> str:
+        """State the run facts, the task and the retained operator messages.
 
         Args:
             quotes: Older operator messages outside the kept turns.
+            task: The run's task when no kept turn states it.
             truncated: No summary follows the notice.
 
         Returns:
@@ -38,10 +39,10 @@ class Context:
         conversation: The live history, with the current turn's notices and cache marks.
         settings: The resolved compaction settings.
         prefix_chars: The size of the system text and tool definitions.
-        task: The composed task with its author and any verbatim operator words.
+        task: The composed task with its author, as the opening states it.
         pins: Operator instructions that survive a restart.
         endpoint_notice: Build the notice that follows a signed summary and its reply.
-        restart_notice: Build the restart header with operator quotes, pins and run facts.
+        restart_notice: Build the restart header with the task, operator quotes, pins and facts.
         call_endpoint: Ask the endpoint to summarise the given request.
         call_worker: Append one instruction to the worker request using the supplied call id.
         call_helper: Send system and user text to the helper using the supplied call id.

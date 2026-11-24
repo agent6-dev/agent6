@@ -149,7 +149,7 @@ class _Scheduled:
             sent = len(messages) if sent_count is None else sent_count
             replay = retention.Replay(messages[1:sent], (), messages[sent:])
         else:
-            replay = retention.select(messages, context.settings)
+            replay = retention.select(messages, context.settings, context.task.text)
         open_tasks = (
             advice.open_subtasks(context.curator.nodes()) if context.curator is not None else []
         )
@@ -181,7 +181,7 @@ class _Scheduled:
             )
         else:
             conversation.restart(
-                context.restart_notice(replay.quotes) + summary,
+                context.restart_notice(replay.quotes, task=replay.task) + summary,
                 keep=keep,
                 quotes=replay.quotes,
                 endpoint_task=context.task if self.endpoint else None,
@@ -343,9 +343,11 @@ class Tiered(_Scheduled):
                 if not restarted:
                     return False
             case "truncate":
-                replay = retention.select(conversation.messages, context.settings)
+                replay = retention.select(
+                    conversation.messages, context.settings, context.task.text
+                )
                 conversation.restart(
-                    context.restart_notice(replay.quotes, truncated=True),
+                    context.restart_notice(replay.quotes, task=replay.task, truncated=True),
                     keep=replay.tail,
                     quotes=replay.quotes,
                 )

@@ -338,7 +338,7 @@ def test_helper_restart_after_an_endpoint_block_reads_the_prior_summary() -> Non
 def test_restored_signed_summary_does_not_change_the_task_author(
     source: loop_conversation.TaskSource, tmp_path: pathlib.Path
 ) -> None:
-    """A helper fallback reconstructs the opening without promoting the composed task."""
+    """A helper fallback reconstructs the opening with the author the run recorded."""
     snap = tmp_path / "loop_state.json"
     original = "Rendered context.\nAssignment."
     words = "Assignment."
@@ -357,7 +357,7 @@ def test_restored_signed_summary_does_not_change_the_task_author(
         task_source=source,
         resume_state_path=snap,
     )
-    system, conv, _ = wf._open_task(original, words)
+    system, conv, _ = wf._open_task(original)
     state = loop_state.LoopState(original, 0, system=system, operator_task=words)
     ctx = wf.compaction_context(conv, state, [])
     assert driver.Endpoint().summarise_and_restart(ctx)
@@ -377,12 +377,12 @@ def test_restored_signed_summary_does_not_change_the_task_author(
     conv = loop_conversation.Conversation.from_wire(
         loop_snapshot.load_session_snapshot(snap).messages
     )
-    assert conv.to_wire()[0]["content"][0]["text"] == original
+    opening = conv.to_wire(snapshot=True)[0]["content"][0]
+    assert (opening["text"], opening.get("origin", "harness")) == (original, source)
     local._reply(conv, "Done.")
-    local._restart(conv, keep_recent_chars=500, keep_recent_turns=0)
+    local._restart(conv, task=original, keep_recent_chars=500, keep_recent_turns=0)
     notice = local._notice(conv)
-    assert original not in notice
-    assert ("Operator message:\nAssignment." in notice) is (source == "operator")
+    assert notice.count(original) == 1 and "Operator message:" not in notice
 
 
 def test_rejected_sent_image_stays_in_the_prefix() -> None:

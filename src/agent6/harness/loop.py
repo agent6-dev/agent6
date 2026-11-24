@@ -256,7 +256,7 @@ class Harness:
         if self.mode == "run" and self.events is not None:
             self.metrics.restore(self.events.path)
         system, conversation, root_id = (
-            self._open_task(user_task, operator_task)
+            self._open_task(user_task)
             if self.contract is None
             else self._open_contract(self.contract)
         )
@@ -270,14 +270,11 @@ class Harness:
             operator_task=operator_task,
         )
 
-    def _open_task(
-        self, user_task: str, operator_task: str
-    ) -> tuple[str, loop_conversation.Conversation, str | None]:
+    def _open_task(self, user_task: str) -> tuple[str, loop_conversation.Conversation, str | None]:
         """Open a worker's execution: the assembled system prompt, the task block, the root task.
 
         Args:
             user_task: The task, with any seed digest or skill block prepended.
-            operator_task: The operator's original words.
 
         Returns:
             The system prompt, the conversation holding the task block, and the root task's
@@ -329,16 +326,8 @@ class Harness:
         )
         initial_user = f"TASK:\n{user_task}\n\n{instructions}{dag_hint}"
         conversation = loop_conversation.Conversation()
-        conversation.notice(
-            initial_user,
-            origin=self.task_source,
-            operator_words=self._task_words(operator_task),
-        )
+        conversation.notice(initial_user, origin=self.task_source, operator_words=(user_task,))
         return system, conversation, root_id
-
-    def _task_words(self, words: str) -> tuple[str, ...]:
-        """Return the uncomposed task only when the operator supplied it."""
-        return (words,) if self.task_source == "operator" else ()
 
     def _open_contract(
         self, contract: kinds.ConversationContract
@@ -2069,12 +2058,14 @@ class Harness:
         def notice(
             operator_messages: Sequence[str] = (),
             *,
+            task: str = "",
             truncated: bool = False,
-            task: str | None = None,
+            endpoint: bool = False,
         ) -> str:
             return compaction_prompts.context_restart_notice(
                 self.mode,
-                endpoint_task=task,
+                task=task,
+                endpoint_task=state.original_task if endpoint else None,
                 truncated=truncated,
                 operator_messages=operator_messages,
                 session_id=self.session_id
@@ -2094,11 +2085,11 @@ class Harness:
             settings=self.compaction,
             prefix_chars=compaction_window.request_prefix_chars(state.system, tools),
             task=loop_conversation.Notice(
-                state.original_task, self.task_source, self._task_words(state.operator_task)
+                state.original_task, self.task_source, (state.original_task,)
             ),
             pins=state.pins,
             restart_notice=notice,
-            endpoint_notice=lambda: notice(task=state.original_task),
+            endpoint_notice=lambda: notice(endpoint=True),
             call_worker=calls.call_worker,
             call_endpoint=calls.call_endpoint,
             call_helper=calls.call_helper,

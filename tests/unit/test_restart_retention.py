@@ -15,6 +15,7 @@ import pytest
 from agent6.harness import loop_conversation as history
 from agent6.harness import loop_resume, loop_snapshot, tool_effects
 from agent6.harness.compaction import driver, window
+from agent6.prompts import compaction
 from agent6.providers import (
     anthropic,
     claude_code_wire,
@@ -31,10 +32,18 @@ def _reply(conv: history.Conversation, text: str) -> None:
     conv.assistant([{"type": "text", "text": text}])
 
 
-def _restart(conv: history.Conversation, *, idle: bool = False, **settings: int) -> str:
+def _restart(
+    conv: history.Conversation, *, idle: bool = False, task: str = "", **settings: int
+) -> str:
     helper = writers.Writer(writers.response("Ready."))
     ctx = writers.context(
-        helper, helper, [], conversation=conv, pins=("Standing rule.",), summariser="helper"
+        helper,
+        helper,
+        [],
+        conversation=conv,
+        pins=("Standing rule.",),
+        summariser="helper",
+        task=task,
     )
     ctx = dataclasses.replace(ctx, settings=dataclasses.replace(ctx.settings, **settings))
     assert driver.Tiered().summarise_and_restart(ctx, idle_gap_s=2 if idle else None)
@@ -76,6 +85,77 @@ def test_operator_reservations_and_whole_turns_share_one_cap(
         "PROGRESS SUMMARY:"
     )
     assert [m["content"][0]["text"] for m in conv.to_wire()[1:]] == tail
+
+
+_TASK = "Execute the prepared plan: cache\n\n1. Add CacheV2.\n2. Flip the readers."
+_STATED = f"TASK (the goal, verbatim):\n{_TASK}"
+
+
+def _opened(source: history.TaskSource = "operator") -> history.Conversation:
+    """Open a run of `_TASK`, a plan under its typed first line, then take one steer."""
+    conv = test_harness._wf(task_source=source)._open_task(_TASK)[1]
+    _reply(conv, "A")
+    conv.notice("steer", origin="operator")
+    _reply(conv, "B")
+    return conv
+
+
+@pytest.mark.parametrize("source", ["operator", "model", "harness"])
+def test_a_restart_states_the_composed_task_of_every_source_once(
+    source: history.TaskSource,
+) -> None:
+    """A restart kept the typed first line of a plan, and no task from a parent or a machine."""
+    conv = _opened(source)
+    _restart(conv, task=_TASK, keep_recent_turns=0, keep_recent_chars=80_000)
+    notice = _notice(conv)
+    assert notice.count(_TASK) == 1 and notice.count("Operator message:") == 1
+    assert notice.index(_STATED) < notice.index("Operator message:\nsteer")
+
+    # A kept opening already states the task, and its words are charged once.
+    conv = _opened(source)
+    _restart(conv, task=_TASK, keep_recent_chars=sum(map(window.message_chars, conv.messages)))
+    assert str(conv.to_wire()).count("Flip the readers.") == 1 and len(conv) == 5
+    assert "TASK (the goal" not in _notice(conv) and "Operator message:" not in _notice(conv)
+
+
+@pytest.mark.parametrize(
+    "operators,chars,kept",
+    [
+        (-1, 80_000, True),
+        (2, 80_000, True),
+        (1, 80_000, False),
+        (0, 80_000, False),
+        (-1, len(_TASK) + 5, True),
+        (-1, len(_TASK) + 4, False),
+    ],
+)
+def test_the_task_is_the_oldest_message_under_both_caps(
+    operators: int, chars: int, kept: bool
+) -> None:
+    conv = _opened()
+    _restart(
+        conv,
+        task=_TASK,
+        keep_operator_messages=operators,
+        keep_recent_chars=chars,
+        keep_recent_turns=0,
+    )
+    assert (_STATED in _notice(conv)) is kept
+    assert ("Operator message:\nsteer" in _notice(conv)) is (operators != 0)
+
+
+def test_a_task_the_history_lost_returns_from_the_run() -> None:
+    """After an endpoint summary cleared the opening, a local restart stated no task."""
+    conv = history.Conversation()
+    conv.adopt({"type": "compaction", "content": "Signed."}, [], "Continue from the summary.")
+    conv.unsign(compaction.unsigned_summary_notice)
+    _reply(conv, "A")
+    _restart(conv, task=_TASK, keep_recent_turns=0, keep_recent_chars=len(_TASK) - 1)
+    assert _TASK not in str(conv.to_wire())
+    conv = history.Conversation.from_wire(conv.to_wire(snapshot=True))
+    _reply(conv, "B")
+    _restart(conv, task=_TASK, keep_recent_turns=0, keep_recent_chars=80_000)
+    assert _notice(conv).count(_STATED) == str(conv.to_wire()).count("Flip the readers.") == 1
 
 
 def test_first_turn_that_does_not_fit_ends_replay() -> None:
@@ -376,8 +456,6 @@ def test_interrupted_turn_keeps_answers_to_repeated_call_ids_in_order(
 
 
 def test_endpoint_fallback_omits_the_answer_notice_from_a_kept_turn() -> None:
-    from agent6.prompts import compaction
-
     # Even words shaped like a prior summary are still a tool answer.
     first = compaction.unsigned_summary_notice("a" * 600 + " capped ending")
     conv = _answers(first, "short answer")

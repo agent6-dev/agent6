@@ -24,9 +24,9 @@ from tests.unit import test_context_compaction as drops
 from tests.unit import test_harness
 
 
-def _history() -> loop_conversation.Conversation:
+def _history(origin: loop_conversation.TaskSource = "operator") -> loop_conversation.Conversation:
     conv = loop_conversation.Conversation()
-    conv.notice("Original goal.", origin="operator")
+    conv.notice("Original goal.", origin=origin)
     conv.assistant(
         [
             {"type": "thinking", "thinking": "old reasoning", "signature": "old signature"},
@@ -162,6 +162,15 @@ def test_first_cold_worker_request(
         assert row["gap_s"] >= row["idle_compact_s"] == 5
     else:
         assert row["previous_route"] != row["route"] == "p/m"
+
+
+@pytest.mark.parametrize("mode", ["summarize", "truncate"])
+def test_a_cold_restart_states_the_task_a_parent_gave(
+    tmp_path: pathlib.Path, mode: kinds.ColdStart
+) -> None:
+    """A child restarted cold had its task in no message."""
+    sent, _, _, _ = _resume(tmp_path, mode, [rules.request(model="other")], saved=_history("model"))
+    assert "TASK (the goal, verbatim):\nOriginal goal." in sent[0]["content"][0]["text"]
 
 
 @pytest.mark.parametrize(

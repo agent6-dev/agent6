@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Select the operator quotes and whole turns for a local restart."""
+"""Select the task, the operator quotes and the whole turns for a local restart."""
 
 from __future__ import annotations
 
@@ -34,18 +34,16 @@ def inputs(message: history.UserMessage) -> Iterator[history.ToolResultItem | hi
 
 
 def operator_words(item: history.Notice | history.ToolResultItem) -> tuple[str, ...]:
-    """Read operator input from its typed notice or answered question result.
+    """Read the verbatim input of a notice or an answered question result.
 
     Args:
         item: A user message block.
 
     Returns:
-        One message per delivery, including the quotes carried by a prior restart.
+        One message per delivery: the opening's task, the quotes carried by a prior restart.
     """
     if isinstance(item, history.Notice):
-        if item.origin == "operator":
-            return item.operator_words or (item.text,)
-        return item.operator_words if item.origin == "restart" else ()
+        return item.operator_words or ((item.text,) if item.origin == "operator" else ())
     if item.for_call.name != "ask_user":
         return ()
     try:
@@ -61,11 +59,19 @@ def operator_words(item: history.Notice | history.ToolResultItem) -> tuple[str, 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Replay:
-    """Keep one chronological suffix after the summary and quote older operator messages."""
+    """Keep one chronological suffix after the summary and quote older operator messages.
+
+    Attributes:
+        replaced: The history the restart removes.
+        quotes: Reserved operator messages older than the kept turns.
+        tail: The kept turns and pending inputs.
+        task: The run's task when it is reserved and no kept turn states it.
+    """
 
     replaced: tuple[history.Message, ...]
     quotes: tuple[str, ...]
     tail: tuple[history.Message, ...]
+    task: str = ""
 
 
 def _result_messages(
@@ -165,12 +171,15 @@ def _partition(
     return contract, prior, history_messages
 
 
-def select(messages: Sequence[history.Message], settings: window.CompactionSettings) -> Replay:
-    """Reserve operator messages, then extend the kept suffix while whole turns fit.
+def select(
+    messages: Sequence[history.Message], settings: window.CompactionSettings, task: str = ""
+) -> Replay:
+    """Reserve the task and operator messages, then extend the kept suffix while whole turns fit.
 
     Args:
         messages: The live local history.
         settings: The resolved caps.
+        task: The task the run was given, the oldest reservable message.
 
     Returns:
         The helper transcript, verbatim quotes and paired messages to replay.
@@ -199,6 +208,12 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
         for it in inputs(m)
         for word in operator_words(it)
     ]
+    # A review contract's opening is its task and keeps its own place.
+    task = "" if opening else task
+    if task:
+        # The run holds its task, so a rewrite that removed the opening cannot lose it.
+        stated = next((turn for turn, word in words if word == task), -1)
+        words = [(stated, task), *(w for w in words if w[1] != task)]
     reserved: list[tuple[int, str]] = []
     costs: dict[int, int] = {}
     for n, (turn, word) in enumerate(reversed(words)):
@@ -224,8 +239,9 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
     if plan is not None and plan in replaced:
         opening.append(plan)
         replaced = tuple(m for m in replaced if m is not plan)
-    return Replay(
-        replaced,
-        tuple(word for turn, word in reversed(reserved) if turn < start),
-        (*opening, *(m for turn in turns[start:] for m in turn), *live),
-    )
+    quotes = tuple(word for turn, word in reversed(reserved) if turn < start)
+    tail = (*opening, *(m for turn in turns[start:] for m in turn), *live)
+    if task and quotes[:1] == (task,):
+        # Reserved and older than the kept turns, the task leaves the quotes for its own label.
+        return Replay(replaced, quotes[1:], tail, task)
+    return Replay(replaced, quotes, tail)

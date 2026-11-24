@@ -88,7 +88,7 @@ class Notice:
     Attributes:
         text: The text.
         origin: Who delivered the notice. A local summary is a `restart`.
-        operator_words: Verbatim inputs within a rendered steer, answer notice or restart.
+        operator_words: Verbatim inputs within a rendered task, steer, answer notice or restart.
         result_index: Zero-based position of this answer's capped result in the same message.
     """
 

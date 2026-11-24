@@ -40,10 +40,10 @@ SELECT = retention.select
 
 
 def pointer_tail(
-    messages: Sequence[history.Message], settings: window.CompactionSettings
+    messages: Sequence[history.Message], settings: window.CompactionSettings, task: str = ""
 ) -> retention.Replay:
     """Replace selected tool output after charging the same turns as the baseline."""
-    replay = SELECT(messages, settings)
+    replay = SELECT(messages, settings, task)
     tail: list[history.Message] = []
     for msg in replay.tail:
         if isinstance(msg, history.UserMessage):

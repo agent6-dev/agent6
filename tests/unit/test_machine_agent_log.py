@@ -174,10 +174,10 @@ def _run(
 
 
 @pytest.mark.parametrize("authoring", [False, True])
-def test_only_the_authoring_request_contributes_operator_words(
+def test_a_restart_states_the_rendered_prompt_as_the_task(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, authoring: bool
 ) -> None:
-    """A rendered state prompt is not an operator message outside the kept turns."""
+    """A state's restart kept no task; an authoring request's kept only the typed words."""
     restarts: list[str] = []
 
     class Compacts(_Finishes):
@@ -222,8 +222,8 @@ def test_only_the_authoring_request_contributes_operator_words(
         },
     )
     (notice,) = restarts
-    assert "Rendered request" not in notice
-    assert ("Operator message:\nAuthor a judge." in notice) is authoring
+    assert "TASK (the goal, verbatim):\nRendered request with machine output." in notice
+    assert "Operator message:" not in notice
 
 
 def _types(log: pathlib.Path) -> list[str]:

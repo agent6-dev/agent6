@@ -557,9 +557,9 @@ class CompactionConfig(pydantic.BaseModel):
         ge=-1,
         default=-1,
         description=(
-            "Local restart: reserve the newest N operator messages (task, steers, answers) "
-            "word for word before selecting turns; "
-            "-1: no count limit; 0: reserve none outside kept turns"
+            "Local restart: reserve the newest N messages given to the run, word for word, "
+            "before selecting turns: operator steers and answers, and the whole task as the "
+            "oldest; -1: no count limit; 0: reserve none outside kept turns"
         ),
     )
     keep_recent_turns: int = pydantic.Field(
@@ -575,7 +575,7 @@ class CompactionConfig(pydantic.BaseModel):
         ge=0,
         default=80_000,
         description=(
-            "Local restart: shared character cap on reserved operator messages and recent "
+            "Local restart: shared character cap on reserved messages and recent "
             "turns; the newest optional turn stays whole even if it exceeds the space left; "
             "0: keep nothing optional; adaptive thresholds limit the cap to half of "
             "`compaction.summarise_at_chars`"
