@@ -21,11 +21,12 @@ The parent and children use `git.control = "model"`, the selected route and `med
 The parent has 48 turns; the children use the run's remaining budget.
 Each run has a $1 cap, a plan cap (`--max-plan-points`, default 2 points) and a 100,000-token fallback.
 The job needs no edits, commands, merge, verify gate or review panel.
+With `harness.parallel.judges = []`, a second attempt at one task starts no ranking reviewer.
 Command tools that execute shell commands are withheld.
 
 ## Run set
 
-Use a clean checkout with its matching CLI installed in the project environment.
+Run from the root of a clean checkout with its matching CLI installed in the project environment.
 Use a private directory on a real disk outside the checkout for `base`.
 The output directory must not already exist.
 
@@ -38,20 +39,28 @@ This split tests the method, not model behaviour.
 uv run python -m bench.handoff.run --scripted --reps 1 --out "$base/scripted"
 ```
 
-**Live evaluation.** Use a host with full isolation and the matching `agent6-jail` binary.
+**Live evaluation.** Use a host with full isolation.
+A run uses the `agent6-jail` bundled in the project environment (`src/agent6/sandbox/_bin/`); the runner's private environment drops `AGENT6_JAIL_BIN`.
 Sign in to a dedicated profile, for example with `XDG_CONFIG_HOME="$base/signin" agent6 connect chatgpt`, skipping the model picker.
 Its `agent6/config.toml` may contain only provider settings and `agent6.config_version`.
 The runner uses the [tool benchmark's private homes](../tools/README.md#run-sets) and returns any refreshed credentials to that profile.
 Do not use the profile elsewhere during the set.
 
 ```sh
-uv run python -m bench.handoff.run --profile "$base/signin/agent6" \
-    --model chatgpt/gpt-6.2-sol --reps 3 --out "$base/live"
+handoff() {
+    uv run python -m bench.handoff.run --profile "$base/signin/agent6" \
+        --model chatgpt/gpt-6.2-sol "$@"
+}
+handoff --reps 1 --out "$base/smoke"
+handoff --reps 3 --out "$base/live"
 ```
 
-Run the set sequentially on a quiet account.
+The first command is the smoke: one pair, which is two parent runs and twelve children.
+Inspect its rows, journals and each `agent.log` before the measured set of six parent runs and 36 children.
+The plan cap counts a parent and its children together.
+On a plan route `agent.log` reports the run's plan movement: give the measured set a `--max-plan-points` above what a smoke run moved.
+Run the set sequentially on a quiet host and account: host load delays child starts, which the wait measure includes.
 Each replicate includes both arms, text first on odd replicates and id first on even ones.
-`--reps 1` runs one pair for a smoke in a separate directory.
 Freeze the job and settings before evaluation; do not pool the smoke or scripted runs with live replicates.
 
 ## Journal measures
