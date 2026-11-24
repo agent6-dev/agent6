@@ -115,7 +115,7 @@ def test_multibyte_text_is_measured_in_utf8_bytes(tmp_path: pathlib.Path) -> Non
 def test_a_write_under_a_grant_outside_the_workspace_records_its_absolute_path(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A grant's path is relative to the grant: against the workspace it names another file."""
+    """A path relative to the grant names another file when read against the workspace."""
     root, session_dir, granted = tmp_path / "repo", tmp_path / "session", tmp_path / "granted"
     for directory in (root, session_dir, granted):
         directory.mkdir()
@@ -132,6 +132,32 @@ def test_a_write_under_a_grant_outside_the_workspace_records_its_absolute_path(
     outside, inside = _results(session_dir)
     assert [change["path"] for change in outside["changes"]] == [str(granted / "note.txt")]
     assert [change["path"] for change in inside["changes"]] == ["note.txt"]
+    assert (outside["paths"], inside["paths"]) == ([str(granted / "note.txt")], ["note.txt"])
+
+
+def test_a_patch_under_a_grant_journals_absolute_paths(tmp_path: pathlib.Path) -> None:
+    """A resume reads `paths` against the workspace, where a grant's own path names another file."""
+    root, session_dir, granted = tmp_path / "repo", tmp_path / "session", tmp_path / "granted"
+    for directory in (root, session_dir, granted):
+        directory.mkdir()
+    (granted / "old.txt").write_text("bye\n", encoding="utf-8")
+    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    sink = event_log.EventSink(session_dir / "logs.jsonl")
+    d = dispatch.ToolDispatcher(root=root, config=config, session_dir=session_dir, events=sink)
+
+    result = d.dispatch(
+        "apply_patch",
+        {
+            "patch": "*** Begin Patch\n*** Add File: a.txt\n+in\n"
+            f"*** Add File: {granted}/a.txt\n+out\n"
+            f"*** Delete File: {granted}/old.txt\n*** End Patch\n"
+        },
+    )
+
+    assert isinstance(result, results.PatchResult)
+    assert result.deleted == (str(granted / "old.txt"),)
+    assert [path for path, _ in result.files] == ["a.txt", str(granted / "a.txt")]
+    assert _results(session_dir)[0]["paths"] == ["a.txt", str(granted / "a.txt")]
 
 
 def test_a_preview_and_a_failed_edit_record_no_change(tmp_path: pathlib.Path) -> None:

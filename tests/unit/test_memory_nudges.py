@@ -150,9 +150,7 @@ def test_memory_dir_edit_marks_memory_written() -> None:
         state,
         turn,
         "apply_edit",
-        # EditResult spells memory paths store-relative; the INPUT path is
-        # what identifies a memory write.
-        results.EditResult(applied=("create",), path="new-fact.md"),
+        results.EditResult(applied=("create",), path="/tmp/state/memory/new-fact.md"),
         {"path": "/tmp/state/memory/new-fact.md", "edits": []},
     )
     assert state.memory.written is True

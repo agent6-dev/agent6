@@ -270,7 +270,7 @@ class EditResult(ToolResult):
 
     Attributes:
         applied: The kind of each edit applied, in order.
-        path: The workspace-relative path.
+        path: The workspace-relative path, or the absolute path of a file outside the workspace.
         created: The write made the file; off the wire, read by the memory use record.
         changes: The file's text before and after; off the wire, journaled as the call's diff.
         diff_omitted: The text was over `DIFF_BUDGET_BYTES`, so `changes` holds none.
@@ -297,7 +297,7 @@ class PatchResult(ToolResult):
     """apply_patch that wrote.
 
     Attributes:
-        path: The first file's path.
+        path: The first file's path: workspace-relative, or absolute outside the workspace.
         bytes_written: The bytes written in all.
         files: One (path, bytes_written) row per file for a multi-file patch; empty for one file.
         deleted: The paths the patch deleted, disjoint from `files`.

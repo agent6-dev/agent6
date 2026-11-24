@@ -14,11 +14,12 @@ import pytest
 
 from agent6 import budget
 from agent6.app import finalize, reporter
+from agent6.config import Config
 from agent6.context import memory
 from agent6.harness import loop_conversation, loop_snapshot, loop_state, run_chain
 from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import results
+from agent6.tools import dispatch, results
 from agent6.vcs.git import read as git_read
 from tests.unit import test_harness
 from tests.unit.turn_context import turn_context
@@ -159,24 +160,41 @@ def test_an_edit_to_a_start_untracked_file_says_so_in_its_tool_result(
 
 
 def test_a_memory_store_write_carries_no_note(tmp_path: pathlib.Path) -> None:
-    """A memory write's result names its file inside the store and carries no note.
-
-    Taken as a repo path, the result's `notes.md` would match the operator's untracked
-    `notes.md` and say the run's commits leave it out. The store is outside the repository.
-    """
+    """A memory write's result names its file by absolute path and carries no note."""
     repo = _repo(tmp_path)
     (repo / "notes.md").write_text("the operator's\n", encoding="utf-8")
     state = tmp_path / "state"
     store = memory.memory_dir(state)
     store.mkdir(parents=True)
+    target = str(store / "notes.md")
     wire, events = _dispatch_edit(
         repo,
-        results.EditResult(applied=("create",), path="notes.md", created=True),
+        results.EditResult(applied=("create",), path=target, created=True),
         untracked=frozenset({"notes.md"}),
-        tool_path=str(store / "notes.md"),
+        tool_path=target,
         state_dir=state,
     )
     assert "note" not in wire
+    assert not [e for e in events if e["type"] == "checkpoint.left_out"]
+
+
+def test_a_write_under_a_grant_carries_no_note(tmp_path: pathlib.Path) -> None:
+    """A write under a write grant is no path of the repository.
+
+    Named relative to the grant, its `notes.md` matched the operator's untracked `notes.md`
+    and the result said the run's commits leave it out.
+    """
+    repo = _repo(tmp_path)
+    (repo / "notes.md").write_text("the operator's\n", encoding="utf-8")
+    granted = tmp_path / "granted"
+    granted.mkdir()
+    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    target = str(granted / "notes.md")
+    result = dispatch.ToolDispatcher(root=repo, config=config).dispatch(
+        "apply_edit", {"path": target, "edits": [{"kind": "create", "new_string": "x"}]}
+    )
+    wire, events = _dispatch_edit(repo, result, untracked=frozenset({"notes.md"}), tool_path=target)
+    assert wire == {"applied": ["create"], "path": target}
     assert not [e for e in events if e["type"] == "checkpoint.left_out"]
 
 

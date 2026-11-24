@@ -346,7 +346,7 @@ def _preview(
 
 
 def _change_path(ws: path_safety.Workspace, sp: path_safety.SafePath) -> str:
-    """Return the path a file change is recorded under.
+    """Return the path a write is recorded under.
 
     A path under a write grant is relative to that grant, so only its absolute form names
     the file.
@@ -443,7 +443,7 @@ def apply_edit(
     fits = results.within_diff_budget(changes)
     return results.EditResult(
         applied=tuple(applied),
-        path=str(sp.rel_path),
+        path=changes[0].path,
         created=existing is None,
         changes=changes if fits else (),
         diff_omitted=not fits,
@@ -604,22 +604,22 @@ def apply_patch(
                 if index is not None:
                     index.mark_deleted(sp.abs_path)
             else:
-                written[str(sp.rel_path)] = path_safety.write_contained(sp, change.after)
+                written[change.path] = path_safety.write_contained(sp, change.after)
                 if index is not None:
                     index.mark_changed(sp.abs_path)
         except (OSError, path_safety.ContainmentError) as exc:
             detail = (exc.strerror or str(exc)) if isinstance(exc, OSError) else str(exc)
             changed = f"; already changed: {', '.join(landed)}" if landed else ""
-            raise tool_errors.ToolError(f"apply_patch: {sp.rel_path}: {detail}{changed}") from exc
-        landed.append(str(sp.rel_path))
+            raise tool_errors.ToolError(f"apply_patch: {change.path}: {detail}{changed}") from exc
+        landed.append(change.path)
     rows = tuple(written.items())
     changes = tuple(change for _sp, change in staged)
     fits = results.within_diff_budget(changes)
     return results.PatchResult(
-        path=str(staged[0][0].rel_path),
+        path=changes[0].path,
         bytes_written=sum(b for _p, b in rows),
         files=rows if len(staged) > 1 else (),
-        deleted=tuple(str(sp.rel_path) for sp, change in staged if change.after is None),
+        deleted=tuple(change.path for change in changes if change.after is None),
         healed=tuple(healed_all),
         changes=changes if fits else (),
         diff_omitted=not fits,

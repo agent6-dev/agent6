@@ -22,12 +22,10 @@ class MemoryTouch:
 
     Attributes:
         facts: Fact name to `read`, `create`, `edit` or `delete`.
-        store_paths: Every path under the store, spelled store-relative as the results spell it.
         whole_store: Whether every path the call named is under the store.
     """
 
     facts: dict[str, str]
-    store_paths: tuple[str, ...]
     whole_store: bool
 
 
@@ -88,6 +86,5 @@ def memory_store_touch(
             for p, op in inside
             if p.parent == store and p.suffix == ".md" and memory.is_memory_name(p.stem)
         },
-        store_paths=tuple(str(p.relative_to(store)) for p, _ in inside),
         whole_store=len(inside) == len(paths),
     )

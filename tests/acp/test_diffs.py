@@ -126,7 +126,7 @@ def test_a_patch_sends_one_diff_per_file_with_a_create_and_a_delete(
 
 
 def test_a_write_outside_the_workspace_shows_the_file_it_wrote(tmp_path: pathlib.Path) -> None:
-    """A write under a grant journals a path relative to the grant; the diff names the file."""
+    """A write under a grant shows the granted file, not the workspace's file of that name."""
     granted = tmp_path / "granted"
     granted.mkdir()
     config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})

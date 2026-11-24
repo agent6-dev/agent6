@@ -9,6 +9,7 @@ error each feed the commit, the review panel and the finish gates through the tu
 from __future__ import annotations
 
 import json
+import pathlib
 from typing import TYPE_CHECKING, Any
 
 from agent6 import kinds, paths, task_text
@@ -67,40 +68,30 @@ def bounded_result(
     return loop_conversation.ToolResultItem(call.id, payload, call, attachment, answer)
 
 
-def left_out_note(
-    wf: loop.Harness,
-    turn: loop_state.TurnState,
-    name: str,
-    result: results.ToolResult,
-    tool_input: Any,
-) -> str:
+def left_out_note(wf: loop.Harness, turn: loop_state.TurnState, result: results.ToolResult) -> str:
     """Return the sentence for an edit the run's commits leave out, and log the paths.
 
     Args:
         wf: The harness driving the execution.
         turn: This turn's state.
-        name: The tool that ran.
         result: The dispatched tool's result.
-        tool_input: The model's input to the tool.
 
     Returns:
         One sentence per left-out path; "" when the commits hold every path written.
     """
     if wf.mode != "run":
         return ""
-    # A memory write names its file inside the store, which is no path of the repository.
-    touch = memory_touch.memory_store_touch(wf.state_dir, name, result, tool_input)
-    if touch is not None and touch.whole_store:
-        return ""
-    store_paths = () if touch is None else touch.store_paths
     if isinstance(result, results.EditResult):
-        paths: tuple[str, ...] = (result.path,)
+        written: tuple[str, ...] = (result.path,)
     elif isinstance(result, results.PatchResult):
         written = tuple(p for p, _ in result.files) or (result.path,)
-        paths = tuple(p for p in written if p not in result.deleted and p not in store_paths)
+        written = tuple(p for p in written if p not in result.deleted)
     else:
         return ""
-    ignored, untracked = wf.chain.left_out(paths)
+    # A write under a grant or the memory store has an absolute path, none of the repository's.
+    ignored, untracked = wf.chain.left_out(
+        tuple(p for p in written if not pathlib.PurePath(p).is_absolute())
+    )
     if not (ignored or untracked):
         return ""
     wf.emit(

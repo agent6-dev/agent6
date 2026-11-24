@@ -153,7 +153,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
 
     Judged as workspace work alone, the fact got no provenance, the flip advisory stayed armed
     at a model that had just written memory, and the left-out advisory named the store file
-    (spelled store-relative in the result) as ignored by git whenever the repo ignores that name.
+    as ignored by git whenever the repo ignores that name.
     The workspace half keeps its own left-out notice.
     """
     import subprocess
@@ -200,7 +200,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
     assert state.memory.written
     assert state.memory.wrote == ["fresh"]
     assert state.memory.created == ["fresh"]
-    note = tool_effects.left_out_note(wf, turn, "apply_patch", result, tool_input)
+    note = tool_effects.left_out_note(wf, turn, result)
     assert note == (
         "notes.txt was untracked when the run started: the edit is on disk, and this"
         " run's commits leave it out."
@@ -244,10 +244,8 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
 ) -> None:
     """A memory write does not withdraw a green verify.
 
-    The predicate judges the model's input path: EditResult.path is store-relative, so an exclusion
-    testing it for an absolute prefix never matches, the memory write after a green verify counts as
-    a tree edit, and the run ends gate_red_at_base with verification=false over the suite it just
-    fixed.
+    Counted as a tree edit, a memory write after a green verify ends the run gate_red_at_base
+    with verification=false over the suite it just fixed.
     """
     from unittest import mock
 
@@ -265,7 +263,7 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
     target = agent6_memory.memory_dir(state_dir) / "fact.md"
 
     result = mock.MagicMock()
-    result.path = "fact.md"  # the store-relative spelling EditResult uses
+    result.path = str(target)
     tool_effects.note(wf, state, turn, "apply_edit", result, {"path": str(target), "edits": []})
     assert state.memory.written is True
     assert state.verify.green_and_untouched  # the green survived

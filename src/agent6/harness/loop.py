@@ -1214,7 +1214,7 @@ class Harness:
                     self.emit(journal.MediaRefused(provider_tool_call_id=tu.id, reason=reason))
                     raise tool_errors.ToolError(reason)
                 wire_result = result.to_wire()
-                if note := tool_effects.left_out_note(self, turn, name, result, tool_input):
+                if note := tool_effects.left_out_note(self, turn, result):
                     wire_result["note"] = note
                 content = json.dumps(wire_result, ensure_ascii=False)
                 tool_effects.note(
