@@ -106,6 +106,7 @@ class TranscriptFold:
         # Items a receipt event produced, handed out with the next feed.
         self._deferred: list[transcript_items.TranscriptItem] = []
         self._finish = ""
+        self._provider_error = ""
         self._tools = 0
         self._commits = 0
         self._mode = ""
@@ -143,6 +144,7 @@ class TranscriptFold:
             self._stranded = False
             self._ended = False
             self._finish = ""
+            self._provider_error = ""
         if notices := review.notice_texts(event):
             self._deferred.extend(self._flush_message())
             self._deferred.extend(
@@ -252,10 +254,7 @@ class TranscriptFold:
             buffer.append(str(event.get("text", "")))
             return []
         if etype == "model.result":
-            # Only the driving actor speaks: a side call's answer would read as the agent's.
-            # A marker inside the stream already flushed the speech this result repeats.
-            unspoken = not (self._is_side_call(event) or self._spoke)
-            return self._flush_message(settled=str(event.get("text", "")) if unspoken else "")
+            return self._model_result(event)
         if etype == "tool.call":
             out = self._flush_message()
             name = str(event.get("name", ""))
@@ -326,7 +325,7 @@ class TranscriptFold:
             out.append(
                 transcript_items.TranscriptItem(
                     "done",
-                    body=body,
+                    body=session_status.display_end(reason, body, self._provider_error),
                     # The gate's tri-state: a stop or a gateless finish is neither pass nor fail.
                     ok=(verification == "passed") if verification in ("passed", "failed") else None,
                     detail=counts,
@@ -336,6 +335,15 @@ class TranscriptFold:
             )
             return out
         return []
+
+    def _model_result(self, event: dict[str, Any]) -> list[transcript_items.TranscriptItem]:
+        # Only the driving actor speaks: a side call's answer would read as the agent's.
+        # A marker inside the stream already flushed the speech this result repeats.
+        side_call = self._is_side_call(event)
+        if event.get("ok") is False and not side_call:
+            self._provider_error = str(event.get("error") or "")
+        unspoken = not (side_call or self._spoke)
+        return self._flush_message(settled=str(event.get("text", "")) if unspoken else "")
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
         """Return whether the result is a side call's."""

@@ -19,6 +19,7 @@ from agent6.sessions import journal, layout, process
 from agent6.viewmodel import events, format, log_line, review
 from agent6.viewmodel.session import core as session_core
 from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import status
 
 
 def initial_state() -> state_types.SessionState:
@@ -346,7 +347,7 @@ def _mirror(
         verify_scoped=life.verify_scoped,
         stop_reason=life.stop_reason,
         stranded=life.stranded,
-        end_summary=life.end_summary,
+        end_summary=status.display_end(life.stop_reason, life.end_summary, life.provider_error),
         finish_summary=life.finish_summary,
         unattended_questions=life.unattended_questions,
         undone_to=life.undone_to,

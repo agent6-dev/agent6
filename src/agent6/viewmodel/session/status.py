@@ -8,7 +8,7 @@ import dataclasses
 import pathlib
 import time
 
-from agent6 import kinds, task_text
+from agent6 import kinds, task_text, terminal
 from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format
@@ -147,6 +147,18 @@ def end_text(reason: str, summary: str = "", finish_summary: str = "") -> str:
     if reason in MODEL_ENDS:
         return finish_summary.strip()
     return ""
+
+
+def provider_error_detail(summary: str, error: str) -> str:
+    """Return the provider's error on one clean line unless the end already states it."""
+    clean = " ".join(terminal.scrub_terminal_controls(error).split())
+    return "" if clean in " ".join(summary.split()) else clean
+
+
+def display_end(reason: str, summary: str, error: str) -> str:
+    """Return the end sentence with the driving provider's reason when its call failed."""
+    detail = provider_error_detail(summary, error) if reason == "provider_error" else ""
+    return ": ".join(filter(None, (summary, detail)))
 
 
 def status_word(

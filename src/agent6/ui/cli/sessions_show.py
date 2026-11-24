@@ -37,7 +37,7 @@ from agent6.viewmodel import (
     transcript,
     wire,
 )
-from agent6.viewmodel.session import patches
+from agent6.viewmodel.session import patches, status
 from agent6.viewmodel.session import view as state_view
 
 
@@ -115,10 +115,7 @@ def _status_state(
         return word, cell, format.dead_run_note(word, reason)[0]
     if scan.finished:
         if scan.stop_reason == "provider_error":
-            # The label names the failure; the provider's own text, on one clean line, says why.
-            error = " ".join(terminal.scrub_terminal_controls(scan.provider_error).split())
-            # An end sentence that names a status leaves the provider's text out.
-            return word, cell, "" if error in " ".join(scan.end_summary.split()) else error
+            return word, cell, status.provider_error_detail(scan.end_summary, scan.provider_error)
         if scan.end_summary:
             # The `ended:` line carries the run's own sentence; the raw reason would repeat it.
             return word, cell, ""

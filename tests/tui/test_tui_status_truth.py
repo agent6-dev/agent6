@@ -259,7 +259,13 @@ def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: pathlib.Pat
             "ok": False,
             "summary": "the verify gate failed",
         },
-        {"type": "session.stop", "reason": "provider_error", "verification": "unverified"},
+        {"type": "model.result", "actor": "worker", "ok": False, "error": "bad\nmodel name"},
+        {
+            "type": "session.stop",
+            "reason": "provider_error",
+            "summary": "provider error at turn 1 (HTTP 400)",
+            "verification": "unverified",
+        },
     ]
     (d / "logs.jsonl").write_text(
         "".join(json.dumps(event) + "\n" for event in events), encoding="utf-8"
@@ -271,6 +277,7 @@ def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: pathlib.Pat
             await _open_dash(app, pilot)
             body = str(app._dash.query_one("#stream-body", widgets.Static).render())
             assert "failed · provider error" in body
+            assert "HTTP 400): bad model name" in body
             assert "Everything passed." not in body
 
     asyncio.run(scenario())
