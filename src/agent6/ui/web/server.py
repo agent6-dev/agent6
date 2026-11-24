@@ -236,9 +236,11 @@ class MachineRunBody(_Body):
 
     Attributes:
         file: The path of a listed machine definition.
+        restart: Archive the stopped instance before the run.
     """
 
     file: str
+    restart: pydantic.StrictBool = False
 
 
 class MachinePokeBody(_Body):
@@ -822,7 +824,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         if path == "/api/machine/run":
             body = MachineRunBody.model_validate(self._read_body())
-            ok, msg = actions.spawn_machine_run(self.cwd, body.file, self.config_paths)
+            ok, msg = actions.spawn_machine_run(
+                self.cwd, body.file, self.config_paths, restart=body.restart
+            )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if len(parts) in (5, 6) and parts[:2] == ["api", "session"] and parts[3] == "findings":

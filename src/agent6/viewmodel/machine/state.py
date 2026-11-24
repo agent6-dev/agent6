@@ -362,6 +362,7 @@ class MachineSummary:
         reason: A failed end's reason, what a live instance waits on, or "no worker" for a
             parked instance nothing is driving; else "".
         mtime: The last-activity time as epoch seconds.
+        start_actions: The starts an authored file can offer for this instance.
     """
 
     name: str
@@ -370,6 +371,7 @@ class MachineSummary:
     status: str
     reason: str
     mtime: float
+    start_actions: tuple[str, ...] = ()
 
 
 def machine_mtime(machine_dir: pathlib.Path) -> float:
@@ -409,6 +411,7 @@ def summarize_machine_dir(machine_dir: pathlib.Path) -> MachineSummary:
         first_line = str(exc).split("\n", 1)[0]
         return MachineSummary(machine_dir.name, "", "", "unreadable", first_line, mtime)
     probes = probe_instance(machine_dir, ms)
+    starts = ("Restart",) if ms.ended is not None else ("Resume", "Restart")
     return MachineSummary(
         name=machine_dir.name,
         machine=ms.machine,
@@ -416,6 +419,7 @@ def summarize_machine_dir(machine_dir: pathlib.Path) -> MachineSummary:
         status=probes.status_word(ms),
         reason=probes.reason(ms),
         mtime=mtime,
+        start_actions=() if probes.alive else starts,
     )
 
 

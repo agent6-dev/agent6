@@ -2245,6 +2245,7 @@ Source: [`ui.web.model.list_machine_files`](https://github.com/agent6-dev/agent6
 | --- | --- | --- |
 | `[].path` | `JSON` | The path accepted by machine run. |
 | `[].name` | `JSON` | The machine file's basename. |
+| `[].actions` | `JSON` | The available start buttons, in display order. |
 
 ### `/api/routes` payload
 
@@ -3310,6 +3311,7 @@ Source: [`agent6.ui.web.server.MachineRunBody`](https://github.com/agent6-dev/ag
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `file` | `str` | The path of a listed machine definition. |
+| `restart` | `bool` | Archive the stopped instance before the run. |
 
 ### MachinePokeBody
 

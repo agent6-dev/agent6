@@ -658,6 +658,8 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             (
                 menubar.MenuItem("View", "view"),
                 menubar.MenuItem("Run", "run"),
+                menubar.MenuItem("Resume", "resume"),
+                menubar.MenuItem("Restart", "restart"),
                 menubar.MenuItem("Watch", "watch"),
                 menubar.MenuItem("Create…", "create"),
                 menubar.MenuItem("Refresh", "refresh"),
@@ -681,6 +683,8 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     FOOTER: ClassVar = (
         ("view", "View"),
         ("run", "Run"),
+        ("resume", "Resume"),
+        ("restart", "Restart"),
         ("watch", "Watch"),
         ("create", "Create"),
         ("refresh", "Refresh"),
@@ -763,17 +767,22 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
 
     @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Return None to dim a row action with no fitting row; False would hide the key.
+        """Show the starts the selected row offers and dim verbs that need a selection.
 
         Args:
             action: The action's name, from a key binding or a menu item.
             parameters: The action's arguments, unused.
 
         Returns:
-            True, or None to dim the action: View and Run need an authored file, Watch an instance.
+            True for an available action, False to hide a start, or None to dim an action.
         """
         del parameters
-        if action in ("view", "run"):
+        if action in ("run", "resume", "restart"):
+            row = self._selected_row()
+            if row is None:
+                return None if action == "run" else False
+            return action.capitalize() in row.start_actions
+        if action == "view":
             return True if self._selected() is not None else None
         if action == "watch":
             row = self._selected_row()
@@ -797,22 +806,36 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             self.app.push_screen(MachineDetailScreen(path))
 
     def action_run(self) -> None:
-        """Confirm, then run the selected machine detached and watch it."""
-        path = self._selected()
-        if path is None:
+        """Start a machine that has not run."""
+        self._confirm_start("Run")
+
+    def action_resume(self) -> None:
+        """Continue the stopped machine from its journal."""
+        self._confirm_start("Resume")
+
+    def action_restart(self) -> None:
+        """Start the stopped machine from its initial state."""
+        self._confirm_start("Restart")
+
+    def _confirm_start(self, label: str) -> None:
+        row = self._selected_row()
+        if row is None or row.file is None or label not in row.start_actions:
             return
+        path = row.file
+        restart = label == "Restart"
+        note = "Archives the previous run and starts from the initial state. " if restart else ""
         self.app.push_screen(
             modals.ConfirmModal(
-                f"Run machine {path.name}?",
-                "Runs `agent6 machine run` (detached) and opens the live watch view: "
-                "the state overview, each transition, and the agent state's reasoning. "
-                "The run keeps going if you close the view.",
-                confirm_label="Run",
+                f"{label} machine {path.name}?",
+                note + "Opens the live watch view. The run keeps going if you close the view.",
+                confirm_label=label,
             ),
-            self._on_run_confirm(path),
+            self._on_run_confirm(path, restart=restart),
         )
 
-    def _on_run_confirm(self, path: pathlib.Path) -> Callable[[bool | None], None]:
+    def _on_run_confirm(
+        self, path: pathlib.Path, *, restart: bool = False
+    ) -> Callable[[bool | None], None]:
         """Return the confirm's callback, which loads the spec and spawns the run."""
 
         def cb(confirmed: bool | None) -> None:
@@ -824,14 +847,22 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                 self.app.notify(f"cannot load {path.name}: {exc}", severity="error", timeout=8.0)
                 return
             self._spawn_machine_run(
-                self.app, path, layout.machines_root(self.agent6_dir) / spec.machine
+                self.app,
+                path,
+                layout.machines_root(self.agent6_dir) / spec.machine,
+                restart=restart,
             )
 
         return cb
 
     @textual.work(thread=True)
     def _spawn_machine_run(
-        self, app: textual_app.App[object], path: pathlib.Path, instance: pathlib.Path
+        self,
+        app: textual_app.App[object],
+        path: pathlib.Path,
+        instance: pathlib.Path,
+        *,
+        restart: bool,
     ) -> None:
         """Spawn `machine run` detached, off the UI thread, and report back.
 
@@ -842,12 +873,9 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             app: The app, bound on the UI thread; a screen dismissed mid-spawn has no parent.
             path: The machine file.
             instance: The instance dir the child claims.
+            restart: Archive the previous run before starting.
         """
-        err = spawn.spawn_and_confirm(
-            [*spawn.agent6_argv(self.config_paths), "machine", "run", str(path)],
-            self.repo_cwd,
-            started=lambda pid: process.read_worker_pid(instance) == pid,
-        )
+        err = spawn.start_machine(self.repo_cwd, path, instance, self.config_paths, restart=restart)
         app.call_from_thread(self._machine_run_started, path, err)
 
     def _machine_run_started(self, path: pathlib.Path, err: str) -> None:

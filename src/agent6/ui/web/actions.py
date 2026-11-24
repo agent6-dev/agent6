@@ -27,7 +27,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.sessions import ipc, layout, process
+from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, operator_images, spawn
 from agent6.ui.web import model
@@ -61,7 +61,11 @@ def spawn_machine_create(
 
 
 def spawn_machine_run(
-    cwd: pathlib.Path, machine_file: str, config_paths: tuple[pathlib.Path, ...] = ()
+    cwd: pathlib.Path,
+    machine_file: str,
+    config_paths: tuple[pathlib.Path, ...] = (),
+    *,
+    restart: bool = False,
 ) -> tuple[bool, str]:
     """Spawn `agent6 machine run <file>` detached.
 
@@ -72,13 +76,14 @@ def spawn_machine_run(
         cwd: The repository.
         machine_file: A listed machine file, by path or listed name (never an arbitrary path).
         config_paths: The `--config` files in command-line order.
+        restart: Archive the previous run before starting.
 
     Returns:
         Whether it started, and the note or the refusal.
     """
-    listed = model.list_machine_files(cwd)
-    by_name = {mf["name"]: mf["path"] for mf in listed}
-    paths = {mf["path"] for mf in listed}
+    listed = machine_state.machine_files(cwd)
+    by_name = {file.name: str(file) for file in listed}
+    paths = {str(file) for file in listed}
     if machine_file in by_name and machine_file not in paths:
         machine_file = by_name[machine_file]
     if machine_file not in paths:
@@ -91,10 +96,8 @@ def spawn_machine_run(
     except MachineError as exc:
         return False, f"invalid machine file: {exc}"
     instance = layout.machines_root(agent6_paths.state_dir(cwd)) / spec.machine
-    err = spawn.spawn_and_confirm(
-        [*spawn.agent6_argv(config_paths), "machine", "run", machine_file],
-        cwd,
-        started=lambda pid: process.read_worker_pid(instance) == pid,
+    err = spawn.start_machine(
+        cwd, pathlib.Path(machine_file), instance, config_paths, restart=restart
     )
     return (err == ""), (err or "started")
 

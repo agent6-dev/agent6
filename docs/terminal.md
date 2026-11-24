@@ -123,6 +123,12 @@ With `none` picked, edits go to the global and repo config; entries are edited o
 
 ## Watching a state machine
 
+On the Machines page, select an authored file to see its start keys:
+
+- **Run** (`R`) starts a machine that has never run.
+- **Resume** (`u`) continues a stopped machine that has not finished.
+- **Restart** (`S`) asks before it archives a stopped or finished instance and starts from the initial state.
+
 An [agent state machine](state-machines.md) runs in the terminal like anything else: author the file, read its graph, watch it execute.
 Here `code-fixer` runs a fix loop: an agent state edits the repo to make a failing check pass, a tool state re-runs it, and the machine routes on the result until the check is green or the attempt budget is spent.
 

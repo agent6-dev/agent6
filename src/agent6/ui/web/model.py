@@ -17,6 +17,7 @@ from typing import Any
 
 from agent6 import paths
 from agent6.app import confine, merge_plan, worktrees
+from agent6.app.machine import listing as machine_listing
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
@@ -32,12 +33,9 @@ from agent6.viewmodel import (
     format,
     is_session_husk,
     listing,
-    machine_files,
-    machine_instance_dirs,
     operator_inputs,
     restate,
     session_state_as_dict,
-    summarize_machine_dir,
     tail_events,
     transcript_style,
 )
@@ -244,19 +242,13 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
     return entry
 
 
-def _list_machines(cwd: pathlib.Path) -> list[dict[str, Any]]:
-    """Return the machine instances, newest first, summarized by the shared fold."""
-    dirs = machine_instance_dirs(paths.state_dir(cwd))
-    return [_machine_row(summarize_machine_dir(d)) for d in dirs]
-
-
 def _list_drafts(cwd: pathlib.Path) -> list[listing.SummaryRow]:
     """Return the `machine create` drafts as listing rows, newest first."""
     rows, winners = listing.rows_for(cwd, buckets=("machines",))
     return [listing.row_json(r, winners=winners) for r in rows]
 
 
-def list_machine_files(cwd: pathlib.Path) -> list[dict[str, str]]:
+def list_machine_files(rows: list[machine_listing.MachineRow]) -> list[dict[str, Any]]:
     """Return the hub's machine-file rows.
 
     Attributes:
@@ -264,14 +256,19 @@ def list_machine_files(cwd: pathlib.Path) -> list[dict[str, str]]:
         name: The machine file's basename.
         [].path: The path accepted by machine run.
         [].name: The machine file's basename.
+        [].actions: The available start buttons, in display order.
 
     Args:
-        cwd: The repository.
+        rows: Authored files joined with their instances.
 
     Returns:
         The authored machine files.
     """
-    return [{"path": str(p), "name": p.name} for p in machine_files(cwd)]
+    return [
+        {"path": str(row.file), "name": row.file.name, "actions": list(row.start_actions)}
+        for row in sorted(rows, key=lambda row: str(row.file))
+        if row.file is not None
+    ]
 
 
 def routes_payload(
@@ -363,10 +360,11 @@ def hub_payload(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) 
     Returns:
         The hub listings and preset choices.
     """
+    instances = machine_listing.machine_summaries(paths.state_dir(cwd))
     return {
         "sessions": _list_sessions(cwd),
-        "machines": _list_machines(cwd),
-        "machine_files": list_machine_files(cwd),
+        "machines": [_machine_row(inst) for inst in instances],
+        "machine_files": list_machine_files(machine_listing.join_machine_rows(cwd, instances)),
         "drafts": _list_drafts(cwd),
         "presets": layer_presets.available_preset_names(cwd, config_paths),
         "preset_default_label": choices.default_label(choices.default_preset(cwd, config_paths)),

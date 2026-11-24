@@ -49,6 +49,34 @@ def agent6_argv(config_paths: tuple[pathlib.Path, ...]) -> list[str]:
     return argv
 
 
+def start_machine(
+    cwd: pathlib.Path,
+    path: pathlib.Path,
+    instance: pathlib.Path,
+    config_paths: tuple[pathlib.Path, ...],
+    *,
+    restart: bool,
+) -> str:
+    """Start the CLI worker and wait for its pid or refusal.
+
+    Args:
+        cwd: The repository.
+        path: The authored machine file.
+        instance: The directory the worker claims after taking the lock.
+        config_paths: The front-end's config files in command-line order.
+        restart: Archive the previous run before starting.
+
+    Returns:
+        The refusal, or an empty string after the start.
+    """
+    argv = [*agent6_argv(config_paths), "machine", "run", str(path)]
+    if restart:
+        argv.append("--restart")
+    return spawn_and_confirm(
+        argv, cwd, started=lambda pid: process.read_worker_pid(instance) == pid
+    )
+
+
 # Work a front-end drives over the bridge: approvals wait for it, and a run streams its deltas.
 DETACHED_AWAY_ENV: dict[str, str] = {"AGENT6_DETACHED_AWAY": "wait"}
 DETACHED_RUN_ENV: dict[str, str] = {"AGENT6_STREAM_TO_LOG": "1", **DETACHED_AWAY_ENV}

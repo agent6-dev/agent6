@@ -824,6 +824,8 @@ def test_spawn_machine_run_takes_the_listed_name_or_path(
     monkeypatch.setattr(spawn, "spawn_and_confirm", _record)
     assert actions.spawn_machine_run(tmp_path, "tiny.asm.toml") == (True, "started")
     assert spawned[-1][-1] == str(mf)
+    assert actions.spawn_machine_run(tmp_path, "tiny.asm.toml", restart=True) == (True, "started")
+    assert spawned[-1][-4:] == ["machine", "run", str(mf), "--restart"]
     ok, msg = actions.spawn_machine_run(tmp_path, "/elsewhere/tiny.asm.toml")
     assert ok is False and "listed path or name" in msg and "tiny.asm.toml" in msg
 

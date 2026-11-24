@@ -9,6 +9,7 @@ import contextlib
 import pathlib
 from typing import override
 
+import pytest
 from textual import app as textual_app
 from textual import widgets
 
@@ -558,6 +559,47 @@ def test_machine_run_confirms_then_spawns(tmp_path: pathlib.Path, monkeypatch: o
             await pilot.press("y")  # confirm
             await app.workers.wait_for_complete()
             assert captured and captured[-1][-3:] == ["machine", "run", str(path)]
+
+    asyncio.run(scenario())
+
+
+def test_stopped_machine_offers_resume_and_confirms_restart(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _write(tmp_path / "renamed.asm.toml")
+    instance = tmp_path / ".agent6" / "machines" / "waiter_demo"
+    instance.mkdir(parents=True)
+    _write(instance / "machine.asm.toml")
+    (instance / "journal.jsonl").write_text(
+        '{"type":"machine.begin","machine":"waiter_demo","version":1,"ts":"t"}\n'
+    )
+    captured: list[list[str]] = []
+
+    def record(argv: list[str], *_a: object, **_k: object) -> str:
+        captured.append(argv)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_and_confirm", record)
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test(size=(130, 35)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, machmod.MachinesScreen)
+            assert [a for a in ("run", "resume", "restart") if screen.check_action(a, ())] == [
+                "resume",
+                "restart",
+            ]
+            await pilot.press("S")
+            assert isinstance(app.screen, modals.ConfirmModal)
+            assert app.screen.query_one("#no").has_focus
+            assert "archive" in app.screen._body.lower()
+            await pilot.press("escape")
+            assert not captured
+            await pilot.press("S", "y")
+            await app.workers.wait_for_complete()
+            assert [argv[-4:] for argv in captured] == [["machine", "run", str(path), "--restart"]]
 
     asyncio.run(scenario())
 

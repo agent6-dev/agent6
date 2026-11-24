@@ -89,7 +89,9 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - on a screen under 576px tall at the default text size (a zoomed window, a phone on its side), the composer sits below the list instead of over it and messages show under the top bar, here and on the State machines page
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
     - on a phone, **Maintenance** folds the notification, prune and clear-saved-asks controls
-- **State machines page**: instances, `machine create` drafts, and authored machine files listed by name and path with a **Run** button; the composer creates a new one; its lists take the same keys and clicks as the Sessions list
+- **State machines page**: instances, `machine create` drafts, and authored machine files listed by name and path; the composer creates a new one; its lists take the same keys and clicks as the Sessions list
+    - a file that has never run offers **Run**; a stopped, unfinished instance offers **Resume** and **Restart**; a finished instance offers **Restart**
+    - **Restart** asks before it archives the old instance and starts from the initial state
     - the composer keeps the machine description when you leave the page and clears it after a successful create
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden, and a click on an item with more to show, or Enter on its first line, opens or closes it; the conversation is one Tab stop, and the arrow keys, Home and End move between those items
     - the conversation footer counts only the checkpoint commits recorded by that execution, not its children's commits or earlier executions' checkpoints

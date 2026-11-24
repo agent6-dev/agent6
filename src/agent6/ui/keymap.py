@@ -247,6 +247,8 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "quit": "ctrl+q",
         "view": "v",
         "run": "R",
+        "resume": "u",
+        "restart": "S",
         "watch": "w",
         "create": "c",
         "refresh": "r",

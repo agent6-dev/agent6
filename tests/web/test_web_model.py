@@ -405,6 +405,32 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: pathlib.Path) ->
     assert machine_snapshot(md)["status"] == "waiting"  # parked
 
 
+def test_machine_file_actions_follow_the_declared_machine(tmp_path: pathlib.Path) -> None:
+    """A parked wait with no worker can restart. A live wait cannot."""
+    (tmp_path / "renamed.asm.toml").write_text(TINY_MACHINE)
+
+    def actions() -> list[str]:
+        (file,) = model.hub_payload(tmp_path)["machine_files"]
+        return file["actions"]
+
+    assert actions() == ["Run"]
+    instance = sessions_layout.machines_root(paths.state_dir(tmp_path)) / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "machine.asm.toml").write_text(TINY_MACHINE)
+    log = instance / "journal.jsonl"
+    log.write_text('{"type":"machine.begin","ts":"t","machine":"tiny","version":1}\n')
+    (instance / "wait.json").write_text('{"state":"route","wake_epoch":9999999999.0}\n')
+    assert actions() == ["Resume", "Restart"]
+    process.write_worker_pid(instance, os.getpid())
+    assert not actions()
+    (instance / "worker.pid").unlink()
+    with log.open("a") as out:
+        out.write(
+            '{"type":"machine.end","ts":"t","status":"ok","reason":"done","state":"done","transitions":1}\n'
+        )
+    assert actions() == ["Restart"]
+
+
 def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: pathlib.Path) -> None:
     """A failed machine's hub entry carries the reason label, like run and draft rows."""
     md = sessions_layout.machines_root(paths.state_dir(tmp_path)) / "m-fail"

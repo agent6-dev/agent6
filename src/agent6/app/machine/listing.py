@@ -13,6 +13,7 @@ import pathlib
 
 from agent6.app.machine import bundle
 from agent6.viewmodel import machine_files, machine_instance_dirs, summarize_machine_dir
+from agent6.viewmodel.machine import state as machine_state
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -28,6 +29,7 @@ class MachineRow:
         reason: A failed instance's reason, else "".
         current: The instance's current state; "" without an instance.
         mtime: The instance's last activity; 0.0 without one.
+        start_actions: The starts available for the authored file.
     """
 
     name: str
@@ -38,9 +40,30 @@ class MachineRow:
     reason: str
     current: str
     mtime: float
+    start_actions: tuple[str, ...]
+
+
+def machine_summaries(state_dir: pathlib.Path) -> list[machine_state.MachineSummary]:
+    """Return the summaries of a project's instances, newest first."""
+    return [summarize_machine_dir(d) for d in machine_instance_dirs(state_dir)]
 
 
 def machine_rows(cwd: pathlib.Path, state_dir: pathlib.Path) -> list[MachineRow]:
+    """List a repository's instances and authored machine files.
+
+    Args:
+        cwd: The repository containing the authored files.
+        state_dir: The repository's state directory.
+
+    Returns:
+        The instances newest first, then the remaining files.
+    """
+    return join_machine_rows(cwd, machine_summaries(state_dir))
+
+
+def join_machine_rows(
+    cwd: pathlib.Path, instances: list[machine_state.MachineSummary]
+) -> list[MachineRow]:
     """List instances newest first, then the authored files no instance ran.
 
     An instance joins the first authored file declaring its name; a second file with the same
@@ -48,7 +71,7 @@ def machine_rows(cwd: pathlib.Path, state_dir: pathlib.Path) -> list[MachineRow]
 
     Args:
         cwd: The repository the authored files are found under.
-        state_dir: The repo's state directory holding the instances.
+        instances: The repo's instance summaries, newest first.
 
     Returns:
         The rows in listing order.
@@ -56,7 +79,8 @@ def machine_rows(cwd: pathlib.Path, state_dir: pathlib.Path) -> list[MachineRow]
     files = [(p, bundle.summarize_machine_file(p)) for p in machine_files(cwd)]
     rows: list[MachineRow] = []
     joined: set[pathlib.Path] = set()
-    for inst in (summarize_machine_dir(d) for d in machine_instance_dirs(state_dir)):
+    starts = {inst.name: inst.start_actions for inst in instances}
+    for inst in instances:
         own = next(((p, f) for p, f in files if f.name == inst.name and p not in joined), None)
         if own is not None:
             joined.add(own[0])
@@ -70,9 +94,14 @@ def machine_rows(cwd: pathlib.Path, state_dir: pathlib.Path) -> list[MachineRow]
                 reason=inst.reason,
                 current=inst.current,
                 mtime=inst.mtime,
+                start_actions=inst.start_actions if own else (),
             )
         )
     for path, f in files:
         if path not in joined:
-            rows.append(MachineRow(f.name, path, f.states, f.spec, "", "", "", 0.0))
+            rows.append(
+                MachineRow(
+                    f.name, path, f.states, f.spec, "", "", "", 0.0, starts.get(f.name, ("Run",))
+                )
+            )
     return rows

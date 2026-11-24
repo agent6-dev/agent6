@@ -1258,6 +1258,15 @@ def test_a_dialog_keeps_its_close_button_in_view_while_it_scrolls(
     [
         ("#/", [], "Clear saved asks", "Delete every saved ask?", "Delete", "Cancel", "rm_asks"),
         ("#/machines", ["code-fixer"], "Run code-fixer", "Run code-fixer?", "Run", "Run", "run"),
+        (
+            "#/machines",
+            ["code-fixer"],
+            "Restart code-fixer",
+            "Restart code-fixer?",
+            "Restart",
+            "Cancel",
+            "run",
+        ),
     ],
 )
 def test_a_question_acts_only_on_its_action_button(
@@ -1283,11 +1292,18 @@ def test_a_question_acts_only_on_its_action_button(
 
     def answer(route: Route) -> None:
         posts.append(route.request.url.rsplit("/", 1)[1])
+        if files:
+            assert route.request.post_data_json == {
+                "file": "machines/code-fixer.yaml",
+                "restart": action == "Restart",
+            }
         route.fulfill(json={"ok": True, "message": "done"})
 
     page.route(f"**/api/*/{post}", answer)
     if files:
-        mfs = [{"name": name, "path": f"machines/{name}.yaml"} for name in files]
+        mfs = [
+            {"name": name, "path": f"machines/{name}.yaml", "actions": [action]} for name in files
+        ]
         page.route("**/api/hub", lambda route: route.fulfill(json={"machine_files": mfs}))
     page.goto(f"http://127.0.0.1:{port}/{hash_}")
     button = page.get_by_role("button", name=asker, exact=True)
@@ -1320,7 +1336,11 @@ def test_a_held_enter_answers_no_question(
 
     page, errors = open_page(port)
     posts: list[str] = []
-    files = {"machine_files": [{"name": "code-fixer", "path": "machines/code-fixer.yaml"}]}
+    files = {
+        "machine_files": [
+            {"name": "code-fixer", "path": "machines/code-fixer.yaml", "actions": ["Run"]}
+        ]
+    }
     page.route("**/api/hub", lambda route: route.fulfill(json=files))
     page.route(
         "**/api/machine/run",

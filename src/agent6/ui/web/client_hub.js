@@ -239,21 +239,26 @@ function machineFilesCard() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Run a machine'));
   const frow = el('div', 'list machine-files'); frow.setAttribute('role', 'list');
-  const run = (mf) => {
-    const b = el('button', null, 'Run');
-    b.setAttribute('aria-label', 'Run ' + mf.name);
+  const button = (mf, label) => {
+    const restart = label === 'Restart';
+    const b = el('button', null, label);
+    b.setAttribute('aria-label', label + ' ' + mf.name);
     runOnce(b, async () => {
-      // Starting an instance spends against the configured provider.
-      if (!await confirmDialog('Run ' + mf.name + '?', 'It starts a paid machine run now and spends against your provider.', 'Run')) return;
-      try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); }
+      const note = (restart ? 'Archives the previous run and starts from the initial state. ' : '') + 'The run can spend against your provider.';
+      if (!await confirmDialog(`${label} ${mf.name}?`, note, label, restart)) return;
+      try { await postJSON('/api/machine/run', { file: mf.path, restart }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); }
     });
-    return itemRow((row, text) => {
-      text.append(el('div', 'title name', mf.name), el('div', 'sub', mf.path));
-      row.appendChild(b);
-    });
+    return b;
   };
+  const paint = mf => itemRow((row, text) => {
+    text.append(el('div', 'title name', mf.name), el('div', 'sub', mf.path));
+    if (!mf.actions.length) return;
+    const actions = el('div', 'item-actions');
+    actions.append(...mf.actions.map(label => button(mf, label)));
+    row.appendChild(actions);
+  });
   card.appendChild(frow);
-  card.show = (files, hold) => patchRows(frow, files.map(mf => ({ key: mf.path, data: mf, paint: () => run(mf) })), hold);
+  card.show = (files, hold) => patchRows(frow, files.map(mf => ({ key: mf.path, data: mf, paint: () => paint(mf) })), hold);
   return card;
 }
 
