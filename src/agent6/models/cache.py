@@ -388,6 +388,8 @@ def _fetch(
         return Listing(ids, {}, context, {})  # A subscription prices nothing.
     if entry.oauth is not None:
         api_key = oauth.OAuthCredential(provider_name, entry).token(refresh=refresh)
+    elif entry.token_command:
+        raise provider_types.ProviderError("model listings do not run token_command")
     url, headers = _models_endpoint(entry, api_key)
     resp = transport.http_request("GET", url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()

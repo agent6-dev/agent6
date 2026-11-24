@@ -164,6 +164,18 @@ def test_model_listings_use_the_capped_request(
     assert request.call_args.kwargs.get("cap") is None
 
 
+def test_a_listing_does_not_substitute_a_static_key_for_a_command_token(
+    cache_home: pathlib.Path,
+) -> None:
+    entry = OpenAIProviderEntry(backend="openai", token_command=["test-token"])
+    response = httpx2.Response(
+        200, json={"data": [{"id": "x"}]}, request=httpx2.Request("GET", entry.base_url)
+    )
+    with mock.patch.object(transport, "http_request", return_value=response) as request:
+        models_cache.list_models("catalog", entry, "test-static-key")
+    request.assert_not_called()
+
+
 def test_fresh_cache_skips_network(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
