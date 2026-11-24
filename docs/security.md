@@ -689,6 +689,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   The base must still hold the recorded commit or the run's content (merging the ref into the base would change no file).
   Prune writes that record itself for a run merged by hand, on the same content check.
   A branch's or chain ref's line carries the sha to undelete it.
+- agent6's git reads no replace ref and no graft file (`GIT_NO_REPLACE_OBJECTS`, and a `GIT_GRAFT_FILE` that names no file): a jailed command can add either where `.git` is writable.
+    - it still reads the repository's commit-graph and `shallow` file, so a view there can show another tree or other parents for a commit
 - Host-side git calls use `vcs.git.policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.
     - Of the shell's `GIT_*` variables, only `GIT_ASKPASS`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_EDITOR`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT` and `GIT_TRACE*` pass through; agent6 can still supply explicit settings such as `GIT_INDEX_FILE`.
     - Other PATH, SSH, proxy and credential-helper variables stay.

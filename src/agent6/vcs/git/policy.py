@@ -440,7 +440,7 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
 
     Returns:
         The inherited environment with Git overrides and provider keys removed, the
-        operator's pager set and `BLANK_ENV` empty.
+        operator's pager set, replace refs and graft files off and `BLANK_ENV` empty.
     """
     # Inherit only GIT_{ASKPASS,AUTHOR_*,COMMITTER_*,EDITOR,SSH,SSH_COMMAND,SSH_VARIANT,TRACE*}.
     allowed = {"GIT_ASKPASS", "GIT_EDITOR", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"}
@@ -457,11 +457,15 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
     # Disable terminal credential prompts; stable Git prose keeps the stash rescue parseable.
     # No lazy fetch: a promisor remote in .git/config would fetch a missing object through
     # the repository's own transport keys (`core.sshCommand`, a credential helper).
+    # The stored commit: a jailed command can write `refs/replace/` and `info/grafts` too.
+    # No file exists under /dev/null; for a graft file git can open, it prints a hint on stderr.
     env = child_env.without_provider_keys(
         {
             **inherited,
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "GIT_GRAFT_FILE": "/dev/null/grafts",
             "GIT_PAGER": pager,
             "LC_ALL": "C",
             **(extra or {}),
