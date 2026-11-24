@@ -115,6 +115,7 @@ def test_present_pack_refuses_startup(
     foreign_field: str | None,
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     pack.pack(tmp_path)
     file = tmp_path / ".agent6/pack.json"
     manifest = json.loads(file.read_text())
@@ -133,6 +134,7 @@ def test_foreign_pack_allows_unpack(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     pack.pack(tmp_path)
     file = tmp_path / ".agent6/pack.json"
     manifest = json.loads(file.read_text())
@@ -156,10 +158,11 @@ def test_subdirectory_resolves_pack_at_project_root(
 
 
 def test_pack_outside_a_checkout_names_it(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    host_tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Outside a git checkout, pack refuses in its own words rather than git's."""
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(host_tmp_path)
+    assert not (paths.checkout_root(pathlib.Path.cwd()) / ".git").exists()
     assert _invoke(["pack"]) != 0
     out = capsys.readouterr()
     assert "not a git checkout" in out.err + out.out
