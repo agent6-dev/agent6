@@ -18,6 +18,8 @@ from agent6.app import child_launch
 from agent6.sessions import journal
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import receipt, transcript, transcript_items
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as session_state
 from agent6.viewmodel.session import status as session_status
 from agent6.viewmodel.session import view as state_view
 
@@ -240,6 +242,74 @@ class RunInfo:
         return [_update(self.acp_session_id, usage)]
 
 
+# ACP's plan status per task status; it has no failed status, and a failed task is still open.
+_PLAN_STATUS = {
+    "pending": "pending",
+    "in_progress": "in_progress",
+    "passed": "completed",
+    "failed": "pending",
+}
+
+
+def plan_entries(tasks: tuple[state_types.TaskNodeView, ...]) -> list[dict[str, str]]:
+    """Return the task list as ACP plan entries, in the read model's depth-first order.
+
+    Args:
+        tasks: The folded session state's tasks.
+
+    Returns:
+        One entry per task that is neither skipped nor obsolete, each `medium` priority. The
+        task the worker is on reads `in_progress`; a failed one keeps " (failed)" after its
+        title.
+    """
+    return [
+        {
+            "content": printable(task.title) + (" (failed)" if task.status == "failed" else ""),
+            "priority": "medium",
+            "status": "in_progress" if task.is_cursor else _PLAN_STATUS.get(task.status, "pending"),
+        }
+        for task in tasks
+        if task.status not in ("skipped", "obsolete")
+    ]
+
+
+@dataclasses.dataclass
+class TaskPlan:
+    """Project the run's task list into ACP's `plan`, from the state every surface folds.
+
+    Attributes:
+        acp_session_id: The conversation the notifications address.
+    """
+
+    acp_session_id: str
+    _state: state_types.SessionState = dataclasses.field(
+        default_factory=session_state.initial_state, init=False
+    )
+    # The entries the editor holds from this projection; None before the first graph.
+    _sent: list[dict[str, str]] | None = dataclasses.field(default=None, init=False)
+
+    def feed(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the plan when the event changed it.
+
+        Args:
+            event: One rows event.
+
+        Returns:
+            One `plan` update with the complete list, empty included, at a `graph.update` and
+            at the `session.stop` that clears the focus; none while the list is unchanged, or
+            at a stop before the execution journaled a graph.
+        """
+        kind = event.get("type")
+        if kind != "graph.update" and (kind != "session.stop" or self._sent is None):
+            return []
+        self._state = session_state.apply_event(self._state, event)
+        entries = plan_entries(self._state.tasks)
+        if entries == self._sent:
+            return []
+        self._sent = entries
+        return [_update(self.acp_session_id, {"sessionUpdate": "plan", "entries": entries})]
+
+
 def replay(
     rows: Iterable[dict[str, Any]],
     *,
@@ -258,6 +328,7 @@ def replay(
         notify: Sends each notification before load returns.
     """
     fold = transcript.TranscriptFold()
+    plan = TaskPlan(acp_session_id)
     execution, executions = "", 0
     announced: set[str] = set()
 
@@ -278,6 +349,8 @@ def replay(
 
     for event in rows:
         event_type = event.get("type")
+        for body in plan.feed(event):
+            notify(body)
         paths = result_paths(event) if event_type == "tool.result" else ()
         for item in fold.feed(event):
             wire_item = item

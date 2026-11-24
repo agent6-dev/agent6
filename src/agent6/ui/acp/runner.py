@@ -646,6 +646,7 @@ class RunBridge:
             objects_dir: The run's object directory; None sends an edit without its diffs.
         """
         fold = transcript.TranscriptFold()
+        plan = updates.TaskPlan(session.acp_id)
         streamed: set[str] = set()
         # The last message streamed: an end summary repeating it is not sent again.
         spoken: list[str] = []
@@ -666,6 +667,8 @@ class RunBridge:
                 if event_type in journal.SESSION_START_EVENTS:
                     announced.execution_id = str(event.get("execution_id") or "")
                 for body in info.feed(event) if info is not None else ():
+                    self.server.notify_raw(body)
+                for body in plan.feed(event):
                     self.server.notify_raw(body)
                 paths = updates.result_paths(event) if event_type == "tool.result" else ()
                 if event_type == "model.call":
