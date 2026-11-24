@@ -207,7 +207,7 @@ _STAGE_MODULES = {
 }
 # The stage behind a call through a callable the lifecycle hands in, by the attribute called:
 # the execution calls a run's gate step as `inputs.gate`.
-_HANDED_STAGES = {"gate": ("src/agent6/app/run.py", "_gate")}
+_HANDED_STAGES = {"gate": ("src/agent6/app/run.py", "infer_gate")}
 
 
 @functools.cache
