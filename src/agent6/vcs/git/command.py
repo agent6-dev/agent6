@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import signal
 import subprocess
 
 from agent6 import errors, kinds
@@ -66,6 +67,8 @@ def spawn(
     env_extra: dict[str, str] | None,
     stdin_text: str | None,
     repo: pathlib.Path | None = None,
+    *,
+    own_group: bool = False,
 ) -> tuple[tuple[str, ...], int, bytes, bytes]:
     """Run one hardened git command.
 
@@ -75,6 +78,7 @@ def spawn(
         env_extra: Environment entries added for this call.
         stdin_text: Text fed to git's stdin.
         repo: The repository to harden when git runs elsewhere.
+        own_group: Signal git and its helpers together on timeout.
 
     Returns:
         The full argv, exit code, stdout and stderr.
@@ -93,6 +97,7 @@ def spawn(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
+        process_group=0 if own_group else None,
     )
     try:
         # fsencode: a name decoded with surrogateescape goes back to git byte for byte.
@@ -100,12 +105,20 @@ def spawn(
         out, err = proc.communicate(input=stdin_bytes, timeout=GIT_TIMEOUT_S)
     except subprocess.TimeoutExpired as exc:
         # git's TERM handler unlinks its own lockfiles, so a lock left afterwards is another git's.
-        proc.terminate()
+        if own_group:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
         try:
             proc.communicate(timeout=GIT_TERM_GRACE_S)
         except subprocess.TimeoutExpired:
             # SIGKILL skips git's cleanup: clear the lock only when it appeared under this child.
-            proc.kill()
+            if own_group:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
             proc.communicate()
             if "GIT_INDEX_FILE" not in env and not lock_preexisted:
                 with contextlib.suppress(OSError):
@@ -156,6 +169,7 @@ def run(
     env_extra: dict[str, str] | None = None,
     stdin_text: str | None = None,
     repo: pathlib.Path | None = None,
+    own_group: bool = False,
 ) -> kinds.CommandResult:
     """Run one hardened git command in the repository.
 
@@ -166,6 +180,7 @@ def run(
         env_extra: Environment entries added for this call.
         stdin_text: Text fed to git's stdin.
         repo: The repository, when git runs elsewhere; None means `cwd`.
+        own_group: Signal git and its helpers together on timeout.
 
     Returns:
         The command's result, its output decoded lossily.
@@ -174,7 +189,9 @@ def run(
         GitError: The command failed with check set or timed out, or agent6 could not list
             the repository's config or name its checkout.
     """
-    full_argv, returncode, out, err = spawn(cwd, args, env_extra, stdin_text, repo=repo)
+    full_argv, returncode, out, err = spawn(
+        cwd, args, env_extra, stdin_text, repo=repo, own_group=own_group
+    )
     result = kinds.CommandResult(
         argv=full_argv,
         returncode=returncode,

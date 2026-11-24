@@ -295,6 +295,7 @@ def scratch_fetch(
                 "--end-of-options",
                 url,
                 *refspecs,
+                own_group=sender is None and protocols == "file",
                 check=False,
                 env_extra=env,
             )

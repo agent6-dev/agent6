@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 
 import pytest
@@ -44,6 +45,41 @@ def pair(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     work = tmp_path / "work"
     subprocess.run(["git", "clone", "-q", str(upstream), str(work)], check=True)
     return upstream, work
+
+
+def test_local_fetch_timeout_ends_its_host_sender(
+    pair: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sender holds the stderr pipe until it exits, even after git fetch exits."""
+    upstream, work = pair
+    sender = tmp_path / "slow-upload-pack"
+    started, finished = tmp_path / "started", tmp_path / "finished"
+    sender.write_text(
+        f"#!/bin/sh\ntouch {shlex.quote(str(started))}\nsleep 6\n"
+        f"touch {shlex.quote(str(finished))}\n",
+        encoding="utf-8",
+    )
+    sender.chmod(0o700)
+    invocation = git_command.invocation
+
+    def slow_sender(
+        cwd: pathlib.Path,
+        args: tuple[str, ...],
+        env_extra: dict[str, str] | None = None,
+        repo: pathlib.Path | None = None,
+    ) -> tuple[tuple[str, ...], dict[str, str]]:
+        if "fetch" in args:
+            at = args.index("--end-of-options")
+            args = (*args[:at], f"--upload-pack={shlex.quote(str(sender))}", *args[at:])
+        return invocation(cwd, args, env_extra, repo)
+
+    monkeypatch.setattr(git_command, "invocation", slow_sender)
+    monkeypatch.setattr(git_command, "GIT_TIMEOUT_S", 1.0)
+    monkeypatch.setattr(git_command, "GIT_TERM_GRACE_S", 0.5)
+    with pytest.raises(errors.GitError, match="got no answer within 1s"):
+        git_ops.fetch_branch(work, upstream, "main:refs/remotes/check/main", sender=None)
+    assert started.exists()
+    assert not finished.exists()
 
 
 def test_a_fetch_moves_only_the_remotes_tracking_refs(
