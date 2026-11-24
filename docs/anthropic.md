@@ -6,7 +6,7 @@ Every other entry on this backend defaults to `false`.
 `agent6 config show` prints the effective value and its origin.
 
 The models with signed compaction are Claude Fable 5.1 and 5.2, Mythos 5.1 and 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5.
-An unsupported model or `server_compaction = false` uses [agent6's own compaction](architecture.md#a-run).
+An unsupported model or `server_compaction = false` uses [agent6's own compaction](architecture.md#compaction).
 
 **Clearing.** Above `compaction.drop_at_chars`, agent6 asks the endpoint to clear old tool results.
 It keeps sending the full history, and each request names how many of the newest tool uses stay whole.
