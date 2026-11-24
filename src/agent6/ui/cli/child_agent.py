@@ -2,10 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Start one child from its launch file.
 
-Invoked as `python -P -E -m agent6.ui.cli.child_agent` with `AGENT6_LAUNCH` naming the file:
-validates it and the config snapshot beside it, loads the child's config and drives
-`agent6.app.run.run_task` through the CLI's session seam. The task reaches the run as the
-file holds it, never parsed as options or directives.
+`python -P -E -m agent6.ui.cli.child_agent` reads the file named by `AGENT6_LAUNCH`.
+It validates the launch and loads the checked config snapshot beside it.
+A new child's task goes straight from the file to `agent6.app.run.run_task`, not through argv.
+`run_task` checks `directive.steer_problem` and prepares a leading `/review`.
+A valid opening `/parallel` is task text here.
+A continuation resumes the child with the parent's steer as text.
 """
 
 from __future__ import annotations
