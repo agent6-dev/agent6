@@ -18,7 +18,6 @@ from unittest import mock
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import (
-    dag_focus,
     loop,
     loop_conversation,
     loop_state,
@@ -26,6 +25,7 @@ from agent6.harness import (
     operator_bridge,
     run_chain,
 )
+from agent6.harness.tasks import focus as dag_focus
 from agent6.sessions import event_log, ipc
 from agent6.sessions import layout as sessions_layout
 

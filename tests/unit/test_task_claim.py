@@ -12,7 +12,8 @@ import dataclasses
 import pathlib
 
 from agent6.graph import curator, models
-from agent6.harness import dag_focus, guards
+from agent6.harness import guards
+from agent6.harness.tasks import focus as dag_focus
 from agent6.sessions import layout
 from agent6.tools import dag_tools, dispatch
 

@@ -180,7 +180,7 @@ depends_on = [
 # compaction.driver uses compaction.elision, compaction.rules and compaction.window.
 # compaction.window uses loop_conversation and compaction.elision; the result cap
 # reads review.panel and verify.gate notice sizes within this harness boundary.
-# The package re-exports prompt_preview; it uses dag_focus, prompt_blocks,
+# The package re-exports prompt_preview; it uses tasks.focus, prompt_blocks,
 # repo_context and toolset within this boundary.
 # parallel_dispatch shares one executor and budget reservation path for work and panels.
 # parallel_merge owns merge/DAG projections; child_repo retains descendant session records.

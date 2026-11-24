@@ -109,6 +109,9 @@ Each entry is the package's docstring.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
     - The reviews an operator starts (`/review`, `sessions review`) are `app.review`.
     - Main modules: `gate`, `panel`, `verdict`, `history`.
+- **[`harness/tasks`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/tasks)**: The run's task graph in the loop: the focus, the operator's tasks and the standing goal.
+    - Part of `harness`: every module reads `graph`, and none imports `app` or `ui`.
+    - Main modules: `focus`, `operator_tasks`, `standing`.
 - **[`harness/verify`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/verify)**: The verify gate: when the harness runs it, its scoped retry and its verdict.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
     - Main modules: `gate`, `scope`, `verdict`, `child`.
@@ -322,7 +325,7 @@ flowchart TD
 The graph is a side store: it never picks the next tool.
 
 - `add_task` and `update_task` write it, with cycle-checked `depends_on` edges, and `list_tasks` reads it back.
-- Each turn the current task surfaces into the prompt (`harness/dag_focus.py`).
+- Each turn the current task surfaces into the prompt (`harness/tasks/focus.py`).
 - `finish_session` refuses while the worker's own subtasks are open, under a cap.
 - A standing goal (`run --standing "<goal>"`, `/standing`) is the never-passing fallback: the soft endings re-enter it, and only the operator retires it.
 - `[harness].standing_patience` bounds the re-entry rounds that run no tool (default `-1`: no bound).

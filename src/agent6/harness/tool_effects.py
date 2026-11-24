@@ -13,15 +13,9 @@ import pathlib
 from typing import TYPE_CHECKING, Any
 
 from agent6 import kinds, paths, task_text
-from agent6.harness import (
-    dag_focus,
-    finish_gates,
-    loop_conversation,
-    loop_state,
-    memory_touch,
-    nudges,
-)
+from agent6.harness import finish_gates, loop_conversation, loop_state, memory_touch, nudges
 from agent6.harness.compaction import elision
+from agent6.harness.tasks import focus as dag_focus
 from agent6.sessions import journal
 from agent6.tools import mcp_client, results, tool_errors
 

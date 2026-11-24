@@ -41,7 +41,6 @@ from agent6.graph import models, order
 from agent6.harness import (
     advice,
     child_work,
-    dag_focus,
     finish_gates,
     guards,
     loop_conversation,
@@ -64,13 +63,14 @@ from agent6.harness import (
     toolset,
 )
 from agent6.harness import compaction as harness_compaction
-from agent6.harness import operator_tasks as harness_operator_tasks
-from agent6.harness import standing_goal as harness_standing_goal
 from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as harness_review_gate
 from agent6.harness.review import history as review_history
+from agent6.harness.tasks import focus as dag_focus
+from agent6.harness.tasks import operator_tasks as harness_operator_tasks
+from agent6.harness.tasks import standing as harness_standing_goal
 from agent6.harness.verify import child as child_verify
 from agent6.harness.verify import gate as verify_gate
 from agent6.harness.verify import verdict as verify_verdict

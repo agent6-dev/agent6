@@ -15,8 +15,9 @@ import pytest
 
 from agent6 import directive, kinds
 from agent6.config import Config, load_config
-from agent6.harness import dag_focus, loop_state, prompt_blocks, provider_call, run_chain, toolset
 from agent6.harness import loop as loopmod
+from agent6.harness import loop_state, prompt_blocks, provider_call, run_chain, toolset
+from agent6.harness.tasks import focus as dag_focus
 from agent6.providers import ProviderResponse
 from agent6.tools import dispatch, mcp_client, results, schema, tool_errors
 

@@ -132,7 +132,7 @@ flowchart TD
 The graph is a side store: it never picks the next tool.
 
 - `add_task` and `update_task` write it, with cycle-checked `depends_on` edges, and `list_tasks` reads it back.
-- Each turn the current task surfaces into the prompt (`harness/dag_focus.py`).
+- Each turn the current task surfaces into the prompt (`harness/tasks/focus.py`).
 - `finish_session` refuses while the worker's own subtasks are open, under a cap.
 - A standing goal (`run --standing "<goal>"`, `/standing`) is the never-passing fallback: the soft endings re-enter it, and only the operator retires it.
 - `[harness].standing_patience` bounds the re-entry rounds that run no tool (default `-1`: no bound).

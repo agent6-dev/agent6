@@ -64,7 +64,7 @@ def test_after_must_name_a_sibling(tmp_path: pathlib.Path) -> None:
 
 def test_the_inserted_task_is_focused_next(tmp_path: pathlib.Path) -> None:
     """The frontier surfaces an inserted task in its new position, not at the end."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -107,7 +107,7 @@ def test_standing_task_is_the_fallback_never_the_frontier(tmp_path: pathlib.Path
     """
     import pytest
 
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -195,7 +195,7 @@ def test_a_parent_over_a_failed_child_is_focused_and_its_refusal_names_the_child
     """A parent over a failed child is focused, and its refusal to pass names the child."""
     import pytest
 
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")

@@ -4124,7 +4124,7 @@ def test_metric_plateau_end_is_refused_while_a_subtask_is_open() -> None:
 
 def test_current_task_id_prefers_open_cursor() -> None:
     """The cursor wins when it still points at an open subtask, even if an earlier one is open."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -4142,7 +4142,7 @@ def test_current_task_id_prefers_open_cursor() -> None:
 
 def test_first_ready_subtask_respects_deps_and_order() -> None:
     """The frontier skips a subtask whose dependency is open; roots and done tasks never show."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -4162,7 +4162,7 @@ def test_first_ready_subtask_respects_deps_and_order() -> None:
 
 def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
     """A subtask with open children is a container: the frontier surfaces its first ready leaf."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a", "b"]},
@@ -4185,7 +4185,7 @@ def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
 
 def test_first_ready_subtask_surfaces_a_parent_over_a_failed_child() -> None:
     """A failed child is not open, so the frontier surfaces the parent again."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a"]},
@@ -4196,7 +4196,7 @@ def test_first_ready_subtask_surfaces_a_parent_over_a_failed_child() -> None:
 
 
 def test_current_task_banner_carries_title_acceptance_paths() -> None:
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     banner = dag_focus.current_task_banner(
         "01TASK",
@@ -4418,7 +4418,7 @@ def _stuck_count(messages: list[dict[str, Any]]) -> int:
 
 def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None:
     """The split/pass/skip nudge re-fires on the same stuck task and caps at _STUCK_NUDGE_MAX."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     cur = _FakeCurator(
         {
@@ -4444,7 +4444,7 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
 
 def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
     """Forward motion (a task marked passed, focus advances) resets the grind counter."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -8006,7 +8006,7 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
 
 def test_the_frontier_executes_the_order_the_children_list_shows() -> None:
     """`list_tasks` and every task tree render a parent's children in its `children` order."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     nodes = _typed(
         {
@@ -8020,7 +8020,7 @@ def test_the_frontier_executes_the_order_the_children_list_shows() -> None:
 
 def test_the_frontier_walks_depth_first_through_children() -> None:
     """A decomposed child's own leaves come before its later siblings, as the tree shows them."""
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
 
     nodes = _typed(
         {
@@ -9359,7 +9359,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
     """With nothing ordinary ready the focus falls back to the standing goal, unpassable."""
     from agent6.graph import curator as graph_curator
     from agent6.graph import models
-    from agent6.harness import dag_focus
+    from agent6.harness.tasks import focus as dag_focus
     from agent6.sessions import layout
 
     curator = graph_curator.GraphCurator(

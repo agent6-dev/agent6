@@ -19,7 +19,8 @@ import time
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph import models, order
-from agent6.harness import advice, dag_focus, finish_gates, loop_snapshot, metric_rules, nudges
+from agent6.harness import advice, finish_gates, loop_snapshot, metric_rules, nudges
+from agent6.harness.tasks import focus as dag_focus
 from agent6.sessions import journal
 from agent6.tools import results
 

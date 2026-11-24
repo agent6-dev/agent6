@@ -13,7 +13,7 @@ import pydantic
 from agent6 import child_records, errors, terminal
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
-from agent6.harness import dag_focus
+from agent6.harness.tasks import focus as dag_focus
 from agent6.sessions import child_dispatch
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read

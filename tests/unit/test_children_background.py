@@ -27,7 +27,6 @@ from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import (
     child_work,
-    dag_focus,
     guards,
     loop,
     loop_conversation,
@@ -38,6 +37,7 @@ from agent6.harness import (
     provider_call,
     run_chain,
 )
+from agent6.harness.tasks import focus as dag_focus
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, event_log, ipc
 from agent6.sessions import layout as sessions_layout

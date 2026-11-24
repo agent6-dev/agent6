@@ -150,7 +150,7 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** app/fork, harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, standing_goal, tool_effects}, harness/compaction/{calls, retention, rules, strategy, window, writers}, harness/verify/gate
+- **Read by:** app/fork, harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, tool_effects}, harness/compaction/{calls, retention, rules, strategy, window, writers}, harness/tasks/standing, harness/verify/gate
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (56 test files exercise it)
 
 ## SessionManifest
@@ -308,7 +308,7 @@ The task-graph nodes and the intents that mutate them.
 | `held_by` | `tuple[str, ...]` | `()` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** app/merge, graph/{order, replay}, harness/{advice, child_tasks, dag_focus, guards, loop, operator_tasks, parallel_merge}, harness/compaction/driver, tools/{dag_tools, schema}, viewmodel/session/state
+- **Read by:** app/merge, graph/{order, replay}, harness/{advice, child_tasks, guards, loop, parallel_merge}, harness/compaction/driver, harness/tasks/{focus, operator_tasks}, tools/{dag_tools, schema}, viewmodel/session/state
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (24 test files exercise it)
 
 ## Run/machine wire snapshot
