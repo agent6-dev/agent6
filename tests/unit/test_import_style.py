@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The module-style import rule, read from the tree.
 
-`from agent6.pkg.module import name` is refused everywhere: a leaf module's members are reached
-as `module.name`. A package's `__init__.py` re-exports names from its modules with a trailing
-`# re-export`; `pyproject.toml`'s `banned-from` carries the same rule for external modules.
+A leaf module's members are reached as `module.name`. A package's `__init__.py` imports
+nothing from agent6. `pyproject.toml`'s `banned-from` covers external modules.
 """
 
 from __future__ import annotations
@@ -56,6 +55,22 @@ def test_no_name_is_imported_from_a_leaf_module() -> None:
 def test_the_external_list_holds_no_agent6_module() -> None:
     """The tree rule above owns agent6's modules; the list names only external ones."""
     assert not [m for m in _banned_from() if m.startswith("agent6")]
+
+
+def test_package_initializers_import_nothing_from_agent6() -> None:
+    """Importing a package does not pull in other agent6 modules."""
+    violations: list[str] = []
+    for path in sorted((_ROOT / "src/agent6").rglob("__init__.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                internal = any(alias.name.split(".")[0] == "agent6" for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                internal = node.level > 0 or (node.module or "").split(".")[0] == "agent6"
+            else:
+                continue
+            if internal:
+                violations.append(f"{path.relative_to(_ROOT)}:{node.lineno}: {ast.unparse(node)}")
+    assert not violations, "\n".join(violations)
 
 
 def test_the_list_is_sorted_and_keeps_the_typing_exceptions() -> None:

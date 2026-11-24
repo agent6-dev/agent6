@@ -123,12 +123,14 @@
   Strict pyrefly.
 - **Layout**: src layout under `src/agent6/`; tests under `tests/`; Rust sandbox launcher under `src/agent6/jail/`.
 - **Style**: ruff is the only formatter and linter, line length 100; run `uv run ruff check` and `uv run ruff format` before committing.
-  The select list in `pyproject.toml` is the rule set: docstrings in the Google shape (a one-line imperative summary, a blank line, short lines; Args, Returns, Yields, Raises with names only, the types in the annotations), everything typed, module-style imports (`from agent6.pkg import module`, `module.name` at the call site), pep8 names.
+  The select list in `pyproject.toml` is the rule set: docstrings in the Google shape (a one-line imperative summary, a blank line, short lines; Args, Returns, Yields, Raises with names only, the types in the annotations), everything typed, pep8 names.
   `C901` at 20 is the hard bound on a function; the target is smaller: a function reads in one screen, a module in one sitting.
   A comment is one line; a docstring's rationale is one line the reader could not reconstruct.
 - **Web**: new and changed web code uses current web primitives, as [modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance) describes them, within the target `docs/web.md` states; one code path, no polyfills.
 - **Typing**: pydantic v2 at trust boundaries (config, LLM I/O, tool schemas, IPC); everywhere else, `@dataclass(frozen=True, slots=True)`.
-- **Imports**: absolute only (`from agent6.x import y`).
+- **Imports**: absolute only, in the module style of the [Google Python Style Guide, 2.2.4](https://google.github.io/styleguide/pyguide.html#224-decision): `from agent6.pkg import module`, then `module.name`.
+  Use `as` only for a clash or a name too generic to read alone.
+  A package's `__init__.py` re-exports nothing.
 - **Errors**: fail loudly, through a custom exception class per subsystem; every `except` names what it catches and re-raises what it cannot handle.
 - **Versioning**: `__version__` in `src/agent6/__init__.py` is the single source of truth; everything else reads it.
 - **A new runtime dependency is discussed first.**

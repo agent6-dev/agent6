@@ -160,10 +160,9 @@ max-complexity = 20
 [tool.ruff.lint.flake8-import-conventions]
 # Members are never imported from these external modules: `from pkg import module` and
 # `module.name` at the call site (typing and collections.abc excepted). The repository's own
-# leaf modules follow the same rule from the tree, enforced by tests/unit/test_import_style.py;
-# a package's `__init__.py` marks its re-exports `# re-export`. A package whose submodules are
-# imported (textual, importlib, unittest) is not listed: `from textual import widgets` is the
-# module style, and the rule would refuse it.
+# leaf modules follow the same rule from the tree, enforced by tests/unit/test_import_style.py.
+# A package whose submodules are imported (textual, importlib, unittest) is not listed:
+# `from textual import widgets` is the module style, and the rule would refuse it.
 banned-from = [
     "argcomplete.shell_integration",
     "argparse",
