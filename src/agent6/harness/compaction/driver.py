@@ -372,8 +372,9 @@ class Tiered(_Scheduled):
         n_elided = len(stats.elided_calls)
         n_gisted = len(stats.gist_paths)
         n_demoted = len(stats.demoted_paths)
-        if context.settings.keep_thinking_turns > 0 and (n_deduped or n_elided or n_demoted):
-            # Strip only alongside a result rewrite, so thinking adds no cache break.
+        rewrote = n_deduped or n_elided or n_demoted
+        if context.settings.keep_thinking_turns > 0 and (cold or rewrote):
+            # Warm, strip only alongside a result rewrite, so thinking adds no cache break.
             n_messages, n_chars = compaction_window.strip_old_thinking(
                 conversation, keep_messages=context.settings.keep_thinking_turns
             )

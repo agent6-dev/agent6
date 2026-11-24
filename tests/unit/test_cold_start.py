@@ -211,6 +211,27 @@ def test_endpoint_keeps_its_own_compaction_at_a_cold_start(tmp_path: pathlib.Pat
     assert row["action"] == "endpoint" and row["chars_not_sent"] == 0
 
 
+def test_a_cold_drop_strips_old_thinking_when_it_replaces_no_result(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Every old thinking block was sent with `keep_thinking_turns = 1`."""
+    saved = loop_conversation.Conversation()
+    saved.notice("Original goal.", origin="operator")
+    for i in range(3):
+        saved.assistant(
+            [
+                {"type": "thinking", "thinking": f"thought-{i}", "signature": "s"},
+                {"type": "text", "text": f"reply {i}"},
+            ]
+        )
+        saved.notice("continue")
+    sent, rows, _, _ = _resume(tmp_path, "drop", [rules.request(model="other")], saved=saved)
+    assert [f"thought-{i}" in str(sent) for i in range(3)] == [False, False, True]
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert row["chars_not_sent"] > 0
+    assert [r["messages"] for r in rows if r["type"] == "compact.thinking_dropped"] == [2]
+
+
 def test_a_cold_drop_takes_the_ordinary_checks_of_a_resend(tmp_path: pathlib.Path) -> None:
     """After a route change to a smaller window, a cold drop sent three times the summary bound."""
     prose = loop_conversation.Conversation()

@@ -585,8 +585,8 @@ class CompactionConfig(pydantic.BaseModel):
         default=-1,
         description=(
             "Local compaction: keep thinking on the newest N assistant turns when rewriting "
-            "results or restarting; -1: keep all; minimum otherwise: 1, to keep signed "
-            "thinking with an in-flight tool call"
+            "results, at a cold drop or restarting; -1: keep all; minimum otherwise: 1, to "
+            "keep signed thinking with an in-flight tool call"
         ),
     )
     summary_max_tokens: int = pydantic.Field(

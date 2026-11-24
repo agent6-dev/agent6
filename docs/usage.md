@@ -570,6 +570,7 @@ The wait setting `idle_compact_min_chars` does not apply at resume.
 
 - `drop` (default): replace every eligible old tool result, even below `drop_at_chars`.
   The newest two results, unread results, operator answers and reads of recently edited files stay whole.
+  Thinking outside the newest `keep_thinking_turns` replies goes too, even when no result is replaced.
   Only `elision_gists` can call the helper during the drop.
   The usual size and manual compaction checks follow on the same request, as after `resend`.
 - `resend`: keep the saved conversation for the usual size and manual compaction checks.
@@ -607,7 +608,7 @@ The helper fallback for a signed endpoint summary omits those tool answers.
 `compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
 After reserving those messages, the newest eligible turn stays whole even if it exceeds the space left.
 At `0`, no optional history survives; the restart still carries pending work and any required plan or contract notice.
-`compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a local restart keeps turns.
+`compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results, at a cold `drop`, and when a local restart keeps turns.
 
 **Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
 The timer starts when the worker starts its model request.

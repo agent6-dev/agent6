@@ -291,7 +291,7 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
 
 - tier 1, `drop_at_chars`: above this bound, the oldest tool results become placeholders until the total reaches half the bound or no eligible results remain
 - the newest two results, undelivered results and operator answers stay whole; reads of recently-edited files elide last
-- dedup runs in the same tier-1 pass; `keep_thinking_turns` strips old thinking only when that pass rewrites results, avoiding separate cache breaks
+- dedup runs in the same tier-1 pass; `keep_thinking_turns` strips old thinking only when that pass rewrites results, avoiding separate cache breaks; a cold `drop` strips it either way
 - a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
 - On a cold start, `resend` leaves the history alone and `drop` replaces all eligible results without touching reads of recently edited files.
   `summarize` gives any pending manual focus to the helper; `truncate` uses no writer.
