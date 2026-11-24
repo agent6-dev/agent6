@@ -51,7 +51,8 @@ class ShellView:
         state: "running", "exited", "stopped", "died", "unknown" or "stop failed".
         returncode: The exit code, when known.
         detail: Why the fate is unknown, cleanup failed or output is incomplete, else "".
-        duration_s: Seconds from launch to this observation or the first observed end, if known.
+        duration_s: Seconds from launch to this observation of a running command, or to an
+            end the caller watched; None for an end first seen after the fact.
         running: Whether the command is still running, None when the launcher cannot tell.
     """
 
@@ -93,6 +94,7 @@ class _Shell:
     # The host record's descriptor is never selected again by path.
     log_fd: int
     started: float
+    ended: bool = False
     final_duration_s: float | None = None
     stopped: bool = False
     # Why a stop could not be confirmed, "" when the command is gone.
@@ -376,16 +378,18 @@ class BackgroundShells:
             BackgroundError: The id is unknown.
         """
         shell = self._get(shell_id)
+        watched = False
         if wait_s > 0:
             deadline = time.monotonic() + wait_s
             # Backs off to 2s: the status probe is a round trip to the launcher.
             pause = 0.1
             while shell.job.status().running and time.monotonic() < deadline:
+                watched = True
                 if interrupted():
                     break
                 time.sleep(min(pause, max(0.0, deadline - time.monotonic())))
                 pause = min(pause * 1.5, 2.0)
-        view = self._view(shell)
+        view = self._view(shell, watched=watched)
         try:
             size = os.lseek(shell.log_fd, 0, os.SEEK_END)
             start = max(size - _TAIL_BYTES, 0)
@@ -422,8 +426,7 @@ class BackgroundShells:
             BackgroundError: The id is unknown.
         """
         shell = self._get(shell_id)
-        self._stop(shell)
-        return self._view(shell)
+        return self._view(shell, watched=self._stop(shell))
 
     def stop_all(self) -> list[ShellView]:
         """Kill everything this run started; idempotent and safe at teardown.
@@ -442,7 +445,7 @@ class BackgroundShells:
         for shell in self._shells.values():
             try:
                 if self._stop(shell):
-                    stopped.append(self._view(shell))
+                    stopped.append(self._view(shell, watched=True))
             except OSError as exc:
                 failures.append(f"{shell.id}: {exc}")
         if failures:
@@ -486,7 +489,16 @@ class BackgroundShells:
             raise BackgroundError(f"no background command {shell_id!r} (started this run: {known})")
         return shell
 
-    def _view(self, shell: _Shell) -> ShellView:
+    def _view(self, shell: _Shell, *, watched: bool = False) -> ShellView:
+        """Return the command's view, recording its end the first time one is seen.
+
+        Args:
+            shell: The registered command.
+            watched: Whether the caller saw the command running just before this look.
+
+        Returns:
+            The view. Only a watched end has a known duration.
+        """
         if shell.log_fd >= 0:
             shell.output_error = shell.job.copy_output(shell.log_fd)
         status = shell.job.status()
@@ -506,11 +518,14 @@ class BackgroundShells:
             state = "stopped"
         else:
             state = "died" if status.returncode is None else "exited"
-        duration_s = shell.final_duration_s
-        if duration_s is None and running is not None:
-            duration_s = time.monotonic() - shell.started
-            if not running:
-                shell.final_duration_s = duration_s
+        if running:
+            duration_s: float | None = time.monotonic() - shell.started
+        else:
+            if running is not None and not shell.ended:
+                shell.ended = True
+                # An end first seen by a later look says when agent6 looked, not when it ended.
+                shell.final_duration_s = time.monotonic() - shell.started if watched else None
+            duration_s = shell.final_duration_s
         return ShellView(
             shell.id, shell.command, state, status.returncode, detail, duration_s, running
         )

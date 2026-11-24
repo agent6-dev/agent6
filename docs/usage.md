@@ -520,7 +520,8 @@ A child runs under the parent's own config and the run's remaining budget, with 
 A child whose launch was refused reads `never started`.
 A merge can still be refused, for example if another attempt already merged.
 With a command's `background_id` it returns the command preview, state, `returncode`, `duration_s` and `still_running` beside the output tail.
-The duration runs from launch until the host observes the end.
+The duration runs from launch to the present while the command runs, and to its end when a `read_background` wait or a stop saw it end.
+A command first found ended by a later look has a null `duration_s`.
 If the launcher is lost before it reports an exit, `still_running`, `duration_s` and `returncode` are null.
 With no id it lists one line per command or child; a positive `wait_s` waits for the next child to end.
 A child tail shows the same bounded tool arguments and result summaries as the numbered journal entries.

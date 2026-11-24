@@ -389,7 +389,7 @@ def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(
 def test_wire_read_background_command(
     tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
 ) -> None:
-    """A read preserves the hand-back's clock and reports the observed exit beside clean output."""
+    """A look that finds a command ended reported the time until that look as its duration."""
     data = b"\x1b[32mout\x1b[0m\n"
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
@@ -444,13 +444,31 @@ def test_wire_read_background_command(
             ended = d.dispatch("read_background", args)
             assert _dumps(ended) == (
                 '{"background_id": "bg1", "command": "sleep 60", "state": "exited",'
-                ' "returncode": 7, "duration_s": 905.0, "still_running": false, "output": "out"}'
+                ' "returncode": 7, "duration_s": null, "still_running": false, "output": "out"}'
             )
             clock.monotonic.return_value = 2000.0
             assert d.dispatch("read_background", args).to_wire() == ended.to_wire()
             assert d.dispatch("read_background", {}).to_wire() == {
                 "shells": ["[bg1] exited (exit 7): sleep 60"]
             }
+            # A wait that sees the command run and then end knows its run time.
+            statuses = iter(
+                [jail_session.BackgroundStatus(running=True, returncode=None, error="")] * 2
+            )
+            session.status_background.side_effect = lambda *_args, **_kwargs: next(
+                statuses, session.status_background.return_value
+            )
+            second = d.dispatch("run_command", {"argv": ["sleep", "60"]}).to_wire()
+            clock.monotonic.return_value = 2004.0
+            watched = d.dispatch("read_background", {"id": second["background_id"], "wait_s": 5})
+            assert (watched.to_wire()["state"], watched.to_wire()["duration_s"]) == (
+                "exited",
+                904.0,
+            )
+            clock.monotonic.return_value = 3000.0
+            assert (
+                d.dispatch("read_background", args | {"id": "bg2"}).to_wire() == watched.to_wire()
+            )
         finally:
             d.close()
 
