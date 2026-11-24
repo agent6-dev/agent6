@@ -579,3 +579,15 @@ def apply_checkoff(context: strategy.Context, summary_text: str, *, valid_ids: s
         # Record successful writes, not requested writes.
         context.log(f"LOOP: compaction check-off -- passed {passed}, queued {queued}")
         context.emit_graph_snapshot()
+
+
+def default_strategy(endpoint: provider_types.EndpointCompaction) -> strategy.Strategy:
+    """Create the built-in strategy for one harness execution.
+
+    Args:
+        endpoint: The history operations of the driving route.
+
+    Returns:
+        A strategy with a fresh restart floor.
+    """
+    return Endpoint() if endpoint.writes_summary else Tiered()

@@ -107,7 +107,7 @@ Each entry is the package's docstring.
     - Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel`, `run_chain`.
 - **[`harness/compaction`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/compaction)**: Context compaction: its driver, the elision of old tool results, its rules and its window.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
-    - `default_strategy` picks the built-in strategy for the driving route.
+    - `driver.default_strategy` picks the built-in strategy for the driving route.
     - Main modules: `driver`, `strategy`, `rules`, `elision`, `window`, `retention`, `cold_start`.
 - **[`harness/parallel`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/parallel)**: The children a run dispatches: their dispatch, merge, ranking, panels and recovery.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
@@ -347,7 +347,7 @@ The graph is a side store: it never picks the next tool.
 ## Compaction
 
 - The driving route reports what its endpoint does with history (`provider_types.EndpointCompaction`).
-- `harness.compaction.default_strategy` picks `driver.Endpoint` or `driver.Tiered` once per execution.
+- `harness.compaction.driver.default_strategy` picks `driver.Endpoint` or `driver.Tiered` once per execution.
 - Both strategies use the same size, manual and idle triggers.
 - `Tiered` compacts locally: above `compaction.drop_at_chars` the oldest tool results become placeholders, and above `compaction.summarize_at_chars` the conversation restarts from a summary.
 - `Endpoint` leaves earlier messages intact and asks the endpoint to clear results or write the summary.

@@ -141,7 +141,7 @@ The graph is a side store: it never picks the next tool.
 ## Compaction
 
 - The driving route reports what its endpoint does with history (`provider_types.EndpointCompaction`).
-- `harness.compaction.default_strategy` picks `driver.Endpoint` or `driver.Tiered` once per execution.
+- `harness.compaction.driver.default_strategy` picks `driver.Endpoint` or `driver.Tiered` once per execution.
 - Both strategies use the same size, manual and idle triggers.
 - `Tiered` compacts locally: above `compaction.drop_at_chars` the oldest tool results become placeholders, and above `compaction.summarize_at_chars` the conversation restarts from a summary.
 - `Endpoint` leaves earlier messages intact and asks the endpoint to clear results or write the summary.

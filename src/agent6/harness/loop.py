@@ -57,8 +57,8 @@ from agent6.harness import (
     tool_effects,
     toolset,
 )
-from agent6.harness import compaction as harness_compaction
 from agent6.harness.compaction import calls as compaction_calls
+from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.parallel import dispatch as parallel_dispatch
@@ -223,7 +223,7 @@ class Harness:
     def __post_init__(self) -> None:
         """Hand the dispatcher the run's children, which the loop owns."""
         if self.compactor is None:
-            self.compactor = harness_compaction.default_strategy(self.compaction.endpoint)
+            self.compactor = compaction_driver.default_strategy(self.compaction.endpoint)
         self.dispatcher.metric = None
         self.dispatcher.children = child_work.ChildWork(self)
 
