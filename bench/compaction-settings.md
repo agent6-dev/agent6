@@ -150,3 +150,36 @@ Quantities are min..max over the scored runs.
 `no-operator`, `chars-20000` and `pointers` overlap the baseline on turns and tokens.
 No arm separated from the baseline on pass or recall, so no finalist was chosen and the confirmation stage did not run.
 The pilot, one `baseline` run and not a replicate, passed 6/6 with exact recall in 18 turns.
+
+## Cold resume with a lookup from an earlier turn
+
+Each first execution read three 100-row sheets linked by filename and stopped at a three-turn cap.
+After the two-second provider idle limit, the second execution received a steer to write row 037 of the first sheet to a file.
+Every journal recorded the requested cold action; one kept turn, no elision gists, and the helper summary writer separate the four treatments on a short history.
+Inputs include cache reads; the first request can be the helper’s, and the total includes both executions and any helper.
+Rereads count resumed `read_session` calls and reads of files seen in the opening; correctness compares the output file with the generated value.
+
+| Model (medium) | Arm | Rep | First input | First worker input | Rereads | Correct | Total input |
+|---|---|---:|---:|---:|---:|---|---:|
+| gpt-6.2-sol | drop | 1 | 5,441 | 5,441 | 1 | Yes | 29,027 |
+| gpt-6.2-sol | drop | 2 | 5,438 | 5,438 | 1 | Yes | 29,008 |
+| gpt-6.2-sol | drop | 3 | 5,442 | 5,442 | 1 | Yes | 29,033 |
+| gpt-6.2-sol | resend | 1 | 6,397 | 6,397 | 0 | Yes | 25,242 |
+| gpt-6.2-sol | resend | 2 | 6,396 | 6,396 | 0 | Yes | 25,236 |
+| gpt-6.2-sol | resend | 3 | 6,399 | 6,399 | 0 | Yes | 25,251 |
+| gpt-6.2-sol | summarize | 1 | 464 | 4,446 | 1 | Yes | 26,514 |
+| gpt-6.2-sol | summarize | 2 | 464 | 4,476 | 1 | Yes | 26,604 |
+| gpt-6.2-sol | summarize | 3 | 464 | 4,473 | 1 | Yes | 26,625 |
+| gpt-6.2-sol | truncate | 1 | 4,155 | 4,155 | 1 | Yes | 31,764 |
+| gpt-6.2-sol | truncate | 2 | 4,159 | 4,159 | 1 | Yes | 31,792 |
+| gpt-6.2-sol | truncate | 3 | 4,157 | 4,157 | 2 | Yes | 48,597 |
+| gpt-6.2-astra | resend | 1 | 6,400 | 6,400 | 0 | Yes | 25,256 |
+| gpt-6.2-astra | resend | 2 | 6,396 | 6,396 | 0 | Yes | 25,236 |
+| gpt-6.2-astra | summarize | 1 | 464 | 4,446 | 1 | Yes | 28,451 |
+| gpt-6.2-astra | summarize | 2 | 464 | 4,445 | 1 | Yes | 26,517 |
+
+All twelve sol runs ended right.
+The two arms with the lowest median total input were `resend` and `summarize`.
+On astra, both passed twice and `resend` again used fewer total input tokens.
+`truncate` reduced first input relative to `drop` on sol, but used more total input in every run, so this lookup gives no reason to replace the `drop` default with `truncate`.
+This is one task with one kept turn, not a comparison of cache latency, billing or long sessions.
