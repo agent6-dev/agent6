@@ -308,11 +308,26 @@ def test_architecture_event_table_has_one_generated_owner() -> None:
     assert "| Event |" not in template
 
 
-def test_documentation_and_web_copy_use_straight_quotes() -> None:
-    curly = re.compile("[\u2018\u2019\u201c\u201d]")
-    web = REPO / "src" / "agent6" / "ui" / "web"
-    files = [REPO / "README.md", *(REPO / "docs").rglob("*.md"), *web.glob("*.js")]
-    assert not [p.relative_to(REPO) for p in files if curly.search(p.read_text(encoding="utf-8"))]
+def test_documentation_and_source_use_straight_quotes() -> None:
+    """Recorded sessions and provider replies keep their original text."""
+    result = subprocess.run(
+        [
+            "git",
+            "grep",
+            "-InE",
+            "[\u2018\u2019\u201c\u201d]",
+            "--",
+            "README.md",
+            "docs",
+            "src/agent6",
+            ":(exclude)docs/screenshots/seed/**",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout or result.stderr
 
 
 def test_agents_md_names_every_shared_ui_helper() -> None:
