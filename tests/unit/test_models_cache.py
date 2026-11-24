@@ -373,7 +373,7 @@ def test_boolean_context_and_pricing_values_are_rejected(tmp_path: pathlib.Path)
 def test_pricing_catalog_refresh_prices_a_bare_claude_id(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A configured reference listing supplies the direct model's rate."""
+    """The fallback price list, fetched without a key, supplies the direct model's rate."""
     from agent6.models import pricing as models_pricing
 
     def _get(
@@ -395,11 +395,11 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
         )
 
     monkeypatch.setattr(transport, "http_request", _get)
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://openrouter.ai/api/v1")
-    providers = {"openrouter": entry, "direct": AnthropicProviderEntry(backend="anthropic")}
+    direct = AnthropicProviderEntry(backend="anthropic")
+    providers = {"direct": direct}
     route = kinds.ModelRoute("direct", "claude-opus-5")
     assert models_pricing.lookup_price(route, providers) is None
-    models_cache.list_models("openrouter", entry, None)
+    models_cache.list_models(*models_pricing.price_list_source(direct.price_list_fallback), None)
     quote = models_pricing.lookup_price(route, providers)
     assert quote is not None and quote.rates.input > 0 and quote.rates.output > 0
 
