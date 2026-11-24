@@ -35,7 +35,7 @@ async function renderConfig(gen = routeGen, state = {}) {
       filtering: document.activeElement === filter,
       action: [...bar.children].indexOf(document.activeElement),
     };
-    card.inert = true; // A write can change which reviewer an index names.
+    card.inert = true; // A removal can expose another layer or shift a reviewer's position.
     try { await renderConfig(gen, state); }
     catch (e) { if (gen === routeGen && card.isConnected) showProblem('Could not reload Config', e.message, true); }
   };
@@ -225,8 +225,8 @@ function addButtons(dialog) {
   return { add, act: actionRow(dialog, row, add) };
 }
 
-// Cancel restores the editor's fields, including the layer.
-function confirmConfigRemoval(dialog, opener, title, text, remove) {
+// Cancel restores the draft. A confirmed removal can succeed even if the reply is lost.
+function confirmConfigRemoval(dialog, opener, title, text, refresh, remove) {
   const fields = [...dialog.children];
   const label = dialog.getAttribute('aria-labelledby'), keys = dialog.onkeydown;
   const question = el('div');
@@ -239,7 +239,6 @@ function confirmConfigRemoval(dialog, opener, title, text, remove) {
   const row = question.appendChild(el('div', 'form-row'));
   const yes = row.appendChild(el('button', 'danger', 'Remove'));
   const no = row.appendChild(el('button', null, 'Cancel'));
-  const err = question.appendChild(el('p', 'err')); err.setAttribute('role', 'alert');
   no.onclick = () => {
     dialog.replaceChildren(...fields);
     dialog.removeAttribute('role'); dialog.removeAttribute('aria-describedby');
@@ -251,10 +250,9 @@ function confirmConfigRemoval(dialog, opener, title, text, remove) {
   dialog.onkeydown = e => { if (e.key === 'Enter' && e.repeat) e.preventDefault(); };
   yes.onclick = async () => {
     yes.disabled = no.disabled = true;
-    try { await remove(); } catch (e) {
-      if (!dialog.open) { toast(e.message, true); return; }
-      err.replaceChildren(withCode(e.message)); yes.disabled = no.disabled = false; no.focus();
-    }
+    try { toast((await remove()).message || 'removed'); }
+    catch (e) { toast(e.message, true); }
+    dialog.close(); await refresh();
   };
   no.focus();
 }
@@ -525,9 +523,9 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   }
   const entry = s.entry;
   const table = entry && tables.find(t => t.path === entry.table);
-  // Under a preset the entry's source reads `preset`; the server removes it from the layer
-  // holding [presets.<name>].
-  const entryWhere = preset ? '[presets.' + preset + ']' : entry && entry.source + ' config';
+  // Remove targets the preset table's layer, not the edited leaf's layer.
+  const presetWhere = preset && `[presets.${preset}] in the ${data['agent6.preset'].remove_layer} config`;
+  const entryWhere = presetWhere || (entry && entry.source + ' config');
   let removeBtn = null;
   if (table) {
     const addBtn = el('button', null, 'Add ' + table.label + '…');
@@ -551,7 +549,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   if (key === 'review.reviewers') {
     const roster = el('div', 'cfg-roster');
     const editable = s.source === 'repo' || s.source === 'global' || (preset && s.source === 'preset');
-    const rosterWhere = preset ? '[presets.' + preset + ']' : 'the ' + s.source + ' config';
+    const rosterWhere = presetWhere || 'the ' + s.source + ' config';
     const reviewers = s.value || [];
     // The roster's first line explains its Remove buttons, or says it has none.
     const note = !reviewers.length ? 'The reviewer roster is empty.'
@@ -565,13 +563,8 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       const remove = el('button', 'danger', 'Remove'); remove.disabled = !editable;
       remove.setAttribute('aria-label', 'Remove reviewer ' + label);
       remove.onclick = () => confirmConfigRemoval(dialog, remove, `Remove reviewer ${label}?`,
-        `This saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`, async () => {
-          try {
-            const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
-            toast(result.message);
-          } catch (e) { toast(e.message, true); }
-          close(); await refresh();
-        });
+        `This saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`, refresh,
+        () => postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'}));
       item.appendChild(remove); roster.appendChild(item);
     });
     dialog.insertBefore(roster, field);
@@ -591,8 +584,6 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   });
   if (removeBtn) removeBtn.onclick = () => confirmConfigRemoval(dialog, removeBtn,
     'Remove ' + table.label + " '" + entry.name + "'?",
-    'This removes it and all its values from ' + entryWhere + '. Values from lower layers may become visible.', async () => {
-      const d = await postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'});
-      toast(d.message || 'removed'); close(); await refresh();
-    });
+    'This removes it and all its values from ' + entryWhere + '. Values from lower layers may become visible.', refresh,
+    () => postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'}));
 }

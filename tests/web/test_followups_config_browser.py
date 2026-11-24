@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pathlib
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -170,3 +172,50 @@ def test_a_lost_removal_reply_requires_a_fresh_reviewer_confirmation(
     sync_api.expect(question).to_have_accessible_name("Remove reviewer 1: security?")
     question.get_by_role("button", name="Cancel").click()
     assert "tests" not in config.read_text() and "security" in config.read_text()
+
+
+@pytest.mark.parametrize("applied", [True, False], ids=["lost-reply", "lost-request"])
+def test_a_lost_removal_reply_requires_a_fresh_entry_confirmation(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    applied: bool,
+) -> None:
+    """A lost reply cannot reuse the repo confirmation for the exposed global entry."""
+    from playwright import sync_api
+
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    table = "[presets.work.providers.local]\n"
+    original = '[agent6]\npreset = "work"\n' + table + 'backend = "openai"\n'
+    config.write_text(original)
+    repo = paths.repo_config_path(tmp_path)
+    repo.parent.mkdir(parents=True, exist_ok=True)
+    repo.write_text(table + 'base_url = "http://localhost:1"\n')
+    page, _ = open_page(port)
+
+    def lose_reply(route: Route) -> None:
+        if applied:
+            assert route.fetch().ok
+        route.abort()
+
+    page.route("**/api/config/entry/remove", lose_reply, times=1)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    edit = page.get_by_role("button", name="edit providers.local.backend", exact=True)
+    edit.click()
+    remove = page.get_by_role("button", name="Remove provider", exact=True)
+    remove.click()
+    question = page.get_by_role("alertdialog", name="Remove provider 'local'?")
+    question.get_by_role("button", name="Remove", exact=True).click()
+    sync_api.expect(page.get_by_text("no answer from the agent6 web server")).to_be_visible()
+    assert (table in repo.read_text()) == (not applied)
+    sync_api.expect(question).to_have_count(0)
+    edit.click()
+    remove.click()
+    layer = "global" if applied else "repo"
+    sync_api.expect(question).to_have_accessible_description(
+        re.compile(rf"\[presets\.work\].*{layer} config")
+    )
+    question.get_by_role("button", name="Cancel").click()
+    sync_api.expect(remove).to_be_focused()
+    assert config.read_text() == original

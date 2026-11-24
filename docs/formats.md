@@ -2358,6 +2358,7 @@ Source: [`ui.web.model.config_payload`](https://github.com/agent6-dev/agent6/blo
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `input` | `JSON` | The value formatted for round-trip editing. |
+| `remove_layer` | `JSON` | On `agent6.preset` when selected, the layer for entry and reviewer removal. |
 | `entry` | `JSON` | The named config entry, only for entry-table settings. |
 | `entry.table` | `JSON` | The entry table's dotted path. |
 | `entry.name` | `JSON` | The entry's name. |

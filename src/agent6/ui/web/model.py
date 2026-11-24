@@ -552,6 +552,7 @@ def config_payload(
         entry.table: The entry table's dotted path.
         entry.name: The entry's name.
         entry.source: The highest config layer holding the entry.
+        remove_layer: On `agent6.preset` when selected, the layer for entry and reviewer removal.
 
     Args:
         cwd: The repository.
@@ -573,6 +574,8 @@ def config_payload(
                 table, name = entry
                 entry_sources[table.path, name] = source.source
     for key, setting in payload.items():
+        if key == "agent6.preset" and (preset := write.selected_preset(eff)):
+            setting["remove_layer"] = "repo" if write.preset_layer(cwd, preset) else "global"
         if entry := write.entry_of(key):
             table, name = entry
             setting["entry"] = {
