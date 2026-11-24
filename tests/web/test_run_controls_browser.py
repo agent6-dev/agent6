@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import pathlib
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import pytest
 
+from agent6.sessions import event_log, ipc, journal
+from tests import task_runs
 from tests.web import session_logs, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
@@ -96,4 +99,70 @@ def test_more_dismisses_and_uses_the_inline_actions_when_wide(
     sync_api.expect(bar.get_by_text("Compact context", exact=True)).to_have_count(1)
     page.set_viewport_size(phone)
     sync_api.expect(compact).to_be_hidden()
+    assert not errors
+
+
+def test_retire_queues_only_the_chosen_live_task(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """Retiring a selected task queues its full id without stopping or steering the worker."""
+    from playwright import sync_api
+
+    run = task_runs.live_graph(tmp_path)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{run.session_id}")
+    tree = page.locator(".card-tasks")
+    sync_api.expect(tree).to_contain_text("Check paths")
+    sync_api.expect(tree.get_by_role("radio", name=re.compile("Check paths"))).to_have_count(0)
+    retire = tree.get_by_role("button", name="Retire task")
+    sync_api.expect(retire).to_be_disabled()
+    tree.get_by_role("radio", name=re.compile("Link pages")).check()
+    retire.click()
+    dialog = page.get_by_role("alertdialog", name=re.compile("Retire task 2"))
+    sync_api.expect(dialog).to_contain_text("Link pages")
+    sync_api.expect(dialog).to_contain_text("obsolete")
+    sync_api.expect(dialog.get_by_role("button", name="Cancel")).to_be_focused()
+    page.keyboard.press("Escape")
+    assert not ipc.drain_requests(run.session_dir)
+    retire.click()
+    dialog.get_by_role("button", name="Retire task").click()
+    sync_api.expect(page.get_by_role("status").filter(has_text="retiring")).to_contain_text(
+        "Link pages"
+    )
+    assert [(r.kind, r.text) for r in ipc.drain_requests(run.session_dir)] == [("retire", "0002")]
+    assert not ipc.steer_request_pending(run.session_dir)
+    assert not ipc.stop_request_pending(run.session_dir)
+    retire.click()
+    event_log.EventSink(run.logs_path).emit(
+        journal.SessionStop(execution_id="first", reason="finish_session", turns=1)
+    )
+    sync_api.expect(tree.locator('input[type="radio"]')).to_have_count(0)
+    dialog.get_by_role("button", name="Retire task").click()
+    assert not ipc.drain_requests(run.session_dir)
+    sync_api.expect(retire).to_be_hidden()
+    assert not errors
+
+
+def test_the_task_graph_for_a_commit_offers_no_retirement(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    from playwright import sync_api
+
+    run = task_runs.live_graph(tmp_path)
+    sha = "a" * 40
+    event_log.EventSink(run.logs_path).emit(
+        journal.CheckpointCommitted(sha=sha, turn=1, subject="Add index")
+    )
+    page, errors = open_page(port)
+    page.route("**/diff?*", lambda route: route.fulfill(json={"patch": ""}))
+    page.goto(f"http://127.0.0.1:{port}/#/session/{run.session_id}")
+    commit = page.get_by_role("combobox", name="Commit", exact=True)
+    tree = page.locator(".card-tasks")
+    tree.get_by_role("radio", name=re.compile("Link pages")).check()
+    commit.select_option(sha)
+    sync_api.expect(tree).to_contain_text("as of turn 1")
+    sync_api.expect(tree.get_by_role("radio")).to_have_count(0)
+    sync_api.expect(tree.get_by_role("button", name="Retire task")).to_be_hidden()
+    commit.select_option("")
+    sync_api.expect(tree.get_by_role("button", name="Retire task")).to_be_disabled()
     assert not errors

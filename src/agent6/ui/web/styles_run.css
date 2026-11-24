@@ -6,6 +6,9 @@
 .tree { font-family: var(--mono); font-size: var(--fs-m); }
 /* A task's line: its id, its glyph at its depth, then its title, which wraps under itself. */
 .tree .node { display: flex; padding: 1px 0; white-space: pre; }
+.tree label.node { cursor: pointer; }
+.tree .node input[type="radio"] { flex: none; inline-size: 1rem; margin: 0 0.5rem 0 0; align-self: baseline; }
+.tree[role="radiogroup"] > div.node { padding-inline-start: 1.5rem; }
 .tree .task { min-width: 0; white-space: normal; overflow-wrap: anywhere; } /* Firefox strikes a space pre-wrap keeps at a wrap */
 .tree .cursor { color: var(--accent); font-weight: 700; }
 .st-passed { color: var(--ok); } .st-failed { color: var(--err); }

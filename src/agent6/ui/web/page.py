@@ -30,6 +30,7 @@ _CLIENT_FILES = (
     "client_composer.js",
     "client_layout.js",
     "client_children.js",
+    "client_tasks.js",
     "client_run.js",
     "client_machine.js",
     "client_config.js",

@@ -146,7 +146,7 @@ async function renderRun(id, opts, gen) {
   mk('review', 'Run review', 'scroll');
   cards.review.parentElement.style.display = 'none';
   mk('findings', 'Findings', 'scroll');
-  mk('tasks', 'Task graph', 'scroll');
+  cards._paintTasks = taskTree(mk('tasks', 'Task graph', 'scroll'), base);
   mk('budget', 'Budget', '');
   mk('tools', 'Tool calls', 'scroll');
   // Background commands the run started and how they ended (hidden until one exists).
@@ -400,7 +400,10 @@ function paintPrompts(cards, s) {
 // Budget and task graph: the live state, or the state as of the commit picked
 // in the Latest commit card (the server folds the log up to that commit).
 function paintDetails(cards, s, asOf) {
-  if (!cardChanged(cards, 'details', [s.budget, s.context_used_percent, s.tasks, asOf])) return;
+  const stamp = asOf ? `as of turn ${asOf.turn} · ${String(asOf.sha).slice(0, 7)}` : '';
+  const liveTree = !asOf && !cards._diffPick?.sha && !cards._readOnly && !notLive(s) && s.session_actions?.resume !== false;
+  if (cardChanged(cards, 'tasks', [s.tasks, liveTree, stamp])) cards._paintTasks(s.tasks || [], liveTree, stamp);
+  if (!cardChanged(cards, 'budget', [s.budget, s.context_used_percent, stamp])) return;
   // budget
   const b = s.budget || {};
   cards.budget.innerHTML = '';
@@ -445,25 +448,7 @@ function paintDetails(cards, s, asOf) {
     ? ` · cached read ${run.cache_read_tokens||0} · cached written ${run.cache_write_tokens||0}` : '';
   cards.budget.appendChild(el('div', 'muted', `tokens: in ${run.input_tokens||0} · out ${run.output_tokens||0}${cached}${ctxPct}`));
 
-  // task tree
-  cards.tasks.innerHTML = '';
-  const tree = el('div', 'tree');
-  if (!(s.tasks||[]).length) cards.tasks.appendChild(el('div', 'muted', 'no task graph yet')); // in the card's type, not the tree's
-  for (const t of s.tasks || []) {
-    const line = el('div', 'node' + (t.is_cursor ? ' cursor' : ''));
-    const glyph = t.glyph || '·'; // the server's TASK_STATUS_GLYPH
-    // The id leads the line: it is what /retire takes.
-    line.appendChild(el('span', 'muted', String(t.short_id || '').padStart(3) + ' '));
-    line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
-    const task = el('span', 'task');
-    task.appendChild(el('span', 'title', t.title));
-    // The operator's mark beside a task they own (the server's owner_note).
-    if (t.note) task.appendChild(el('span', 'muted', ' ' + t.note));
-    line.appendChild(task);
-    tree.appendChild(line);
-  }
-  cards.tasks.appendChild(tree);
-  if (asOf) for (const c of [cards.budget, cards.tasks]) c.prepend(el('div', 'sub muted', `as of turn ${asOf.turn} · ${String(asOf.sha).slice(0, 7)}`));
+  if (stamp) cards.budget.prepend(el('div', 'sub muted', stamp));
 }
 
 function paintRun(cards, s) {
@@ -720,8 +705,8 @@ function paintCommits(cards, s) {
       const selected = sel.value, sha = selected || commits[0].sha;
       // The log holds the latest commit's diff; a picked commit's is a fetch away.
       const loading = el('div', 'muted', 'loading the diff…');
+      cards._commitState = null; paintDetails(cards, cards._frame, null);
       if (!selected) {
-        cards._commitState = null; paintDetails(cards, cards._frame, null);
         body.appendChild(renderDiff({patch: s.latest_diff || ''}));
       } else body.appendChild(loading);
       const url = cards._base + '/diff?sha=' + encodeURIComponent(sha) + '&cumulative=' + (cum.checked ? '1' : '0');
