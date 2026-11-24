@@ -6,7 +6,7 @@ import contextlib
 import json
 import pathlib
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Any
 
 from bench.handoff import job
@@ -58,7 +58,7 @@ def parent_reply(opening: str, answers: list[dict[str, Any]]) -> launch_env.Repl
 
 
 @contextlib.contextmanager
-def profile() -> Iterator[pathlib.Path]:
+def profile() -> Generator[pathlib.Path]:
     """Serve a dedicated provider config without opening a live profile."""
     with (
         tempfile.TemporaryDirectory(prefix="handoff-provider-") as temp,

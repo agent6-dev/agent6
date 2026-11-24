@@ -125,8 +125,8 @@ def _usage(rows: list[Event], result: Event) -> None:
         result["issues"].append("missing parent model call or usage")
         return
     for key in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"):
-        counts = [a.get(key) for a in attempts]
-        if all(type(v) is int and v >= 0 for v in counts):
+        counts = [v for a in attempts if type(v := a.get(key)) is int and v >= 0]
+        if len(counts) == len(attempts):
             result[key] = sum(counts)
         elif key in ("input_tokens", "output_tokens"):
             result["issues"].append(f"unreported parent {key}")
