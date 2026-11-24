@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+from collections.abc import Callable
 
 import pytest
 
@@ -630,7 +631,14 @@ def test_config_suggestions_providers_and_models(
     )
     seen: dict[str, object] = {}
 
-    def _fake_list(provider: str, entry: object, api_key: object) -> list[str]:
+    def _fake_list(
+        provider: str,
+        entry: object,
+        api_key: object,
+        *,
+        on_error: Callable[[str], None] | None = None,
+    ) -> list[str]:
+        assert on_error is None
         seen["provider"] = provider
         return ["kimi", "qwen3"]
 
@@ -668,7 +676,10 @@ def test_model_suggestions_use_the_unsaved_provider(
     )
     before = cfg.read_text()
 
-    def listing(provider: str, *_: object) -> list[str]:
+    def listing(
+        provider: str, *_: object, on_error: Callable[[str], None] | None = None
+    ) -> list[str]:
+        assert on_error is None
         return [provider + "-live"]
 
     monkeypatch.setattr(models_cache, "list_models", listing)
