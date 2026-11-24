@@ -164,6 +164,92 @@ agent6 forward ID 8000        # reach a port inside the run's network; --local-p
 - a command a signal ended reports 128 plus the signal, at every `sandbox.isolation` level
 - `agent6 exec ID -- COMMAND...` works in the run's workspace: a file your command writes there is in the run's tree, and the run's next commit holds it
 
+## Scheduled runs
+
+agent6 has no scheduler: cron or a systemd user timer starts it, with no terminal and no login shell.
+Three things differ from your shell:
+
+- **PATH** is not your shell's: name agent6 by the full path `command -v agent6` prints.
+  A run's own commands get the sandbox's PATH either way.
+- **The working directory** is your home directory, and agent6 works on the repository it starts in: `WorkingDirectory=` in the unit, `cd` in the crontab line.
+- **Credentials**: a key your shell profile exports is missing.
+  Save it with `agent6 connect` (`~/.config/agent6/secrets.toml` is read as from a shell), or name a file of `NAME=value` lines with `EnvironmentFile=` in the unit.
+
+### A machine on a timer
+
+`agent6 machine run <file> --exit-on-wait` runs the machine to its next [`wait`](state-machines.md#wait), prints the wake time and exits 0.
+A later start before that time exits 0 at once, and a start after it resumes the machine.
+
+`~/.config/systemd/user/agent6-triage.service`:
+
+```ini
+[Service]
+Type=oneshot
+WorkingDirectory=/home/you/project
+ExecStart=/home/you/.local/bin/agent6 machine run triage.asm.toml --exit-on-wait
+```
+
+`~/.config/systemd/user/agent6-triage.timer`:
+
+```ini
+[Timer]
+OnCalendar=hourly
+
+[Install]
+WantedBy=timers.target
+```
+
+```sh
+systemctl --user enable --now agent6-triage.timer   # start the timer and keep it enabled
+systemctl --user list-timers                        # the next and the last start
+journalctl --user -u agent6-triage.service          # each start's output, and a failed start's exit code
+```
+
+A user timer fires while you are logged out only when `loginctl show-user "$USER" --property=Linger` reads `Linger=yes`.
+
+The same start as a crontab line, which keeps the output in a file:
+
+```text
+0 * * * * cd /home/you/project && /home/you/.local/bin/agent6 machine run triage.asm.toml --exit-on-wait >> /home/you/agent6-triage.log 2>&1
+```
+
+- A start while another still runs the machine exits 1 (`machine is already running`).
+- A machine that reached a terminal state refuses every later start with exit 2, so a machine for a timer loops back to a `wait`.
+- A `mode = "run"` agent state runs commands only with `--auto-approve` on the line or `sandbox.run_commands = "allow"` ([agent states](state-machines.md#agent)).
+- `agent6 machine status triage`, from the repository, shows the state, the spend and the next wake.
+
+### A run on a timer
+
+A scheduled run has nobody to answer it, so its line decides three things:
+
+- `AGENT6_DETACHED_AWAY=deny` answers for the absent operator: an approval is refused and a waiting question returns unanswered, so the run never waits ([approvals](security.md#6-approvals)).
+  With no away mode, a run under `sandbox.run_commands = "ask"` refuses to start (exit 2).
+- `--auto-approve`, or `agent6 config set --repo sandbox.run_commands allow`, lets the run start commands in the sandbox.
+  Without either, a run under the `deny` away mode has no command tools and no verify gate.
+- `--worktree` gives each start [its own worktree](usage.md#worktrees) and leaves the checkout as it is.
+  Without it, a start refuses (exit 2) while the last run's unmerged edits to tracked files are in the checkout.
+
+The unit and its timer differ from the machine's in three lines, here for a start every day at 03:00:
+
+```ini
+[Service]
+Environment=AGENT6_DETACHED_AWAY=deny
+ExecStart=/home/you/.local/bin/agent6 run --worktree --auto-approve "your task here"
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+```
+
+The crontab line:
+
+```text
+0 3 * * * cd /home/you/project && AGENT6_DETACHED_AWAY=deny /home/you/.local/bin/agent6 run --worktree --auto-approve "your task here" >> /home/you/agent6-run.log 2>&1
+```
+
+The output names the session (`session id: <id>`) and, when the run committed changes, the command that merges them.
+The journal shows a failed start's exit code as `status=2/INVALIDARGUMENT`: the number is agent6's ([exit codes](#exit-codes-and-end-reasons)), the name systemd's.
+From the repository, `agent6 sessions list` shows each start's session and how it ended, newest first, and `agent6 sessions show` the latest.
+
 ## Unattended chains
 
 Development briefs follow the [unattended-chain rule](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md#dev-environment-and-session-practice).
