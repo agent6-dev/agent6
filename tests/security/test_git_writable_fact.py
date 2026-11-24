@@ -5,14 +5,19 @@
 from __future__ import annotations
 
 import pathlib
+from typing import Any
+from unittest import mock
 
 import pytest
 
 from agent6 import evidence, kinds, paths
+from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
+from agent6.sandbox import container, jail_session
 from agent6.tools import target_policy
 from agent6.ui.cli import check_sandbox
+from tests.unit import test_environment_lease as lease
 
 
 def _controls(raw: dict[str, object], isolation: str) -> tuple[kinds.EffectiveControl, ...]:
@@ -76,3 +81,65 @@ def test_the_checkout_keeps_the_record_under_a_later_config(
     assert paths.git_exposure_record(checkout).read_text(encoding="utf-8") == first
     check_sandbox._git_exposure(protected)
     assert evidence.GIT_WRITABLE in capsys.readouterr().out
+
+
+def test_a_local_execution_records_the_access_before_its_session_opens(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The record's pins called `record_git_exposure` themselves.
+
+    The call in `prepare_local_execution` could go and every test stayed green: a run's
+    commands then wrote `.git` with no record that they could.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    checkout = tmp_path / "repo"
+    (checkout / ".git").mkdir(parents=True)
+    record = paths.git_exposure_record(checkout)
+    recorded: list[bool] = []
+    open_session = jail_session.JailSession.open
+
+    def _open(policy: kinds.JailPolicy, **kwargs: Any) -> jail_session.JailSession:
+        recorded.append(record.exists())
+        return open_session(policy, **kwargs)
+
+    monkeypatch.setattr(jail_session.JailSession, "open", _open)
+
+    session_runtime.prepare_local_execution(Config(), checkout, "none").close()
+
+    assert recorded == [True]
+
+
+def test_a_container_execution_records_the_access_before_it_is_prepared(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The call in `prepare_container_execution` could go and every test stayed green."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    workspace = tmp_path / "workspace"
+    clone = workspace / ".agent6/worktrees/repo-1/run-p1/child-1"
+    clone.mkdir(parents=True)
+    fake = lease.Fake(tmp_path, workspace)
+    fake.running("a" * 64)
+    for name in ("exposures", "check_hidden_paths"):
+        monkeypatch.setattr(container, name, mock.Mock(return_value=()))
+    record = paths.git_exposure_record(clone)
+    recorded: list[bool] = []
+
+    def _prepare(_found: container.ContainerDiscovery, **_kwargs: object) -> mock.Mock:
+        recorded.append(record.exists())
+        return mock.Mock()
+
+    monkeypatch.setattr(container, "prepare", _prepare)
+
+    session_runtime.prepare_container_execution(
+        Config(),
+        workspace,
+        fake.options(),
+        state_dir=paths.state_dir(workspace),
+        session_id="child",
+        execution_id="e1",
+        checkout=clone,
+        controls=_controls({"sandbox": {"isolation": "container"}}, "container"),
+        reporter=app_reporter.Reporter(out=lambda _line: None, err=lambda _line: None),
+    )
+
+    assert recorded == [True]
