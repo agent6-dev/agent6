@@ -148,7 +148,7 @@ def budget_dict(budget: state_types.BudgetView) -> dict[str, Any]:
     Returns:
         The view's fields plus the rendered `usd_text` and `plan_text`.
     """
-    d = dataclasses.asdict(budget)
+    d: dict[str, Any] = dataclasses.asdict(budget)
     account = budget.account
     d["usd_text"] = format.budget_usd_text(
         budget.usd_so_far,

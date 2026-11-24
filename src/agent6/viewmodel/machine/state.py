@@ -605,7 +605,7 @@ def machine_state_as_dict(
         The state's fields, plus `status`, `status_label`, `status_level`, `refusals`, for a
         parked machine `wait_line` and for a stopped machine `worker_lost`.
     """
-    d = dataclasses.asdict(ms)
+    d: dict[str, Any] = dataclasses.asdict(ms)
     if machine_dir is not None:
         probes = probe_instance(machine_dir, ms, execution=execution)
         d["status"] = probes.status_word(ms)
