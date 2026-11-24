@@ -507,7 +507,7 @@ def probe_provider_key(
     try:
         n = len(_parse_models(resp.json()))
         detail = f"provider returned {n} models" if n else "provider accepted the key"
-    except (ValueError, json.JSONDecodeError):
+    except ValueError:
         detail = "provider accepted the key"
     return KeyProbeResult(ok=True, status="ok", detail=detail)
 

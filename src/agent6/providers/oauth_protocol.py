@@ -731,6 +731,6 @@ def jwt_claims(token: str) -> dict[str, Any]:
         decoded: Any = json.loads(
             base64.b64decode(payload.encode("ascii"), altchars=b"-_", validate=True)
         )
-    except (ValueError, UnicodeDecodeError):
+    except ValueError:
         return {}
     return decoded if isinstance(decoded, dict) else {}

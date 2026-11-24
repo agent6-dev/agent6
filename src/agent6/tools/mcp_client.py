@@ -354,7 +354,7 @@ class _MCPServer:
             self._proc = _spawn_server(
                 self.command, self.policy, self.pass_env, session_net=self.session_net
             )
-        except (OSError, FileNotFoundError, jail.JailUnavailableError) as exc:
+        except (OSError, jail.JailUnavailableError) as exc:
             raise MCPError(f"could not spawn MCP server {self.name!r}: {exc}") from exc
         if self._proc.stderr is not None:
             self._stderr_reader = threading.Thread(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import binascii
 import dataclasses
 import hashlib
 import json
@@ -94,7 +93,7 @@ def omit_payloads(value: Any) -> Any:
             }
             try:
                 data = base64.b64decode(encoded, validate=True)
-            except (ValueError, binascii.Error):
+            except ValueError:
                 metadata["error"] = "invalid media payload"
             else:
                 metadata.update(byte_size=len(data), sha256=hashlib.sha256(data).hexdigest())

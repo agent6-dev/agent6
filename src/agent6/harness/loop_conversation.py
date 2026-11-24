@@ -27,7 +27,6 @@ providers never forward the field.
 from __future__ import annotations
 
 import base64
-import binascii
 import contextlib
 import dataclasses
 import json
@@ -849,7 +848,7 @@ def _with_image(
                 base64.b64decode(source["data"], validate=True), source["media_type"], ""
             )
             image_ref(loaded)  # an operator's image is never a document
-    except (ValueError, TypeError, binascii.Error) as exc:
+    except (ValueError, TypeError) as exc:
         raise ValueError(f"malformed conversation: {where} is not an image block") from exc
     return dataclasses.replace(notice, images=(*notice.images, loaded))
 
@@ -974,7 +973,7 @@ def _parse_result_content(content: Any, call: ToolUse) -> tuple[str, kinds.Media
         raise ValueError("malformed conversation: invalid image source")
     try:
         data = base64.b64decode(source["data"], validate=True)
-    except (ValueError, binascii.Error) as exc:
+    except ValueError as exc:
         raise ValueError("malformed conversation: invalid image base64") from exc
     path = str(call.input.get("path", "")) if isinstance(call.input, dict) else ""
     attachment = kinds.MediaAttachment(data, source["media_type"], path)

@@ -510,7 +510,7 @@ def machine_verb_refusals(machine_dir: pathlib.Path, name: str) -> dict[MachineV
     try:
         spec = load_machine(machine_dir / "machine.asm.toml")
         ms = fold_machine(spec, journal.MachineJournal(machine_dir).read())
-    except (MachineError, journal.JournalError) as exc:
+    except MachineError as exc:
         return dict.fromkeys(MACHINE_VERBS, f"machine {name!r}: {exc}")
     return probe_instance(machine_dir, ms).refusals(name, ms)
 

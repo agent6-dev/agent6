@@ -9,7 +9,6 @@ opens a path or fetches a URL: the bytes come from the request alone.
 from __future__ import annotations
 
 import base64
-import binascii
 import pathlib
 from collections.abc import Sequence
 
@@ -53,7 +52,7 @@ def decode(encoded: Sequence[EncodedImage]) -> tuple[kinds.MediaAttachment, ...]
             raise ImageRefusedError(f"{name} is over the 2 MiB limit")
         try:
             image = media_files.inspect_media(base64.b64decode(data, validate=True), name)
-        except (ValueError, binascii.Error):
+        except ValueError:
             raise ImageRefusedError(f"{name} is not valid base64") from None
         except tool_errors.ToolError:
             raise ImageRefusedError(
