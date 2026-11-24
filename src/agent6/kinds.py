@@ -605,6 +605,11 @@ class Serving:
             tier=tier if isinstance(tier, str) and tier else self.tier,
         )
 
+    @property
+    def canonical_tier(self) -> str | None:
+        """The reported tier for matching a request or a price."""
+        return "priority" if self.tier == "fast" else self.tier
+
     def wire_fields(self) -> dict[str, str]:
         """Return the observed fields for a reconstructed response."""
         fields = {"model": self.model} if self.model is not None else {}

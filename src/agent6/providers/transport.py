@@ -208,13 +208,26 @@ def envelope_status(err: object) -> int | None:
     return None
 
 
-def _envelope_detail(err: object) -> str:
+def envelope_detail(err: object) -> str:
     """Return an error envelope as `code: message`, tolerating a bare string or an empty object."""
     if isinstance(err, dict):
         label = err.get("code") or err.get("type") or "error"
         param = f" (param: {err['param']})" if err.get("param") else ""
         return f"{label}: {err.get('message') or err}{param}"
     return str(err)
+
+
+def _tier_mismatch(route: kinds.ModelRoute, serving: kinds.Serving) -> str:
+    """Return the refusal when the reported tier differs from a concrete request."""
+    if serving.requested_tier not in (None, "auto") and serving.canonical_tier not in (
+        None,
+        serving.requested_tier,
+    ):
+        return (
+            f"providers.{route.provider}.service_tier: asked {serving.requested_tier!r},"
+            f" served {serving.tier!r}"
+        )
+    return ""
 
 
 def meter_completion(
@@ -250,17 +263,8 @@ def meter_completion(
             cache_write_tokens=parsed.cache_write_tokens,
             cost_usd=parsed.cost_usd,
         )
-    serving = parsed.serving
-    if serving.requested_tier not in (None, "auto") and serving.tier not in (
-        None,
-        serving.requested_tier,
-    ):
-        raise provider_types.ProviderError(
-            f"providers.{route.provider}.service_tier: asked {serving.requested_tier!r},"
-            f" served {serving.tier!r}",
-            fatal=True,
-            usage=parsed.usage,
-        )
+    if reason := _tier_mismatch(route, parsed.serving):
+        raise provider_types.ProviderError(reason, fatal=True, usage=parsed.usage)
     if (
         parsed.stop_reason.strip().lower() == "error"
         and not parsed.text.strip()
@@ -366,7 +370,7 @@ class ProviderCall:
                     self._observe_recovery(recovery_pending, exc.status_code)
                     recovery_pending = False
                     exc.args = (self._safe_text(str(exc), headers),)
-                    self._refuse_tier(exc)
+                    self._refuse_tier(exc, exc.serving)
                     media_errors.raise_rejection(exc.status_code, str(exc), self.body)
                     if attempt + 1 < max_attempts and self.adapt_400(
                         exc.status_code, str(exc), self.body
@@ -392,8 +396,7 @@ class ProviderCall:
                 self._observe_recovery(recovery_pending, 200)
                 return result
 
-            transcript = call._open_transcript(headers)
-            with transcript.capture():
+            with call._open_transcript(headers).capture() as transcript:
                 try:
                     resp = http_post(
                         self.url,
@@ -411,6 +414,7 @@ class ProviderCall:
                 transcript.response_headers = dict(resp.headers)
                 transcript.response_body = self._safe_text(resp.text, headers)[:8192]
 
+                error = self._response_error(resp, transcript.response_body)
                 if (
                     cred is not None
                     and not recovered
@@ -434,7 +438,7 @@ class ProviderCall:
                         " follow with credentials (the Location is not shown: it may echo them)",
                         status_code=resp.status_code,
                     )
-                if (error := self._response_error(resp, transcript.response_body)) is not None:
+                if error is not None:
                     self._observe_recovery(recovery_pending, resp.status_code)
                     recovery_pending = False
                     media_errors.raise_rejection(resp.status_code, resp.text, self.body)
@@ -480,11 +484,14 @@ class ProviderCall:
         self._refuse_tier(exc)
         return exc
 
-    def _refuse_tier(self, exc: provider_types.ProviderError) -> None:
+    def _refuse_tier(
+        self, exc: provider_types.ProviderError, serving: kinds.Serving = kinds.UNREPORTED
+    ) -> None:
         """Keep a tier refusal out of the credential and sampling retry paths.
 
         Args:
             exc: The upstream error, with secrets removed.
+            serving: The facts observed before the error.
 
         Raises:
             ProviderError: The endpoint named the tier in its refusal.
@@ -492,6 +499,10 @@ class ProviderCall:
         tier = self.body.get("service_tier")
         if tier is None or exc.fatal:
             return
+        if reason := _tier_mismatch(self.route, serving):
+            exc.args = (f"{reason}: {exc}",)
+            exc.fatal = True
+            raise exc
         detail = str(exc).lower()
         named = (
             "service_tier" in detail
@@ -500,7 +511,7 @@ class ProviderCall:
         )
         if named or exc.status_code in (400, 422):
             exc.args = (
-                f"request with providers.{self.route.provider}.service_tier = {tier!r}: {exc}",
+                f"request sent {tier!r} for providers.{self.route.provider}.service_tier: {exc}",
             )
         if named:
             exc.fatal = True
@@ -569,16 +580,19 @@ class ProviderCall:
             self._observe_recovery(recovery_pending, envelope_status(err))
             error = provider_types.ProviderError(
                 f"{self.api_label} error in 2xx body: "
-                f"{self._safe_text(_envelope_detail(err), headers)}",
+                f"{self._safe_text(envelope_detail(err), headers)}",
                 status_code=envelope_status(err),
                 retry_after_s=provider_types.parse_retry_after(resp.headers),
             )
-            self._refuse_tier(error)
+            self._refuse_tier(error, transcript.serving)
             raise error
-        if self.budget is not None:
-            self.require_metered(data)
         try:
+            if self.budget is not None:
+                self.require_metered(data)
             parsed = self.parse(data)
+        except provider_types.ProviderError as exc:
+            self._refuse_tier(exc, transcript.serving)
+            raise
         except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
             # The one parse seam: a malformed body never bypasses the retry wrapper as a traceback.
             raise provider_types.ProviderError(

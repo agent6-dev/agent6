@@ -551,10 +551,10 @@ class BudgetTracker:
         """Return the served tier's quote, or None for an unconfirmed tier request."""
         if serving.requested_tier is not None and serving.tier is None:
             return None
-        key = (route, serving.tier)
+        key = (route, serving.canonical_tier)
         if key not in self._quotes:
             self._quotes[key] = pricing.lookup_price(
-                route, self.providers, served_tier=serving.tier
+                route, self.providers, served_tier=serving.canonical_tier
             )
         return self._quotes[key]
 

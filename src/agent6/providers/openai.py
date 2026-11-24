@@ -499,7 +499,7 @@ class OpenAIProvider:
                 if isinstance(err, dict):
                     call.record(status=0, response=data_str[:8192])
                     raise provider_types.ProviderError(
-                        f"OpenAI stream error: {err.get('code')}: {err.get('message')}",
+                        f"OpenAI stream error: {transport.envelope_detail(err)}",
                         status_code=transport.envelope_status(err),
                     )
                 evt_usage = evt.get("usage")

@@ -128,6 +128,7 @@ def test_serving_an_alias_is_a_recorded_fact_not_a_failure(
     ("tier", "asked", "served", "ok"),
     [
         ("fast", "priority", "priority", True),
+        ("fast", "priority", "fast", True),
         ("auto", "auto", "flex", True),
         ("standard", "default", "priority", False),
         ("flex", "flex", "default", False),
@@ -214,6 +215,49 @@ def test_a_2xx_tier_refusal_keeps_the_key(tmp_path: pathlib.Path, stream: bool) 
             worker.call(system="s", messages=[])
     assert exc.value.fatal and "providers.work.service_tier" in str(exc.value)
     assert "Account not enrolled" in str(exc.value) and len(calls) == 1
+
+
+def test_a_tier_permission_refusal_does_not_refresh_the_bearer(tmp_path: pathlib.Path) -> None:
+    with provider_endpoint.serve(
+        {"error": {"param": "service_tier", "message": "Not enrolled"}}, status=403
+    ) as (url, calls):
+        worker = _worker(
+            tmp_path,
+            url,
+            "responses",
+            False,
+            service_tier="fast",
+            auth_style="bearer",
+            token_command=["echo", "stand-in-key"],
+        )
+        with pytest.raises(provider_types.ProviderError, match="Not enrolled") as exc:
+            worker.call(system="s", messages=[])
+    assert exc.value.fatal and exc.value.status_code == 403
+    assert "providers.work.service_tier" in str(exc.value) and len(calls) == 1
+
+
+def test_a_chat_error_frame_can_name_the_tier_by_param_only(tmp_path: pathlib.Path) -> None:
+    error = {"code": "invalid_request_error", "param": "service_tier", "message": "Not enrolled"}
+    with provider_endpoint.serve([{"error": error}]) as (url, calls):
+        worker = _worker(tmp_path, url, "openai", True, service_tier="fast")
+        with pytest.raises(provider_types.ProviderError, match="Not enrolled") as exc:
+            worker.call(system="s", messages=[])
+    assert exc.value.fatal and "providers.work.service_tier" in str(exc.value) and len(calls) == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_a_known_tier_mismatch_is_final_even_without_a_usage_trailer(
+    tmp_path: pathlib.Path, stream: bool
+) -> None:
+    facts = {"model": "snapshot", "service_tier": "priority"}
+    with provider_endpoint.serve(
+        [{"type": "response.created", "response": facts}] if stream else facts
+    ) as (url, calls):
+        worker = _worker(tmp_path, url, "responses", stream, service_tier="flex")
+        with pytest.raises(provider_types.ProviderError) as exc:
+            worker.call(system="s", messages=[])
+    assert exc.value.fatal and "providers.work.service_tier" in str(exc.value) and len(calls) == 1
+    assert exc.value.usage is None and exc.value.serving.model == "snapshot"
 
 
 def test_only_matching_tier_quotes_price_an_auto_call(
