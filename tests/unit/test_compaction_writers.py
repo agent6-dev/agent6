@@ -10,7 +10,7 @@ import pytest
 from agent6 import budget, providers
 from agent6.config import harness_config
 from agent6.harness import loop_conversation, loop_state
-from agent6.harness.compaction import cold_start, driver, strategy, window
+from agent6.harness.compaction import driver, strategy, window
 from agent6.providers import provider_types, responses_codec
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
@@ -117,11 +117,10 @@ def test_the_cold_helper_reads_the_pending_focus_once() -> None:
     pending = ["Keep the rollback conditions."]
     turn = dataclasses.replace(
         context(worker, helper, events, cold_start="summarize"),
-        cold_start=cold_start.Trigger("route_changed", "p/old", "p/m", None, -1),
         compact_requested=lambda: pending[0] if pending else None,
         compact_clear=pending.clear,
     )
-    assert driver.Tiered().compact(turn)
+    assert driver.Tiered().cold_start(turn) == "summarize"
     assert len(helper.calls) == 1 and not worker.calls
     assert "Keep the rollback conditions." in str(helper.calls[0]["messages"])
     assert not pending and not any(e.TYPE == "compact.refused" for e in events)
@@ -132,36 +131,11 @@ def test_the_cold_helper_reads_the_pending_focus_once() -> None:
 def test_a_cold_drop_above_the_summary_bound_does_not_buy_a_writer() -> None:
     worker, helper = Writer(response()), Writer(response())
     events: list[Any] = []
-    warm = context(worker, helper, events, cold_start="drop", elision_gists=False)
-    turn = dataclasses.replace(warm, cold_start=cold_start.Trigger("idle", "p/m", "p/m", 12, 10))
+    turn = context(worker, helper, events, cold_start="drop", elision_gists=False)
     compactor = driver.Tiered()
-    assert not compactor.compact(turn)
+    assert compactor.cold_start(turn) == "drop"
     assert not worker.calls and not helper.calls and "EARLY" in str(turn.conversation.to_wire())
-    assert compactor.compact(warm) and len(worker.calls) == 1
-
-
-@pytest.mark.parametrize(
-    "failure",
-    [provider_types.ProviderError("refused", status_code=403), budget.BudgetExceededError("limit")],
-)
-def test_a_terminal_cold_helper_refusal_reports_unchanged_history(failure: Exception) -> None:
-    worker, helper = Writer(response()), Writer(failure)
-    events: list[Any] = []
-    lines: list[str] = []
-    turn = dataclasses.replace(
-        context(worker, helper, events, cold_start="summarize"),
-        cold_start=cold_start.Trigger("route_changed", "p/old", "p/m", None, -1),
-        log=lines.append,
-    )
-    before = turn.conversation.to_wire(snapshot=True)
-    with pytest.raises(type(failure)) as raised:
-        driver.Tiered().compact(turn)
-    assert raised.value is failure and not worker.calls and len(helper.calls) == 1
-    assert turn.conversation.to_wire(snapshot=True) == before
-    (row,) = [e for e in events if e.TYPE == "compact.cold_start"]
-    assert (row.reason, row.previous_route, row.route) == ("route_changed", "p/old", "p/m")
-    assert (row.mode, row.action, row.chars_not_sent) == ("summarize", "summary_failed", 0)
-    assert row.message in lines
+    assert compactor.compact(turn) and len(worker.calls) == 1
 
 
 @pytest.mark.parametrize("offered", [True, False])

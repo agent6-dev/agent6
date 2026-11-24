@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from agent6 import errors, kinds, portable
+from agent6 import budget, errors, kinds, portable, providers
 from agent6.harness import (
     loop_conversation,
     loop_snapshot,
@@ -15,7 +15,7 @@ from agent6.harness import (
     metric_rules,
     operator_bridge,
 )
-from agent6.harness.compaction import cold_start
+from agent6.harness.compaction import cold_start, strategy
 from agent6.harness.compaction import rules as compaction_rules
 from agent6.prompts import compaction as prompts_compaction
 from agent6.sessions import journal
@@ -131,6 +131,39 @@ def seed_carryover(
         harness.emit(journal.PinRestored(pins=list(state.pins), count=len(state.pins)))
         if state.pins:
             conversation.notice(prompts_compaction.pinned_block(state.pins))
+
+
+def apply_cold_start(
+    harness: loop.Harness, state: loop_state.LoopState, context: strategy.Context
+) -> journal.ColdStartAction:
+    """Let the strategy decide what the first request of a cold resume sends.
+
+    Args:
+        harness: The execution that owns the strategy.
+        state: The execution with the pending cold trigger.
+        context: The prepared turn.
+
+    Returns:
+        What happened to the history. An endpoint that writes summaries keeps its own
+        compaction, and a strategy without the rule resends.
+
+    Raises:
+        ProviderError: The provider refused the summary; the kept history is reported first.
+        BudgetExceededError: The budget refused the summary; reported the same way.
+        ProviderAborted: The operator stopped the run.
+        ProviderInterrupted: A steer is pending.
+    """
+    if harness.compaction.endpoint.writes_summary:
+        return "endpoint"
+    if not isinstance(harness.compactor, strategy.ColdStartStrategy):
+        return "resend"
+    try:
+        return harness.compactor.cold_start(context)
+    except (providers.ProviderAborted, providers.ProviderInterrupted):
+        raise
+    except (providers.ProviderError, budget.BudgetExceededError):
+        report_cold_start(harness, state, "summary_failed", 0)
+        raise
 
 
 def report_cold_start(

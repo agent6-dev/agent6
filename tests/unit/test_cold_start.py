@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import config, kinds, media
+from agent6 import budget, config, kinds, media
 from agent6.app import role_providers
 from agent6.harness import loop_conversation, nudges, operator_bridge
 from agent6.harness.compaction import window
@@ -106,7 +106,7 @@ def _resume(
         max_turns=1,
     )
     result = wf.resume(steer="Continue here.")
-    if result.reason == "plan_unreadable":
+    if result.reason in ("plan_unreadable", "provider_error", "budget_exhausted"):
         worker.call.assert_not_called()
         sent = []
     else:
@@ -303,6 +303,28 @@ def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None
     assert len(helper.calls) == 1 and "Old evidence." in str(sent)
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
     assert row["action"] == "summary_failed" and row["chars_not_sent"] == 0
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [provider_types.ProviderError("refused", status_code=403), budget.BudgetExceededError("limit")],
+)
+def test_a_terminal_cold_helper_refusal_reports_unchanged_history(
+    tmp_path: pathlib.Path, failure: Exception
+) -> None:
+    sent, rows, lines, helper = _resume(
+        tmp_path, "summarize", [rules.request(model="other")], helper=writers.Writer(failure)
+    )
+    assert not sent and len(helper.calls) == 1
+    assert "Old evidence." in (tmp_path / "loop_state.json").read_text()
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert (row["reason"], row["previous_route"], row["route"]) == (
+        "route_changed",
+        "p/other",
+        "p/m",
+    )
+    assert (row["mode"], row["action"], row["chars_not_sent"]) == ("summarize", "summary_failed", 0)
+    assert any(row["message"] in line for line in lines)
 
 
 @pytest.mark.parametrize("stream", [False, True])

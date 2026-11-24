@@ -226,9 +226,10 @@ On a failed attempt, `model.attempt.process_reply` records that output began eve
 A changed provider or model takes precedence over age.
 A positive limit fires at or beyond the limit; `-1` disables age.
 `compact.cold_start` records the cause, action and net reduction in context characters before the first worker request.
+The strategy's `cold_start` step returns the action and the loop reports it.
 
 `Endpoint` leaves earlier messages intact.
-It reports the cold decision without applying the local mode.
+On its route the loop reports the cold decision without applying the local mode.
 On ordinary requests over the drop threshold it asks the endpoint to clear the oldest results, in steps down to half the threshold, without removing any local results.
 A route that does not write summaries reads an adopted block as a text notice.
 For a summary it replays the worker request without clearing.

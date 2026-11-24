@@ -720,17 +720,20 @@ class Harness:
             conversation.unsign(compaction_prompts.unsigned_summary_notice)
         conversation.roll_cache_marks()
         assert self.compactor is not None
+        context = self.compaction_context(conversation, state, tools)
+        cold = state.cold_start is not None
+        local_cold = cold and not endpoint
+        before = compaction_window.context_chars(conversation) if cold else 0
+        action = loop_resume.apply_cold_start(self, state, context) if cold else None
+        restarted = action in ("summarize", "truncate")
+        if action is not None and not restarted:
+            # A step that keeps the conversation is counted before the ordinary checks.
+            loop_resume.report_cold_start(
+                self, state, action, before - compaction_window.context_chars(conversation)
+            )
         # An endpoint summary covers a request already sent, so it follows the reply instead.
-        mode = self.compaction.cold_start
-        local_cold = state.cold_start is not None and not endpoint
-        if state.cold_start is not None and (endpoint or mode == "resend"):
-            loop_resume.report_cold_start(self, state, "endpoint" if endpoint else "resend", 0)
-        before = (
-            compaction_window.context_chars(conversation) if state.cold_start is not None else 0
-        )
-        restarted = not endpoint and self.compactor.compact(
-            self.compaction_context(conversation, state, tools)
-        )
+        if not endpoint and action in (None, "resend"):
+            restarted = self.compactor.compact(context)
         if restarted and self.contract is None:
             state.focus.surfaced_task_id = None
             self._maybe_surface_current_task(conversation, state)
@@ -741,8 +744,8 @@ class Harness:
             )
             if isinstance(plan, loop_snapshot.SessionResult):
                 return plan
-        if state.cold_start is not None:
-            action = "summary_failed" if mode == "summarize" and not restarted else mode
+        if action is not None and state.cold_start is not None:
+            # A cold restart is counted with the notices the worker receives.
             loop_resume.report_cold_start(
                 self, state, action, before - compaction_window.context_chars(conversation)
             )
@@ -2080,7 +2083,6 @@ class Harness:
 
         return strategy.Context(
             execution_id=state.execution_id,
-            cold_start=state.cold_start,
             conversation=conversation,
             settings=self.compaction,
             prefix_chars=compaction_window.request_prefix_chars(state.system, tools),

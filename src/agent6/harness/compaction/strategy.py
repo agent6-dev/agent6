@@ -8,7 +8,7 @@ from typing import Protocol, runtime_checkable
 
 from agent6.graph import curator as graph_curator
 from agent6.harness import loop_conversation
-from agent6.harness.compaction import cold_start, window
+from agent6.harness.compaction import window
 from agent6.providers import provider_types
 from agent6.sessions import journal
 from agent6.tools import waits
@@ -57,7 +57,6 @@ class Context:
         emit_graph_snapshot: Record a graph change after a check-off.
         execution_id: The execution that owns this turn.
         awaiting_reply: The reply to this request has not entered the conversation.
-        cold_start: The rule that fired for the first request after restore.
     """
 
     conversation: loop_conversation.Conversation
@@ -81,7 +80,6 @@ class Context:
     emit_graph_snapshot: Callable[[], None]
     execution_id: str
     awaiting_reply: bool = False
-    cold_start: cold_start.Trigger | None = None
 
 
 @runtime_checkable
@@ -113,6 +111,22 @@ class ClearingStrategy(Protocol):
 
         Returns:
             The edit, or None to send the history whole.
+        """
+        ...
+
+
+@runtime_checkable
+class ColdStartStrategy(Protocol):
+    """Decide what the first request of a cold resume sends."""
+
+    def cold_start(self, context: Context) -> journal.ColdStartAction:
+        """Apply the cold-start rule before the ordinary checks.
+
+        Args:
+            context: The prepared turn.
+
+        Returns:
+            What happened to the history; `summarize` and `truncate` restarted it.
         """
         ...
 

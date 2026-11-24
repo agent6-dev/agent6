@@ -306,13 +306,24 @@ class Tiered(_Scheduled):
     """Drop local tool results before the next worker call."""
 
     def compact(self, context: strategy.Context) -> bool:
-        """Apply the cold-start rule before the ordinary size checks.
+        """Run the ordinary size and manual checks, then the drop step.
 
         Args:
             context: The prepared worker request.
 
         Returns:
             True when the worker needs fresh focus notices after a restart.
+        """
+        return self._scheduled(context, drop=self.drop)
+
+    def cold_start(self, context: strategy.Context) -> journal.ColdStartAction:
+        """Apply `compaction.cold_start` to the first request of a cold resume.
+
+        Args:
+            context: The prepared worker request.
+
+        Returns:
+            What happened to the history; `summarize` and `truncate` restarted it.
 
         Raises:
             BudgetExceededError: The budget refused the summary.
@@ -320,28 +331,17 @@ class Tiered(_Scheduled):
             ProviderAborted: The operator stopped the run.
             ProviderInterrupted: A steer is pending.
         """
-        mode = context.settings.cold_start
-        if context.cold_start is None or mode == "resend":
-            return self._scheduled(context, drop=self.drop)
         conversation = context.conversation
+        mode = context.settings.cold_start
         match mode:
+            case "resend":
+                return mode
             case "drop":
                 self.drop(context, cold=True)
-                return False
+                return mode
             case "summarize":
-                try:
-                    restarted = self.summarise_and_restart(
-                        context, cold=True, focus=_take_focus(context)
-                    )
-                except (ProviderAborted, ProviderInterrupted):
-                    raise
-                except (ProviderError, budget.BudgetExceededError):
-                    record = context.cold_start.record(mode, "summary_failed", 0)
-                    context.log(record.message)
-                    context.emit(record)
-                    raise
-                if not restarted:
-                    return False
+                if not self.summarise_and_restart(context, cold=True, focus=_take_focus(context)):
+                    return "summary_failed"
             case "truncate":
                 replay = retention.select(
                     conversation.messages, context.settings, context.task.text
@@ -354,7 +354,7 @@ class Tiered(_Scheduled):
                 self._set_restart_floor(context)
         elided, gists = compaction_rules.count_elisions(conversation)
         context.emit(journal.CompactRestored(elided=elided, gists=gists))
-        return True
+        return mode
 
     def drop(self, context: strategy.Context, *, cold: bool = False) -> None:
         """Apply the first tier in place without a restart."""
