@@ -12,11 +12,16 @@
 #
 #   tui  the gate's baseline run approved -> the conversation streaming ->
 #        the model's verify call approved on the dashboard -> verify ✓
-#        auto-commit + diff pane -> hub receipt -> config: sandbox.
-#   cli  the failing suite -> one command, the run streams -> /exit ->
-#        sessions diff (the fix) -> sessions show (the receipt).
-#   web  hub -> session view -> config: sandbox -> git graph -> a commit's
-#        diff -> files with blame -> a reviewed run's findings and receipt -> hub.
+#        auto-commit + diff pane -> hub receipt -> a new session starts two
+#        children with /parallel -> the dashboard's children table -> a
+#        message to one child, queued for its next turn.
+#   cli  the failing suite -> one command with a metric, the run streams and
+#        reads the score after its commit -> /exit -> sessions diff (the fix)
+#        -> sessions show (the receipt).
+#   web  hub -> session view -> config: sandbox -> files: a task box ticked,
+#        the page edited, an HTML page previewed with its scripts off -> git:
+#        stage, commit, the commit's diff -> a reviewed run's findings and
+#        receipt -> hub.
 #
 # Sources (record first):
 #   bash docs/screenshots/hero_run.sh                       # -> hero-src-tui.webm
@@ -65,23 +70,29 @@ TUI_SEGMENTS=(
   "hero-src-tui.webm:13.5:4.0:1.2:0"
   "hero-src-tui.webm:21.8:2.3:1.5:0"
   "hero-src-tui.webm:25.0:0.28:0.30:1.3"
-  "hero-src-tui.webm:31.5:2.4:1.3:0"
-  "hero-src-tui.webm:35.0:4.9:2.0:0.9"
+  "hero-src-tui.webm:31.5:2.4:1.1:0"
+  "hero-src-tui.webm:34.3:4.5:1.5:0"
+  "hero-src-tui.webm:50.5:1.3:0.8:0"
+  "hero-src-tui.webm:52.1:1.9:1.1:0"
+  "hero-src-tui.webm:54.6:1.9:0.6:1.1"
 )
 CLI_SEGMENTS=(
-  "hero-src-cli.webm:0.3:3.3:1.4:0"
-  "hero-src-cli.webm:3.9:22.2:3.8:0"
-  "hero-src-cli.webm:26.9:6.9:2.2:0.5"
-  "hero-src-cli.webm:35.4:4.6:1.4:0.9"
+  "hero-src-cli.webm:0.3:5.0:1.8:0"
+  "hero-src-cli.webm:5.6:22.4:3.6:0"
+  "hero-src-cli.webm:28.0:2.4:0.9:1.0"
+  "hero-src-cli.webm:31.4:6.6:1.8:0.5"
+  "hero-src-cli.webm:38.2:5.0:1.2:0.9"
 )
 WEB_SEGMENTS=(
-  "hero-src-web.webm:0.6:3.4:1.0:0"
-  "hero-src-web.webm:4.4:5.0:1.5:0"
-  "hero-src-web.webm:23.0:3.0:0.8:0"
-  "hero-src-web.webm:30.0:4.8:1.4:0"
-  "hero-src-web.webm:38.5:7.0:1.5:0"
-  "hero-src-web.webm:50.0:6.0:1.4:0"
-  "hero-src-web.webm:56.8:2.0:0.6:1.0"
+  "hero-src-web.webm:0.6:3.4:0.9:0"
+  "hero-src-web.webm:4.4:5.0:1.3:0"
+  "hero-src-web.webm:25.0:4.0:0.8:0"
+  "hero-src-web.webm:35.6:4.8:1.2:0"
+  "hero-src-web.webm:42.0:6.0:1.4:0"
+  "hero-src-web.webm:51.0:3.6:0.9:0.4"
+  "hero-src-web.webm:60.2:10.4:1.9:0"
+  "hero-src-web.webm:72.2:4.6:1.0:0"
+  "hero-src-web.webm:83.2:3.0:0.7:0.9"
 )
 
 build() {

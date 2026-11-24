@@ -7,9 +7,14 @@
 # streams live) -> dashboard -> the model's own verify call docks the approval
 # row again; Tab, y -> verify passes, auto-commit, the diff pane fills -> the run
 # ends and the TUI holds the payoff; Ctrl+Q leaves -> back in via `agent6 tui`:
-# the hub lists the finished run -> config, filtered to sandbox. Each approval
-# pauses the run until its answer, so the beats after it are tape-timed, not
-# race-timed.
+# the hub lists the finished run -> a new session whose task is `/parallel 2`
+# starts two children -> the dashboard's children table; Tab, m messages the
+# first. Each approval pauses its run until its answer, so the beats after it
+# are tape-timed, not race-timed: both children wait on their baseline approval
+# while the message is typed.
+#
+# The first run works in a worktree, so the checkout the children are cloned
+# from stays clean and still holds the failing test.
 #
 # 1600x900 at FontSize 17: the hero is read at README width, so fewer, larger
 # cells beat the docs tapes' 1280x720/13.
@@ -35,12 +40,14 @@ Hide
 Type "cd ${AGENT6_DEMO_REPO:-.}" Enter
 Type "export PYTHONDONTWRITEBYTECODE=1" Enter
 Type "clear" Enter
-Type `agent6 run --tui "A test in tests/test_stats.py is failing. Find and fix the bug in src/stats.py so the whole suite passes. Keep the change minimal."`
+Type `agent6 run --tui --worktree "A test in tests/test_stats.py is failing. Find and fix the bug in src/stats.py so the whole suite passes. Keep the change minimal."`
 Enter
-Sleep 1.5s
+# The worktree is cut and the baseline approval docks while hidden; the run
+# waits there for its answer.
+Sleep 5s
 Show
 
-# The baseline approval docks within a second; answer it from the row.
+# Answer the baseline approval from the row.
 Sleep 2s
 Tab
 Sleep 400ms
@@ -67,9 +74,20 @@ Type "agent6 tui" Enter
 Sleep 2.5s
 Show
 Sleep 2.5s
-Type "c"
+Type "n"
+Sleep 800ms
+Type@40ms "/parallel 2 -- Fix the failing test in tests/test_stats.py"
+Sleep 1.5s
+Enter
+# The children are cloned and started, then each parks on its baseline approval.
+Sleep 10s
+Ctrl+D
 Sleep 2s
-Type "/"
+Tab
 Sleep 600ms
-Type@110ms "sandbox"
+Type "m"
+Sleep 800ms
+Type@40ms "Keep the change minimal."
+Sleep 600ms
+Enter
 Sleep 3s

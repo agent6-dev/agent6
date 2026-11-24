@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Test report</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; background: #0f1414; color: #c0caf5; }
+  h1 { font-size: 1.4rem; }
+  table { border-collapse: collapse; }
+  th, td { padding: 0.3rem 2rem 0.3rem 0; text-align: left; border-bottom: 1px solid #1e2626; }
+  .ok { color: #9ece6a; }
+</style>
+<h1>Test report</h1>
+<p id="script">This page's script has not run.</p>
+<table>
+  <tr><th>Suite</th><th>Tests</th><th>Result</th></tr>
+  <tr><td>unit</td><td>412</td><td class="ok">passed</td></tr>
+  <tr><td>web</td><td>96</td><td class="ok">passed</td></tr>
+  <tr><td>sandbox</td><td>38</td><td class="ok">passed</td></tr>
+</table>
+<script>
+  document.getElementById("script").textContent = "This page's script ran.";
+</script>

@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import shutil
 import socket
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 from urllib import parse
 
@@ -17,36 +18,76 @@ from docs.screenshots import seed
 from tests.web import signin, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page, Route
+    from playwright.sync_api import Browser, ConsoleMessage, Page, Route
 
 browser = test_web_browser.browser
 
 
-@pytest.fixture
-def tour_page(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, browser: Browser
-) -> Iterator[Page]:
-    """Serve the docs sessions and bundled Git history through the real CLI, without keys."""
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _homes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Point this process and the server it starts at throwaway homes, with no provider key."""
     root = pathlib.Path(__file__).resolve().parents[2]
-    repo = tmp_path / "repo"
-    bundle = root / "docs" / "screenshots" / "seed" / "stats-demo.bundle"
-    subprocess.run(["git", "clone", "--quiet", str(bundle), str(repo)], check=True)
-    subprocess.run(
-        ["git", "-C", str(repo), "fetch", "--quiet", str(bundle), "+refs/agent6/*:refs/agent6/*"],
-        check=True,
-    )
     home = tmp_path / "home"
     home.mkdir()
     env = {"PATH": os.environ["PATH"], "HOME": str(home), "PYTHONPATH": str(root / "src")}
     for name in ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
         env[name] = str(tmp_path / name.lower())
         monkeypatch.setenv(name, env[name])
-    monkeypatch.setenv("AGENT6_DEMO_REPO", str(repo))
-    seed.main()
     env["AGENT6_WEB_SECRET"] = signin.SECRET
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
+    return env
+
+
+# What a seeded tour may write: a preview, a file save, a stage and a commit.
+_TOUR_WRITES = frozenset(
+    {
+        "/api/files/preview",
+        "/api/files/preview/answers",
+        "/api/files/preview/close",
+        "/api/files/preview/renew",
+        "/api/files/text",
+        "/api/git/commit",
+        "/api/git/stage",
+    }
+)
+
+
+def _tour_request(method: str, path: str) -> bool:
+    return method == "GET" or (method == "POST" and path in _TOUR_WRITES)
+
+
+def _blocked_preview_script(text: str, _url: str) -> bool:
+    """Chromium reports each script an HTML preview's sandbox refuses as a console error."""
+    return text.startswith("Blocked script execution in ")
+
+
+def _signed_in(
+    repo: pathlib.Path,
+    env: dict[str, str],
+    tmp_path: pathlib.Path,
+    browser: Browser,
+    allowed: Callable[[str, str], bool],
+    expected: Callable[[str, str], bool],
+) -> Iterator[Page]:
+    """Serve the repository through the real CLI and yield a signed-in page.
+
+    Args:
+        repo: The checkout `agent6 web` starts in.
+        env: The server's whole environment.
+        tmp_path: Where `server.log` goes.
+        browser: The module's browser.
+        allowed: Whether a request to the server, by method and path, may pass.
+        expected: Whether a console error, by its text and source address, is the tour's own.
+
+    Yields:
+        The page; a refused request, a page error or any other console error fails the test
+        at its end.
+    """
+    port = _free_port()
     base = f"http://127.0.0.1:{port}"
     log = tmp_path / "server.log"
     with log.open("w") as output:
@@ -83,31 +124,25 @@ def tour_page(
                 )
                 errors: list[str] = []
 
-                def read_only(route: Route) -> None:
+                def filtered(route: Route) -> None:
                     request = route.request
-                    if parse.urlsplit(request.url).netloc == f"127.0.0.1:{port}" and (
-                        request.method == "GET"
-                        or (
-                            request.method == "POST"
-                            and parse.urlsplit(request.url).path
-                            in {
-                                "/api/files/preview",
-                                "/api/files/preview/close",
-                                "/api/files/preview/renew",
-                            }
-                        )
-                    ):
+                    url = parse.urlsplit(request.url)
+                    if url.netloc == f"127.0.0.1:{port}" and allowed(request.method, url.path):
                         route.continue_()
                     else:
                         errors.append(f"Unexpected request: {request.method} {request.url}")
                         route.abort()
 
-                context.route("**/*", read_only)
+                context.route("**/*", filtered)
                 page = context.new_page()
                 page.on("pageerror", lambda error: errors.append(str(error)))
-                page.on(
-                    "console", lambda msg: errors.append(msg.text) if msg.type == "error" else None
-                )
+
+                def console(message: ConsoleMessage) -> None:
+                    address = str(message.location.get("url", ""))
+                    if message.type == "error" and not expected(message.text, address):
+                        errors.append(message.text)
+
+                page.on("console", console)
                 page.goto(base)
                 yield page
                 assert not errors, errors
@@ -118,3 +153,30 @@ def tour_page(
             except subprocess.TimeoutExpired:
                 server.kill()
                 server.wait(timeout=10)
+
+
+@pytest.fixture
+def tour_page(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> Iterator[Page]:
+    """Serve the docs sessions and bundled Git history through the real CLI, without keys.
+
+    The browser may save a file, stage it and commit it, as the recorded tour does; every
+    other write is refused, so no tour starts or resumes a run.
+    """
+    seeds = pathlib.Path(__file__).resolve().parents[2] / "docs" / "screenshots" / "seed"
+    repo = tmp_path / "repo"
+    bundle = seeds / "stats-demo.bundle"
+    subprocess.run(["git", "clone", "--quiet", str(bundle), str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "fetch", "--quiet", str(bundle), "+refs/agent6/*:refs/agent6/*"],
+        check=True,
+    )
+    for key, value in (("user.name", "agent6 demo"), ("user.email", "demo@agent6.dev")):
+        subprocess.run(["git", "-C", str(repo), "config", key, value], check=True)
+    for page_file in (seeds / "pages").iterdir():
+        shutil.copy(page_file, repo)
+    env = _homes(tmp_path, monkeypatch)
+    monkeypatch.setenv("AGENT6_DEMO_REPO", str(repo))
+    seed.main()
+    yield from _signed_in(repo, env, tmp_path, browser, _tour_request, _blocked_preview_script)

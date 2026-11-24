@@ -35,9 +35,13 @@ done
 
 TMP="$(mktemp -d)"
 DEMO_REPO="/tmp/acme-stats-hero"
-trap 'kill "${PROXY_PID:-0}" 2>/dev/null || true; rm -rf "$TMP" "$DEMO_REPO"' EXIT
+# The tape ends with two children waiting on an approval: stop them with their run.
+trap '( cd "$DEMO_REPO" && agent6 stop --all ) >/dev/null 2>&1 || true
+  kill "${PROXY_PID:-0}" 2>/dev/null || true; rm -rf "$TMP" "$DEMO_REPO"' EXIT
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
+# Worktrees and child clones live under the cache home.
+export XDG_CACHE_HOME="$TMP/cache"
 export AGENT6_DEMO_REPO="$DEMO_REPO"
 mkdir -p "$XDG_CONFIG_HOME/agent6"
 
@@ -62,6 +66,10 @@ max_tokens_fallback = 2000000
 verify.at_start = true
 verify.command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
 verify.when = "finish"
+[harness.parallel]
+# A judge is a model call and the cassette holds none: the two attempts rank by
+# verify result, then cost.
+judges = []
 [providers.openrouter]
 backend = "openai"
 base_url = "http://127.0.0.1:${PORT}/api/v1"
@@ -87,8 +95,9 @@ echo "hero_run: REPLAY proxy on :$PORT <- $CASSETTE"
 # 60ms per SSE chunk paces the replay like a live model (~20s run), so the TUI
 # has real streaming to show; cli_demo.sh uses 4ms because its terminal beats
 # only need the result.
+# One replay per conversation: the run and each child it starts get the whole cassette.
 AGENT6_PROXY_MODE=replay AGENT6_PROXY_CASSETTE="$CASSETTE" AGENT6_PROXY_PORT="$PORT" \
-  AGENT6_PROXY_CHUNK_MS=60 python3 "$SS/llm_proxy.py" & PROXY_PID=$!
+  AGENT6_PROXY_PER_CONVERSATION=1 AGENT6_PROXY_CHUNK_MS=60 python3 "$SS/llm_proxy.py" & PROXY_PID=$!
 sleep 1
 
 TAPE="${1:-$SS/hero_run.tape}"

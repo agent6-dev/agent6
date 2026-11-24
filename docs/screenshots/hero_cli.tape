@@ -3,9 +3,10 @@
 # seeds the buggy stats repo, starts the proxy, and records this; hero.sh cuts
 # it.
 #
-# Arc: open on the failing suite -> one command hands it to agent6 (reasoning
-# and tool calls stream, verify passes, auto-commit) -> `sessions diff` shows
-# the fix -> `sessions show` is the receipt.
+# Arc: open on the failing suite -> one command hands it to agent6 with a
+# metric, the count of passing tests (reasoning and tool calls stream,
+# auto-commit, the score reads 3, verify passes) -> `sessions diff` shows the
+# fix -> `sessions show` is the receipt.
 #
 # 1600x900 at FontSize 17, matching the other hero sources.
 Output docs/screenshots/out/hero-src-cli.webm
@@ -36,12 +37,12 @@ Sleep 800ms
 Show
 
 Sleep 1.2s
-Type@28ms `agent6 run "Find and fix the failing test in tests/test_stats.py"`
+Type@28ms `agent6 run --metric "maximize target 3 -- python3 score.py" "Find and fix the failing test in tests/test_stats.py"`
 Enter
-# The replayed run streams at model pace (~20s to the summary), then waits at
+# The replayed run streams at model pace (~24s to the summary), then waits at
 # the follow-up prompt ("next (/exit to finish):"); typing earlier would steer
 # the run instead of the shell.
-Sleep 24s
+Sleep 26s
 
 Type@40ms "/exit"
 Enter

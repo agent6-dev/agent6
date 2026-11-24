@@ -5,7 +5,7 @@
 
 Drives `agent6 web` in a headless Chromium, recording a .webm at a given
 viewport (desktop, phone or hero) while touring the hub, a run view, the
-conversation, the config page, and the Git and Files pages of the repository
+conversation, the config page, and the Files and Git pages of the repository
 `agent6 web` runs in. A virtual circle cursor glides between targets
 and a bottom-center toast narrates each step, the browser analogue of the TUI
 reel's keystroke overlay (keystroke_overlay.py).
@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 import webm
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page, ViewportSize
+    from playwright.sync_api import Locator, Page, ViewportSize
 
 VIEWPORTS: dict[str, ViewportSize] = {
     "desktop": {"width": 1280, "height": 800},
@@ -45,11 +45,12 @@ VIEWPORTS: dict[str, ViewportSize] = {
 
 # A virtual circle cursor (headless recordings have no OS pointer), a click
 # ripple, and a bottom-center toast. Self-installing once per document via
-# add_init_script so it survives navigations. Motion is a CSS transition on
+# add_init_script so it survives navigations; the top document only, so a file
+# preview's frame gets no cursor of its own. Motion is a CSS transition on
 # left/top so the compositor drives it (a per-frame JS animation janks here).
 OVERLAY_INIT_SCRIPT = r"""
 (() => {
-  if (window.__a6Overlay) return;
+  if (window !== top || window.__a6Overlay) return;
   window.__a6Overlay = true;
   const install = () => {
     if (!document.body || document.getElementById('__a6_cursor')) return;
@@ -126,31 +127,41 @@ def toast(page: Page, msg: str, ms: int = 2400, after: int = 450) -> None:
         page.wait_for_timeout(after)
 
 
-def move_to(page: Page, selector: str, *, settle: int = 760) -> tuple[float, float] | None:
-    loc = page.locator(selector).first
+def _centre(loc: Locator) -> tuple[float, float] | None:
+    box = loc.bounding_box()
+    return (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2) if box else None
+
+
+def move_to(page: Page, target: str | Locator, *, settle: int = 760) -> tuple[float, float] | None:
+    """Glide the cursor to a target: a selector, or a locator for an element inside a frame."""
+    loc = page.locator(target).first if isinstance(target, str) else target
     # Centre the target: a row scrolled to the nearest edge sits under the phone's docked
     # composer and tab bar, where the click would land on them.
     loc.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest'})")
     page.wait_for_timeout(250)
-    box = loc.bounding_box()
-    if box is None:
-        return None
-    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-    page.evaluate(f"window.__a6MoveCursor({cx}, {cy})")
-    page.wait_for_timeout(settle)  # let the 650ms CSS transition finish
-    return cx, cy
+    centre = _centre(loc)
+    if centre is not None:
+        page.evaluate(f"window.__a6MoveCursor({centre[0]}, {centre[1]})")
+        page.wait_for_timeout(settle)  # let the 650ms CSS transition finish
+    return centre
 
 
-def click(page: Page, selector: str, *, label: str | None = None, settle: int = 800) -> None:
-    center = move_to(page, selector)
+def click(
+    page: Page, target: str | Locator, *, label: str | None = None, settle: int = 800
+) -> None:
+    loc = page.locator(target).first if isinstance(target, str) else target
+    move_to(page, loc)
     if label:
         toast(page, label, after=320)
     page.evaluate("window.__a6Ripple()")
     page.wait_for_timeout(180)
-    if center is not None:
-        page.mouse.click(*center)
+    # A live view moves its controls while the cursor glides: click where the target is now.
+    centre = _centre(loc)
+    if centre is not None:
+        page.evaluate(f"window.__a6MoveCursor({centre[0]}, {centre[1]})")
+        page.mouse.click(*centre)
     else:
-        page.locator(selector).first.click()
+        loc.click()
     page.wait_for_timeout(settle)
 
 
@@ -174,33 +185,50 @@ def scroll_card(page: Page, selector: str, y: int, *, wait: int = 1500) -> None:
 
 
 def drive_repo(page: Page, mode: str) -> None:
-    """The Git page (graph, a commit, a diff) and the Files page (a Markdown file, its source, blame)."""
+    """The Files page (a task box, an edit, an HTML preview), then the Git page (stage, commit, diff)."""
     rail = "nav.tabs a[data-tab='%s']" if mode == "phone" else "aside.rail a[data-tab='%s']"
-    click(page, rail % "git", label="Git: the commit graph, every branch and tag", settle=1200)
-    page.wait_for_selector(".gc-row:not(.gc-wt)")
-    page.wait_for_timeout(900)
-    click(
-        page, ".gc-row:not(.gc-wt) >> nth=1", label="A commit: its message and files", settle=1400
-    )
-    page.wait_for_selector(".gf")
-    click(page, ".gf >> nth=0", label="A file's diff, inline or split", settle=2000)
-
-    # The Files page: the tree at a revision, one file with blame.
-    click(page, rail % "files", label="Files: any revision, read-only", settle=1200)
+    click(page, rail % "files", label="Files: the working tree, or any revision", settle=1200)
     page.wait_for_selector(".gtree")
-    click(page, ".gtree [data-path='README.md']", label="A Markdown file, rendered", settle=1400)
+    click(page, ".gtree [data-path='release.md']", label="A Markdown page, rendered", settle=1400)
     # Rendered Markdown lives in the preview frame.
-    page.frame_locator(".files-preview iframe").locator(".md-view").wait_for()
-    click(
-        page,
-        ".files-md-mode button[data-mode=source]",
-        label="Its source, highlighted",
-        settle=1200,
-    )
-    page.wait_for_selector("pre.src")
-    click(page, "button.files-blame", label="Blame: each line's last commit", settle=1600)
-    page.wait_for_selector(".blame-cell")
+    preview = page.frame_locator(".files-preview iframe")
+    task = preview.get_by_role("checkbox", name="Update the changelog")
+    task.wait_for()
+    click(page, task, label="Tick a task: Save writes it to the file", settle=900)
+    click(page, "dialog[open] button.primary", settle=1300)
+    preview.get_by_role("checkbox", name="Update the changelog", checked=True).wait_for()
+    edit = page.get_by_role("button", name="Edit", exact=True)
+    click(page, edit, label="Edit the page's text", settle=900)
+    # The editor enables its text once the file has loaded.
+    page.locator("dialog[open] textarea.file-text:enabled").press("Control+End")
+    page.keyboard.type("- [ ] Announce the release\n", delay=45)
+    page.wait_for_timeout(700)
+    click(page, "dialog[open] footer button.primary", settle=1400)
+    preview.get_by_role("checkbox", name="Announce the release").wait_for()
+    if mode == "phone":  # the open file covers the tree
+        click(page, "button.files-back", settle=700)
+    click(page, ".gtree [data-path='report.html']", label="An HTML page", settle=1200)
+    show = page.get_by_role("button", name="Preview", exact=True)
+    click(page, show, label="Preview it: its scripts stay off", settle=1600)
+    page.get_by_text("Scripts are off for this page.", exact=True).wait_for()
+    preview.get_by_role("heading", name="Test report").wait_for()
     page.wait_for_timeout(1200)
+
+    # The Git page: stage the edited page, commit it, then read the commit.
+    click(page, rail % "git", label="Git: the commit graph and your changes", settle=1200)
+    click(page, ".gc-row.gc-wt", settle=1200)
+    staged = ".git-side .gf[data-path='release.md']"
+    click(page, f"{staged} button[data-act=stage]", label="Stage a file", settle=1200)
+    # The message box opens once the panel shows the staged file.
+    click(page, ".git-commit textarea:enabled", settle=300)
+    page.keyboard.type("Add the release checklist", delay=45)
+    click(page, ".git-commit button.primary", label="Commit what is staged", settle=1600)
+    commit = page.locator(".gc-row:not(.gc-wt)", has_text="Add the release checklist")
+    commit.wait_for(state="attached")
+    if mode == "phone":  # the working-tree panel covers the graph
+        click(page, page.get_by_role("button", name="Graph", exact=True), settle=700)
+    click(page, commit, label="The commit: its message and files", settle=1400)
+    click(page, staged, label="A file's diff, inline or split", settle=2000)
 
 
 def drive_findings(page: Page, mode: str) -> None:

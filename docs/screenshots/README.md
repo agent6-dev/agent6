@@ -23,11 +23,11 @@ GIF encoding uses its own palette filter.
 - `generate.sh`: seeds a temporary home, captures TUI PNGs with `tour.tape`, then records `reel.tape` and overlays keystroke toasts.
 - `hero.sh`: cuts and retimes the three hero source recordings into 1440x810 WebM and GIF clips, one per surface.
 - `hero_cli.sh`: replays the CLI cassette through `hero_cli.tape` to record the CLI hero source without overlays.
-- `hero_run.sh`: replays the CLI cassette in the run TUI through `hero_run.tape` (or a supplied tape) to record the TUI hero source without overlays.
+- `hero_run.sh`: replays the CLI cassette in the run TUI through `hero_run.tape` (or a supplied tape) to record the TUI hero source without overlays; the run and each of the two children the tape starts replay it.
 - `machine_demo.sh`: records or replays the code-fixer machine in the TUI with `machine_demo.tape`, `seed/machine-repo/` and `seed/machine-cassette.jsonl`.
 - `rename_demo.sh`: records or replays the `TASK.md` rename from `Cart` to `ShoppingCart` across `shop/` with `rename_demo.tape`, `seed/rename-repo/` and `seed/rename-cassette.jsonl`.
 - `temps_demo.sh`: records or replays a temperature-conversion fix with `temps_demo.tape`, `seed/temps-repo/` and `seed/temps-cassette.jsonl`.
-- `web_demo.sh`: records seeded desktop and phone web tours, or the web hero source with the `hero` argument, using Playwright.
+- `web_demo.sh`: records seeded desktop and phone web tours, or the web hero source with the `hero` argument, using Playwright; each tour gets its own clone, because it saves a file and commits it.
 - `web_machine_demo.sh`: replays the machine cassette and records the code-fixer machine started and watched from the browser.
 
 Supporting files:
@@ -36,7 +36,7 @@ Supporting files:
 - `reel.tape`: records one TUI tour without screenshot commands, which stall the video clock.
 - `webm.py`: converts VHS output in place and checks WebM colour-space tags for the terminal, browser and overlay encoders.
 - `keystroke_overlay.py`: overlays animated keystroke toasts, scaling the tape's keypress timeline to the recording's duration.
-- `seed/`: sanitized run fixtures with trimmed `logs.jsonl` files and transcripts for the seeded tours, plus demo repos and cassettes; `stats-demo.bundle` holds the stats repository's history with the two reviewed runs' trees, fetched into the clone of this checkout the tours run in.
+- `seed/`: sanitized run fixtures with trimmed `logs.jsonl` files and transcripts for the seeded tours, plus demo repos and cassettes; `stats-demo.bundle` holds the stats repository's history with the two reviewed runs' trees, fetched into the clone of this checkout the tours run in; `pages/` holds the Markdown and HTML pages the web tours open, copied untracked into the tour's working tree.
 - `seed.py`: installs the run fixtures into an isolated `$XDG_STATE_HOME/agent6` under the demo repo's id and writes `config.toml` and `ui.toml` with theme `agent6-dark`.
 - `build_fixtures.py`: rebuilds run fixtures from `$XDG_STATE_HOME/agent6/`, trimming token deltas and scrubbing paths; not run in CI.
 - `tui_snapshot.py`: captures a run's dashboard, log or transcript through Textual's headless Pilot as SVG, or PNG with Chromium or `rsvg-convert`; not run in CI.
@@ -52,7 +52,8 @@ Browser recordings need a Playwright-capable Python with Chromium installed; set
 
 `tests/web/test_seeded_tours.py` drives the hub and a session, Git and Files, and the findings through the real `agent6 web` CLI.
 Each test clones `seed/stats-demo.bundle`, installs the sessions with `seed.py`, and signs in to a loopback server with isolated config and state.
-The server inherits no provider keys, and the browser refuses non-GET requests after sign-in.
+The server inherits no provider keys.
+After sign-in the browser refuses every write except the recorded tour's own: a file save, a stage and a commit.
 No tour starts or resumes a model run.
 
 ```sh
