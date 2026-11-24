@@ -23,7 +23,7 @@ from agent6.ui.web import page
 from tests.web import client_assets
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "b341a8f6001e2dbd1768a4e265580ab97820f225ccd8e60163b70b7d15013eee"
+PAGE_SHA256 = "aefcd5016994c222e6166c3e9f32108d1c9f04055a33c823f16979b01c9d93b4"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -408,6 +408,7 @@ function el(tag, cls, text = '') {
   return {
     tag, cls, text, children: [], style: {}, value: '', checked: false, isConnected: true,
     listeners: {},
+    replaceChildren(...children) { this.children = []; this.append(...children); },
     set textContent(value) { this.text = value; this.children = []; },
     set innerHTML(value) { this.children = []; },
     appendChild(child) { this.children.push(child); child.parent = this; return child; },
@@ -486,16 +487,15 @@ function field(id) { return nodes().find(n => n.id === id); }
   assert.equal(removes.length, 2);
   assert.ok(nodes().some(n => n.text === '1: tests'));
   assert.ok(nodes().some(n => n.text === '2: tests'));
-  const cancelled = removes[1].onclick();
+  const editor = document.querySelector('dialog[open]');
+  removes[1].onclick();
   const open = nodes().filter(n => n.tag === 'dialog' && n.open);
-  assert.deepEqual(open.map(n => n.role), ['alertdialog'], "the question takes the editor's place");
+  assert.deepEqual(open, [editor]);
+  assert.equal(editor.role, 'alertdialog');
   button('Cancel').onclick();
-  await cancelled;
   assert.equal(posts.length, 0, 'cancel does not write');
-  editConfig('review.reviewers', setting);
-  const removed = nodes().filter(n => n.tag === 'button' && n.text === 'Remove')[1].onclick();
-  button('Remove').onclick();
-  await removed;
+  removes[1].onclick();
+  await button('Remove').onclick();
   assert.deepEqual(posts.shift(), {
     path: '/api/config/reviewer/remove', body: {index: 1, repo: true},
   });

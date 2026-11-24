@@ -188,22 +188,24 @@ async function run() {
     ['skills.state.alpha', 'skill', 'skills.state', 'alpha', false],
     ['skills.state."org.some.skill"', 'skill', 'skills.state', 'org.some.skill', false],
   ]) {
-    // The question takes the editor's place; its Cancel writes nothing, its Remove removes.
+    row(key).onclick();
+    const editor = dialog();
     for (const answer of ['Cancel', 'Remove']) {
-      row(key).onclick();
       const before = writes.length;
-      const removing = button('Remove ' + label, dialog()).onclick();
+      button('Remove ' + label, editor).onclick();
       const question = dialog();
+      assert.equal(question, editor);
       assert.equal(question.role, 'alertdialog');
       assert.ok(question.textContent.includes(label + " '" + name + "'"));
       if (name === 'org.some.skill') {
         assert.ok(!question.textContent.includes('skills.state.org.some.skill'));
       }
       assert.ok(question.textContent.includes(repo ? 'repo' : 'global'));
-      button(answer, question).onclick();
-      await removing;
-      assert.equal(dialog(), undefined);
-      if (answer === 'Cancel') assert.equal(writes.length, before);
+      await button(answer, question).onclick();
+      if (answer === 'Cancel') {
+        assert.equal(dialog(), editor);
+        assert.equal(writes.length, before);
+      } else assert.equal(dialog(), undefined);
     }
     assert.deepEqual(writes.at(-1), {path: '/api/config/entry/remove', body: {table, name, repo}});
     assert.equal(row(key), undefined);

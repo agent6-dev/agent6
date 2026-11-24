@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from agent6 import paths
 from tests.web import captures, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
@@ -87,3 +88,48 @@ def test_config_marks_required_fields_and_pending_saves(
     held.pop().fulfill(status=422, json={"error": "Rejected for this test"})
     expect(page.get_by_role("button", name="Save", exact=True)).to_be_enabled()
     assert [e for e in errors if "422" not in e] == []
+
+
+def test_cancelling_removal_returns_to_the_editor_draft(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Cancelling a provider or reviewer removal keeps the value, layer and focus."""
+    from playwright import sync_api
+
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[providers.local]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[review]\nreviewers = [{focus = "tests"}]\n'
+    )
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    for key, action in [
+        ("providers.local.base_url", "Remove provider"),
+        ("review.reviewers", "Remove reviewer 1: tests"),
+    ]:
+        page.get_by_role("button", name=f"edit {key}", exact=True).click()
+        editor = page.get_by_role("dialog", name=key)
+        field = editor.get_by_role("textbox")
+        layer = editor.get_by_role("checkbox")
+        field.fill("unsaved draft")
+        layer.check()
+        remove = editor.get_by_role("button", name=action, exact=True)
+        question = page.get_by_role("alertdialog")
+        for answer in ["Cancel", "Escape"]:
+            remove.click()
+            cancel = question.get_by_role("button", name="Cancel")
+            sync_api.expect(cancel).to_be_focused()
+            if answer == "Escape":
+                page.keyboard.press("Escape")
+            else:
+                cancel.click()
+            sync_api.expect(field).to_have_value("unsaved draft")
+            sync_api.expect(layer).to_be_checked()
+            sync_api.expect(remove).to_be_focused()
+        remove.click()
+        question.get_by_role("button", name="Remove", exact=True).click()
+        sync_api.expect(page.locator("dialog[open]")).to_have_count(0)
+    assert "localhost" not in config.read_text()
+    assert "tests" not in config.read_text()
+    assert not errors

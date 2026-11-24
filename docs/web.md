@@ -119,6 +119,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
 - **Config page**: every setting with value and source, one collapsible section per table in the order every surface shares (`[agent6]`, `[providers]`, `[models]`, then the rest by name), filterable; click a row to set it, with the choices an enum or a provider's model listing offers, or to add or remove an entry of its table (a provider, an MCP server, a skill, a reviewer) from the same popup; **Preset: name** sets `preset`, and the page edits the selected preset's table, as a line under the bar says ([Presets](config.md#presets)); secrets never shown
 
     - Tab and Shift+Tab keep the focused setting below the sticky toolbar when its buttons wrap.
+    - Removing an entry or reviewer asks inside the editor. Cancel or Escape returns to the draft and its selected layer.
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
     - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge

@@ -223,6 +223,40 @@ function addButtons(dialog) {
   return { add, act: actionRow(dialog, row, add) };
 }
 
+// Only a successful removal closes the editor. Cancel restores its fields, including the layer.
+function confirmConfigRemoval(dialog, opener, title, text, remove) {
+  const fields = [...dialog.children];
+  const label = dialog.getAttribute('aria-labelledby'), keys = dialog.onkeydown;
+  const question = el('div');
+  dialog.replaceChildren(question, ...fields.filter(node => node.id === 'toasts'));
+  const heading = question.appendChild(el('div', 'dialog-head')).appendChild(el('h2', null, title));
+  heading.id = 'cfg-remove-title';
+  const detail = question.appendChild(el('p', null, text)); detail.id = 'cfg-remove-detail';
+  dialog.setAttribute('role', 'alertdialog');
+  dialog.setAttribute('aria-labelledby', heading.id); dialog.setAttribute('aria-describedby', detail.id);
+  const row = question.appendChild(el('div', 'form-row'));
+  const yes = row.appendChild(el('button', 'danger', 'Remove'));
+  const no = row.appendChild(el('button', null, 'Cancel'));
+  const err = question.appendChild(el('p', 'err')); err.setAttribute('role', 'alert');
+  no.onclick = () => {
+    dialog.replaceChildren(...fields);
+    dialog.removeAttribute('role'); dialog.removeAttribute('aria-describedby');
+    dialog.setAttribute('aria-labelledby', label);
+    dialog.onkeydown = keys; dialog.oncancel = null;
+    opener.focus();
+  };
+  dialog.oncancel = e => { e.preventDefault(); if (!no.disabled) no.click(); };
+  dialog.onkeydown = e => { if (e.key === 'Enter' && e.repeat) e.preventDefault(); };
+  yes.onclick = async () => {
+    yes.disabled = no.disabled = true;
+    try { await remove(); } catch (e) {
+      if (!dialog.open) { toast(e.message, true); return; }
+      err.replaceChildren(withCode(e.message)); yes.disabled = no.disabled = false; no.focus();
+    }
+  };
+  no.focus();
+}
+
 // A blank field writes nothing, preserving an existing entry's value.
 function addEntry(table, refresh) {
   const dialog = openDialog('Add ' + table.label);
@@ -528,14 +562,11 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       item.appendChild(el('span', null, label));
       const remove = el('button', 'danger', 'Remove'); remove.disabled = !editable;
       remove.setAttribute('aria-label', 'Remove reviewer ' + label);
-      remove.onclick = async () => {
-        close(); // the question takes the editor's place: one dialog at a time
-        if (!await confirmDialog(`Remove reviewer ${label}?`, `This saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`, 'Remove', true)) return;
-        await act(remove, async () => {
+      remove.onclick = () => confirmConfigRemoval(dialog, remove, `Remove reviewer ${label}?`,
+        `This saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`, async () => {
           const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
-          toast(result.message); await refresh();
+          toast(result.message); close(); await refresh();
         });
-      };
       item.appendChild(remove); roster.appendChild(item);
     });
     dialog.insertBefore(roster, field);
@@ -553,12 +584,10 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     const d = await postJSON('/api/config', { key, unset: true, repo: preset ? repoCb.checked : s.source === 'repo' });
     toast(d.message || 'unset ' + key); close(); await refresh();
   });
-  if (removeBtn) removeBtn.onclick = async () => {
-    close(); // the question takes the editor's place: one dialog at a time
-    if (!await confirmDialog('Remove ' + table.label + " '" + entry.name + "'?", 'This removes it and all its values from ' + entryWhere + '. Values from lower layers may become visible.', 'Remove', true)) return;
-    await act(removeBtn, async () => {
+  if (removeBtn) removeBtn.onclick = () => confirmConfigRemoval(dialog, removeBtn,
+    'Remove ' + table.label + " '" + entry.name + "'?",
+    'This removes it and all its values from ' + entryWhere + '. Values from lower layers may become visible.', async () => {
       const d = await postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'});
-      toast(d.message || 'removed'); await refresh();
+      toast(d.message || 'removed'); close(); await refresh();
     });
-  };
 }
