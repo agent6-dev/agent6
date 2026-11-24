@@ -27,7 +27,6 @@ Only the `vcs` package's modules import the runner, `command.py`.
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` group
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `ChildRuntime`); output goes through the injected `Reporter`
 - **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` drives `run` and `resume` through `provider_call`.
-  `review.session` reviews a finished session.
   The panel uses `review.gate`, `review.verdict` and `review.panel`.
   `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
@@ -587,7 +586,7 @@ The web Findings card reads the same review fold as the merge guard.
 `client_git_diff.js` owns each diff request's lifetime; `client_review.js` attaches findings through the source renderer's line attributes only when both comparison trees match.
 Reviewed file links keep the panel and side, so Files reads the cited version rather than the working tree.
 
-`agent6 sessions review <id>` ([harness/review/session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review/session.py)) reviews a finished session's record: the journal folds into a digest (the task, the operator's steers, directives and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
+`agent6 sessions review <id>` ([app/review/recap.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/review/recap.py)) reviews a finished session's record: the journal folds into a digest (the task, the operator's steers, directives and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.
 
 ## Session review directive
@@ -970,7 +969,7 @@ A pass covers the final tree only when both observations and the end tree match;
 `viewmodel/cache_usage.py` matches each summary writer to its `model.result` by `model_call_id` for the receipt and run-end token summary.
 It reports ordinary worker cache use and the first input after a history rewrite separately.
 The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call, verification run or environment probe.
-`VerifyRun` in `harness/review/session.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
+`VerifyRun` in `app/review/recap.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
 
 `execution.target` owns the immutable environment evidence for an execution; `app/stamps.py` mirrors its persistence-safe `kinds.ExecutionTargetStamp` into the manifest as history, not a current-target pointer.
 The stamp retains both roots, user, HOME, effective controls, environment inheritance policy and variable names, never environment values.

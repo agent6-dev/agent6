@@ -11,6 +11,7 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6.app import role_providers
+from agent6.app.review import recap as review_recap
 from agent6.config import Config
 from agent6.harness import (
     loop,
@@ -22,7 +23,6 @@ from agent6.harness import (
 )
 from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import window as compaction_window
-from agent6.harness.review import session as review_session
 from agent6.prompts import loop as loop_prompts
 from agent6.providers import ProviderResponse
 from tests.unit import test_loop_wire_golden as golden
@@ -113,7 +113,7 @@ def test_a_summary_call_and_a_reviewer_are_never_offered_search() -> None:
     calls.call_worker("Summarize.", "c1")
     calls.call_endpoint("Summarize.", "c2", 1)
     calls.call_helper("s", "Summarize.", "c3")
-    review_session.review_digest(worker, digest="the record")
+    review_recap.review_digest(worker, digest="the record")
     assert len(worker.calls) == 4
     assert not any("web_search" in call for call in worker.calls)
 

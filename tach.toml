@@ -242,7 +242,7 @@ depends_on = [
   "agent6.vcs.git.snapshots",
   "agent6.vcs.review",
   "agent6.vcs.review_rule_reader",
-  "agent6.viewmodel",  # the run review folds a session's record with the one listing scan
+  "agent6.viewmodel",  # children and recovery read a journal with the one listing scan
 ]
 
 [[modules]]

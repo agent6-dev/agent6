@@ -19,10 +19,10 @@ import pytest
 
 from agent6 import kinds, paths
 from agent6.app import role_providers
+from agent6.app.review import recap as review_recap
 from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness.review import session as review_session
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout
@@ -106,7 +106,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     memory.record_use(layout.state_dir, session="run-other", wrote=("other",), read={})
     memory.add(layout.state_dir, "money-rounding", "Money rounds half-up on the cent.")
 
-    d = review_session.run_digest(layout)
+    d = review_recap.run_digest(layout)
 
     assert (d.session_id, d.mode, d.task) == ("run-AAAA11", "run", "fix the parser")
     assert (d.stop_reason, d.verify, d.turns) == ("finish_session", "passed", 6)
@@ -159,7 +159,7 @@ def test_digest_lists_operator_directives_in_journal_order(repo: pathlib.Path) -
             {"type": "steer.injected", "text": "Stop after the tests"},
         ],
     )
-    assert review_session.run_digest(layout).steers == (
+    assert review_recap.run_digest(layout).steers == (
         "Keep the API",
         "/task Add perimeter_rectangle",
         "/retire 0002",
@@ -202,7 +202,7 @@ def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
 
     prompts = operator_prompts.OperatorPrompts(questioner=seen, journal=sink.emit)
     prompts.ask((schema.UserQuestion(question="a question the operator saw"),))
-    text = review_session.run_digest(layout).render()
+    text = review_recap.run_digest(layout).render()
     assert "questions nobody answered (2):" in text
     assert "keep the public API?" in text and "allow the migration?" in text
     assert "a question the operator saw" not in text
@@ -223,7 +223,7 @@ def test_verify_tail_keeps_the_last_complete_lines(repo: pathlib.Path, field: st
             }
         ],
     )
-    (verify,) = review_session.run_digest(layout).verify_runs
+    (verify,) = review_recap.run_digest(layout).verify_runs
     assert len(verify.tail) <= 400
     assert verify.tail.startswith("…\n")
     assert verify.tail.endswith("2 failed, 100 passed")
@@ -240,7 +240,7 @@ def test_every_writer_of_a_fact_is_credited_not_only_the_first_and_last(repo: pa
     memory.record_use(layout.state_dir, session="run-A", wrote=("fact",), read={})
     memory.record_use(layout.state_dir, session="run-AAAA11", wrote=("fact",), read={})
     memory.record_use(layout.state_dir, session="run-C", wrote=("fact",), read={})
-    assert review_session.run_digest(layout).memory_wrote == ("fact",)
+    assert review_recap.run_digest(layout).memory_wrote == ("fact",)
 
 
 def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: pathlib.Path) -> None:
@@ -253,11 +253,11 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: pathlib.Path) -> 
         {"type": "session.stop", "reason": "no_progress", "turns": 9, "verification": "failed"}
     )
     layout = _write_session(repo, events=red)
-    d = review_session.run_digest(layout)
+    d = review_recap.run_digest(layout)
     assert (d.stop_reason, d.verify) == ("no_progress", "failed")
 
     empty = _write_session(repo, session_id="run-BBBB22", events=[])
-    d = review_session.run_digest(empty)
+    d = review_recap.run_digest(empty)
     # No stop event records a final verification.
     assert (d.stop_reason, d.verify, d.tool_calls, d.steers) == ("", "unverified", 0, ())
     assert "conversation (tail):" in d.render()
@@ -284,7 +284,7 @@ def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: pathlib.Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    d = review_session.run_digest(layout)
+    d = review_recap.run_digest(layout)
     assert (d.mode, d.verify) == ("plan", "not gated")
     assert "verify not gated" in d.render()
 
@@ -297,7 +297,7 @@ def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: pathlib.Pat
     layout = _write_session(repo)
     for i in range(120):
         memory.add(layout.state_dir, f"fact-{i:03d}", "x" * 60)
-    d = review_session.run_digest(layout)
+    d = review_recap.run_digest(layout)
     assert len(d.memory_index) <= memory.INDEX_INJECT_CAP
     assert d.memory_index.endswith(
         "... (index clipped; the rest are <name>.md files in the memory dir)"
@@ -337,7 +337,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         },
     ]
     layout = _write_session(repo, session_id="run-resumed", events=resumed)
-    d = review_session.run_digest(layout)
+    d = review_recap.run_digest(layout)
     assert d.verify == "unverified"
     assert session_log.scan_session_log(layout.logs_path).verification == "unverified"
 
@@ -351,7 +351,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         },
     ]
     layout = _write_session(repo, session_id="run-never", events=never_ran)
-    assert review_session.run_digest(layout).verify == "unverified"
+    assert review_recap.run_digest(layout).verify == "unverified"
 
     killed = [
         {"type": "session.start", "session_id": "k", "mode": "run", "user_task": "t"},
@@ -365,7 +365,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         },
     ]
     layout = _write_session(repo, session_id="run-killed", events=killed)
-    assert review_session.run_digest(layout).verify == "unverified"
+    assert review_recap.run_digest(layout).verify == "unverified"
 
     gateless = [
         {"type": "session.start", "session_id": "g", "mode": "run", "user_task": "t"},
@@ -377,13 +377,13 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         },
     ]
     layout = _write_session(repo, session_id="run-gateless", events=gateless)
-    assert review_session.run_digest(layout).verify == "not gated"
+    assert review_recap.run_digest(layout).verify == "not gated"
 
 
 def test_the_caps_are_named_not_silent(repo: pathlib.Path) -> None:
     many = [{"type": "steer.injected", "chars": 1, "text": f"steer {i}"} for i in range(25)]
     layout = _write_session(repo, events=many)
-    d = review_session.run_digest(layout)
+    d = review_recap.run_digest(layout)
     assert len(d.steers) == 20
     assert d.steers_total == 25
     assert "operator steers (20, 5 more not shown):" in d.render()
@@ -422,7 +422,7 @@ class _FakeProvider:
 
 def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     provider = _FakeProvider()
-    out = review_session.review_digest(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
+    out = review_recap.review_digest(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
     assert out.startswith("## Outcome")
     assert provider.last_user == "AGENTS.md:\n# rules\n\nRUN RECORD:\nsession x: task"
     assert "Candidate memory facts" in provider.last_system
@@ -437,10 +437,10 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
         "or the memory index already state",
     ):
         assert line in provider.last_system
-    with pytest.raises(review_session.RunReviewError, match="provider call failed"):
-        review_session.review_digest(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
-    with pytest.raises(review_session.RunReviewError, match="empty"):
-        review_session.review_digest(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
+    with pytest.raises(review_recap.RunReviewError, match="provider call failed"):
+        review_recap.review_digest(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
+    with pytest.raises(review_recap.RunReviewError, match="empty"):
+        review_recap.review_digest(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
 
 
 def _reviewer_config() -> Config:
@@ -666,7 +666,7 @@ def test_digest_names_verification_identity_and_capture_limit(repo: pathlib.Path
             }
         ],
     )
-    rendered = review_session.run_digest(layout).render()
+    rendered = review_recap.run_digest(layout).render()
     assert "observed-gate" in rendered and "tree-one" in rendered
     assert "truncated" in rendered and "capture completeness unknown" in rendered
 
@@ -685,7 +685,7 @@ def test_verify_details_stay_with_their_own_run(tmp_path: pathlib.Path) -> None:
             {"type": "verify.end", "verify_id": "second", "exit_code": 0, "command": ["true"]},
         ],
     )
-    text = review_session.run_digest(saved).render()
+    text = review_recap.run_digest(saved).render()
     assert (
         text.index("- exit 1")
         < text.index("first:")

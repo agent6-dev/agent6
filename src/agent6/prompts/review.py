@@ -5,7 +5,7 @@
 The run review (`sessions review`) reads a finished session's record; each panel reviewer
 sees the panel prompt with a `{focus}` placeholder, and a judge, the reviewer that ranks a
 task's attempts, sees the rank prompt.
-`harness.review.session`, `harness.review.verdict` and `harness.parallel_rank` own the calls.
+`app.review.recap`, `harness.review.verdict` and `harness.parallel_rank` own the calls.
 """
 
 from __future__ import annotations
