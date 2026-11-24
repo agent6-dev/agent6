@@ -112,3 +112,46 @@ Quantities are the median [minimum, maximum] from the parent's journal; cache wr
 The `id` arm used fewer parent turns and fewer output tokens: those two ranges do not overlap.
 Fresh input, cache reads and the wait overlap between the arms.
 The smoke, one run per arm and not pooled, read 19 against 14 turns and 601 against 297 output tokens.
+
+## Queue arrivals and a blocking child question
+
+Two detached runs used `chatgpt/gpt-6.2-sol` at medium, full isolation, away mode `wait` and a three-child limit.
+Each root received three operator tasks through the task queue before startup and three `/task` steers after the first child started.
+The original task IDs join `task.queued` to the final `graph.update`; the child start detail identifies the assignment.
+Sessions show and attach ran in separate CLI processes.
+Read times include polling and CLI startup, so they bound visibility from above.
+
+### Run 1
+
+| Task | Queued | Child | Report | Final task state |
+|---|---|---|---|---|
+| 0002: Choose a file | Before start | queue-p1-l1 | blue-491 | passed |
+| 0003: Ash | Before start | queue-p2-l1 | ash-497 | passed |
+| 0004: Birch | Before start | queue-p3-l1 | birch-500 | passed |
+| 0005: Cedar | During children | queue-p4-l1 | cedar-503 | passed |
+| 0006: Oak | During children | queue-p5-l1 | oak-506 | passed |
+| 0007: Missing file | During children | queue-p6-l1 | Absent | passed |
+
+From the child's question to the root journal: 1.86 s.
+`sessions show` returned `waiting · question` at +6.44 s; `attach --json` returned an unanswered blocking question at +9.35 s.
+The child received the CLI answer at +11.85 s and reported the code in blue.txt.
+
+### Run 2
+
+| Task | Queued | Child | Report | Final task state |
+|---|---|---|---|---|
+| 0002: Choose a file | Before start | queue-p1-l1 | blue-491 | passed |
+| 0003: Ash | Before start | queue-p2-l1 | ash-497 | passed |
+| 0004: Birch | Before start | queue-p3-l1 | birch-500 | passed |
+| 0005: Cedar | During children | queue-p4-l1 | cedar-503 | passed |
+| 0006: Oak | During children | queue-p5-l1 | oak-506 | passed |
+| 0007: Missing file | During children | queue-p6-l1 | Absent | passed |
+
+From the child's question to the root journal: 0.86 s.
+`sessions show` returned `waiting · question` at +6.10 s; `attach --json` returned an unanswered blocking question at +9.73 s.
+The child received the CLI answer at +12.46 s and reported the code in blue.txt.
+
+Neither run lost an ID.
+Both marked the missing file passed despite its failed report.
+Both refused the parent’s attempt to change passed to failed.
+The final summaries named that failure.
