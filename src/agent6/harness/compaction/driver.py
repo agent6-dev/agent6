@@ -374,6 +374,7 @@ def write_summary(
         ProviderInterrupted: A steer is pending.
     """
     messages = context.conversation.complete().messages
+    local = writer != "endpoint"
     sent_count = len(context.conversation) - len(replay.tail)
     fallback_reason = ""
     if writer == "worker" and context.settings.endpoint.keeps_session:
@@ -410,6 +411,7 @@ def write_summary(
                     replay.replaced,
                     request,
                     context_tokens=context.settings.helper_context_tokens,
+                    include_answers=local,
                     max_tokens=context.settings.summary_max_tokens,
                 )
                 resp = context.call_helper(

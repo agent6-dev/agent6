@@ -26,11 +26,14 @@ class Summary:
     block: dict[str, Any] | None = None
 
 
-def _transcript_lines(messages: Sequence[loop_conversation.Message]) -> list[str]:
+def _transcript_lines(
+    messages: Sequence[loop_conversation.Message], *, include_answers: bool
+) -> list[str]:
     """Render the helper's transcript without tool output, except operator answers.
 
     Args:
         messages: The history being replaced.
+        include_answers: Include answers in a local summary.
 
     Returns:
         Transcript lines in their original order.
@@ -52,7 +55,7 @@ def _transcript_lines(messages: Sequence[loop_conversation.Message]) -> list[str
             for item in message.items:
                 if isinstance(item, loop_conversation.Notice):
                     parts.append(f"[user:text] {item.text}")
-                else:
+                elif include_answers:
                     parts.extend(
                         f"[operator answer] {answer}" for answer in retention.operator_words(item)
                     )
@@ -64,6 +67,7 @@ def helper_input(
     instruction: str,
     *,
     context_tokens: int | None,
+    include_answers: bool = False,
     max_tokens: int,
 ) -> str:
     """Keep replaced text and tool inputs, dropping results and the oldest excess.
@@ -74,6 +78,7 @@ def helper_input(
         messages: The replaced history.
         instruction: The task, check-off, pins, focus and prior summary.
         context_tokens: The helper's known context window.
+        include_answers: Include answers in a local summary.
         max_tokens: The configured output cap.
 
     Returns:
@@ -84,7 +89,7 @@ def helper_input(
     """
     if context_tokens is None:
         raise provider_types.ProviderError("helper context window is unknown")
-    parts = _transcript_lines(messages)
+    parts = _transcript_lines(messages, include_answers=include_answers)
     prefix = instruction + "\n\nTRANSCRIPT (oldest first, tool output removed):\n"
     missing = "[The beginning is missing because it does not fit the helper's window.]\n"
     # Reserve message framing as well as the largest built-in reasoning output floor.

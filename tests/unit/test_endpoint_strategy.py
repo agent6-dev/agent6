@@ -387,3 +387,32 @@ def test_summary_retry_keeps_the_call_id_and_worker_clock() -> None:
         for c in provider.call.call_args_list
     )
     assert caller.counter.request_started == 42
+
+
+def test_endpoint_fallback_only_sends_the_question_to_the_helper() -> None:
+    worker, helper = (
+        fixtures.Writer(fixtures.response("")),
+        fixtures.Writer(fixtures.response("ok")),
+    )
+    ctx = fixtures.context(worker, helper, [])
+    c = ctx.conversation
+    call = c.assistant(
+        [
+            {
+                "type": "tool_use",
+                "name": "ask_user",
+                "id": "q",
+                "input": {"question": "Which parser?"},
+            }
+        ]
+    ).tool_uses[0]
+    c.results(
+        [
+            loop_conversation.ToolResultItem(
+                call.id, '{"status":"answered","answers":["private parser reference"]}', call
+            )
+        ]
+    )
+    assert driver.Endpoint().summarise_and_restart(ctx)
+    transcript = helper.calls[0]["messages"][0]["content"]
+    assert "Which parser?" in transcript and "private parser reference" not in transcript
