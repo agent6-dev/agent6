@@ -267,6 +267,13 @@ class Steering:
     ) -> str | None:
         """Route an operator verb, directive or message.
 
+        Args:
+            conversation: The run's conversation.
+            turn: The turn just completed.
+            state: The loop state.
+            text: The steer as the operator sent it, not blank.
+            heading: The notice introducing the operator's instruction.
+
         Returns:
             The verb ending the turn, or None to continue.
         """
