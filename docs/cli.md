@@ -220,7 +220,8 @@ The same start as a crontab line, which keeps the output in a file:
 
 - A start while another still runs the machine exits 1 (`machine is already running`).
 - A machine that reached a terminal state refuses a later start with exit 2.
-  With `--restart` on the line, that start [archives the ended run](state-machines.md#persistence-layout) and begins a fresh one; the flag changes nothing for a run that has not ended.
+- `--restart` [archives any stopped instance](state-machines.md#persistence-layout) and starts from the initial state.
+  Leave it out of a timer that should continue a waiting machine.
 - A `mode = "run"` agent state runs commands only with `--auto-approve` on the line or `sandbox.run_commands = "allow"` ([agent states](state-machines.md#agent)).
 - `agent6 machine status triage`, from the repository, shows the state, the spend and the next wake.
 

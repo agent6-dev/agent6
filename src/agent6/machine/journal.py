@@ -50,7 +50,7 @@ __all__ = [
     "StepEvent",
     "ToolFact",
     "WaitFact",
-    "archive_ended",
+    "archive_instance",
     "fresh_start_remedy",
     "machine_lock",
     "read_source",
@@ -671,15 +671,15 @@ def machine_lock(root: pathlib.Path) -> Generator[None]:
         os.close(fd)
 
 
-def archive_ended(root: pathlib.Path, end: MachineEnd) -> pathlib.Path:
-    """Move an ended instance out of the machines listing, named for its end time.
+def archive_instance(root: pathlib.Path, end: MachineEnd | None) -> pathlib.Path:
+    """Move a stopped instance out of the machines listing.
 
     The caller holds the instance's lock. The directory moves whole, so the archive replays
     as the instance did.
 
     Args:
         root: The instance directory under `machines/`.
-        end: The journal's terminal event.
+        end: The event whose time names the archive, or None to use the current time.
 
     Returns:
         The archive.
@@ -688,7 +688,10 @@ def archive_ended(root: pathlib.Path, end: MachineEnd) -> pathlib.Path:
         JournalError: The end time does not parse, or the directory cannot move.
     """
     try:
-        target = archive_path(root, datetime.datetime.fromisoformat(end.ts))
+        when = (
+            datetime.datetime.fromisoformat(end.ts) if end else datetime.datetime.now(datetime.UTC)
+        )
+        target = archive_path(root, when)
         root.rename(target)
     except (ValueError, OSError) as exc:
         raise JournalError(f"cannot archive {root}: {exc}") from exc

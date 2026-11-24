@@ -723,13 +723,14 @@ Sizing for long-running machines:
     - replay and recovery fold the whole journal and never read a snapshot
 - the journal has no rotation: archive or delete an instance dir when replay no longer needs it; `[budget] max_transitions` is the primary runaway guard
 
-`agent6 machine run <file> --restart` archives an ended instance and starts a fresh run:
+`agent6 machine run <file> --restart` archives a stopped instance and starts a fresh run:
 
-- the instance directory moves whole to `<state-dir>/<machine-id>.archived-<end time>`, beside `machines/`; the time is the `machine.end` event's, in UTC
+- the instance directory moves whole to `<state-dir>/<machine-id>.archived-<UTC time>`, beside `machines/`
+- the archive name uses the `machine.end` time when present and the current time otherwise
 - `machine status`, `machine replay` and the listing read `machines/` only: after a restart they show the fresh run
 - the archive keeps its journal and recorded bundle; moved into `machines/` under its archive name, it lists and replays under that name
-- an instance that has not ended (running, waiting, stopped or crashed) stays in place, and the start does what it does without the flag
-- a machine with run states restarts once HEAD holds its chain: until then the [fresh-instance refusal](#agent) names the merge and the discard, and the ended instance stays in place
+- a running machine holds its lock and refuses the restart
+- a machine restarts once HEAD holds its chain: until then the [fresh-instance refusal](#agent) names the merge and the discard, and the instance stays in place
 
 Keep archives outside `machines/`; renaming an instance inside it still lists the renamed directory.
 Moving the directory by hand preserves its journal and recorded bundle, but does not remove a run-mode machine's git chain; a fresh run names any chain work that must be merged or discarded.
@@ -784,7 +785,7 @@ These [job states](architecture.md#jail-job-ownership) are separate from the wor
 | `agent6 machine check <file>`             | validate: the `[config]` overlay and every state's `config` against the config schema, their refusals and the sandbox bound; parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; warnings for script findings (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; pyrefly with its `strict` preset and no config file; both in a no-network jail); no execution, no network |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` validates; the bundle's `scripts/**/*_test.py` mock tests in a no-network jail (`full` `sandbox.isolation` only: elsewhere they count as not run on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | machine diagram; `--format mermaid` (default): `stateDiagram-v2`; `--format dot`: Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the Graphviz/`xdot` ecosystem; both pure renders of the same validated graph, reachability computed at load |
-| `agent6 machine run <file> [--exit-on-wait] [--restart] [--auto-approve\|--no-commands] [--disable-sandbox]` | machine start or resume; lock acquired, loop driven; an ended instance refused (exit 2); `--exit-on-wait`: next wake persisted, exit 0 (status `waiting`) at the first not-ready `wait`, resume by an external scheduler ([a systemd timer or cron](cli.md#scheduled-runs)); `--restart`: an ended instance [archived](#persistence-layout) and a fresh run started, no effect on any other instance; approval and sandbox flags: same purpose and refusals as the run flags |
+| `agent6 machine run <file> [--exit-on-wait] [--restart] [--auto-approve\|--no-commands] [--disable-sandbox]` | machine start or resume; lock acquired, loop driven; an ended instance refused (exit 2); `--exit-on-wait`: next wake persisted, exit 0 (status `waiting`) at the first not-ready `wait`, resume by an external scheduler ([a systemd timer or cron](cli.md#scheduled-runs)); `--restart`: any stopped instance [archived](#persistence-layout) and a fresh run started; approval and sandbox flags: same purpose and refusals as the run flags |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake; read-only |
 | `agent6 machine` (`machine list`)         | repo's machines: each instance's status and current state joined with its authored `.asm.toml`, then authored files with no instance run; spec validity per file; read-only |
 | `agent6 attach <id>`                       | live instance watcher, same command as for a run; state overview and current state, transitions as they land, active agent state's reasoning from its per-state `logs.jsonl`; read-only, Ctrl-C to stop; `agent6 attach --tui <id>`: watch screen, steer (`s`) for a running agent state as on the web machine page |

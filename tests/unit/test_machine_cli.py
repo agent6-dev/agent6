@@ -868,7 +868,7 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
     assert machine_state.machine_instance_dirs(state_dir) == [ghost]
     ghost.rename(root)
 
-    # The drift refusal prints the command: `--restart` moves only an ended instance.
+    # The drift refusal prints a shell-quoted command even when the state path has spaces.
     f.write_text(WAITER_DELAYED.replace('reason = "ticked"', 'reason = "changed"'), "utf-8")
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 2
     err = capsys.readouterr().err
@@ -886,6 +886,15 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
 
 
+def _committed_waiter(repo: pathlib.Path) -> pathlib.Path:
+    """Write the waiting machine as a clean bundle in its own repository."""
+    _git_init(repo)
+    f = _write_machine(repo)
+    subprocess.run(["git", "add", f.name], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "waiter"], cwd=repo, check=True)
+    return f
+
+
 def test_restart_archives_an_ended_run_and_starts_fresh(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -896,7 +905,7 @@ def test_restart_archives_an_ended_run_and_starts_fresh(
     from agent6.viewmodel.machine import state as machine_state
 
     monkeypatch.chdir(tmp_path)
-    f = _write_machine(tmp_path)
+    f = _committed_waiter(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     assert main(["machine", "poke", "waiter_delayed"]) == 0
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -924,12 +933,16 @@ def test_restart_archives_an_ended_run_and_starts_fresh(
     assert machine_state.machine_instance_dirs(state_dir) == [root]
 
 
-def test_restart_resumes_a_run_that_has_not_ended(
+def test_restart_archives_a_stopped_wait_and_starts_fresh(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--restart` leaves a waiting machine's instance in place, and the run resumes."""
+    """A plain start keeps the wait; restart archives it intact and arms a new one."""
+    import datetime
+
+    from agent6.machine import machine_lock
+
     monkeypatch.chdir(tmp_path)
-    f = _write_machine(tmp_path)
+    f = _committed_waiter(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
@@ -937,13 +950,56 @@ def test_restart_resumes_a_run_that_has_not_ended(
     armed = MachineJournal(root).read_pending_wait()
     capsys.readouterr()
 
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert MachineJournal(root).read() == begun
+    assert MachineJournal(root).read_pending_wait() == armed
+    with machine_lock(root):
+        assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 1
+    assert "already running" in capsys.readouterr().err
+    assert not list(state_dir.glob("waiter_delayed.archived-*"))
+
+    before = datetime.datetime.now(datetime.UTC)
     assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
 
     captured = capsys.readouterr()
     assert "WAITING" in captured.out
+    (archive,) = state_dir.glob("waiter_delayed.archived-*")
+    stamp = archive.name.split("archived-")[1]
+    assert (
+        before.strftime("%Y%m%dT%H%M%S%fZ")
+        <= stamp
+        <= datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    )
+    assert str(archive) in captured.err
+    assert MachineJournal(archive).read() == begun
+    assert MachineJournal(archive).read_pending_wait() == armed
+    assert MachineJournal(root).read() != begun
+    assert MachineJournal(root).read_pending_wait() != armed
+
+
+def test_restart_checks_the_previous_branch_even_without_a_run_state(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Removing a run state from the bundle cannot discard its unmerged branch."""
+    monkeypatch.chdir(tmp_path)
+    f = _committed_waiter(tmp_path)
+    args = ["machine", "run", str(f), "--exit-on-wait"]
+    assert main(args) == 0
+    state_dir = paths.state_dir(tmp_path)
+    root = state_dir / "machines" / "waiter_delayed"
+    old = MachineJournal(root).read()
+    work = subprocess.run(
+        ["git", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "work"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    branch = "agent6/machine-waiter_delayed"
+    subprocess.run(["git", "update-ref", f"refs/heads/{branch}", work], check=True)
+    assert main([*args, "--restart"]) == 2
+    assert f"git merge {branch}" in capsys.readouterr().err
+    assert MachineJournal(root).read() == old
     assert not list(state_dir.glob("waiter_delayed.archived-*"))
-    assert MachineJournal(root).read() == begun
-    assert MachineJournal(root).read_pending_wait() == armed
 
 
 def test_poke_drops_signal_for_waiting_machine(

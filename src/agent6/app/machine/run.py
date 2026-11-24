@@ -311,19 +311,14 @@ def _archive_for_restart(
     cwd: pathlib.Path,
     machine_id: str,
     reporter: app_reporter.Reporter,
-    *,
-    has_chain: bool,
 ) -> int | None:
-    """Archive the machine's instance when its last run ended, for `--restart`.
-
-    An instance that has not ended stays in place.
+    """Archive a stopped instance for `--restart`.
 
     Args:
         root: The instance directory.
         cwd: The repository.
         machine_id: The machine.
         reporter: Receives the archive's path, or the refusal.
-        has_chain: The machine has run states, whose commits ride its git chain.
 
     Returns:
         None to go on to the run. Else the exit code: 2 when the chain holds unmerged work,
@@ -334,18 +329,15 @@ def _archive_for_restart(
         return None
     try:
         with machine_lock(root):
-            end = journal.end_event()
-            if end is None:
-                return None
-            unmerged = _unmerged_chain(cwd, machine_id) if has_chain else None
+            unmerged = _unmerged_chain(cwd, machine_id)
             if unmerged is not None:
-                reporter.refuse(f"{machine_id} ended, but {unmerged}")
+                reporter.refuse(f"cannot restart {machine_id}: {unmerged}")
                 return 2
-            archive = machine_journal.archive_ended(root, end)
+            archive = machine_journal.archive_instance(root, journal.end_event())
     except JournalError as exc:
         reporter.error(str(exc))
         return 1
-    reporter.note(f"archived the ended run to {archive}")
+    reporter.note(f"archived the previous run to {archive}")
     return None
 
 
@@ -405,7 +397,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter: The two output channels.
         config_paths: The `--config` files, part of the operator's ceiling.
         exit_on_wait: Return at the first wait state instead of blocking through it.
-        restart: Archive an ended instance and start a fresh run; no effect on any other.
+        restart: Archive the stopped instance, if any, and start a fresh run.
         disable_sandbox: Run unconfined.
         auto_approve: Approve every run_command in the agent states.
         no_commands: Withhold the command tools from the agent states.
@@ -488,7 +480,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         )
     root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
     if restart:
-        code = _archive_for_restart(root, cwd, spec.machine, reporter, has_chain=has_run_agent)
+        code = _archive_for_restart(root, cwd, spec.machine, reporter)
         if code is not None:
             return code
     base_commit = None
