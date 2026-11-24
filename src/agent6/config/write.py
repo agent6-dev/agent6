@@ -1112,7 +1112,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "anthropic": {"backend": "anthropic"},
     "chatgpt": {"backend": "chatgpt"},
     "claude": {"backend": "claude_code"},
-    "openai": {"backend": "openai", "base_url": "https://api.openai.com/v1"},
+    "openai": {"backend": "responses", "base_url": "https://api.openai.com/v1"},
     "openrouter": {"backend": "openai", "base_url": "https://openrouter.ai/api/v1"},
     "ollama": {"backend": "openai", "base_url": "http://localhost:11434/v1"},
 }

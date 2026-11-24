@@ -238,6 +238,7 @@ extra_query = { "api-version" = "2024-06-01" }
 ### Responses API endpoint (`backend = "responses"`)
 
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
+`agent6 connect openai` writes this backend with `base_url = "https://api.openai.com/v1"`.
 A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it.
 The [budget](#budget) prices its tokens from its own listing or the provider named by `price_from`.
 

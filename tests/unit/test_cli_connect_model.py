@@ -74,6 +74,17 @@ def test_connect_stores_key_and_provider_and_never_execs(
     assert configured["models"] == {"default": {"model": "anthropic/claude-x"}}
 
 
+def test_connect_openai_writes_the_responses_endpoint(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The OpenAI preset uses the Responses tools and reasoning wire."""
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
+    _scripted_input(monkeypatch, "")
+    assert main(["connect", "openai"]) == 0
+    entry = tomllib.loads(paths.global_config_path().read_text())["providers"]["openai"]
+    assert entry == {"backend": "responses", "base_url": "https://api.openai.com/v1"}
+
+
 def test_connect_preserves_hand_edited_provider_keys(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
