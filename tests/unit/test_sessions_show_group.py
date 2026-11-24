@@ -942,6 +942,23 @@ def test_cli_child_roster_json(
     )
 
 
+@pytest.mark.parametrize("command", ["show", "receipt"])
+def test_a_queued_steer_stays_on_its_childs_status_line(
+    child_roster: pathlib.Path, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """A line break in a steer cannot start a second row on the roster or receipt."""
+    sid = "co-p2-l1"
+    assert ipc.submit_steer(
+        child_roster.parent / sid, "Read the tests.\nPlease check the documentation."
+    )
+    assert main(["sessions", command, "co"]) == 0
+    line = next(line for line in capsys.readouterr().out.splitlines() if sid in line)
+    assert (
+        "running · steer queued, not yet delivered: Read the tests. Please check the documentation."
+        in line
+    )
+
+
 def test_steer_and_stop_address_only_the_named_child(child_roster: pathlib.Path) -> None:
     """An explicit child id never steers or stops the parent."""
     sid = "co-p2-l1"

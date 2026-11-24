@@ -436,7 +436,7 @@ def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
         if child.outcome == "retained" and child.imported_ref:
             what += f" on {child.imported_ref}"
         if child.error:
-            what += f": {child.error}"
+            what += f": {' '.join(child.error.split())}"
         spend = (
             f", {budget.format_usd(child.spend_usd, partial=child.usd_partial)}"
             if child.settled

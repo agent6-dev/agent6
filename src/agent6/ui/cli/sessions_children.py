@@ -121,6 +121,7 @@ def read_children(
                     else listing.summarize_session_dir(child_dir, branch_tips=tips)
                 )
                 legacy = listing.summary_row(summary, winner=bool(placement and placement.winner))
+                legacy["status_label"] = " ".join(legacy["status_label"].split())
             if listed_child is not None:
                 nested = read_children(child_dir, listed=listed_child)
         rows.append(ChildRow(view, legacy, placement, nested))

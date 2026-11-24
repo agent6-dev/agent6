@@ -33,7 +33,7 @@ class ChildView:
         model: Its selector, None for the worker's own settings.
         route: The `provider/model` its manifest records; "" when it never started.
         status: The child's own session or launch status. Read `outcome` for a parent merge.
-        status_label: The child's status and reason, followed by the parent's outcome when known.
+        status_label: One line with the child's status and reason, then any parent outcome.
         outcome: The recorded dispatch outcome, including `stopped`, `ranked` and `retained`.
             An empty string means the parent has recorded no outcome.
         parent_merge_sha: The merge commit on the parent's chain, "" when none.
@@ -82,7 +82,7 @@ class ChildView:
     def with_status(self, word: str, reason: format.StatusReason = "") -> ChildView:
         """Return the row with its session or launch status and the reason in words."""
         return dataclasses.replace(
-            self, status=word, status_label=format.status_label(word, reason)
+            self, status=word, status_label=" ".join(format.status_label(word, reason).split())
         )
 
     @property
@@ -338,7 +338,7 @@ def _recorded_child(
             label += f": {merge.detail}"
     return dataclasses.replace(
         row,
-        status_label=label,
+        status_label=" ".join(label.split()),
         outcome=merge.status,
         imported_ref=merge.branch,
         parent_merge_sha=merge.sha,
