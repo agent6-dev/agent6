@@ -558,7 +558,10 @@ def fetch_models_live(
         return None
     except (httpx2.HTTPError, ValueError, OSError, provider_types.ProviderError) as exc:
         if on_error is not None:
-            on_error(f"{provider_name} model listing: {exc}")
+            reason = (
+                str(exc) if isinstance(exc, provider_types.ProviderError) else type(exc).__name__
+            )
+            on_error(f"{provider_name} model listing: {reason}")
         return None
     if not listing.models:
         return None

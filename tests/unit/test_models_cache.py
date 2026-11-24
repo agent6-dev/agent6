@@ -555,3 +555,17 @@ def test_review_reviewers_resolve_their_own_modality_facts(
     assert worker.image == "unsupported"
     assert capability.image == "supported"
     assert capability.route.spec == "p/vision"
+
+
+def test_model_listing_transport_failure_does_not_print_wire_text() -> None:
+    """A protocol exception may include a malformed status line carrying the bearer."""
+    key = "stand-in-listing-bearer"
+    entry = OpenAIProviderEntry(backend="openai", base_url="http://localhost:1/v1")
+    notices: list[str] = []
+    with mock.patch.object(
+        transport,
+        "http_request",
+        side_effect=httpx2.RemoteProtocolError(f"illegal status line: {key}"),
+    ):
+        assert models_cache.fetch_models_live("work", entry, key, on_error=notices.append) is None
+    assert len(notices) == 1 and key not in notices[0] and "RemoteProtocolError" in notices[0]
