@@ -12,6 +12,8 @@ import hashlib
 import re
 from collections.abc import Sequence
 
+from agent6 import budget
+
 # No-progress guard (run mode): consecutive verify failures sharing one normalized signature.
 # A green verify or a different failure resets the streak (evidence: bench/coreagent/FINDINGS.md).
 NO_PROGRESS_NUDGE_AFTER = 4
@@ -247,6 +249,40 @@ RUN_BUDGET_NUDGE_GATELESS = (
     "[harness budget] Under a quarter of the budget remains; the loop halts"
     " when a cap is crossed. finish_session ends the run."
 )
+
+# The budget line: what the execution has used of each cap, read before each worker call.
+BUDGET_LINE_PREFIX = "[harness budget] this execution: "
+
+
+def budget_line(snap: budget.BudgetSnapshot | None, *, turn: int, max_turns: int) -> str:
+    """Return the budget line: each capped meter as used/cap, or "" when nothing is capped.
+
+    A cap of 0 refuses its ledger's first call, so that ledger holds no reading to state.
+
+    Args:
+        snap: The tracker's counters; None for an execution with no tracker.
+        turn: The turn about to call, counted from the execution's first.
+        max_turns: The execution's turn cap; -1 for none.
+
+    Returns:
+        The line; dollars and fallback tokens include the running children's, as the caps count.
+    """
+    meters: list[str] = []
+    if snap is not None:
+        if snap.max_plan_points > 0:
+            meters.append(f"plan moved={snap.plan_observed_points:g}/{snap.max_plan_points:g}pt")
+        if snap.max_usd > 0:
+            used = budget.format_usd(
+                snap.usd_total + snap.usd_running_children, partial=snap.usd_partial
+            )
+            meters.append(f"metered={used}/{budget.format_usd(snap.max_usd)}")
+        if snap.max_tokens_fallback > 0:
+            used_tokens = snap.unmetered_tokens + snap.tokens_running_children
+            meters.append(f"fallback tokens={used_tokens}/{snap.max_tokens_fallback}")
+    if max_turns >= 0:
+        meters.append(f"turn={turn}/{max_turns}")
+    return BUDGET_LINE_PREFIX + "; ".join(meters) if meters else ""
+
 
 # plan.md on disk is the plan; the planner's conversation only holds a copy.
 # The loop re-reads the file each turn and prepends this header when it differs from the last shown.

@@ -447,6 +447,8 @@ When a skill must apply, use `always`, `/name`, or `--skill`.
 Hard stops; on hit the run ends (exit 3) and is resumable with a fresh budget.
 Every call is bounded in exactly one currency: priceable calls (reported cost, else cached price × tokens) count against `max_usd`; a call carrying a plan-usage reading counts percentage points against `max_plan_points`; the rest count input+output tokens against `max_tokens_fallback`.
 All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
+Before each model call, the worker reads what the execution has used of each cap above `0`, when a figure changed: `[harness budget] this execution: plan moved=8/95pt; metered=$0.42/$10.00; fallback tokens=600/2000000; turn=3/20`.
+`turn` counts against `harness.max_turns`.
 
 <!-- config-table: budget -->
 

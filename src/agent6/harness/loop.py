@@ -757,7 +757,10 @@ class Harness:
             loop_resume.report_cold_start(
                 self, state, action, before - compaction_window.context_chars(conversation)
             )
-        if self.contract is not None:
+        if self.contract is None:
+            # No roll follows the line: a second roll would drop the previous call's cache mark.
+            self._show_budget(conversation, ctx)
+        else:
             # Every reviewer request gets this notice, regardless of compaction.
             conversation.notice(
                 review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
@@ -825,6 +828,25 @@ class Harness:
             )
         return True
 
+    def _show_budget(
+        self, conversation: loop_conversation.Conversation, ctx: advice.TurnContext
+    ) -> None:
+        """Show the worker what the execution has used of each cap, when the line changed.
+
+        The history holds the last line shown, so a line a restart replaced shows again.
+
+        Args:
+            conversation: The conversation the line enters.
+            ctx: This turn's context.
+        """
+        line = nudges.budget_line(
+            self.budget.snapshot() if self.budget is not None else None,
+            turn=ctx.turn - ctx.execution_start + 1,
+            max_turns=self.max_turns,
+        )
+        if line and conversation.latest_notice(nudges.BUDGET_LINE_PREFIX) != line:
+            conversation.notice(line)
+
     def _turn_before_call(
         self,
         conversation: loop_conversation.Conversation,
@@ -833,7 +855,7 @@ class Harness:
     ) -> None:
         """Add the operator's queued tasks, the focus banner, then the before-call advice.
 
-        The advice comes last so a finish directive is the most recent message.
+        The advice comes last so a finish directive follows the focus banner.
 
         Args:
             conversation: The conversation the notices enter.

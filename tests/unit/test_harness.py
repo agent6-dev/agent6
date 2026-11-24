@@ -492,6 +492,12 @@ def _tool_resp(
     )
 
 
+def _turn_input(messages: list[dict[str, Any]]) -> str:
+    """Render what a call's messages add after the model's last reply: results, then notices."""
+    replies = [i for i, m in enumerate(messages) if m["role"] == "assistant"]
+    return str(messages[replies[-1] + 1 :] if replies else messages)
+
+
 # --- ProviderCaller -------------------------------------------------------
 
 
@@ -974,7 +980,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             self.calls.append(messages)
             if len(self.calls) == 1:
                 return _tool_resp("run_verify_command")
-            rendered = str(messages[-1])
+            rendered = _turn_input(messages)
             self.saw_metric_feedback = self.saw_metric_feedback or (
                 "[harness metric]" in rendered
                 and "score=42" in rendered
@@ -2223,7 +2229,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            rendered = str(kwargs["messages"][-1])
+            rendered = _turn_input(kwargs["messages"])
             if "[harness plateau]" in rendered:
                 self.saw_plateau_nudge = True
                 return _tool_resp("finish_session", {"summary": "pivoted"}, tool_id="fin")
@@ -2321,7 +2327,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if "[harness plateau]" in str(kwargs["messages"][-1]):
+            if "[harness plateau]" in _turn_input(kwargs["messages"]):
                 self.saw_final_nudge = True
             # Vary the call each turn so the repeat guard (10 identical calls) stays out of the way.
             return _tool_resp(
@@ -2425,7 +2431,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: pathlib.P
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if nudges.PLAN_BUDGET_NUDGE[:24] in _turn_input(kwargs["messages"]):
                 self.nudged_on.append(self.calls)
             # never finish on our own -> the loop must force the issue
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
@@ -2477,7 +2483,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if nudges.PLAN_BUDGET_NUDGE[:24] in _turn_input(kwargs["messages"]):
                 self.nudged_on.append(self.calls)
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
@@ -2527,7 +2533,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.RUN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if nudges.RUN_BUDGET_NUDGE[:24] in _turn_input(kwargs["messages"]):
                 self.nudged_on.append(self.calls)
             return _tool_resp("list_dir", {"path": "."}, tool_id=f"l-{self.calls}")
 
@@ -2568,7 +2574,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if "[harness settled]" in str(kwargs["messages"][-1]):
+            if "[harness settled]" in _turn_input(kwargs["messages"]):
                 self.saw_nudge = True
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")  # -> verify passes
@@ -2779,7 +2785,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if "[harness settled]" in str(kwargs["messages"][-1]):
+            if "[harness settled]" in _turn_input(kwargs["messages"]):
                 self.saw_nudge = True
             if self.calls >= 6:
                 return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
@@ -2992,7 +2998,7 @@ def test_a_batch_count_on_the_score_line_cannot_end_a_plateau_with_budget_left(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            rendered = str(kwargs["messages"][-1])
+            rendered = _turn_input(kwargs["messages"])
             if "[harness plateau]" in rendered:
                 self.plateau_nudges_seen += 1
             return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
@@ -3090,8 +3096,8 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            rendered = str(kwargs["messages"][-1])
-            if "[harness budget]" in rendered:
+            rendered = _turn_input(kwargs["messages"])
+            if metric_rules.METRIC_FINISH_NUDGE in rendered:
                 self.finish_nudges_seen += 1
             # Vary the summary so the loop-guard repeat detector stays quiet.
             return _tool_resp(
@@ -3167,8 +3173,8 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            rendered = str(kwargs["messages"][-1])
-            if "[harness budget]" in rendered:
+            rendered = _turn_input(kwargs["messages"])
+            if metric_rules.METRIC_FINISH_NUDGE in rendered:
                 self.finish_nudges_seen += 1
             return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"finish-{self.calls}")
 
@@ -3322,8 +3328,8 @@ def test_only_a_typed_target_allows_an_early_finish(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            rendered = str(kwargs["messages"][-1])
-            if "[harness budget]" in rendered:
+            rendered = _turn_input(kwargs["messages"])
+            if metric_rules.METRIC_FINISH_NUDGE in rendered:
                 self.finish_nudges_seen += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
@@ -5800,12 +5806,8 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.turns += 1
-            # After the nudge, the last user message carries _QUESTION_NUDGE.
-            msgs = kwargs.get("messages", [])
-            last = msgs[-1] if msgs else {}
-            blocks = last.get("content", []) if isinstance(last, dict) else []
-            text = " ".join(b.get("text", "") for b in blocks if isinstance(b, dict))
-            if nudges.QUESTION_NUDGE in text:
+            # After the nudge, the turn's input carries _QUESTION_NUDGE.
+            if nudges.QUESTION_NUDGE in _turn_input(kwargs["messages"]):
                 self.saw_nudge = True
                 return _tool_resp("ask_user", {"questions": [{"question": "A?"}]}, tool_id="q1")
             if self.turns == 1:
@@ -5888,7 +5890,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            last = str(kwargs["messages"][-1])
+            last = _turn_input(kwargs["messages"])
             if nudges.NO_PROGRESS_NUDGE[:28] in last:
                 self.nudges += 1
             if nudges.NO_PROGRESS_ESCALATION[:28] in last:
@@ -5978,7 +5980,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
+            if nudges.NO_PROGRESS_NUDGE[:28] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
             if self.calls >= 20:
                 return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
@@ -6148,7 +6150,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
+            if nudges.SILENT_NO_WORK_NUDGE[:22] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
             return _resp("Here is my analysis of the problem.")
 
@@ -6209,7 +6211,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
+            if nudges.SILENT_NO_WORK_NUDGE[:22] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
             if self.calls == 1:
                 return _tool_resp(
@@ -6279,7 +6281,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
+            if nudges.NO_PROGRESS_NUDGE[:28] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
             if self.calls >= 18:
                 return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
@@ -6461,7 +6463,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            last = str(kwargs["messages"][-1])
+            last = _turn_input(kwargs["messages"])
             if nudges.TOOL_ERROR_NUDGE[:26] in last:
                 self.nudges += 1
             if nudges.TOOL_ERROR_ESCALATION[:26] in last:
@@ -6542,7 +6544,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            last = str(kwargs["messages"][-1])
+            last = _turn_input(kwargs["messages"])
             if nudges.TOOL_DENIED_NUDGE[:30] in last:
                 self.denial_nudges += 1
             if nudges.TOOL_ERROR_NUDGE[:26] in last:
@@ -6633,7 +6635,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if nudges.TOOL_ERROR_NUDGE[:26] in str(kwargs["messages"][-1]):
+            if nudges.TOOL_ERROR_NUDGE[:26] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
             if self.calls >= 12:
                 return _tool_resp("finish_session", {"summary": "ok"}, tool_id="f")
@@ -6828,8 +6830,8 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if "sandbox-\n" in str(kwargs["messages"][-1]) or "reachability" in str(
-                kwargs["messages"][-1]
+            if any(
+                word in _turn_input(kwargs["messages"]) for word in ("sandbox-\n", "reachability")
             ):
                 self.reach_hits += 1
             return _tool_resp(
@@ -7203,7 +7205,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if "verify command was adopted" in str(kwargs["messages"][-1]):
+            if "verify command was adopted" in _turn_input(kwargs["messages"]):
                 self.adoption_notices += 1
             if self.calls == 1:
                 return _tool_resp(
@@ -7291,7 +7293,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if "verify command was adopted" in str(kwargs["messages"][-1]):
+            if "verify command was adopted" in _turn_input(kwargs["messages"]):
                 self.adoption_notices += 1
             if self.calls == 1:
                 return _tool_resp(
@@ -7349,7 +7351,7 @@ def _run_command_provider(calls_before_idle: int) -> Any:
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if "the sandbox cannot execute it" in str(kwargs["messages"][-1]):
+            if "the sandbox cannot execute it" in _turn_input(kwargs["messages"]):
                 self.reachability_notes += 1
             if self.calls <= calls_before_idle:
                 return _tool_resp(

@@ -74,7 +74,8 @@ def test_parallel_prompt_streams_the_child_before_its_permission_is_answered(
             tools = {t["function"]["name"] for t in calls[0]["tools"]}
             assert not tools.intersection({"parallel", "steer_child", "merge_child"})
             assert not (repo / "not-approved").exists()
-            assert "run_command not approved" in calls[-1]["messages"][-1]["content"]
+            denied = [m for m in calls[-1]["messages"] if m["role"] == "tool"][-1]
+            assert "run_command not approved" in denied["content"]
         finally:
             wire.close()
 

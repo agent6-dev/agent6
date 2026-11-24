@@ -399,6 +399,22 @@ class Conversation:
             self.notice(text, origin="plan")
         return True
 
+    def latest_notice(self, prefix: str) -> str | None:
+        """Return the newest notice starting with the prefix, as far as the history still holds it.
+
+        Args:
+            prefix: The notice's leading words.
+
+        Returns:
+            The notice's text, or None when a restart replaced it or none was shown.
+        """
+        for message in reversed(self._messages):
+            if isinstance(message, UserMessage):
+                for item in reversed(message.items):
+                    if isinstance(item, Notice) and item.text.startswith(prefix):
+                        return item.text
+        return None
+
     @property
     def initiator(self) -> str:
         """Who the next call answers: `user` when operator text arrived since the last reply.
