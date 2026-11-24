@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6.app.machine import summarize_machine_file
+from agent6.app.machine import bundle
 
 _VALID = """
 machine = "lint-and-test"
@@ -32,7 +32,7 @@ def test_an_unparsable_file_claims_no_name(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "lint-and-test.asm.toml"
     path.write_text("this is not toml {{{", encoding="utf-8")
 
-    row = summarize_machine_file(path)
+    row = bundle.summarize_machine_file(path)
     assert row.spec == "invalid"
     assert row.states == "-"
     assert row.name == "-", f"invented a name: {row.name!r}"
@@ -43,7 +43,7 @@ def test_a_valid_file_shows_its_declared_name(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "some-other-filename.asm.toml"
     path.write_text(_VALID, encoding="utf-8")
 
-    row = summarize_machine_file(path)
+    row = bundle.summarize_machine_file(path)
     assert row.name == "lint-and-test"
     assert row.spec != "invalid"
 
@@ -73,6 +73,6 @@ reason = "r"
 """,
         encoding="utf-8",
     )
-    row = summarize_machine_file(f)
+    row = bundle.summarize_machine_file(f)
     assert row.name == "runner"
     assert row.spec != "valid" and "issue" in row.spec

@@ -12,7 +12,7 @@ import tomllib
 
 from agent6 import errors, paths, portable
 from agent6.app import confine
-from agent6.app.machine import config_widening
+from agent6.app.machine import state_configs
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, notices, write
 from agent6.machine import (
     MachineError,
@@ -290,7 +290,7 @@ def _overlay_problems(
     operator = layer.load_effective(cwd, config_paths).config
     machine = layer.load_effective_with_overlay(cwd, overlay, explicit_paths=config_paths).config
     try:
-        return config_widening(
+        return state_configs.config_widening(
             operator,
             detect.resolve_isolation(operator.sandbox.isolation, env),
             machine,

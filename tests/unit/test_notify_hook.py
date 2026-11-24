@@ -10,7 +10,7 @@ import pathlib
 import pytest
 
 from agent6.app import notify_hook, reporter
-from agent6.app.machine import build_machine_notify_hook
+from agent6.app.machine import host_preflight
 from agent6.config import Config, NotifyConfig, load_config
 
 
@@ -52,7 +52,7 @@ def test_both_callers_run_the_same_hook(
     argv = ("sh", "-c", "echo HOOK_STDOUT; exit 3")
     _end(NotifyConfig(on_event=argv, timeout_s=5.0), tmp_path)
     cfg = Config.model_validate({"notify": {"on_event": list(argv)}})
-    fire = build_machine_notify_hook(cfg, "machine-1", tmp_path)
+    fire = host_preflight.build_machine_notify_hook(cfg, "machine-1", tmp_path)
     assert fire is not None
     fire("end", "done", "", "ok")
 
@@ -109,7 +109,7 @@ def test_machine_notify_hook_fires_with_env(tmp_path: pathlib.Path) -> None:
     """A machine's notify and end carry the event, message and level plus the machine's facts."""
     out = tmp_path / "machine-notify.json"
     cfg = _config(tmp_path, _DUMP_AGENT6_VARS, out)
-    hook = build_machine_notify_hook(cfg, "mymachine", tmp_path / "inst")
+    hook = host_preflight.build_machine_notify_hook(cfg, "mymachine", tmp_path / "inst")
     assert hook is not None
     hook("notify", "poll", "attention needed", "warn")
     assert json.loads(out.read_text(encoding="utf-8")) == {
@@ -133,7 +133,7 @@ def test_machine_notify_hook_nonzero_exit_is_reported(
     Notifications silently stopped arriving. The exit is named on stderr.
     """
     cfg = _config(tmp_path, "raise SystemExit(3)", tmp_path / "unused")
-    hook = build_machine_notify_hook(cfg, "m", tmp_path / "inst")
+    hook = host_preflight.build_machine_notify_hook(cfg, "m", tmp_path / "inst")
     assert hook is not None
     hook("notify", "poll", "msg", "warn")
     assert "notify.on_event exited 3" in capsys.readouterr().err
@@ -145,7 +145,7 @@ def test_machine_notify_hook_none_when_unconfigured(tmp_path: pathlib.Path) -> N
     )
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(body, encoding="utf-8")
-    assert build_machine_notify_hook(load_config(cfg_path), "m", tmp_path) is None
+    assert host_preflight.build_machine_notify_hook(load_config(cfg_path), "m", tmp_path) is None
 
 
 def test_notify_in_config_loads(tmp_path: pathlib.Path) -> None:
@@ -251,7 +251,9 @@ def test_machine_notify_hook_env_carries_no_secrets(
         "'id': os.environ['AGENT6_MACHINE_ID']"
         "}, open(sys.argv[1], 'w'))"
     )
-    hook = build_machine_notify_hook(_config(tmp_path, script, out), "m1", tmp_path / "inst")
+    hook = host_preflight.build_machine_notify_hook(
+        _config(tmp_path, script, out), "m1", tmp_path / "inst"
+    )
     assert hook is not None
     hook("notify", "poll", "msg", "info")
     assert json.loads(out.read_text(encoding="utf-8")) == {"key": None, "path": True, "id": "m1"}

@@ -16,16 +16,7 @@ import pytest
 
 from agent6 import kinds, paths
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import (
-    ConfigWidenedError,
-    StateConfig,
-    agent,
-    config_widening,
-    machine_protect_paths,
-    resolve_configs,
-    run,
-    state_configs,
-)
+from agent6.app.machine import agent, host_preflight, run, state_configs
 from agent6.config import Config, ConfigError, SandboxConfig
 from agent6.machine import AgentExecResult, MachineError, load_machine
 from agent6.sandbox import detect, jail
@@ -191,7 +182,7 @@ def _cfg(**sandbox: Any) -> Config:
 
 
 def _widening(operator: Config, state: Config, isolation: kinds.IsolationLevel = "full") -> str:
-    return "; ".join(config_widening(operator, isolation, state, isolation).values())
+    return "; ".join(state_configs.config_widening(operator, isolation, state, isolation).values())
 
 
 @pytest.fixture
@@ -356,7 +347,7 @@ def test_a_state_table_cannot_select_a_preset(
         )
     )
     with pytest.raises(ConfigError, match="preset"):
-        resolve_configs(spec, tmp_path, detect.probed_environment())
+        state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
 
 
 def test_state_cap_is_not_a_field_of_an_agent_state(tmp_path: pathlib.Path) -> None:
@@ -375,7 +366,7 @@ def test_machine_cannot_raise_an_operator_budget_cap(
     _operator(OPERATOR + f"\n[budget]\n{key} = 3\n")
     spec = load_machine(_write(tmp_path, MACHINE + f"\n[{where}.budget]\n{key} = -1\n"))
     with pytest.raises(ConfigError, match=rf"budget\.{key} = -1.*wider than your config's 3"):
-        resolve_configs(spec, tmp_path, detect.probed_environment())
+        state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
 
 
 # --- the bound, key by key --------------------------------------------------------------------
@@ -556,18 +547,20 @@ def test_a_path_is_compared_by_where_it_really_is(tmp_path: pathlib.Path) -> Non
 
 def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:
     op, st = _cfg(isolation="full"), _cfg(isolation="auto")
-    assert config_widening(op, "full", st, "full") == {}
-    assert "sandbox.isolation" in config_widening(op, "full", st, "partial")
-    assert "sandbox.isolation" in config_widening(_cfg(), "full", _cfg(isolation="none"), "none")
+    assert state_configs.config_widening(op, "full", st, "full") == {}
+    assert "sandbox.isolation" in state_configs.config_widening(op, "full", st, "partial")
+    assert "sandbox.isolation" in state_configs.config_widening(
+        _cfg(), "full", _cfg(isolation="none"), "none"
+    )
 
 
 def test_protect_git_is_compared_by_what_it_resolves_to() -> None:
     """A machine's `git.control = "model"` under the operator's `auto` turned protection off."""
     state = Config.model_validate({"git": {"control": "model"}})
-    problems = config_widening(_cfg(), "full", state, "full")
+    problems = state_configs.config_widening(_cfg(), "full", state, "full")
     assert "sandbox.protect_git" in problems and "git.control" in problems["sandbox.protect_git"]
-    assert config_widening(_cfg(protect_git="off"), "full", state, "full") == {}
-    assert config_widening(state, "full", Config(), "full") == {}
+    assert state_configs.config_widening(_cfg(protect_git="off"), "full", state, "full") == {}
+    assert state_configs.config_widening(state, "full", Config(), "full") == {}
 
 
 def test_network_is_compared_by_what_it_resolves_to() -> None:
@@ -584,7 +577,7 @@ def test_the_machine_narrows_and_a_state_widens_back_up_to_the_operators(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _operator()
-    configs = resolve_configs(
+    configs = state_configs.resolve_configs(
         load_machine(_write(tmp_path, MACHINE)), tmp_path, detect.probed_environment()
     )
     assert configs.operator.config.sandbox.extra_read_paths == ("/srv/inbox", "/opt/toolchain")
@@ -608,8 +601,8 @@ def test_a_state_wider_than_the_operator_is_refused_by_name(
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
     spec = load_machine(_write(tmp_path, MACHINE))
-    with pytest.raises(ConfigWidenedError) as refused:
-        resolve_configs(spec, tmp_path, detect.probed_environment())
+    with pytest.raises(state_configs.ConfigWidenedError) as refused:
+        state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
     said = str(refused.value)
     assert said.startswith('[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"]')
     assert "wider than your config's []" in said
@@ -635,7 +628,7 @@ def test_shared_regions_exclude_unused_operator_write_grants(
             "[states.judge.config.sandbox]\nextra_write_paths = []",
             '[states.judge.config.sandbox]\nextra_write_paths = ["/srv/outbox/judge"]',
         )
-    configs = resolve_configs(
+    configs = state_configs.resolve_configs(
         load_machine(_write(tmp_path, text)), tmp_path, detect.probed_environment()
     )
     expected = (
@@ -657,8 +650,8 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
     nested = MACHINE.replace(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox/in"]'
     )
-    with pytest.raises(ConfigWidenedError) as refused:
-        resolve_configs(load_machine(_write(tmp_path, nested)), tmp_path, env)
+    with pytest.raises(state_configs.ConfigWidenedError) as refused:
+        state_configs.resolve_configs(load_machine(_write(tmp_path, nested)), tmp_path, env)
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /srv/outbox/in")
     assert "which the machine's jailed commands write" in said
@@ -667,7 +660,7 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
     whole = MACHINE.replace(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox"]'
     )
-    configs = resolve_configs(load_machine(_write(tmp_path, whole)), tmp_path, env)
+    configs = state_configs.resolve_configs(load_machine(_write(tmp_path, whole)), tmp_path, env)
     assert state_configs.shared_write_regions(configs, tmp_path) == (pathlib.Path("/srv/outbox"),)
 
 
@@ -687,8 +680,8 @@ def test_a_grant_under_the_hosts_tmp_is_refused_when_any_state_writes_it(
         'extra_read_paths = ["/srv/inbox"]',
         'isolation = "full"\nextra_read_paths = ["/tmp/handoff"]',
     )
-    with pytest.raises(ConfigWidenedError) as refused:
-        resolve_configs(load_machine(_write(tmp_path, mixed)), tmp_path, env)
+    with pytest.raises(state_configs.ConfigWidenedError) as refused:
+        state_configs.resolve_configs(load_machine(_write(tmp_path, mixed)), tmp_path, env)
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /tmp/handoff")
     assert f"it sits inside {pathlib.Path('/tmp').resolve()}, which the machine's" in said
@@ -705,9 +698,10 @@ def test_the_ceiling_is_the_operators_layers_alone(
         '[config.sandbox]\nextra_read_paths = ["/srv/inbox"]',
     )
     with pytest.raises(
-        ConfigWidenedError, match=r"the machine's \[config\] sets sandbox\.extra_read_paths"
+        state_configs.ConfigWidenedError,
+        match=r"the machine's \[config\] sets sandbox\.extra_read_paths",
     ):
-        resolve_configs(
+        state_configs.resolve_configs(
             load_machine(_write(tmp_path, widened)), tmp_path, detect.probed_environment()
         )
 
@@ -719,14 +713,20 @@ def test_a_config_flag_file_is_part_of_the_ceiling(
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
     ops = _write(tmp_path, '[sandbox]\nextra_write_paths = ["/srv/outbox"]\n', name="ops.toml")
     spec = load_machine(_write(tmp_path, MACHINE))
-    configs = resolve_configs(spec, tmp_path, detect.probed_environment(), config_paths=(ops,))
+    configs = state_configs.resolve_configs(
+        spec, tmp_path, detect.probed_environment(), config_paths=(ops,)
+    )
     assert configs.states["judge"].config.sandbox.extra_write_paths == ("/srv/outbox",)
     # A state must not be able to rewrite its own ceiling: the file is read-only in every jail.
-    assert ops.resolve() in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops,))
-    assert ops.resolve() not in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path)
+    assert ops.resolve() in host_preflight.machine_protect_paths(
+        tmp_path / "m.asm.toml", tmp_path, (ops,)
+    )
+    assert ops.resolve() not in host_preflight.machine_protect_paths(
+        tmp_path / "m.asm.toml", tmp_path
+    )
     # Every `--config` file is part of the ceiling, so each is read-only.
     more = _write(tmp_path, "[review]\ninterval_turns = 7\n", name="more.toml")
-    protected = machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops, more))
+    protected = host_preflight.machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops, more))
     assert ops.resolve() in protected and more.resolve() in protected
 
 
@@ -738,7 +738,7 @@ def test_agent_launch_keeps_state_and_operator_setting_origins(
     _operator(OPERATOR)
     path = _write(tmp_path, MACHINE)
     ops = _write(tmp_path, "[budget]\nmax_usd = 2\n", name="ops.toml")
-    configs = resolve_configs(
+    configs = state_configs.resolve_configs(
         load_machine(path), tmp_path, detect.probed_environment(), config_paths=(ops,)
     )
     snapshot = agent.state_overlay(configs.states["judge"], path)
@@ -754,7 +754,9 @@ def test_the_operator_flags_apply_after_the_overlays(
     spec = load_machine(
         _write(tmp_path, MACHINE + '\n[states.store.config.sandbox]\nrun_commands = "deny"\n')
     )
-    configs = resolve_configs(spec, tmp_path, detect.probed_environment(), auto_approve=True)
+    configs = state_configs.resolve_configs(
+        spec, tmp_path, detect.probed_environment(), auto_approve=True
+    )
     assert configs.states["scan"].config.sandbox.run_commands == "allow"
     # A state's own `deny` stays: a flag never grants what the standing policy denied.
     assert configs.states["store"].config.sandbox.run_commands == "deny"
@@ -768,7 +770,7 @@ def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     _operator(OPERATOR + 'run_commands = "allow"\nisolation = "full"\n')
     spec = load_machine(_write(tmp_path, MACHINE))
-    configs = resolve_configs(
+    configs = state_configs.resolve_configs(
         spec, tmp_path, detect.probed_environment(), disable_sandbox=True, no_commands=True
     )
     for resolved in (configs.operator, configs.machine, *configs.states.values()):
@@ -790,7 +792,7 @@ def test_each_tool_state_gets_its_own_jail_policy(
         MACHINE.replace("[config.sandbox]\n", '[config.sandbox]\nnetwork = "session"\n')
         + '\n[states.store.config.sandbox]\nnetwork = "host"\n'
     )
-    configs = resolve_configs(
+    configs = state_configs.resolve_configs(
         load_machine(_write(tmp_path, machine)), tmp_path, detect.probed_environment()
     )
     build = run.machine_tool_policy_factory(
@@ -1141,7 +1143,7 @@ def test_resolve_configs_keeps_the_resolved_isolation_per_state(
     monkeypatch.chdir(tmp_path)
     _operator()
     env = detect.probed_environment()
-    configs = resolve_configs(load_machine(_write(tmp_path, MACHINE)), tmp_path, env)
+    configs = state_configs.resolve_configs(load_machine(_write(tmp_path, MACHINE)), tmp_path, env)
     expected = detect.resolve_isolation("auto", env)
     assert {s.isolation for s in configs.states.values()} == {expected}
-    assert isinstance(configs.states["scan"], StateConfig)
+    assert isinstance(configs.states["scan"], state_configs.StateConfig)

@@ -11,7 +11,8 @@ from typing import Any
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app.machine import StateConfig, machine_protect_paths, run, validate_bundle
+from agent6.app.machine import bundle as machine_bundle
+from agent6.app.machine import host_preflight, run, state_configs
 from agent6.config import Config
 from agent6.machine import (
     MachineError,
@@ -182,7 +183,7 @@ def _world(
 ) -> live_world.LiveWorld:
     """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
     factory = run.machine_tool_policy_factory(
-        {"": StateConfig(cfg or Config(), isolation)},
+        {"": state_configs.StateConfig(cfg or Config(), isolation)},
         tmp_path,
         protect_paths=protect_paths,
         data_dir=data_dir,
@@ -331,7 +332,7 @@ def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
     bundle = tmp_path / "machines"
     (bundle / "scripts").mkdir(parents=True)
     factory = run.machine_tool_policy_factory(
-        {"": StateConfig(Config(), "full")},
+        {"": state_configs.StateConfig(Config(), "full")},
         tmp_path,
         protect_paths=(),
         data_dir=None,
@@ -359,14 +360,14 @@ def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
 def test_protect_paths_include_machine_file_and_scripts(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
-    got = machine_protect_paths(f, tmp_path)
+    got = host_preflight.machine_protect_paths(f, tmp_path)
     assert f.resolve() in got
     assert (tmp_path / "scripts").resolve() in got
 
 
 def test_protect_paths_skip_missing_scripts(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)  # no scripts/ dir
-    got = machine_protect_paths(f, tmp_path)
+    got = host_preflight.machine_protect_paths(f, tmp_path)
     assert got == (f.resolve(),)
 
 
@@ -376,7 +377,7 @@ def test_protect_paths_exclude_machine_outside_cwd(tmp_path: pathlib.Path) -> No
     outside.write_text(NET_MACHINE, encoding="utf-8")
     sub = tmp_path / "repo"
     sub.mkdir()
-    assert machine_protect_paths(outside, sub) == ()
+    assert host_preflight.machine_protect_paths(outside, sub) == ()
 
 
 # --- bundle / script-path validation ---------------------------------------
@@ -387,13 +388,13 @@ def test_bundle_ok_when_script_exists(tmp_path: pathlib.Path) -> None:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "fetch.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     spec = load_machine(f)
-    assert validate_bundle(spec, f) == []
+    assert machine_bundle.validate_bundle(spec, f) == []
 
 
 def test_bundle_flags_missing_script(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)  # references scripts/fetch.sh, never created
     spec = load_machine(f)
-    problems = validate_bundle(spec, f)
+    problems = machine_bundle.validate_bundle(spec, f)
     assert any("not found in bundle" in p for p in problems)
 
 
@@ -403,7 +404,7 @@ def test_bundle_flags_escaping_command_ref(tmp_path: pathlib.Path) -> None:
     )
     f = _write(tmp_path, text)
     spec = load_machine(f)
-    problems = validate_bundle(spec, f)
+    problems = machine_bundle.validate_bundle(spec, f)
     assert any("escapes the bundle" in p for p in problems)
 
 
@@ -414,7 +415,7 @@ def test_bundle_flags_symlink_escape(tmp_path: pathlib.Path) -> None:
     outside.write_text("secret", encoding="utf-8")
     (tmp_path / "scripts" / "fetch.sh").symlink_to(outside)
     spec = load_machine(f)
-    problems = validate_bundle(spec, f)
+    problems = machine_bundle.validate_bundle(spec, f)
     assert any("outside the bundle" in p for p in problems)
 
 
@@ -424,7 +425,7 @@ def test_bundle_reports_circular_symlink_in_scripts(tmp_path: pathlib.Path) -> N
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
     spec = load_machine(f)
-    problems = validate_bundle(spec, f)  # must not raise
+    problems = machine_bundle.validate_bundle(spec, f)  # must not raise
     assert any("loop" in p for p in problems)
 
 
@@ -434,7 +435,7 @@ def test_bundle_reports_circular_symlink_command_ref(tmp_path: pathlib.Path) -> 
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
     spec = load_machine(f)
-    problems = validate_bundle(spec, f)  # must not raise
+    problems = machine_bundle.validate_bundle(spec, f)  # must not raise
     assert any("fetch" not in p and "loop" in p for p in problems)
 
 

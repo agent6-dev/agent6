@@ -12,8 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import kinds
-from agent6.app import machine
-from agent6.app.machine import run
+from agent6.app.machine import run, state_configs
 from agent6.config import Config
 from agent6.machine import contracts, execution, live_world, semantics
 from agent6.machine import engine as machine_engine
@@ -191,9 +190,11 @@ reason = "fail"
 """
 
 
-def _one_state(cfg: Config, isolation: kinds.IsolationLevel) -> dict[str, machine.StateConfig]:
+def _one_state(
+    cfg: Config, isolation: kinds.IsolationLevel
+) -> dict[str, state_configs.StateConfig]:
     """The resolved-config map of a world whose tool calls name no state."""
-    return {"": machine.StateConfig(cfg, isolation)}
+    return {"": state_configs.StateConfig(cfg, isolation)}
 
 
 # A terminal's `notify` template that references an absent optional field raises at render.

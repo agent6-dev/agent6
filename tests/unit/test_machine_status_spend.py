@@ -178,7 +178,7 @@ def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: pa
 
 def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) -> None:
     """A supervisor crash mid-agent-state books the per-state log's spend as an AttemptSpend."""
-    from agent6.app.machine import book_crashed_attempt
+    from agent6.app.machine import crash_spend
     from agent6.machine import AttemptSpend, MachineJournal
 
     journal = MachineJournal(tmp_path)
@@ -187,7 +187,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
     journal.append(_agent_step(0, 0.10))
     _state_log(tmp_path, 1, "hunt", 0.059)  # crashed mid-state: unbooked
 
-    book_crashed_attempt(journal, tmp_path)
+    crash_spend.book_crashed_attempt(journal, tmp_path)
     events = journal.read()
     booked = [e for e in events if isinstance(e, AttemptSpend)]
     assert len(booked) == 1
@@ -199,7 +199,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
     assert not (tmp_path / "states" / "0001-hunt").exists()
 
     # Idempotent: no orphan left, nothing more books.
-    book_crashed_attempt(journal, tmp_path)
+    crash_spend.book_crashed_attempt(journal, tmp_path)
     assert len([e for e in journal.read() if isinstance(e, AttemptSpend)]) == 1
 
     # The spend fold keeps the slice with the worker dead.
@@ -209,7 +209,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
 
     # A second crash in the same state: the retired name must not collide with the first.
     _state_log(tmp_path, 1, "hunt", 0.02)
-    book_crashed_attempt(journal, tmp_path)
+    crash_spend.book_crashed_attempt(journal, tmp_path)
 
     booked = [e for e in journal.read() if isinstance(e, AttemptSpend)]
     assert len(booked) == 2

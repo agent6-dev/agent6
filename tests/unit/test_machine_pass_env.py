@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6.app.machine import StateConfig, machine_pass_env_refusal, run
+from agent6.app.machine import host_preflight, run, state_configs
 from agent6.config import Config
 from agent6.machine import MachineError, ToolState, load_machine
 from agent6.ui.cli import machine_check
@@ -76,11 +76,11 @@ def test_the_operator_allowlist_is_never_a_machine_overlay_or_a_provider_key(
 
 def test_a_variable_the_operator_has_not_allowed_refuses_the_run(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, MACHINE))
-    refusal = machine_pass_env_refusal(Config(), spec.states)
+    refusal = host_preflight.machine_pass_env_refusal(Config(), spec.states)
     assert refusal is not None and "[states.fetch] asks for X_TOKEN, X_REGION" in refusal
     assert "[machine].pass_env does not allow" in refusal
     allowed = Config.model_validate({"machine": {"pass_env": ["X_TOKEN", "X_REGION"]}})
-    assert machine_pass_env_refusal(allowed, spec.states) is None
+    assert host_preflight.machine_pass_env_refusal(allowed, spec.states) is None
 
 
 def test_a_pass_env_refusal_ends_the_run_at_startup(
@@ -104,7 +104,7 @@ def test_the_jail_gets_only_the_declared_variables_that_are_set(
     monkeypatch.delenv("X_REGION", raising=False)
     monkeypatch.setenv("OTHER_SECRET", "no")
     factory = run.machine_tool_policy_factory(
-        {"fetch": StateConfig(Config(), "full")},
+        {"fetch": state_configs.StateConfig(Config(), "full")},
         tmp_path,
         protect_paths=(),
         data_dir=None,
