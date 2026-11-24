@@ -158,6 +158,32 @@ def test_a_task_the_history_lost_returns_from_the_run() -> None:
     assert _notice(conv).count(_STATED) == str(conv.to_wire()).count("Flip the readers.") == 1
 
 
+def _restart_run(wf: Any, conv: history.Conversation, state: Any, **settings: int) -> str:
+    """Restart a conversation with the pins and facts of its own run."""
+    helper = writers.Writer(writers.response("Ready."))
+    wf.compaction = window.CompactionSettings(
+        helper=helper, helper_context_tokens=200000, summariser="helper", **settings
+    )
+    assert driver.Tiered().summarise_and_restart(wf.compaction_context(conv, state, []))
+    return _notice(conv)
+
+
+def test_a_pinned_steer_is_stated_once_by_the_pinned_block() -> None:
+    """A `/pin` was quoted as an operator message and again in the pinned block."""
+    wf, state = test_harness._wf(), test_harness._state(original_task="")
+    conv = history.Conversation()
+    conv.notice("first steer", origin="operator")
+    wf.steering.operator_steer(
+        conv, 1, state, "/pin Never touch vendor/.", heading="OPERATOR STEERING:"
+    )
+    _reply(conv, "ok")
+    # The pin is neither quoted nor counted: the one reserved message is the steer before it.
+    notice = _restart_run(wf, conv, state, keep_recent_turns=0, keep_operator_messages=1)
+    assert notice.count("Never touch vendor/.") == 1
+    assert "PINNED operator instructions (verbatim):\n1. Never touch vendor/." in notice
+    assert "Operator message:\nfirst steer" in notice and notice.count("Operator message:") == 1
+
+
 def test_first_turn_that_does_not_fit_ends_replay() -> None:
     conv = history.Conversation()
     for reply in ("a", "X" * 20, "b"):

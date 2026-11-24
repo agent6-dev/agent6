@@ -386,7 +386,7 @@ class Steering:
             " and binds for the rest of the run):\n"
             f"{instruction}",
             origin="operator",
-            operator_words=(steer_text,),
+            operator_words=(instruction,),
         )
         return True
 

@@ -149,7 +149,7 @@ class _Scheduled:
             sent = len(messages) if sent_count is None else sent_count
             replay = retention.Replay(messages[1:sent], (), messages[sent:])
         else:
-            replay = retention.select(messages, context.settings, context.task.text)
+            replay = retention.select(messages, context.settings, context.task.text, context.pins)
         open_tasks = (
             advice.open_subtasks(context.curator.nodes()) if context.curator is not None else []
         )
@@ -339,7 +339,9 @@ class Tiered(_Scheduled):
         if mode == "drop":
             self.drop(context, cold=True)
             return mode
-        replay = retention.select(conversation.messages, context.settings, context.task.text)
+        replay = retention.select(
+            conversation.messages, context.settings, context.task.text, context.pins
+        )
         if not replay.replaced:
             # The caps keep everything, so the history is sent as it is.
             return "resend"

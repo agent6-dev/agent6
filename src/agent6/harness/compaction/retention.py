@@ -172,7 +172,10 @@ def _partition(
 
 
 def select(
-    messages: Sequence[history.Message], settings: window.CompactionSettings, task: str = ""
+    messages: Sequence[history.Message],
+    settings: window.CompactionSettings,
+    task: str = "",
+    pins: Sequence[str] = (),
 ) -> Replay:
     """Reserve the task and operator messages, then extend the kept suffix while whole turns fit.
 
@@ -180,6 +183,7 @@ def select(
         messages: The live local history.
         settings: The resolved caps.
         task: The task the run was given, the oldest reservable message.
+        pins: The pinned instructions, which the restart states in their own block.
 
     Returns:
         The helper transcript, verbatim quotes and paired messages to replay.
@@ -207,6 +211,7 @@ def select(
         if isinstance(m, history.UserMessage)
         for it in inputs(m)
         for word in operator_words(it)
+        if word not in pins
     ]
     # A review contract's opening is its task and keeps its own place.
     task = "" if opening else task
