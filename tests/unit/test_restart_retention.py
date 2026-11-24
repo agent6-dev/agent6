@@ -6,15 +6,22 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import pathlib
 from typing import Any
 from unittest import mock
 
 import pytest
 
 from agent6.harness import loop_conversation as history
-from agent6.harness import tool_effects
-from agent6.harness.compaction import driver
-from agent6.providers import anthropic, claude_code_wire, openai_messages, responses_codec
+from agent6.harness import loop_resume, loop_snapshot, tool_effects
+from agent6.harness.compaction import driver, window
+from agent6.providers import (
+    anthropic,
+    claude_code_wire,
+    openai_messages,
+    provider_types,
+    responses_codec,
+)
 from agent6.tools import results
 from tests.unit import test_compaction_writers as writers
 from tests.unit import test_harness
@@ -279,12 +286,8 @@ def test_answer_before_tool_capping_reaches_the_local_restart(operators: int) ->
     assert (f"Operator message:\n{words}" in _notice(conv)) is bool(operators)
 
 
-def _answers(
-    first: str, second: str, call_ids: tuple[str, str] = ("q1", "q2")
-) -> history.Conversation:
-    conv = history.Conversation()
-    conv.notice("Opening task.", origin="operator")
-    reply = responses_codec.parse_output_items(
+def _questions(*calls: tuple[str, str]) -> provider_types.ProviderResponse:
+    return responses_codec.parse_output_items(
         [
             {
                 "type": "function_call",
@@ -292,13 +295,21 @@ def _answers(
                 "call_id": call_id,
                 "arguments": json.dumps({"questions": [{"question": q}]}),
             }
-            for call_id, q in zip(call_ids, ("Which file?", "Which test?"), strict=True)
+            for call_id, q in calls
         ],
         usage={},
         stop_reason="end_turn",
         label="Responses",
         route="r",
     )
+
+
+def _answers(
+    first: str, second: str, call_ids: tuple[str, str] = ("q1", "q2")
+) -> history.Conversation:
+    conv = history.Conversation()
+    conv.notice("Opening task.", origin="operator")
+    reply = _questions((call_ids[0], "Which file?"), (call_ids[1], "Which test?"))
     calls = conv.assistant(reply.raw["content"]).tool_uses
     items: list[history.ToolResultItem] = []
     for call, words in zip(calls, (first, second), strict=True):
@@ -309,6 +320,59 @@ def _answers(
     conv.results(items)
     assert sum(item.unshown_answer is not None for item in items) == 1
     return conv
+
+
+def test_interrupted_turn_keeps_answers_to_repeated_call_ids_in_order(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A capped answer must not replace a later answer with the same provider call ID."""
+    first, second = "A" * 600 + " first", "Second answer."
+    path = tmp_path / "loop_state.json"
+    wf = test_harness._wf(
+        root=tmp_path,
+        resume_state_path=path,
+        compaction=window.CompactionSettings(tool_result_cap_bytes=400),
+    )
+    state = test_harness._state()
+    conv = history.Conversation()
+    conv.notice("Opening task.", origin="operator")
+    loop_resume.save_resume_snapshot(wf, state, conv.to_wire(snapshot=True), next_turn=1)
+    reply = _questions(("same", "First?"), ("same", "Second?"), ("last", "Third?"))
+    turn = test_harness._turn(resp=reply, assistant=conv.assistant(reply.raw["content"]))
+    dispatches = [
+        results.AnswersResult("q1", (first,)),
+        results.AnswersResult("q2", (second,)),
+        test_harness._Died,
+    ]
+    with (
+        mock.patch.object(wf.dispatcher, "dispatch", side_effect=dispatches),
+        pytest.raises(test_harness._Died),
+    ):
+        wf._turn_dispatch_tools(state, turn, test_harness._ctx(wf, state))
+    assert [
+        (r.tool_use_id, r.unshown_answer)
+        for r in turn.tool_results
+        if isinstance(r, history.ToolResultItem)
+    ] == [("same", first), ("same", None)]
+
+    snapshot, interrupted = loop_resume.fold_interrupted_turn(
+        wf, loop_snapshot.load_session_snapshot(path)
+    )
+    assert interrupted == ("ask_user",) and snapshot.tool_calls == 2
+    conv = history.Conversation.from_wire(snapshot.messages)
+    _reply(conv, "Done.")
+    prompt = _restart(conv, keep_recent_turns=0, keep_operator_messages=2, keep_recent_chars=2000)
+    quotes = [
+        p.removeprefix("Operator message:\n")
+        for p in _notice(conv).split("\n\n")
+        if p.startswith("Operator message:\n")
+    ]
+    answers = [
+        line.removeprefix("[operator answer] ")
+        for line in prompt.splitlines()
+        if line.startswith("[operator answer] ")
+    ]
+    assert (quotes, answers) == ([first, second], [first, second])
 
 
 def test_endpoint_fallback_omits_the_answer_notice_from_a_kept_turn() -> None:

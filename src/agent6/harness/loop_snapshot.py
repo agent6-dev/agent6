@@ -162,7 +162,7 @@ class ResumeError(Exception):
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 11
+SNAPSHOT_VERSION = 12
 
 
 class SessionSnapshot(pydantic.BaseModel):
@@ -339,22 +339,29 @@ def load_session_snapshot(path: pathlib.Path) -> SessionSnapshot:
 TURN_IN_FLIGHT_NAME = "turn_in_flight.json"
 
 
+class InFlightResult(pydantic.BaseModel):
+    """Keep a tool result with any operator answer omitted from its payload."""
+
+    model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
+
+    content: str
+    unshown_answer: str | None = None
+
+
 class TurnInFlight(pydantic.BaseModel):
     """Hold the turn whose tools are dispatching, for a resume after the execution dies in it.
 
     Attributes:
         turn: The turn.
         assistant: The assistant message's content blocks, verbatim.
-        results: The result content of each call that returned, in call order.
-        unshown_answers: Operator answers omitted from the delivered tool payload, by call id.
+        results: The results that returned, in call order.
     """
 
     model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
 
     turn: int
     assistant: tuple[Any, ...]
-    results: tuple[str, ...] = ()
-    unshown_answers: dict[str, str] = pydantic.Field(default_factory=dict)
+    results: tuple[InFlightResult, ...] = ()
 
 
 def write_turn_marker(path: pathlib.Path, flight: TurnInFlight) -> None:
@@ -365,7 +372,7 @@ def write_turn_marker(path: pathlib.Path, flight: TurnInFlight) -> None:
         flight: The turn and the results that returned so far.
     """
     with contextlib.suppress(OSError):
-        portable.atomic_write(path, flight.model_dump_json())
+        portable.atomic_write(path, flight.model_dump_json(exclude_none=True))
 
 
 def read_turn_marker(path: pathlib.Path) -> TurnInFlight | None:
@@ -429,17 +436,22 @@ def fold_interrupted_turn(
     if not calls:
         raise ValueError("the in-flight turn holds no tool call")
     returned = len(flight.results)
-    conversation.results(
-        [
+    items: list[loop_conversation.ToolResultItem] = []
+    for i, call in enumerate(calls):
+        result = (
+            flight.results[i]
+            if i < returned
+            else InFlightResult(content=interrupted_result(call.name))
+        )
+        items.append(
             loop_conversation.ToolResultItem(
                 tool_use_id=call.id,
-                content=flight.results[i] if i < returned else interrupted_result(call.name),
+                content=result.content,
                 for_call=call,
-                unshown_answer=flight.unshown_answers.get(call.id),
+                unshown_answer=result.unshown_answer,
             )
-            for i, call in enumerate(calls)
-        ]
-    )
+        )
+    conversation.results(items)
     folded = snapshot.model_copy(
         update={
             "messages": conversation.to_wire(snapshot=True),
