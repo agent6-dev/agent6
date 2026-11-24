@@ -189,8 +189,12 @@ def test_ask_repl_multi_turn_carries_context(
     # turn 2 carried the prior Q&A as context
     assert "a follow-up" in wf.calls[1]
     assert "answer-1" in wf.calls[1]
-    out = capsys.readouterr().out
-    assert "answer-1" in out and "answer-2" in out
+    from agent6 import directive
+
+    captured = capsys.readouterr()
+    offered = captured.err.split("type a follow-up, or ")[1].split(" (Ctrl-D")[0].split()
+    assert offered == [c.name for c in directive.commands_for("ask -i")]
+    assert "answer-1" in captured.out and "answer-2" in captured.out
     assert result.summary == "answer-2"
     # cumulative transcript written
     assert "## Q2" in (layout.session_dir / "transcript.md").read_text(encoding="utf-8")

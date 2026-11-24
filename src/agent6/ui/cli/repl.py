@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from agent6.ui.cli import console_render
 
 from agent6 import budget as agent6_budget
-from agent6 import kinds, paths
+from agent6 import directive, kinds, paths
 from agent6.sessions import id, ipc, layout
 from agent6.tools import mcp_client
 from agent6.ui import parallel_preview
@@ -23,28 +23,8 @@ from agent6.ui.cli import init_wizard, interact, plan_watch, sessions_cmds, stee
 from agent6.viewmodel import events
 from agent6.viewmodel.session import state
 
-REPL_HELP = (
-    "  /continue  (empty enter) - let the agent take another turn\n"
-    "  /parallel [SPEC --] TASK - preview child attempts; repeat the line to send it\n"
-    "  /cost                    - print the running token + USD summary\n"
-    "  /diff                    - git diff: base_sha -> the run branch's tip\n"
-    "                              (read-only; `agent6 sessions diff`, no pager)\n"
-    "  /watch                   - print the last 20 audit events from this run\n"
-    "                              (snapshot, no streaming deltas; not a live tail)\n"
-    "  /mcp                     - list MCP servers + tools currently wired\n"
-    "                              into the agent's tool surface\n"
-    "  /init                    - run the `agent6 init` setup wizard in the\n"
-    "                              current cwd (prompts; never overwrites files)\n"
-    "  /undo                    - take back the last message (the same /undo\n"
-    "                              as steering, the TUI and web): this run\n"
-    "                              ends, the tree as it stands is committed on\n"
-    "                              this run's chain ref, the tree goes back to\n"
-    "                              the turn before, and a fork holds that\n"
-    "                              state; resume it with the message edited.\n"
-    "  /help                    - show this help\n"
-    "  /quit                    - stop the agent cleanly after this commit\n"
-    "  /exit                    - stop and leave (no follow-up prompt; resume later)\n"
-)
+_COMMAND_ROWS = directive.commands_for("run -i")
+REPL_HELP = "\n".join(f"  {c.usage:<26} {c.help}" for c in _COMMAND_ROWS)
 
 
 def build_repl_hook(
@@ -84,7 +64,7 @@ def build_repl_hook(
     def _prompt_loop(turn: int, sha: str) -> kinds.AutoCommitDirective:
         print(
             f"\n[agent6] turn {turn} committed {sha[:12]}. "
-            f"REPL: /continue /parallel /cost /diff /watch /mcp /init /undo /help /quit /exit",
+            f"REPL: {' '.join(c.name for c in _COMMAND_ROWS)}",
             file=sys.stderr,
         )
         steer = steer_cell[0] if steer_cell else None
@@ -120,6 +100,7 @@ def build_repl_hook(
     def _run_command(cmd: str, raw: str) -> None:
         if cmd in {"/help", "/h", "?"}:
             print(REPL_HELP, file=sys.stderr)
+            print("  A /parallel line previews first. Repeat it to send.", file=sys.stderr)
         elif cmd == "/cost":
             print(budget.format_summary(), file=sys.stderr)
         elif cmd == "/diff":

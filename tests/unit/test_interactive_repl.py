@@ -16,7 +16,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import budget, paths
+from agent6 import budget, directive, paths
 from agent6.harness import operator_bridge, run_chain
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import process
@@ -119,6 +119,20 @@ def test_the_banner_names_a_ctrl_c_pause_armed_during_the_commit(
         == "continue"
     )
     assert "pause armed" not in capsys.readouterr().err
+
+
+def test_commit_prompt_advertises_its_registered_commands(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commands = iter(["/help", "/continue"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(commands))
+    repl.build_repl_hook(tmp_path, _budget())(1, "abc")
+    output = capsys.readouterr().err
+    rows = directive.commands_for("run -i")
+    assert output.split("REPL: ")[1].splitlines()[0].split() == [c.name for c in rows]
+    assert [line.split()[0] for line in output.splitlines() if line.lstrip().startswith("/")] == [
+        c.name for c in rows
+    ]
 
 
 def test_hook_slash_continue(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

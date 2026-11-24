@@ -12,7 +12,7 @@ import sys
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, evidence, paths
+from agent6 import directive, errors, evidence, paths
 from agent6.harness import loop, loop_snapshot, operator_bridge
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
@@ -324,8 +324,9 @@ def run_ask_repl(  # noqa: PLR0912  # the input loop and each local command
     Returns:
         The last turn's result.
     """
+    commands = " ".join(c.name for c in directive.commands_for("ask -i"))
     print(
-        "[agent6] ask REPL: type a follow-up, or /cost /reset /quit (Ctrl-D exits).",
+        f"[agent6] ask REPL: type a follow-up, or {commands} (Ctrl-D exits).",
         file=sys.stderr,
     )
     conversation: list[tuple[str, str]] = []

@@ -69,6 +69,12 @@ def test_tab_prefix_filters_and_arrows_move_selection() -> None:
     assert line == "/status"
 
 
+def test_tab_completes_the_immediate_steer() -> None:
+    """The pause menu acts on `/now <text>` and Tab offers its word."""
+    line, _ = _run([*_chars("/no"), "tab", *_chars(" go"), "enter"])
+    assert line == "/now go"
+
+
 def test_unique_prefix_completes_without_a_menu() -> None:
     line, out = _run([*_chars("/stat"), "tab", "enter"])
     assert line == "/status"

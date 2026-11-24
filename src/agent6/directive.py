@@ -502,11 +502,33 @@ _VIEW_ONLY = _TASK_REFUSAL | _at("script")
 # Registry order is the completion order for a bare slash.
 COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand(
+        "/status",
+        "run status: tasks, tools, cost, context, preset",
+        "opens a view",
+        _at("pause"),
+        "agent6.ui.cli.steer_menu._print_status",
+    ),
+    SlashCommand(
+        "/tasks",
+        "the task graph with statuses",
+        "opens a view",
+        _at("pause"),
+        "agent6.ui.cli.steer_menu._print_tasks",
+    ),
+    SlashCommand(
         "/pin <text>",
         "pin an instruction that survives compaction: /pin <text>",
         "sets state",
         _STEER,
         "agent6.harness.operator_bridge.Steering.pin",
+    ),
+    SlashCommand(
+        "/answer <question-id> <text>...",
+        "answer a question (pause menu: /answer lists questions, /answer ID asks one)",
+        "sets state",
+        _at("pause", "acp"),
+        "agent6.ui.acp.review._answer_reply",
+        _at("acp start"),
     ),
     SlashCommand(
         "/compact [focus]",
@@ -595,6 +617,13 @@ COMMANDS: tuple[SlashCommand, ...] = (
         _LIVE_ONLY,
     ),
     SlashCommand(
+        "/continue",
+        "resume the run unchanged (same as Enter)",
+        "controls the run",
+        _at("pause", "run -i"),
+        "agent6.ui.cli.steer_menu._answer_line",
+    ),
+    SlashCommand(
         "/stop",
         "stop the run now, as `agent6 stop` does (resumable)",
         "controls the run",
@@ -616,35 +645,6 @@ COMMANDS: tuple[SlashCommand, ...] = (
         "sets state",
         _STEER,
         "agent6.harness.operator_bridge.Steering.skill",
-    ),
-    SlashCommand(
-        "/answer <question-id> <text>...",
-        "answer a question (pause menu: /answer lists questions, /answer ID asks one)",
-        "sets state",
-        _at("pause", "acp"),
-        "agent6.ui.acp.review._answer_reply",
-        _at("acp start"),
-    ),
-    SlashCommand(
-        "/status",
-        "run status: tasks, tools, cost, context, preset",
-        "opens a view",
-        _at("pause"),
-        "agent6.ui.cli.steer_menu._print_status",
-    ),
-    SlashCommand(
-        "/tasks",
-        "the task graph with statuses",
-        "opens a view",
-        _at("pause"),
-        "agent6.ui.cli.steer_menu._print_tasks",
-    ),
-    SlashCommand(
-        "/continue",
-        "resume the run unchanged (same as Enter)",
-        "controls the run",
-        _at("pause", "run -i"),
-        "agent6.ui.cli.steer_menu._answer_line",
     ),
     SlashCommand(
         "/exit",

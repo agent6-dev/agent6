@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 
+from agent6 import directive
 from agent6.ui.cli import common, completers, sessions_findings
 
 
@@ -152,8 +153,9 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "text",
         nargs="?",
         help=(
-            "The instruction, or a composer directive (/pin, /compact, /task, /standing, /metric,"
-            " /retire, /btw, /now)."
+            "The instruction, or a composer directive: "
+            + ", ".join(c.name for c in directive.commands_for("script"))
+            + "."
         ),
     )
     finding = instruction.add_argument(

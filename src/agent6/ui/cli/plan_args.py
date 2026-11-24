@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import os
 
+from agent6 import directive
 from agent6.config import model
 from agent6.ui.cli import common, completers, run_args
 
@@ -149,9 +150,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--interactive",
         action="store_true",
         help=(
-            "Keep accepting follow-up questions in this session, with earlier questions and"
-            " answers as context. Commands: /cost, /reset, and /quit. Requires a foreground"
-            " terminal. A bare `agent6 ask` uses this mode there."
+            "Keep accepting follow-up questions with earlier answers as context. Commands: "
+            + ", ".join(c.name for c in directive.commands_for("ask -i"))
+            + ". Requires a foreground terminal. A bare `agent6 ask` uses this mode there."
         ),
     )
     common._add_budget_flags(ask_query)

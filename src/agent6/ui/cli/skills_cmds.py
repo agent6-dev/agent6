@@ -470,7 +470,7 @@ def _cmd_skills_install(
             prefix = f"  {name:<{name_w}}  "
             print(f"{prefix}{common.sgr(_one_line(desc, max(20, width - len(prefix))), '2')}")
     for name in installed:
-        if f"/{name}" in steer_menu.MENU_COMMANDS:
+        if f"/{name}" in steer_menu.BARE_MENU_COMMANDS:
             print(
                 f"note: /{name} is a built-in pause-menu command and keeps its meaning;"
                 " the skill stays reachable via the <skills> index, use_skill, and --skill"

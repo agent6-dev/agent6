@@ -709,17 +709,30 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
         state.restore()
 
 
-def test_the_menu_help_matches_the_owner_for_every_shared_command() -> None:
-    """The pause menu's help words match the composers'; bare `/pin` is the one difference."""
+def test_pause_help_lists_the_registered_commands(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     from agent6 import directive
 
-    shared = set(directive.STEER_COMMANDS) & set(steer_menu.MENU_COMMANDS)
-    differing = {c for c in shared if directive.STEER_COMMANDS[c] != steer_menu.MENU_COMMANDS[c]}
+    steer_menu.pause_menu(tmp_path, input_fn=_feed(["/help", ""]), btw_runner=lambda *_: (True, ""))
+    offered = dict(
+        line.strip().split(maxsplit=1)
+        for line in capsys.readouterr().out.splitlines()
+        if line.lstrip().startswith("/")
+    )
+    assert offered == {c.name: c.help for c in directive.commands_for("pause")}
+    assert "/now" in offered
 
-    assert differing == {"/pin"}
-    assert steer_menu.MENU_COMMANDS["/pin"] == steer_menu.MENU_ONLY_HELP["/pin"]
-    # Every word the menu describes itself is one no composer offers.
-    assert set(steer_menu.MENU_ONLY_HELP) - shared == set(steer_menu.MENU_ONLY_HELP) - {"/pin"}
+
+def test_now_needs_text_or_a_skill_of_that_name(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert steer_menu.pause_line("/now", tmp_path) == ""
+    assert "unknown command '/now'" in capsys.readouterr().out
+    assert steer_menu.pause_line("/now go", tmp_path) == "go"
+    _skill_env(tmp_path, monkeypatch, "now")
+    assert steer_menu.pause_line("/now", tmp_path) == "/now"
+    assert steer_menu.pause_line("/now go", tmp_path) == "/now go"
 
 
 def test_pause_menu_continuation_aligns_with_task(

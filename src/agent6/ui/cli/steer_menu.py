@@ -41,41 +41,9 @@ from agent6.viewmodel.session import status as session_status
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
-# The commands only a paused run can offer; `/pin` is the one word the menu describes differently.
-MENU_ONLY_HELP: dict[str, str] = {
-    "/status": "run status: tasks, tools, cost, context, preset",
-    "/tasks": "the task graph with statuses",
-    "/pin": "list pinned instructions (pin one with `/pin <text>`)",
-    "/answer": "list the pending questions (`/answer ID` asks one here)",
-    "/continue": "resume the run unchanged (same as Enter)",
-    "/exit": "stop the run and leave (no follow-up prompt; resume later)",
-    "/detach": "keep the run going in the background",
-    "/help": "this list",
-}
-
-# Command to help line, read by the Tab preview and /help; a shared word's line is the owner's.
-MENU_COMMANDS: dict[str, str] = {
-    "/status": MENU_ONLY_HELP["/status"],
-    "/tasks": MENU_ONLY_HELP["/tasks"],
-    "/pin": MENU_ONLY_HELP["/pin"],
-    "/answer": MENU_ONLY_HELP["/answer"],
-    "/compact": directive.STEER_COMMANDS["/compact"],
-    "/parallel": directive.STEER_COMMANDS["/parallel"],
-    "/btw": directive.STEER_COMMANDS["/btw"],
-    "/task": directive.STEER_COMMANDS["/task"],
-    "/metric": directive.STEER_COMMANDS["/metric"],
-    "/standing": directive.STEER_COMMANDS["/standing"],
-    "/retire": directive.STEER_COMMANDS["/retire"],
-    "/shells": directive.STEER_COMMANDS["/shells"],
-    "/restate": directive.STEER_COMMANDS["/restate"],
-    "/review": directive.STEER_COMMANDS["/review"],
-    "/undo": directive.STEER_COMMANDS["/undo"],
-    "/continue": MENU_ONLY_HELP["/continue"],
-    "/stop": directive.STEER_COMMANDS["/stop"],
-    "/exit": MENU_ONLY_HELP["/exit"],
-    "/detach": MENU_ONLY_HELP["/detach"],
-    "/help": MENU_ONLY_HELP["/help"],
-}
+MENU_COMMANDS = {c.name: c.help for c in directive.commands_for("pause")}
+# `/now` takes an argument. Its bare word stays available to a skill.
+BARE_MENU_COMMANDS = MENU_COMMANDS.keys() - {"/now"}
 
 
 def _without_btw() -> dict[str, str]:
@@ -104,7 +72,7 @@ def skill_menu_table(config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, t
     return {
         f"/{s.name}": (s.description, s.text)
         for s in (*resolved.enabled, *resolved.always)
-        if f"/{s.name}" not in MENU_COMMANDS
+        if f"/{s.name}" not in BARE_MENU_COMMANDS
     }
 
 
@@ -237,6 +205,7 @@ def _print_help(offered: dict[str, str]) -> None:
     width = max(len(c) for c in offered)
     for cmd, what in offered.items():
         print(f"  {cmd:<{width}}  {what}")
+    print("  A bare /pin lists pinned instructions.")
     print("  anything else is sent to the run as a steering instruction")
     print("  Up recalls this session's messages · Ctrl-R searches them · Tab previews commands")
 
@@ -419,9 +388,9 @@ def _answer_line(  # noqa: PLR0911, PLR0912
         assert acted is not None
         print(f"[agent6] {acted[1]}")
         return AGAIN
-    if word not in MENU_COMMANDS and word not in skills:
+    if word not in BARE_MENU_COMMANDS and word not in skills:
         # A prefix drives Tab completion, never an action, so a new command re-points no habit.
-        near = sorted(c for c in (*MENU_COMMANDS, *skills) if c.startswith(word) and c != word)
+        near = sorted(c for c in (*BARE_MENU_COMMANDS, *skills) if c.startswith(word) and c != word)
         hint = f"; did you mean {'  '.join(near)}?" if near else "; /help lists them"
         print(f"[agent6] unknown command {word!r}{hint} (a line with spaces is sent as a steer)")
         return AGAIN
