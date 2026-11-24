@@ -404,8 +404,10 @@ def reset_bridge(
     )
     # The steer as a front-end recorded it before it launched the resume: its images and its id.
     launch = ipc.take_launch_input(layout.session_dir, steer)
+    # A plain steer takes the free slot; one with an id cannot, so it takes the inbox's head.
+    named = bool(launch.message_id)
     if steer.strip() and not ipc.submit_steer(
-        layout.session_dir, steer, images=launch.images, message_id=launch.message_id, first=True
+        layout.session_dir, steer, images=launch.images, message_id=launch.message_id, first=named
     ):
         reporter.error("could not write the initial steer request")
         raise preflight.SessionRefusedError(2)
