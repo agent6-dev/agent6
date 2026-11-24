@@ -30,7 +30,7 @@ class ChildLine:
         state: Where the child stands, including its review, ranking or recorded result.
         task: The first line of its task.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
-        mergeable: Whether it is stopped with unmerged work.
+        mergeable: Whether the child's recorded merge status is `stopped`.
         commits: Its measured commits beyond start, None when unknown.
     """
 

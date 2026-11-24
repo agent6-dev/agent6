@@ -262,7 +262,9 @@ With `git.control = "model"`, the model must commit its changes before calling `
 Each child is an ordinary run with the same tools as the parent and may edit its clone.
 Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
-`read_background` with a child's id returns its id, attempt, state, task, running flag, merge eligibility and commit count beside its transcript tail.
+`read_background` with a child's id returns its id, attempt, state, task, `running`, `mergeable` and commit count beside its transcript tail.
+`mergeable` means the child's recorded merge status is `stopped`.
+A merge can still be refused, for example if another attempt already merged.
 With a command's `background_id` it returns the command preview, state, `returncode`, `duration_s` and `still_running` beside the output tail.
 The duration runs from launch until the host observes the end.
 If the launcher is lost before it reports an exit, `still_running`, `duration_s` and `returncode` are null.
