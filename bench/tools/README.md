@@ -35,7 +35,7 @@ These tasks do not separate the effects of the three shorter descriptions.
 ## Run sets
 
 Use one clean checkout and the matching executable static `agent6-jail` on a host with full isolation.
-Use partial isolation only with a local scripted provider and no credentials.
+The runner requires full isolation and refuses sandbox settings in the profile.
 Prepare Python 3.13 and uv's offline cache with the wheel build and runtime dependencies first.
 The runner archives `HEAD`, applies the arm's patch there, copies the launcher and installs that source into its own venv.
 The control patch is empty.
@@ -44,6 +44,7 @@ Set `base` to a private directory on a real disk outside the checkout and `launc
 Sign in to a dedicated profile and skip the default-model picker.
 Keep only provider settings in its `config.toml`.
 Do not share this profile with another process: each run returns its refreshed `secrets.toml` to the profile.
+The jail hides the source profile and the arm build from both the submission and the grader.
 
 ```sh
 XDG_CONFIG_HOME="$base/signin" agent6 connect chatgpt

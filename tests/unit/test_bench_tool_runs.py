@@ -7,18 +7,112 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
+import tomllib
+from collections.abc import Generator
 from typing import Any
+from unittest import mock
 
 import pytest
 
-from agent6.sandbox import jail
+from agent6.sandbox import detect, jail
 from tests import launch_env
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
-def test_run_set_counts_failed_edits_and_grades_the_final_tree(
+def test_profile_cannot_select_partial_isolation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.tools import run
+
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "config.toml").write_text(
+        '[sandbox]\nisolation = "partial"\n[providers.chatgpt]\nbackend = "chatgpt"\n'
+    )
+    (profile / "secrets.toml").touch(mode=0o600)
+    monkeypatch.setattr(run, "archive", mock.Mock(side_effect=AssertionError("unexpected build")))
+    with pytest.raises(SystemExit) as exc:
+        run.main(
+            [
+                "--arm",
+                "control",
+                "--tasks",
+                "textkit",
+                "--launcher",
+                "unused",
+                "--profile",
+                str(profile),
+                "--out",
+                str(tmp_path / "out"),
+            ]
+        )
+    assert exc.value.code == 2 and not (tmp_path / "out").exists()
+
+
+def test_config_masks_the_source_profile_and_the_arms_build(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bench.tools import run
+
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "config.toml").write_text('[providers.chatgpt]\nbackend="chatgpt"\n')
+    (profile / "secrets.toml").touch(mode=0o600)
+    alias = tmp_path / "profile-link"
+    alias.symlink_to(profile, target_is_directory=True)
+    build = tmp_path / "build"
+    monkeypatch.setattr(run, "archive", mock.Mock(return_value=build / "src"))
+    monkeypatch.setattr(run, "install", mock.Mock(return_value=build / "venv/bin/agent6"))
+
+    def inspect_config(repo: pathlib.Path, env: dict[str, str]) -> None:
+        config = tomllib.loads((repo.parents[1] / "run.toml").read_text())["sandbox"]
+        assert config["isolation"] == "full"
+        grant = pathlib.Path(env["XDG_CONFIG_HOME"]) / "agent6/secrets.toml"
+        assert grant.samefile(profile / "secrets.toml")
+        assert {str(build), str(profile)} <= set(config["hide_paths"])
+        raise OSError("inspected before launch")
+
+    monkeypatch.setattr(run, "seed", inspect_config)
+    args = [
+        "--arm",
+        "control",
+        "--tasks",
+        "plan-cap",
+        "--reps",
+        "1",
+        "--profile",
+        str(alias),
+        "--launcher",
+        "unused",
+        "--out",
+        str(tmp_path / "out"),
+    ]
+    assert run.main(args) == 1
+    row = json.loads((tmp_path / "out/results.jsonl").read_text())
+    assert row["error"] == "inspected before launch"
+
+
+@pytest.fixture
+def scripted_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[pathlib.Path]:
+    """Use partial isolation only for fixed test replies on a host without namespaces."""
+    from bench.tools import run
+
+    if detect.environment().userns_supported:
+        yield tmp_path
+        return
+    if ROOT.is_relative_to("/tmp"):
+        pytest.skip("partial test needs its build outside the host tmp grant")
+    monkeypatch.setattr(run, "ISOLATION", "partial")
+    with tempfile.TemporaryDirectory(dir=ROOT, prefix=".scripted-bench-") as where:
+        yield pathlib.Path(where)
+
+
+def test_run_set_counts_failed_edits_and_grades_the_final_tree(
+    scripted_root: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A rejected patch and a successful edit have different outcomes in the same run."""
     changes = [
@@ -43,7 +137,7 @@ def test_run_set_counts_failed_edits_and_grades_the_final_tree(
         launch_env.FINISH,
     ]
     with launch_env.scripted_provider(replies) as (url, calls):
-        rows = _run(tmp_path, monkeypatch, url, "short", "bugs")
+        rows = _run(scripted_root, monkeypatch, url, "short", "bugs")
     assert {"parallel", "ask_user", "apply_edit", "apply_patch"} <= {
         t["function"]["name"] for t in calls[0]["tools"]
     }
@@ -57,7 +151,7 @@ def test_run_set_counts_failed_edits_and_grades_the_final_tree(
 
 @pytest.mark.parametrize("arm", ["control", "no-docs"])
 def test_ask_scores_the_journal_answer_not_a_tool_result(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, arm: str
+    scripted_root: pathlib.Path, monkeypatch: pytest.MonkeyPatch, arm: str
 ) -> None:
     """Each replicate starts fresh, even when the preceding answer was correct."""
     with launch_env.scripted_provider(
@@ -68,7 +162,7 @@ def test_ask_scores_the_journal_answer_not_a_tool_result(
             "completion_tokens": 2,
         },
     ) as (url, calls):
-        rows = _run(tmp_path, monkeypatch, url, arm, "plan-cap", reps=2)
+        rows = _run(scripted_root, monkeypatch, url, arm, "plan-cap", reps=2)
     assert ("agent6_docs" in {t["function"]["name"] for t in calls[0]["tools"]}) == (
         arm == "control"
     )
@@ -79,7 +173,7 @@ def test_ask_scores_the_journal_answer_not_a_tool_result(
     assert rows[0]["answer"] == "`--max-plan-points`"
     for r in rows:
         assert (r["arm"], r["split"], r["model"], r["effort"]) == (arm, "eval", "local/m", "medium")
-        log = tmp_path / "out" / f"plan-cap-{r['rep']}" / r["journal"]
+        log = scripted_root / "out" / f"plan-cap-{r['rep']}" / r["journal"]
         events = [json.loads(line) for line in log.read_text().splitlines()]
         budget = next(event for event in events if event["type"] == "budget.update")
         assert (budget["plan_cap"], budget["usd_cap"], budget["tokens_fallback_cap"]) == (
@@ -94,6 +188,7 @@ def test_ask_scores_the_journal_answer_not_a_tool_result(
             assert docs and docs["ok"] == (arm == "control")
 
 
+@pytest.mark.needs_namespaces
 def test_offline_install_runs_the_patched_wheel(tmp_path: pathlib.Path) -> None:
     """The CLI uses the arm's install, not an agent6 already on PATH."""
     env = os.environ.copy()
@@ -164,7 +259,6 @@ def _arguments(where: pathlib.Path, url: str, arm: str, task: str, reps: int) ->
     profile.mkdir()
     (profile / "config.toml").write_text(
         f'[providers.local]\nbackend = "openai"\nbase_url = "{url}"\n'
-        '[sandbox]\nisolation = "partial"\n'
     )
     return [
         "--arm",

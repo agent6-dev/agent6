@@ -24,6 +24,7 @@ from bench.tools import journals
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ARMS = ("control", "no-docs", "no-patch", "short")
+ISOLATION = "full"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -172,7 +173,8 @@ def sample(
     config.write_text(
         f"[models.default]\nmodel = {json.dumps(args.model)}\neffort = {json.dumps(args.effort)}\n"
         f"[budget]\nmax_plan_points = {args.max_plan_points}\nmax_usd = 1.0\nmax_tokens_fallback = 100000\n"
-        f'[sandbox]\nisolation = "{args.isolation}"\nrun_commands = "{"allow" if editing else "deny"}"\n'
+        f'[sandbox]\nisolation = "{ISOLATION}"\nrun_commands = "{"allow" if editing else "deny"}"\n'
+        f"hide_paths = {json.dumps([str(args.profile), str(source.parent)])}\n"
         + (
             '[harness]\nverify.command = ["bash", "verify.sh"]\nparallel.tool = true\n'
             if editing
@@ -230,17 +232,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.out = args.out.resolve()
     args.profile = args.profile.resolve()
     profile = tomllib.loads((args.profile / "config.toml").read_text(encoding="utf-8"))
-    if (
-        profile.keys() - {"agent6", "providers", "sandbox"}
-        or profile.get("agent6", {}).keys() - {"config_version"}
-        or profile.get("sandbox", {}).keys() - {"isolation"}
-    ):
+    if profile.keys() - {"agent6", "providers"} or profile.get("agent6", {}).keys() - {
+        "config_version"
+    }:
         parser.error(
-            "the profile may contain only providers, agent6.config_version and sandbox.isolation"
+            "full isolation is required; the profile may contain only providers and agent6.config_version"
         )
-    args.isolation = profile.get("sandbox", {}).get("isolation", "full")
-    if args.isolation not in {"full", "partial"}:
-        parser.error("use full isolation, or explicitly select partial for a local scripted run")
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     args.out.mkdir(mode=0o700, parents=True, exist_ok=False)
     ok = True
@@ -261,7 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         model=args.model,
                         effort=args.effort,
                         max_plan_points=args.max_plan_points,
-                        isolation=args.isolation,
+                        isolation=ISOLATION,
                         error=None,
                         passed=None,
                     )
