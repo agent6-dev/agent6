@@ -136,7 +136,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
         "tool errors (1 of 2 calls):",
         "harness notices: nudge.no_progress x1",
         "memory facts this session wrote: lexer-rule",
-        "memory index (every run on this repo is shown it):\n- money-rounding:",
+        "current repo memory index:\n- money-rounding:",
         "conversation (tail):",
     ):
         assert heading in text

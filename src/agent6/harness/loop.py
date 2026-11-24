@@ -1965,7 +1965,9 @@ class Harness:
         """
         if self.state_dir is None or self.mode == "read_only":
             return ""
-        return agent6_memory.index_text(self.state_dir)
+        return agent6_memory.index_text(
+            self.state_dir, session_id=self.session_id, execution_id=self.execution_id
+        )
 
     def _load_decisions(self) -> str:
         """Return the operator's recorded rulings for the prompt, "" without a state dir."""

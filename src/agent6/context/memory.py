@@ -110,6 +110,11 @@ class MemoryUse:
         return self.writes[-1] if self.writes else None
 
     @property
+    def last_used(self) -> str:
+        """The later UTC stamp of the last read and write, or empty when neither is known."""
+        return max((touch.at for touch in (self.updated, self.last_read) if touch), default="")
+
+    @property
     def writers(self) -> tuple[str, ...]:
         """Every distinct writer, first to last."""
         return tuple(dict.fromkeys(t.session for t in self.writes))
@@ -620,17 +625,6 @@ def decisions_text(state_dir: pathlib.Path) -> str:
     return marker + ("\n" + "\n".join(reversed(kept)) if kept else "")
 
 
-def clipped_index(index: str) -> str:
-    """Return the index as a prompt carries it: whole under the cap, else its head and a marker."""
-    body = index.strip()
-    if len(body) <= INDEX_INJECT_CAP:
-        return body
-    marker = "... (index clipped; the rest are <name>.md files in the memory dir)"
-    head = body[: INDEX_INJECT_CAP - len(marker) - 1]
-    head = head.rsplit("\n", 1)[0] if "\n" in head else head
-    return f"{head}\n{marker}" if head else marker
-
-
 def _is_fact_file(path: pathlib.Path) -> bool:
     """Return whether a store entry is a fact: `<name>.md` under the name rule, a regular file.
 
@@ -711,16 +705,49 @@ def ignored_names(state_dir: pathlib.Path) -> tuple[str, ...]:
     return tuple(p.name for p in _store_entries(state_dir) if not _is_fact_file(p))
 
 
-def index_text(state_dir: pathlib.Path) -> str:
-    """Render the index for injection.
+def index_text(state_dir: pathlib.Path, *, session_id: str = "", execution_id: str = "") -> str:
+    """Render the prompt index, in name order when it fits.
 
     Args:
         state_dir: The repo's state dir.
+        session_id: The run's session, empty for a preview.
+        execution_id: The execution whose prompt holds the draw.
 
     Returns:
-        One `- <name>: <first line>` per fact, sorted by name; "" with no facts.
+        The index. Over the cap it shows recent facts, a draw from the rest and a pointer.
     """
-    return "\n".join(f"- {name}: {first}" for name, first in index_entries(state_dir))
+    lines = {name: f"- {name}: {first}" for name, first in index_entries(state_dir)}
+    body = "\n".join(lines.values()).strip()
+    if len(body) <= INDEX_INJECT_CAP:
+        return body
+
+    use = read_use(state_dir)
+    by_use = sorted(
+        lines, key=lambda name: use[name].last_used if name in use else "", reverse=True
+    )
+    marker = "... (index clipped; the rest are <name>.md files in the memory dir)"
+    room = INDEX_INJECT_CAP - len(marker)  # each line pays for its trailing newline
+    recent_room = room * 3 // 4 if len(lines) > 1 else room
+    selected: list[str] = []
+    for name in by_use:
+        line = lines[name]
+        if len(line) + 1 > recent_room:
+            if selected:
+                break
+            line = line[: recent_room - 1]  # even an oversized first line keeps its hook
+        selected.append(line)
+        recent_room -= len(line) + 1
+        room -= len(line) + 1
+
+    others = by_use[len(selected) :]
+    seed = f"{session_id}\0{execution_id}\0".encode()
+    others.sort(key=lambda name: hashlib.sha256(seed + name.encode()).digest())
+    for name in others:
+        line = lines[name]
+        if len(line) + 1 <= room:
+            selected.append(line)
+            room -= len(line) + 1
+    return "\n".join([*selected, marker])
 
 
 def is_memory_name(name: str) -> bool:

@@ -361,7 +361,8 @@ The graph is a side store: it never picks the next tool.
 ## Memory, rulings and skills
 
 - Repo memory is one fact per markdown file under `<state-dir>/memory/`, with an index rendered from each file's first non-empty line (`context/memory.py`).
-- The index injects into every run's prompt as a capped `<memory>` block.
+- The `<memory>` index stays in name order when it fits.
+- Over the cap, about three quarters shows facts by latest read or write; the rest is a random draw from the remaining facts, fixed for the execution.
 - The worker writes through the ordinary edit tools under a narrow grant, in-process only.
 - The jail never mounts the store.
 - Run mode writes, and plan and ask read.

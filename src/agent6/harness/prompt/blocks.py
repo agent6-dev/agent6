@@ -15,7 +15,7 @@ import pathlib
 from agent6 import directive, kinds
 from agent6.config import model as config_model
 from agent6.config import provider_config
-from agent6.context import memory, skills
+from agent6.context import skills
 from agent6.prompts import loop
 from agent6.tools import target_policy
 
@@ -34,8 +34,7 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
     Returns:
         The block, or "" for a read-only mode with nothing recorded.
     """
-    body = memory.clipped_index(index)
-    if mode != "run" and not body:
+    if mode != "run" and not index:
         return ""
     header = (
         f"<memory>\nRepo memory at {memory_dir_path}: one fact per file,"
@@ -48,7 +47,7 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
             " keep that first line concise and put details below it."
             " A wrong fact is updated or deleted with the edit tools."
         )
-    tail = body if body else "(none recorded yet)"
+    tail = index if index else "(none recorded yet)"
     return f"{header}\n\n{tail}\n</memory>"
 
 

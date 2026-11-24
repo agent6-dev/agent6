@@ -129,7 +129,7 @@ class RunDigest:
         first_errors: The first failures as "[tool] summary".
         notices: The (notice, count) harness interventions.
         memory_wrote: The memory facts this session wrote.
-        memory_index: The repo's memory index, shown to every run.
+        memory_index: The repo's current memory index for this execution.
         conversation: The conversation's tail.
         steers_total: The steers the journal holds.
         decisions_total: The decisions the journal holds.
@@ -207,9 +207,7 @@ class RunDigest:
         if self.memory_wrote:
             lines.append("\nmemory facts this session wrote: " + ", ".join(self.memory_wrote))
         if self.memory_index:
-            lines.append(
-                f"\nmemory index (every run on this repo is shown it):\n{self.memory_index}"
-            )
+            lines.append(f"\ncurrent repo memory index:\n{self.memory_index}")
         lines.append(f"\nconversation (tail):\n{self.conversation}")
         return "\n".join(lines)
 
@@ -277,6 +275,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     except OSError:
         raw = ""
     started = False
+    execution_id = ""
     for line in raw.splitlines():
         try:
             event = json.loads(line)
@@ -288,6 +287,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         etype = str(event.get("type", ""))
         if etype in journal.SESSION_START_EVENTS:
             started = True
+            execution_id = str(event.get("execution_id") or "")
         if directive := _DIRECTIVES.get(etype):
             verb, field = directive
             value = event.get(field)
@@ -363,7 +363,9 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         first_errors=tuple(first_errors),
         notices=tuple(sorted(notices.items())),
         memory_wrote=wrote,
-        memory_index=memory.clipped_index(memory.index_text(layout.state_dir)),
+        memory_index=memory.index_text(
+            layout.state_dir, session_id=layout.session_id, execution_id=execution_id
+        ),
         conversation=sessions.conversation(layout, max_chars=max_chars),
         steers_total=len(steers),
         decisions_total=len(decisions),

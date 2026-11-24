@@ -61,20 +61,55 @@ def test_run_mode_always_carries_the_memory_header(tmp_path: pathlib.Path) -> No
     assert "first line concise" in prompt_blocks.memory_block("", "/state/memory", mode="run")
 
 
-def test_index_content_renders_and_clips(tmp_path: pathlib.Path) -> None:
-    out = _build("run", "- fact: the hook", tmp_path)
-    assert "- fact: the hook" in out
-    big = "\n".join(f"- fact-{i}: {'x' * 80}" for i in range(200))
-    out = _build("run", big, tmp_path)
-    assert "index clipped" in out
-    body = out.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
-    assert len(body) <= agent6_memory.INDEX_INJECT_CAP
+def test_an_execution_keeps_its_recent_facts_and_its_draw(tmp_path: pathlib.Path) -> None:
+    """The most recent read or write leads; only another execution redraws the rest."""
+    from unittest import mock
+
+    from tests.unit import test_harness
+
+    store = agent6_memory.memory_dir(tmp_path)
+    store.mkdir()
+    for i in range(100):
+        (store / f"fact-{i:02}.md").write_text("x" * 89, encoding="utf-8")
+    agent6_memory.record_use(tmp_path, session="s", wrote=["fact-95"], read={"fact-96": 1}, when=60)
+    agent6_memory.record_use(tmp_path, session="s", wrote=["fact-96"], read={}, when=120)
+    agent6_memory.record_use(tmp_path, session="s", wrote=[], read={"fact-95": 1}, when=180)
+
+    def prompts(execution: str) -> list[str]:
+        provider = mock.MagicMock()
+        provider.call.return_value = test_harness._tool_resp("list_dir", {"path": "."}, tool_id="c")
+        tools = dispatch.ToolDispatcher(
+            root=tmp_path, config=config_model.Config(), mode="ask", execution_id=execution
+        )
+        wf = test_harness._wf(
+            tmp_path,
+            state_dir=tmp_path,
+            config=config_model.Config(),
+            mode="ask",
+            provider=provider,
+            dispatcher=tools,
+            max_turns=2,
+        )
+        wf.run("Which facts apply?")
+        return [str(call.kwargs["system"]) for call in provider.call.call_args_list]
+
+    first, second = prompts("first")
+    assert first == second == prompts("first")[0]
+    body = first.split("<memory>", 1)[1].split("\n\n", 1)[1].split("\n</memory>", 1)[0]
+    rows = body.splitlines()
+    assert rows[0].startswith("- fact-95:") and rows[1].startswith("- fact-96:")
+    assert rows[2].startswith("- fact-00:")  # missing use ties break by name
+    assert len(rows) == len(set(rows)) and len(body) <= agent6_memory.INDEX_INJECT_CAP
+    assert rows[-1] == "... (index clipped; the rest are <name>.md files in the memory dir)"
+    other = prompts("next")[0]
+    recent_rows = ((agent6_memory.INDEX_INJECT_CAP - len(rows[-1])) * 3 // 4) // (len(rows[0]) + 1)
+    assert body not in other and "\n".join(rows[:recent_rows]) in other
 
 
 def test_an_index_of_one_long_line_keeps_its_head(tmp_path: pathlib.Path) -> None:
     """A single index entry longer than the cap rendered the clip marker alone."""
-    big = "- fact: " + "x" * (agent6_memory.INDEX_INJECT_CAP + 500)
-    out = _build("run", big, tmp_path)
+    agent6_memory.add(tmp_path, "fact", "x" * (agent6_memory.INDEX_INJECT_CAP + 500))
+    out = _build("run", agent6_memory.index_text(tmp_path), tmp_path)
     assert "index clipped" in out
     assert "- fact: " + "x" * 100 in out
     assert "... (index clipped; the rest are <name>.md files in the memory dir)" in out
