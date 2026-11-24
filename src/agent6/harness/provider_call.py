@@ -269,7 +269,9 @@ class MediaRecovery:
             return False
         route = self.capabilities.route.spec
         detail = f"{route}: {_REFUSAL_DETAIL[reason].format(modality='image')}"
-        notice = conversation.messages[message_idx].items[item_idx]
+        message = conversation.messages[message_idx]
+        assert isinstance(message, loop_conversation.UserMessage)
+        notice = message.items[item_idx]
         assert isinstance(notice, loop_conversation.Notice)
         images = notice.images
         lines = conversation.drop_notice_images(message_idx, item_idx, lambda _image: detail)

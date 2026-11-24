@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from agent6 import paths
+from agent6 import operator_input, paths
 from agent6.app import confine, execution, preflight, role_providers, run
 from agent6.app import resume as resume_mod
 from agent6.app.session import runtime as session_runtime
@@ -24,11 +24,12 @@ from agent6.app.session import setup as session_setup
 from agent6.config import layer, layer_data
 from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
-from agent6.sessions import event_log, journal, process
+from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import run as cli_run
 from agent6.vcs.git import read as git_read
+from tests.unit import test_operator_images
 
 
 def _git_repo(path: pathlib.Path) -> None:
@@ -1187,6 +1188,15 @@ def test_a_steer_that_resumes_a_run_is_its_continuation(
         )
         assert rc == 0
         assert sessions_manifest.read_manifest(session_dir).continued_task == ""
+    # A steer whose front-end stored images enters the inbox with them.
+    ref = test_operator_images.stored(session_dir)
+    message = operator_input.OperatorInput(parts=("and match this", ref))
+    ipc.write_launch_input(session_dir, message)
+    rc = resume_mod.resume_task(
+        (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer=message.text
+    )
+    assert rc == 0
+    assert ipc.queued_steers(session_dir)[-1] == ipc.QueuedSteer(text=message.text, images=(ref,))
 
 
 def test_a_declined_unconfined_confirm_is_the_operators_refusal(
