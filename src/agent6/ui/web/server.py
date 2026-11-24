@@ -565,7 +565,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     # Seconds one socket read or one response write may block; an idle event stream is in neither.
     timeout = 60.0
-    server: WebServer  # type: ignore[assignment]
+    server: WebServer  # pyrefly: ignore[bad-override-mutable-attribute]
 
     @override
     def log_message(self, format: str, *args: Any) -> None:
