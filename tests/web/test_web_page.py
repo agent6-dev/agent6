@@ -23,7 +23,7 @@ from agent6.ui.web import page
 from tests.web import client_assets
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "b942043a6fef5369c1806188afcfd237e3ecc15d48a495044154a024bcb2fa35"
+PAGE_SHA256 = "7456ae4078c71916141c865f225828bea6b7464dce08d138f18a555977ecd275"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -264,7 +264,7 @@ def test_the_policy_line_breaks_only_between_its_settings() -> None:
     """
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const parts = s.policy.split(' · ');" in run
-    assert "el('span', 'setting', part + (i < parts.length - 1 ? ' ·' : ''))" in run
+    assert r"el('span', 'setting', (i ? '·\u00a0' : '') + part)" in run
     # A space at an inline block's end collapses, so it stands between the blocks.
     assert "if (i) kv.lastElementChild.append(' ');" in run
     css = page.STYLES_CSS

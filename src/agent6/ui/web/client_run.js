@@ -542,7 +542,7 @@ function paintRun(cards, s) {
     const parts = s.policy.split(' · ');
     parts.forEach((part, i) => {
       if (i) kv.lastElementChild.append(' ');
-      kv.lastElementChild.appendChild(el('span', 'setting', part + (i < parts.length - 1 ? ' ·' : '')));
+      kv.lastElementChild.appendChild(el('span', 'setting', (i ? '·\u00a0' : '') + part));
     });
   }
   if (s.last_model_call) {

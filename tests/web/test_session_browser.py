@@ -701,7 +701,7 @@ def test_the_run_card_lines_up_the_judge_settings_and_last_call_with_its_rows(
     values = page.locator(".card-head .kv .v")
     expect(values.nth(4)).to_have_text("covers it")
     expect(values.nth(6)).to_have_text("worker / m1")
-    settings = values.nth(5).evaluate("e => e.innerText")
+    settings = values.nth(5).inner_text().replace("\xa0", " ")
     assert settings.startswith("gpt-4.1-mini · isolation full · network session · run_commands ask")
     assert len(set(values.evaluate_all("vs => vs.map(v => v.getBoundingClientRect().x)"))) == 1
     assert not errors
@@ -1109,4 +1109,41 @@ def test_a_phone_draft_starts_its_conversation_under_the_top_bar(
     header, top = page.locator("header").bounding_box(), card.bounding_box()
     assert header and top
     assert top["y"] == header["y"] + header["height"]
+    assert not errors
+
+
+def test_settings_do_not_wrap_a_separator_onto_its_own_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    session = session_logs.write_run(tmp_path, "long-settings", [])
+    manifest = {
+        "mode": "run",
+        "models": {"driver": {"provider": "local", "model": "multilingual-reader-large-2026"}},
+        "policy": {"isolation": "full", "network": "session", "run_commands": "ask"},
+    }
+    (session / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    settings = page.locator(".card-head .setting").first
+    assert "multilingual" in settings.inner_text()
+    orphan = settings.evaluate("""first => {
+      const drawer = first.closest('.drawer');
+      const row = first.parentNode;
+      for (let width = 220; width <= 350; width++) {
+        drawer.style.width = width + 'px';
+        const lines = new Map(), nodes = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+        for (let n; (n = nodes.nextNode()); ) {
+          const r = document.createRange();
+          for (let i = 0; i < n.length; i++) {
+            r.setStart(n, i); r.setEnd(n, i + 1);
+            const y = r.getBoundingClientRect().top;
+            lines.set(y, (lines.get(y) || '') + n.data[i]);
+          }
+        }
+        const text = [...lines.values()];
+        if (text.some(line => line.trim() === '·')) return [width, ...text];
+      }
+      return [];
+    }""")
+    assert not orphan, orphan
     assert not errors
