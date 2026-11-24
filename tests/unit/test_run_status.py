@@ -1240,9 +1240,42 @@ def test_a_missing_child_ref_reports_only_the_measured_count(
     assert sessions_show._cmd_status(sid) == 0
     assert f"changes:    {note}" in capsys.readouterr().out.splitlines()
     assert sessions_cmds._cmd_diff(session_id=sid, stat=False, paths=()) == 0
-    assert note in capsys.readouterr().out
+    assert f"{note}. No patch recorded." in capsys.readouterr().out
     assert sessions_cmds._cmd_commits(session_id=sid) == 0
     assert note in capsys.readouterr().out
+
+
+def test_diff_prints_the_recorded_child_patches_without_a_local_ref(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sid = "winsome-dawn-YWH5ZS"
+    first, last = "aa11111", "bb22222"
+    rows: list[dict[str, object]] = [{"type": "session.start", "mode": "run"}]
+    for sha, patch, cut in ((first, "+one\n", False), (last, "+two\x1b[2J\n", True)):
+        rows.extend(
+            [
+                {"type": "checkpoint.committed", "sha": sha, "subject": "work", "turn": 1},
+                {"type": "diff.updated", "sha": sha, "patch": patch, "truncated": cut},
+            ]
+        )
+    d = _make_run(tmp_path, monkeypatch, rows)
+    subprocess.run(["git", "init", "-q", "-b", "main"], check=True)
+    _stamp_manifest(
+        d,
+        session_id=sid,
+        run_branch=f"agent6/{sid}",
+        base_sha="1" * 40,
+        parallel={"group": "parent-p1", "number": 1, "parent": "parent"},
+    )
+    assert sessions_cmds._cmd_diff(session_id=sid, stat=False, paths=()) == 0
+    output = capsys.readouterr()
+    assert output.out == "+one\n+two\n"
+    assert first in output.err and last in output.err and "not cumulative" in output.err
+    assert "Recorded patch truncated" in output.err
+    for stat, paths in ((True, ()), (False, ("other",))):
+        assert sessions_cmds._cmd_diff(session_id=sid, stat=stat, paths=paths) == 2
+        output = capsys.readouterr()
+        assert not output.out and "require a local child ref" in output.err
 
 
 @pytest.mark.parametrize("advance", [False, True], ids=["covered", "advanced"])

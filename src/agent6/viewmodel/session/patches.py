@@ -7,10 +7,14 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import re
+from collections.abc import Iterator
+from typing import Any
 
 from agent6.sessions import child_dispatch, journal, layout, manifest
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import events, tail
+
+_SHA = re.compile(r"[0-9a-f]{7,64}")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -47,6 +51,36 @@ def child_commit_note(
     return f"no child branch or chain in this repository; {measure}"
 
 
+def _preview(row: dict[str, Any]) -> RecordedPatch:
+    event = events.parse_event(row)
+    assert isinstance(event, journal.DiffUpdated)
+    note = ""
+    if event.truncated:
+        note = "Recorded patch truncated"
+    elif event.truncated is None and len(event.patch) == journal.DiffUpdated.MAX_CHARS:
+        note = "Recorded patch possibly truncated"
+    return RecordedPatch(event.patch, note)
+
+
+def recorded_patches(session_dir: pathlib.Path) -> Iterator[tuple[str, RecordedPatch]]:
+    """Read the available per-commit previews in journal order.
+
+    Args:
+        session_dir: The child's session record.
+
+    Yields:
+        The commit id and its recorded patch, with a note when the patch was cut.
+    """
+    for row in tail.tail_events(session_dir / layout.LOGS_NAME, follow=False):
+        sha = row.get("sha")
+        if (
+            row.get("type") == journal.DiffUpdated.TYPE
+            and isinstance(sha, str)
+            and _SHA.fullmatch(sha)
+        ) and (preview := _preview(row)).patch:
+            yield sha, preview
+
+
 def child_patch(
     repo: pathlib.Path,
     session_dir: pathlib.Path,
@@ -69,7 +103,7 @@ def child_patch(
     """
     if run.parallel is None or not run.parallel.parent:
         return None
-    if not re.fullmatch(r"[0-9a-f]{7,64}", sha):
+    if not _SHA.fullmatch(sha):
         return RecordedPatch("", f"not a commit sha: {sha!r}")
     selected = ""
     for row in tail.tail_events(session_dir / layout.LOGS_NAME, follow=False):
@@ -85,16 +119,9 @@ def child_patch(
                     )
                 selected = commit
             case {"type": "diff.updated", "sha": str(commit)} if selected and commit == selected:
-                event = events.parse_event(row)
-                assert isinstance(event, journal.DiffUpdated)
-                if not event.patch:
-                    break
-                note = ""
-                if event.truncated:
-                    note = "Recorded patch truncated"
-                elif event.truncated is None and len(event.patch) == journal.DiffUpdated.MAX_CHARS:
-                    note = "Recorded patch possibly truncated"
-                return RecordedPatch(event.patch, note)
+                if (preview := _preview(row)).patch:
+                    return preview
+                break
             case _:
                 continue
     return RecordedPatch("", f"No patch recorded for {sha}")

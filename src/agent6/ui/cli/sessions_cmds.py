@@ -8,12 +8,13 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import pathlib
 import shutil
 import subprocess
 import sys
 
-from agent6 import errors, portable
+from agent6 import errors, portable, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import fork_worktrees, merge_plan, resume_record
 from agent6.sessions import id, lineage, process
@@ -65,8 +66,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         # A branch may stand in for a pruned one: say where the work went.
         pruned = _pruned_branch_note(cwd, layout.session_dir, manifest, manifest.run_branch)
         if pruned is not None:
-            print(pruned)
-            return 0
+            return pruned.print_diff(layout.session_dir, filtered=bool(paths or stat))
     base_sha = manifest.base_sha
     if not base_sha:
         common.error("manifest has no base_sha; nothing to diff against")
@@ -216,12 +216,52 @@ def _committed_nothing(cwd: pathlib.Path, session_id: str) -> bool:
     return git_read.chain_tip(cwd, git_read.chain_ref_for(session_id)) is None
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _AbsentBranch:
+    """The missing branch's explanation and whether a child journal can supply patches."""
+
+    note: str
+    child: bool = False
+
+    def print_diff(self, session_dir: pathlib.Path, *, filtered: bool) -> int:
+        """Print the missing branch note or the child's available patch previews.
+
+        Args:
+            session_dir: The run's record.
+            filtered: Whether the operator asked for a stat or a path selection.
+
+        Returns:
+            Zero after printing, or 2 when the selection requires git objects.
+        """
+        if not self.child:
+            print(self.note)
+            return 0
+        if filtered:
+            common.error(
+                "--stat and --path require a local child ref; omit them for recorded patches."
+            )
+            return 2
+        shown = False
+        for sha, preview in patches.recorded_patches(session_dir):
+            if not shown:
+                print(f"{self.note} Recorded checkpoint patches (not cumulative):", file=sys.stderr)
+                shown = True
+            print(f"[agent6] {sha}", file=sys.stderr)
+            patch = terminal.scrub_terminal_controls(preview.patch)
+            print(patch, end="" if patch.endswith("\n") else "\n", flush=True)
+            if preview.note:
+                print(f"[agent6] {preview.note}.", file=sys.stderr)
+        if not shown:
+            print(f"{self.note} No patch recorded.")
+        return 0
+
+
 def _pruned_branch_note(
     cwd: pathlib.Path,
     session_dir: pathlib.Path,
     manifest: sessions_manifest.SessionManifest,
     run_branch: str,
-) -> str | None:
+) -> _AbsentBranch | None:
     """Return where the work went when a run's branch is absent, or None when it is there.
 
     Args:
@@ -243,18 +283,18 @@ def _pruned_branch_note(
         note = f"[agent6] run branch {run_branch} was pruned; {stamp.description()}"
         if stamp.commit:
             note += f"\n  see: git show {stamp.commit}"
-        return note
+        return _AbsentBranch(note)
     if note := patches.child_commit_note(cwd, session_dir, manifest):
-        return f"[agent6] {note}."
+        return _AbsentBranch(f"[agent6] {note}.", child=True)
     if _committed_nothing(cwd, manifest.session_id):
-        return f"[agent6] this run committed nothing, so {run_branch} was never cut."
+        return _AbsentBranch(f"[agent6] this run committed nothing, so {run_branch} was never cut.")
     chain = git_read.chain_ref_for(manifest.session_id)
     if manifest.merged is not None:
-        return (
+        return _AbsentBranch(
             f"[agent6] run branch {run_branch} is gone; its commits survive at {chain},"
             f" past the merge into {manifest.merged.into}."
         )
-    return (
+    return _AbsentBranch(
         f"[agent6] run branch {run_branch} is gone with no merge recorded; its commits"
         f" survive at {chain}."
     )
@@ -290,7 +330,7 @@ def _cmd_commits(*, session_id: str) -> int:
         else None
     )
     if pruned is not None:
-        print(pruned)
+        print(pruned.note)
         return 0
     rows = git_read.list_run_commits(cwd, base_sha, head_ref)
     if not rows:

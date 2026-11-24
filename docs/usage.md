@@ -495,6 +495,9 @@ One notice per task names each child's outcome: the commit on the parent chain i
 A stopped child never merges by itself, whoever stopped it: its parent, the operator, the run's budget or the end of the execution that started it.
 Its end notice and its line say what stopped it, that it did not merge, what holds its work, its conversation size at the last measured provider call, and how long ago it last ran; the model decides what to do with it.
 Missing measurements read as unknown.
+If the repository has neither a child's branch nor its chain, `agent6 sessions diff <child>` prints the available checkpoint patches in journal order.
+These are recorded previews, not a cumulative diff. The command marks truncated previews and says when no patch was recorded.
+`--stat` and `--path` need a local child ref.
 Among attempts a stopped child is no candidate; a task whose every child stopped merges nothing, says `Every child stopped: nothing merged.` and is marked failed.
 Under agent6-owned git, `agent6 sessions merge <child> --into <branch>` merges a stopped child's branch by hand.
 
