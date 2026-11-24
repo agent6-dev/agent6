@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, errors, token_usage
 from agent6.graph import curator as graph_curator
-from agent6.harness import run_chain
+from agent6.harness import run_chain, run_checkpoint
 from agent6.harness.parallel import merge as parallel_merge
 from agent6.harness.parallel import merge_request as child_merge
 from agent6.harness.parallel import rank as parallel_rank
@@ -982,12 +982,7 @@ class ParallelDispatcher:
             if sha:
                 self.log(f"  checkpoint before {what}: {sha[:12]}")
                 self.emit(journal.CheckpointCommitted(turn=turn, sha=sha, subject=subject))
-                self.emit(
-                    journal.DiffUpdated(
-                        sha=sha,
-                        patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
-                    )
-                )
+                self.emit(run_checkpoint.diff_event(self.chain.root, sha))
         except (errors.GitError, OSError) as exc:
             self.log(f"PARALLEL: checkpoint before {what} failed: {exc}")
         return not self.chain.dirty()

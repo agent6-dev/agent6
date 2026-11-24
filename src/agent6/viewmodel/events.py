@@ -341,7 +341,12 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 nodes=nodes, cursor=cursor if isinstance(cursor, str) else None
             )
         case "diff.updated":
-            return journal.DiffUpdated(patch=_text(raw, "patch"), sha=_text(raw, "sha"))
+            cut = raw.get("truncated")
+            return journal.DiffUpdated(
+                patch=_text(raw, "patch"),
+                sha=_text(raw, "sha"),
+                truncated=cut if isinstance(cut, bool) else None,
+            )
         case "checkpoint.committed":
             return journal.CheckpointCommitted(
                 # Journals written before the turn rename stamp `iteration`.

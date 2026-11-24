@@ -24,6 +24,7 @@ from agent6.ui.tui import forms
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import SessionState, format
+from agent6.viewmodel.session import patches
 
 
 class DiffPane(forms.ScrollPane):
@@ -101,13 +102,30 @@ class DiffPane(forms.ScrollPane):
             select.value = self.commit_sel if any(v == self.commit_sel for _, v in options) else ""
             self._sync_cumulative()
 
-    def _commit_patch(self, sha: str) -> str:
-        if self.cumulative:
-            with contextlib.suppress(manifest.ManifestError):
-                base = manifest.read_manifest(self._session_dir).base_sha
-                if base:
-                    return git_read.diff_range(pathlib.Path.cwd(), base, sha) or "(no diff)"
-        return git_read.commit_diff(pathlib.Path.cwd(), sha) or "(no diff)"
+    def _commit_patch(self, sha: str) -> text.Text:
+        repo = pathlib.Path.cwd()
+        body = text.Text()
+        base = ""
+        with contextlib.suppress(manifest.ManifestError):
+            run = manifest.read_manifest(self._session_dir)
+            preview = patches.child_patch(
+                repo, self._session_dir, run, sha, cumulative=self.cumulative
+            )
+            if preview is not None:
+                # The parent can import the commit without another row in the child's journal.
+                self._rendered = None
+                append_colored_diff(body, preview.patch)
+                if preview.note:
+                    body.append(preview.note + "\n", style="dim")
+                return body
+            base = run.base_sha
+        patch = (
+            git_read.diff_range(repo, base, sha)
+            if self.cumulative and base
+            else git_read.commit_diff(repo, sha)
+        )
+        append_colored_diff(body, patch or "(no diff)", cap=4000)
+        return body
 
     def on_select_changed(self, event: widgets.Select.Changed) -> None:
         """Follow the commit picker."""
@@ -227,7 +245,7 @@ class DiffPane(forms.ScrollPane):
             if commit is not None:
                 what = "cumulative to" if self.cumulative else "commit"
                 dt.append(f"{what} {commit.label}\n", style="bold")
-                append_colored_diff(dt, self._commit_patch(commit.sha), cap=4000)
+                dt.append(self._commit_patch(commit.sha))
                 return dt
         if sel is not None:
             task_diffs = [d for d in s.recent_diffs if d.task_id == sel]

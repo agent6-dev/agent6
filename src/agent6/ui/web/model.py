@@ -42,6 +42,7 @@ from agent6.viewmodel import (
     transcript_style,
 )
 from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.session import patches
 from agent6.viewmodel.session import status as session_status
 from agent6.viewmodel.session import view as session_view
 
@@ -688,6 +689,18 @@ def commit_diff_payload(
         if not commits:
             return None, "no commit yet"
         sha = commits[-1].sha
+    recorded = patches.child_patch(repo, session_dir, m, sha, cumulative=cumulative)
+    if recorded is not None:
+        if not recorded.patch:
+            return None, recorded.note
+        return {
+            "patch": recorded.patch,
+            "note": recorded.note,
+            "recorded": True,
+            "cumulative": False,
+            "old_spans": {},
+            "new_spans": {},
+        }, ""
     return _diff_payload(
         repo,
         sha,

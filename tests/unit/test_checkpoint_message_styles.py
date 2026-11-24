@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import pathlib
 from typing import Any
 from unittest import mock
@@ -12,6 +14,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.harness import loop, loop_state, run_chain
+from agent6.sessions import event_log
 from agent6.tools import dispatch
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -118,6 +121,31 @@ def test_a_pure_rename_is_a_refactor(tmp_path: pathlib.Path) -> None:
     assert wf.checkpoints.subject(_turn("Rename the module."), fallback="checkpoint") == (
         "refactor: update new.py"
     )
+
+
+@pytest.mark.parametrize("length", [8000, 8001])
+def test_the_checkpoint_records_whether_the_decoded_patch_was_cut(
+    tmp_path: pathlib.Path, length: int
+) -> None:
+    """A multibyte patch exactly at the character limit is complete."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    wf = _wf(repo, "agent6")
+    (repo / "a").write_text("é\n")
+    sample = wf.chain.commit("sample")
+    assert sample
+    overhead = len(git_read.commit_diff(repo, sample)) - 1
+    (repo / "b").write_text("é" * (length - overhead) + "\n")
+    logs = tmp_path / "logs.jsonl"
+    sha = dataclasses.replace(wf.checkpoints, emit=event_log.EventSink(logs).emit).commit(
+        "work", turn=1
+    )
+    full = git_read.commit_diff(repo, sha)
+    assert len(full) == length
+    committed, diff = map(json.loads, logs.read_text().splitlines())
+    assert committed["sha"] == diff["sha"] == sha
+    assert diff["patch"] == full[:8000]
+    assert diff["truncated"] is (length > 8000)
 
 
 @pytest.mark.parametrize("name", ["with\ttab.py", "with\nnewline.py"])

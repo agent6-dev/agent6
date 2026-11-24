@@ -9,6 +9,7 @@ every fold counts a commit by. The loop decides when a turn commits.
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,21 @@ from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state
+
+
+def diff_event(repo: pathlib.Path, sha: str) -> journal.DiffUpdated:
+    """Capture the checkpoint patch with one extra character to detect a cut.
+
+    Args:
+        repo: The repository holding the commit.
+        sha: The checkpoint commit.
+
+    Returns:
+        The bounded patch and whether it was cut.
+    """
+    cap = journal.DiffUpdated.MAX_CHARS
+    patch = git_read.commit_diff(repo, sha, max_chars=cap + 1)
+    return journal.DiffUpdated(sha=sha, patch=patch[:cap], truncated=len(patch) > cap)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -111,12 +127,7 @@ class Checkpoints:
             journal.CheckpointCommitted(turn=turn, sha=sha, subject=subject, task_id=task_id or "")
         )
         # Every fold tallies commits and the latest diff from diff.updated alone.
-        self.emit(
-            journal.DiffUpdated(
-                sha=sha,
-                patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
-            )
-        )
+        self.emit(diff_event(self.chain.root, sha))
         return sha
 
     def report_failure(self, exc: errors.GitError | OSError, subject: str, *, turn: int) -> None:

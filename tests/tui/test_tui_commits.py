@@ -13,6 +13,7 @@ from textual import widgets
 
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import diff_pane
+from tests import child_env, child_patch_env
 
 
 def _mk(d: pathlib.Path) -> None:
@@ -130,6 +131,40 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
             dash.render_state()
             await pilot.pause()
             assert dash.query_one("#diff").border_title == "diff · the model owns git"
+
+    asyncio.run(scenario())
+
+
+def test_the_picker_reads_the_child_record_until_import(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An older pick still has its patch while the child's clone owns the commits."""
+    monkeypatch.chdir(tmp_path)
+    child = child_patch_env.recorded_child(tmp_path, monkeypatch)
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(child.directory)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            pane = app._dash.diff
+            pane.commit_sel = child.sha
+            app._dash.render_state()
+            body = pane.query_one("#diff-body", widgets.Static)
+            assert "+preview 1\n" in str(body.render()) and "Recorded patch truncated" in str(
+                body.render()
+            )
+            pane.commit_sel = f"{32:040x}"
+            app._dash.render_state()
+            assert f"No patch recorded for {pane.commit_sel}" in str(body.render())
+            pane.commit_sel, pane.cumulative = child.sha, True
+            app._dash.render_state()
+            assert "Cumulative diff available after the parent imports this child's commits" in str(
+                body.render()
+            )
+            branch = f"agent6/{child.directory.name}"
+            child_env.git(tmp_path, "fetch", str(child.clone), f"{branch}:{branch}")
+            app._dash.render_state()
+            assert "+committed text" in str(body.render())
 
     asyncio.run(scenario())
 

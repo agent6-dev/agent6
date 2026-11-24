@@ -327,6 +327,9 @@ Heartbeats run every 15 seconds, including after the run ends.
 
 A run or draft `/diff` without `sha` returns its latest journaled commit, or 422 with `no commit yet`.
 With `cumulative=1`, the patch covers the chain through that commit.
+A child whose commit is not yet in the parent's repository serves the single patch from its journal.
+The preview has `recorded: true` and a `note` when it is truncated or an older record may be truncated.
+A missing preview or a cumulative request before import returns 422 with the reason.
 
 ## Finding actions API
 

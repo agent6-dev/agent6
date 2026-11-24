@@ -627,15 +627,18 @@ def test_a_picked_commit_says_its_diff_is_loading(
     rows = [
         {"type": "checkpoint.committed", "turn": 1, "sha": "1" * 40, "subject": "first"},
         {"type": "checkpoint.committed", "turn": 2, "sha": "2" * 40, "subject": "second"},
-        {"type": "diff.updated", "patch": patch, "sha": "2" * 40},
+        {"type": "diff.updated", "patch": patch, "sha": "2" * 40, "truncated": True},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     session = session_logs.write_run(tmp_path, "picked-AAA111", rows)
-    (session / "manifest.json").write_text(json.dumps({"version": 0, "mode": "run"}))
+    (session / "manifest.json").write_text(
+        json.dumps({"version": 0, "mode": "run", "parallel": {"parent": "parent-AAA111"}})
+    )
     page, errors = open_page(port)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"http://127.0.0.1:{port}/#/session/picked-AAA111")
     expect(page.locator(".card-diff .card-body")).to_contain_text("new")
+    expect(page.locator(".card-diff .card-body")).to_contain_text("Recorded patch truncated")
     held: list[Route] = []
 
     def hold(route: Route) -> None:
@@ -648,7 +651,7 @@ def test_a_picked_commit_says_its_diff_is_loading(
     while not held:
         page.wait_for_timeout(50)
     held[0].continue_()
-    expect(body).to_have_text(f"no diff for {'1' * 12} (pruned, or not a commit of this run)")
+    expect(body).to_have_text(f"No patch recorded for {'1' * 40}")
     assert [error for error in errors if "Failed to load resource" not in error] == []
 
 

@@ -356,7 +356,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `sha` | `str` | The commit identifier, possibly abbreviated. |
-| `patch` | `str` | The commit's patch, capped at 8000 bytes. |
+| `patch` | `str` | The commit's patch, capped at 8000 characters. |
+| `truncated` | `bool, optional` | Whether the patch was cut. Older records omit this field. |
 
 ### environment.acquired
 

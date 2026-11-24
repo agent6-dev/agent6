@@ -436,8 +436,12 @@ class DiffUpdated(Event):
     """The chain gained a commit and its patch."""
 
     TYPE: ClassVar[str] = "diff.updated"
+    MAX_CHARS: ClassVar[int] = 8000
     sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
-    patch: str = pydantic.Field(description="The commit's patch, capped at 8000 bytes.")
+    patch: str = pydantic.Field(description="The commit's patch, capped at 8000 characters.")
+    truncated: bool | None = pydantic.Field(
+        default=None, description="Whether the patch was cut. Older records omit this field."
+    )
 
 
 class EnvironmentAcquired(Event):

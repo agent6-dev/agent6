@@ -659,7 +659,7 @@ function paintLog(cards, s) {
 // The latest commit's diff and a commit picker, which hides when the model owns git or none exist.
 function paintCommits(cards, s) {
   cards._frame = s; // "latest commit" paints the newest frame's details
-  if (!cardChanged(cards, 'diff', [s.mode, s.git_control, s.commits, s.latest_diff])) return;
+  if (!cardChanged(cards, 'diff', [s.mode, s.git_control, s.commits_ref, s.commits, s.latest_diff])) return;
   cards.diff.innerHTML = '';
   cards._diffGeneration = (cards._diffGeneration || 0) + 1;
   cards._diffCache ||= new Map();
@@ -710,24 +710,26 @@ function paintCommits(cards, s) {
       if (cards._commitState?.as_of?.sha !== selected) {
         cards._commitState = null; paintDetails(cards, cards._frame, null);
       }
-      if (!selected) {
-        body.appendChild(renderDiff({patch: s.latest_diff || ''}));
-      } else body.appendChild(loading);
+      const latest = !selected && s.recent_diffs?.at(-1)?.sha === sha && s.latest_diff;
+      if (latest) body.appendChild(renderDiff({patch: latest}));
+      else body.appendChild(loading);
       const url = cards._base + '/diff?sha=' + encodeURIComponent(sha) + '&cumulative=' + (cum.checked ? '1' : '0');
       try {
         if (!cards._diffCache.has(url)) cards._diffCache.set(url, getJSON(url).catch(e => { cards._diffCache.delete(url); throw e; }));
         const d = await cards._diffCache.get(url);
+        // The parent's import replaces a journal preview with the commit's own diff.
+        if (d.recorded) cards._diffCache.delete(url);
         if (!current()) return;
         if (cum.checked && d.cumulative === false) { cum.checked = false; cards._diffPick.cumulative = false; toast('this run has no base to accumulate from; showing the single commit'); }
         body.innerHTML = ''; body.appendChild(renderDiff(d));
+        if (d.note) body.appendChild(el('div', 'muted', d.note));
         if (!selected || cards._commitState) return;
         const st = await getJSON(cards._base + '?commit=' + encodeURIComponent(selected));
         if (!current()) return;
         cards._commitState = st; paintDetails(cards, st, st.as_of);
       } catch (e) {
         loading.remove();
-        // With no commit picked the log's diff shows, so only a picked commit's failure is news.
-        if (current() && selected) body.appendChild(el('div', 'muted', e.message));
+        if (current() && !latest) body.appendChild(el('div', 'muted', e.message));
       }
     };
     sel.onchange = show; cum.onchange = show;

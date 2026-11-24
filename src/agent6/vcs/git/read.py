@@ -1185,13 +1185,13 @@ def diff_range(path: pathlib.Path, base_sha: str, ref: str) -> str:
     return res.stdout if res.ok else ""
 
 
-def commit_diff(path: pathlib.Path, sha: str, *, max_bytes: int = 16384) -> str:
+def commit_diff(path: pathlib.Path, sha: str, *, max_chars: int = 16384) -> str:
     """Return the patch one commit introduced, without its message.
 
     Args:
         path: The repository.
         sha: The commit.
-        max_bytes: Where the patch is cut, so no caller holds an unbounded diff.
+        max_chars: The maximum number of decoded characters to return.
 
     Returns:
         The patch text; "" when git fails.
@@ -1201,4 +1201,4 @@ def commit_diff(path: pathlib.Path, sha: str, *, max_bytes: int = 16384) -> str:
     )
     if not res.ok:
         return ""
-    return res.stdout[:max_bytes]
+    return res.stdout[:max_chars]

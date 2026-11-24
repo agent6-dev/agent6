@@ -32,6 +32,7 @@ from agent6.sessions import process, shells
 from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.web import server as web_server
+from tests import child_env, child_patch_env
 from tests.web import signin
 
 TINY = """
@@ -2274,6 +2275,40 @@ def test_commit_diff_serves_one_commit_or_the_cumulative_chain(
     )
     status, raw, _ = _get(port, f"/api/session/commits-run/diff?sha={c1}")
     assert status == 422 and "owns git" in str(json.loads(raw)["error"])
+
+
+def test_child_diff_reads_the_record_until_import(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The parent can serve an older picked patch before it has any child Git objects."""
+    _, port = server
+    child = child_patch_env.recorded_child(tmp_path, monkeypatch)
+    route = f"/api/session/{child.directory.name}/diff?sha="
+    status, raw, _ = _get(port, route + child.sha)
+    assert status == 200, raw
+    preview = json.loads(raw)
+    assert preview["patch"] == "+preview 1\n" and preview["note"] == "Recorded patch truncated"
+    assert preview["old_spans"] == preview["new_spans"] == {}
+    for turn, note in ((2, "Recorded patch possibly truncated"), (3, ""), (4, "")):
+        status, raw, _ = _get(port, route + f"{turn:040x}")
+        assert status == 200 and json.loads(raw)["note"] == note
+    for missing in (f"{32:040x}", child.base):
+        status, raw, _ = _get(port, route + missing)
+        assert status == 422 and json.loads(raw)["error"] == f"No patch recorded for {missing}"
+    with (child.directory / "logs.jsonl").open("a") as log:
+        log.write('{"type":"session.stop","reason":"answered"}\n')
+    cumulative = route + child.sha + "&cumulative=1"
+    status, raw, _ = _get(port, cumulative)
+    assert status == 422 and json.loads(raw)["error"] == (
+        "Cumulative diff available after the parent imports this child's commits"
+    )
+    branch = f"agent6/{child.directory.name}"
+    child_env.git(tmp_path, "fetch", str(child.clone), f"{branch}:{branch}")
+    for path in (route + child.sha, cumulative):
+        status, raw, _ = _get(port, path)
+        assert status == 200 and "+committed text" in json.loads(raw)["patch"]
 
 
 def test_session_snapshot_as_of_a_commit(
