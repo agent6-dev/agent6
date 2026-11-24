@@ -35,7 +35,11 @@ def test_preflight_refreshes_only_configured_listings(
         return []
 
     monkeypatch.setattr(secret_store, "load_secrets", dict)
-    monkeypatch.setattr(secret_store, "resolve_api_key", lambda *_a, **_k: "sk-test")
+
+    def key(*_args: object, **_kwargs: object) -> str:
+        return "sk-test"
+
+    monkeypatch.setattr(secret_store, "resolve_api_key", key)
     monkeypatch.setattr(cache, "list_models", models)
     entries = {"anthropic": {"backend": "anthropic"}}
     if configured:
@@ -268,7 +272,12 @@ def test_claude_code_routes_are_plan_metered(
     assert err is not None and "the plan cap is 0" in err and "claude-haiku-4-5" in err
 
     called: list[bool] = []
-    monkeypatch.setattr(cache, "list_models", lambda *_: called.append(True))
+
+    def listed(*_args: object) -> list[str]:
+        called.append(True)
+        return []
+
+    monkeypatch.setattr(cache, "list_models", listed)
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     # The sign-in probe is the next test's subject; here the binary need not exist.
     monkeypatch.setattr(providers_claude_code, "login_status", _signed_in)
