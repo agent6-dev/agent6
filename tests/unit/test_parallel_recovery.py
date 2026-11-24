@@ -443,6 +443,32 @@ def test_a_budget_row_keeps_live_and_recovered_balances_apart(short_repo: pathli
     assert (usage.usd, fresh.available().usd) == (3, 9)
 
 
+def test_a_recovered_reading_is_not_the_launchers_live_baseline(short_repo: pathlib.Path) -> None:
+    """A parent that only settled an $8 reading has no live balance for its own child."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    sink = event_log.EventSink(parent / "logs.jsonl")
+    _resume(parent, "first")
+    first = _tracker()
+    _balance(first, 10, 10)
+    budget_events.emit_budget_update(first, sink.emit)
+    for number, owner, balance in ((1, "first", 8), (2, "second", 6)):
+        child = _running_child(repo, parent, f"parent-p{number}", owner=owner, work=True)
+        meter = _tracker()
+        _balance(meter, number * 20, balance)
+        budget_events.emit_budget_update(meter, event_log.EventSink(child / "logs.jsonl").emit)
+        _resume(parent, "second" if number == 1 else "third")
+        fresh = _tracker()
+        _reconcile(repo, parent, fresh)
+        assert fresh.estimate_usd()[0] == (2 if number == 1 else 0)
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert [row["credit_origins"] for row in rows if row.get("credit_origins")] == [
+        {"provider:p": {"0": 2}},
+        {"provider:p": {"0": 3}},
+    ]
+
+
 @pytest.mark.parametrize("conflict", [False, True], ids=["recorded-series", "ambiguous"])
 def test_recovery_respects_an_account_wide_origin(short_repo: pathlib.Path, conflict: bool) -> None:
     """The launching execution can have used another execution's series for one account."""
