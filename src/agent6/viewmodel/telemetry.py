@@ -11,7 +11,7 @@ open work live in `telemetry_records`, the metrics in `telemetry_metrics`.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any, ClassVar, Literal
 
 from agent6 import evidence
@@ -668,7 +668,7 @@ class TelemetryFold:
         log = execution.log(step.now, "WARN", "edits left uncommitted", {}, execution.span.span_id)
         step.logs.append(log)
 
-    _HANDLERS: ClassVar[dict[str, Callable[[TelemetryFold, telemetry_records.Step], None]]] = {
+    _HANDLERS: ClassVar = {
         "execution.settings": _settings,
         "model.attempt": _model_attempt,
         "model.call": _model_call,
