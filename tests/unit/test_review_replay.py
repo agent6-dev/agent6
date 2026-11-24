@@ -366,3 +366,16 @@ def test_generic_reader_mentions_do_not_name_one(reader: str) -> None:
 
 def test_a_code_span_can_name_a_reader() -> None:
     assert scoring.reader_evidence("Reader: `build bot`") == "Reader: `build bot`"
+
+
+def test_table_escapes_nonprinting_labels_without_changing_the_reply(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    label = "Time\u200bzone"
+    reply = scoring.score(
+        providers.ProviderResponse(answer(finding(label, "Offset", "Lost")), (), "stop", 1, 1, 0, 0)
+    )
+    scoring.print_table({"review": [{"recorded": reply, "tree": reply}]})
+    assert reply.blocks[0].category == label
+    err = capsys.readouterr().err
+    assert label not in err and r"Time\u200bzone" in err

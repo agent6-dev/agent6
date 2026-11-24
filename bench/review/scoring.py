@@ -83,7 +83,7 @@ type Results = dict[str, list[dict[str, Reply]]]
 
 
 def _counts(items: collections.Counter[str]) -> str:
-    return ", ".join(f"{key}={n}" for key, n in items.most_common()) or "-"
+    return ", ".join(f"{terminal.printable_name(key)}={n}" for key, n in items.most_common()) or "-"
 
 
 def print_table(results: Results) -> None:
