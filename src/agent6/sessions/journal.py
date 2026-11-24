@@ -136,9 +136,9 @@ class BudgetUpdate(Event):
     credit_origins: credit_usage.Origins = pydantic.Field(
         default_factory=dict,
         description=(
-            "Each recovered account maps to its execution number (start is 1). If its readings "
-            "have different origins, the value maps zero-based `credit_readings` indexes to "
-            "executions. A missing origin means this row's execution."
+            "For each account, zero-based `credit_readings` indexes map recovered readings to "
+            "their execution numbers (start is 1). Unmarked readings belong to this row's "
+            "execution. A single number identifies the series used for the whole account."
         ),
     )
     usd_total: float = pydantic.Field(

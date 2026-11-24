@@ -39,7 +39,7 @@ class _Series:
     spent: decimal.Decimal = decimal.Decimal(0)
 
 
-# An account with readings from several executions in one row needs an origin per reading.
+# A number binds the account. An index map binds only those readings.
 type Origins = dict[str, int | dict[int, int]]
 
 
@@ -72,16 +72,18 @@ class Ledger:
         """The additional movement from recovery plus the live execution's declines."""
         return float(sum(series.spent for series in self._series.values()))
 
-    def restore(self, origin: int, accounts: Mapping[str, set[Reading]]) -> None:
-        """Seed each recovered series once, without publishing or charging its history."""
-        for account, readings in accounts.items():
-            key = origin, account
-            if key not in self._series:
-                self._series[key] = _Series(set(readings), _declines(readings))
+    def restore(self, origin: int, account: str, readings: set[Reading]) -> None:
+        """Seed a recovered series once, without publishing or charging its history."""
+        key = origin, account
+        if key not in self._series:
+            self._series[key] = _Series(set(readings), _declines(readings))
 
-    def observe(self, readings: Iterable[Reading], *, origin: int | None = None) -> None:
+    def observe(
+        self, readings: Iterable[Reading], *, origins: Mapping[str, int] | None = None
+    ) -> None:
         """Charge new evidence to its execution, even when settlement delivers it late."""
         for account, group in itertools.groupby(sorted(readings), key=lambda r: r.account):
+            origin = origins[account] if origins is not None else None
             series = self._series.setdefault((origin, account), _Series(set(), decimal.Decimal(0)))
             new = set(group) - series.seen
             if new:
@@ -97,13 +99,8 @@ class Ledger:
         for account, group in itertools.groupby(
             enumerate(rows), key=lambda item: item[1][1].account
         ):
-            scoped = {i: origin for i, (origin, _) in group}
-            values = set(scoped.values())
-            if len(values) == 1:
-                if (origin := values.pop()) is not None:
-                    origins[account] = origin
-            else:
-                origins[account] = {i: n for i, n in scoped.items() if n is not None}
+            if indexed := {i: origin for i, (origin, _) in group if origin is not None}:
+                origins[account] = indexed
         return Batch(tuple(r for _, r in rows), origins)
 
     def published(self, batch: Batch) -> None:

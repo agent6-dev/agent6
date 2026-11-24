@@ -58,7 +58,8 @@ class _CreditHistory:
 
     executions: dict[str, int]
     continuations: dict[tuple[str, str, int], int]
-    readings: dict[int, dict[str, set[credit_usage.Reading]]]
+    origins: dict[tuple[int, str], set[int]]
+    readings: dict[tuple[int, str], set[credit_usage.Reading]]
 
     @classmethod
     def read(cls, logs: pathlib.Path) -> _CreditHistory:
@@ -73,7 +74,8 @@ class _CreditHistory:
         execution = 0
         executions: dict[str, int] = {}
         continuations: dict[tuple[str, str, int], int] = {}
-        readings: dict[int, dict[str, set[credit_usage.Reading]]] = {}
+        origins: dict[tuple[int, str], set[int]] = {}
+        readings: dict[tuple[int, str], set[credit_usage.Reading]] = {}
         for raw in tail.tail_events(logs, follow=False):
             match raw:
                 case {"type": "session.start" | "session.resume"}:
@@ -90,15 +92,19 @@ class _CreditHistory:
                     continuations[group, child, sequence] = execution
                 case {"type": "budget.update"}:
                     row = events.parse_event(raw)
-                    if isinstance(row, journal.BudgetUpdate):
-                        for origin, reading in row.credits.scoped():
-                            series = execution if origin is None else origin
-                            readings.setdefault(series, {}).setdefault(reading.account, set()).add(
-                                reading
-                            )
+                    if not isinstance(row, journal.BudgetUpdate):
+                        continue
+                    for account, binding in row.credit_origins.items():
+                        if isinstance(binding, int):
+                            origins.setdefault((execution, account), set()).add(binding)
+                    for origin, reading in row.credits.scoped():
+                        if origin is None:
+                            origins.setdefault((execution, reading.account), set()).add(execution)
+                        series = execution if origin is None else origin
+                        readings.setdefault((series, reading.account), set()).add(reading)
                 case _:
                     continue
-        return cls(executions, continuations, readings)
+        return cls(executions, continuations, origins, readings)
 
     def restore(
         self,
@@ -116,12 +122,13 @@ class _CreditHistory:
             usage: Its cumulative usage.
 
         Raises:
-            DispatchRecordError: No recorded execution owns the new credit readings.
+            DispatchRecordError: The journal does not identify a unique series for an account.
         """
         continuation = child.continuation
-        if continuation and not set(usage.credit_readings).difference(
-            continuation.usage_before.credit_readings
-        ):
+        new = set(usage.credit_readings)
+        if continuation:
+            new.difference_update(continuation.usage_before.credit_readings)
+        if not new:
             return
         execution = self.executions.get(continuation.owner if continuation else record.owner)
         if execution is None and continuation:
@@ -133,7 +140,17 @@ class _CreditHistory:
                 f"cannot settle credit readings for {child.account_id}: "
                 "the parent journal does not identify the execution that launched it"
             )
-        meter.restore_child_credits(child.account_id, execution, self.readings.get(execution, {}))
+        for account in sorted({r.account for r in new}):
+            origins = self.origins.get((execution, account), {execution})
+            if len(origins) != 1:
+                raise child_dispatch.DispatchRecordError(
+                    f"ambiguous credit series for {child.account_id}: "
+                    f"execution {execution} used {sorted(origins)} for {account}"
+                )
+            (origin,) = origins
+            meter.restore_child_credits(
+                child.account_id, account, origin, self.readings.get((origin, account), set())
+            )
 
 
 def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery path
