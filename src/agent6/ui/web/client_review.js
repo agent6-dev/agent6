@@ -103,10 +103,6 @@ function reviewEntries(review, session_id, panel_id = '') {
 function findingRequestId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
 }
-const dispositionLabels = {
-  fixed: 'Fixed', false_positive: 'False positive', intentional: 'Intentional',
-  wont_fix: "Won't fix", duplicate: 'Duplicate', pre_existing: 'Pre-existing line',
-};
 function findingActions(card, entry, cards) {
   const base = cards._base + '/findings/' + encodeURIComponent(entry.finding.finding_id);
   // A button busy with its request reads disabled (aria-disabled) but keeps the keyboard focus.
@@ -145,7 +141,7 @@ function findingActions(card, entry, cards) {
   disposition.onchange = () => { duplicate.hidden = disposition.value !== 'duplicate'; duplicate.required = !duplicate.hidden; };
   if (verb === 'resolve') { form.appendChild(disposition); form.appendChild(duplicate); }
   const reason = el('textarea', 'field'); reason.maxLength = 2000; reason.required = true;
-  form.append(fieldLabel(reason, 'Reason (required, at most 2,000 characters)'), reason);
+  form.append(fieldLabel(reason, reasonLabel), reason);
   const submit = el('button', 'mini', verb === 'resolve' ? 'Submit resolution' : 'Submit reopen'); submit.type = 'submit'; form.appendChild(submit);
   const request_id = findingRequestId();
   for (const control of card.querySelectorAll('button')) describedBy(card.querySelector('.finding-title'), control);

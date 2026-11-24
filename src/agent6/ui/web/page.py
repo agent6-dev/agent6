@@ -10,7 +10,10 @@ the server serves from memory and tests assert against.
 
 from __future__ import annotations
 
+import json
 from importlib import resources
+
+from agent6.ui import keymap
 
 _ASSETS = resources.files(__package__)
 # A single classic script shares these declarations; start routing after the last one.
@@ -40,10 +43,28 @@ _CLIENT_FILES = (
     "client_git.js",
     "client_files.js",
 )
-CLIENT_JS = (
-    "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
-    + "boot();\n"
-)
+
+
+def client_script(name: str) -> str:
+    """Read a page script with its control labels.
+
+    Args:
+        name: Packaged JavaScript filename.
+
+    Returns:
+        The script as served in the page.
+    """
+    source = _ASSETS.joinpath(name).read_text(encoding="utf-8")
+    if name == "client_review.js":
+        labels = {value: label for label, value in keymap.REVIEW_DISPOSITIONS}
+        return (
+            f"const dispositionLabels = {json.dumps(labels)};\n"
+            f"const reasonLabel = {json.dumps(keymap.REVIEW_TEXT['reason'])};\n" + source
+        )
+    return source
+
+
+CLIENT_JS = "".join(map(client_script, _CLIENT_FILES)) + "boot();\n"
 # One style block, concatenated in declaration order: the shared base (tokens, shell, controls,
 # composers), then each page's own rules, which may override the base.
 _STYLE_FILES = (

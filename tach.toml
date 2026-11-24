@@ -462,6 +462,7 @@ depends_on = [
   "agent6.sessions.manifest",
   "agent6.sessions.process",
   "agent6.ui.directive_actions",
+  "agent6.ui.keymap",
   "agent6.ui.parallel_preview",
   "agent6.ui.spawn",
   "agent6.ui.telemetry",

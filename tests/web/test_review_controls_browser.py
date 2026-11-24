@@ -6,8 +6,13 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent6.ui import keymap
-from tests.web import geometry, test_files_preview_browser, test_review_evidence, test_web_browser
-from tests.web.test_findings import _request
+from tests.web import (
+    geometry,
+    test_files_preview_browser,
+    test_findings,
+    test_review_evidence,
+    test_web_browser,
+)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -72,9 +77,9 @@ def test_another_resolution_preserves_the_reason_and_uses_the_new_version(
     card.get_by_role("button", name="Resolve", exact=True).click()
     reason = card.get_by_role("textbox", name="Reason")
     reason.fill("Keep this format.")
-    code, review = _request(port)
+    code, review = test_findings._request(port)
     assert code == 200
-    code, result = _request(
+    code, result = test_findings._request(
         port,
         "/delete/resolve",
         dict(
