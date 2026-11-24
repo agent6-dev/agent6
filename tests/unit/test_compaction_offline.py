@@ -6,6 +6,26 @@ import subprocess
 import sys
 from typing import Any
 
+from bench import compaction_offline as counter
+
+
+def test_post_result_steer_stays_with_the_reply_that_reads_it() -> None:
+    rows: list[dict[str, Any]] = []
+    for i in (1, 2):
+        rows.extend(
+            [
+                dict(type="budget.turn", turn=i),
+                dict(type="tool.call", call_id=i, name="read_file", args_preview={}),
+                dict(type="tool.result", call_id=i, name="read_file", summary="x" * 50000),
+            ]
+        )
+        if i == 1:
+            rows.append(dict(type="steer.injected", text="1234567"))
+    sizes = {r["arm"]: r for r in counter.sizes(tuple(counter.projected(rows)))}
+    # The recent reply costs the id, tool name, {}, result and the steer it consumed.
+    assert sizes["no-operator"]["kept_chars"] == 1 + len("read_file{}") + 50000 + 7
+    assert sizes["no-operator"]["quote_chars"] == 0
+
 
 def test_settings_count_only_journal_text_before_the_cut(tmp_path: pathlib.Path) -> None:
     """No checkout, manifest, object store or provider is needed to count a journal."""

@@ -21,7 +21,9 @@ def _project_turn(rows: list[Row]) -> Iterator[history.Message]:
     """Project one journal turn onto operator notices, settled text and paired tool previews."""
     calls = {r.get("call_id"): r for r in rows if r.get("type") == "tool.call"}
     blocks: list[Row] = []
-    results: list[history.ToolResultItem] = []
+    uses: list[history.ToolUse] = []
+    deliveries: list[history.Message] = []
+    reply_at: int | None = None
     for r in rows:
         match r.get("type"):
             case "session.start" | "steer.injected" | "session.resume":
@@ -29,27 +31,38 @@ def _project_turn(rows: list[Row]) -> Iterator[history.Message]:
                     r["type"], "text"
                 )
                 if text := r.get(key):
-                    yield history.UserMessage((history.Notice(text, "operator"),))
+                    deliveries.append(history.UserMessage((history.Notice(text, "operator"),)))
             case "question.answer" if r.get("answers"):
-                yield history.UserMessage((history.Notice("\n".join(r["answers"]), "operator"),))
+                deliveries.append(
+                    history.UserMessage((history.Notice("\n".join(r["answers"]), "operator"),))
+                )
             case "model.result" if r.get("actor") == "worker" and r.get("text"):
+                if reply_at is None:
+                    reply_at = len(deliveries)
                 blocks.append({"type": "text", "text": r["text"]})
+            case "tool.call" if reply_at is None:
+                reply_at = len(deliveries)
             case "tool.result":
+                if reply_at is None:
+                    reply_at = len(deliveries)
                 call = calls.get(r.get("call_id"), {})
                 args = call.get("args_preview", {})
                 name = r["name"]
-                uid = str(r.get("provider_tool_call_id") or r.get("call_id", len(results)))
+                uid = str(r.get("provider_tool_call_id") or r.get("call_id", len(uses)))
                 blocks.append({"type": "tool_use", "name": name, "id": uid, "input": args})
                 text = "\n".join(
                     r[k] for k in ("summary", "head_tail", "stdout_tail", "stderr_tail") if r.get(k)
                 )
-                results.append(history.ToolResultItem(uid, text, history.ToolUse(uid, name, args)))
+                call_view = history.ToolUse(uid, name, args)
+                uses.append(call_view)
+                deliveries.append(
+                    history.UserMessage((history.ToolResultItem(uid, text, call_view),))
+                )
             case _:
                 pass
-    if blocks:
-        yield history.AssistantMessage(tuple(blocks), tuple(item.for_call for item in results))
-    if results:
-        yield history.UserMessage(tuple(results))
+    if blocks and reply_at is not None:
+        deliveries.insert(reply_at, history.AssistantMessage(tuple(blocks), tuple(uses)))
+    yield from deliveries
 
 
 def projected(rows: Iterable[Row]) -> Iterator[history.Message]:
