@@ -204,7 +204,7 @@ uv run ruff check && uv run ruff format --check && \
 - Adding a tool (`tools/schema.py`), loosening a security default, or dialling a host not derived from a provider `base_url` each require a `Security review note:` in the commit message.
 - Secrets (provider API keys, `$XDG_CONFIG_HOME/agent6/secrets.toml`) stay `0600`: out of `config show`, out of transcripts, out of the `full` jail.
   `pack` carries a private copy in the workspace's hidden, gitignored `.agent6/`; `unpack` recreates it as the importing user.
-- The LLM tool surface is the fixed set in `src/agent6/tools/schema.py`, plus tools from operator-configured MCP servers when `[mcp].enabled` is set (default off).
+- The LLM tool surface is the fixed set in `src/agent6/tools/schema.py`, plus tools from operator-configured MCP servers when `[mcp].enabled` is set (default off), plus the provider's hosted web search when `providers.<name>.web_search` is set (default off).
 - Config is secure by default: every field has a default, security-sensitive ones default safe, and `agent6 config show` audits every leaf.
   `Config` stays `extra="forbid", frozen=True`; push, force and history rewrites have no knob at all.
   Loosening a security default gets the same scrutiny as adding a tool.

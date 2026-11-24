@@ -680,6 +680,29 @@ A child task names its source when recorded; `task` means the author is unknown.
 The report names any skipped records over 1 MiB.
 After compaction the restart notice names the session id when the model can use `read_session`.
 
+### Web search
+
+`providers.<name>.web_search = true` offers the provider's own hosted web search on the worker's run and ask turns.
+It is off by default.
+
+```toml
+[providers.anthropic]
+backend = "anthropic"
+web_search = true
+```
+
+- The search runs inside the provider: agent6 adds one entry to the request's tool list and dials no new host.
+- An `anthropic` or `responses` entry at the vendor's own address and a `chatgpt` entry can offer it; any other entry refuses `web_search = true` at load.
+- Reviewers, judges, summaries and `machine create` drafts never get it; a child run follows its own provider entry.
+- Each search shows as one line, `Search: <query>` with its URLs, and as a `model.web_search` journal event.
+- The provider bills each search apart from tokens.
+    - agent6 counts them: `searches=` in the cost summary and in `agent6 sessions show`, `web_searches` in `budget.update`.
+    - A price listing's per-search rate prices them; a provider-reported cost or a subscription plan already covers them.
+    - Without a rate the run says so at start and marks the dollar total a lower bound.
+    - An Anthropic response holds at most one search, so `[budget].max_usd` is checked between searches; a Responses reply can hold several.
+- `sandbox.fetch_approved_hosts` and `sandbox.network` do not bound it.
+  A query is text the model chose, which can include workspace content, and it goes to the provider's search service ([Network](security.md#5-network)).
+
 ## Model call actors
 
 A role selects model settings; `actor` tells you who made a call with them.

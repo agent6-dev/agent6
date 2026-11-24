@@ -61,6 +61,7 @@ The holds below describe the local jail, `full` and `partial` `sandbox.isolation
 - The agent process's own egress is unbounded
     - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus the fixed ChatGPT OAuth authority and each `[providers.*].oauth` issuer for token grants); nothing stops the process reaching elsewhere
     - a jailed command's egress is bounded under `full` `sandbox.isolation` unless `sandbox.network = "host"` ([Network](#5-network))
+    - with `providers.<name>.web_search` set, the model sends search queries of its choosing through the provider ([Network](#5-network))
 - Under `partial` `sandbox.isolation`, a command can hand work to a user daemon already running (tmux, `systemd --user`): pathname unix sockets have no Landlock hook and stay nameable without a mount namespace.
   Abstract unix sockets are scoped to the jail on Landlock ABI 6 (Linux 6.12); an older kernel leaves them reachable, and the run warns
     - the environment carries no address for one.
@@ -82,7 +83,7 @@ The model reaches the machine through two surfaces:
 - The in-process tools, whose paths resolve against the file boundary ([File access](#3-file-access)).
 - Anything that executes, which runs in the jail ([Sandbox](#2-sandbox)).
 
-The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tools of operator-configured MCP servers when `[mcp].enabled` is set.
+The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tools of operator-configured MCP servers when `[mcp].enabled` is set, plus the provider's hosted web search when `providers.<name>.web_search` is set ([Network](#5-network)).
 
 - structured edits, read-only navigation, `read_session`, `list_findings` (the run's own review findings), fixed-argv verify and metric commands, `finish_session` (`finish_planning` in plan mode), `ask_user`, a curator task notepad, `use_skill` ([Skills](#skills)), approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command` with `read_background` / `stop_background`, `parallel` and `steer_child` under `harness.parallel.tool` ([Parallel children](#10-parallel-children)), and `agent6_docs` under `agent6 ask` only
 - no `shell`, no `write_file`, no `eval`
@@ -488,6 +489,14 @@ While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, re
   The request dials the resolved address with the name in SNI and `Host`, so no second lookup can rebind it.
 - A `content-encoding` other than identity is refused: the cap counts bytes as they arrive, and a decoded stream would expand past it.
 - Hidden when a jailed command already has the host network: `network = "host"`, or any `sandbox.isolation` but `full`.
+
+**Hosted web search** (`providers.<name>.web_search`, off by default) runs inside the provider, on the worker's run and ask turns.
+
+- The request's tool list names the provider's search tool; the agent6 process dials no new host, and a jailed command gains no network access.
+- A query is text the model chose, which can include workspace content, and it goes to the provider's search service.
+- `sandbox.fetch_approved_hosts` does not bound it, and neither does `sandbox.network`.
+- Results enter the context as untrusted text, like a file the agent reads.
+- An entry whose endpoint hosts no search refuses `web_search = true` at load: the `openai` and `claude_code` backends, and an `anthropic` or `responses` entry off the vendor's own address.
 
 **Which network a jailed child joins.** `sandbox.network` is one of:
 

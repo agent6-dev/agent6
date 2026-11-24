@@ -57,7 +57,7 @@ Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_show
 - **Read by:** ui/cli/entry
-- **Guarded by:** [test_sessions_show_group.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_show_group.py) (8 test files exercise it)
+- **Guarded by:** [test_sessions_show_group.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_show_group.py) (9 test files exercise it)
 
 ## Live process rows
 
@@ -89,7 +89,7 @@ Public fields: [Formats](formats.md#web-api).
 
 - **Written by:** ui/web/server
 - **Read by:** ui/cli/web_cmds, ui/web/{actions, sse}
-- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (11 test files exercise it)
+- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (12 test files exercise it)
 
 ## Review read model
 
