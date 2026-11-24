@@ -189,8 +189,7 @@ def test_a_prompt_lands_after_the_conversation_and_moves_neither_bar(
     _append(session, _reads(1, 40))
     expect(box.locator(".ci").filter(has_text="f40.py")).to_be_attached()
     assert prompt.evaluate(PROMPT_PLACE)["whole"]
-    # The page learns of the reader's scroll at the next frame: wait for it before a new line.
-    box.evaluate("b => { b.scrollTop = 0; return new Promise(requestAnimationFrame); }")
+    box.evaluate("b => { b.scrollTop = 0; }")
     _append(session, _reads(1, 41))
     expect(box.locator(".ci").filter(has_text="f41.py")).to_be_attached()
     place = prompt.evaluate(PROMPT_PLACE)

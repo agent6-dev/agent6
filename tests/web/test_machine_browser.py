@@ -448,7 +448,8 @@ def test_the_current_state_and_the_newest_transition_open_in_view(
     """States opened at its top with the current state below the fold, Path at its oldest line.
 
     Path follows each new transition while the reader stays at its end, and keeps the reader's
-    place once they scroll up.
+    place once they scroll up. A transition that arrived before their scroll event pulled them
+    back to the end, and a place below the top was lost at every transition.
     """
     from playwright.sync_api import expect
 
@@ -474,16 +475,18 @@ def test_the_current_state_and_the_newest_transition_open_in_view(
             journal.write(json.dumps(_chain_step(seq)) + "\n")
         expect(page.locator(".tree .node", has_text=f"[{seq}]")).to_have_count(1)
 
-    # The page learns of the reader's scroll at the next frame: wait for it before a transition.
+    # A transition can arrive before the reader's scroll event: withhold the event.
     page.evaluate(
-        "() => { [...document.querySelectorAll('.tree')][1].parentElement.scrollTop = 0;"
-        " return new Promise(requestAnimationFrame); }"
+        "() => { addEventListener('scroll', event => event.stopPropagation(), true);"
+        " [...document.querySelectorAll('.tree')][1].parentElement.scrollTop = 120; }"
     )
     add(55)
-    assert page.evaluate("[...document.querySelectorAll('.tree')][1].parentElement.scrollTop") == 0
+    assert (
+        page.evaluate("[...document.querySelectorAll('.tree')][1].parentElement.scrollTop") == 120
+    )
     page.evaluate(
         "() => { const p = [...document.querySelectorAll('.tree')][1].parentElement;"
-        " p.scrollTop = p.scrollHeight; return new Promise(requestAnimationFrame); }"
+        " p.scrollTop = p.scrollHeight; }"
     )
     add(56)
     assert page.evaluate(at_end)

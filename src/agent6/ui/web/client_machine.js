@@ -91,16 +91,11 @@ async function renderMachine(name, gen) {
   // opening a machine does not replay every past notification; toast + OS-notify
   // only genuinely new ones, named by the instance.
   const ctx = {
-    name, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null, pathAtEnd: true, pathTop: null,
+    name, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null, pathTop: null,
     held: [], // the notifications' toasts that hold until dismissed
   };
-  // Path follows its newest transition while the reader stays at its end, through a resize too (the entry growing below).
-  pathBody.addEventListener('scroll', () => {
-    const own = pathBody.scrollTop === ctx.pathTop; // the page's own: its event can land after a resize
-    ctx.pathTop = null;
-    if (!own) ctx.pathAtEnd = pathBody.scrollTop + pathBody.clientHeight >= pathBody.scrollHeight - 8;
-  });
-  new ResizeObserver(() => { if (ctx.pathAtEnd) pathToEnd(pathBody, ctx); }).observe(pathBody);
+  // Path follows its newest transition through a resize too (the entry growing below).
+  new ResizeObserver(() => { if (pathFollows(pathBody, ctx)) pathToEnd(pathBody, ctx); }).observe(pathBody);
   paintMachine(structBody, pathBody, cards, ctx, { machine: initial, reasoning: {} });
 
   let opened = false;
@@ -149,7 +144,14 @@ function machineNotify(ctx, m) {
   }
 }
 
-// Path scrolls to its end and remembers where, so its own scroll event records nothing.
+// Path follows while it sits where the page left it or at its end. The pane's own offset says
+// whether the reader moved: their scroll event can arrive after the next transition.
+function pathFollows(pathBody, ctx) {
+  return pathBody.scrollTop === ctx.pathTop
+    || pathBody.scrollTop + pathBody.clientHeight >= pathBody.scrollHeight - 8;
+}
+
+// Path scrolls to its end and remembers where the page left it.
 function pathToEnd(pathBody, ctx) {
   pathBody.scrollTop = pathBody.scrollHeight;
   ctx.pathTop = pathBody.scrollTop;
@@ -205,6 +207,8 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   }
   structBody.appendChild(tree);
 
+  // Emptying the pane resets its offset: read the reader's place first.
+  const follows = pathFollows(pathBody, ctx), kept = pathBody.scrollTop;
   pathBody.innerHTML = '';
   const path = el('div', 'tree');
   const transitions = m.transitions || [];
@@ -223,7 +227,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (m.worker_lost) path.appendChild(el('div', 'muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
   if (m.wait_line) path.appendChild(el('div', 'muted')).append(withCode(m.wait_line));
   pathBody.appendChild(path);
-  if (ctx.pathAtEnd) pathToEnd(pathBody, ctx);
+  if (follows) pathToEnd(pathBody, ctx); else pathBody.scrollTop = kept;
   // The conversation is the newest agent state's. Its dir is `<seq>-<state>`, seq being the
   // transition that execution makes, so the current state's own execution has the path's length.
   const [, seq, ran] = /^(\d+)-(.+)$/.exec(cards._state) || [];
