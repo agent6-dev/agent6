@@ -116,6 +116,9 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             state = open_now.get(sid, "ended, task pending")
             if child.merge is not None:
                 state = parallel_merge.merge_words(parallel_merge.merge_of(child))
+            elif sid not in open_now and record.state == "complete":
+                # A completed dispatch records a merge for every child that ran.
+                state = "never started"
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
             # A wait has something to wait for: the child itself, or the judges ranking it.
             running = state in ("starting", "running", "in review", "stopping", "being ranked")

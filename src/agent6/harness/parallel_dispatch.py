@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, directive, errors
+from agent6 import child_records, directive, errors, token_usage
 from agent6.graph import curator as graph_curator
 from agent6.harness import child_merge, child_repo, parallel_merge, parallel_rank, run_chain
 from agent6.sessions import budget_events, child_dispatch, journal
@@ -371,8 +371,21 @@ class ParallelDispatcher:
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
         message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was merged."
         by_id = {res.spec.session_id: res for res in reviewers}
-        # A listed task's prelaunch refusal has no work to settle on resume.
-        if not listed or by_id:
+        if listed:
+            # A child the spawner never took used nothing: a resume has no usage to settle.
+            nothing = agent6_budget.UsageSettlement(
+                usd=0, usd_partial=False, tokens=0, model_tokens=token_usage.ZERO
+            )
+            for child in record.children:
+                if child.session_id in submitted:
+                    continue
+                if self.budget is not None:
+                    self.budget.settle_child(child.session_id, nothing)
+                unused = child_dispatch.UsageRecord(usd=0.0, model_tokens=token_usage.ZERO)
+                record = record.with_child(
+                    child.model_copy(update={"usage": unused, "settled": True})
+                )
+        else:
             record = self.settled(record, by_id)
         merges: list[child_records.ChildMerge] = []
         for child in record.children:

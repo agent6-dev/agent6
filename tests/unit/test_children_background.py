@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, directive
+from agent6 import child_records, directive, token_usage
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
@@ -1033,6 +1033,12 @@ def test_a_listed_task_is_held_before_launch_and_free_after_a_refusal(
     assert not work.start("", "", task_id="0002").children
     node = graph.nodes()["0002"]
     assert (seen, node.status, node.held_by) == ([("run-p1-l1",)], "pending", ())
+    # The refused child read `ended, task pending`, and its record stayed unsettled.
+    assert [line.state for line in work.roster()] == ["never started"]
+    (refused,) = child_dispatch.read_records(graph.layout.session_dir)[0].children
+    assert refused.settled and refused.usage == child_dispatch.UsageRecord(
+        usd=0.0, model_tokens=token_usage.ZERO
+    )
     wf.parallel.child_spawner = children
     assert work.start("", "2", task_id="0002").children == ("run-p2-l1", "run-p2-l2")
     assert "held by run-p2-l1, run-p2-l2" in work.start("", "", task_id="0002").message

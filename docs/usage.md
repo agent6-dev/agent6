@@ -517,6 +517,7 @@ Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
 `read_background` with a child's id returns its id, attempt, state, task preview, `running`, `mergeable` and commit count beside its transcript tail.
 `mergeable` marks stopped work or a continued child whose commits await an explicit merge.
+A child whose launch was refused reads `never started`.
 A merge can still be refused, for example if another attempt already merged.
 With a command's `background_id` it returns the command preview, state, `returncode`, `duration_s` and `still_running` beside the output tail.
 The duration runs from launch until the host observes the end.
