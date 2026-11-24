@@ -186,11 +186,11 @@ def parallel_compared_body(event: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def parallel_merged_body(event: dict[str, Any]) -> str:
+def parallel_returned_body(event: dict[str, Any]) -> str:
     """Describe a completed dispatch without implying that anything merged.
 
     Args:
-        event: The `parallel.merged` event.
+        event: The `parallel.returned` event.
 
     Returns:
         The head line, then one line per child.
@@ -254,7 +254,7 @@ def parallel_failed_body(event: dict[str, Any]) -> str | None:
 
     Returns:
         The dispatch error when the event carries one; None for a failure after the children
-        ran, whose merged event or end summary already showed each child's status.
+        ran, whose return event or end summary already showed each child's status.
     """
     error = str(event.get("error", "")).strip()
     return f"{parallel_group_label(event)} dispatch failed: {error}" if error else None
@@ -350,7 +350,7 @@ MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
         f"child {e.get('child', '?')} continued ({e.get('sequence', '?')})"
     ),
     "parallel.dispatched": parallel_dispatched_body,
-    "parallel.merged": parallel_merged_body,
+    "parallel.returned": parallel_returned_body,
     "parallel.failed": parallel_failed_body,
     "parallel.compared": parallel_compared_body,
     "task.queued": task_queued_body,

@@ -156,9 +156,9 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                         for child in record.children
                     ),
                 }
-            ).advanced("complete", message=message)
+            )
             dispatcher.emit_budget(record.turn)
-            dispatcher.write(record)
+            dispatcher.record_return(record, message)
             dispatcher.deliver(
                 conversation,
                 child_records.DispatchResult(record.identity, True, (), message, base=record.base),

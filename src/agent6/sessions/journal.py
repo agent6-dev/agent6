@@ -1074,13 +1074,13 @@ class ParallelChildMerged(Event):
     detail: str = pydantic.Field(description="The conflict files or failure reason, if any.")
 
 
-class ParallelMerged(Event):
-    """Parallel child results returned."""
+class ParallelReturned(Event):
+    """A dispatch ended, whether or not any child work merged."""
 
-    TYPE: ClassVar[str] = "parallel.merged"
+    TYPE: ClassVar[str] = "parallel.returned"
     group: str = pydantic.Field(description="Parallel dispatch group identifier.")
     children: Sequence[Any] = pydantic.Field(
-        description="Child count for dispatch, or child results for completion.",
+        description="Child outcomes in dispatch order. Empty when the launch yielded no results.",
     )
     source: str = pydantic.Field(
         default="operator",
@@ -2087,7 +2087,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "parallel.compared": ParallelCompared,
     "parallel.dispatched": ParallelDispatched,
     "parallel.failed": ParallelFailed,
-    "parallel.merged": ParallelMerged,
+    "parallel.returned": ParallelReturned,
     "pin.added": PinAdded,
     "pin.refused": PinRefused,
     "pin.restored": PinRestored,

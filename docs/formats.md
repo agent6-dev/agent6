@@ -914,14 +914,14 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `children` | `list, optional` | Child count for dispatch, or child results for completion. |
 | `error` | `str, optional` | The failure diagnostic. |
 
-### parallel.merged
+### parallel.returned
 
-**Support: public.** Parallel child results returned.
+**Support: public.** A dispatch ended, whether or not any child work merged.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | Parallel dispatch group identifier. |
-| `children` | `list` | Child count for dispatch, or child results for completion. |
+| `children` | `list` | Child outcomes in dispatch order. Empty when the launch yielded no results. |
 | `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
 
 ### pin.added

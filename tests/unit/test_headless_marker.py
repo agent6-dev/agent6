@@ -39,7 +39,7 @@ def test_headless_log_names_child_activity_and_merge_results(tmp_path: pathlib.P
         )
     )
     sink.emit(
-        journal.ParallelMerged(
+        journal.ParallelReturned(
             group="g",
             children=[{"session_id": "c2", "status": "unmerged", "commits": 2, "branch": "kept"}],
         )

@@ -165,7 +165,7 @@ def headless_marker(event: dict[str, Any], *, log: Callable[[str], None]) -> Non
         "parallel.child_activity",
         "parallel.child_continued",
         "parallel.child_merged",
-        "parallel.merged",
+        "parallel.returned",
     ):
         log(f"[agent6] {transcript_text.MARKER_BODIES[event['type']](event)}")
 

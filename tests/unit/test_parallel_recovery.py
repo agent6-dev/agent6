@@ -287,6 +287,10 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
     wf2 = _build_wf(repo, session_dir, provider2, child_recoverer=recoverer, budget=budget2)
     wf2.resume()
     assert seen == [("run-abc-p1", ("run-abc-p1-l1", "run-abc-p1-l2"))]
+    assert isinstance(wf2.events, _Events)
+    assert wf2.events.of("parallel.returned") == [
+        {"group": "run-abc-p1", "source": "operator", "children": []}
+    ]
     (record,) = _records(session_dir)
     assert record.state == "complete" and record.delivered
     assert "nothing ran" in record.message

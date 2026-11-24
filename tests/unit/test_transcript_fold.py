@@ -270,11 +270,11 @@ def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     assert "fix the bug" in item.body and "add tests" in item.body
 
 
-def test_parallel_merged_names_child_ids_branches_shas() -> None:
+def test_parallel_returned_names_child_ids_branches_shas() -> None:
     items = fold_transcript(
         [
             {
-                "type": "parallel.merged",
+                "type": "parallel.returned",
                 "group": "p1",
                 "children": [
                     {"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "merged",
@@ -304,7 +304,7 @@ def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
                 "source": "panel",
             },
             {
-                "type": "parallel.merged",
+                "type": "parallel.returned",
                 "group": "run-rpanel",
                 "source": "panel",
                 "children": [
@@ -1167,12 +1167,12 @@ def test_parallel_dispatched_counts_children_when_the_event_carries_them() -> No
     assert "dispatched 3 children for 2 tasks (group p1)" in item.body
 
 
-def test_parallel_merged_renders_a_failed_children_reason() -> None:
+def test_parallel_returned_renders_a_failed_children_reason() -> None:
     """A failed child's event distinguishes a failed start, a crash and no result."""
     (item,) = fold_transcript(
         [
             {
-                "type": "parallel.merged",
+                "type": "parallel.returned",
                 "group": "run-p1",
                 "children": [
                     {

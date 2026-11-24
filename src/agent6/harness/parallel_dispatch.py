@@ -348,9 +348,7 @@ class ParallelDispatcher:
                 )
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
         message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was merged."
-        record = self.settled(record, {}).advanced("complete", message=message)
-        self.write(record)
-        return record
+        return self.record_return(self.settled(record, {}), message)
 
     def unended(self) -> list[concurrent.futures.Future[child_records.ChildResult]]:
         """Return the result of every child and judge this execution started that still runs."""
@@ -542,6 +540,28 @@ class ParallelDispatcher:
             self.write(record)
         parallel_merge.stamp_segment_node(self.curator, record.node_id, merges, log=self.log)
         self.emit_graph_snapshot()
+        message = parallel_merge.summary_text(record.identity, merges, record.ranking)
+        self.record_return(record, message, merges)
+        return child_records.DispatchResult(
+            record.identity, True, tuple(merges), message, base=record.base
+        )
+
+    def record_return(
+        self,
+        record: child_dispatch.DispatchRecord,
+        message: str,
+        merges: Sequence[child_records.ChildMerge] = (),
+    ) -> child_dispatch.DispatchRecord:
+        """Journal the returned results and close the dispatch.
+
+        Args:
+            record: The dispatch to close.
+            message: The notice for the parent.
+            merges: The child outcomes, empty when the launch yielded no results.
+
+        Returns:
+            The completed record.
+        """
         payload = [
             {
                 "session_id": j.session_id,
@@ -555,7 +575,7 @@ class ParallelDispatcher:
             for j in merges
         ]
         self.emit(
-            journal.ParallelMerged(group=record.identity, children=payload, source=record.source)
+            journal.ParallelReturned(group=record.identity, children=payload, source=record.source)
         )
         failures = [
             p
@@ -565,12 +585,9 @@ class ParallelDispatcher:
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
-        message = parallel_merge.summary_text(record.identity, merges, record.ranking)
         record = record.advanced("complete", message=message)
         self.write(record)
-        return child_records.DispatchResult(
-            record.identity, True, tuple(merges), message, base=record.base
-        )
+        return record
 
     def settled(
         self,

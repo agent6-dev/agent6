@@ -268,7 +268,7 @@ def test_a_finished_task_merges_at_the_next_boundary_while_an_earlier_one_still_
     assert (first.status, second.status) == ("merged", "merged")
     # The first task merged onto the tip the second left: it merged a boundary later.
     assert first.target_before == second.target_after == second.sha
-    assert [row["group"] for row in _events(tmp_path / "run", "parallel.merged")] == [
+    assert [row["group"] for row in _events(tmp_path / "run", "parallel.returned")] == [
         "run-p2",
         "run-p1",
     ]
@@ -731,7 +731,7 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     assert roster[0].state.startswith("merged into parent chain at ") and roster[1].state == words
     (failed,) = [[], *(_events(tmp_path / "run", "parallel.failed"))][-1:]
     assert failed == [], "a stopped child is no failed merge"
-    rows = _events(tmp_path / "run", "parallel.merged")
+    rows = _events(tmp_path / "run", "parallel.returned")
     assert rows[0]["children"][0]["status"] == "stopped" and rows[0]["children"][0]["commits"] == 1
 
 

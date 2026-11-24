@@ -682,7 +682,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 
 - `run --parallel` is a run: `ExecutionInputs.opening` carries its spec and task to the harness, and the loop's opening step (`loop_steer.ranked_opening`) dispatches the task in place of the first model call and waits for its children (`ParallelDispatcher.wait`); `merge_policy` is `rank` for several attempts and `merge` for one
     - under `rank` the dispatcher ranks once the children settle (`harness.parallel_rank.rank`) and writes the order before any merge; under agent6-owned git it merges the winner into the run's chain and records the other ranked attempts with their places; the opening waits for the judges as it waited for the children
-    - the journal: the dispatch, the judges' own dispatch and return (`source = "panel"`), `parallel.compared` with the ranking and rationale, `parallel.merged` with each child's outcome, the end (`children_ranked`, `no_child_result` or `budget_exhausted`)
+    - the journal: the dispatch, the judges' own dispatch and return (`source = "panel"`), `parallel.compared` with the ranking and rationale, `parallel.returned` with each child's outcome, the end (`children_ranked`, `no_child_result` or `budget_exhausted`)
     - a manifest comparison record: the group id, ranking, method, rationale and judge cost; child manifests keep only their placement and group id
     - the parent's verify gate applies its policy to the merged tree
     - without a parent result, `session.stop.child_verification` can cite a child's full pass on the same tree by the same command (child, attempt id, argv and tree)
@@ -767,7 +767,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - `child_continue` reopens a stopped child's dispatch before its private bootstrap resumes the same session and clone (`app.child_resume` validates ownership); `ContinuationRecord` records its instruction, sequence and cumulative usage baseline, `parallel.child_continued` journals the new execution, and the parent charges only its new usage
 - stopped children keep their clone and launch file; a finished continuation fast-forwards its retained ref before cleanup, and direct operator child resume remains refused
 - `merge_child` is offered only to a parent with stopped unmerged work under `git.control = "agent6"`; it does not require the parallel tool knob, since an operator directive can start children
-- `parallel.dispatched` and `parallel.merged` name the same group as its dispatch record.
+- `parallel.dispatched` and `parallel.returned` name the same group as its dispatch record.
 - The parent's transcript names a steer, a refused finish, a continuation and the result of a requested merge.
 - The child's transcript shows a steer from its parent as a parent message.
 
@@ -889,7 +889,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `steers/` | the instructions queued behind the steer in flight, one file each in the order sent; the worker moves the oldest into the slot when it clears |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
-The journal writer records dispatch outcomes as `parallel.merged` (`ParallelMerged`).
+The journal writer records dispatch outcomes as `parallel.returned` (`ParallelReturned`).
 The journal and provider transcripts record the [actor](usage.md#model-call-actors) of each model call.
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
