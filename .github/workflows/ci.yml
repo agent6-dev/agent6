@@ -94,6 +94,12 @@ jobs:
           assert 'site-packages' in agent6.__file__, agent6.__file__
           print('testing', agent6.__file__)"
 
+      - &install-ripgrep
+        name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
+
       - &cache-grammars
         name: Cache tree-sitter grammars
         uses: actions/cache@v6
@@ -165,6 +171,7 @@ jobs:
           assert 'site-packages' in agent6.__file__, agent6.__file__
           print('testing', agent6.__file__)"
 
+      - *install-ripgrep
       - *cache-grammars
       - *prepare-grammars
 
