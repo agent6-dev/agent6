@@ -3,10 +3,10 @@
 """Run the verify gate the harness owes a turn, per `[harness.verify].when`.
 
 `finish` certifies the tree a run ends on; `turn` also judges every editing turn; `never`
-leaves every gate run to the model. Under `finish` and `turn` a fresh run also runs the gate once
-before its first turn, which records the baseline. A tree the run already holds a verdict for is
-never judged twice. `VerifyGate` runs the gate and its scoped follow-up and keeps the verdict
-bookkeeping.
+leaves every gate run to the model. With `harness.verify.at_start`, a fresh run under `finish` or
+`turn` also runs the gate once before its first turn, which records the baseline. A tree the run
+already holds a verdict for is never judged twice. `VerifyGate` runs the gate and its scoped
+follow-up and keeps the verdict bookkeeping.
 """
 
 from __future__ import annotations
