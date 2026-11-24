@@ -195,14 +195,14 @@ def read_background(
         interrupted: Cuts the wait short.
 
     Returns:
-        The roster; with an id, that command's row and output.
+        The roster, or the selected command's fields and output tail.
 
     Raises:
         ToolError: No session directory was wired, or the id is unknown.
     """
     shells = get_background()
     if not args.id:
-        return results.BackgroundResult(shells=tuple(v.line() for v in shells.roster()))
+        return results.BackgroundRosterResult(shells=tuple(v.line() for v in shells.roster()))
     try:
         with waits.during(wait_s):
             view, output = shells.read(
@@ -213,16 +213,14 @@ def read_background(
             )
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
-    return results.BackgroundResult(
-        shells=(view.line(),), output=output, running=view.state == "running"
-    )
+    return results.BackgroundReadResult(view, output)
 
 
 def stop_background(
     raw: dict[str, Any],
     *,
     get_background: Callable[[], background.BackgroundShells],
-) -> results.BackgroundResult:
+) -> results.BackgroundRosterResult:
     """Stop a background command.
 
     Args:
@@ -240,7 +238,7 @@ def stop_background(
         view = get_background().stop(args.id)
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
-    return results.BackgroundResult(shells=(view.line(),))
+    return results.BackgroundRosterResult(shells=(view.line(),))
 
 
 def run_argv_raw(

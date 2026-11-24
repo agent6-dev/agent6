@@ -42,6 +42,10 @@ class ChildLine:
     mergeable: bool = False
     commits: int | None = None
 
+    def to_wire(self) -> dict[str, object]:
+        """Return the fields beside the child's transcript tail."""
+        return dataclasses.asdict(self)
+
     def line(self) -> str:
         """Return the roster line."""
         count = (
@@ -115,7 +119,7 @@ def read(
         state_dir: The project's state dir, where a child's journal is; None renders none.
 
     Returns:
-        Both rosters without an id. With an id, only that child's row and transcript tail.
+        Both rosters without an id. With an id, that child's fields and transcript tail.
     """
     with waits.during(wait_s):
         children.wait(args.id, wait_s, interrupted)
@@ -123,14 +127,9 @@ def read(
     if not args.id:
         running = any(child.running for child in roster)
         lines = tuple(child.line() for child in roster)
-        return results.BackgroundResult(shells=shells, children=lines, running=running)
+        return results.BackgroundRosterResult(shells=shells, children=lines, running=running)
     child = next(child for child in roster if child.id == args.id)
-    return results.BackgroundResult(
-        shells=shells,
-        children=(child.line(),),
-        output=f"{child.line()}\n\n{_transcript(state_dir, child.id, args.tail_lines)}",
-        running=child.running,
-    )
+    return results.BackgroundReadResult(child, _transcript(state_dir, child.id, args.tail_lines))
 
 
 def _transcript(state_dir: pathlib.Path | None, child: str, tail_lines: int) -> str:

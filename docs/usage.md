@@ -262,14 +262,16 @@ With `git.control = "model"`, the model must commit its changes before calling `
 Each child is an ordinary run with the same tools as the parent and may edit its clone.
 Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
-`read_background` with a child's id returns only its state and transcript tail.
-With no id it lists the rosters; a positive `wait_s` waits for the next child to end.
+`read_background` with a child's id returns its id, attempt, state, task, running flag, merge eligibility and commit count beside its transcript tail.
+With a command's `background_id` it returns the command preview, state, `returncode`, `duration_s` and `still_running` beside the output tail.
+The duration runs from launch until the host observes the end.
+With no id it lists one line per command or child; a positive `wait_s` waits for the next child to end.
 A child tail shows the same bounded tool arguments and result summaries as the numbered journal entries.
 A separate shell line gives a background command's exit when its result is on disk.
 See [Session readers](security.md#1-trust-boundary) for what the project shares.
 Every background wait uses the shorter of `wait_s` and [`harness.command_checkin_s`](config.md#harness); a check-in of 0 disables this cap.
 With an id, an omitted `wait_s` uses the check-in interval; without an id, it returns the roster at once.
-When the check-in ends a wait, the result names the interval and lists the work still running.
+When the check-in ends a wait, `output` names the interval.
 
 **Who compacts.** The threshold line at startup names `agent6` or `endpoint`.
 With [Anthropic server compaction](anthropic.md), the endpoint clears old tool output and writes a signed summary.

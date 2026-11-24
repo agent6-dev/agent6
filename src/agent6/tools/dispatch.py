@@ -958,8 +958,7 @@ class ToolDispatcher:
             raw: The tool call's arguments.
 
         Returns:
-            The rosters; with an `id`, that command's row and output or that child's row and
-            transcript.
+            The rosters, or the selected job's fields and its output or transcript tail.
         """
         args = schema.ReadBackgroundInput.model_validate(raw)
         checkin = self._config.harness.command_checkin_s
@@ -987,7 +986,7 @@ class ToolDispatcher:
                 wait_s=wait_s,
                 interrupted=self._background_wait_interrupted,
             )
-            if not args.id:
+            if isinstance(result, results.BackgroundRosterResult):
                 lines = tuple(child.line() for child in roster)
                 result = dataclasses.replace(result, children=lines)
         if (
@@ -1002,7 +1001,7 @@ class ToolDispatcher:
             )
         return result
 
-    def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
+    def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundRosterResult:
         """Stop a command or a child.
 
         Args:
@@ -1015,7 +1014,7 @@ class ToolDispatcher:
         if self.children is not None and any(c.id == args.id for c in self.children.roster()):
             self.children.stop(args.id)
             rows = tuple(c.line() for c in self.children.roster() if c.id == args.id)
-            return results.BackgroundResult(shells=(), children=rows)
+            return results.BackgroundRosterResult(shells=(), children=rows)
         return command_tools.stop_background(raw, get_background=self._background)
 
     def _background(self) -> background.BackgroundShells:

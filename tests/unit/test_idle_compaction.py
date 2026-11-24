@@ -203,12 +203,12 @@ def test_wait_delivers_its_result_after_the_callback(tmp_path: pathlib.Path, kin
                 result = dispatcher.dispatch(
                     "read_background", {"id": "bg1", "wait_s": 4}
                 ).to_wire()
-                assert "exit 0" in str(result["shells"]) and "waited" in result["output"]
+                assert result["returncode"] == 0 and "waited" in result["output"]
             elif kind == "child":
                 result = dispatcher.dispatch(
                     "read_background", {"id": "run-p1-l1", "wait_s": 0.3}
                 ).to_wire()
-                assert "starting" in result["children"][0]
+                assert result["state"] == "starting"
             elif kind == "approval":
                 assert gate.approve("Allow the command?")
             else:

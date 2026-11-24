@@ -93,7 +93,7 @@ def test_a_command_outliving_the_checkin_comes_back_as_a_background_job(
 
         # It really is still running, and it is an ordinary background job now.
         read = d.dispatch("read_background", {"id": "bg1"}).to_wire()
-        assert "running" in str(read["shells"])
+        assert read["still_running"] is True
         assert "starting" in str(read["output"])
         stopped = d.dispatch("stop_background", {"id": "bg1"}).to_wire()
         assert "stopped" in str(stopped["shells"])
@@ -116,7 +116,7 @@ def test_a_read_or_stop_of_one_command_lists_only_that_command(tmp_path: pathlib
         roster = d.dispatch("read_background", {}).to_wire()
     finally:
         d.close()
-    assert [line.split("]")[0] for line in read["shells"]] == ["[bg2"]
+    assert read["background_id"] == "bg2" and "shells" not in read
     assert "two" in read["output"]
     assert [line.split("]")[0] for line in stopped["shells"]] == ["[bg1"]
     assert [line.split("]")[0] for line in roster["shells"]] == ["[bg1", "[bg2"]
@@ -321,7 +321,7 @@ def test_a_pending_steer_ends_a_command_wait_without_consuming_it(
         answer = d.dispatch("read_background", {"id": "bg1", "wait_s": 4}).to_wire()
 
         assert time.monotonic() - started < 2.0, "the pending steer did not end the 4s wait"
-        assert answer["output"] == "ready" and "[bg1] running" in answer["shells"][0]
+        assert answer["output"] == "ready" and answer["still_running"] is True
         assert ipc.steer_request_pending(session_dir)
         assert ipc.steer_interrupt_pending(session_dir) is now
         assert ipc.read_steer_answer(session_dir) == "inspect the output"
@@ -353,7 +353,7 @@ def test_an_immediate_stop_ends_a_running_command_at_once(
         assert out["stopped_by_operator"] is True and out["returncode"] != 0
         assert "still_running" not in out and "background_id" not in out
         read = d.dispatch("read_background", {"id": "bg1", "wait_s": 0}).to_wire()
-        assert "stopped" in str(read["shells"]) and "running" not in str(read["shells"])
+        assert read["state"] == "stopped" and read["still_running"] is False
     finally:
         d.close()
 

@@ -51,6 +51,8 @@ class ShellView:
         state: "running", "exited", "stopped", "died" or "stop failed".
         returncode: The exit code, when known.
         detail: Why the fate is unknown, cleanup failed or output is incomplete, else "".
+        duration_s: Seconds from launch to this observation, fixed at the first observed end.
+        running: Whether the launcher reports the command is still running.
     """
 
     id: str
@@ -58,6 +60,22 @@ class ShellView:
     state: str
     returncode: int | None
     detail: str
+    duration_s: float
+    running: bool
+
+    def to_wire(self) -> dict[str, object]:
+        """Return the fields beside the command's output tail."""
+        wire: dict[str, object] = {
+            "background_id": self.id,
+            "command": terminal.line_preview(self.command),
+            "state": self.state,
+            "returncode": self.returncode,
+            "duration_s": self.duration_s,
+            "still_running": self.running,
+        }
+        if self.detail:
+            wire["detail"] = terminal.line_preview(self.detail)
+        return wire
 
     def line(self) -> str:
         """Return the roster line."""
@@ -74,6 +92,8 @@ class _Shell:
     job: jail_jobs.SessionJob
     # The host record's descriptor is never selected again by path.
     log_fd: int
+    started: float
+    final_duration_s: float | None = None
     stopped: bool = False
     # Why a stop could not be confirmed, "" when the command is gone.
     stop_error: str = ""
@@ -150,6 +170,7 @@ class BackgroundShells:
         job: jail_jobs.SessionJob
         try:
             policy = policy_for(argv, ())
+            started = time.monotonic()
             job = jail_jobs.start_in_jail(
                 policy,
                 outcome_dir=shell_dir,
@@ -159,7 +180,7 @@ class BackgroundShells:
         except (jail.JailUnavailableError, OSError) as exc:
             os.close(log_fd)
             raise BackgroundError(f"could not start a background command: {exc}") from exc
-        shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job, log_fd=log_fd)
+        shell = _Shell(shell_id, shlex.join(argv), shell_dir, job, log_fd, started)
         return self._register(shell)
 
     def adopt(
@@ -180,6 +201,7 @@ class BackgroundShells:
             BackgroundError: The log could not be opened or the record written; the command is
                 stopped first.
         """
+        started = time.monotonic() - handoff.duration_s
         self._seq += 1
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
@@ -197,6 +219,7 @@ class BackgroundShells:
                     dir=shell_dir,
                     job=job,
                     log_fd=-1,
+                    started=started,
                     stopped=True,
                 )
             )
@@ -204,7 +227,7 @@ class BackgroundShells:
             raise BackgroundError(
                 f"could not open the handed-back command's log: {exc}{detail}"
             ) from exc
-        shell = _Shell(id=shell_id, command=command, dir=shell_dir, job=job, log_fd=log_fd)
+        shell = _Shell(shell_id, command, shell_dir, job, log_fd, started)
         return self._register(shell)
 
     def _register(self, shell: _Shell) -> ShellView:
@@ -467,12 +490,18 @@ class BackgroundShells:
         )
         # A stop that could not be confirmed outranks every other word: the command may be running.
         if shell.stop_error:
-            return ShellView(shell.id, shell.command, "stop failed", status.returncode, detail)
-        if status.running:
-            return ShellView(shell.id, shell.command, "running", None, detail)
-        if shell.stopped:
-            return ShellView(shell.id, shell.command, "stopped", status.returncode, detail)
-        # No exit code from the launcher means the fate is unknown, not a clean exit.
-        if status.returncode is None:
-            return ShellView(shell.id, shell.command, "died", None, detail)
-        return ShellView(shell.id, shell.command, "exited", status.returncode, detail)
+            state = "stop failed"
+        elif status.running:
+            state = "running"
+        elif shell.stopped:
+            state = "stopped"
+        else:
+            state = "died" if status.returncode is None else "exited"
+        duration_s = shell.final_duration_s
+        if duration_s is None:
+            duration_s = time.monotonic() - shell.started
+            if not status.running:
+                shell.final_duration_s = duration_s
+        return ShellView(
+            shell.id, shell.command, state, status.returncode, detail, duration_s, status.running
+        )

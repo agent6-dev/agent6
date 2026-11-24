@@ -700,8 +700,16 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
 
     # Only the requested child and its transcript are in this read.
     read = _tool_answers(provider.seen[2])[-1]
-    assert read["children"] == [f"[{one}] attempt 1 · starting: write a"]
-    assert read["output"] == f"[{one}] attempt 1 · starting: write a\n\n(no transcript yet)"
+    assert read == {
+        "id": one,
+        "attempt": 1,
+        "state": "starting",
+        "task": "write a",
+        "running": True,
+        "mergeable": False,
+        "commits": None,
+        "output": "(no transcript yet)",
+    }
     # The stop answers at once; the child ends in the background and never merges.
     assert children.stopped == [two]
     stopped = _tool_answers(provider.seen[3])[-1]
@@ -818,9 +826,11 @@ def test_a_pending_steer_ends_a_child_wait_without_consuming_it(
 
     wf.run("start")
 
-    assert _tool_answers(provider.seen[2])[-1]["children"] == [
-        "[run-p1-l1] attempt 1 · starting: write a"
-    ]
+    read = _tool_answers(provider.seen[2])[-1]
+    if child_id:
+        assert read["id"] == child_id and read["state"] == "starting"
+    else:
+        assert read["children"] == ["[run-p1-l1] attempt 1 · starting: write a"]
     assert ipc.read_steer_answer(session_dir) == "inspect the output"
 
 

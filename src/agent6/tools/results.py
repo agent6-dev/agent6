@@ -14,10 +14,13 @@ from __future__ import annotations
 import abc
 import dataclasses
 import shlex
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent6 import evidence, kinds
 from agent6.tools import operator_prompts
+
+if TYPE_CHECKING:
+    from agent6.tools import background, child_tools
 
 
 class ToolResult(abc.ABC):
@@ -730,17 +733,13 @@ class SteeredResult(ToolResult):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class BackgroundResult(ToolResult):
-    """A background tool's result.
-
-    A read without an id lists the full roster. A read or stop with an id lists only that
-    command or child.
+class BackgroundRosterResult(ToolResult):
+    """The full roster for a read without an id, or the selected row for a stop.
 
     Attributes:
         shells: The formatted command roster.
-        output: The selected command's output or child's transcript, with a note when the
-            check-in ends the wait; absent for immediate rosters and stop responses.
-        running: The selected job was still running when this read returned; off the wire.
+        output: The check-in note when a wait for the next child reaches its bound.
+        running: A child is still running after that wait.
         children: The formatted roster of the run's children; off the wire when it has none.
     """
 
@@ -762,6 +761,30 @@ class BackgroundResult(ToolResult):
         """Return the one-line summary."""
         lines = (*self.shells, *self.children)
         return lines[0] if len(lines) == 1 else f"{len(lines)} background"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class BackgroundReadResult(ToolResult):
+    """The selected job's facts and its output or transcript tail."""
+
+    job: background.ShellView | child_tools.ChildLine
+    output: str
+
+    @property
+    def running(self) -> bool:
+        """Return whether there is still work to wait for."""
+        return self.job.running
+
+    def to_wire(self) -> dict[str, Any]:
+        """Return the job's fields beside its text."""
+        return {**self.job.to_wire(), "output": self.output}
+
+    def summary(self) -> str:
+        """Return the job's roster line."""
+        return self.job.line()
+
+
+BackgroundResult = BackgroundRosterResult | BackgroundReadResult
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

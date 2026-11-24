@@ -24,6 +24,7 @@ from typing import Any
 import pytest
 
 from agent6 import kinds
+from agent6.tools import background
 from agent6.tools import results as results_mod
 
 _HIT: dict[str, Any] = {"path": "a.py", "line": 1, "text": "x"}
@@ -161,20 +162,27 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
     ),
     # background commands
     (
+        "background_read",
+        results_mod.BackgroundReadResult(
+            background.ShellView("bg1", "false", "exited", 1, "", 0.5, False), ""
+        ),
+        "[bg1] exited (exit 1): false",
+    ),
+    (
         "background_one",
-        results_mod.BackgroundResult(shells=("[bg1] running: sleep 300",)),
+        results_mod.BackgroundRosterResult(shells=("[bg1] running: sleep 300",)),
         "[bg1] running: sleep 300",
     ),
     (
         "background_many",
-        results_mod.BackgroundResult(
+        results_mod.BackgroundRosterResult(
             shells=("[bg1] running: a", "[bg2] exited (exit 1): b"), output="x"
         ),
         "2 background",
     ),
     (
         "background_children",
-        results_mod.BackgroundResult(shells=(), children=("[run-p1-l1] running: write a",)),
+        results_mod.BackgroundRosterResult(shells=(), children=("[run-p1-l1] running: write a",)),
         "[run-p1-l1] running: write a",
     ),
     ("parallel_started", results_mod.StartedResult(("run-p1-l1", "run-p1-l2"), "m"), "started 2"),

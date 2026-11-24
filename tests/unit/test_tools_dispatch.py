@@ -1831,7 +1831,7 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
             assert out["returncode"] == -15
             assert "still_running" not in out and "background_id" not in out
             assert "operator's stop ended the command before it finished" in result.summary()
-            assert "stopped" in str(read["shells"]) and "running" not in str(read["shells"])
+            assert read["state"] == "stopped" and read["still_running"] is False
             assert command_result["stopped_by_operator"] is True
             assert command_result["exit_code"] == -15 and "background_id" not in command_result
             assert command_result["summary"] == result.summary()
@@ -1842,7 +1842,7 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
             assert out["background_id"] == "bg1"
             assert command_result["background_id"] == "bg1"
             assert command_result["exit_code"] is None
-            assert "running" in str(read["shells"])
+            assert read["still_running"] is True
             assert any(e["type"] == "command.backgrounded" for e in events)
         assert command_result["stdout_tail"] == "starting\n"
         assert command_result["stderr_tail"] == "warning\n"
@@ -1904,7 +1904,7 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(
         ):
             d.dispatch("run_command", {"argv": ["sleep", "40"]})
         read = d.dispatch("read_background", {"id": "bg1", "wait_s": 0}).to_wire()
-        assert "stop failed" in str(read["shells"]) and "777" in str(read["shells"])
+        assert read["state"] == "stop failed" and "777" in read["detail"]
         assert read["output"] == "starting"
     finally:
         d.close()

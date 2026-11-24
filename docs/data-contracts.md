@@ -215,13 +215,13 @@ Hold a session's end and the snapshot a resume re-enters.
 
 ## ToolResult family
 
-[`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 28 frozen result types
+[`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 29 frozen result types
 
 Typed tool-handler results.
 
 **ToolResult** &mdash; One tool handler's typed result.
 
-Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `StartedResult`, `SteeredResult`, `BackgroundResult`, `SessionsResult`, `SessionEntriesResult`, `FindingsResult`
+Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `StartedResult`, `SteeredResult`, `BackgroundRosterResult`, `BackgroundReadResult`, `SessionsResult`, `SessionEntriesResult`, `FindingsResult`
 
 - **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fs_tools, nav_tools, skill_tools}
 - **Read by:** app/review/actions, harness/{child_work, guards, memory_touch, metric_sampler, tool_effects}, harness/verify/gate, tools/{child_tools, result_format, sessions}

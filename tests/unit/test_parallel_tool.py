@@ -219,11 +219,8 @@ def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathl
     read, stop = (_description(offered, name) for name in ("read_background", "stop_background"))
     assert read.endswith(schema.ReadBackgroundInput.CHILDREN_NOTE)
     assert "`harness.command_checkin_s` (900s)" in read
-    assert "With no `id`, a `wait_s` above 0 waits for the next child to end" in read
-    assert stop.endswith(
-        " A child's id stops that child at once; a stopped child's work does not merge, and its"
-        " branch holds what it committed."
-    )
+    assert "waits for the next child to end" in read
+    assert stop.endswith(schema.StopBackgroundInput.CHILDREN_NOTE)
     # The arguments are the same either way: no new field addresses a child.
     for name in ("read_background", "stop_background"):
         ((one,), (other,)) = (
@@ -256,10 +253,8 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
     read = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 3}).to_wire()
 
     assert work.waits == [("run-p1-l1", 3.0)]
-    assert read["children"] == ["[run-p1-l1] attempt 1 · running: write a"]
+    assert read["id"] == "run-p1-l1" and read["running"] is True
     assert read["output"].splitlines() == [
-        "[run-p1-l1] attempt 1 · running: write a",
-        "",
         "user: write a",
         "",
         "[tool] apply_edit",
@@ -267,7 +262,7 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
         "assistant: a.txt is written",
     ]
     tail = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 0, "tail_lines": 1})
-    assert tail.to_wire()["output"].splitlines()[2:] == [
+    assert tail.to_wire()["output"].splitlines() == [
         "... 4 earlier lines ...",
         "assistant: a.txt is written",
     ]
@@ -285,10 +280,10 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
 def test_a_targeted_child_read_excludes_other_children_and_shells(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A one-line child read must not repeat unrelated jobs from the run."""
+    """A selected child's result excludes the roster, even when other jobs exist."""
     work = _Work()
     d = _dispatcher(tmp_path, _config(tool=True), work=work)
-    shell = background.ShellView("bg1", "true", "exited", 0, "")
+    shell = background.ShellView("bg1", "true", "exited", 0, "", 0.1, False)
 
     def finished_shells(_owner: background.BackgroundShells) -> list[background.ShellView]:
         return [shell]
@@ -300,8 +295,8 @@ def test_a_targeted_child_read_excludes_other_children_and_shells(
     assert roster["shells"] and len(roster["children"]) == 2
 
     tail = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 0, "tail_lines": 1})
-    assert tail.to_wire()["shells"] == []
-    assert tail.to_wire()["children"] == [roster["children"][0]]
+    assert tail.to_wire()["id"] == "run-p1-l1"
+    assert "shells" not in tail.to_wire() and "children" not in tail.to_wire()
 
 
 @pytest.mark.parametrize("reader", ["read_background", "read_session"])

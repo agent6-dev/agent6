@@ -30,7 +30,15 @@ from agent6.harness import nudges, tool_effects
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
-from agent6.tools import dispatch, operator_prompts, result_format, results, tool_errors
+from agent6.tools import (
+    background,
+    child_tools,
+    dispatch,
+    operator_prompts,
+    result_format,
+    results,
+    tool_errors,
+)
 
 _VALID_TOML = """
 [agent6]
@@ -75,15 +83,35 @@ def _dumps(result: object) -> str:
 
 
 @pytest.mark.parametrize("running", [False, True])
-def test_selected_background_state_stays_off_the_wire_and_summary(running: bool) -> None:
-    result = results.BackgroundResult(
-        shells=("[bg1] running: sleep 60",), output="ready\n", running=running
-    )
-    assert _dumps(result) == '{"shells": ["[bg1] running: sleep 60"], "output": "ready\\n"}'
+def test_background_roster_keeps_one_line_per_job(running: bool) -> None:
+    result = results.BackgroundRosterResult(shells=("[bg1] running: sleep 60",), running=running)
+    assert _dumps(result) == '{"shells": ["[bg1] running: sleep 60"]}'
     assert result.summary() == "[bg1] running: sleep 60"
-    assert results.BackgroundResult(shells=(), running=running).to_wire() == {"shells": []}
-    children = results.BackgroundResult(shells=(), children=("[run-p1-l1] running: t",))
+    assert results.BackgroundRosterResult(shells=(), running=running).to_wire() == {"shells": []}
+    children = results.BackgroundRosterResult(shells=(), children=("[run-p1-l1] running: t",))
     assert children.to_wire() == {"shells": [], "children": ["[run-p1-l1] running: t"]}
+
+
+def test_wire_read_background_child(tmp_path: pathlib.Path) -> None:
+    """A selected attempt returns its measured facts apart from its transcript."""
+    d = dispatch.ToolDispatcher(
+        root=tmp_path,
+        session_dir=tmp_path / "parent",
+        config=_config(tmp_path, extra="\n[harness.parallel]\ntool = true\n"),
+    )
+    children = mock.Mock(spec=child_tools.Children)
+    children.roster.return_value = (
+        child_tools.ChildLine("parent-p1-l2", 2, "stopped", "write tests", False, True, 3),
+    )
+    d.children = children
+    result = d.dispatch("read_background", {"id": "parent-p1-l2", "wait_s": 0})
+    assert _dumps(result) == (
+        '{"id": "parent-p1-l2", "attempt": 2, "state": "stopped", "task": "write tests",'
+        ' "running": false, "mergeable": true, "commits": 3, "output": "(no transcript yet)"}'
+    )
+    assert result.summary() == (
+        "[parent-p1-l2] attempt 2 · stopped · 3 commits beyond start: write tests"
+    )
 
 
 # --- content access family ---------------------------------------------------
@@ -358,10 +386,10 @@ def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(
     assert out["stdout"] == "... 5010 earlier chars clipped ...\n" + "y" * 20_000
 
 
-def test_a_handed_back_command_is_scrubbed(
+def test_wire_read_background_command(
     tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
 ) -> None:
-    """A check-in hand-back scrubs both streams and retains a readable background handle."""
+    """A read preserves the hand-back's clock and reports the observed exit beside clean output."""
     data = b"\x1b[32mout\x1b[0m\n"
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
@@ -388,19 +416,41 @@ def test_a_handed_back_command_is_scrubbed(
         returncode=-9, survivors=frozenset()
     )
     d = build_dispatcher(root=tmp_path, config=_config(tmp_path), session_dir=tmp_path / "run")
-    with mock.patch.object(
-        d, "_command_access", dataclasses.replace(d._jail_access("run_command"), session=session)
+    with (
+        mock.patch.object(
+            d,
+            "_command_access",
+            dataclasses.replace(d._jail_access("run_command"), session=session),
+        ),
+        mock.patch.object(background, "time") as clock,
     ):
         try:
+            clock.monotonic.return_value = 1000.0
             out = d.dispatch("run_command", {"argv": ["sleep", "60"]}).to_wire()
             assert out["returncode"] is None and out["still_running"] is True
             assert out["stdout"] == "out\n" and out["stderr"] == "err\n"
-            assert (
-                d.dispatch("read_background", {"id": out["background_id"], "wait_s": 0}).to_wire()[
-                    "output"
-                ]
-                == "out"
+            args = {"id": out["background_id"], "wait_s": 0}
+            clock.monotonic.return_value = 1002.0
+            live = d.dispatch("read_background", args)
+            assert _dumps(live) == (
+                '{"background_id": "bg1", "command": "sleep 60", "state": "running",'
+                ' "returncode": null, "duration_s": 902.0, "still_running": true, "output": "out"}'
             )
+            assert live.summary() == "[bg1] running: sleep 60"
+            session.status_background.return_value = jail_session.BackgroundStatus(
+                running=False, returncode=7, error=""
+            )
+            clock.monotonic.return_value = 1005.0
+            ended = d.dispatch("read_background", args)
+            assert _dumps(ended) == (
+                '{"background_id": "bg1", "command": "sleep 60", "state": "exited",'
+                ' "returncode": 7, "duration_s": 905.0, "still_running": false, "output": "out"}'
+            )
+            clock.monotonic.return_value = 2000.0
+            assert d.dispatch("read_background", args).to_wire() == ended.to_wire()
+            assert d.dispatch("read_background", {}).to_wire() == {
+                "shells": ["[bg1] exited (exit 7): sleep 60"]
+            }
         finally:
             d.close()
 

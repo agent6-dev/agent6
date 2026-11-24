@@ -43,7 +43,6 @@ def test_background_wait_uses_the_shorter_enabled_interval(
         d = command_env._dispatcher(tmp_path, checkin)
         d.dispatch("run_command", {"argv": ["sleep", "30"], "background": True})
         handle = "bg1"
-        roster_key = "shells"
     else:
         repo = tmp_path / "repo"
         child_env._init_repo(repo)
@@ -59,7 +58,6 @@ def test_background_wait_uses_the_shorter_enabled_interval(
         d.children = child_work.ChildWork(harness)
         child_env._start(harness.parallel, ("", "work"))
         handle = "run-p1-l1" if kind == "child" else ""
-        roster_key = "children"
         if kind == "next child" and wait_s is None:
             minimum, capped = 0, False
     args: dict[str, Any] = {"id": handle}
@@ -72,8 +70,10 @@ def test_background_wait_uses_the_shorter_enabled_interval(
 
         assert minimum <= elapsed < 2, f"wait took {elapsed:.2f}s"
         # The fake child has a future but no live worker record.
-        expected = "running" if kind == "command" else "starting"
-        assert expected in result[roster_key][0]
+        if kind == "next child":
+            assert "starting" in result["children"][0]
+        else:
+            assert result["state"] == ("running" if kind == "command" else "starting")
         note = "Wait ended at harness.command_checkin_s = 0.2s."
         assert (note in result.get("output", "")) is capped
     finally:
@@ -104,6 +104,6 @@ def test_a_steer_does_not_claim_the_checkin_ended_a_wait(tmp_path: pathlib.Path)
         ipc.submit_steer(tmp_path / "session", "inspect output")
         answer = d.dispatch("read_background", {"id": "bg1", "wait_s": 4}).to_wire()
         assert "harness.command_checkin_s" not in answer["output"]
-        assert "running" in answer["shells"][0]
+        assert answer["still_running"] is True
     finally:
         d.close()

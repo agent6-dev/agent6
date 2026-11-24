@@ -257,8 +257,10 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
         selected_state or "running",
         None if selected_state in (None, "running") else 0,
         "",
+        1.5,
+        selected_state in (None, "running"),
     )
-    sibling = background.ShellView("bg2", "sleep 60", "running", None, "")
+    sibling = background.ShellView("bg2", "sleep 60", "running", None, "", 1.0, True)
     shells.read.return_value = (selected, "output")
     shells.roster.return_value = [selected, sibling]
     outcome = command_tools.read_background(
@@ -282,12 +284,10 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
     tool_effects.note(wf, state, turn, "read_background", outcome, {})
     guards.verify_settled(turn, state, turn_context(tree_sha=lambda: "tree"))
     assert state.settled.idle == (1 if selected_state == "running" else 2)
-    # A read that names a job returns that job's row; the whole roster answers a read with no id.
-    rows = [selected.line()] if selected_state else [selected.line(), sibling.line()]
-    assert outcome.to_wire() == {
-        "shells": rows,
-        **({"output": "output"} if selected_state else {}),
-    }
+    if selected_state:
+        assert outcome.to_wire()["still_running"] is (selected_state == "running")
+    else:
+        assert outcome.to_wire() == {"shells": [selected.line(), sibling.line()]}
     assert outcome.summary() == (selected.line() if selected_state else "2 background")
 
 

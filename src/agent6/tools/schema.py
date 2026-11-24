@@ -398,20 +398,19 @@ class ReadBackgroundInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "read_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read a background command's output. `id` from run_command's"
-        " hand-back; `tail_lines` bounds the tail; `wait_s` waits for exit up"
-        " to that many seconds (0 = look now; omitted = the run's configured"
-        " check-in interval). Waits are bounded by that interval when it is above 0."
-        " Returns the output tail, running state,"
-        " and returncode when finished. With no `id`, returns this run's"
-        " background roster."
+        "Pass run_command's `background_id` as `id` for `background_id`, a `command` preview,"
+        " `state`, `returncode` (null if unknown), `duration_s`, `still_running` and the `output`"
+        " tail. `detail` explains errors. With no `id`, `shells` lists one line per command."
+        " `tail_lines` bounds the tail. With an `id`, `wait_s` waits for exit"
+        " (0 = look now; omitted = the run's configured check-in interval)."
+        " Waits are bounded by that interval when it is above 0."
     )
 
     # Appended in a run that has the `parallel` tool; every other run reads the text above.
     CHILDREN_NOTE: ClassVar[str] = (
-        " A child's id from `parallel` reads that child: its state and the tail of its"
-        " transcript, after waiting up to `wait_s` for it to end. With no `id`, a `wait_s`"
-        " above 0 waits for the next child to end, and `children` lists this run's children."
+        " A child id returns `id`, `attempt`, `state`, `task`, `running`, `mergeable`, `commits`"
+        " (null if unknown) and the transcript tail in `output`. With no `id`, `children` lists"
+        " one line per child when present. A positive `wait_s` waits for the next child to end."
     )
 
     id: str = ""
@@ -425,13 +424,13 @@ class StopBackgroundInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "stop_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Stop a background command by background_id. Returns the background roster with"
-        " it marked stopped and its exit code; read its output first with read_background."
+        "Stop one command by `background_id`. Returns its status line in `shells`,"
+        " with the exit code if known."
     )
     # Appended in a run that has the `parallel` tool; every other run reads the text above.
     CHILDREN_NOTE: ClassVar[str] = (
-        " A child's id stops that child at once; a stopped child's work does not merge, and"
-        " its branch holds what it committed."
+        " A child id requests an immediate stop and returns its status line in `children`"
+        " with `shells` empty. Its commits stay on its branch."
     )
 
     id: str

@@ -177,8 +177,8 @@ def test_a_one_line_read_keeps_the_exit_and_not_the_shell_script(
             wait_s=0,
             interrupted=lambda: False,
         ).to_wire()
-        (line,) = out["shells"]
-        assert "exit -9" in line and "sh -c" in line and "cat <<EOF" in line
+        line = out["command"]
+        assert out["returncode"] == -9 and "sh -c" in line and "cat <<EOF" in line
         assert len(line.splitlines()) == 1 and "…" in line and "HEREDOC BODY" not in line
     finally:
         shells.stop_all()
