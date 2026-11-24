@@ -8,7 +8,7 @@ import pytest
 from textual import pilot as textual_pilot
 from textual import widgets
 
-from agent6.ui.tui import home, menubar
+from agent6.ui.tui import files, home, menubar
 from tests.tui import waits
 
 
@@ -576,10 +576,12 @@ def test_the_tree_is_as_wide_as_its_names_up_to_a_limit(
 
 def test_the_file_starts_under_the_menu_and_a_cut_file_says_so_above_it(
     repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An empty note held a blank row above every file."""
+    monkeypatch.setattr(files, "_MAX_BYTES", 128)
     (repo / "README.md").write_text("# Guide\n", encoding="utf-8")
-    (repo / "big.txt").write_text("line\n" * 300_000, encoding="utf-8")
+    (repo / "big.txt").write_text("line\n" * 30, encoding="utf-8")
 
     async def scenario() -> None:
         app = home.Agent6HomeApp(repo.parent / "state", repo)
