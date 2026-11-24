@@ -269,6 +269,25 @@ def test_a_message_raised_under_a_dialog_shows_above_it_and_takes_the_keyboard(
     assert not errors
 
 
+def test_a_message_is_back_on_the_page_in_the_task_that_closes_its_dialog(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A message moved back on the `close` event stayed hidden in the closed dialog until then."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock textarea").wait_for()
+    page.keyboard.press("Control+K")
+    dialog = page.get_by_role("dialog", name="Switch session")
+    expect(dialog.get_by_role("combobox")).to_be_focused()
+    page.evaluate("text => toast(text, true)", FAILURE.format(1))
+    expect(dialog.locator("#toasts .toast")).to_be_visible()
+    message = page.locator("#toasts .toast")
+    assert message.evaluate(f"e => {{ e.closest('dialog').close(); return ({PRESSABLE})(e); }}")
+    assert not errors
+
+
 def test_a_failed_refresh_keeps_the_rows_and_says_since_when(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

@@ -37,7 +37,9 @@ function openDialog(title, cls) {
   dialog.appendChild(head);
   // Keep messages above the modal backdrop and inside its focus trap.
   const toasts = document.getElementById('toasts');
-  dialog.addEventListener('close', () => { if (toasts.parentNode === dialog) document.body.append(toasts); dialog.remove(); });
+  // Back on the page before the dialog closes: `close` fires a task later, and they would be hidden until it ran.
+  dialog.addEventListener('beforetoggle', e => { if (e.newState === 'closed' && toasts.parentNode === dialog) document.body.append(toasts); });
+  dialog.addEventListener('close', () => dialog.remove());
   const root = document.documentElement;
   root.classList.toggle('scrollbar', innerWidth > root.clientWidth);
   document.body.appendChild(dialog);
