@@ -863,6 +863,8 @@ def settle_tree(
             auto_pop=start.cfg.git.auto_stash_pop or settled.pop,
             in_worktree=manifest.worktree is not None,
         )
+        # After the record: the teardown ends the stash even when this line cannot be written.
+        reporter.note(resume_tree.stashed_note(tree))
     return settled.kept
 
 

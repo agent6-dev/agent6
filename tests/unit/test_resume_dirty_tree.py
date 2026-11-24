@@ -13,6 +13,7 @@ import json
 import pathlib
 import shlex
 import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -256,6 +257,36 @@ def test_resume_stashes_an_edit_made_outside_the_run_under_dirty_tree_stash(
     err = capsys.readouterr().err
     assert "stashed for this execution as yours: a.py" in err
     assert "restore them with: git stash apply" in err  # the resumed execution's own end line
+
+
+def test_a_resume_that_cannot_say_it_stashed_still_restores_the_stash(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume whose stash note failed to print left the operator's edit stashed.
+
+    The teardown ends the stash the stage recorded, and the note came between the stash and
+    its record.
+    """
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\nauto_stash_pop = true\n')
+    _stopped_run(repo, monkeypatch, "tree-NOTE01", _edit("z.txt", "1\n"))
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+    stderr = sys.stderr
+
+    class _FailsOneLine:
+        def write(self, text: str) -> int:
+            if "stashed for this execution" in text:
+                raise OSError(5, "Input/output error")
+            return stderr.write(text)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(stderr, name)
+
+    monkeypatch.setattr(sys, "stderr", _FailsOneLine())
+
+    assert _resume(monkeypatch, "tree-NOTE01", [_finish()]) == 1
+
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2\n"
+    assert _git(repo, "stash", "list") == ""
 
 
 def test_resume_stashes_an_outside_edit_to_a_name_git_quotes(

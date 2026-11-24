@@ -592,7 +592,7 @@ def settle(
         reporter: Receives a refusal.
 
     Returns:
-        What was done.
+        What was done; the caller records a stash before it says so (`stashed_note`).
 
     Raises:
         preflight.SessionRefusedError: The resume is refused or cancelled, already reported.
@@ -632,8 +632,20 @@ def settle(
     except errors.GitError as exc:
         reporter.refuse(f"stashing the edits made outside the run failed: {exc}")
         raise preflight.SessionRefusedError(2) from exc
+    return Settled(stashed=True, pop=asked)
+
+
+def stashed_note(tree: TreeVerdict) -> str:
+    """Return the line that names the outside edits a resume stashed.
+
+    Args:
+        tree: Whose the working tree's changes are.
+
+    Returns:
+        The line.
+    """
+    outside = tree.outside
     names = ", ".join(terminal.printable_name(p) for p in outside[:4])
     shown = names + (f", +{len(outside) - 4} more" if len(outside) > 4 else "")
-    since = "the run last ended" if end_tree else "the run's last commit"
-    reporter.note(f"stashed for this execution as yours: {shown} (changed since {since})")
-    return Settled(stashed=True, pop=asked)
+    since = "the run last ended" if tree.end_tree else "the run's last commit"
+    return f"stashed for this execution as yours: {shown} (changed since {since})"
