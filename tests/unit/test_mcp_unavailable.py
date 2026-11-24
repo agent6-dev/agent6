@@ -111,7 +111,7 @@ def test_the_editor_is_told_too() -> None:
     ACP projects the same fold, so the editor gets it in the conversation instead of a log pane it
     may not show.
     """
-    from agent6.ui.acp import updates as acp_updates
+    from tests.acp import v1
 
     event = {
         "type": "mcp.server_unavailable",
@@ -121,7 +121,7 @@ def test_the_editor_is_told_too() -> None:
     updates = [
         u
         for item in transcript.TranscriptFold().feed(event)
-        for u in acp_updates.updates_for(item, acp_session_id="s")
+        for u in v1.updates_for(item, acp_session_id="s")
     ]
     assert updates, "the editor was told nothing"
     text = updates[0]["params"]["update"]["content"]["text"]

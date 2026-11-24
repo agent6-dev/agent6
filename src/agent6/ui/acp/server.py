@@ -20,7 +20,7 @@ from typing import Any, BinaryIO
 from agent6 import __version__
 from agent6.app import frontend
 from agent6.ui import operator_images
-from agent6.ui.acp import review, rpc, updates
+from agent6.ui.acp import model, review, rpc, updates, wire
 from agent6.ui.acp import session as acp_session
 
 # The client sends the newest version it supports and disconnects if this one will not do.
@@ -110,7 +110,7 @@ class ACPServer:
                     line = self.stdin.readline(MAX_LINE_BYTES + 1)
                 self.reply(
                     None,
-                    error=(
+                    error=rpc.RpcError(
                         rpc.INVALID_REQUEST,
                         f"a request line over {MAX_LINE_BYTES} bytes was dropped",
                     ),
@@ -129,18 +129,22 @@ class ACPServer:
         handler = self._handlers.get(method)
         if handler is None:
             if req_id is not None:  # an unknown notification is ignorable
-                self.reply(req_id, error=(rpc.METHOD_NOT_FOUND, f"unknown method: {method!r}"))
+                self.reply(
+                    req_id, error=rpc.RpcError(rpc.METHOD_NOT_FOUND, f"unknown method: {method!r}")
+                )
             return
         try:
             result = handler(params, req_id)
         except rpc.RpcError as exc:
             if req_id is not None:
-                self.reply(req_id, error=(exc.code, exc.message))
+                self.reply(req_id, error=exc)
             return
         except Exception as exc:  # a handler bug never kills the connection
             print(f"[agent6] {method}: {traceback.format_exc()}", file=sys.stderr)
             if req_id is not None:
-                self.reply(req_id, error=(rpc.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}"))
+                self.reply(
+                    req_id, error=rpc.RpcError(rpc.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
+                )
             return
         if result is DEFERRED:
             return
@@ -166,14 +170,17 @@ class ACPServer:
         except json.JSONDecodeError as exc:
             self.reply(
                 None,
-                error=(
+                error=rpc.RpcError(
                     rpc.PARSE_ERROR,
                     f"invalid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}",
                 ),
             )
             return None
         if not isinstance(message, dict):
-            self.reply(None, error=(rpc.INVALID_REQUEST, "the JSON-RPC message must be an object"))
+            self.reply(
+                None,
+                error=rpc.RpcError(rpc.INVALID_REQUEST, "the JSON-RPC message must be an object"),
+            )
             return None
         req_id = message.get("id")
         if "method" not in message and self._ours(req_id) and self._deliver(req_id, message):
@@ -186,13 +193,13 @@ class ACPServer:
                 and not isinstance(req_id, bool)
                 and not self._ours(req_id)
                 else None,
-                error=(rpc.INVALID_REQUEST, "jsonrpc must be '2.0'"),
+                error=rpc.RpcError(rpc.INVALID_REQUEST, "jsonrpc must be '2.0'"),
             )
             return None
         if req_id is not None and (isinstance(req_id, bool) or not isinstance(req_id, str | int)):
             self.reply(
                 None,
-                error=(rpc.INVALID_REQUEST, "id must be a string, number, or null"),
+                error=rpc.RpcError(rpc.INVALID_REQUEST, "id must be a string, number, or null"),
             )
             return None
         method = message.get("method")
@@ -202,14 +209,16 @@ class ACPServer:
                 # An error frame naming an id this server minted would answer its own request.
                 self.reply(
                     None if self._ours(req_id) else req_id,
-                    error=(rpc.INVALID_REQUEST, "no method"),
+                    error=rpc.RpcError(rpc.INVALID_REQUEST, "no method"),
                 )
             return None
         if raw is not None and not isinstance(raw, dict):
             if req_id is not None:
                 self.reply(
                     req_id,
-                    error=(rpc.INVALID_PARAMS, f"params for {method!r} must be an object"),
+                    error=rpc.RpcError(
+                        rpc.INVALID_PARAMS, f"params for {method!r} must be an object"
+                    ),
                 )
             return None
         return req_id, method, raw or {}
@@ -296,23 +305,26 @@ class ACPServer:
 
     def _session_new(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/new`: the new session's id and config options."""
-        return self._sessions().new(params)
+        return wire.v1_result(self._sessions().new(params))
 
     def _session_list(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/list`: the recorded runs, newest first."""
         return self._sessions().list(params)
 
     def _session_load(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        """Return the reply to `session/load` after replaying the run's conversation."""
-        return self._sessions().load(params, notify=self.notify_raw)
+        """Return the reply to v1's `session/load`: a resume that replays from the start."""
+        replaying = {**params, "replayFrom": {"type": "start"}}
+        return wire.v1_result(self._sessions().resume(replaying, notify=self.update))
 
     def _session_resume(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/resume`: the config options of the run's conversation."""
-        return self._sessions().resume(params)
+        # v1's resume has no replay cursor: `session/load` is its replay.
+        plain = {key: value for key, value in params.items() if key != "replayFrom"}
+        return wire.v1_result(self._sessions().resume(plain, notify=self.update))
 
     def _session_set_config_option(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/set_config_option`: the complete config options."""
-        return self._sessions().set_config_option(params)
+        return wire.v1_result(self._sessions().set_config_option(params))
 
     def _session_close(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/close`: empty; a prompt in flight answers `cancelled`."""
@@ -353,11 +365,11 @@ class ACPServer:
         def finish(end: acp_session.TurnEnd) -> None:
             # ACP v1 reports a failed turn as the request's error; `refusal` is a model's.
             if isinstance(end, rpc.RpcError):
-                self.reply(req_id, error=(end.code, end.message))
+                self.reply(req_id, error=end)
             else:
                 self.reply(req_id, result={"stopReason": end})
 
-        if review.handle_command(sessions, session, text, notify=self.notify_raw, finish=finish):
+        if review.handle_command(sessions, session, text, notify=self.update, finish=finish):
             return DEFERRED
         sessions.start_execution(session, text, finish=finish, images=images)
         return DEFERRED
@@ -375,9 +387,7 @@ class ACPServer:
         try:
             sessions.cancel(sessions.get(params))
         except rpc.RpcError as exc:
-            self.notify_raw(
-                updates.message_update(str(params.get("sessionId")), f"cancel: {exc.message}")
-            )
+            self.update(str(params.get("sessionId")), updates.notice(f"cancel: {exc.message}"))
         return {}
 
     def _sessions(self) -> acp_session.Sessions:
@@ -435,15 +445,21 @@ class ACPServer:
         req_id: object,
         *,
         result: dict[str, Any] | None = None,
-        error: tuple[int, str] | None = None,
+        error: rpc.RpcError | None = None,
     ) -> None:
-        """Send a reply carrying the result, or the error as code and message."""
+        """Send a reply carrying the result, or the error as the connection's version reads it."""
         body: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
         if error is not None:
-            body["error"] = {"code": error[0], "message": error[1]}
+            body["error"] = wire.v1_error(error)
         else:
             body["result"] = result if result is not None else {}
         self.notify_raw(body)
+
+    def update(self, acp_session_id: str, update: model.Update) -> None:
+        """Send one session update as the connection's version reads it, when it has a form."""
+        body = wire.v1(update)
+        if body is not None:
+            self.notify_raw(wire.notification(acp_session_id, body))
 
     def notify_raw(self, body: dict[str, Any]) -> None:
         """Write one message, encoded lossily: a lone surrogate must not desync the stream."""

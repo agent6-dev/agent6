@@ -13,7 +13,7 @@ from agent6.ui.acp import runner, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
 from agent6.viewmodel import tail
-from tests.acp import schema_check
+from tests.acp import schema_check, v1
 
 
 def _node(
@@ -50,8 +50,8 @@ def _entries(sent: list[dict[str, Any]]) -> list[list[tuple[str, str]]]:
 
 
 def _fed(*events: dict[str, Any]) -> list[list[tuple[str, str]]]:
-    plan = updates.TaskPlan("s")
-    return _entries([body for event in events for body in plan.feed(event)])
+    plan = updates.TaskPlan()
+    return _entries(v1.frames("s", [update for event in events for update in plan.feed(event)]))
 
 
 def test_each_task_status_maps_to_a_plan_status_in_depth_first_order() -> None:
@@ -141,10 +141,10 @@ def test_the_plan_is_sent_live_and_again_on_replay(tmp_path: pathlib.Path) -> No
     replayed: list[dict[str, Any]] = []
     updates.replay(
         tail.tail_events(log, follow=False),
-        acp_session_id="run-x",
+        session_id="run-x",
         cwd=tmp_path,
         objects_dir=tmp_path / "objects",
-        notify=replayed.append,
+        notify=v1.collector("run-x", replayed),
     )
 
     assert _entries(live) == [

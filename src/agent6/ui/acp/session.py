@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Serve the session lifecycle: new, list, load, resume, close, prompt and cancel.
+"""Serve the session lifecycle: new, list, resume, close, prompt and cancel.
 
 A prompt runs on a worker thread: a blocked read loop could not receive the
 `session/cancel` ACP requires to work during one. A conversation's id is the run id its
@@ -25,7 +25,7 @@ from agent6.app import preflight, stop
 from agent6.sessions import id, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import operator_images
-from agent6.ui.acp import options, rpc, updates
+from agent6.ui.acp import model, options, rpc, updates
 from agent6.viewmodel import listing, tail
 
 # What a prompt answers; `cancelled` is the operator's act, not a failure.
@@ -155,7 +155,7 @@ class Sessions:
             )
         config_id, value = params.get("configId"), params.get("value")
         offered = {
-            option["id"]: [choice["value"] for choice in option["options"]]
+            option["configId"]: [choice["value"] for choice in option["options"]]
             for option in self.build_options(session)
         }
         if not isinstance(config_id, str) or config_id not in offered:
@@ -225,22 +225,53 @@ class Sessions:
                 )
         return {"sessions": sessions}
 
-    def resume(self, params: dict[str, Any]) -> dict[str, Any]:
+    def resume(
+        self, params: dict[str, Any], *, notify: Callable[[str, model.Update], None]
+    ) -> dict[str, Any]:
         """Serve `session/resume`: open a conversation on a recorded run.
 
         The run's id becomes the conversation's `sessionId`; the next prompt resumes the run
-        with its text as the steering instruction, as every follow-up prompt does.
+        with its text as the steering instruction, as every follow-up prompt does. With
+        `replayFrom: {"type": "start"}` the run's conversation is replayed before returning.
 
         Args:
-            params: The run's `sessionId` and the repository's absolute `cwd`.
+            params: The run's `sessionId`, the repository's absolute `cwd`, and an optional
+                `replayFrom` cursor.
+            notify: Sends each replayed update to the conversation it names.
 
         Returns:
             The reply with the session's config options.
 
         Raises:
             RpcError: The cwd is not a repository, the id names no recorded run of it, the
-                record is a plan or an ask, the run's worker is alive, or this connection
-                has it open for another directory or with a prompt in flight.
+                record is a plan or an ask, the run's worker is alive, this connection has
+                it open for another directory or with a prompt in flight, or the cursor is
+                not one agent6 replays from.
+        """
+        replay = _replays(params)
+        session = self._open(params)
+        if replay:
+            saved = session.layout(self.state_dir_for(session.cwd))
+            updates.replay(
+                tail.tail_events(saved.logs_path, follow=False),
+                session_id=session.session_id,
+                cwd=session.cwd,
+                objects_dir=saved.objects_dir,
+                notify=lambda update: notify(session.acp_id, update),
+            )
+        return {"configOptions": self._options(session)}
+
+    def _open(self, params: dict[str, Any]) -> Session:
+        """Return the conversation `session/resume` opens on a recorded run.
+
+        Args:
+            params: The run's `sessionId` and the repository's absolute `cwd`.
+
+        Returns:
+            The conversation, new or already open on this connection.
+
+        Raises:
+            RpcError: The resume checks refuse the run or the editor's extras.
         """
         cwd = _repository(params)
         _refuse_editor_extras(params)
@@ -249,7 +280,11 @@ class Sessions:
             raise rpc.RpcError(rpc.INVALID_PARAMS, "sessionId must be a non-empty string")
         saved = sessions_layout.session_layout(self.state_dir_for(cwd), session_id)
         if saved is None or saved.session_id != session_id or not saved.manifest_path.exists():
-            raise rpc.RpcError(rpc.INVALID_PARAMS, f"no recorded run {session_id!r} in {cwd}")
+            raise rpc.RpcError(
+                rpc.RESOURCE_NOT_FOUND,
+                f"no recorded run {session_id!r} in {cwd}",
+                {"sessionId": session_id},
+            )
         bucket = saved.session_dir.parent.name
         if bucket != kinds.session_bucket(ACP_MODE):
             mode = "an ask" if bucket == "asks" else f"a {kinds.bucket_mode(bucket)}"
@@ -275,37 +310,10 @@ class Sessions:
                     rpc.INVALID_PARAMS, "that session already has a prompt in flight"
                 )
             # The conversation is open already; its counters and picked options carry on.
-            return {"configOptions": self._options(known)}
+            return known
         session = Session(acp_id=session_id, cwd=cwd, session_id=session_id)
         self._by_id[session_id] = session
-        return {"configOptions": self._options(session)}
-
-    def load(
-        self, params: dict[str, Any], *, notify: Callable[[dict[str, Any]], None]
-    ) -> dict[str, Any]:
-        """Open a recorded run and replay its conversation before returning.
-
-        Args:
-            params: The run's `sessionId` and repository's absolute `cwd`.
-            notify: Sends each `session/update` notification.
-
-        Returns:
-            The reply with the session's config options, after the replay.
-
-        Raises:
-            RpcError: The resume checks refuse the requested run or editor extras.
-        """
-        opened = self.resume(params)
-        session = self.get(params)
-        saved = session.layout(self.state_dir_for(session.cwd))
-        updates.replay(
-            tail.tail_events(saved.logs_path, follow=False),
-            acp_session_id=session.acp_id,
-            cwd=session.cwd,
-            objects_dir=saved.objects_dir,
-            notify=notify,
-        )
-        return opened
+        return session
 
     def close(self, params: dict[str, Any]) -> dict[str, Any]:
         """Serve `session/close`: end a conversation, cancelling a prompt in flight.
@@ -342,7 +350,11 @@ class Sessions:
         acp_session_id = params.get("sessionId")
         session = self._by_id.get(acp_session_id) if isinstance(acp_session_id, str) else None
         if session is None or session.closed:
-            raise rpc.RpcError(rpc.INVALID_PARAMS, f"no session {acp_session_id!r}")
+            raise rpc.RpcError(
+                rpc.RESOURCE_NOT_FOUND,
+                f"no session {acp_session_id!r}",
+                {"sessionId": acp_session_id},
+            )
         return session
 
     def start_execution(
@@ -467,6 +479,28 @@ def _repository(params: dict[str, Any]) -> pathlib.Path:
     if refusal is not None:
         raise rpc.RpcError(rpc.INVALID_PARAMS, refusal)
     return cwd
+
+
+def _replays(params: dict[str, Any]) -> bool:
+    """Return whether the request asks for the conversation to be replayed from its start.
+
+    Args:
+        params: The `session/resume` params.
+
+    Returns:
+        False without a `replayFrom` cursor.
+
+    Raises:
+        RpcError: The cursor is malformed, or of a type other than `start`.
+    """
+    cursor = params.get("replayFrom")
+    if cursor is None:
+        return False
+    if not isinstance(cursor, dict) or cursor.get("type") != "start":
+        raise rpc.RpcError(
+            rpc.INVALID_PARAMS, 'replayFrom must be {"type": "start"}: agent6 replays from there'
+        )
+    return True
 
 
 def _refuse_editor_extras(params: dict[str, Any]) -> None:

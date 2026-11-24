@@ -1,21 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Project the shared transcript fold into ACP `session/update` notifications.
+"""Project the shared transcript fold into the session's updates.
 
 Projecting the fold every other surface renders keeps a fourth surface from
-disagreeing about what happened. Nothing here touches the wire.
+disagreeing about what happened. The updates are `model`'s; `wire` renders them.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import pathlib
+import uuid
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from agent6 import directive, evidence
+from agent6 import directive, evidence, kinds
 from agent6.app.parallel import launch as child_launch
 from agent6.sessions import journal
+from agent6.ui.acp import model
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import receipt, transcript, transcript_items
 from agent6.viewmodel.session import records as state_types
@@ -23,12 +25,12 @@ from agent6.viewmodel.session import state as session_state
 from agent6.viewmodel.session import status as session_status
 from agent6.viewmodel.session import view as state_view
 
-# The update a fold item becomes; the operator's own words echo back as a user message.
-_CHUNK_KIND = {
-    "thinking": "agent_thought_chunk",
-    "text": "agent_message_chunk",
-    "operator": "user_message_chunk",
-    "task": "user_message_chunk",
+# Whose message a fold item is; the operator's own words are a user message.
+_ROLE: dict[str, model.Role] = {
+    "thinking": "thought",
+    "text": "agent",
+    "operator": "user",
+    "task": "user",
 }
 
 # ACP's kind per built-in tool, the editor's icon; an MCP tool reads `other`.
@@ -62,21 +64,59 @@ _TOOL_KINDS = {
 }
 
 
-def _available_commands(mode: str) -> list[dict[str, Any]]:
-    """Return the registered commands an editor can offer for this execution."""
+def available_commands(mode: str) -> tuple[model.Command, ...]:
+    """Return the registered commands an editor can offer for a session in this mode."""
     can_dispatch = child_launch.can_dispatch_work(mode)
-    offered: list[dict[str, Any]] = []
+    offered: list[model.Command] = []
     for command in directive.commands_for("acp"):
         if command.kind == "starts children" and not can_dispatch:
             continue
         word, _, hint = command.usage.partition(" ")
-        entry: dict[str, Any] = {"name": word.removeprefix("/"), "description": command.help}
-        if hint:
-            entry["input"] = {"hint": hint}
-            if word in {"/pin", "/review"}:
-                entry["input"]["type"] = "text"
-        offered.append(entry)
-    return offered
+        offered.append(model.Command(word.removeprefix("/"), command.help, hint))
+    return tuple(offered)
+
+
+def row_id(event: dict[str, Any]) -> str:
+    """Return a journal row's id: its `event_id`, or its timestamp in a journal without one."""
+    return str(event.get("event_id") or event.get("ts") or "")
+
+
+@dataclasses.dataclass
+class MessageIds:
+    """Name each message by the journal row it came from, the same live as replayed.
+
+    The model's text and thinking take the id of their `model.call` row, so the deltas a
+    live run streams and the whole message a replay sends are one message.
+
+    Attributes:
+        call: The id of the worker's model call in flight.
+    """
+
+    call: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex, init=False)
+
+    def feed(self, event: dict[str, Any]) -> None:
+        """Take the next call's id at the worker's `model.call` row."""
+        if event.get("type") == "model.call" and not kinds.is_side_actor(
+            str(event.get("actor", ""))
+        ):
+            self.call = row_id(event) or uuid.uuid4().hex
+
+    def of(self, item: transcript_items.TranscriptItem, event: dict[str, Any], index: int) -> str:
+        """Return the id of the message a fold item becomes.
+
+        Args:
+            item: The fold item.
+            event: The row the fold yielded it at.
+            index: The item's place among that row's items.
+
+        Returns:
+            The call's id for the model's words, else the row's, with the place appended
+            after the row's first item; "" for a row with no id.
+        """
+        if item.kind in ("text", "thinking"):
+            return self.call
+        base = row_id(event)
+        return f"{base}:{index}" if base and index else base
 
 
 @dataclasses.dataclass
@@ -87,13 +127,11 @@ class RunInfo:
     (`state_view.context_fill`): the last completed call's whole prompt over its model's window.
 
     Attributes:
-        acp_session_id: The conversation the notifications address.
         window: The context window of a provider's model, None when unknown.
         banked_usd: The spend of the run's earlier executions; each execution's budget
             starts at 0.
     """
 
-    acp_session_id: str
     window: Callable[[str, str], int | None] = state_view.cached_context_window
     banked_usd: float = 0.0
     _verification: evidence.VerificationEvidence | None = dataclasses.field(
@@ -101,12 +139,12 @@ class RunInfo:
     )
     _size: int | None = dataclasses.field(default=None, init=False)
     _used: int = dataclasses.field(default=0, init=False)
-    _cost: dict[str, Any] | None = dataclasses.field(default=None, init=False)
+    _cost: float | None = dataclasses.field(default=None, init=False)
     # A call's result and its budget update arrive as a pair, in either order in old journals.
     _owed: set[str] = dataclasses.field(default_factory=set, init=False)
 
-    def feed(self, event: dict[str, Any]) -> list[dict[str, Any]]:
-        """Return the notifications the event owes beyond the fold's items.
+    def feed(self, event: dict[str, Any]) -> list[model.Update]:
+        """Return the updates the event owes beyond the fold's items.
 
         Args:
             event: One rows event.
@@ -124,22 +162,16 @@ class RunInfo:
                 except ValueError:
                     self._verification = None
             case "session.stop":
+                tree_id = f"{row}:tree" if (row := row_id(event)) else ""
                 if child := journal.ChildVerification.from_stop(event):
-                    return [
-                        message_update(self.acp_session_id, f"Final tree passed ({child.label})")
-                    ]
+                    return [notice(f"Final tree passed ({child.label})", tree_id)]
                 record = self._verification
                 if record is not None:
                     final = record.verify_id == event.get("final_verify_id") and record.certifies(
                         event.get("tree")
                     )
                     word = "Final tree passed" if final else "Final tree not certified"
-                    return [
-                        message_update(
-                            self.acp_session_id,
-                            word + "\n" + receipt.verification_summary(record),
-                        )
-                    ]
+                    return [notice(word + "\n" + receipt.verification_summary(record), tree_id)]
             case "model.call":
                 self._size = self.window(
                     str(event.get("provider", "")), str(event.get("model", ""))
@@ -160,45 +192,27 @@ class RunInfo:
                     plan = (row.plan_observed_points or 0.0) > 0 or (
                         row.account is not None and row.account.used_percent > 0
                     )
-                    self._cost = (
-                        {"amount": total, "currency": "USD"}
-                        if not row.usd_partial and (total > 0 or not plan)
-                        else None
-                    )
+                    priced = not row.usd_partial and (total > 0 or not plan)
+                    self._cost = total if priced else None
                 return self._settle("budget.update")
             case _:
                 pass
         return []
 
-    def _start(self, user_task: str, mode: str) -> list[dict[str, Any]]:
+    def _start(self, user_task: str, mode: str) -> list[model.Update]:
         """Return the title, when the task has a headline, and the commands."""
-        out: list[dict[str, Any]] = []
+        out: list[model.Update] = []
         if title := printable(session_status.task_snippet(user_task)):
-            out.append(
-                _update(
-                    self.acp_session_id, {"sessionUpdate": "session_info_update", "title": title}
-                )
-            )
-        commands = {
-            "sessionUpdate": "available_commands_update",
-            "availableCommands": _available_commands(mode),
-        }
-        out.append(_update(self.acp_session_id, commands))
+            out.append(model.SessionInfoUpdate(title))
+        out.append(model.AvailableCommandsUpdate(available_commands(mode)))
         return out
 
-    def _settle(self, arrived: str) -> list[dict[str, Any]]:
+    def _settle(self, arrived: str) -> list[model.Update]:
         """Return the call's usage once its pair is complete, the window and a prompt known."""
         self._owed.discard(arrived)
         if self._owed or not self._size or self._used <= 0:
             return []
-        usage: dict[str, Any] = {
-            "sessionUpdate": "usage_update",
-            "used": self._used,
-            "size": self._size,
-        }
-        if self._cost is not None:
-            usage["cost"] = self._cost
-        return [_update(self.acp_session_id, usage)]
+        return [model.UsageUpdate(self._used, self._size, self._cost)]
 
 
 # ACP's plan status per task status; it has no failed status, and a failed task is still open.
@@ -210,51 +224,44 @@ _PLAN_STATUS = {
 }
 
 
-def plan_entries(tasks: tuple[state_types.TaskNodeView, ...]) -> list[dict[str, str]]:
+def plan_entries(tasks: tuple[state_types.TaskNodeView, ...]) -> tuple[model.PlanEntry, ...]:
     """Return the task list as ACP plan entries, in the read model's depth-first order.
 
     Args:
         tasks: The folded session state's tasks.
 
     Returns:
-        One entry per task that is neither skipped nor obsolete, each `medium` priority. The
-        task the worker is on reads `in_progress`; a failed one keeps " (failed)" after its
-        title.
+        One entry per task that is neither skipped nor obsolete. The task the worker is on
+        reads `in_progress`; a failed one keeps " (failed)" after its title.
     """
-    return [
-        {
-            "content": printable(task.title) + (" (failed)" if task.status == "failed" else ""),
-            "priority": "medium",
-            "status": "in_progress" if task.is_cursor else _PLAN_STATUS.get(task.status, "pending"),
-        }
+    return tuple(
+        model.PlanEntry(
+            printable(task.title) + (" (failed)" if task.status == "failed" else ""),
+            "in_progress" if task.is_cursor else _PLAN_STATUS.get(task.status, "pending"),
+        )
         for task in tasks
         if task.status not in ("skipped", "obsolete")
-    ]
+    )
 
 
 @dataclasses.dataclass
 class TaskPlan:
-    """Project the run's task list into ACP's `plan`, from the state every surface folds.
+    """Project the run's task list into ACP's plan, from the state every surface folds."""
 
-    Attributes:
-        acp_session_id: The conversation the notifications address.
-    """
-
-    acp_session_id: str
     _state: state_types.SessionState = dataclasses.field(
         default_factory=session_state.initial_state, init=False
     )
     # The entries the editor holds from this projection; None before the first graph.
-    _sent: list[dict[str, str]] | None = dataclasses.field(default=None, init=False)
+    _sent: tuple[model.PlanEntry, ...] | None = dataclasses.field(default=None, init=False)
 
-    def feed(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+    def feed(self, event: dict[str, Any]) -> list[model.Update]:
         """Return the plan when the event changed it.
 
         Args:
             event: One rows event.
 
         Returns:
-            One `plan` update with the complete list, empty included, at a `graph.update` and
+            One plan update with the complete list, empty included, at a `graph.update` and
             at the `session.stop` that clears the focus; none while the list is unchanged, or
             at a stop before the execution journaled a graph.
         """
@@ -266,57 +273,65 @@ class TaskPlan:
         if entries == self._sent:
             return []
         self._sent = entries
-        return [_update(self.acp_session_id, {"sessionUpdate": "plan", "entries": entries})]
+        return [model.PlanUpdate(entries)]
 
 
 def replay(
     rows: Iterable[dict[str, Any]],
     *,
-    acp_session_id: str,
+    session_id: str,
     cwd: pathlib.Path,
     objects_dir: pathlib.Path,
-    notify: Callable[[dict[str, Any]], None],
+    notify: Callable[[model.Update], None],
 ) -> None:
     """Replay a recorded run through the shared fold and ACP projection.
 
     Args:
         rows: The run's events in emission order.
-        acp_session_id: The conversation id, also the recorded run's id.
+        session_id: The recorded run's id.
         cwd: The working directory for tool locations.
         objects_dir: The run's object directory, holding the text of each edit's diff.
-        notify: Sends each notification before load returns.
+        notify: Sends each update before the replay returns.
     """
     fold = transcript.TranscriptFold()
-    plan = TaskPlan(acp_session_id)
+    plan = TaskPlan()
+    ids = MessageIds()
     execution, executions = "", 0
     announced: set[str] = set()
 
-    def send(item: transcript_items.TranscriptItem, paths: tuple[str, ...] = ()) -> None:
-        wire_id = tool_call_id(item, acp_session_id, execution)
-        for body in updates_for(
+    def send(
+        item: transcript_items.TranscriptItem,
+        paths: tuple[str, ...] = (),
+        message_id: str = "",
+        cancelled: bool = False,
+    ) -> None:
+        wire_id = tool_call_id(item, session_id, execution)
+        for update in updates_for(
             item,
-            acp_session_id=acp_session_id,
             wire_id=wire_id,
             announced=wire_id in announced,
             cwd=cwd,
             paths=paths,
             objects_dir=objects_dir,
+            message_id=message_id,
+            cancelled=cancelled,
         ):
-            notify(body)
+            notify(update)
         if item.kind in ("tool", "verify"):
             announced.add(wire_id)
 
     for event in rows:
         event_type = event.get("type")
-        for body in plan.feed(event):
-            notify(body)
+        ids.feed(event)
+        for update in plan.feed(event):
+            notify(update)
         paths = result_paths(event) if event_type == "tool.result" else ()
-        for item in fold.feed(event):
+        for index, item in enumerate(fold.feed(event)):
             wire_item = item
             if item.kind == "task":
                 # The fold's task is a headline; a loaded conversation keeps the full prompt.
                 wire_item = dataclasses.replace(item, body=str(event.get("user_task", "")))
-            send(wire_item, paths)
+            send(wire_item, paths, ids.of(item, event, index), operator_stopped(event))
         if event_type in journal.SESSION_START_EVENTS:
             # The fold settles the previous execution's open calls before this boundary.
             executions += 1
@@ -325,6 +340,13 @@ def replay(
             announced.clear()
     for item in fold.settle_open_calls("the run died"):
         send(item)
+
+
+def operator_stopped(event: dict[str, Any]) -> bool:
+    """Return whether the row is the `session.stop` of a run the operator stopped."""
+    return (
+        event.get("type") == "session.stop" and event.get("reason") in session_status.OPERATOR_STOPS
+    )
 
 
 def result_paths(event: dict[str, Any]) -> tuple[str, ...]:
@@ -338,82 +360,88 @@ def result_paths(event: dict[str, Any]) -> tuple[str, ...]:
 def updates_for(
     item: transcript_items.TranscriptItem,
     *,
-    acp_session_id: str,
     wire_id: str = "",
     announced: bool = False,
     cwd: pathlib.Path | None = None,
     paths: tuple[str, ...] = (),
     streamed: bool = False,
     objects_dir: pathlib.Path | None = None,
-) -> list[dict[str, Any]]:
-    """Return the `session/update` notifications one fold item becomes.
+    message_id: str = "",
+    prompt: bool = False,
+    cancelled: bool = False,
+) -> list[model.Update]:
+    """Return the updates one fold item becomes.
 
-    A tool call is announced once and updated after that, so an editor shows work
-    in progress.
+    The first update of a tool call creates it and names it; the ones after patch it, so
+    an editor shows work in progress.
 
     Args:
         item: The fold item.
-        acp_session_id: The conversation the notifications address.
         wire_id: The call's `toolCallId`; "" takes the execution's own stamp.
         announced: The editor already has the call.
         cwd: The working directory the locations and diffs resolve against.
         paths: The paths the tool result named.
         streamed: The item is one delta of a message in flight, sent whole.
         objects_dir: The run's object directory; None sends an edit without its diffs.
+        message_id: The id of the message the item is, or is a piece of; "" mints one.
+        prompt: The item is the prompt this connection sent.
+        cancelled: The operator stopped the run, so a call it never returned from reads
+            `cancelled`.
 
     Returns:
-        The notifications, in sending order; none for a blank message.
+        The updates, in sending order; none for a blank message.
         An unmapped kind becomes an agent message naming its kind.
     """
     if item.kind == "done":
         summary = item.body.strip()
-        result: list[dict[str, Any]] = []
+        result: list[model.Update] = []
         if summary and item.arg in session_status.MODEL_ENDS:
             result.append(
-                _update(
-                    acp_session_id,
-                    {"sessionUpdate": "agent_message_chunk", "content": _text(summary + "\n\n")},
-                )
+                model.Message("agent", message_id or _new_id(), printable(summary + "\n\n"))
             )
         elif summary:
             # A stop's sentence (a spend ceiling, an operator stop) is agent6's, not the model's.
-            result.append(message_update(acp_session_id, summary))
-        result.append(message_update(acp_session_id, status_line(item)))
+            result.append(notice(summary, message_id))
+        result.append(notice(status_line(item), f"{message_id}:status" if message_id else ""))
         return result
     if item.kind == "commit":
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
-        return [message_update(acp_session_id, text)]
+        return [notice(text, message_id)]
     if item.kind in ("tool", "verify"):
-        wire_id = wire_id or execution_call_id(item)
-        if item.ok is None and not announced:
-            update = {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)}
-        else:
-            content = _tool_content(item, cwd, objects_dir)
-            # The changes name every file, a deleted one and one outside the workspace too.
-            located = tuple(change.path for change in item.changes) or paths
-            update = {
-                "sessionUpdate": "tool_call_update",
-                "toolCallId": wire_id,
-                "status": _tool_status(item),
-                **({"content": content} if content else {}),
-                **({"locations": _tool_locations(located, cwd)} if located and cwd else {}),
-            }
-        return [_update(acp_session_id, update)]
+        text, changes = _tool_content(item, cwd, objects_dir)
+        # The changes name every file, a deleted one and one outside the workspace too.
+        located = tuple(change.path for change in item.changes) or paths
+        return [
+            model.ToolCallUpdate(
+                tool_call_id=wire_id or execution_call_id(item),
+                status=_tool_status(item, cancelled),
+                title="" if announced else printable(f"{item.name} {item.arg}".strip()),
+                name="" if announced else item.name,
+                kind="" if announced else _TOOL_KINDS.get(item.name, "other"),
+                text=text,
+                changes=changes,
+                locations=_tool_locations(located, cwd) if cwd else (),
+            )
+        ]
     if item.kind == "marker":
         # Harness prose: a compaction, a btw answer, a notice.
         body = item.body.strip()
-        return [message_update(acp_session_id, body)] if body else []
-    chunk = _CHUNK_KIND.get(item.kind)
+        return [notice(body, message_id)] if body else []
+    role = _ROLE.get(item.kind)
     # A streamed delta keeps every byte; a whole message is stripped, and a blank one is none.
     body = item.body if streamed else item.body.strip()
-    if chunk is None:
+    if role is None:
         detail = "\n".join(
             part for part in (body, item.name, item.arg, item.detail, item.tail) if part
         )
-        return [message_update(acp_session_id, f"{item.kind}: {detail}".rstrip())]
-    return (
-        [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})] if body else []
+        return [notice(f"{item.kind}: {detail}".rstrip(), message_id)]
+    message_id = message_id or _new_id()
+    message = (
+        model.MessageChunk(role, message_id, printable(body))
+        if streamed
+        else model.Message(role, message_id, printable(body), prompt=prompt)
     )
+    return [message] if body else []
 
 
 def status_line(item: transcript_items.TranscriptItem) -> str:
@@ -432,53 +460,31 @@ def status_line(item: transcript_items.TranscriptItem) -> str:
     return " ".join(parts)
 
 
-def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
-    """Return one line of agent6's own prose as a `session/update`, marked as its own.
+def notice(text: str, message_id: str = "") -> model.Message:
+    """Return one line of agent6's own prose as an agent message, marked as its own.
 
-    The chunk ends its line: an editor appends chunks as they come, and the model's next
-    words would otherwise start on the notice's line.
+    The message ends its line: a v1 editor appends messages as they come, and the model's
+    next words would otherwise start on the notice's line.
 
     Args:
-        acp_session_id: The conversation the notification addresses.
         text: The line, without the `[agent6]` marker this adds.
+        message_id: The message's id; "" mints one.
 
     Returns:
-        An `agent_message_chunk` notification.
+        The message.
     """
-    return _update(
-        acp_session_id,
-        {"sessionUpdate": "agent_message_chunk", "content": _text(f"[agent6] {text}\n")},
-    )
+    return model.Message("agent", message_id or _new_id(), printable(f"[agent6] {text}\n"))
 
 
-def config_options_update(acp_session_id: str, options: list[dict[str, Any]]) -> dict[str, Any]:
-    """Return the `config_option_update` telling the editor agent6 changed a session's options.
-
-    Args:
-        acp_session_id: The conversation the notification addresses.
-        options: The complete config option list.
-
-    Returns:
-        The notification.
-    """
-    return _update(
-        acp_session_id, {"sessionUpdate": "config_option_update", "configOptions": options}
-    )
-
-
-def _update(acp_session_id: str, update: dict[str, Any]) -> dict[str, Any]:
-    """Return one `session/update` notification."""
-    return {
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {"sessionId": acp_session_id, "update": update},
-    }
+def _new_id() -> str:
+    """Return an id for a message no journal row names."""
+    return uuid.uuid4().hex
 
 
 def printable(text: str) -> str:
     """Return the text with control characters dropped.
 
-    Every model-authored string on the wire goes through here: content blocks,
+    Every model-authored string on the wire goes through here: message text,
     tool titles, and the permission request an operator reads before granting.
     A diff's file text is the one exception.
 
@@ -491,75 +497,60 @@ def printable(text: str) -> str:
     return "".join(c for c in text if c.isprintable() or c in "\n\t")
 
 
-def _text(text: str) -> dict[str, Any]:
-    """Return a text content block, scrubbed; the editor is a third-party renderer."""
-    return {"type": "text", "text": printable(text)}
-
-
-def _tool_status(item: transcript_items.TranscriptItem) -> str:
-    """Return ACP's status for the item; a call waiting on an answer is `pending`."""
+def _tool_status(item: transcript_items.TranscriptItem, cancelled: bool) -> model.ToolCallStatus:
+    """Return the call's status; a call waiting on an answer is `paused`."""
     if item.ok is None:
-        return "pending" if item.detail else "in_progress"
-    return "completed" if item.ok else "failed"
+        return "paused" if item.detail else "in_progress"
+    if item.ok:
+        return "completed"
+    return "cancelled" if cancelled else "failed"
 
 
 def _tool_content(
     item: transcript_items.TranscriptItem,
     cwd: pathlib.Path | None = None,
     objects_dir: pathlib.Path | None = None,
-) -> list[dict[str, Any]]:
-    """Return what the tool produced, in ACP's tagged shape.
+) -> tuple[str, tuple[model.DiffChange, ...]]:
+    """Return what the tool produced: its text, and the files it changed.
 
-    A bare content-block array makes a strict client reject the notification, and
-    the call then stays pending; `tail` is the failure's output, the reason an
-    editor shows beside "failed".
+    `tail` is the failure's output, the reason an editor shows beside "failed".
 
     Args:
         item: A tool item of the fold.
-        cwd: The working directory a diff's path resolves against.
+        cwd: The working directory a change's path resolves against.
         objects_dir: The run's object directory.
 
     Returns:
-        One `content` entry holding the item's detail and tail, when either is set, then one
-        `diff` entry per file the call changed: `oldText` null for a created file, `newText`
-        empty for a deleted one. A call whose stored text is gone (pruned history) sends no
-        diff, and the text says so.
+        The item's detail and tail as one text, and one change per file the call wrote. A
+        call whose stored text is gone (pruned history) has no change, and the text says so.
     """
     parts = [item.detail, item.tail]
-    diffs: list[dict[str, Any]] | None = []
+    changes: tuple[model.DiffChange, ...] | None = ()
     if cwd is not None and objects_dir is not None:
-        diffs = _diffs(item.changes, cwd, objects_dir)
-    if diffs is None:
+        changes = _changes(item.changes, cwd, objects_dir)
+    if changes is None:
         parts.append("diff unavailable: its stored text is gone")
-    body = "\n".join(part for part in parts if part)
-    return [*([{"type": "content", "content": _text(body)}] if body else []), *(diffs or [])]
+    return printable("\n".join(part for part in parts if part)), changes or ()
 
 
-def _diffs(
-    changes: tuple[transcript_items.StoredChange, ...], cwd: pathlib.Path, objects_dir: pathlib.Path
-) -> list[dict[str, Any]] | None:
-    """Return one ACP diff per changed file, or None when a stored text is gone."""
-    diffs: list[dict[str, Any]] = []
-    for change in changes:
+def _changes(
+    stored: tuple[transcript_items.StoredChange, ...], cwd: pathlib.Path, objects_dir: pathlib.Path
+) -> tuple[model.DiffChange, ...] | None:
+    """Return one change per file with both texts, or None when a stored text is gone."""
+    changes: list[model.DiffChange] = []
+    for change in stored:
         texts = transcript_items.change_texts(change, objects_dir)
         if texts is None:
             return None
-        # The text is the file's, sent whole: a scrubbed side would differ from the file.
-        diffs.append(
-            {
-                "type": "diff",
-                "path": str((cwd / change.path).resolve()),
-                "oldText": texts[0],
-                "newText": texts[1] or "",
-            }
-        )
-    return diffs
+        # The text is the file's, kept whole: a scrubbed side would differ from the file.
+        changes.append(model.DiffChange(str((cwd / change.path).resolve()), texts[0], texts[1]))
+    return tuple(changes)
 
 
-def _tool_locations(paths: tuple[str, ...], cwd: pathlib.Path) -> list[dict[str, str]]:
+def _tool_locations(paths: tuple[str, ...], cwd: pathlib.Path) -> tuple[str, ...]:
     """Return ACP's absolute follow-along locations, each path once."""
-    resolved = ((cwd / path).resolve() for path in paths)
-    return [{"path": str(path)} for path in dict.fromkeys(resolved)]
+    resolved = (str((cwd / path).resolve()) for path in paths)
+    return tuple(dict.fromkeys(resolved))
 
 
 def wire_call_id(session_id: str, execution: str, within_execution: str) -> str:
@@ -571,7 +562,7 @@ def wire_call_id(session_id: str, execution: str, within_execution: str) -> str:
         within_execution: The dispatcher's stamp, a counter that restarts every execution.
 
     Returns:
-        The `toolCallId` the call's announcement, updates and permission request carry.
+        The `toolCallId` the call's updates and permission request carry.
     """
     return f"{session_id}:{execution}:{within_execution}" if session_id else within_execution
 
@@ -584,15 +575,3 @@ def execution_call_id(item: transcript_items.TranscriptItem) -> str:
 def tool_call_id(item: transcript_items.TranscriptItem, session_id: str, execution: str) -> str:
     """Return the wire id for a fold item."""
     return wire_call_id(session_id, execution, execution_call_id(item))
-
-
-def _tool_call(item: transcript_items.TranscriptItem, wire_id: str) -> dict[str, Any]:
-    """Return the `tool_call` announcement's fields; the model wrote the arg, so it is scrubbed."""
-    title = printable(f"{item.name} {item.arg}".strip())
-    return {
-        "toolCallId": wire_id,
-        "title": title,
-        "name": item.name,
-        "kind": _TOOL_KINDS.get(item.name, "other"),
-        "status": _tool_status(item),
-    }

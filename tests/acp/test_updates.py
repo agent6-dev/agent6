@@ -17,6 +17,7 @@ import pytest
 from agent6 import directive
 from agent6.ui.acp import updates as acp_updates
 from agent6.viewmodel import transcript, transcript_items
+from tests.acp import v1
 
 
 def updates_for_events(
@@ -29,7 +30,7 @@ def updates_for_events(
     for event in events:
         for item in fold.feed(event):
             out.extend(
-                acp_updates.updates_for(
+                v1.updates_for(
                     item, acp_session_id=acp_session_id, announced=item.call_id in announced
                 )
             )
@@ -59,10 +60,10 @@ def test_verification_settles_the_same_editor_call() -> None:
 
 def test_reasoning_and_answer_are_different_channels() -> None:
     """Thinking is its own delta; conflated, the model's scratch work reads as its answer."""
-    thinking = acp_updates.updates_for(
+    thinking = v1.updates_for(
         transcript_items.TranscriptItem("thinking", body="let me look"), acp_session_id="s"
     )
-    text = acp_updates.updates_for(
+    text = v1.updates_for(
         transcript_items.TranscriptItem("text", body="the answer"), acp_session_id="s"
     )
     assert _kinds(thinking) == ["agent_thought_chunk"]
@@ -74,7 +75,7 @@ def test_the_operators_own_words_echo_back_as_theirs() -> None:
 
     Attributing it to the agent would make the transcript lie about who said what.
     """
-    updates = acp_updates.updates_for(
+    updates = v1.updates_for(
         transcript_items.TranscriptItem("operator", body="also add a flag"), acp_session_id="s"
     )
     assert _kinds(updates) == ["user_message_chunk"]
@@ -82,7 +83,7 @@ def test_the_operators_own_words_echo_back_as_theirs() -> None:
 
 def test_an_unmapped_item_names_its_kind_in_an_agent_message() -> None:
     """A fold extension remains visible even before ACP gains a native mapping."""
-    (notification,) = acp_updates.updates_for(
+    (notification,) = v1.updates_for(
         transcript_items.TranscriptItem(
             cast("transcript_items.ItemKind", "future_kind"), body="Recorded detail"
         ),
@@ -123,7 +124,7 @@ def test_known_tools_carry_their_acp_kinds() -> None:
         "fetch": "fetch",
     }
     for name, kind in expected.items():
-        (notification,) = acp_updates.updates_for(
+        (notification,) = v1.updates_for(
             transcript_items.TranscriptItem("tool", name=name), acp_session_id="s"
         )
         assert notification["params"]["update"]["kind"] == kind
@@ -150,7 +151,7 @@ def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
         }
     )
 
-    (notification,) = acp_updates.updates_for(
+    (notification,) = v1.updates_for(
         item,
         acp_session_id="s",
         cwd=pathlib.Path("/repo"),
@@ -190,7 +191,7 @@ def test_an_approval_wait_reads_pending_then_in_progress() -> None:
 
 
 def test_a_failed_tool_says_so() -> None:
-    (outcome,) = acp_updates.updates_for(
+    (outcome,) = v1.updates_for(
         transcript_items.TranscriptItem("tool", name="run_command", arg="ls", ok=False),
         acp_session_id="s",
     )
@@ -199,7 +200,7 @@ def test_a_failed_tool_says_so() -> None:
 
 def test_a_tool_still_running_is_not_reported_failed() -> None:
     """`ok=None` is no outcome yet: the call is announced, in progress, and nothing closes it."""
-    updates = acp_updates.updates_for(
+    updates = v1.updates_for(
         transcript_items.TranscriptItem("tool", name="grep", arg="x"), acp_session_id="s"
     )
     assert _kinds(updates) == ["tool_call"]
@@ -209,15 +210,13 @@ def test_a_tool_still_running_is_not_reported_failed() -> None:
 def test_an_empty_body_produces_nothing() -> None:
     """A blank chunk renders as an empty bubble in the editor."""
     assert (
-        acp_updates.updates_for(
-            transcript_items.TranscriptItem("text", body="   "), acp_session_id="s"
-        )
+        v1.updates_for(transcript_items.TranscriptItem("text", body="   "), acp_session_id="s")
         == []
     )
 
 
 def test_every_notification_is_addressed_and_well_formed() -> None:
-    updates = acp_updates.updates_for(
+    updates = v1.updates_for(
         transcript_items.TranscriptItem("text", body="hi"), acp_session_id="sess-1"
     )
     (one,) = updates
@@ -278,7 +277,7 @@ def test_a_done_summary_is_bare_and_precedes_the_labelled_status() -> None:
     item = transcript_items.TranscriptItem(
         "done", body=" \nThe model's summary.\n\n\n", name="finished", detail="1s"
     )
-    updates = acp_updates.updates_for(item, acp_session_id="s")
+    updates = v1.updates_for(item, acp_session_id="s")
     assert _kinds(updates) == ["agent_message_chunk", "agent_message_chunk"]
     assert [u["params"]["update"]["content"]["text"] for u in updates] == [
         "The model's summary.\n\n",
@@ -290,7 +289,7 @@ def test_a_done_without_a_summary_emits_only_the_status() -> None:
     """A blank summary produces no chunk or dangling punctuation in the ending."""
     for body in ("", " \n\n"):
         item = transcript_items.TranscriptItem("done", body=body)
-        updates = acp_updates.updates_for(item, acp_session_id="s")
+        updates = v1.updates_for(item, acp_session_id="s")
         assert _kinds(updates) == ["agent_message_chunk"]
         assert updates[0]["params"]["update"]["content"]["text"] == "[agent6] Session ended\n"
 
@@ -313,7 +312,7 @@ def test_a_red_gate_does_not_look_like_a_green_one() -> None:
 
 def test_a_commit_is_not_dropped() -> None:
     """An auto-commit's sha and line count live in `detail`; keying on `body` dropped it."""
-    updates = acp_updates.updates_for(
+    updates = v1.updates_for(
         transcript_items.TranscriptItem("commit", arg="abc1234", detail="3 lines"),
         acp_session_id="s",
     )
@@ -374,7 +373,7 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions() -> None:
     second = acp_updates.tool_call_id(item, "brave-oak-AAAAAA", "b")
     assert first != second
     assert first.startswith("brave-oak-AAAAAA:")
-    (announced,) = acp_updates.updates_for(item, acp_session_id="s", wire_id=first)
+    (announced,) = v1.updates_for(item, acp_session_id="s", wire_id=first)
     assert announced["params"]["update"]["toolCallId"] == first
 
 
@@ -391,7 +390,7 @@ def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:
     item = transcript_items.TranscriptItem(
         kind="tool", name="run_verify", arg="", ok=False, detail="exit 1"
     )
-    (outcome,) = acp_updates.updates_for(item, acp_session_id="s")
+    (outcome,) = v1.updates_for(item, acp_session_id="s")
     content = outcome["params"]["update"]["content"]
     assert content == [{"type": "content", "content": {"type": "text", "text": "exit 1"}}]
 
@@ -405,7 +404,7 @@ def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
     item = transcript_items.TranscriptItem(
         kind="tool", name="run_verify", arg="", ok=False, detail="exit 1", tail="E   assert 1 == 2"
     )
-    (outcome,) = acp_updates.updates_for(item, acp_session_id="s")
+    (outcome,) = v1.updates_for(item, acp_session_id="s")
     text = outcome["params"]["update"]["content"][0]["content"]["text"]
     assert "assert 1 == 2" in text
 
@@ -416,7 +415,7 @@ def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
     The renderer is a third party, so agent6 cannot assume it treats an escape as inert.
     """
     hostile = "hi\x1b]0;pwned\x07 there\x1b[2J\nsecond\tline"
-    (update,) = acp_updates.updates_for(
+    (update,) = v1.updates_for(
         transcript_items.TranscriptItem(kind="text", body=hostile), acp_session_id="s"
     )
     text = update["params"]["update"]["content"]["text"]
@@ -427,7 +426,7 @@ def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
 def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
     """The `title` is scrubbed like `content`; it is the model's own argv, path or pattern."""
     hostile = "sh -c '\x1b]0;PWNED\x07'"
-    (call,) = acp_updates.updates_for(
+    (call,) = v1.updates_for(
         transcript_items.TranscriptItem(kind="tool", name="run_command", arg=hostile),
         acp_session_id="s",
     )
@@ -463,12 +462,12 @@ def test_every_built_in_tool_names_its_acp_kind() -> None:
 
 def test_a_whitespace_delta_reaches_the_editor() -> None:
     """A paragraph-break delta reaches the editor; dropped, two paragraphs ran together."""
-    (update,) = acp_updates.updates_for(
+    (update,) = v1.updates_for(
         transcript_items.TranscriptItem("text", body="\n\n"), acp_session_id="s", streamed=True
     )
     assert update["params"]["update"]["content"]["text"] == "\n\n"
     assert (
-        acp_updates.updates_for(
+        v1.updates_for(
             transcript_items.TranscriptItem("text", body=""), acp_session_id="s", streamed=True
         )
         == []
@@ -488,13 +487,11 @@ def test_a_tool_call_carries_the_tools_name() -> None:
 
 
 def _info(**kw: float) -> acp_updates.RunInfo:
-    return acp_updates.RunInfo(
-        acp_session_id="s", window=lambda _p, m: 200_000 if m == "big" else None, **kw
-    )
+    return acp_updates.RunInfo(window=lambda _p, m: 200_000 if m == "big" else None, **kw)
 
 
 def _updates_of(info: acp_updates.RunInfo, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [u["params"]["update"] for ev in events for u in info.feed(ev)]
+    return [u["params"]["update"] for ev in events for u in v1.frames("s", info.feed(ev))]
 
 
 def test_the_session_is_titled_by_the_tasks_headline() -> None:
@@ -688,7 +685,7 @@ def test_a_stops_sentence_is_agent6s_line_and_a_finish_summary_the_models() -> N
     )
     texts = [
         u["params"]["update"]["content"]["text"]
-        for u in acp_updates.updates_for(stopped, acp_session_id="s")
+        for u in v1.updates_for(stopped, acp_session_id="s")
     ]
     assert texts == [
         "[agent6] budget exhausted\n",
@@ -699,7 +696,7 @@ def test_a_stops_sentence_is_agent6s_line_and_a_finish_summary_the_models() -> N
     )
     texts = [
         u["params"]["update"]["content"]["text"]
-        for u in acp_updates.updates_for(finished, acp_session_id="s")
+        for u in v1.updates_for(finished, acp_session_id="s")
     ]
     assert texts == ["Fixed it.\n\n", "[agent6] Session finished\n"]
 
@@ -719,7 +716,7 @@ def test_journal_end_leaves_the_receipt_pointer_to_the_footer() -> None:
     ]
     info = _info()
     messages = updates_for_events(rows, acp_session_id="s")
-    messages += [message for row in rows for message in info.feed(row)]
+    messages += [message for row in rows for message in v1.frames("s", info.feed(row))]
     assert "receipt" not in json.dumps(messages)
 
 

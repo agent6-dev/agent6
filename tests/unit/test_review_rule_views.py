@@ -7,11 +7,11 @@ from typing import Any
 import pytest
 
 from agent6 import review_records
-from agent6.ui.acp import updates
 from agent6.ui.cli import console_render
 from agent6.ui.tui import conversation
 from agent6.viewmodel import log_line, review, transcript
 from agent6.viewmodel.session import state
+from tests.acp import v1
 
 
 def start_event(**changes: Any) -> dict[str, Any]:
@@ -74,7 +74,7 @@ def test_cli_tui_and_acp_render_the_same_recorded_sources() -> None:
     assert expected in output.getvalue()
     rendered = conversation._item_renderables(item, detail="collapsed")
     assert expected in "\n".join(line.plain for line in rendered)
-    notifications = updates.updates_for(item, acp_session_id="session")
+    notifications = v1.updates_for(item, acp_session_id="session")
     assert expected in str(notifications)
     assert expected in log_line.format_log_line(event)
 
@@ -106,7 +106,7 @@ def test_rule_notices_escape_controls_without_losing_the_name(field: str) -> Non
     console.feed(event)
     console.close()
     tui = "\n".join(line.plain for line in conversation._item_renderables(item, detail="collapsed"))
-    (notification,) = updates.updates_for(item, acp_session_id="session")
+    (notification,) = v1.updates_for(item, acp_session_id="session")
     acp = notification["params"]["update"]["content"]["text"]
     panel = state.fold_session([event]).review.panels[0]
     for rendered in (

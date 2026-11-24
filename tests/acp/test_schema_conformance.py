@@ -25,6 +25,7 @@ import pytest
 
 from agent6.ui.acp import updates
 from agent6.viewmodel import transcript, transcript_items
+from tests.acp import v1
 
 _SCHEMA = json.loads(
     (pathlib.Path(__file__).parent / "data" / "acp-schema.json").read_text(encoding="utf-8")
@@ -56,7 +57,7 @@ def _notifications() -> list[dict[str, Any]]:
     for event in _events():
         for item in fold.feed(event):
             out.extend(
-                updates.updates_for(
+                v1.updates_for(
                     item,
                     acp_session_id="s",
                     wire_id=updates.tool_call_id(item, "brave-oak-AAAAAA", "1"),
@@ -116,7 +117,7 @@ def test_each_fold_item_projects_to_a_valid_update(item: transcript_items.Transc
     """Item kinds the recorded run does not happen to contain."""
     validator = _validator("SessionNotification")
     paths = ("a.py",) if item.name == "apply_edit" else ()
-    notifications = updates.updates_for(
+    notifications = v1.updates_for(
         item,
         acp_session_id="s",
         wire_id=updates.tool_call_id(item, "r", "1"),
@@ -129,8 +130,8 @@ def test_each_fold_item_projects_to_a_valid_update(item: transcript_items.Transc
 
 
 def test_the_recorded_runs_title_commands_and_usage_are_valid_updates() -> None:
-    info = updates.RunInfo(acp_session_id="s", window=lambda _p, _m: 128_000)
-    out = [body for event in _events() for body in info.feed(event)]
+    info = updates.RunInfo(window=lambda _p, _m: 128_000)
+    out = [body for event in _events() for body in v1.frames("s", info.feed(event))]
     assert {b["params"]["update"]["sessionUpdate"] for b in out} == {
         "agent_message_chunk",
         "session_info_update",
@@ -143,7 +144,7 @@ def test_the_recorded_runs_title_commands_and_usage_are_valid_updates() -> None:
 
 
 def test_the_harness_message_is_a_valid_update() -> None:
-    body = updates.message_update("s", "the run could not start: boom")
+    (body,) = v1.frames("s", [updates.notice("the run could not start: boom")])
     assert not _errors(_validator("SessionNotification"), body["params"])
 
 

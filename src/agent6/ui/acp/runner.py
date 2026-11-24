@@ -31,7 +31,7 @@ from agent6.sessions import id, ipc, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap, operator_images, spawn
 from agent6.ui.acp import frontend as acp_frontend
-from agent6.ui.acp import options, rpc, updates
+from agent6.ui.acp import model, options, rpc, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from agent6.viewmodel import tail as viewmodel_tail
@@ -82,10 +82,8 @@ class ProseOrder:
                 (s, t) for s, t in self._pending if consumed is not None and s > consumed
             ]
         for text in due:
-            # A note or warning already carries the marker `message_update` adds.
-            self.server.notify_raw(
-                updates.message_update(self.acp_session_id, text.removeprefix("[agent6] "))
-            )
+            # A note or warning already carries the marker `notice` adds.
+            self.server.update(self.acp_session_id, updates.notice(text.removeprefix("[agent6] ")))
 
 
 def forwarding_reporter(
@@ -120,9 +118,7 @@ def forwarding_reporter(
         if order is not None:
             order.say(text)
         else:
-            server.notify_raw(
-                updates.message_update(acp_session_id, text.removeprefix("[agent6] "))
-            )
+            server.update(acp_session_id, updates.notice(text.removeprefix("[agent6] ")))
 
     return app_reporter.Reporter(out=_say, err=_say, receipt=_stderr)
 
@@ -250,6 +246,30 @@ class Announced:
                 self._changed.wait(0.5)  # abandonment is polled; add and close wake at once
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Sending:
+    """What the tail knows about one fold item as it sends it.
+
+    Attributes:
+        paths: The paths the tool result named.
+        spoken: The last message streamed; an end summary repeating it is not sent again,
+            and the status line keeps its own paragraph.
+        prompt: The prompt this execution runs.
+        objects_dir: The run's object directory; None sends an edit without its diffs.
+        message_id: The id of the message the item becomes.
+        call_message_id: The id of the model's message in flight.
+        cancelled: The item's row ends a run the operator stopped.
+    """
+
+    paths: tuple[str, ...]
+    spoken: str
+    prompt: str
+    objects_dir: pathlib.Path | None
+    message_id: str = ""
+    call_message_id: str = ""
+    cancelled: bool = False
+
+
 @dataclasses.dataclass
 class RunBridge:
     """Run prompts for one ACP connection.
@@ -367,20 +387,8 @@ class RunBridge:
         )
         chosen = _selected(answer, options)
         if call_id is None:
-            self.server.notify_raw(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "session/update",
-                    "params": {
-                        "sessionId": session.acp_id,
-                        "update": {
-                            "sessionUpdate": "tool_call_update",
-                            "toolCallId": gated,
-                            "status": "completed" if chosen else "failed",
-                        },
-                    },
-                }
-            )
+            closed = model.ToolCallUpdate(gated, "completed" if chosen else "failed")
+            self.server.update(session.acp_id, closed)
         return chosen
 
     def _frontend(
@@ -388,7 +396,7 @@ class RunBridge:
     ) -> frontend.SessionFrontend:
         """Return the front-end for one turn."""
         return acp_frontend.acp_frontend(
-            say=lambda line: self.server.notify_raw(updates.message_update(session.acp_id, line)),
+            say=lambda line: self.server.update(session.acp_id, updates.notice(line)),
             ask=lambda prompt, options, standing, call_id, until=None: self.ask(
                 session, announced, prompt, options, standing, call_id, until
             ),
@@ -476,16 +484,16 @@ class RunBridge:
             resuming = self._resumable(session)
             if session.require_resume and not resuming:
                 why = "this run has no resume point; Fix cannot start a new run"
-                self.server.notify_raw(updates.message_update(session.acp_id, why))
+                self.server.update(session.acp_id, updates.notice(why))
                 raise rpc.RpcError(rpc.INVALID_PARAMS, why)
             if not resuming and self._recorded(session):
                 # A recorded run with no resume point is refused both ways; a new run says so.
-                self.server.notify_raw(
-                    updates.message_update(
-                        session.acp_id,
+                self.server.update(
+                    session.acp_id,
+                    updates.notice(
                         f"run {session.session_id} left no resume point;"
-                        " this prompt starts a new run",
-                    )
+                        " this prompt starts a new run"
+                    ),
                 )
                 session.session_id = ""
             if not session.session_id:
@@ -498,11 +506,11 @@ class RunBridge:
         if not self._runs.acquire(blocking=False):
             holder = self._running
             who = f"session {holder.acp_id}" if holder is not None else "another session"
-            self.server.notify_raw(
-                updates.message_update(
-                    session.acp_id,
-                    f"waiting: {who} is running a prompt; this prompt starts when it ends",
-                )
+            self.server.update(
+                session.acp_id,
+                updates.notice(
+                    f"waiting: {who} is running a prompt; this prompt starts when it ends"
+                ),
             )
             while not self._runs.acquire(timeout=QUEUE_POLL_S):
                 if session.cancelled:
@@ -542,7 +550,7 @@ class RunBridge:
         except Exception as exc:
             what = "could not start" if not self.had_journal(session) else "failed"
             message = f"the run {what}: {exc}"
-            self.server.notify_raw(updates.message_update(session.acp_id, message))
+            self.server.update(session.acp_id, updates.notice(message))
             if not isinstance(exc, errors.OperatorError):
                 _stderr(f"[agent6] run {session.session_id}: {traceback.format_exc()}")
             raise rpc.RpcError(rpc.INTERNAL_ERROR, message) from exc
@@ -593,7 +601,7 @@ class RunBridge:
         banked = (
             session_log.scan_session_log(layout.logs_path).budget.session.usd if resuming else 0.0
         )
-        info = updates.RunInfo(session.acp_id, banked_usd=banked)
+        info = updates.RunInfo(banked_usd=banked)
         tail = threading.Thread(
             target=self._stream,
             args=(session, layout.logs_path, _stop, start_at, announced, order),
@@ -653,11 +661,9 @@ class RunBridge:
         if current != session.config_options:
             # The execution recorded its route or cached a provider's listing: agent6's change.
             session.config_options = current
-            self.server.notify_raw(updates.config_options_update(session.acp_id, current))
+            self.server.update(session.acp_id, model.ConfigOptionUpdate(current))
         if code != 0 and not said and not self.had_journal(session):
-            self.server.notify_raw(
-                updates.message_update(session.acp_id, f"the run stopped (exit {code})")
-            )
+            self.server.update(session.acp_id, updates.notice(f"the run stopped (exit {code})"))
         # Only a journal that grew and ended in this execution carries its end reason.
         grown = viewmodel_tail.journal_size(layout.logs_path) > journal_before
         scan = session_log.scan_session_log(layout.logs_path)
@@ -694,7 +700,8 @@ class RunBridge:
             objects_dir: The run's object directory; None sends an edit without its diffs.
         """
         fold = transcript.TranscriptFold()
-        plan = updates.TaskPlan(session.acp_id)
+        plan = updates.TaskPlan()
+        ids = updates.MessageIds()
         streamed: set[str] = set()
         # The last message streamed: an end summary repeating it is not sent again.
         spoken: list[str] = []
@@ -712,12 +719,13 @@ class RunBridge:
                 on_position=_at,
             ):
                 event_type = str(event.get("type", ""))
+                ids.feed(event)
                 if event_type in journal.SESSION_START_EVENTS:
                     announced.execution_id = str(event.get("execution_id") or "")
-                for body in info.feed(event) if info is not None else ():
-                    self.server.notify_raw(body)
-                for body in plan.feed(event):
-                    self.server.notify_raw(body)
+                for update in info.feed(event) if info is not None else ():
+                    self.server.update(session.acp_id, update)
+                for update in plan.feed(event):
+                    self.server.update(session.acp_id, update)
                 paths = updates.result_paths(event) if event_type == "tool.result" else ()
                 if event_type == "model.call":
                     streamed.clear()
@@ -731,17 +739,25 @@ class RunBridge:
                             spoken.clear()  # a new message begins
                         spoken.append(str(event.get("text", "")))
                     streamed.add(kind)
-                    for body in updates.updates_for(
+                    for update in updates.updates_for(
                         transcript_items.TranscriptItem(kind, body=str(event.get("text", ""))),
-                        acp_session_id=session.acp_id,
                         streamed=True,
+                        message_id=ids.call,
                     ):
-                        self.server.notify_raw(body)
-                for item in items:
-                    if item.kind not in streamed:
-                        self._send_item(
-                            session, item, announced, paths, "".join(spoken), prompt, objects_dir
-                        )
+                        self.server.update(session.acp_id, update)
+                for index, item in enumerate(items):
+                    if item.kind in streamed:
+                        continue
+                    sending = Sending(
+                        paths,
+                        "".join(spoken),
+                        prompt,
+                        objects_dir,
+                        message_id=ids.of(item, event, index),
+                        call_message_id=ids.call,
+                        cancelled=updates.operator_stopped(event),
+                    )
+                    self._send_item(session, item, announced, sending)
                 if event_type == "model.result":
                     streamed.clear()
                 if order is not None:
@@ -749,15 +765,17 @@ class RunBridge:
         finally:
             announced.close()
             for item in fold.settle_open_calls("the run died"):
-                wire_id = updates.tool_call_id(item, session.session_id, announced.execution_id)
-                for body in updates.updates_for(
+                within = updates.execution_call_id(item)
+                for update in updates.updates_for(
                     item,
-                    acp_session_id=session.acp_id,
-                    wire_id=wire_id,
-                    announced=wire_id in announced,
+                    wire_id=updates.wire_call_id(
+                        session.session_id, announced.execution_id, within
+                    ),
+                    announced=within in announced,
                     cwd=session.cwd,
+                    cancelled=session.cancelled,
                 ):
-                    self.server.notify_raw(body)
+                    self.server.update(session.acp_id, update)
             if order is not None:
                 order.flush(None)
 
@@ -766,10 +784,7 @@ class RunBridge:
         session: acp_session.Session,
         item: transcript_items.TranscriptItem,
         announced: Announced,
-        paths: tuple[str, ...],
-        spoken: str,
-        prompt: str,
-        objects_dir: pathlib.Path | None = None,
+        sending: Sending,
     ) -> None:
         """Send one fold item's updates; the ending also goes to stderr.
 
@@ -777,42 +792,43 @@ class RunBridge:
             session: The session.
             item: The fold item.
             announced: The execution's register of announced calls.
-            paths: The paths the tool result named.
-            spoken: The last message streamed; an end summary repeating it is not sent
-                again, and the status line keeps its own paragraph.
-            prompt: The prompt this execution runs; the editor shows it already, so its
-                echo as steering is not sent, while a steer from another front-end is.
-            objects_dir: The run's object directory; None sends an edit without its diffs.
+            sending: What the tail knows about the item.
         """
-        if item.kind == "task" or (item.kind == "operator" and item.body.strip() == prompt.strip()):
-            return
+        # The editor shows its own prompt already; a steer from another front-end is news.
+        own = item.kind == "task" or (
+            item.kind == "operator" and item.body.strip() == sending.prompt.strip()
+        )
         within = updates.execution_call_id(item) if item.kind in ("tool", "verify") else ""
         wire_id = (
             updates.wire_call_id(session.session_id, announced.execution_id, within)
             if within
             else ""
         )
-        wire_item = item
+        # The fold's task is a headline; the message is the whole prompt.
+        wire_item = dataclasses.replace(item, body=sending.prompt) if item.kind == "task" else item
+        spoken = sending.spoken
         if item.kind == "done" and spoken.strip() and item.body.strip() == spoken.strip():
             wire_item = dataclasses.replace(item, body="")
             trailing = len(spoken) - len(spoken.rstrip("\n"))
             if pad := "\n" * max(0, 2 - trailing):
-                for body in updates.updates_for(
+                for update in updates.updates_for(
                     transcript_items.TranscriptItem("text", body=pad),
-                    acp_session_id=session.acp_id,
                     streamed=True,
+                    message_id=sending.call_message_id,
                 ):
-                    self.server.notify_raw(body)
-        for body in updates.updates_for(
+                    self.server.update(session.acp_id, update)
+        for update in updates.updates_for(
             wire_item,
-            acp_session_id=session.acp_id,
             wire_id=wire_id,
             announced=within in announced,
             cwd=session.cwd,
-            paths=paths,
-            objects_dir=objects_dir,
+            paths=sending.paths,
+            objects_dir=sending.objects_dir,
+            message_id=sending.message_id,
+            prompt=own,
+            cancelled=sending.cancelled,
         ):
-            self.server.notify_raw(body)
+            self.server.update(session.acp_id, update)
         if within:
             announced.add(within)
         elif item.kind == "done":

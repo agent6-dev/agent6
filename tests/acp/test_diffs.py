@@ -16,7 +16,7 @@ from agent6.ui.acp import runner, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
 from agent6.viewmodel import tail
-from tests.acp import schema_check
+from tests.acp import schema_check, v1
 
 _RUN = "run-x"
 
@@ -56,10 +56,10 @@ class _Run:
         sent: list[dict[str, Any]] = []
         updates.replay(
             tail.tail_events(self.logs, follow=False),
-            acp_session_id=_RUN,
+            session_id=_RUN,
             cwd=self.repo,
             objects_dir=self.objects,
-            notify=sent.append,
+            notify=v1.collector(_RUN, sent),
         )
         return _settled(sent)
 

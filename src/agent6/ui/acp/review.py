@@ -7,12 +7,12 @@ import pathlib
 import shlex
 import uuid
 from collections.abc import Callable, Iterator
-from typing import Any, NoReturn, override
+from typing import NoReturn, override
 
 from agent6 import review_records
 from agent6.app.review import actions as review_actions
 from agent6.sessions import ipc, process
-from agent6.ui.acp import rpc, session, updates
+from agent6.ui.acp import model, rpc, session, updates
 from agent6.viewmodel import pending_questions, receipt, review, tail, transcript
 
 
@@ -184,13 +184,14 @@ def _fix_targets(
 
 
 def _recorded_updates(
-    logs: pathlib.Path, before: int | None, request_id: str, acp_id: str
-) -> Iterator[dict[str, Any]]:
+    logs: pathlib.Path, before: int | None, request_id: str
+) -> Iterator[model.Update]:
     fold = transcript.TranscriptFold()
+    ids = updates.MessageIds()
     for event in tail.tail_events(logs, follow=False, start_at=before):
         if event.get("request_id") == request_id:
-            for item in fold.feed(event):
-                yield from updates.updates_for(item, acp_session_id=acp_id)
+            for index, item in enumerate(fold.feed(event)):
+                yield from updates.updates_for(item, message_id=ids.of(item, event, index))
 
 
 def handle_command(
@@ -198,7 +199,7 @@ def handle_command(
     current: session.Session,
     text: str,
     *,
-    notify: Callable[[dict[str, Any]], None],
+    notify: Callable[[str, model.Update], None],
     finish: Callable[[session.TurnEnd], None],
 ) -> bool:
     """Handle an advertised review command before the prompt reaches the worker.
@@ -228,7 +229,7 @@ def handle_command(
             else _read_only_reply(command, sessions, current, args)
         )
         if body is not None:
-            notify(updates.message_update(current.acp_id, body))
+            notify(current.acp_id, updates.notice(body))
             finish("end_turn")
             return True
         if not current.session_id:
@@ -278,15 +279,12 @@ def handle_command(
         )
         # A live execution's tail owns its notices; idle dispositions have no tail.
         if command != "/fix" and not live:
-            for frame in _recorded_updates(
-                saved.logs_path, before, action.request_id, current.acp_id
-            ):
-                notify(frame)
+            for update in _recorded_updates(saved.logs_path, before, action.request_id):
+                notify(current.acp_id, update)
         elif command != "/fix":
             notify(
-                updates.message_update(
-                    current.acp_id, f"{result.message} (request {result.request_id})"
-                )
+                current.acp_id,
+                updates.notice(f"{result.message} (request {result.request_id})"),
             )
         if command != "/fix":
             finish("end_turn")

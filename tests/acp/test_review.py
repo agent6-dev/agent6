@@ -15,6 +15,7 @@ from agent6.sessions import event_log, ipc, process
 from agent6.ui.acp import runner, server, session, updates
 from agent6.viewmodel import transcript
 from tests import review_helpers
+from tests.acp import v1
 
 
 def _connection(
@@ -58,7 +59,9 @@ def _notices(out: io.BytesIO) -> str:
 def test_review_commands_are_advertised() -> None:
     commands = next(
         update["params"]["update"]["availableCommands"]
-        for update in updates.RunInfo("editor").feed(dict(type="session.start", user_task="task"))
+        for update in v1.frames(
+            "editor", updates.RunInfo().feed(dict(type="session.start", user_task="task"))
+        )
         if update["params"]["update"]["sessionUpdate"] == "available_commands_update"
     )
     assert {c["name"] for c in commands} >= {"receipt", "findings", "fix", "resolve", "reopen"}
@@ -306,7 +309,7 @@ def test_shared_transcript_emits_findings_and_each_disposition(
     chunks = [
         frame["params"]["update"]["content"]["text"]
         for item in items
-        for frame in updates.updates_for(item, acp_session_id="editor")
+        for frame in v1.updates_for(item, acp_session_id="editor")
     ]
     assert chunks and all(chunk.startswith("[agent6]") for chunk in chunks)
     prose = "".join(chunks)
@@ -353,7 +356,9 @@ def test_answer_writes_the_pending_questions_file_and_never_reaches_the_model(
         )
     commands = next(
         update["params"]["update"]["availableCommands"]
-        for update in updates.RunInfo("editor").feed(dict(type="session.start", user_task="task"))
+        for update in v1.frames(
+            "editor", updates.RunInfo().feed(dict(type="session.start", user_task="task"))
+        )
         if update["params"]["update"]["sessionUpdate"] == "available_commands_update"
     )
     assert "answer" in {c["name"] for c in commands}

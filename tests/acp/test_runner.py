@@ -2168,7 +2168,7 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
     log = tmp_path / "logs.jsonl"
     log.write_text("", encoding="utf-8")
     done = threading.Event()
-    info = updates.RunInfo(acp_session_id="s", window=lambda _p, _m: 1000)
+    info = updates.RunInfo(window=lambda _p, _m: 1000)
     tail = threading.Thread(
         target=bridge._stream,
         args=(session, log, done.is_set, False, runner.Announced(execution_id="1")),

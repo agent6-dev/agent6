@@ -16,13 +16,13 @@ from agent6 import budget as agent6_budget
 from agent6.app import role_providers
 from agent6.providers import AnthropicProvider
 from agent6.sessions import event_log
-from agent6.ui.acp import updates as acp_updates
 from agent6.ui.cli import console_render, sessions_show
 from agent6.ui.tui import conversation as tui_conversation
 from agent6.ui.web import model as web_model
 from agent6.viewmodel import log_line, transcript
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import view as session_view
+from tests.acp import v1
 from tests.unit import test_web_search_messages as reply
 
 _LINE = "Search: httpx2 release notes · https://example.com/a https://example.com/b"
@@ -132,7 +132,7 @@ def test_every_surface_shows_the_search_line(search_event: dict[str, Any]) -> No
     web = web_model.conversation_items([search_event])
     assert web == [{"kind": "marker", "lines": [[(f"── {_LINE} ──", "marker")]]}]
 
-    told = acp_updates.updates_for(items[0], acp_session_id="s")
+    told = v1.updates_for(items[0], acp_session_id="s")
     assert told[0]["params"]["update"]["content"]["text"] == f"[agent6] {_LINE}\n"
 
 

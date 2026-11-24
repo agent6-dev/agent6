@@ -57,7 +57,7 @@ def config_options(
     meanings: dict[str, str] = schema.choice_meanings if schema is not None else {}
     return [
         {
-            "id": MODEL,
+            "configId": MODEL,
             "name": "Model",
             "description": "The worker's provider/model route, from the next prompt.",
             "category": "model",
@@ -69,7 +69,7 @@ def config_options(
             ],
         },
         {
-            "id": EFFORT,
+            "configId": EFFORT,
             "name": "Effort",
             "description": "The worker's reasoning effort, from the next prompt.",
             "category": "thought_level",
