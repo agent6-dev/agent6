@@ -10,7 +10,7 @@ import pytest
 from agent6 import budget, providers
 from agent6.config import harness_config
 from agent6.harness import loop_conversation, loop_state
-from agent6.harness.compaction import driver, strategy, window
+from agent6.harness.compaction import cold_start, driver, strategy, window
 from agent6.providers import provider_types, responses_codec
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
@@ -109,6 +109,35 @@ def context(
 
 def test_worker_is_the_default() -> None:
     assert harness_config.CompactionConfig().summariser == "worker"
+
+
+def test_the_cold_helper_reads_the_pending_focus_once() -> None:
+    worker, helper = Writer(response()), Writer(response("Focused handoff."))
+    events: list[Any] = []
+    pending = ["Keep the rollback conditions."]
+    turn = dataclasses.replace(
+        context(worker, helper, events, cold_start="summarize"),
+        cold_start=cold_start.Trigger("route_changed", "p/old", "p/m", None, -1),
+        compact_requested=lambda: pending[0] if pending else None,
+        compact_clear=pending.clear,
+    )
+    assert driver.Tiered().compact(turn)
+    assert len(helper.calls) == 1 and not worker.calls
+    assert "Keep the rollback conditions." in str(helper.calls[0]["messages"])
+    assert not pending and not any(e.TYPE == "compact.refused" for e in events)
+    kinds = [e.TYPE for e in events]
+    assert kinds.index("compact.requested") < kinds.index("compact.summarise.call")
+
+
+def test_a_cold_drop_above_the_summary_bound_does_not_buy_a_writer() -> None:
+    worker, helper = Writer(response()), Writer(response())
+    events: list[Any] = []
+    warm = context(worker, helper, events, cold_start="drop", elision_gists=False)
+    turn = dataclasses.replace(warm, cold_start=cold_start.Trigger("idle", "p/m", "p/m", 12, 10))
+    compactor = driver.Tiered()
+    assert not compactor.compact(turn)
+    assert not worker.calls and not helper.calls and "EARLY" in str(turn.conversation.to_wire())
+    assert compactor.compact(warm) and len(worker.calls) == 1
 
 
 @pytest.mark.parametrize("offered", [True, False])

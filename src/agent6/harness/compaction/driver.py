@@ -36,6 +36,24 @@ from agent6.sessions import journal
 from agent6.tools import waits
 
 
+def _take_focus(context: strategy.Context) -> str | None:
+    """Consume the pending manual summary request.
+
+    Args:
+        context: The prepared turn.
+
+    Returns:
+        The operator's focus, empty for an unfocused request, or None for no request.
+    """
+    focus = context.compact_requested()
+    if focus is not None:
+        context.compact_clear()
+        detail = f" (focus: {focus[:80]})" if focus else ""
+        context.log(f"LOOP: operator requested a manual compaction{detail}")
+        context.emit(journal.CompactRequested(focus=focus))
+    return focus
+
+
 @dataclasses.dataclass(slots=True)
 class _Scheduled:
     """Drop old results in steps and restart from one accepted summary.
@@ -87,12 +105,7 @@ class _Scheduled:
             True if a summary replaced the history.
         """
         conversation = context.conversation
-        forced = context.compact_requested()
-        if forced is not None:
-            context.compact_clear()
-            focus_note = f" (focus: {forced[:80]})" if forced else ""
-            context.log(f"LOOP: operator requested a manual compaction{focus_note}")
-            context.emit(journal.CompactRequested(focus=forced))
+        forced = _take_focus(context)
         total = compaction_window.context_chars(conversation) + context.prefix_chars
         # Below four messages a restart loses more than it saves; a forced compaction skips
         # the growth floor.
@@ -313,7 +326,9 @@ class Tiered(_Scheduled):
             case "drop":
                 self.drop(context, cold=True)
             case "summarize":
-                restarted = self.summarise_and_restart(context, cold=True)
+                restarted = self.summarise_and_restart(
+                    context, cold=True, focus=_take_focus(context)
+                )
                 if not restarted:
                     action = "summary_failed"
             case "truncate":
@@ -335,10 +350,9 @@ class Tiered(_Scheduled):
         )
         context.log(record.message)
         context.emit(record)
-        # Do not ask a second writer to summarise the same cold request after a rejection.
-        if mode in ("summarize", "truncate") and context.compact_requested() is None:
-            return restarted
-        return self._scheduled(context, drop=self.drop if mode == "resend" else None) or restarted
+        if mode == "resend":
+            return self._scheduled(context, drop=self.drop)
+        return restarted
 
     def drop(self, context: strategy.Context, *, cold: bool = False) -> None:
         """Apply the first tier in place without a restart."""
