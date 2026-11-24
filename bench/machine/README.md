@@ -37,3 +37,13 @@ Notes:
   before machine agents switched to always-stream; none after.
 - Sonnet writes about a third of kimi's output tokens for the same bundle
   and halves the wall time, at a similar cost at list prices.
+
+## Line counter
+
+One `machine create` task specified counting nonblank lines, writing the count and checking that it was a nonnegative integer.
+Both creates used `chatgpt/gpt-6.2-sol` with medium worker effort configured.
+
+| Draft effort sent | Attempts | `machine check` | `machine run` |
+|---|---:|---|---|
+| `none` | 1 | No draft. HTTP 400: “Unsupported value: 'none' is not supported with the 'gpt-6.2-sol' model. Supported values are: 'low', 'medium', 'high', 'xhigh', and 'max'.” | Not run |
+| `medium` | 2 | Passed, 4 states and 2 scripts. The first draft lacked `capture` on a tool state with `output_schema`. | Reviewed and committed bundle reached `done` in one transition. `count.txt` contained `2` for two nonblank lines. |

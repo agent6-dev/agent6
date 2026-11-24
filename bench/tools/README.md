@@ -131,3 +131,15 @@ Call counts are totals over the three runs; other quantities are the median [min
 - **`no-docs`:** both arms answered correctly.
   `control` took two turns and 16,690 input tokens, `no-docs` one turn and 1,082.
   The set holds one question.
+
+## Live provider checks
+
+Each check used a fresh git repository and full isolation.
+These are single requests or sessions, not estimates of provider reliability.
+
+| `agent6 ask query` check | Provider setting | Result |
+|---|---|---|
+| Days in a week | `openai/gpt-6.2-sol`, default tier | Answer `7`. `sessions show --json` lists `providers.openai.service_tier = standard` under settings. The `model.result` journal row records `default` for both requested and served tier. |
+| Same question | `providers.openai.service_tier = "fast"` | Exit 1, HTTP 400 on `service_tier`: “Invalid service_tier argument: The requested service tier is not allowed for this project.” No retry. |
+| Identify the shape and word on a PNG | `chatgpt/gpt-6.2-sol`, medium | `read_file` supplied the image. The answer named the blue square and MINT. CLI asks do not attach image bytes directly. |
+| Search for the newest stable Python release | `anthropic/claude-sonnet-4-6`, hosted search enabled | One search. The answer named 3.15.2 and cited `https://www.python.org/downloads/release/python-3152/`. The check did not grade the release number. |
