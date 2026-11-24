@@ -74,6 +74,7 @@ A run's page on a phone shows one card at a time, picked from the menu at the to
 The Conversation card opens at its end, every other card at its top.
 While a prompt waits and another card shows, a dot marks the menu button and its Conversation entry.
 In a composer, Enter sends and Shift+Enter types a new line; on a touch screen, Enter types the new line, and a button or Ctrl+Enter sends.
+In the Sessions or run composer, type `/` for commands and use the arrow keys to scroll through the choices.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 A failure, a warning and Prune's undelete commands stay on screen until dismissed, the newest by Esc; any other message fades 4 seconds after it shows or after the pointer leaves it.
 When the server stops answering, the Sessions and State machines lists, a session and a machine keep what they last showed, under a line that names the reason and the time of the last update, until the next answer.

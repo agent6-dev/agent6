@@ -181,8 +181,11 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
       o.onmousedown = (e) => { e.preventDefault(); insert(c); };
       box.appendChild(o);
     });
-    if (active >= 0) ta.setAttribute('aria-activedescendant', box.id + '-' + active);
-    else ta.removeAttribute('aria-activedescendant');
+    if (active >= 0) {
+      const option = box.children[active];
+      ta.setAttribute('aria-activedescendant', option.id);
+      option.scrollIntoView({block: 'nearest', container: 'nearest'});
+    } else ta.removeAttribute('aria-activedescendant');
   };
   ta.addEventListener('input', () => { active = -1; render(); });
   ta.addEventListener('click', render);

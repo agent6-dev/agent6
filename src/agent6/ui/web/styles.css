@@ -267,15 +267,15 @@ button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 .pickers[hidden] { display: none; }
 /* Only a phone folds a composer's pickers behind their summary line (pickerSummary, below). */
 .composer .picker-summary { display: none; }
-/* A composer's suggestion popup (the /parallel model ids, the directives: a textarea can't carry
-   a native datalist) opens on its text entry's top edge, at most as wide as the entry. */
+/* Suggestions use the side of the entry with more room. The anchor area bounds the scroller. */
 .composer { anchor-scope: --entry; }
 .composer textarea.field { anchor-name: --entry; }
-.ac-pop { position: fixed; /* a dock that scrolls never clips it */ position-anchor: --entry; left: anchor(left); bottom: anchor(top);
-  margin-bottom: 0.25rem; z-index: 40;
+.ac-pop { position: fixed; position-anchor: --entry; position-area: block-start span-inline-end;
+  position-try-fallbacks: flip-block; position-try-order: most-block-size; justify-self: start;
+  margin-block: 0.25rem; z-index: 40;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: var(--shadow); max-height: 15rem; overflow-y: auto;
-  min-width: 16.25rem; max-width: anchor-size(width); padding: 0.25rem; }
+  box-shadow: var(--shadow); max-height: min(15rem, calc(100% - 0.5rem)); overflow-y: auto;
+  min-width: min(16.25rem, anchor-size(width)); max-width: anchor-size(width); padding: 0.25rem; }
 .ac-item { padding: 0.3125rem 0.625rem; border-radius: 6px; cursor: pointer; font-size: var(--fs-m);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
