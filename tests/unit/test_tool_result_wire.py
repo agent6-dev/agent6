@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import itertools
 import json
 import pathlib
 from collections.abc import Callable
@@ -452,11 +453,9 @@ def test_wire_read_background_command(
                 "shells": ["[bg1] exited (exit 7): sleep 60"]
             }
             # A wait that sees the command run and then end knows its run time.
-            statuses = iter(
-                [jail_session.BackgroundStatus(running=True, returncode=None, error="")] * 2
-            )
-            session.status_background.side_effect = lambda *_args, **_kwargs: next(
-                statuses, session.status_background.return_value
+            running = jail_session.BackgroundStatus(running=True, returncode=None, error="")
+            session.status_background.side_effect = itertools.chain(
+                [running] * 2, itertools.repeat(session.status_background.return_value)
             )
             second = d.dispatch("run_command", {"argv": ["sleep", "60"]}).to_wire()
             clock.monotonic.return_value = 2004.0
