@@ -39,7 +39,7 @@ The constants in `workflows/_nudges.py` and the observations behind them:
 | no-progress on verify (the same normalized error while the worker keeps editing) | nudge 4, escalate 7, stop 10 | mistral-small: nine identical verify failures burned a third of a run; on the guard waves (n=14) the detector fired on exactly the doomed runs (77-turn score-0 spirals) and never on a healthy one; nudges rescued none, so the stop ends the run as resumable `no_progress` at 40 to 59 turns, about a third of a doomed run's cost saved |
 | tool-error spiral (repeated identical tool errors) | nudge 3, escalate 5, stop 8 | kimi re-issuing a malformed grep (a 117 KB pattern truncated by the output-token ceiling) until the run timed out |
 | verify-broken detection | a verify that exits instantly without running its tests is flagged, not passed on as a red | `python -m pytest` with pytest absent, exit 1 in 0.0 s, on sympy testbeds across three models |
-| verify-settled completion and the low-budget wrap-up | | Kimi K2.6 ran to 128 turns on a task done at about 45, re-running read-only commands; another run solved the task, never re-ran verify and never called finish_session |
+| verify-settled completion and the [low-budget wrap-up experiment](#plain-run-budget-notice-on-a-duration-parser) | | Kimi K2.6 ran to 128 turns on a task done at about 45, re-running read-only commands; another run solved the task, never re-ran verify and never called finish_session |
 | task finish gate | patience 3 | a weak model quitting at silent_finish on turn 7 with 7 subtasks open |
 | early prose finish | bounced back to the tools at most twice, in the first turns | kimi answered the problem statement in prose at turn 2 and the loop accepted it as a finish |
 
@@ -233,6 +233,8 @@ For Claude-tier models the binding constraint is capability; harness work bounds
 
 ## Plain-run budget notice on a duration parser
 
+### Subscription plan
+
 `chatgpt/gpt-6.2-sol` at `medium` implemented seconds and minutes and added tests for invalid inputs.
 The gate was `python3 -m unittest discover`.
 At a 1.25-point execution cap, one observed point would leave 20% and two would stop the run.
@@ -259,3 +261,42 @@ Both arms finished green six times, but **none reached the low-budget zone**.
 These subscription calls consumed neither metered dollars nor fallback tokens.
 A smaller positive cap cannot make zero movement spend 75% of the budget.
 There were no treated runs on which to compare finishes: this does not support removing the notice.
+
+### Dollar cap
+
+**Six of six low-budget runs called `finish_session` and passed verification in each arm.**
+
+`openai/gpt-6.2-sol` at `medium` used the default service tier.
+Each run used a fresh repository, full isolation and `python3 -m unittest discover` as the finish gate for the same duration parser.
+The limits were eight turns per run and 2,048 output tokens per call.
+Three pilots with the directive set the cap for six runs with it followed by six without it.
+A low-budget turn required a worker `model.call` with `budget.turn.cost_usd` at or above 75% of the cap but below the cap.
+
+| Run | Cap (USD) | Low-budget turn | Directive shown | `finish_session` | Final verify | Turns | Spend (USD) | Stopped at cap |
+| --- | ---: | ---: | --- | --- | --- | ---: | ---: | --- |
+| Pilot 1 | 0.070 | None | No | Below cap | Passed | 4 | 0.0216937 | No |
+| Pilot 2 | 0.019 | 4 | Yes | Above cap | Passed | 4 | 0.0194358 | No |
+| Pilot 3 | 0.018 | None | No | Not called | Unverified | 4 | 0.0183319 | Yes |
+| With 1 | 0.019 | 4 | Yes | Above cap | Passed | 4 | 0.0191448 | No |
+| With 2 | 0.019 | 4 | Yes | Above cap | Passed | 4 | 0.0192773 | No |
+| With 3 | 0.019 | 4 | Yes | Above cap | Passed | 4 | 0.0191023 | No |
+| With 4 | 0.019 | 4 | Yes | Above cap | Passed | 4 | 0.0198086 | No |
+| With 5 | 0.019 | 4 | Yes | Below cap | Passed | 4 | 0.0188486 | No |
+| With 6 | 0.019 | 4 | Yes | Above cap | Passed | 4 | 0.0200189 | No |
+| Without 1 | 0.019 | 4 | No | Above cap | Passed | 4 | 0.0198501 | No |
+| Without 2 | 0.019 | 4 | No | Above cap | Passed | 4 | 0.0197768 | No |
+| Without 3 | 0.019 | 4 | No | Above cap | Passed | 4 | 0.0197599 | No |
+| Without 4 | 0.019 | 4 | No | Above cap | Passed | 4 | 0.0191352 | No |
+| Without 5 | 0.019 | 4 | No | Above cap | Passed | 4 | 0.0196729 | No |
+| Without 6 | 0.019 | 4 | No | Below cap | Passed | 4 | 0.0179404 | No |
+
+`nudge.run_budget` marked the directive as shown only when the worker received that turn.
+Pilot 3 recorded the event with nothing left, but the cap blocked its fourth call.
+Spend is the final `budget.update.usd_total`, totaling $0.2917972 including pilots.
+The cap blocks the next model call, so a response that takes spend above the cap can still call `finish_session`.
+
+The rule requires at least four counted runs per arm and at most one fewer green finish without the directive.
+All 12 runs counted, so the tie keeps the meter without the directive.
+The meter on turn four rounded to `metered=$0.02/$0.02` in both arms.
+All edits were complete by then, and nine runs had already passed the gate.
+The comparison does not show whether the directive helps when edits remain.
