@@ -83,7 +83,7 @@ def _first_execution(turn: int, control: str, ending: str, runs: pathlib.Path) -
     if ending == "ranked" and turn == 1:
         return "run_command", {"argv": ["sh", "-c", 'echo attempt > "attempt-${PWD##*-}"']}
     if ending == "provider error":
-        return 429
+        return 404  # a status no retry recovers, so the child ends at once
     if ending == "killed":
         (worker,) = runs.glob("*-p1-l1/worker.pid")
         os.kill(int(worker.read_text().split()[0]), signal.SIGKILL)
