@@ -70,6 +70,11 @@ It also shows why a launch failed or how a reviewer ranked the attempts.
 Both prompts name the child.
 Neither sends a request if the child ends or its worker changes while the prompt is open.
 
+In the live task graph, press `Enter` on a pending or in-progress task to select it.
+Press `r` or choose **Run > Retire task** and confirm.
+Retirement marks the task obsolete at the next step without stopping a worker.
+The task graph for a selected commit is read-only.
+
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
 ## Findings

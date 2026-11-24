@@ -170,6 +170,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "quit_hub": "ctrl+q",
         "stop_child": "x",
         "message_child": "m",
+        "retire_task": "r",
         "history_search": "ctrl+r",
         "view_findings": "ctrl+f",
         "focus_next_pane": "tab",

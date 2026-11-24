@@ -34,6 +34,7 @@ from agent6.ui.tui import (
     conversation,
     dashboard_children,
     dashboard_header,
+    dashboard_tasks,
     diff_pane,
     forms,
     logview,
@@ -46,7 +47,7 @@ from agent6.ui.tui import (
 )
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import SessionState, ToolCallView, format, tail, transcript_style
-from agent6.viewmodel.session import state
+from agent6.viewmodel.session import records, state
 
 if TYPE_CHECKING:
     from agent6.ui.tui import app as tui_app
@@ -141,6 +142,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             (
                 menubar.MenuItem("Message child…", "message_child"),
                 menubar.MenuItem("Stop child…", "stop_child"),
+                menubar.MenuItem("Retire task…", "retire_task"),
                 *composer.RUN_MENU.items,
             ),
         ),
@@ -170,6 +172,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
     FOOTER: ClassVar = (
         ("message_child", "Message child"),
         ("stop_child", "Stop child"),
+        ("retire_task", "Retire task"),
         ("toggle_dashboard", "Conversation"),
         ("copy", "Copy"),
         ("history_search", "History"),
@@ -219,6 +222,8 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         Returns:
             True for an available action, None to dim it or False to hide it.
         """
+        if action == "retire_task":
+            return self._retirable_task() is not None
         if action in ("message_child", "stop_child"):
             table = self.query_one_optional(dashboard_children.ChildTable)
             child = table.selected_child if table is not None else None
@@ -247,7 +252,6 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
         # What each pane last rendered: the fold keeps untouched fields identical, so `is` says
         # nothing to redo, and a burst never rebuilds the tree and table per event.
-        self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
         self._commit_state: tuple[str, SessionState] | None = None  # the fold as of the commit
 
@@ -263,10 +267,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         yield dashboard_children.ChildTable(self._tui.session_dir)
         yield textual_widgets.Static("", id="summary")  # compact only: the folded rows in one line
         with containers.Horizontal(id="head"):
-            # The border names the pane, so the tree shows its tasks without a root row.
-            tasks = textual_widgets.Tree("tasks", id="plan")
-            tasks.show_root = False
-            yield tasks
+            yield dashboard_tasks.TaskTree()
             with forms.ScrollPane(id="stream"):
                 yield textual_widgets.Static("", id="stream-body")
         yield textual_widgets.DataTable(id="tools", cursor_type="row")
@@ -442,6 +443,46 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         """Prompt for a message to the highlighted child."""
         self.query_one(dashboard_children.ChildTable).prompt_child("message_child")
 
+    def _retirable_task(self) -> records.TaskNodeView | None:
+        """Return the open task selected in the live tree, never a historical node."""
+        tui = self._tui
+        if not self._selected_task_id or self.diff.commit_sel:
+            return None
+        if tui.mode == "reviewer" or tui.state.finished or not tui.session_controllable():
+            return None
+        return next(
+            (
+                t
+                for t in tui.state.tasks
+                if t.id == self._selected_task_id and t.status in order.OPEN_STATUSES
+            ),
+            None,
+        )
+
+    def action_retire_task(self) -> None:
+        """Confirm retirement by id before sending the live run its directive."""
+        task = self._retirable_task()
+        if task is None:
+            return
+
+        def submit(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            current = self._retirable_task()
+            if current is None or current.id != task.id:
+                self.notify("The selected task changed. Nothing retired.", severity="warning")
+                return
+            self._tui.submit_instruction(f"/retire {task.id}")
+
+        self.app.push_screen(
+            modals.ConfirmModal(
+                f"Retire task {task.short_id}: {task.title}?",
+                "This marks the task obsolete at the next step. It does not stop a worker.",
+                confirm_label="Retire task",
+            ),
+            submit,
+        )
+
     def action_view_logs(self) -> None:
         """Open the whole log; the inline pane is a sliding window."""
         self.app.push_screen(
@@ -576,7 +617,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             st.append("(no model call in flight)", style="dim")
         return st
 
-    def render_state(self) -> None:  # noqa: PLR0912
+    def render_state(self) -> None:
         """Repaint every pane, rebuilding the tree and table only when their inputs changed."""
         self.render_heartbeat()
         tui = self._tui
@@ -588,26 +629,8 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         filt = f" · task: {markup.escape(sel_title[:28])}" if sel else ""
 
         ds, as_of = self._details_state(s)
-        if self._rendered_tree is None or not (
-            self._rendered_tree[0] is ds.tasks
-            and self._rendered_tree[1] == sel
-            and self._rendered_tree[2] == as_of
-        ):
-            self._rendered_tree = (ds.tasks, sel, as_of)
-            tree = self.query_one("#plan", textual_widgets.Tree)
-            tree.clear()
-            done = sum(t.status in order.DONE_STATUSES for t in ds.tasks)
-            tree.border_title = (f"tasks: {done}/{len(ds.tasks)}" if ds.tasks else "tasks") + as_of
-            for tv in ds.tasks:
-                indent = "  " * tv.depth
-                # The id leads the line: it is what `/retire` takes.
-                label = rich_text.Text(f"{tv.short_id:>3} {indent}{tv.glyph} {tv.title}")
-                if tv.note:
-                    label.append(f"  {tv.note}", style="dim italic")
-                if tv.id == sel:
-                    label.stylize("bold reverse")
-                tree.root.add_leaf(label, data=tv.id)
-            tree.root.expand()
+        self.query_one(dashboard_tasks.TaskTree).show_tasks(ds.tasks, sel, as_of)
+        self.refresh_bindings()
 
         table = self.query_one("#tools", textual_widgets.DataTable)
         if self._rendered_tools is None or not (
