@@ -230,3 +230,32 @@ For Claude-tier models the binding constraint is capability; harness work bounds
 - A wave counts a run only when its last provider transcript shows every tool call answered, the grader non-degenerate and usd > 0.
 - mistral serving stalls (700 to 850 s) inflate its cost variance.
 - The data dir (`XDG_DATA_HOME`) is isolated per run, so host-installed skills cannot leak into an arm; conditions interpolate `{ROOT}` and `USER_SUFFIX` for prompt-file and user-channel arms.
+
+## Plain-run budget notice on a duration parser
+
+`chatgpt/gpt-6.2-sol` at `medium` implemented seconds and minutes and added tests for invalid inputs.
+The gate was `python3 -m unittest discover`.
+At a 1.25-point execution cap, one observed point would leave 20% and two would stop the run.
+The eight-turn ceiling limits the run but does not trigger the budget notice.
+Neither pilot recorded plan movement: the first withheld the gate, and the second ran it and passed in four turns.
+The pilots are not replicates.
+
+| Arm | Rep | Plan points moved | Finish called | Final verify | Turns | Stopped at cap |
+| --- | ---: | ---: | --- | --- | ---: | --- |
+| With notice | 1 | 0 | Yes | Passed | 4 | No |
+| With notice | 2 | 0 | Yes | Passed | 4 | No |
+| With notice | 3 | 0 | Yes | Passed | 4 | No |
+| With notice | 4 | 0 | Yes | Passed | 4 | No |
+| With notice | 5 | 0 | Yes | Passed | 4 | No |
+| With notice | 6 | 0 | Yes | Passed | 4 | No |
+| Without notice | 1 | 0 | Yes | Passed | 4 | No |
+| Without notice | 2 | 0 | Yes | Passed | 5 | No |
+| Without notice | 3 | 0 | Yes | Passed | 4 | No |
+| Without notice | 4 | 0 | Yes | Passed | 4 | No |
+| Without notice | 5 | 0 | Yes | Passed | 4 | No |
+| Without notice | 6 | 0 | Yes | Passed | 4 | No |
+
+Both arms finished green six times, but **none reached the low-budget zone**.
+These subscription calls consumed neither metered dollars nor fallback tokens.
+A smaller positive cap cannot make zero movement spend 75% of the budget.
+There were no treated runs on which to compare finishes: this does not support removing the notice.
