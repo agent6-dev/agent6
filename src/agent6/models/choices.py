@@ -145,6 +145,37 @@ def default_route(
     return route_for(cfg, mode)
 
 
+def session_route(
+    cwd: pathlib.Path,
+    config_paths: tuple[pathlib.Path, ...],
+    mode: str,
+    session_dir: pathlib.Path | None,
+) -> str:
+    """Return the route a session's next execution runs when no flag names one.
+
+    Args:
+        cwd: The session's directory.
+        config_paths: The `--config` files in command-line order.
+        mode: The session mode.
+        session_dir: The session's record; None before its first execution.
+
+    Returns:
+        The route the record holds, which a resume replays, else the config's route for the
+        mode; "" on any config error or an unset role.
+    """
+    replayed = ""
+    if session_dir is not None:
+        try:
+            manifest = sessions_manifest.read_manifest(session_dir)
+        except sessions_manifest.ManifestError:
+            pass
+        else:
+            if (driver := manifest.models.driver) is not None:
+                return f"{driver.provider}/{driver.model}"
+            replayed = manifest.harness.replay_preset
+    return default_route(cwd, config_paths, mode, replayed)
+
+
 def default_label(name: str, *, recorded: bool = False) -> str:
     """Return the label of a picker's no-flag entry, such as `no_review (config default)`.
 

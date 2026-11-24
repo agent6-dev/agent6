@@ -168,7 +168,8 @@ def test_resume_opens_a_recorded_run_under_its_own_id(tmp_path: pathlib.Path) ->
     assert "no recorded run 'gone-run-ZZZZZZ'" in unknown["error"]["message"]
     assert "no recorded run 'quiet-run'" in prefix["error"]["message"]
     assert "is a plan; an editor resumes runs" in plan["error"]["message"]
-    assert resumed["result"] == {} and again["result"] == {}
+    # A session table with no option builder offers none.
+    assert resumed["result"] == {"configOptions": []} == again["result"]
     assert prompted["result"] == {"stopReason": "end_turn"}
     assert seen == [("quiet-run-AAAAAA", "quiet-run-AAAAAA", "carry on")]
     (cwd / "sub").mkdir()
@@ -185,7 +186,7 @@ def test_resume_opens_a_recorded_run_under_its_own_id(tmp_path: pathlib.Path) ->
         + b"\n",
         sessions,
     )
-    assert same["result"] == {}
+    assert same["result"] == {"configOptions": []}
     (editor_servers,) = _drive(
         _msg(
             9,
@@ -257,7 +258,7 @@ def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathl
         _msg(1, "session/load", cwd=str(cwd), sessionId=d.name, mcpServers=[]) + b"\n",
         sessions,
     )
-    assert frames[-1] == {"jsonrpc": "2.0", "id": 1, "result": {}}
+    assert frames[-1] == {"jsonrpc": "2.0", "id": 1, "result": {"configOptions": []}}
     assert all(frame["method"] == "session/update" for frame in frames[:-1])
     assert all(frame["params"]["sessionId"] == d.name for frame in frames[:-1])
     updates = [frame["params"]["update"] for frame in frames[:-1]]
@@ -341,7 +342,7 @@ def test_loaded_executions_keep_distinct_tools_and_resume_the_same_run(
         _msg(1, "session/load", cwd=str(cwd), sessionId=d.name, mcpServers=[]) + b"\n",
         sessions,
     )
-    assert frames[-1] == {"jsonrpc": "2.0", "id": 1, "result": {}}
+    assert frames[-1] == {"jsonrpc": "2.0", "id": 1, "result": {"configOptions": []}}
     updates = [frame["params"]["update"] for frame in frames[:-1]]
     assert [
         update["content"]["text"]
@@ -428,7 +429,7 @@ def test_reopened_thread_seeds_execution_without_replaying_on_resume(
         log.write('{"type": "session.resume"}\n')
     sessions = _sessions(None)
     frames = _drive(_msg(1, method, cwd=str(cwd), sessionId=saved.name) + b"\n", sessions)
-    assert frames[-1]["result"] == {}
+    assert frames[-1]["result"] == {"configOptions": []}
     if method == "session/resume":
         assert len(frames) == 1
 

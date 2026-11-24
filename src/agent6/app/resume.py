@@ -195,6 +195,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     steer: str = "",
     interactive: bool = False,
     model: str = "",
+    effort: kinds.EffortLevel | None = None,
     merge_from: str = "",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
@@ -218,6 +219,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         steer: An operator follow-up queued for the loop's first boundary.
         interactive: Whether the ask REPL drives the session.
         model: The `--model` value for this execution.
+        effort: The reasoning effort this execution's role runs at; None keeps the config's.
         merge_from: A branch to merge into the run's chain before the first turn, its
             conflicts left as markers for the run to resolve; "" merges nothing.
         reporter: Receives every refusal and note.
@@ -358,6 +360,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     budget_overrides=budget_overrides,
                     sandbox_overrides=sandbox_overrides,
                     model=route,
+                    effort=effort,
                 )
                 cfg = effective.config
             except ConfigError as exc:
@@ -498,6 +501,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 model=route,
+                effort=effort,
             )
         except ConfigError as exc:
             reporter.error(str(exc))
@@ -816,7 +820,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             stamps.stamp_continuation(layout.session_dir, steer.strip())
         # This execution's models and policy, for `agent6 exec` and the policy surfaces.
         stamps.stamp_execution(
-            layout.session_dir, cfg, mode, isolation, config_sources=effective.sources
+            layout.session_dir,
+            cfg,
+            mode,
+            isolation,
+            # An effort this execution was started with reads as its own, not a layer's.
+            config_sources={**effective.sources, **effective.applied_sources},
         )
         if carried_edits:
             note = f"uncommitted from this run's last execution: {_first_four(carried_edits)}"

@@ -492,6 +492,21 @@ def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
     )
 
 
+def config_options_update(acp_session_id: str, options: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return the `config_option_update` telling the editor agent6 changed a session's options.
+
+    Args:
+        acp_session_id: The conversation the notification addresses.
+        options: The complete config option list.
+
+    Returns:
+        The notification.
+    """
+    return _update(
+        acp_session_id, {"sessionUpdate": "config_option_update", "configOptions": options}
+    )
+
+
 def _update(acp_session_id: str, update: dict[str, Any]) -> dict[str, Any]:
     """Return one `session/update` notification."""
     return {

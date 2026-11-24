@@ -90,6 +90,7 @@ class ACPServer:
             "session/close": self._session_close,
             "session/prompt": self._session_prompt,
             "session/cancel": self._session_cancel,
+            "session/set_config_option": self._session_set_config_option,
         }
 
     def serve(self) -> None:
@@ -293,7 +294,7 @@ class ACPServer:
         return result if isinstance(result, dict) else {}
 
     def _session_new(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        """Return the reply to `session/new`: the new session's id."""
+        """Return the reply to `session/new`: the new session's id and config options."""
         return self._sessions().new(params)
 
     def _session_list(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
@@ -305,8 +306,12 @@ class ACPServer:
         return self._sessions().load(params, notify=self.notify_raw)
 
     def _session_resume(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        """Return the reply to `session/resume`: empty once the run's conversation is open."""
+        """Return the reply to `session/resume`: the config options of the run's conversation."""
         return self._sessions().resume(params)
+
+    def _session_set_config_option(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        """Return the reply to `session/set_config_option`: the complete config options."""
+        return self._sessions().set_config_option(params)
 
     def _session_close(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/close`: empty; a prompt in flight answers `cancelled`."""

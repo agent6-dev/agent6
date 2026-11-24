@@ -418,7 +418,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             base_branch=base_branch,
             run_branch=run_branch,
             cfg=cfg,
-            config_sources=effective.sources if effective else None,
+            # An effort this execution was started with reads as its own, not a layer's.
+            config_sources=(
+                {**effective.sources, **effective.applied_sources} if effective else None
+            ),
             mode=mode,
             gate=(
                 sessions_manifest.GateStamp(

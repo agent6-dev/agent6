@@ -1037,7 +1037,7 @@ def test_a_second_prompt_resumes_the_same_run(
     calls: list[tuple[str, str, str]] = []
     monkeypatch.chdir(tmp_path)
 
-    def _state_dir(_cwd: pathlib.Path) -> pathlib.Path:
+    def _state_dir(_cwd: pathlib.Path, **_k: object) -> pathlib.Path:
         return tmp_path / "state"
 
     def _minted(*_a: object, **_k: object) -> str:
@@ -1082,7 +1082,7 @@ def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
 
     monkeypatch.chdir(tmp_path)
 
-    def _state_dir(_cwd: pathlib.Path) -> pathlib.Path:
+    def _state_dir(_cwd: pathlib.Path, **_k: object) -> pathlib.Path:
         return tmp_path / "state"
 
     def _minted(*_a: object, **_k: object) -> str:
@@ -1126,7 +1126,7 @@ def test_a_fault_on_a_resume_still_reaches_the_editor(
     """The previous execution's session.stop must not hide a fault in the resume's preflight."""
     monkeypatch.chdir(tmp_path)
 
-    def _state_dir(_cwd: pathlib.Path) -> pathlib.Path:
+    def _state_dir(_cwd: pathlib.Path, **_k: object) -> pathlib.Path:
         return tmp_path / "state"
 
     def _minted(*_a: object, **_k: object) -> str:

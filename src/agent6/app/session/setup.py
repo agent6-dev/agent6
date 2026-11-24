@@ -258,6 +258,7 @@ def load_session_config(
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
     model: str | kinds.ModelRoute | None = None,
+    effort: kinds.EffortLevel | None = None,
 ) -> layer_data.EffectiveConfig:
     """Load the config a session starts or resumes under, the same way at every entry point.
 
@@ -269,6 +270,7 @@ def load_session_config(
         budget_overrides: The `--max-*` flags.
         sandbox_overrides: The sandbox and approval flags, landing last.
         model: A typed `provider/model`, parsed once here, or a recorded pair applied as is.
+        effort: The reasoning effort this execution's role runs at; None keeps the config's.
 
     Returns:
         The effective config, checked runnable for the mode's role.
@@ -294,11 +296,14 @@ def load_session_config(
             for key, value in dataclasses.asdict(budget_overrides).items()
             if value is not None
         )
+    role = kinds.session_kind(mode).role
     if model:
-        role = kinds.session_kind(mode).role
         route = cfg.model_route(model) if isinstance(model, str) else model
         cfg = cfg.with_model_route(role, route)
         sources[f"models.{role}.model"] = "flag" if isinstance(model, str) else "execution"
+    if effort:
+        cfg = cfg.with_model_effort(role, effort)
+        sources[f"models.{role}.effort"] = "flag"
     clamped = session_config(cfg, mode)
     if clamped.sandbox.run_commands != cfg.sandbox.run_commands:
         sources["sandbox.run_commands"] = "mode"
@@ -314,7 +319,7 @@ def load_session_config(
         if sandbox_overrides.auto_approve:
             for name in cfg.mcp.servers:
                 sources[io.render_key(("mcp", "servers", name, "approve"))] = "flag"
-    cfg.require_runnable(kinds.session_kind(mode).role)
+    cfg.require_runnable(role)
     return dataclasses.replace(effective, config=cfg, applied_sources=sources)
 
 

@@ -23,7 +23,7 @@ from agent6 import kinds
 from agent6.app import preflight, stop
 from agent6.sessions import id, ipc, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.acp import rpc, updates
+from agent6.ui.acp import options, rpc, updates
 from agent6.viewmodel import listing, tail
 
 # What a prompt answers; `cancelled` is the operator's act, not a failure.
@@ -50,6 +50,10 @@ class Session:
         require_resume: Refuse a missing resume point instead of starting new work.
         closed: The editor closed the conversation while a prompt was in flight; the
             cancelled prompt still answers, then the entry goes.
+        model: The route the editor picked for this session's next prompts; "" runs the
+            recorded or configured one.
+        effort: The effort the editor picked; None takes the config's.
+        config_options: The config options the editor holds, as last sent to it.
     """
 
     acp_id: str
@@ -60,6 +64,9 @@ class Session:
     execution_live: bool = False
     require_resume: bool = False
     closed: bool = False
+    model: str = ""
+    effort: kinds.EffortLevel | None = None
+    config_options: list[dict[str, Any]] = dataclasses.field(default_factory=list[dict[str, Any]])
 
     def is_running(self) -> bool:
         """Return whether an execution is in flight."""
@@ -80,10 +87,12 @@ class Sessions:
         run: Runs a prompt on a session and returns the stop reason; injected so the
             transport tests without a provider and the lifecycle stays in `app`.
         state_dir_for: The state dir for a working directory.
+        build_options: Builds a session's complete config option list; none by default.
     """
 
     run: Callable[[Session, str], StopReason]
     state_dir_for: Callable[[pathlib.Path], pathlib.Path]
+    build_options: Callable[[Session], list[dict[str, Any]]] = lambda _session: []
     _by_id: dict[str, Session] = dataclasses.field(default_factory=dict)
 
     def new(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -93,7 +102,7 @@ class Sessions:
             params: The request's `cwd`, `mcpServers` and `additionalDirectories`.
 
         Returns:
-            The reply with the new session's id.
+            The reply with the new session's id and its config options.
 
         Raises:
             RpcError: The cwd is relative or not a git repository, or the params carry
@@ -107,7 +116,58 @@ class Sessions:
         # `session/resume` and `session/list` know.
         session = Session(acp_id=id.friendly_token(), cwd=cwd)
         self._by_id[session.acp_id] = session
-        return {"sessionId": session.acp_id}
+        return {"sessionId": session.acp_id, "configOptions": self._options(session)}
+
+    def _options(self, session: Session) -> list[dict[str, Any]]:
+        """Return the session's complete config options, recorded as what the editor holds."""
+        session.config_options = self.build_options(session)
+        return session.config_options
+
+    def set_config_option(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Serve `session/set_config_option`: pick the model or the effort of the next prompts.
+
+        The pick is the session's own. It applies from the next prompt, a resuming one
+        included; it changes no running turn and writes no config file.
+
+        Args:
+            params: The `sessionId`, the option's `configId` and its new `value`.
+
+        Returns:
+            The reply with the complete config options.
+
+        Raises:
+            RpcError: No such session, a prompt is running on it, or the id or the value is
+                not one the session offers.
+        """
+        session = self.get(params)
+        if session.is_running():
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS,
+                "a prompt is running on this session; an option applies from the next prompt,"
+                " so set it once this one ends",
+            )
+        config_id, value = params.get("configId"), params.get("value")
+        offered = {
+            option["id"]: [choice["value"] for choice in option["options"]]
+            for option in self.build_options(session)
+        }
+        if not isinstance(config_id, str) or config_id not in offered:
+            known = ", ".join(offered) or "none"
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS,
+                f"unknown config option {config_id!r}; this session offers: {known}",
+            )
+        if not isinstance(value, str) or value not in offered[config_id]:
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS,
+                f"{value!r} is not one of the {len(offered[config_id])} values"
+                f" {config_id!r} offers",
+            )
+        if config_id == options.MODEL:
+            session.model = value
+        else:
+            session.effort = options.EFFORT_LEVELS.get(value)
+        return {"configOptions": self._options(session)}
 
     def list(self, params: dict[str, Any]) -> dict[str, Any]:
         """Serve `session/list`: the recorded runs an editor can resume, newest first.
@@ -168,7 +228,7 @@ class Sessions:
             params: The run's `sessionId` and the repository's absolute `cwd`.
 
         Returns:
-            An empty reply.
+            The reply with the session's config options.
 
         Raises:
             RpcError: The cwd is not a repository, the id names no recorded run of it, the
@@ -207,9 +267,11 @@ class Sessions:
                 raise rpc.RpcError(
                     rpc.INVALID_PARAMS, "that session already has a prompt in flight"
                 )
-            return {}  # the conversation is open already; its counters carry on
-        self._by_id[session_id] = Session(acp_id=session_id, cwd=cwd, session_id=session_id)
-        return {}
+            # The conversation is open already; its counters and picked options carry on.
+            return {"configOptions": self._options(known)}
+        session = Session(acp_id=session_id, cwd=cwd, session_id=session_id)
+        self._by_id[session_id] = session
+        return {"configOptions": self._options(session)}
 
     def load(
         self, params: dict[str, Any], *, notify: Callable[[dict[str, Any]], None]
@@ -221,12 +283,12 @@ class Sessions:
             notify: Sends each `session/update` notification.
 
         Returns:
-            An empty reply after the replay.
+            The reply with the session's config options, after the replay.
 
         Raises:
             RpcError: The resume checks refuse the requested run or editor extras.
         """
-        self.resume(params)
+        opened = self.resume(params)
         session = self.get(params)
         saved = session.layout(self.state_dir_for(session.cwd))
         updates.replay(
@@ -236,7 +298,7 @@ class Sessions:
             objects_dir=saved.objects_dir,
             notify=notify,
         )
-        return {}
+        return opened
 
     def close(self, params: dict[str, Any]) -> dict[str, Any]:
         """Serve `session/close`: end a conversation, cancelling a prompt in flight.

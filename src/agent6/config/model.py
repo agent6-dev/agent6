@@ -496,9 +496,25 @@ class Config(pydantic.BaseModel):
         Returns:
             The config with the role rerouted.
         """
+        return self._with_role_leaf(role, "model", f"{route.provider}/{route.model}")
+
+    def with_model_effort(self, role: kinds.RoleName, effort: kinds.EffortLevel) -> Config:
+        """Return a copy whose role runs at an effort, keeping the role's route and temperature.
+
+        Args:
+            role: The role.
+            effort: The reasoning effort.
+
+        Returns:
+            The config with the role's effort set.
+        """
+        return self._with_role_leaf(role, "effort", effort)
+
+    def _with_role_leaf(self, role: kinds.RoleName, leaf: str, value: str) -> Config:
+        """Return a copy with one leaf of a role's entry set; its unset leaves still inherit."""
         base = getattr(self.models, role)
         entry = base.model_dump(mode="python", exclude_unset=True) if base is not None else {}
-        entry["model"] = f"{route.provider}/{route.model}"
+        entry[leaf] = value
         data = self.model_dump(mode="python")
         data.setdefault("models", {})[role] = entry
         return Config.model_validate(data)

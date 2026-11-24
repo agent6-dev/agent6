@@ -400,6 +400,8 @@ depends_on = [
   "agent6.evidence",
   "agent6.harness",
   "agent6.kinds",
+  # The model picker offers the routes every other front-end's picker offers.
+  "agent6.models.choices",
   "agent6.paths",
   "agent6.review_records",
   "agent6.sessions.event_log",

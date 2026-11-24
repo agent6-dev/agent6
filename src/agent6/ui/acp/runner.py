@@ -30,9 +30,9 @@ from agent6.sessions import id, ipc, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap, spawn
 from agent6.ui.acp import frontend as acp_frontend
+from agent6.ui.acp import options, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
-from agent6.ui.acp import updates
 from agent6.viewmodel import tail as viewmodel_tail
 from agent6.viewmodel import transcript, transcript_items
 from agent6.viewmodel.session import log as session_log
@@ -268,7 +268,25 @@ class RunBridge:
 
     def sessions(self) -> acp_session.Sessions:
         """Return the session table wired to this bridge."""
-        return acp_session.Sessions(run=self.run, state_dir_for=agent6_paths.state_dir)
+        return acp_session.Sessions(
+            run=self.run, state_dir_for=agent6_paths.state_dir, build_options=self.config_options
+        )
+
+    def config_options(self, session: acp_session.Session) -> list[dict[str, Any]]:
+        """Return the session's complete config options: what its next prompt runs under."""
+        recorded = (
+            session.layout(agent6_paths.state_dir(session.cwd)).session_dir
+            if session.session_id
+            else None
+        )
+        return options.config_options(
+            session.cwd,
+            self.config_paths,
+            recorded,
+            mode=acp_session.ACP_MODE,
+            model=session.model,
+            effort=session.effort,
+        )
 
     def ask(
         self,
@@ -578,11 +596,17 @@ class RunBridge:
                     force=False,
                     started_at=started_at,
                     steer=text,
+                    model=session.model,
+                    effort=session.effort,
                     reporter=reporter,
                 )
             else:
                 effective = session_setup.load_session_config(
-                    session.cwd, self.config_paths, mode=acp_session.ACP_MODE
+                    session.cwd,
+                    self.config_paths,
+                    mode=acp_session.ACP_MODE,
+                    model=session.model or None,
+                    effort=session.effort,
                 )
                 try:
                     opening = directive.parse_directive(text)
@@ -597,6 +621,7 @@ class RunBridge:
                     cwd=session.cwd,
                     started_at=started_at,
                     session_id=session.session_id,
+                    model=session.model or None,
                     config_paths=self.config_paths,
                     explicit_leaves=effective.explicit_leaves,
                     effective=effective,
@@ -606,6 +631,11 @@ class RunBridge:
             ended.set()
             tail.join(timeout=DRAIN_S)
             order.flush(None)  # a tail that outlived the drain still owes these
+        current = self.config_options(session)
+        if current != session.config_options:
+            # The execution recorded its route or cached a provider's listing: agent6's change.
+            session.config_options = current
+            self.server.notify_raw(updates.config_options_update(session.acp_id, current))
         if code != 0 and not said and not self.had_journal(session):
             self.server.notify_raw(
                 updates.message_update(session.acp_id, f"the run stopped (exit {code})")
