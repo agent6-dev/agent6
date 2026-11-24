@@ -27,6 +27,7 @@ from tests import launch_env
 
 TASK = "--allow-root pwn\n$(touch /tmp/pwned)\n/parallel 3 -- rm -rf .\nimport os; os.system('id')"
 PINS = ("never touch schema files", "--pin that looks like a flag")
+SIBLINGS = "[harness siblings]\n[hostile-l2] not ended: check parsing"
 
 
 def _git(repo: pathlib.Path, *args: str) -> None:
@@ -86,6 +87,7 @@ def _launch_files(
         session_id=spec.session_id,
         task=TASK,
         pins=PINS,
+        sibling_notice=SIBLINGS,
         away="deny",
         config=config.path,
         notes=config.notes,
@@ -157,6 +159,7 @@ def test_the_bootstrap_runs_the_launch_file_and_nothing_from_the_clone(
     first = _message_text(calls[0])
     assert TASK in first
     assert all(pin in first for pin in PINS)
+    assert SIBLINGS in first
     assert not any("pwn" in word for word in child_launch.bootstrap_argv())
 
 
