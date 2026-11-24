@@ -162,7 +162,7 @@ class ResumeError(Exception):
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 10
+SNAPSHOT_VERSION = 11
 
 
 class SessionSnapshot(pydantic.BaseModel):

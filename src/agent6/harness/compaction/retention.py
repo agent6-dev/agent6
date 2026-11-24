@@ -22,14 +22,14 @@ def inputs(message: history.UserMessage) -> Iterator[history.ToolResultItem | hi
         Each result or its answer notice, then the other notices.
     """
     answers = {
-        it.answer_for: it
+        it.result_index: it
         for it in message.items
-        if isinstance(it, history.Notice) and it.answer_for is not None
+        if isinstance(it, history.Notice) and it.result_index is not None
     }
-    for item in message.items:
+    for index, item in enumerate(message.items):
         if isinstance(item, history.ToolResultItem):
-            yield answers.get(item.tool_use_id, item)
-        elif item.answer_for is None:
+            yield answers.get(index, item)
+        elif item.result_index is None:
             yield item
 
 
@@ -86,12 +86,12 @@ def _result_messages(
         if isinstance(item, history.ToolResultItem):
             if item.unshown_answer is not None:
                 answers.append(
-                    history.Notice(item.unshown_answer, "operator", answer_for=item.tool_use_id)
+                    history.Notice(item.unshown_answer, "operator", result_index=len(results))
                 )
                 results.append(dataclasses.replace(item, unshown_answer=None))
             else:
                 results.append(item)
-        elif item.answer_for is not None:
+        elif item.result_index is not None:
             answers.append(item)
         else:
             notices.append(item)

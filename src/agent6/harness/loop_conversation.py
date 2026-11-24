@@ -89,13 +89,13 @@ class Notice:
         text: The text.
         origin: Who delivered the notice. A local summary is a `restart`.
         operator_words: Verbatim inputs within a rendered steer, answer notice or restart.
-        answer_for: The ask_user call whose capped result this notice completes on local replay.
+        result_index: Zero-based position of this answer's capped result in the same message.
     """
 
     text: str
     origin: NoticeOrigin = "harness"
     operator_words: tuple[str, ...] = ()
-    answer_for: str | None = None
+    result_index: int | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -613,8 +613,8 @@ class Conversation:
                         block["origin"] = item.origin
                     if snapshot and item.operator_words:
                         block["operator_words"] = list(item.operator_words)
-                    if snapshot and item.answer_for is not None:
-                        block["answer_for"] = item.answer_for
+                    if snapshot and item.result_index is not None:
+                        block["result_index"] = item.result_index
                 if (m_idx, i_idx) in marks:
                     block["cache_control"] = dict(_EPHEMERAL)
                 blocks.append(block)
@@ -714,11 +714,11 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
     if block.get("type") == "text":
         origin = block.get("origin", "harness")
         words = block.get("operator_words", [])
-        answer_for = block.get("answer_for")
+        result_index = block.get("result_index")
         if (
-            keys - {"origin", "operator_words", "answer_for"} != {"type", "text"}
+            keys - {"origin", "operator_words", "result_index"} != {"type", "text"}
             or not isinstance(block["text"], str)
-            or ("answer_for" in keys and not isinstance(answer_for, str))
+            or ("result_index" in keys and (type(result_index) is not int or result_index < 0))
             or origin
             not in (
                 "harness",
@@ -734,7 +734,7 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
             or not all(isinstance(w, str) for w in words)
         ):
             raise ValueError(f"malformed conversation: {where} is not a plain text block")
-        return Notice(block["text"], origin, tuple(words), answer_for)
+        return Notice(block["text"], origin, tuple(words), result_index)
     if block.get("type") == "tool_result":
         if (
             keys - {"unshown_answer"} != {"type", "tool_use_id", "content"}

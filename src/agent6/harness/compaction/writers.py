@@ -53,7 +53,7 @@ def _transcript_lines(
                     )
         else:
             for item in retention.inputs(message):
-                if isinstance(item, loop_conversation.Notice) and item.answer_for is None:
+                if isinstance(item, loop_conversation.Notice) and item.result_index is None:
                     parts.append(f"[user:text] {item.text}")
                 elif include_answers:
                     parts.extend(

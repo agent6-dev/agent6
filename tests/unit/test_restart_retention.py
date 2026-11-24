@@ -279,20 +279,27 @@ def test_answer_before_tool_capping_reaches_the_local_restart(operators: int) ->
     assert (f"Operator message:\n{words}" in _notice(conv)) is bool(operators)
 
 
-def _answers(first: str, second: str) -> history.Conversation:
+def _answers(
+    first: str, second: str, call_ids: tuple[str, str] = ("q1", "q2")
+) -> history.Conversation:
     conv = history.Conversation()
     conv.notice("Opening task.", origin="operator")
-    calls = conv.assistant(
+    reply = responses_codec.parse_output_items(
         [
             {
-                "type": "tool_use",
+                "type": "function_call",
                 "name": "ask_user",
-                "id": q,
-                "input": {"questions": [{"question": q}]},
+                "call_id": call_id,
+                "arguments": json.dumps({"questions": [{"question": q}]}),
             }
-            for q in ("Which file?", "Which test?")
-        ]
-    ).tool_uses
+            for call_id, q in zip(call_ids, ("Which file?", "Which test?"), strict=True)
+        ],
+        usage={},
+        stop_reason="end_turn",
+        label="Responses",
+        route="r",
+    )
+    calls = conv.assistant(reply.raw["content"]).tool_uses
     items: list[history.ToolResultItem] = []
     for call, words in zip(calls, (first, second), strict=True):
         answer = results.AnswersResult(call.id, (words,))
@@ -300,7 +307,7 @@ def _answers(first: str, second: str) -> history.Conversation:
             tool_effects.bounded_result(call, json.dumps(answer.to_wire()), None, None, answer, 400)
         )
     conv.results(items)
-    assert items[0].unshown_answer == first and items[1].unshown_answer is None
+    assert sum(item.unshown_answer is not None for item in items) == 1
     return conv
 
 
@@ -334,11 +341,17 @@ def test_endpoint_fallback_omits_the_answer_notice_from_a_kept_turn() -> None:
 
 @pytest.mark.parametrize("operators", [1, 2])
 @pytest.mark.parametrize("after_replay", [False, True])
+@pytest.mark.parametrize("call_ids", [("q1", "q2"), ("same", "same")], ids=["distinct", "repeated"])
+@pytest.mark.parametrize(
+    "answers",
+    [("A" * 600 + " first", "second answer"), ("first answer", "B" * 600 + " second")],
+    ids=["capped-first", "capped-second"],
+)
 def test_mixed_answers_are_reserved_and_summarised_in_call_order(
-    operators: int, after_replay: bool
+    operators: int, after_replay: bool, call_ids: tuple[str, str], answers: tuple[str, str]
 ) -> None:
-    first, second = "A" * 600 + " first", "second answer"
-    conv = _answers(first, second)
+    first, second = answers
+    conv = _answers(first, second, call_ids)
     if after_replay:
         _restart(conv, keep_recent_turns=1, keep_operator_messages=0, keep_recent_chars=2000)
         conv = history.Conversation.from_wire(conv.to_wire(snapshot=True))
