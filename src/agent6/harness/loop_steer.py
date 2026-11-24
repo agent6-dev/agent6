@@ -370,6 +370,9 @@ def execution_opening(
 
     Returns:
         The end the seeded steer asked for, or None when the execution goes on.
+
+    Raises:
+        ResumeError: An interrupted dispatch cannot be reconciled.
     """
     if not resuming:
         operator_state(harness, conversation, state)
@@ -381,7 +384,10 @@ def execution_opening(
     if harness.resume_state_path is not None and (
         child_dispatch.records_dir(harness.resume_state_path.parent).is_dir()
     ):
-        parallel_recovery.reconcile(harness.parallel, state, conversation, turn=turn - 1)
+        try:
+            parallel_recovery.reconcile(harness.parallel, state, conversation, turn=turn - 1)
+        except child_dispatch.DispatchRecordError as exc:
+            raise loop_snapshot.ResumeError(str(exc)) from exc
     return seeded_steer(harness, conversation, turn, state)
 
 

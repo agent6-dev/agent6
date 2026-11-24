@@ -57,7 +57,7 @@ class _CreditHistory:
     """The journaled balance series, kept apart by account and originating execution."""
 
     executions: dict[str, int]
-    interrupted: int
+    continuations: dict[tuple[str, str, int], int]
     readings: dict[int, dict[str, set[credit_usage.Reading]]]
 
     @classmethod
@@ -72,39 +72,65 @@ class _CreditHistory:
         """
         execution = 0
         executions: dict[str, int] = {}
+        continuations: dict[tuple[str, str, int], int] = {}
         readings: dict[int, dict[str, set[credit_usage.Reading]]] = {}
         for raw in tail.tail_events(logs, follow=False):
-            if raw.get("type") in ("session.start", "session.resume"):
-                execution += 1
-                owner = raw.get("execution_id")
-                if isinstance(owner, str) and owner:
-                    executions[owner] = execution
-            elif raw.get("type") == "budget.update":
-                row = events.parse_event(raw)
-                if isinstance(row, journal.BudgetUpdate):
-                    for origin, reading in row.credits.scoped():
-                        accounts = readings.setdefault(
-                            origin if origin is not None else execution, {}
-                        )
-                        accounts.setdefault(reading.account, set()).add(reading)
-        return cls(executions, max(0, execution - 1), readings)
+            match raw:
+                case {"type": "session.start" | "session.resume"}:
+                    execution += 1
+                    owner = raw.get("execution_id")
+                    if isinstance(owner, str) and owner:
+                        executions[owner] = execution
+                case {
+                    "type": "parallel.child_continued",
+                    "group": str(group),
+                    "child": str(child),
+                    "sequence": int(sequence),
+                } if execution:
+                    continuations[group, child, sequence] = execution
+                case {"type": "budget.update"}:
+                    row = events.parse_event(raw)
+                    if isinstance(row, journal.BudgetUpdate):
+                        for origin, reading in row.credits.scoped():
+                            series = execution if origin is None else origin
+                            readings.setdefault(series, {}).setdefault(reading.account, set()).add(
+                                reading
+                            )
+        return cls(executions, continuations, readings)
 
     def restore(
         self,
         meter: agent6_budget.BudgetTracker,
-        owner: str,
+        record: child_dispatch.DispatchRecord,
         child: child_dispatch.ChildRecord,
         usage: agent6_budget.UsageSettlement,
     ) -> None:
-        """Bank the balances from the execution that started or continued this child."""
+        """Bank the balances from the execution that started or continued this child.
+
+        Args:
+            meter: The resumed parent's meter.
+            record: The dispatch that owns the child.
+            child: The child being reconciled.
+            usage: Its cumulative usage.
+
+        Raises:
+            DispatchRecordError: No recorded execution owns the new credit readings.
+        """
         continuation = child.continuation
         if continuation and not set(usage.credit_readings).difference(
             continuation.usage_before.credit_readings
         ):
             return
-        execution = self.executions.get(
-            continuation.owner if continuation else owner, self.interrupted
-        )
+        execution = self.executions.get(continuation.owner if continuation else record.owner)
+        if execution is None and continuation:
+            execution = self.continuations.get(
+                (record.identity, child.session_id, continuation.sequence)
+            )
+        if execution is None:
+            raise child_dispatch.DispatchRecordError(
+                f"cannot settle credit readings for {child.account_id}: "
+                "the parent journal does not identify the execution that launched it"
+            )
         meter.restore_child_credits(child.account_id, execution, self.readings.get(execution, {}))
 
 
@@ -196,7 +222,7 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                     and result.usage.credit_readings
                 ):
                     history = history or _CreditHistory.read(logs)
-                    history.restore(dispatcher.budget, record.owner, child, result.usage)
+                    history.restore(dispatcher.budget, record, child, result.usage)
         if (
             record.state in ("prepared", "running")
             and dispatcher.child_recoverer is not None

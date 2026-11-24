@@ -54,7 +54,7 @@ def write_commit_count(child_dir: pathlib.Path, count: int) -> None:
 
 
 class DispatchRecordError(Exception):
-    """A record cannot be read: malformed, or written by a newer agent6."""
+    """A dispatch record cannot be read or reconciled."""
 
 
 class MergeRecord(pydantic.BaseModel, frozen=True, extra="forbid"):

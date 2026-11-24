@@ -158,7 +158,7 @@ class End:
 
 
 class ResumeError(Exception):
-    """A resume cannot proceed: the snapshot is missing or corrupt."""
+    """A resume cannot proceed from the recorded session state."""
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.

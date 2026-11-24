@@ -310,7 +310,7 @@ def test_resume_settles_only_credit_movement_missing_from_the_parent_journal(
         before = _tracker()
         _balance(before, 10, 10)
         budget_events.emit_budget_update(before, parent_sink.emit)
-        _resume(parent, "first")
+    _resume(parent, "first")
     child = _running_child(repo, parent, "parent-r1")
     meter = _tracker()
     child_sink = event_log.EventSink(child / "logs.jsonl")
