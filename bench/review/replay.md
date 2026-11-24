@@ -88,3 +88,20 @@ The first table on stderr counts outcomes, block findings by category and blocks
 
 These are sample counts, not judgments of correctness or evidence that the prompt caused a change.
 Read the arm distributions and the number of comparable pairs alongside the totals.
+
+## Results
+
+Recorded first replies of one build's reviewers, replayed on `chatgpt/gpt-6.2-astra` at `max` with `--no-tools`, two repetitions per review.
+A pair is comparable when both prompts returned a verdict in the same repetition.
+
+| Prompt compared with the recorded one | Reviews | Comparable pairs | Block replies | Block findings | Pass to block | Block to pass |
+|---|---|---|---|---|---|---|
+| One sentence changed: "presumed correct" replaced by a neutral sentence | 14 | 27 | 9 to 11 | 11 to 19 | 2 | 0 |
+| A state-only prompt: no role, no bar, a free one-word category, no `verdict` field | 15 | 28 | 10 to 4 | 12 to 4 | 1 | 7 |
+
+- **One sentence:** block findings rose from 11 to 19, and no reply changed from block to pass.
+  The sentence was not adopted.
+- **State-only prompt:** of the seven replies that changed from block to pass, six reported the same defect or the same lines at `warn`, and one did not mention it.
+  Over all 39 answered replies under this prompt the findings were 61 `warn`, 9 `block` and 3 `nit`.
+  The recorded prompt's rows kept block findings only, so its `warn` count is unknown.
+- Replies with tools were not measured.
