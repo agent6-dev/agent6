@@ -66,15 +66,20 @@ def test_scripted_pair_uses_the_same_queue_and_real_child_journals(tmp_path: pat
 def test_a_deviating_parent_keeps_its_measures(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A second attempt at one task starts no ranking reviewer: its start hid the start counts."""
+    """A refused list argument and a ranking reviewer's start each left known measures unknown."""
     from bench.handoff import job, run, scripted
 
     follow = scripted.parent_reply
+    refused = False
 
     def deviate(opening: str, answers: list[dict[str, Any]]) -> launch_env.Reply:
+        nonlocal refused
         reply = follow(opening, answers)
         if isinstance(reply, list) and reply[0] == ("parallel", {"task": job.TITLES[0]}):
-            return "parallel", {"task": job.TITLES[0], "spec": "2"}
+            if refused:
+                return "parallel", {"task": job.TITLES[0], "spec": "2"}
+            refused = True
+            return "parallel", {"task": [job.TITLES[0]]}
         return reply
 
     monkeypatch.setattr(scripted, "parent_reply", deviate)
@@ -82,6 +87,7 @@ def test_a_deviating_parent_keeps_its_measures(
     with scripted.profile() as profile:
         row = run.sample(tmp_path, profile, "scripted/worker", "text", 1, scripted=True)
     assert row["issues"] == []
+    assert (row["off_arm_calls"], row["all_accepted"]) == (1, True)
     # The scripted parent refills by children started, so the second attempt displaces beech.
     assert list(row["starts_by_task"].values()) == [2, 0, 1, 1, 1, 1]
     assert (row["started_twice"], row["never_started"]) == (1, 1)

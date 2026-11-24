@@ -68,7 +68,7 @@ The run directory keeps the config, checkout, console log and journals.
 | All accepted | Look up the six `task.queued` ids in the last `graph.update`. All six must be `passed`. A passed copy, a passed root or a finish summary is not evidence about the originals. |
 | Started twice or never | Match `parallel.child_activity` starts to exact queued titles. Count how many of the six started at least twice, and how many had no start. A refused call is not a start. |
 | Wait below two | For each task, accumulate seconds from queueing until first start, first observed non-open status or parent stop, only while fewer than two children ran. `under_two_s` counts those intervals once even when several tasks waited. |
-| Off-arm calls | Count `parallel` calls whose arguments do not use the assigned id or verbatim text form. Keep these runs under the assigned arm. |
+| Off-arm calls | Count `parallel` calls, refused ones included, whose arguments do not use the assigned id or verbatim text form. Keep these runs under the assigned arm. |
 
 Child activity timestamps measure when the parent observed starts and ends, not CPU time or the instant a worker process exited.
 `wait_by_task_s` and `starts_by_task` retain the per-task readings.

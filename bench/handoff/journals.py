@@ -75,11 +75,12 @@ def _queue(rows: list[Event], result: Event, arm: str) -> None:
     ids = {e["title"]: e["task_id"] for e in queued}
     if tuple(e["title"] for e in queued) != job.TITLES or len(set(ids.values())) != len(job.TITLES):
         raise MissingEvidence("expected the six operator tasks in order")
+    # tool.call keeps a refused call's arguments: a tuple compares a non-string without hashing it.
     result["off_arm_calls"] = sum(
         not (
             args.get("task_id") in ids.values() and not args.get("task")
             if arm == "id"
-            else args.get("task") in ids and not args.get("task_id")
+            else args.get("task") in job.TITLES and not args.get("task_id")
         )
         for e in rows
         if e["type"] == "tool.call" and e["name"] == "parallel"
