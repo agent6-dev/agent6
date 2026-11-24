@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,28 @@ from agent6.sandbox import detect, jail
 from tests import launch_env
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def test_runtime_resolves_commands_only_in_system_directories(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Neither a relative entry nor an absolute trial path enters the runtime search."""
+    from bench.tools import run
+
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "config.toml").touch()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    marker = repo / "bench-only-tool"
+    marker.touch(mode=0o700)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("PATH", f":.:bin:{repo}:/usr/bin:")
+    with run.environment(tmp_path, profile) as env:
+        path = env["PATH"]
+        assert set(path.split(os.pathsep)) <= {"/bin", "/usr/bin"}
+        assert shutil.which("git", path=path) in {"/bin/git", "/usr/bin/git"}
+        assert shutil.which(marker.name, path=path) is None
 
 
 def test_profile_cannot_select_partial_isolation(

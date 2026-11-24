@@ -89,7 +89,7 @@ def install(source: pathlib.Path, venv: pathlib.Path) -> pathlib.Path:
 @contextlib.contextmanager
 def environment(trial: pathlib.Path, profile: pathlib.Path) -> Generator[dict[str, str]]:
     """Give one run private homes and return any refreshed grant to its dedicated profile."""
-    env = {"PATH": os.environ["PATH"], "LANG": "C.UTF-8", "AGENT6_DETACHED_AWAY": "deny"}
+    env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "AGENT6_DETACHED_AWAY": "deny"}
     if "AGENT6_ALLOW_ROOT" in os.environ:
         env["AGENT6_ALLOW_ROOT"] = os.environ["AGENT6_ALLOW_ROOT"]
     for role in ("AUTHOR", "COMMITTER"):
