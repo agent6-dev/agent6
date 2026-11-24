@@ -562,6 +562,7 @@ The wait setting `idle_compact_min_chars` does not apply at resume.
 - `summarize`: ask the helper for a summary and restart with it and the retained history.
   The helper uses a pending `/compact` focus in that summary.
   An unusable summary leaves the history intact.
+  A terminal helper error records that outcome and ends the run before the worker call.
 - `truncate`: restart with the retained history and no summary call.
   The notice states what was left out and points to `read_session` when that tool is available.
 

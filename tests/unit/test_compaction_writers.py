@@ -140,6 +140,30 @@ def test_a_cold_drop_above_the_summary_bound_does_not_buy_a_writer() -> None:
     assert compactor.compact(warm) and len(worker.calls) == 1
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [provider_types.ProviderError("refused", status_code=403), budget.BudgetExceededError("limit")],
+)
+def test_a_terminal_cold_helper_refusal_reports_unchanged_history(failure: Exception) -> None:
+    worker, helper = Writer(response()), Writer(failure)
+    events: list[Any] = []
+    lines: list[str] = []
+    turn = dataclasses.replace(
+        context(worker, helper, events, cold_start="summarize"),
+        cold_start=cold_start.Trigger("route_changed", "p/old", "p/m", None, -1),
+        log=lines.append,
+    )
+    before = turn.conversation.to_wire(snapshot=True)
+    with pytest.raises(type(failure)) as raised:
+        driver.Tiered().compact(turn)
+    assert raised.value is failure and not worker.calls and len(helper.calls) == 1
+    assert turn.conversation.to_wire(snapshot=True) == before
+    (row,) = [e for e in events if e.TYPE == "compact.cold_start"]
+    assert (row.reason, row.previous_route, row.route) == ("route_changed", "p/old", "p/m")
+    assert (row.mode, row.action, row.chars_not_sent) == ("summarize", "summary_failed", 0)
+    assert row.message in lines
+
+
 @pytest.mark.parametrize("offered", [True, False])
 def test_restart_names_its_readable_journal(tmp_path: pathlib.Path, offered: bool) -> None:
     layout = sessions_layout.SessionLayout(tmp_path, "calm-owl-AAAAAA")

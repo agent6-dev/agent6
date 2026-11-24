@@ -313,6 +313,12 @@ class Tiered(_Scheduled):
 
         Returns:
             True when the worker needs fresh focus notices after a restart.
+
+        Raises:
+            BudgetExceededError: The budget refused the summary.
+            ProviderError: The provider refused the summary.
+            ProviderAborted: The operator stopped the run.
+            ProviderInterrupted: A steer is pending.
         """
         mode = context.settings.cold_start
         if context.cold_start is None or mode == "resend":
@@ -323,7 +329,18 @@ class Tiered(_Scheduled):
                 self.drop(context, cold=True)
                 return False
             case "summarize":
-                if not self.summarise_and_restart(context, cold=True, focus=_take_focus(context)):
+                try:
+                    restarted = self.summarise_and_restart(
+                        context, cold=True, focus=_take_focus(context)
+                    )
+                except (ProviderAborted, ProviderInterrupted):
+                    raise
+                except (ProviderError, budget.BudgetExceededError):
+                    record = context.cold_start.record(mode, "summary_failed", 0)
+                    context.log(record.message)
+                    context.emit(record)
+                    raise
+                if not restarted:
                     return False
             case "truncate":
                 replay = retention.select(conversation.messages, context.settings)
