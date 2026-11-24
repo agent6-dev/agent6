@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import kinds, paths
+from agent6.app import resume_record
 from agent6.app.review import actions as review_actions
 from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices as models_choices
@@ -392,9 +393,8 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
 def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the ids `resume` and `fork` pick up: every resumable bucket, not a machine draft."""
     out: list[str] = []
-    from agent6.app import resume  # noqa: PLC0415
 
-    for bucket in resume.resumable_bucket_dirs(paths.state_dir(pathlib.Path.cwd())):
+    for bucket in resume_record.resumable_bucket_dirs(paths.state_dir(pathlib.Path.cwd())):
         if not bucket.is_dir():
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]

@@ -14,7 +14,7 @@ import json
 import pathlib
 import subprocess
 
-from agent6.app import resume
+from agent6.app import resume_record
 
 _REF = "refs/agent6/r1"
 
@@ -59,7 +59,7 @@ def test_aligned_chain_tip_passes(tmp_path: pathlib.Path) -> None:
     head = _git(repo, "rev-parse", "HEAD")
     _git(repo, "update-ref", _REF, head)
     snap = _write_snapshot(tmp_path, {"head_sha": head})
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_own_forward_commit_is_allowed(tmp_path: pathlib.Path) -> None:
@@ -71,7 +71,7 @@ def test_own_forward_commit_is_allowed(tmp_path: pathlib.Path) -> None:
     snap = _write_snapshot(tmp_path, {"head_sha": old_head})
     tip = _commit(repo, "b.txt", "new\n", "the run's own step commit")
     _git(repo, "update-ref", _REF, tip)
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_replaced_chain_is_reported(tmp_path: pathlib.Path) -> None:
@@ -85,7 +85,10 @@ def test_replaced_chain_is_reported(tmp_path: pathlib.Path) -> None:
     _git(repo, "commit", "-q", "--amend", "-m", "amended init")
     other_line = _git(repo, "rev-parse", "HEAD")
     _git(repo, "update-ref", _REF, other_line)
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) == (old_head, other_line)
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) == (
+        old_head,
+        other_line,
+    )
 
 
 def test_reset_backward_is_reported(tmp_path: pathlib.Path) -> None:
@@ -96,7 +99,7 @@ def test_reset_backward_is_reported(tmp_path: pathlib.Path) -> None:
     snap_head = _commit(repo, "b.txt", "second\n", "second")
     snap = _write_snapshot(tmp_path, {"head_sha": snap_head})
     _git(repo, "update-ref", _REF, base)
-    mismatch = resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF)
+    mismatch = resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF)
     assert mismatch == (snap_head, base)
 
 
@@ -105,7 +108,7 @@ def test_missing_ref_skips_check(tmp_path: pathlib.Path) -> None:
     # resume continues from the snapshot head itself, nothing to compare.
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, {"head_sha": _git(repo, "rev-parse", "HEAD")})
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref="refs/agent6/gone") is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref="refs/agent6/gone") is None
 
 
 def test_blank_head_sha_skips_check(tmp_path: pathlib.Path) -> None:
@@ -113,13 +116,13 @@ def test_blank_head_sha_skips_check(tmp_path: pathlib.Path) -> None:
     # refuse, resume proceeds.
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, {"head_sha": ""})
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_pre_head_sha_snapshot_skips_check(tmp_path: pathlib.Path) -> None:
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, {"version": 1, "messages": []})
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_corrupt_snapshot_skips_check(tmp_path: pathlib.Path) -> None:
@@ -128,14 +131,17 @@ def test_corrupt_snapshot_skips_check(tmp_path: pathlib.Path) -> None:
     repo = _init_repo(tmp_path)
     snap = tmp_path / "loop_state.json"
     snap.write_text("{not json", encoding="utf-8")
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
-    assert resume.snapshot_head_mismatch(tmp_path / "missing.json", repo, chain_ref=_REF) is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert (
+        resume_record.snapshot_head_mismatch(tmp_path / "missing.json", repo, chain_ref=_REF)
+        is None
+    )
 
 
 def test_non_dict_snapshot_skips_check(tmp_path: pathlib.Path) -> None:
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, ["not", "a", "dict"])
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_guard_never_reads_the_checkout(tmp_path: pathlib.Path) -> None:
@@ -152,5 +158,5 @@ def test_guard_never_reads_the_checkout(tmp_path: pathlib.Path) -> None:
     (repo / "a.txt").write_text("rewritten\n")
     _git(repo, "commit", "-aqm", "rewrite main", "--amend")  # HEAD now diverged
     snap = _write_snapshot(tmp_path, {"head_sha": base})
-    assert resume.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert resume_record.snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
     assert _git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"

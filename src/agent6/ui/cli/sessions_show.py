@@ -15,7 +15,7 @@ import time
 from typing import Any, TypedDict
 
 from agent6 import child_records, kinds, terminal
-from agent6.app import merge, resume
+from agent6.app import merge, resume_record
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
@@ -596,7 +596,7 @@ def _changes(
         return _Changes(f"work is on {ref}" if ref else "", "")
     if undone:
         return _Changes(f"{run_branch} (taken back by /undo)" if run_branch else "", "")
-    stamp = resume.covering_stamp(cwd, manifest)
+    stamp = resume_record.covering_stamp(cwd, manifest)
     if stamp is not None:
         line = format.format_branch(run_branch, manifest.base_branch, stamp.into)
         return _Changes(line or stamp.description(), stamp.into)

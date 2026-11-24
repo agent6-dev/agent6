@@ -13,7 +13,7 @@ import dataclasses
 import pathlib
 
 from agent6 import errors, kinds, terminal
-from agent6.app import merge, resume, worktrees
+from agent6.app import merge, resume_record, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.harness.parallel import repo as child_repo
@@ -176,7 +176,7 @@ def plan_merge(  # noqa: PLR0911
         reporter.refuse(refusal)
         return 2
     ref = commits_ref(cwd, manifest)
-    if (stamp := resume.covering_stamp(cwd, manifest)) is not None and (
+    if (stamp := resume_record.covering_stamp(cwd, manifest)) is not None and (
         not ref.head_ref or git_read.chain_tip(cwd, ref.head_ref) is None
     ):
         already = "already " if stamp.commit else ""

@@ -24,7 +24,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import errors, kinds, paths, portable
-from agent6.app import fork_worktrees, resume, stamps, worktree_setup, worktrees
+from agent6.app import fork_worktrees, resume_record, stamps, worktree_setup, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
@@ -57,7 +57,7 @@ def resolve_source(
     """
     if not query:
         # The bucket set bare `resume` uses, so the two agree on "most recent".
-        latest = newest_session_dir(resume.resumable_bucket_dirs(state_dir))
+        latest = newest_session_dir(resume_record.resumable_bucket_dirs(state_dir))
         if latest is None:
             reporter.err('nothing to fork yet. Start a session with `agent6 run "<task>"`.')
             return None

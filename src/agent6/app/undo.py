@@ -18,7 +18,7 @@ import pathlib
 
 from agent6 import errors, task_text, terminal
 from agent6 import paths as agent6_paths
-from agent6.app import fork, fork_worktrees, resume
+from agent6.app import fork, fork_worktrees, resume_record
 from agent6.app import reporter as app_reporter
 from agent6.config import ConfigError, layer
 from agent6.graph import storage
@@ -271,7 +271,7 @@ def _manifest_refusal(
     """
     if (refusal := sessions_manifest.model_git_refusal(manifest, "undo")) is not None:
         return refusal
-    if (stamp := resume.covering_stamp(cwd, manifest)) is not None:
+    if (stamp := resume_record.covering_stamp(cwd, manifest)) is not None:
         return (
             f"cannot undo {session_id}: its commits are {stamp.description()}; take them back in"
             f" git, or continue from a turn with `agent6 fork {session_id} --at-turn N`."
@@ -289,7 +289,7 @@ def _manifest_refusal(
     if manifest.worktree is not None and not (checkout / ".git").exists():
         return (
             f"cannot undo {session_id}: its worktree {checkout} is gone (pruned or removed);"
-            f" {resume.commits_note(cwd, manifest)}; `agent6 fork {session_id}` continues it"
+            f" {resume_record.commits_note(cwd, manifest)}; `agent6 fork {session_id}` continues it"
             " in a new worktree."
         )
     return ""

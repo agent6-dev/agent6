@@ -22,6 +22,7 @@ from collections.abc import Callable
 import argcomplete
 
 from agent6 import errors, paths
+from agent6.app import resume_record
 from agent6.sandbox import jail
 from agent6.sessions import event_log, process
 from agent6.ui.cli import common, terminal_guard
@@ -814,7 +815,6 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 resume`, on the named session or the newest resumable one."""
-    from agent6.app import resume
     from agent6.app.session import setup as session_setup
     from agent6.sessions import id
     from agent6.ui.cli import resume as cli_resume
@@ -836,7 +836,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
             session_id = id.resolve_session(state, session_id).session_id
     else:
         # Every resumable bucket, so a plan or an ask is found too.
-        latest = newest_session_dir(resume.resumable_bucket_dirs(state))
+        latest = newest_session_dir(resume_record.resumable_bucket_dirs(state))
         if latest is None:
             # An empty state dir is not a fault.
             print(

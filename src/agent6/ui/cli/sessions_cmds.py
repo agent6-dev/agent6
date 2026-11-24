@@ -15,7 +15,7 @@ import sys
 
 from agent6 import errors, portable
 from agent6 import paths as agent6_paths
-from agent6.app import fork_worktrees, merge_plan, resume
+from agent6.app import fork_worktrees, merge_plan, resume_record
 from agent6.sessions import id, lineage, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -238,7 +238,7 @@ def _pruned_branch_note(
     """
     if git_read.branch_exists(cwd, run_branch):
         return None
-    stamp = resume.covering_stamp(cwd, manifest)
+    stamp = resume_record.covering_stamp(cwd, manifest)
     if stamp is not None:
         note = f"[agent6] run branch {run_branch} was pruned; {stamp.description()}"
         if stamp.commit:

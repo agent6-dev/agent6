@@ -9,6 +9,7 @@ import pathlib
 import pytest
 
 from agent6 import kinds, paths
+from agent6.app import resume_record
 from agent6.sessions import layout as sessions_layout
 
 
@@ -81,7 +82,6 @@ def test_bare_resume_finds_the_newest_session_in_every_resumable_bucket(
     Splitting plans/ out of runs/ must not hide a plan from bare `resume`; a machine draft is
     deliberately absent, since `machine` is not resumable.
     """
-    from agent6.app import resume
     from agent6.viewmodel import newest_session_dir
 
     session = sessions_layout.bucket_dir(tmp_path, bucket) / "brave-oak-AAAAAA"
@@ -92,7 +92,7 @@ def test_bare_resume_finds_the_newest_session_in_every_resumable_bucket(
         sessions_layout.bucket_dir(tmp_path, "machines") / "quiet-fox-BBBBBB" / "logs.jsonl"
     ).write_text("{}\n", encoding="utf-8")
 
-    found = newest_session_dir(resume.resumable_bucket_dirs(tmp_path))
+    found = newest_session_dir(resume_record.resumable_bucket_dirs(tmp_path))
     assert found == session
 
 
