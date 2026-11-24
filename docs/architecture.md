@@ -811,7 +811,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - `child_continue` reopens an unmerged child's dispatch before its private bootstrap resumes the same session (`app.child_resume` validates ownership); `ContinuationRecord` records its instruction, sequence and cumulative usage baseline, `parallel.child_continued` journals the new execution, and the parent charges only its new usage
 - stopped children keep their bound clone and launch file; other ended children resume in a fresh clone with setup rerun
 - a continuation whose worker never reports its start leaves the child's completed record as it was and removes the clone made for it
-- `app.child_trees` pins the recorded working and staged trees in the origin before cleanup or prune; unaccounted files keep their clone
+- `app.child_trees` pins a run child's recorded working and staged trees in the origin before cleanup or prune; unaccounted files keep its clone, and a reviewer's clone is never kept for its files
 - a finished continuation updates its retained ref; under agent6-owned git the parent requests its merge with `merge_child`
 - `merge_child` is offered only to a parent with stopped unmerged work under `git.control = "agent6"`; it does not require the parallel tool knob, since an operator directive can start children
 - `parallel.dispatched` and `parallel.returned` name the same group as its dispatch record.

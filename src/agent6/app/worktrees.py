@@ -327,7 +327,10 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
                         else sessions_layout.bucket_dir(paths.state_dir(origin), "runs")
                         / f"{group_dir.name}-l{clone.name.removeprefix('child-')}"
                     )
-                    if why := child_trees.preserve(origin, clone, session, cfg):
+                    # A reviewer's end records no tree, and its clone holds no work to keep.
+                    if session.parent.name != sessions_layout.EVIDENCE_BUCKET and (
+                        why := child_trees.preserve(origin, clone, session, cfg)
+                    ):
                         break
                     if child_trees.awaits_steer(session, group_dir.name):
                         why = "the parent still needs this clone for its pending or stopped child"
@@ -451,7 +454,10 @@ def cleanup(
             if records
             else sessions_layout.bucket_dir(record_state, "runs") / spec.session_id
         )
-        if why := child_trees.preserve(origin, spec.worktree, session, cfg):
+        # A reviewer's end records no tree, and its clone holds no work to keep.
+        if spec.mode == "run" and (
+            why := child_trees.preserve(origin, spec.worktree, session, cfg)
+        ):
             note_keep(spec.worktree, why)
             continue
         try:

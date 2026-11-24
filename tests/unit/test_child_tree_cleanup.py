@@ -126,3 +126,40 @@ def test_cleanup_keeps_a_clone_for_nested_work_only(
     assert clone.exists() is (nested != "unchanged")
     if nested == "populated":
         assert (clone / "vendor" / "README.md").read_text() == "uncommitted nested work"
+
+
+@pytest.mark.parametrize("sweep", [False, True], ids=["cleanup", "prune"])
+def test_cleanup_removes_a_reviewer_clone_that_holds_a_command_artifact(
+    tmp_path: pathlib.Path, sweep: bool
+) -> None:
+    """A reviewer's end records no tree, so one unignored file kept its clone."""
+    repo = tmp_path / "repo"
+    background._init_repo(repo)
+    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    group = worktrees.place(cfg, repo, "parent-rfinal1")
+    clone = group / "child-1"
+    sid = "parent-rfinal1-l1"
+    cli._git(repo, "clone", str(repo), str(clone))
+    state = paths.state_dir(repo)
+    record = state / "sessions" / "reviewers" / sid
+    record.mkdir(parents=True)
+    (record / "manifest.json").write_text(json.dumps({"session_id": sid, "mode": "reviewer"}))
+    rows = [
+        {"type": "session.start", "mode": "reviewer"},
+        {"type": "session.stop", "reason": "finish_session"},
+    ]
+    (record / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    (clone / "coverage.xml").write_text("<coverage/>")
+    if sweep:
+        worktrees.sweep_group_clones(repo, cfg)
+    else:
+        worktrees.cleanup(
+            [child_records.ChildSpec(1, sid, clone, None, mode="reviewer")],
+            origin=repo,
+            record_state=state,
+            worktree_root=group,
+            base=group.parent,
+            launch_dir=tmp_path / "launch",
+            cfg=cfg,
+        )
+    assert not clone.exists()
