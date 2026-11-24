@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
 import os
 import pathlib
@@ -66,6 +67,17 @@ def _config_with_run_commands(tmp_path: pathlib.Path, mode: str) -> Config:
         encoding="utf-8",
     )
     return load_config(p)
+
+
+def test_each_builtin_routes_to_its_named_family_function() -> None:
+    """Every advertised built-in has a family entry point with the same call shape."""
+    assert dispatch._HANDLERS.keys() == {
+        name for mode in kinds.SESSION_KINDS for name in schema.mode_tools(mode).names
+    }
+    for name, handler in dispatch._HANDLERS.items():
+        assert handler.__qualname__ == name
+        assert handler.__module__ != dispatch.__name__
+        assert tuple(inspect.signature(handler).parameters) == ("ctx", "raw")
 
 
 def test_read_file_ok(tmp_path: pathlib.Path) -> None:

@@ -125,6 +125,36 @@ class ToolContext:
     run_verify: Callable[[], results.ExecResult]
 
 
+_HANDLERS: dict[str, Callable[[ToolContext, dict[str, Any]], results.ToolResult]] = {
+    schema.Agent6DocsInput.TOOL_NAME: fs_tools.agent6_docs,
+    schema.ReadFileInput.TOOL_NAME: fs_tools.read_file,
+    schema.ListDirInput.TOOL_NAME: fs_tools.list_dir,
+    schema.OutlineInput.TOOL_NAME: nav_tools.outline,
+    schema.FindDefinitionInput.TOOL_NAME: nav_tools.find_definition,
+    schema.FindReferencesInput.TOOL_NAME: nav_tools.find_references,
+    schema.ApplyEditInput.TOOL_NAME: fs_tools.apply_edit,
+    schema.ApplyPatchInput.TOOL_NAME: fs_tools.apply_patch,
+    schema.RunVerifyInput.TOOL_NAME: command_tools.run_verify_command,
+    schema.RunCommandInput.TOOL_NAME: command_tools.run_command,
+    schema.ReadSessionInput.TOOL_NAME: sessions.read_session,
+    schema.FetchInput.TOOL_NAME: fetch.fetch,
+    schema.ReadBackgroundInput.TOOL_NAME: command_tools.read_background,
+    schema.StopBackgroundInput.TOOL_NAME: command_tools.stop_background,
+    schema.RunMetricInput.TOOL_NAME: command_tools.run_metric_command,
+    schema.FinishSessionInput.TOOL_NAME: control_tools.finish_session,
+    schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
+    schema.AskUserInput.TOOL_NAME: control_tools.ask_user,
+    schema.ListFindingsInput.TOOL_NAME: sessions.list_findings,
+    schema.ParallelInput.TOOL_NAME: child_tools.parallel,
+    schema.SteerChildInput.TOOL_NAME: child_tools.steer_child,
+    schema.MergeChildInput.TOOL_NAME: child_tools.merge_child,
+    schema.DagAddTaskInput.TOOL_NAME: dag_tools.add_task,
+    schema.DagUpdateTaskInput.TOOL_NAME: dag_tools.update_task,
+    schema.DagListTasksInput.TOOL_NAME: dag_tools.list_tasks,
+    schema.UseSkillInput.TOOL_NAME: skill_tools.use_skill,
+}
+
+
 class ToolDispatcher:
     """The tool dispatcher of one execution, or of a bare caller such as a reviewer.
 
@@ -226,34 +256,6 @@ class ToolDispatcher:
             and not _in_container(command_access.session.target)
         ):
             self._emit(journal.JailDegraded(detail=command_access.session.startup_stderr))
-        self._handlers: dict[str, Callable[[ToolContext, dict[str, Any]], results.ToolResult]] = {
-            schema.Agent6DocsInput.TOOL_NAME: fs_tools.agent6_docs,
-            schema.ReadFileInput.TOOL_NAME: fs_tools.read_file,
-            schema.ListDirInput.TOOL_NAME: fs_tools.list_dir,
-            schema.OutlineInput.TOOL_NAME: nav_tools.outline,
-            schema.FindDefinitionInput.TOOL_NAME: nav_tools.find_definition,
-            schema.FindReferencesInput.TOOL_NAME: nav_tools.find_references,
-            schema.ApplyEditInput.TOOL_NAME: fs_tools.apply_edit,
-            schema.ApplyPatchInput.TOOL_NAME: fs_tools.apply_patch,
-            schema.RunVerifyInput.TOOL_NAME: command_tools.run_verify_command,
-            schema.RunCommandInput.TOOL_NAME: command_tools.run_command,
-            schema.ReadSessionInput.TOOL_NAME: sessions.read_session,
-            schema.FetchInput.TOOL_NAME: fetch.fetch,
-            schema.ReadBackgroundInput.TOOL_NAME: command_tools.read_background,
-            schema.StopBackgroundInput.TOOL_NAME: command_tools.stop_background,
-            schema.RunMetricInput.TOOL_NAME: command_tools.run_metric_command,
-            schema.FinishSessionInput.TOOL_NAME: control_tools.finish_session,
-            schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
-            schema.AskUserInput.TOOL_NAME: control_tools.ask_user,
-            schema.ListFindingsInput.TOOL_NAME: sessions.list_findings,
-            schema.ParallelInput.TOOL_NAME: lambda ctx, raw: self._parallel(raw),
-            schema.SteerChildInput.TOOL_NAME: lambda ctx, raw: self._steer_child(raw),
-            schema.MergeChildInput.TOOL_NAME: lambda ctx, raw: self._merge_child(raw),
-            schema.DagAddTaskInput.TOOL_NAME: dag_tools.add_task,
-            schema.DagUpdateTaskInput.TOOL_NAME: dag_tools.update_task,
-            schema.DagListTasksInput.TOOL_NAME: dag_tools.list_tasks,
-            schema.UseSkillInput.TOOL_NAME: skill_tools.use_skill,
-        }
         self._index: index.SymbolIndex | None = None
         # Concurrent reviewers must not double-build the index.
         self._index_lock = threading.Lock()
@@ -517,7 +519,7 @@ class ToolDispatcher:
                 return results.RawResult(self._mcp_manager.call(name, raw_input))
             except mcp_client.MCPError as exc:
                 raise tool_errors.ToolError(str(exc)) from exc
-        if name not in self._handlers:
+        if name not in _HANDLERS:
             raise tool_errors.ToolError(f"Unknown tool: {name}")
         if name == schema.RunVerifyInput.TOOL_NAME and self.tool_is_withheld(name):
             return self.run_verify()  # records the denied attempt as evidence, then refuses
@@ -567,7 +569,7 @@ class ToolDispatcher:
         """Execute the handler, retrying once with stringified JSON arguments coerced.
 
         Args:
-            name: The built-in tool's name, a key of `_handlers`.
+            name: The built-in tool's name, a key of `_HANDLERS`.
             raw_input: The model's arguments, or `{"_raw_arguments": text}` when the provider
                 could not parse them as a JSON object.
 
@@ -596,14 +598,16 @@ class ToolDispatcher:
                 "the arguments were not a JSON object. Resend the call with a"
                 " single valid JSON object of arguments."
             )
+        handler = _HANDLERS[name]
+        ctx = self.tool_context()
         try:
-            return self._handlers[name](self.tool_context(), raw_input)
+            return handler(ctx, raw_input)
         except pydantic.ValidationError as exc:
             coerced = arguments.coerce_stringified_args(raw_input, exc)
             if coerced is None:
                 raise
             try:
-                return self._handlers[name](self.tool_context(), coerced)
+                return handler(ctx, coerced)
             except pydantic.ValidationError:
                 # The coercion guessed wrong; the original error is the honest one.
                 raise exc from None
@@ -1002,54 +1006,6 @@ class ToolDispatcher:
                 "background commands need a session directory; none was wired"
             )
         return self._shells
-
-    def _parallel(self, raw: dict[str, Any]) -> results.StartedResult:
-        """Start one task's children through the loop.
-
-        Args:
-            raw: The model's arguments.
-
-        Returns:
-            The children started, or the refusal.
-
-        Raises:
-            ToolError: The loop holds no children; the gates refused earlier otherwise.
-        """
-        request = schema.ParallelInput.model_validate(raw)
-        if self.children is None:
-            raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
-        return self.children.start(request.task, request.spec, task_id=request.task_id)
-
-    def _merge_child(self, raw: dict[str, Any]) -> results.RawResult:
-        """Request a child's merge through the loop.
-
-        Args:
-            raw: The model's arguments.
-
-        Returns:
-            The child id and when the merge runs.
-        """
-        request = schema.MergeChildInput.model_validate(raw)
-        assert self.children is not None
-        message = self.children.merge(request.id)
-        return results.RawResult({"merge_requested": request.id, "message": message})
-
-    def _steer_child(self, raw: dict[str, Any]) -> results.SteeredResult:
-        """Send a running child an instruction through the loop.
-
-        Args:
-            raw: The model's arguments.
-
-        Returns:
-            The child steered and when it reads the instruction.
-
-        Raises:
-            ToolError: The loop holds no children, or the id names no running child of the run.
-        """
-        request = schema.SteerChildInput.model_validate(raw)
-        if self.children is None:
-            raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
-        return results.SteeredResult(request.id, self.children.steer(request.id, request.text))
 
     def resolved_skills(self) -> skills.ResolvedSkills:
         """Return the operator's skills, resolved once per dispatcher.

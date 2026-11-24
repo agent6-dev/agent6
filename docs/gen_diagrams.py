@@ -259,8 +259,7 @@ def _tool_name_constants() -> dict[str, str]:
 def _handler_names() -> list[str]:
     """Return the tool names the handler table routes, in table order.
 
-    Resolved through the schema's `TOOL_NAME` constants, never the method names,
-    which advertise tools the model cannot call.
+    The schema constants name the tools on the wire.
 
     Raises:
         SystemExit: A table key is not a known `TOOL_NAME`.
@@ -268,11 +267,11 @@ def _handler_names() -> list[str]:
     constants = _tool_name_constants()
     tree = ast.parse((_ROOT / "src/agent6/tools/dispatch.py").read_text(encoding="utf-8"))
     names: list[str] = []
-    for node in ast.walk(tree):
+    for node in tree.body:
         if not (
             isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Attribute)
-            and node.target.attr == "_handlers"
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "_HANDLERS"
             and isinstance(node.value, ast.Dict)
         ):
             continue

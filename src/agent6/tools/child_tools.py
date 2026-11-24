@@ -11,10 +11,13 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 from collections.abc import Callable
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import results, schema, sessions, waits
+from agent6.tools import results, schema, sessions, tool_errors, waits
+
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
 # The characters of a child's transcript a read renders before it keeps the last lines.
 _TRANSCRIPT_CHARS = 20_000
@@ -156,3 +159,57 @@ def _transcript(state_dir: pathlib.Path | None, child: str, tail_lines: int) -> 
     if len(lines) > tail_lines:
         lines = [f"... {len(lines) - tail_lines} earlier lines ...", *lines[-tail_lines:]]
     return "\n".join(lines)
+
+
+def parallel(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.StartedResult:
+    """Start one task's children through the loop.
+
+    Args:
+        ctx: The run's children.
+        raw: The model's arguments.
+
+    Returns:
+        The children started, or the refusal.
+
+    Raises:
+        ToolError: The loop holds no children; the gates refused earlier otherwise.
+    """
+    request = schema.ParallelInput.model_validate(raw)
+    if ctx.children is None:
+        raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
+    return ctx.children.start(request.task, request.spec, task_id=request.task_id)
+
+
+def steer_child(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.SteeredResult:
+    """Send a running child an instruction through the loop.
+
+    Args:
+        ctx: The run's children.
+        raw: The model's arguments.
+
+    Returns:
+        The child steered and when it reads the instruction.
+
+    Raises:
+        ToolError: The loop holds no children, or the id names no running child of the run.
+    """
+    request = schema.SteerChildInput.model_validate(raw)
+    if ctx.children is None:
+        raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
+    return results.SteeredResult(request.id, ctx.children.steer(request.id, request.text))
+
+
+def merge_child(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.RawResult:
+    """Request a child's merge through the loop.
+
+    Args:
+        ctx: The run's children.
+        raw: The model's arguments.
+
+    Returns:
+        The child id and when the merge runs.
+    """
+    request = schema.MergeChildInput.model_validate(raw)
+    assert ctx.children is not None
+    message = ctx.children.merge(request.id)
+    return results.RawResult({"merge_requested": request.id, "message": message})

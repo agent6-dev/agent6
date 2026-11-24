@@ -171,6 +171,7 @@ CONTRACTS: tuple[Contract, ...] = (
         module="agent6.tools.results",
         primary=("ToolResult",),
         writers=(
+            "tools/child_tools.py",
             "tools/command_tools.py",
             "tools/control_tools.py",
             "tools/dag_tools.py",

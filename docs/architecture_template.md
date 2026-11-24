@@ -520,6 +520,7 @@ Read, status and stop responses carry capture failures separately from the exit 
 ## Tool dispatch
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
+Each built-in routes to its family function with a frozen `ToolContext` and the raw arguments.
 Commands and verify run jailed; file tools resolve through the workspace boundary.
 `tools/command_tools.py` holds the command handlers, including metric sampling and background reads and stops.
 `tools/dispatch.py` owns routing, approvals, verification evidence and the jail session lifecycle.
