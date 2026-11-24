@@ -409,6 +409,7 @@ Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong i
 
 `run_command`, `run_verify_command` and `run_metric_command` run jailed under `[sandbox].run_commands`.
 `stop_background` can signal a command only while the session has `run_command`.
+Denying more commands does not withdraw `read_background` while this execution owns a command.
 Only the operator can set a run's metric: neither a machine config nor a child launch can supply its command, pattern or direction.
 `run_metric_command` takes no arguments and executes the same approved argv as an automatic reading; a metric widens no file or network grant.
 `run_commands = "deny"` withholds the verify gate too.

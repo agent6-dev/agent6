@@ -332,6 +332,11 @@ class BackgroundShells:
         finally:
             os.close(root_fd)
 
+    @property
+    def has_commands(self) -> bool:
+        """Return whether this execution owns a command without probing its status."""
+        return bool(self._shells)
+
     def roster(self) -> list[ShellView]:
         """Return every background command this run started, live or not."""
         return [self._view(s) for s in self._shells.values()]

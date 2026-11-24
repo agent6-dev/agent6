@@ -112,14 +112,15 @@ def test_the_policy_is_re_read_not_cached(tmp_path: pathlib.Path) -> None:
     assert d.command_policy() == "allow"
 
 
-def test_a_child_stop_offer_does_not_authorize_a_command_stop(
-    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+@pytest.mark.parametrize("parallel", [False, True])
+def test_session_denial_keeps_command_output_but_not_command_stops(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher], parallel: bool
 ) -> None:
-    """A later session denial leaves the parent its child controls, not a signal to a command."""
+    """Reading a command this execution owns needs neither a command grant nor a child."""
     from unittest import mock
 
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "harness": {"parallel": {"tool": True}}}
+        {"sandbox": {"run_commands": "ask"}, "harness": {"parallel": {"tool": parallel}}}
     )
     session = tmp_path / "session"
     prompts = operator_prompts.OperatorPrompts(
@@ -135,7 +136,9 @@ def test_a_child_stop_offer_does_not_authorize_a_command_stop(
     ipc.set_session_deny(session, ipc.COMMAND_SCOPE)
 
     assert d.command_policy() == "deny"
-    assert "stop_background" in d.available_tool_names()
+    offers = d.available_tool_names()
+    assert "read_background" in offers and "run_command" not in offers
+    assert ("stop_background" in offers) is parallel
     with pytest.raises(tool_errors.ToolError, match="run_commands"):
         d.dispatch("stop_background", {"id": handle})
     assert d.dispatch("read_background", {"id": handle, "wait_s": 0}).to_wire()["still_running"]

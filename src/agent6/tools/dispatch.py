@@ -304,6 +304,12 @@ class ToolDispatcher:
         if self.allowed_tools is not None and name not in self.allowed_tools:
             return "not available in this conversation contract"
         if name in _BACKGROUND_TOOLS:
+            if (
+                name == schema.ReadBackgroundInput.TOOL_NAME
+                and self._shells is not None
+                and self._shells.has_commands
+            ):
+                return None
             refusal = self._policy_refusal(schema.RunCommandInput.TOOL_NAME)
             return refusal if refusal and not self.background_children_available() else None
         if name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld:
