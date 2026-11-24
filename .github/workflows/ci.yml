@@ -135,14 +135,14 @@ jobs:
       - name: Sync dev environment
         run: uv sync --all-extras --dev
 
-      - name: Cache Playwright's Chromium
+      - name: Cache Playwright's Chromium and Firefox
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock') }}
+          key: playwright-chromium-firefox-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('uv.lock') }}
 
-      - name: Install Playwright's Chromium
-        run: uv run playwright install --with-deps chromium
+      - name: Install Playwright's Chromium and Firefox
+        run: uv run playwright install --with-deps chromium firefox
 
       - name: Download the built wheel
         uses: actions/download-artifact@v8
