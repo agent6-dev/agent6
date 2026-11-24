@@ -42,7 +42,7 @@
   An extraction that shifts a module boundary records the edge in `tach.toml`, one module per commit.
 - **Secure by default, degrade or refuse.** Every knob ships with the safe default, visible in `agent6 config show`; widening is opt-in and carries a security review note.
   The operator loosens; the agent's own sandbox stays where the operator put it.
-  Default-deny beats blocklisting; a mitigation that is trivially bypassed is worse than none.
+  Default-deny beats blocklisting; a mitigation that is trivially bypassed, or that guards what its reader already holds, is worse than none.
   An automatic setting (`auto`) takes the strongest option available and degrades with a warning when it is absent; an explicit setting the host cannot honor refuses, naming what is unsupported and how to change it; an explicit but discouraged widening (a path holding secrets) runs with a loud warning naming the cost.
 - **Use the platform's guard.** A mechanism the browser, the kernel, git or the standard library provides replaces one of ours: a Content-Security-Policy, not rewritten addresses.
   A hand-made guard names what the platform lacks in its `Security review note:`.
