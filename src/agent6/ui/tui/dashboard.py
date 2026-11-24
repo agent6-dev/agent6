@@ -26,6 +26,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6 import terminal
 from agent6.graph import order
 from agent6.ui import keymap
 from agent6.ui.tui import (
@@ -474,9 +475,10 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                 return
             self._tui.submit_instruction(f"/retire {task.id}")
 
+        title = terminal.scrub_terminal_controls(task.title)
         self.app.push_screen(
             modals.ConfirmModal(
-                f"Retire task {task.short_id}: {task.title}?",
+                f"Retire task {task.short_id}: {title}?",
                 "This marks the task obsolete at the next step. It does not stop a worker.",
                 confirm_label="Retire task",
             ),
@@ -624,9 +626,11 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         s = tui.state
 
         sel = self._selected_task_id
-        sel_title = next((t.title for t in s.tasks if t.id == sel), "") if sel else ""
-        # A border title is markup; the task title is the model's or the user's.
-        filt = f" · task: {markup.escape(sel_title[:28])}" if sel else ""
+        filt = ""
+        if sel:
+            sel_title = next((t.title for t in s.tasks if t.id == sel), "")
+            # A border title is markup; the task title is the model's or the user's.
+            filt = f" · task: {markup.escape(terminal.scrub_terminal_controls(sel_title)[:28])}"
 
         ds, as_of = self._details_state(s)
         self.query_one(dashboard_tasks.TaskTree).show_tasks(ds.tasks, sel, as_of)

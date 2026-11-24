@@ -12,11 +12,11 @@ from agent6.graph import curator, models
 from agent6.sessions import event_log, journal, layout, process
 
 
-def live_graph(repo: pathlib.Path) -> layout.SessionLayout:
+def live_graph(repo: pathlib.Path, *, child_title: str = "Link pages") -> layout.SessionLayout:
     """Write an open root, an open child and a passed child under the repo's state directory."""
     run = layout.SessionLayout(paths.state_dir(repo), "task-run")
     graph = curator.GraphCurator(run)
-    for parent, title in ((None, "Write index"), ("0001", "Link pages"), ("0001", "Check paths")):
+    for parent, title in ((None, "Write index"), ("0001", child_title), ("0001", "Check paths")):
         graph.add_subtask(
             models.AddSubtaskIntent(
                 parent_id=parent, draft=models.TaskNodeDraft(title=title, created_by="worker")

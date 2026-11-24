@@ -9,6 +9,7 @@ import pathlib
 
 from textual import widgets
 
+from agent6.graph import storage
 from agent6.sessions import event_log, ipc, journal
 from agent6.ui.tui import app, modals
 from tests import task_runs
@@ -17,7 +18,8 @@ from tests.tui import waits
 
 def test_confirm_retirement_of_the_selected_task(tmp_path: pathlib.Path) -> None:
     """Confirming retires the selected open task and never queues a worker stop."""
-    run = task_runs.live_graph(tmp_path)
+    title = "Link \x1b[1mpages\x1b[0m"
+    run = task_runs.live_graph(tmp_path, child_title=title)
 
     async def scenario() -> None:
         tui = app.Agent6TUI(run.session_dir)
@@ -27,9 +29,13 @@ def test_confirm_retirement_of_the_selected_task(tmp_path: pathlib.Path) -> None
             tree = dashboard.query_one("#plan", widgets.Tree)
             tree.focus()
             tree.move_cursor(tree.root.children[1])
-            await pilot.press("enter", "r")
+            await pilot.press("enter")
+            assert tree.render_line(1).text.rstrip().endswith("Link pages")
+            assert dashboard.query_one("#log").border_title == "log · task: Link pages"
+            await pilot.press("r")
             assert isinstance(tui.screen, modals.ConfirmModal)
-            assert "Link pages" in str(tui.screen.query_one(widgets.Static).render())
+            question = tui.screen.query_one(widgets.Static).render_line(0).text.strip()
+            assert question == "Retire task 2: Link pages?"
             assert tui.focused is tui.screen.query_one("#no")
             await pilot.press("escape")
             assert not ipc.drain_requests(run.session_dir)
@@ -44,6 +50,7 @@ def test_confirm_retirement_of_the_selected_task(tmp_path: pathlib.Path) -> None
             assert tui.screen is dashboard
 
     asyncio.run(scenario())
+    assert storage.load_graph(run)["0002"].title == title
 
 
 def test_a_run_ending_during_confirmation_retires_nothing(tmp_path: pathlib.Path) -> None:

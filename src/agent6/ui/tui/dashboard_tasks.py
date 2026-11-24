@@ -7,6 +7,7 @@ from __future__ import annotations
 from rich import text
 from textual import widgets
 
+from agent6 import terminal
 from agent6.graph import order
 from agent6.viewmodel.session import records
 
@@ -34,7 +35,8 @@ class TaskTree(widgets.Tree[str]):
         self.root.expand()
         for task in tasks:
             indent = "  " * task.depth
-            label = text.Text(f"{task.short_id:>3} {indent}{task.glyph} {task.title}")
+            title = terminal.scrub_terminal_controls(task.title)
+            label = text.Text(f"{task.short_id:>3} {indent}{task.glyph} {title}")
             if task.note:
                 label.append(f"  {task.note}", style="dim italic")
             if task.id == selected:
