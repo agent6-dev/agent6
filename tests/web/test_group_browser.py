@@ -179,3 +179,38 @@ def test_a_conflict_counts_the_parent_outcome_not_the_child_gate(
     expect(card.locator(".child-row").last.locator("summary")).to_contain_text("passed · conflict")
     expect(card).to_contain_text("dates.py")
     assert not errors
+
+
+def test_merge_returns_only_when_the_child_advances(
+    ordinary_parent: pathlib.Path,
+    parent_port: int,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """The child page offers no merge for work already in the parent's chain."""
+    from playwright.sync_api import expect
+
+    repo = ordinary_parent
+    git = test_git_history._git
+    git(repo, "init", "-q")
+    git(repo, "commit", "--allow-empty", "-qm", "Child answer")
+    sha = git(repo, "rev-parse", "HEAD")
+    parent = layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="co")
+    (record,) = child_dispatch.read_records(parent.session_dir)
+    first, second = record.children
+    assert first.merge
+    ref = f"refs/agent6/{first.session_id}/head"
+    git(repo, "update-ref", ref, sha)
+    first = first.model_copy(update={"merge": first.merge.model_copy(update={"sha": sha})})
+    child_dispatch.write_record(
+        parent.session_dir, record.model_copy(update={"children": (first, second)}), now=2.0
+    )
+    page, errors = open_page(parent_port)
+    page.goto(f"http://127.0.0.1:{parent_port}/#/session/{first.session_id}")
+    expect(page.locator(".card-head")).to_contain_text("merged into co's chain")
+    button = page.get_by_role("button", name="Merge", exact=True)
+    expect(button).to_be_hidden()
+    git(repo, "commit", "--allow-empty", "-qm", "Extend answer")
+    git(repo, "update-ref", ref, "HEAD")
+    page.reload()
+    expect(button).to_be_enabled()
+    assert not errors

@@ -464,7 +464,8 @@ function paintRun(cards, s) {
   // An ended run hides its live controls; a reviewer's record offers no compact, fork, merge or review.
   const offered = (action) => s.session_actions?.[action] !== false;
   const shown = { stop: !isDead, turn: !isDead, compact: !isDead && offered('compact'),
-                  fork: offered('fork'), merge: offered('merge'), review: offered('review') };
+                  fork: offered('fork'), merge: offered('merge') && (!s.merged_into_parent || s.unmerged),
+                  review: offered('review') };
   for (const name in shown) {
     const button = cards['_' + name + '_btn'];
     if (button) button.hidden = !shown[name];
