@@ -265,6 +265,7 @@ A child runs under the parent's own config and the run's remaining budget, with 
 `read_background` with a child's id returns its id, attempt, state, task, running flag, merge eligibility and commit count beside its transcript tail.
 With a command's `background_id` it returns the command preview, state, `returncode`, `duration_s` and `still_running` beside the output tail.
 The duration runs from launch until the host observes the end.
+If the launcher is lost before it reports an exit, `still_running`, `duration_s` and `returncode` are null.
 With no id it lists one line per command or child; a positive `wait_s` waits for the next child to end.
 A child tail shows the same bounded tool arguments and result summaries as the numbered journal entries.
 A separate shell line gives a background command's exit when its result is on disk.

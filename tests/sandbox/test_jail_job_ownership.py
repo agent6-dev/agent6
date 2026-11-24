@@ -349,7 +349,10 @@ def test_client_loss_persists_unknown_not_an_invented_completion(tmp_path: pathl
         )
         session.close()
         view = shells.roster()[0]
-        assert view.returncode is None and view.state == "died"
+        wire = view.to_wire()
+        assert wire["state"] == "unknown" and wire["detail"]
+        assert wire["returncode"] is None
+        assert wire["still_running"] is None and wire["duration_s"] is None
         record = json.loads((tmp_path / "shells/bg1/result.json").read_text())
         assert record["returncode"] is None and record["error"]
         assert "unknown" in session_shells.roster_from_dir(tmp_path / "shells")[0]

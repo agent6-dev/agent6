@@ -773,7 +773,7 @@ class BackgroundReadResult(ToolResult):
     @property
     def running(self) -> bool:
         """Return whether there is still work to wait for."""
-        return self.job.running
+        return self.job.running is True
 
     def to_wire(self) -> dict[str, Any]:
         """Return the job's fields beside its text."""

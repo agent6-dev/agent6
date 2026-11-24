@@ -75,10 +75,10 @@ def test_a_command_that_exits_on_its_own_reports_its_code(
     assert "bye" in output
 
 
-def test_a_command_killed_from_outside_is_never_reported_running(
+def test_loss_of_the_launcher_leaves_the_command_outcome_unknown(
     shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
-    """A crash agent6 did not ask for (an OOM kill, an operator's kill -9) reads as over."""
+    """A killed launcher cannot confirm its command's exit."""
     view = shells.start(("/bin/sh", "-c", "echo up; sleep 300"), _policy_for(tmp_path))
     deadline = time.monotonic() + 15.0
     while "up" not in shells.read(view.id, tail_lines=10)[1]:
@@ -86,8 +86,8 @@ def test_a_command_killed_from_outside_is_never_reported_running(
         time.sleep(0.05)
     pid = next(iter(_launcher_pids(shells, view.id)))
     os.killpg(os.getpgid(pid), signal.SIGKILL)
-    assert _wait_state(shells, view.id, "died") in {"died", "exited"}
-    assert not any(v.state == "running" for v in shells.roster())
+    assert _wait_state(shells, view.id, "unknown") == "unknown"
+    assert shells.roster()[0].running is None
 
 
 def test_reading_a_live_command_never_blocks(

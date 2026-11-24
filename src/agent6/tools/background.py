@@ -48,11 +48,11 @@ class ShellView:
     Attributes:
         id: The `bg<N>` id.
         command: The command as shell text.
-        state: "running", "exited", "stopped", "died" or "stop failed".
+        state: "running", "exited", "stopped", "died", "unknown" or "stop failed".
         returncode: The exit code, when known.
         detail: Why the fate is unknown, cleanup failed or output is incomplete, else "".
-        duration_s: Seconds from launch to this observation, fixed at the first observed end.
-        running: Whether the launcher reports the command is still running.
+        duration_s: Seconds from launch to this observation or the first observed end, if known.
+        running: Whether the command is still running, None when the launcher cannot tell.
     """
 
     id: str
@@ -60,8 +60,8 @@ class ShellView:
     state: str
     returncode: int | None
     detail: str
-    duration_s: float
-    running: bool
+    duration_s: float | None
+    running: bool | None
 
     def to_wire(self) -> dict[str, object]:
         """Return the fields beside the command's output tail."""
@@ -488,20 +488,24 @@ class BackgroundShells:
         detail = "; ".join(
             dict.fromkeys(filter(None, (shell.stop_error, status.error, status.capture_error)))
         )
-        # A stop that could not be confirmed outranks every other word: the command may be running.
+        running: bool | None = status.running
+        if not running and status.returncode is None and status.error:
+            running = None  # Losing the supervisor is not an observed exit.
         if shell.stop_error:
             state = "stop failed"
-        elif status.running:
+        elif running is None:
+            state = "unknown"
+        elif running:
             state = "running"
         elif shell.stopped:
             state = "stopped"
         else:
             state = "died" if status.returncode is None else "exited"
         duration_s = shell.final_duration_s
-        if duration_s is None:
+        if duration_s is None and running is not None:
             duration_s = time.monotonic() - shell.started
-            if not status.running:
+            if not running:
                 shell.final_duration_s = duration_s
         return ShellView(
-            shell.id, shell.command, state, status.returncode, detail, duration_s, status.running
+            shell.id, shell.command, state, status.returncode, detail, duration_s, running
         )

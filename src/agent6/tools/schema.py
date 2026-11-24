@@ -398,9 +398,10 @@ class ReadBackgroundInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "read_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "A command `id` returns `background_id`, `command` (preview), `state`, `returncode`"
-        " (null if unknown), `duration_s`, `still_running` and the `output` tail. `detail`"
-        " explains errors. No `id`: one line per command in `shells`. `tail_lines` bounds the"
+        "A command `id` returns `background_id`, `command` (preview), `state`, `returncode`,"
+        " `duration_s`, `still_running` and the `output` tail. Unknown exit code, duration or"
+        " liveness is null. `detail` explains errors. No `id`: one line per command in `shells`."
+        " `tail_lines` bounds the"
         " tail. With an `id`, `wait_s` waits for exit"
         " (0 = look now; omitted = the run's configured check-in interval)."
         " Waits are bounded by that interval when it is above 0."
