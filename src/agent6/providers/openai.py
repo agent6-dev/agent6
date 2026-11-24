@@ -352,9 +352,11 @@ class OpenAIProvider:
                 "n",
             }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
-        # The recovery of a call leaked into text is guarded by the tools offered this turn.
-        tool_names = frozenset(t.name for t in tools) if tools else frozenset()
-        tool_schemas = {t.name: t.input_schema for t in tools} if tools else {}
+        # When calls are forbidden, a reply can quote visible tools without calling them.
+        tool_schemas = (
+            {t.name: t.input_schema for t in tools} if tools and tool_choice == "auto" else {}
+        )
+        tool_names = frozenset(tool_schemas)
 
         # Streaming is the only reliable path through a gateway whose heartbeats corrupt a body.
         return transport.ProviderCall(

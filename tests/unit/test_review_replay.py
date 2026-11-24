@@ -26,9 +26,9 @@ def finding(category: str, title: str, detail: str, severity: str = "block") -> 
     }
 
 
-def answer(*findings: dict[str, Any]) -> str:
+def answer(*findings: dict[str, Any], summary: str = "") -> str:
     return json.dumps(
-        {"verdict": "block" if findings else "pass", "summary": "", "findings": findings}
+        {"verdict": "block" if findings else "pass", "summary": summary, "findings": findings}
     )
 
 
@@ -204,9 +204,10 @@ def test_no_tools_changes_only_tool_choice_on_both_arms(
             "messages": [{"role": "system", "content": env.SYSTEM}, *messages],
             "tools": [{"type": "function", "function": {**tool, "parameters": env.SCHEMA}}],
         }
+        text = answer(summary="A verdict can quote <function=run_command></function>.")
         reply = {
             "choices": [
-                {"message": {"role": "assistant", "content": answer()}, "finish_reason": "stop"}
+                {"message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
             ],
             "usage": {"prompt_tokens": 18, "completion_tokens": 9},
         }
@@ -236,7 +237,8 @@ def test_no_tools_changes_only_tool_choice_on_both_arms(
         }
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [r["tool_choice"] for r in rows] == ["auto", "auto", "none", "none"]
-    assert [r["verdict"] for r in rows] == ["pass"] * 4
+    default = "asked for a tool" if backend == "openai" else "pass"
+    assert [r["outcome"] for r in rows] == [default, default, "pass", "pass"]
 
 
 @pytest.mark.parametrize(
