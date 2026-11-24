@@ -90,7 +90,7 @@ def readable_summary(value: Any) -> str:
 def as_int(value: object) -> int:
     """Return an event field as an int, 0 for anything unusable."""
     try:
-        return int(value)  # type: ignore[arg-type]  # int() rejects bad types itself
+        return int(value)  # pyrefly: ignore[bad-argument-type]  # int() rejects bad types itself
     except (TypeError, ValueError):
         return 0
 
