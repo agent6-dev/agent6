@@ -133,12 +133,20 @@ function createMachineDock() {
   const root = el('div', 'composer dock');
   const row = el('div', 'row');
   const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…';
+  const key = 'a6-machine-description';
+  ct.value = recall(key, '');
   const cbtn = el('button', 'primary', 'Create machine');
   runOnce(cbtn, async () => {
-    try { const d = await postJSON('/api/machine/create', { task: ct.value }); ct.value=''; if (d.draft) location.hash = '#/draft/' + encodeURIComponent(d.draft); }
-    catch (e) { toast(e.message, true); }
+    ct.readOnly = true;
+    try {
+      const d = await postJSON('/api/machine/create', { task: ct.value });
+      if (recall(key, '') === ct.value) forget(key);
+      ct.value = '';
+      if (root.isConnected && d.draft) location.hash = '#/draft/' + encodeURIComponent(d.draft);
+    } catch (e) { toast(e.message, true); }
+    finally { ct.readOnly = false; }
   }, () => !!ct.value.trim());
-  ct.oninput = cbtn.sync;
+  ct.oninput = () => { if (ct.value) remember(key, ct.value); else forget(key); cbtn.sync(); };
   ct.onkeydown = (e) => { if (enterSends(e)) { e.preventDefault(); cbtn.click(); } };
   row.appendChild(ct); row.appendChild(cbtn);
   root.appendChild(fieldLabel(ct, 'Machine description'));
