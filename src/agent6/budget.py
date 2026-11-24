@@ -27,7 +27,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from agent6 import config, credit_usage, kinds, token_usage
+from agent6 import config, credit_usage, kinds, terminal, token_usage
 from agent6.models import pricing
 
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
@@ -1010,7 +1010,7 @@ class BudgetTracker:
                 else:
                     note = ""
                 if cost.estimated and totals.quote and totals.quote.source != route:
-                    note += f" (price from {totals.quote.source.spec})"
+                    note += f" (price from {terminal.printable_name(totals.quote.source.spec)})"
                 if cost.cache_assumed:
                     note += " (cache rates assumed: 0.1x read, 1.25x write)"
                 cost_str = f"{format_usd(cost.usd, partial=cost.partial)}{note}"

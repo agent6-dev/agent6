@@ -406,3 +406,25 @@ def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:
     assert "of $0.0040" in summary  # the cap, at the spend's precision
     assert "cost=$0.0046" in summary
     assert ">= $0.0040" in summary  # and the exhaustion reason, not ">= $0.00"
+
+
+def test_a_reference_price_source_prints_on_one_receipt_line() -> None:
+    price_env.write({"two\nwords/m": [1.0, 2.0]})
+    tracker = budget.BudgetTracker(
+        max_usd=1,
+        max_tokens_fallback=-1,
+        max_plan_points=-1,
+        providers={
+            **price_env.PROVIDERS,
+            "local": price_env.ENTRY.model_copy(update={"price_from": "testprovider"}),
+        },
+    )
+    tracker.record(
+        route=kinds.ModelRoute("local", "m"),
+        input_tokens=10,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+    )
+    row = next(line for line in tracker.format_summary().splitlines() if "price from" in line)
+    assert r"two\nwords/m" in row
