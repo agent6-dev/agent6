@@ -11,6 +11,7 @@ import time
 
 import pytest
 
+from agent6 import token_usage
 from agent6.sessions import child_dispatch, completion, process
 from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import listing, receipt, wire
@@ -200,6 +201,36 @@ def test_a_missing_session_does_not_turn_a_failed_merge_into_a_launch_refusal(
         "unreported · failed",
     )
     assert row["error"] == "could not lock parent ref"
+
+
+@pytest.mark.parametrize(
+    ("usage", "status"),
+    [
+        (child_dispatch.UsageRecord(usd=0, model_tokens=token_usage.ZERO), "failed"),
+        (child_dispatch.UsageRecord(usd=0, tokens=8), "unreported"),
+        (
+            child_dispatch.UsageRecord(usd=0, model_tokens=token_usage.TokenCounts(8, None)),
+            "unreported",
+        ),
+        (
+            child_dispatch.UsageRecord(usd=0, model_tokens=token_usage.TokenCounts(None, 3)),
+            "unreported",
+        ),
+        (child_dispatch.UsageRecord(usd=0, usd_partial=True), "unreported"),
+    ],
+    ids=["nothing-ran", "fallback-tokens", "input-tokens", "output-tokens", "unpriced-call"],
+)
+def test_a_child_can_record_usage_without_a_dollar_charge(
+    tmp_path: pathlib.Path, usage: child_dispatch.UsageRecord, status: str
+) -> None:
+    """Token use or an unpriced call proves the child ran. A zero settlement does not."""
+    parent = _session(tmp_path, "root")
+    record = _record("root-p1", [("root-p1-l1", None, 0.0)])
+    child = record.children[0].model_copy(update={"usage": usage})
+    child_dispatch.write_record(parent, record.with_child(child), now=1)
+    (row,) = vm_children.children_of(parent)
+    assert (row.status, row.status_label, row.outcome) == (status, status, "")
+    assert not row.launched and row.settled and row.error == record.message
 
 
 def test_a_group_without_records_reads_its_children_from_lineage(tmp_path: pathlib.Path) -> None:

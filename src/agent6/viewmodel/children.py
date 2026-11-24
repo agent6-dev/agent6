@@ -299,19 +299,33 @@ def _recorded_child(
         return dataclasses.replace(row.with_status("failed"), error="invalid child session id")
     child_dir = bucket / child.session_id
     row = _session_child(row, child_dir, child, version=record.version)
-    if child.usage is not None:
+    usage = child.usage
+    if usage is not None:
         row = dataclasses.replace(
             row,
-            spend_usd=child.usage.usd,
-            usd_partial=child.usage.usd_partial,
+            spend_usd=usage.usd,
+            usd_partial=usage.usd_partial,
             settled=child.settled,
         )
     merge = child.merge
     if merge is None:
         if record.state == "complete" and not row.launched:
-            return dataclasses.replace(
-                row.with_status("failed"), error=record.message or "never started"
+            # Recovery also settles zero for a dispatch interrupted before launch.
+            used = usage is not None and any(
+                (
+                    usage.usd,
+                    usage.usd_partial,
+                    usage.tokens,
+                    usage.model_tokens.input_tokens,
+                    usage.model_tokens.output_tokens,
+                )
             )
+            status, error = (
+                ("unreported", record.message)
+                if used
+                else ("failed", record.message or "never started")
+            )
+            return dataclasses.replace(row.with_status(status), error=error)
         # A panel announces later batches before submitting them.
         if record.state == "running" and not row.launched and record.source != "panel":
             return row.with_status("unreported" if child.reported else "starting")

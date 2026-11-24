@@ -34,6 +34,7 @@ from agent6.harness import (
 from agent6.providers import ProviderResponse
 from agent6.sessions import budget_events, child_dispatch, event_log, journal
 from agent6.tools import results as tools_results
+from agent6.viewmodel import wire
 from tests import child_env
 
 
@@ -889,6 +890,7 @@ def test_recovering_unknown_usage_does_not_return_a_completed_group_again(
     failed = dispatcher.failed_launch(running, OSError("launch refused"), submitted={child.name})
     with (child / "logs.jsonl").open("a") as log:
         log.write('{"type":"budget.update","usd_total":0.5}\n')
+        log.write('{"type":"session.stop","reason":"answered"}\n')
     _resume(parent, "next")
     meter = _tracker()
     for _ in range(2):
@@ -902,6 +904,15 @@ def test_recovering_unknown_usage_does_not_return_a_completed_group_again(
     assert done.settled and done.usage is not None and done.usage.usd == 0.5
     assert not missing.settled and missing.usage is None
     assert meter.estimate_usd()[0] == 0.5
+    (child / "logs.jsonl").unlink()
+    charged, refused = wire.manifest_header(parent)["children"]
+    assert (charged["status_label"], charged["outcome"], charged["spend_usd"]) == (
+        "unreported",
+        "",
+        0.5,
+    )
+    assert not charged["launched"] and charged["error"] == failed.message
+    assert refused["status"] == "failed" and refused["error"] == failed.message
 
 
 def test_a_result_completed_but_undelivered_is_delivered_once(
