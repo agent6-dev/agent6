@@ -825,6 +825,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
     - up to `--max-attempts` (default 3); the agent patches the files it wrote
 - the result is a draft: `-o <file>` overwrites the file and same-named files in the `scripts/` directory beside it
     - without `-o`, `<name>.asm.toml` in the cwd and its script targets are never clobbered (a collision prints the machine to stdout, exits non-zero)
+- for each variable a drafted `tool` state lists in `pass_env` and your `[machine].pass_env` lacks, `create` prints the command that allows it: `agent6 config add machine.pass_env <NAME>`
 - each attempt is watchable: a draft dir under the state dir carries the prompt, the transcript, and a `logs.jsonl` the TUI/web follow live
     - the CLI streams in the foreground; the TUI and web start detached and follow the dir
 - `create` publishes a draft for review; `machine run` checks for uncommitted bundle pieces inside the cwd's git work tree, including when started from a subdirectory

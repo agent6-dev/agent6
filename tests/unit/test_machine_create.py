@@ -107,6 +107,18 @@ def test_authoring_guide_describes_the_metered_budget() -> None:
     assert "best_effort_usd_limit" not in prompt
 
 
+def test_authoring_guide_teaches_pass_env_and_its_example_declares_it() -> None:
+    """The example read `PRICE_FEED_TOKEN` with no `pass_env`, so no jail passed it."""
+    prompt = build_authoring_prompt("Poll a queue", attempt=1)
+    assert 'pass_env = ["PRICE_FEED_TOKEN"]' in prompt
+    assert "`[machine].pass_env`" in prompt
+
+
+def test_authoring_guide_names_no_cron_key() -> None:
+    """A `wait` state has no `cron` key, so the guide names none."""
+    assert "cron" not in build_authoring_prompt("Poll a queue", attempt=1)
+
+
 def test_authoring_guide_does_not_call_the_data_dir_the_one_writable_spot() -> None:
     """The guide never calls the data dir the one writable spot under `partial`.
 
@@ -1685,3 +1697,35 @@ def test_create_under_a_zero_dollar_cap_still_runs_its_first_attempt(
         main(["machine", "create", "--max-usd", "0", "--max-attempts", "3", "Greet the user"]) == 0
     )
     assert "exhausted after" not in capsys.readouterr().err
+
+
+def test_create_names_the_pass_env_grant_a_draft_needs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A draft whose tool names a variable left the operator to meet the run's refusal."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    asks = SCRIPT_MACHINE.replace(
+        'kind = "tool"', 'kind = "tool"\npass_env = ["FEED_TOKEN", "FEED_USER"]'
+    )
+    _stub_runner(
+        monkeypatch,
+        [
+            (
+                {"greeter.asm.toml": asks, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+            ),
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+            ),
+        ],
+    )
+    assert main(["machine", "create", "Run a script"]) == 0
+    err = capsys.readouterr().err
+    assert "  agent6 config add machine.pass_env FEED_TOKEN\n" in err
+    assert "  agent6 config add machine.pass_env FEED_USER\n" in err
+    assert (
+        main(["machine", "create", "Run a script", "-o", str(tmp_path / "b" / "m.asm.toml")]) == 0
+    )
+    assert "machine.pass_env" not in capsys.readouterr().err

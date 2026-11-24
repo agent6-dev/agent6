@@ -25,6 +25,7 @@ from agent6.config import ConfigError, layer
 from agent6.machine import (
     AgentRequest,
     MachineSpec,
+    ToolState,
     build_authoring_prompt,
     dry_run,
 )
@@ -166,6 +167,17 @@ def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter)
         workspace.parent.rmdir()
     if errors:
         reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
+
+
+def _pass_env_to_allow(spec: MachineSpec, allowed: tuple[str, ...]) -> list[str]:
+    """Return the variables the machine's tools name that `[machine].pass_env` lacks, sorted."""
+    asked = {
+        name
+        for state in spec.states.values()
+        if isinstance(state, ToolState)
+        for name in state.pass_env
+    }
+    return sorted(asked - set(allowed))
 
 
 def new_draft_dir(state: pathlib.Path) -> pathlib.Path:
@@ -527,6 +539,13 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             "Review and commit the bundle; `machine run` checks it for uncommitted changes"
             " when run from this repository."
         )
+    if to_allow := _pass_env_to_allow(spec, cfg.machine.pass_env):
+        reporter.err(
+            "The draft's tools read operator environment variables; `machine run` refuses"
+            " until your config allows each:"
+        )
+        for name in to_allow:
+            reporter.err(f"  agent6 config add machine.pass_env {name}")
     # A failure keeps the workspace: the draft in it is what the operator reads.
     _discard_workspace(workspace, reporter)
     return 0
