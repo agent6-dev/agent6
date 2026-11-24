@@ -17,6 +17,7 @@ def test_table_shows_acceptance_coverage_and_spread(
         split="scripted",
         model="scripted/worker",
         effort="medium",
+        max_plan_points=2.0,
         revision="tree",
         seed="seed",
         arm="text",
@@ -55,6 +56,7 @@ def test_table_shows_acceptance_coverage_and_spread(
     path.write_text("".join(json.dumps(r) + "\n" for r in (base, other, absent)))
     table.print_set(path)
     text = capsys.readouterr().out
+    assert text.startswith("scripted | scripted/worker | effort medium | plan cap 2 | tree\n")
     assert "text | 2 | 1/2 | 1 | 0 [0,0] | 7 [4,10] | 60 [60,60] (1/2)" in text
     assert "0.5 [0,1] | 1 [0,2] | 2.5 [1.5,3.5]" in text
     assert "id | 1 | ? | 1 | ? | ?" in text

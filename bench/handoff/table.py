@@ -15,7 +15,10 @@ def print_set(path: pathlib.Path) -> None:
     if not rows:
         raise ValueError(f"no runs in {path}")
     first = rows[0]
-    print(f"{first['split']} | {first['model']} | effort {first['effort']} | {first['revision']}")
+    print(
+        f"{first['split']} | {first['model']} | effort {first['effort']}"
+        f" | plan cap {first['max_plan_points']:g} | {first['revision']}"
+    )
     print(
         "arm | n | all accepted/known | with issues | stuck | turns | fresh input | cache read | cache write | output | started twice | never started | under two (s) | off-arm calls"
     )

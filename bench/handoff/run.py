@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -23,7 +24,7 @@ SESSION = "handoff"
 EFFORT = "medium"
 
 
-def config(model: str, profile: pathlib.Path, *, scripted: bool) -> str:
+def config(model: str, profile: pathlib.Path, *, scripted: bool, max_plan_points: float) -> str:
     """Pin the queue policy and limits for the parent and its children."""
     sandbox = (
         'isolation = "auto"'
@@ -37,7 +38,7 @@ effort = "{EFFORT}"
 control = "model"
 [budget]
 max_usd = 1.0
-max_plan_points = 2.0
+max_plan_points = {max_plan_points}
 max_tokens_fallback = 100000
 [sandbox]
 {sandbox}
@@ -69,7 +70,14 @@ def seed(repo: pathlib.Path, env: dict[str, str]) -> str:
 
 
 def sample(
-    out: pathlib.Path, profile: pathlib.Path, model: str, arm: str, rep: int, *, scripted: bool
+    out: pathlib.Path,
+    profile: pathlib.Path,
+    model: str,
+    arm: str,
+    rep: int,
+    *,
+    scripted: bool,
+    max_plan_points: float,
 ) -> dict[str, Any]:
     """Queue the operator's tasks before the parent takes its first turn."""
     trial = out / f"{arm}-{rep}"
@@ -83,6 +91,7 @@ def sample(
         seed=None,
         model=model,
         effort=EFFORT,
+        max_plan_points=max_plan_points,
         journal=str(parent.logs_path.relative_to(out)),
         exit_code=None,
     )
@@ -92,7 +101,10 @@ def sample(
         with tool_runs.environment(trial, profile) as env:
             row["seed"] = seed(repo, env)
             cfg = trial / "run.toml"
-            cfg.write_text(config(model, profile, scripted=scripted), encoding="utf-8")
+            cfg.write_text(
+                config(model, profile, scripted=scripted, max_plan_points=max_plan_points),
+                encoding="utf-8",
+            )
             for title in job.TITLES:
                 ipc.queue_request(parent.session_dir, "task", title)
             cli = pathlib.Path(sys.executable).with_name("agent6")
@@ -141,12 +153,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--model", help="Live provider/model (default: chatgpt/gpt-6.2-sol)")
     parser.add_argument("--reps", type=int, default=3, help="Runs per arm (default: 3)")
     parser.add_argument(
+        "--max-plan-points",
+        type=float,
+        default=2.0,
+        help="Plan cap per run, in percentage points (default: 2)",
+    )
+    parser.add_argument(
         "--out", type=pathlib.Path, required=True, help="New directory outside the checkout"
     )
     args = parser.parse_args(argv)
     out = args.out.resolve()
     if out.is_relative_to(ROOT) or out.exists() or args.reps < 1:
         parser.error("use a new output directory outside the checkout and at least one replicate")
+    if not math.isfinite(args.max_plan_points) or args.max_plan_points < 0:
+        parser.error("--max-plan-points needs a finite nonnegative cap")
     if args.scripted:
         if args.model:
             parser.error("--model selects a live route; omit it with --scripted")
@@ -169,7 +189,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     with source as profile, (out / "results.jsonl").open("x", encoding="utf-8") as stream:
         for rep in range(1, args.reps + 1):
             for arm in ("text", "id") if rep % 2 else ("id", "text"):
-                row = sample(out, profile, model, arm, rep, scripted=args.scripted)
+                row = sample(
+                    out,
+                    profile,
+                    model,
+                    arm,
+                    rep,
+                    scripted=args.scripted,
+                    max_plan_points=args.max_plan_points,
+                )
                 print(json.dumps(dict(revision=revision, **row)), file=stream, flush=True)
                 if row["issues"]:
                     print(f"{arm}-{rep}: {'; '.join(row['issues'])}", file=sys.stderr)

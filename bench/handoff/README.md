@@ -19,7 +19,7 @@ The ceiling is two children, not two attempts at one task.
 **Controls.** Each run starts at the same commit in a fresh repository with private config, state, data, cache and HOME.
 The parent and children use `git.control = "model"`, the selected route and `medium` effort.
 The parent has 48 turns; the children use the run's remaining budget.
-Each run has a $1 cap, a 2-point plan cap and a 100,000-token fallback.
+Each run has a $1 cap, a plan cap (`--max-plan-points`, default 2 points) and a 100,000-token fallback.
 The job needs no edits, commands, merge, verify gate or review panel.
 Command tools that execute shell commands are withheld.
 
@@ -57,7 +57,7 @@ Freeze the job and settings before evaluation; do not pool the smoke or scripted
 ## Journal measures
 
 `results.jsonl` keeps one line per run, including failed and capped runs.
-Each line names the revision, seed commit, arm, replicate, parent journal, CLI exit code and stop reason.
+Each line names the revision, seed commit, arm, replicate, plan cap, parent journal, CLI exit code and stop reason.
 The run directory keeps the config, checkout, console log and journals.
 
 | Measure | Evidence in the parent journal |

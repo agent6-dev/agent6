@@ -37,6 +37,7 @@ def test_scripted_pair_uses_the_same_queue_and_real_child_journals(tmp_path: pat
     assert len({r["seed"] for r in rows}) == 1
     for row in rows:
         assert row["issues"] == [] and row["exit_code"] == 0
+        assert row["max_plan_points"] == 2
         assert row["all_accepted"] is True and row["stop_reason"] == "finish_session"
         assert row["started_twice"] == row["never_started"] == row["off_arm_calls"] == 0
         assert list(row["starts_by_task"].values()) == [1] * 6
@@ -93,7 +94,11 @@ def test_a_deviating_parent_keeps_its_measures_and_its_flags(
     monkeypatch.setattr(scripted, "parent_reply", deviate)
     monkeypatch.setenv("AGENT6_ALLOW_ROOT", "1")
     with scripted.profile() as profile:
-        row = run.sample(tmp_path, profile, "scripted/worker", "text", 1, scripted=True)
+        row = run.sample(
+            tmp_path, profile, "scripted/worker", "text", 1, scripted=True, max_plan_points=5
+        )
+    budget = tomllib.loads((tmp_path / "text-1/run.toml").read_text())["budget"]
+    assert row["max_plan_points"] == budget["max_plan_points"] == 5
     assert row["issues"] == ["child handoff-p2-l1 used scripted/alternate"]
     assert (row["off_arm_calls"], row["all_accepted"]) == (1, True)
     # The scripted parent refills by children started, so the second attempt displaces beech.
@@ -112,6 +117,10 @@ def test_live_profile_cannot_override_the_job_or_isolation(tmp_path: pathlib.Pat
     with pytest.raises(SystemExit):
         run.main(["--profile", str(profile), "--out", str(out)])
     assert not out.exists()
-    cfg = tomllib.loads(run.config("sample/model", profile, scripted=False))
+    with pytest.raises(SystemExit):
+        run.main(["--scripted", "--max-plan-points", "nan", "--out", str(out)])
+    assert not out.exists()
+    cfg = tomllib.loads(run.config("sample/model", profile, scripted=False, max_plan_points=5))
+    assert cfg["budget"]["max_plan_points"] == 5
     assert cfg["sandbox"]["isolation"] == "full" and cfg["sandbox"]["run_commands"] == "deny"
     assert cfg["git"]["control"] == "model" and cfg["harness"]["parallel"]["max_children"] == 2
