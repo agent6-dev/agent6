@@ -218,6 +218,24 @@ def test_compact_elides_oldest_when_over_threshold() -> None:
     assert contents[2] == c
 
 
+def test_cold_drop_keeps_edited_reads_and_can_distill_other_victims() -> None:
+    conv = loop_conversation.Conversation()
+    hot = "hot evidence " * 1000
+    for path in ("hot.py", "hot.py", "other.py"):
+        _add_exchange(conv, ("read_file", {"path": path}, hot))
+    _add_exchange(conv, ("apply_edit", {"path": "hot.py"}, "edited"))
+    _add_exchange(conv, *(("run_command", {}, c * 1000) for c in "xyz"))
+    stats = compaction_rules.compact_old_tool_results(
+        conv,
+        max_total_bytes=None,
+        protect_paths=compaction_rules.recently_edited_paths(conv),
+        gister=lambda batch: {read.path: "file facts" for read in batch},
+    )
+    contents = _result_contents(conv)
+    assert contents[:2] == [hot, hot] and contents[-3:] == [c * 1000 for c in "xyz"]
+    assert stats.gist_paths == ("other.py",) and "file facts" in contents[2]
+
+
 def test_compact_drops_to_half_the_bound_then_leaves_room_to_grow() -> None:
     """A drop frees several turns of headroom instead of trimming each turn."""
     conv = loop_conversation.Conversation()

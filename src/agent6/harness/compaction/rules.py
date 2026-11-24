@@ -187,7 +187,7 @@ def count_elisions(conversation: loop_conversation.Conversation) -> tuple[int, i
 def compact_old_tool_results(
     conversation: loop_conversation.Conversation,
     *,
-    max_total_bytes: int,
+    max_total_bytes: int | None,
     keep_recent: int = 2,
     protect_paths: frozenset[str] = frozenset(),
     gister: compaction_elision.Gister | None = None,
@@ -207,7 +207,8 @@ def compact_old_tool_results(
 
     Args:
         conversation: The loop's history, rewritten in place.
-        max_total_bytes: The bound on tool_result content.
+        max_total_bytes: The bound on tool_result content. None replaces every eligible
+            result without touching reads of recently edited files.
         keep_recent: How many of the newest results always stay.
         protect_paths: The actively-edited paths from `recently_edited_paths`.
         gister: The distiller; None elides to bare markers.
@@ -216,22 +217,21 @@ def compact_old_tool_results(
         What the pass did.
     """
     pointers, total = _tool_result_pointers(conversation)
-    if total <= max_total_bytes or len(pointers) <= keep_recent:
+    if len(pointers) <= keep_recent or (max_total_bytes is not None and total <= max_total_bytes):
         return CompactionStats()
 
-    target = max_total_bytes // 2
+    target = max_total_bytes // 2 if max_total_bytes is not None else None
     # Dedup first: freeing duplicate bytes is lossless and may spare real content.
-    deduped_calls = _dedupe_identical_results(conversation, pointers, keep_recent=keep_recent)
+    deduped_calls = _dedupe_identical_results(
+        conversation,
+        pointers,
+        keep_recent=keep_recent,
+        protect_paths=protect_paths if target is None else frozenset(),
+    )
     if deduped_calls:
         pointers, total = _tool_result_pointers(conversation)
-        if total <= target:
+        if target is not None and total <= target:
             return CompactionStats(deduped_calls=deduped_calls)
-
-    def _is_protected(message_idx: int, item_idx: int) -> bool:
-        call = _result_at(conversation, message_idx, item_idx).for_call
-        if call.name != "read_file" or not isinstance(call.input, dict):
-            return False
-        return str(call.input.get("path", "")) in protect_paths
 
     undelivered_message = _undelivered_result_message(conversation, pointers)
     older = pointers[:-keep_recent] if keep_recent else pointers
@@ -242,10 +242,15 @@ def compact_old_tool_results(
         and not _is_operator_answer(_result_at(conversation, c[0], c[1]))
     ]
     if protect_paths:
-        # Protected reads go last, each group staying oldest-first.
-        candidates = [c for c in candidates if not _is_protected(c[0], c[1])] + [
-            c for c in candidates if _is_protected(c[0], c[1])
+        hot = [
+            c
+            for c in candidates
+            if _protected_read(_result_at(conversation, c[0], c[1]), protect_paths)
         ]
+        exempt = set(hot)
+        candidates = [c for c in candidates if c not in exempt]
+        if target is not None:
+            candidates.extend(hot)
 
     walk = _Tier1Pass(
         conversation=conversation,
@@ -280,6 +285,16 @@ def _is_operator_answer(item: loop_conversation.ToolResultItem) -> bool:
         True for an `ask_user` result.
     """
     return item.for_call.name == ASK_USER_TOOL
+
+
+def _protected_read(item: loop_conversation.ToolResultItem, paths: frozenset[str]) -> bool:
+    """Return whether this read supplied a recently edited file."""
+    call = item.for_call
+    return (
+        call.name == "read_file"
+        and isinstance(call.input, dict)
+        and str(call.input.get("path", "")) in paths
+    )
 
 
 def _result_at(
@@ -324,6 +339,7 @@ def _dedupe_identical_results(
     pointers: list[tuple[int, int, int]],
     *,
     keep_recent: int,
+    protect_paths: frozenset[str],
 ) -> tuple[str, ...]:
     """Replace every copy but the newest of a byte-identical result with a placeholder.
 
@@ -337,6 +353,7 @@ def _dedupe_identical_results(
         conversation: The loop's history, rewritten in place.
         pointers: The result positions from `_tool_result_pointers`.
         keep_recent: How many of the newest results always stay.
+        protect_paths: Reads to leave whole on a cold drop.
 
     Returns:
         The `compaction_elision.call_label` of each copy replaced.
@@ -353,6 +370,7 @@ def _dedupe_identical_results(
             item.content.startswith(compaction_elision.ELISION_PREFIX)
             or len(item.content) < _DEDUP_MIN_CHARS
             or _is_operator_answer(item)
+            or _protected_read(item, protect_paths)
             or item.attachment is not None
         ):
             continue
@@ -402,7 +420,7 @@ class _Tier1Pass:
     """
 
     conversation: loop_conversation.Conversation
-    max_total_bytes: int
+    max_total_bytes: int | None
     protect_paths: frozenset[str]
     candidates: list[tuple[int, int, int]]
     total: int
@@ -423,7 +441,7 @@ class _Tier1Pass:
         """
         planned = self.total
         for message_idx, item_idx, size in self.candidates:
-            if planned <= self.max_total_bytes:
+            if self.max_total_bytes is not None and planned <= self.max_total_bytes:
                 break
             item = self._item(message_idx, item_idx)
             if item.content.startswith(compaction_elision.ELISION_PREFIX):
@@ -437,7 +455,9 @@ class _Tier1Pass:
             self.victims.append((message_idx, item_idx, size))
             planned -= size - len(placeholder)
         # What a gist may add back on top of the bare-placeholder plan.
-        self.gist_headroom = self.max_total_bytes - planned
+        self.gist_headroom = (
+            self.total if self.max_total_bytes is None else self.max_total_bytes
+        ) - planned
 
     def distill(self, gister: compaction_elision.Gister) -> None:
         """Make one batched distiller call over the eligible victims.
@@ -534,7 +554,7 @@ class _Tier1Pass:
 
     def demote(self) -> None:
         """Demote gist placeholders oldest-first to the bare marker while over budget."""
-        if self.total <= self.max_total_bytes:
+        if self.max_total_bytes is None or self.total <= self.max_total_bytes:
             return
         for message_idx, item_idx, _size in self.candidates:
             if self.total <= self.max_total_bytes:
