@@ -190,6 +190,7 @@ class OpenAIProvider:
     budget: agent6_budget.BudgetTracker | None = None
     provider_name: str = ""
     reasoning_effort: str | None = None
+    service_tier: str | None = None
     credential: provider_types.BearerCredential | None = None
     # Latched on a parameter-rejection 400 (an Azure reasoning deployment has an arbitrary name)
     # so the rest of the run builds the right body first; lists, since the dataclass is frozen.
@@ -333,6 +334,8 @@ class OpenAIProvider:
             body["tools"] = openai_messages.tools_to_openai(tools)
         if tool_choice == "none":
             body["tool_choice"] = tool_choice
+        if self.service_tier is not None:
+            body["service_tier"] = self.service_tier
         if self.extra_body:
             # The structural keys stay agent6's; tuning keys merge last and win.
             reserved = {

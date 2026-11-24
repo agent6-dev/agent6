@@ -272,6 +272,7 @@ class TranscriptAttempt:
             request.headers: The request headers, with secret-bearing values redacted.
             request.body: The redacted body, with message and prompt references into objects/.
             response: What the attempt received before it ended.
+            response.service_tier: The processing tier that served the call, when reported.
             response.model: The model that served the call, when reported.
             response.status: The HTTP status, or 0 when no response opened.
             response.headers: The response headers, with secret-bearing values redacted.

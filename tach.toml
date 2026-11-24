@@ -696,7 +696,7 @@ depends_on = ["agent6.config.validation"]
 
 [[modules]]
 path = "agent6.config.provider_config"
-depends_on = ["agent6.config.header_config", "agent6.config.oauth_config", "agent6.config.sandbox_config", "agent6.config.validation"]
+depends_on = ["agent6.config.header_config", "agent6.config.oauth_config", "agent6.config.sandbox_config", "agent6.config.validation", "agent6.kinds"]
 
 [[modules]]
 # The [container] model: which container runs the commands, and its start and stop.

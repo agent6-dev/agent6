@@ -119,3 +119,97 @@ def test_serving_an_alias_is_a_recorded_fact_not_a_failure(
     assert all(r["model"] == "alias" and r["served_model"] == "snapshot" and r["ok"] for r in rows)
     assert transcript["response"]["body"]["model"] == "snapshot"
     assert "asked alias, served snapshot" in worker.budget.format_summary()
+
+
+@pytest.mark.parametrize("backend", ["openai", "responses"])
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize(
+    ("tier", "asked", "served", "ok"),
+    [
+        ("fast", "priority", "priority", True),
+        ("auto", "auto", "flex", True),
+        ("standard", "default", "priority", False),
+        ("flex", "flex", "default", False),
+        (None, None, "priority", True),
+    ],
+)
+def test_service_tier_is_enforced_after_accounting(
+    tmp_path: pathlib.Path,
+    backend: str,
+    stream: bool,
+    tier: str | None,
+    asked: str | None,
+    served: str,
+    ok: bool,
+) -> None:
+    settings = {"service_tier": tier} if tier else {}
+    with provider_endpoint.serve(
+        _reply(backend, stream, {"model": "m", "service_tier": served})
+    ) as (url, calls):
+        worker = _worker(tmp_path, url, backend, stream, **settings)
+        if ok:
+            worker.call(system="s", messages=[])
+        else:
+            with pytest.raises(
+                provider_types.ProviderError, match=r"providers\.work\.service_tier"
+            ) as exc:
+                worker.call(system="s", messages=[])
+            assert exc.value.fatal
+    assert [c.get("service_tier") for c in calls] == [asked]
+    transcript, rows = _records(tmp_path)
+    assert transcript["response"]["body"]["service_tier"] == served
+    assert [r["type"] for r in rows] == ["model.attempt", "model.result"]
+    assert all(
+        (
+            r.get("requested_service_tier"),
+            r["served_service_tier"],
+            r["ok"],
+            r["input_tokens"],
+            r["served_model"],
+        )
+        == (asked, served, ok, 10, "m")
+        for r in rows
+    )
+    assert worker.budget.snapshot().unmetered_tokens == 12
+
+
+@pytest.mark.parametrize(("backend", "stream"), [("responses", True), ("openai", False)])
+def test_a_tier_refusal_names_the_key_and_keeps_the_reason(
+    tmp_path: pathlib.Path, backend: str, stream: bool
+) -> None:
+    error = {"param": "service_tier", "message": "The account cannot use priority."}
+    with provider_endpoint.serve({"error": error}, status=400) as (url, calls):
+        worker = _worker(tmp_path, url, backend, stream, service_tier="fast")
+        with pytest.raises(provider_types.ProviderError) as exc:
+            worker.call(system="s", messages=[])
+    assert "providers.work.service_tier" in str(exc.value) and error["message"] in str(exc.value)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("backend", ["openai", "responses"])
+def test_the_direct_default_is_standard_and_a_tier_in_extra_body_is_refused(backend: str) -> None:
+    entry = {"backend": backend, "base_url": "https://api.openai.com/v1"}
+    cfg = config.Config.model_validate({"providers": {"work": entry}})
+    assert cfg.providers["work"].model_dump()["service_tier"] == "standard"
+    with pytest.raises(ValueError, match=r"extra_body\.service_tier"):
+        config.Config.model_validate(
+            {"providers": {"work": {**entry, "extra_body": {"service_tier": "auto"}}}}
+        )
+
+
+@pytest.mark.parametrize("stream", [True, False])
+def test_a_2xx_tier_refusal_keeps_the_key(tmp_path: pathlib.Path, stream: bool) -> None:
+    error = {
+        "code": "invalid_request_error",
+        "message": "Account not enrolled",
+        "param": "service_tier",
+    }
+    body = {"status": "failed", "error": error}
+    with provider_endpoint.serve(
+        [{"type": "response.failed", "response": body}] if stream else body
+    ) as (url, calls):
+        worker = _worker(tmp_path, url, "responses", stream, service_tier="flex")
+        with pytest.raises(provider_types.ProviderError) as exc:
+            worker.call(system="s", messages=[])
+    assert exc.value.fatal and "providers.work.service_tier" in str(exc.value)
+    assert "Account not enrolled" in str(exc.value) and len(calls) == 1

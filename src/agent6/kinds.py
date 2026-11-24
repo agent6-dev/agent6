@@ -27,6 +27,13 @@ RoleName = Literal["default", "helper", "planner", "reviewer", "worker"]
 MODEL_ROLES: tuple[RoleName, ...] = ("default", "helper", "planner", "reviewer", "worker")
 # The provider's reasoning setting; its meaning depends on the backend.
 EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
+ServiceTier = Literal["standard", "flex", "fast", "auto"]
+TIER_WIRE: dict[ServiceTier, str] = {
+    "standard": "default",
+    "flex": "flex",
+    "fast": "priority",
+    "auto": "auto",
+}
 # The modes `agent6 resume` accepts; `session_kind` answers the wider "is this a known mode".
 ResumableMode = Literal["run", "plan", "ask"]
 # The modes `run_task` starts and the Harness drives; `machine` is driven by the machine agent.
@@ -576,6 +583,8 @@ class Serving:
     """The serving facts the endpoint reported for this attempt."""
 
     model: str | None = None
+    requested_tier: str | None = None
+    tier: str | None = None
 
     def observe(self, response: object) -> Serving:
         """Read serving facts from a response or stream frame.
@@ -586,17 +595,31 @@ class Serving:
         Returns:
             The reported facts, retaining fields absent in this frame.
         """
-        if isinstance(response, dict) and isinstance(model := response.get("model"), str) and model:
-            return dataclasses.replace(self, model=model)
-        return self
+        if not isinstance(response, dict):
+            return self
+        model = response.get("model")
+        tier = response.get("service_tier")
+        return dataclasses.replace(
+            self,
+            model=model if isinstance(model, str) and model else self.model,
+            tier=tier if isinstance(tier, str) and tier else self.tier,
+        )
 
     def wire_fields(self) -> dict[str, str]:
         """Return the observed fields for a reconstructed response."""
-        return {"model": self.model} if self.model is not None else {}
+        fields = {"model": self.model} if self.model is not None else {}
+        if self.tier is not None:
+            fields["service_tier"] = self.tier
+        return fields
 
     def event_fields(self) -> dict[str, str]:
         """Return the observed fields for this call's journal rows."""
-        return {"served_model": self.model} if self.model is not None else {}
+        fields = {"served_model": self.model} if self.model is not None else {}
+        if self.requested_tier is not None:
+            fields["requested_service_tier"] = self.requested_tier
+        if self.tier is not None:
+            fields["served_service_tier"] = self.tier
+        return fields
 
 
 UNREPORTED = Serving()

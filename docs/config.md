@@ -129,6 +129,7 @@ A minimal block is just `backend` (plus `base_url` for a non-default host).
 | `<name>.price_from` | per endpoint | Configured provider whose listing supplies token rates instead of this entry's own listing; default: openrouter for direct Anthropic and OpenAI endpoints |
 | `<name>.prompt_caching` | `true` | prompt caching for `backend = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
 | `<name>.server_compaction` | `true` | true on a supported model: the endpoint clears old tool results and writes the summary; agent6 changes no earlier message there; false or an unsupported model: agent6 compacts by itself; default: true for `deployment = "direct"` without a configured `base_url`, false otherwise |
+| `<name>.service_tier` | none | Processing tier on Chat Completions and Responses: standard, flex, fast, or auto for the project's choice; default: standard at api.openai.com, unset elsewhere<ul><li><code>standard</code>: Use standard processing</li><li><code>fast</code>: Request priority processing</li><li><code>flex</code>: Request flex processing</li><li><code>auto</code>: Let the project choose</li></ul> |
 | `<name>.binary` | `"claude"` | executable for `backend = "claude_code"` only; a name on PATH or an absolute path |
 
 ### Request headers
@@ -234,6 +235,13 @@ base_url = "https://RESOURCE.openai.azure.com"
 api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
+
+`service_tier` applies to `openai` and `responses` entries.
+The wire values for `standard`, `flex`, `fast` and `auto` are `default`, `flex`, `priority` and `auto`.
+Direct calls to `api.openai.com` request `standard` unless configured otherwise.
+Other endpoints get no tier by default.
+A tier refusal stops the call. If the response names a different tier, agent6 records its usage and stops unless the request selected `auto` or sent no tier.
+A different serving model is recorded beside the requested id in the token summary without stopping the run.
 
 ### Responses API endpoint (`backend = "responses"`)
 

@@ -183,6 +183,13 @@ api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
 
+`service_tier` applies to `openai` and `responses` entries.
+The wire values for `standard`, `flex`, `fast` and `auto` are `default`, `flex`, `priority` and `auto`.
+Direct calls to `api.openai.com` request `standard` unless configured otherwise.
+Other endpoints get no tier by default.
+A tier refusal stops the call. If the response names a different tier, agent6 records its usage and stops unless the request selected `auto` or sent no tier.
+A different serving model is recorded beside the requested id in the token summary without stopping the run.
+
 ### Responses API endpoint (`backend = "responses"`)
 
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.

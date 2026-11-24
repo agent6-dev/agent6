@@ -381,6 +381,7 @@ def _provider_from_entry(
             budget=budget,
             provider_name=provider_name,
             reasoning_effort=effort,
+            service_tier=entry.wire_tier,
             credential=credential,
             auth_observer=auth_observer,
         )
@@ -398,6 +399,7 @@ def _provider_from_entry(
         budget=budget,
         provider_name=provider_name,
         reasoning_effort=effort,
+        service_tier=entry.wire_tier,
         credential=credential,
         auth_observer=auth_observer,
     )

@@ -381,6 +381,9 @@ def stream_error(
     code = str(err.get("code") or "")
     status = 429 if code in usage_limit_codes else None
     detail = str(err.get("message") or code or "unknown error")
+    if err.get("param") == "service_tier":
+        status = 400
+        detail += ' (param: "service_tier")'
     if code == "unsupported_value" and err.get("param") == "reasoning.effort":
         status = 400
         detail += ' (param: "reasoning.effort")'

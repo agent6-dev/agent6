@@ -324,6 +324,7 @@ class SseCall:
                 request_headers=self.headers,
                 request_body=self.body,
             )
+        self.transcript.serving = kinds.Serving(requested_tier=self.body.get("service_tier"))
         with self.transcript.capture():
             yield
 

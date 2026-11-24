@@ -616,6 +616,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `model` | `str` | Model identifier. |
+| `requested_service_tier` | `str, optional` | Processing tier sent on the wire, when requested. |
+| `served_service_tier` | `str, optional` | Processing tier the endpoint reported. |
 | `served_model` | `str, optional` | Model that served this attempt, when reported. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the attempt with its model call. |
@@ -668,6 +670,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `model` | `str` | Model identifier. |
+| `requested_service_tier` | `str, optional` | Processing tier sent on the wire, when requested. |
+| `served_service_tier` | `str, optional` | Processing tier the endpoint reported. |
 | `served_model` | `str, optional` | Model that served this attempt, when reported. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the model call with its result. |

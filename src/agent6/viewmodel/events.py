@@ -361,6 +361,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             return journal.ModelAttempt(
                 actor=_text(raw, "actor"),
                 model=_text(raw, "model"),
+                requested_service_tier=raw.get("requested_service_tier"),
+                served_service_tier=raw.get("served_service_tier"),
                 served_model=raw.get("served_model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
@@ -378,6 +380,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             return journal.ModelResult(
                 actor=_text(raw, "actor"),
                 model=_text(raw, "model"),
+                requested_service_tier=raw.get("requested_service_tier"),
+                served_service_tier=raw.get("served_service_tier"),
                 served_model=raw.get("served_model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),

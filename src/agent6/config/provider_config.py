@@ -11,6 +11,7 @@ from urllib import parse
 
 import pydantic
 
+from agent6 import kinds
 from agent6.config import header_config, oauth_config, sandbox_config, validation
 
 _BACKEND_MEANINGS: dict[str, pydantic.JsonValue] = {
@@ -328,6 +329,10 @@ class _ProviderBase(pydantic.BaseModel):
         Raises:
             ValueError: A value is non-finite or has a non-JSON type, such as a TOML date or time.
         """
+        if "service_tier" in v:
+            raise ValueError(
+                "set service_tier on an openai or responses entry, not extra_body.service_tier"
+            )
         for key, value in v.items():
             _require_json_shaped(value, f".{key}")
         return v
@@ -472,7 +477,38 @@ class AnthropicProviderEntry(PricedProviderEntry):
     )
 
 
-class OpenAIProviderEntry(PricedProviderEntry):
+class _TieredProviderEntry(PricedProviderEntry):
+    """An OpenAI wire that carries a service tier."""
+
+    service_tier: kinds.ServiceTier | None = pydantic.Field(
+        default=None,
+        description=(
+            "Processing tier on Chat Completions and Responses: standard, flex, fast, or auto "
+            "for the project's choice; default: standard at api.openai.com, unset elsewhere"
+        ),
+        json_schema_extra={
+            "choice_meanings": {
+                "standard": "Use standard processing",
+                "fast": "Request priority processing",
+                "flex": "Request flex processing",
+                "auto": "Let the project choose",
+            }
+        },
+    )
+
+    @pydantic.model_validator(mode="after")
+    def _default_tier(self) -> _TieredProviderEntry:
+        if self.service_tier is None and self.direct_vendor == "openai":
+            object.__setattr__(self, "service_tier", "standard")
+        return self
+
+    @property
+    def wire_tier(self) -> str | None:
+        """The requested tier in the endpoint's vocabulary."""
+        return kinds.TIER_WIRE[self.service_tier] if self.service_tier is not None else None
+
+
+class OpenAIProviderEntry(_TieredProviderEntry):
     """The OpenAI Chat Completions wire format.
 
     `direct` serves OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp and Gemini's
@@ -577,7 +613,7 @@ class ChatGPTProviderEntry(_ProviderBase):
         return self
 
 
-class ResponsesProviderEntry(PricedProviderEntry):
+class ResponsesProviderEntry(_TieredProviderEntry):
     """The Responses API on a configured endpoint.
 
     `/responses` is appended to `base_url`, which has no vendor default; `direct` is the only

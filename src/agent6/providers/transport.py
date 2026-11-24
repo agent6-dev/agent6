@@ -212,7 +212,8 @@ def _envelope_detail(err: object) -> str:
     """Return an error envelope as `code: message`, tolerating a bare string or an empty object."""
     if isinstance(err, dict):
         label = err.get("code") or err.get("type") or "error"
-        return f"{label}: {err.get('message') or err}"
+        param = f" (param: {err['param']})" if err.get("param") else ""
+        return f"{label}: {err.get('message') or err}{param}"
     return str(err)
 
 
@@ -248,6 +249,17 @@ def meter_completion(
             cache_read_tokens=parsed.cache_read_tokens,
             cache_write_tokens=parsed.cache_write_tokens,
             cost_usd=parsed.cost_usd,
+        )
+    serving = parsed.serving
+    if serving.requested_tier not in (None, "auto") and serving.tier not in (
+        None,
+        serving.requested_tier,
+    ):
+        raise provider_types.ProviderError(
+            f"providers.{route.provider}.service_tier: asked {serving.requested_tier!r},"
+            f" served {serving.tier!r}",
+            fatal=True,
+            usage=parsed.usage,
         )
     if (
         parsed.stop_reason.strip().lower() == "error"
@@ -354,6 +366,7 @@ class ProviderCall:
                     self._observe_recovery(recovery_pending, exc.status_code)
                     recovery_pending = False
                     exc.args = (self._safe_text(str(exc), headers),)
+                    self._refuse_tier(exc)
                     media_errors.raise_rejection(exc.status_code, str(exc), self.body)
                     if attempt + 1 < max_attempts and self.adapt_400(
                         exc.status_code, str(exc), self.body
@@ -379,17 +392,7 @@ class ProviderCall:
                 self._observe_recovery(recovery_pending, 200)
                 return result
 
-            transcript = (
-                self.transcript_sink.open(
-                    url=self.url,
-                    call_context=call.facts.context.call_context if call.facts.context else None,
-                    request_id=call.facts.request_id,
-                    request_headers=headers,
-                    request_body=self.body,
-                )
-                if self.transcript_sink is not None
-                else provider_types.TranscriptAttempt()
-            )
+            transcript = call._open_transcript(headers)
             with transcript.capture():
                 try:
                     resp = http_post(
@@ -407,6 +410,7 @@ class ProviderCall:
                 transcript.response_status = resp.status_code
                 transcript.response_headers = dict(resp.headers)
                 transcript.response_body = self._safe_text(resp.text, headers)[:8192]
+
                 if (
                     cred is not None
                     and not recovered
@@ -430,7 +434,7 @@ class ProviderCall:
                         " follow with credentials (the Location is not shown: it may echo them)",
                         status_code=resp.status_code,
                     )
-                if not 200 <= resp.status_code < 300:
+                if (error := self._response_error(resp, transcript.response_body)) is not None:
                     self._observe_recovery(recovery_pending, resp.status_code)
                     recovery_pending = False
                     media_errors.raise_rejection(resp.status_code, resp.text, self.body)
@@ -438,18 +442,69 @@ class ProviderCall:
                         resp.status_code, resp.text, self.body
                     ):
                         continue
-                    raise provider_types.ProviderError(
-                        f"{self.api_label} API error {resp.status_code}: "
-                        f"{self._safe_text(resp.text, headers)[:500]}",
-                        status_code=resp.status_code,
-                        retry_after_s=provider_types.parse_retry_after(resp.headers),
-                    )
+                    raise error
                 return call._decode_success(
                     headers, resp, transcript=transcript, recovery_pending=recovery_pending
                 )
         raise provider_types.ProviderError(
             f"{self.api_label} auth retry exhausted"
         )  # pragma: no cover
+
+    def _open_transcript(self, headers: dict[str, str]) -> provider_types.TranscriptAttempt:
+        """Return the transcript evidence for one JSON request."""
+        transcript = (
+            self.transcript_sink.open(
+                url=self.url,
+                call_context=self.facts.context.call_context if self.facts.context else None,
+                request_id=self.facts.request_id,
+                request_headers=headers,
+                request_body=self.body,
+            )
+            if self.transcript_sink is not None
+            else provider_types.TranscriptAttempt()
+        )
+        transcript.serving = kinds.Serving(requested_tier=self.body.get("service_tier"))
+        return transcript
+
+    def _response_error(
+        self, resp: httpx2.Response, detail: str
+    ) -> provider_types.ProviderError | None:
+        """Return an HTTP error with its status and retry hint, or None for success."""
+        if resp.status_code < 400:
+            return None
+        exc = provider_types.ProviderError(
+            f"{self.api_label} API error {resp.status_code}: {detail[:500]}",
+            status_code=resp.status_code,
+            retry_after_s=provider_types.parse_retry_after(resp.headers),
+        )
+        self._refuse_tier(exc)
+        return exc
+
+    def _refuse_tier(self, exc: provider_types.ProviderError) -> None:
+        """Keep a tier refusal out of the credential and sampling retry paths.
+
+        Args:
+            exc: The upstream error, with secrets removed.
+
+        Raises:
+            ProviderError: The endpoint named the tier in its refusal.
+        """
+        tier = self.body.get("service_tier")
+        if tier is None or exc.fatal:
+            return
+        detail = str(exc).lower()
+        named = (
+            "service_tier" in detail
+            or "service tier" in detail
+            or (tier in ("flex", "priority") and tier in detail)
+        )
+        if named or exc.status_code in (400, 422):
+            exc.args = (
+                f"request with providers.{self.route.provider}.service_tier = {tier!r}: {exc}",
+            )
+        if named:
+            exc.fatal = True
+            raise exc
 
     def _safe_text(self, text: str, headers: dict[str, str]) -> str:
         """Scrub image echoes and credentials before an error is logged or clipped.
@@ -512,12 +567,14 @@ class ProviderCall:
         err = data.get("error")
         if err and not _has_assistant_output(data):
             self._observe_recovery(recovery_pending, envelope_status(err))
-            raise provider_types.ProviderError(
+            error = provider_types.ProviderError(
                 f"{self.api_label} error in 2xx body: "
                 f"{self._safe_text(_envelope_detail(err), headers)}",
                 status_code=envelope_status(err),
                 retry_after_s=provider_types.parse_retry_after(resp.headers),
             )
+            self._refuse_tier(error)
+            raise error
         if self.budget is not None:
             self.require_metered(data)
         try:

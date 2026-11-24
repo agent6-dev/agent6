@@ -95,6 +95,7 @@ class ResponsesProvider:
     budget: agent6_budget.BudgetTracker | None = None
     provider_name: str = ""
     reasoning_effort: str | None = None
+    service_tier: str | None = None
     credential: provider_types.BearerCredential | None = None
     # Latched on a 400 naming `temperature` so the rest of the run omits it; a list, since
     # the dataclass is frozen.
@@ -230,6 +231,8 @@ class ResponsesProvider:
             body["reasoning"] = {"effort": "none" if effort == "off" else effort, "summary": "auto"}
         if temperature is not None and not self._omit_temperature[0]:
             body["temperature"] = temperature
+        if self.service_tier is not None:
+            body["service_tier"] = self.service_tier
         if self.extra_body:
             body.update(
                 {k: v for k, v in self.extra_body.items() if k not in responses_codec.RESERVED_BODY}

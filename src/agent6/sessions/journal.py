@@ -699,6 +699,12 @@ class ModelAttempt(Event):
         description="The calling role, optionally followed by a colon and detail."
     )
     model: str = pydantic.Field(description="Model identifier.")
+    requested_service_tier: str | None = pydantic.Field(
+        default=None, description="Processing tier sent on the wire, when requested."
+    )
+    served_service_tier: str | None = pydantic.Field(
+        default=None, description="Processing tier the endpoint reported."
+    )
     served_model: str | None = pydantic.Field(
         default=None, description="Model that served this attempt, when reported."
     )
@@ -798,6 +804,12 @@ class ModelResult(Event):
         description="The calling role, optionally followed by a colon and detail."
     )
     model: str = pydantic.Field(description="Model identifier.")
+    requested_service_tier: str | None = pydantic.Field(
+        default=None, description="Processing tier sent on the wire, when requested."
+    )
+    served_service_tier: str | None = pydantic.Field(
+        default=None, description="Processing tier the endpoint reported."
+    )
     served_model: str | None = pydantic.Field(
         default=None, description="Model that served this attempt, when reported."
     )
