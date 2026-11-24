@@ -155,3 +155,21 @@ Neither run lost an ID.
 Both marked the missing file passed despite its failed report.
 Both refused the parent’s attempt to change passed to failed.
 The final summaries named that failure.
+
+## Questions in a recorded parent queue
+
+Count one row per question in `question.prompt` in 56 child run journals, checked against `ask_user` tool calls.
+Match `question.answer` by session and question ID.
+Exclude nine questions the parent asked on its own behalf.
+Classify by who held the evidence, not by who received the notification.
+
+| Answer source | Questions | Example |
+|---|---:|---|
+| Parent's records | 1 | A child without access to its predecessor's review asked for seven findings and the reviewers' summaries. |
+| Operator only | 0 | None |
+| Child's repository | 0 | None |
+
+The single question was queued without waiting and had no recorded answer, so median time to answer is undefined.
+The parent could read the earlier child's journal and ultimately recovered the findings; the record does not show it had read all seven before the question.
+Its attempted steer reached an already ended child and delivered nothing.
+This sample cannot supply five examples per class or estimate savings from a parent answering questions.
