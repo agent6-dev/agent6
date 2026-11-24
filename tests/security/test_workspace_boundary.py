@@ -27,9 +27,9 @@ _SECRET = "AWS_SECRET_ACCESS_KEY=leaked-xyz"
 
 
 def _dispatcher(
-    root: pathlib.Path, cfg: Config, isolation: str = "none"
+    root: pathlib.Path, cfg: Config, isolation: kinds.IsolationLevel = "none"
 ) -> dispatch.ToolDispatcher:
-    return dispatch.ToolDispatcher(root=root, config=cfg, isolation=isolation)  # pyrefly: ignore[bad-argument-type]
+    return dispatch.ToolDispatcher(root=root, config=cfg, isolation=isolation)
 
 
 def _hiding(root: pathlib.Path, *rel: str) -> Config:
@@ -106,7 +106,7 @@ def test_a_hidden_file_never_reaches_the_symbol_index(tmp_path: pathlib.Path) ->
 
 @pytest.mark.parametrize("isolation", ["full", "partial", "none"])
 def test_the_boundary_holds_at_every_isolation_level(
-    tmp_path: pathlib.Path, isolation: str
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """Config values define the boundary, never the isolation level.
 
