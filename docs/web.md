@@ -134,7 +134,9 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - an open diff hides the repository toolbar, and the unselected graph has no empty details pane
     - split diffs fall back to inline when the diff pane is too narrow, keeping the saved split choice
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; several lines queue up before you write and start the run
-- **Files page**: the files at one revision in the repository `agent6 web` was started in; a symlink shows its target, a link when the revision lists it
+- **Files page**: opens on the working tree of the checkout where you started `agent6 web`.
+    - choose a commit in the revision box to read its files instead
+    - a symlink shows its target as a link when the revision lists it
     - a markdown file opens rendered in a sandboxed frame, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - an HTML file opens as **Source**; **Preview** shows it in a sandboxed frame, with repository CSS and images at the listed revision
     - HTML scripts are off by default; previews need HTTPS or localhost and refuse direct tabs

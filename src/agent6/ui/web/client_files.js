@@ -1,9 +1,6 @@
 // --- files -------------------------------------------------------------------
-// The Files tab: the files at one revision (HEAD to start, the working tree, or any
-// revision the picker finds) as a folder tree with a filter, and one file: text
-// with line numbers and highlighting, an image, or a binary file's size and kind. The
-// picked revision and the folders opened outlive a visit to another tab; the tree is fetched
-// again on return.
+// Files opens on the working tree unless the link names a revision.
+// Folder choices outlive a visit to another page.
 // The picker's { rev, label }; each folder path → open; the page's in-place opener, if any.
 const filesState = { rev: null, folders: new Map(), open: null, closePreview: null, previewScroll: null };
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
@@ -226,10 +223,10 @@ async function editFileText(path, afterSave) {
   } catch (e) { if (dialog.open) { loaded = null; buttons(); error.textContent = e.message; } }
 }
 
-async function renderFiles(gen, revision = '', path = '', query = new URLSearchParams()) {
+async function renderFiles(gen, revision, path = '', query = new URLSearchParams()) {
   if (query.has('panel')) return renderReviewedFile(gen, path, query);
-  // A hash at the revision listed, or naming none, moves within the page: the tree keeps its state.
-  const inPlace = (!revision || revision === filesState.rev?.rev) && filesState.open?.(path, query);
+  revision ||= GIT_WORKTREE;
+  const inPlace = revision === filesState.rev?.rev && filesState.open?.(path, query);
   if (inPlace) return inPlace;
   closeFilePreview();
   const refsData = await getJSON('/api/git/refs');
@@ -237,11 +234,11 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   view.innerHTML = '';
   const app = el('div', 'files-app'); view.appendChild(app);
   // A revision from the hash reads as the picker names it: a ref by its name, a full sha short.
-  if (revision && revision !== filesState.rev?.rev) {
+  if (revision === GIT_WORKTREE) filesState.rev = GIT_WORKTREE_PICK;
+  else if (revision !== filesState.rev?.rev) {
     const ref = refsData.refs.find(r => r.full === revision), sha = /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(revision);
-    filesState.rev = { rev: revision, label: revision === GIT_WORKTREE ? 'working tree' : ref ? ref.name : sha ? revision.slice(0, 7) : revision };
+    filesState.rev = { rev: revision, label: ref ? ref.name : sha ? revision.slice(0, 7) : revision };
   }
-  if (!filesState.rev) filesState.rev = refsData.head.sha ? { rev: 'HEAD', label: 'HEAD' } : GIT_WORKTREE_PICK;
   // The hash names the revision picked, so a reload keeps HEAD or a branch; the reads use the
   // commit its listing resolved to.
   const filesHash = (file = '') => '#/files/' + encodeURIComponent(filesState.rev.rev) + (file && '/' + file.split('/').map(encodeURIComponent).join('/'));

@@ -1164,13 +1164,14 @@ def test_files_marks_worktree_states_and_sums_folders(
     open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
 ) -> None:
     """Working-tree marks name untracked and modified files; clean files and commits get none."""
+    from playwright import sync_api
+
     page, errors = open_page(files_port)
     page.goto(f"http://127.0.0.1:{files_port}/#/files")
-    page.wait_for_selector(".files-tree [data-path='b.txt']")
-    assert page.locator(".files-tree .gf-st").count() == 0
-    page.locator(".files-bar .gpick input").click()
-    page.locator(".gpick-list .ac-item", has_text="working tree").click()
-    page.wait_for_selector(".files-tree [data-path='src/tool.py']")
+    revision = page.get_by_role("combobox", name="revision")
+    sync_api.expect(revision).to_have_value("working tree")
+    untracked = page.locator(".files-tree [data-path='src/tool.py']")
+    sync_api.expect(untracked).to_be_visible()
     for path, mark in (
         ("b.txt", "M"),
         ("img.bin", ""),
@@ -1183,10 +1184,13 @@ def test_files_marks_worktree_states_and_sums_folders(
     assert "1 untracked" in (
         page.locator(".files-tree [data-path='src'] .gf-st").get_attribute("title") or ""
     )
-    page.locator(".files-bar .gpick input").fill("HEAD")
-    page.locator(".files-bar .gpick input").press("Enter")
+    revision.click()
+    page.get_by_role("option", name=re.compile("merge feature")).click()
     page.wait_for_selector(".files-tree [data-path='dir/f.txt']")
     assert page.locator(".files-tree .gf-st").count() == 0
+    page.get_by_role("link", name="Files", exact=True).click()
+    sync_api.expect(revision).to_have_value("working tree")
+    sync_api.expect(untracked).to_be_visible()
     assert errors == [], errors
 
 
@@ -1194,17 +1198,9 @@ def test_files_marks_worktree_states_and_sums_folders(
 def test_the_files_tab_opens_a_file_highlighted(
     open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
 ) -> None:
-    """The Files tab lists the working tree's files as a tree and shows one with its spans.
-
-    HEAD is the revision to start; the picker's "working tree" lists the untracked file
-    too, and the filter narrows the tree.
-    """
+    """The Files filter finds an untracked file and the pane highlights its source."""
     page, errors = open_page(files_port)
     page.goto(f"http://127.0.0.1:{files_port}/#/files")
-    page.wait_for_selector(".files-tree [data-path='b.txt']")
-    assert page.locator(".files-tree [data-path='src/tool.py']").count() == 0  # not at HEAD
-    page.locator(".files-bar .gpick input").click()
-    page.locator(".gpick-list .ac-item", has_text="working tree").click()
     page.wait_for_selector(".files-tree [data-path='src/tool.py']")
     assert page.locator(".files-tree .gtree-dir[data-path='src']").count() == 1
     page.locator(".files-bar input.filter").fill("tool")
