@@ -1969,7 +1969,10 @@ def test_config_suggest_endpoint_accepts_the_selected_provider(
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n')
 
-    def listing(provider: str, *_: object) -> list[str]:
+    def listing(
+        provider: str, *_: object, on_error: Callable[[str], None] | None = None
+    ) -> list[str]:
+        assert on_error is None
         return [provider + "-live"]
 
     monkeypatch.setattr(cache, "list_models", listing)

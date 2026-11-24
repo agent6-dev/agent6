@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+from collections.abc import Callable
 
 import pytest
 from textual import app as textual_app
@@ -455,7 +456,10 @@ def test_scalar_model_editor_saves_one_key_and_preserves_siblings(
     repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     repo_cfg.write_text('[models.worker]\neffort = "low"\ntemperature = 0.8\n')
 
-    def listing(provider: str, *_: object) -> list[str]:
+    def listing(
+        provider: str, *_: object, on_error: Callable[[str], None] | None = None
+    ) -> list[str]:
+        assert on_error is None
         return [provider + "-live"]
 
     monkeypatch.setattr(cache, "list_models", listing)
