@@ -479,6 +479,7 @@ class ProviderCall:
         exc = provider_types.ProviderError(
             f"{self.api_label} API error {resp.status_code}: {detail[:500]}",
             status_code=resp.status_code,
+            tier_refused=provider_types.refuses_service_tier(detail, resp.status_code),
             retry_after_s=provider_types.parse_retry_after(resp.headers),
         )
         self._refuse_tier(exc)
@@ -503,17 +504,11 @@ class ProviderCall:
             exc.args = (f"{reason}: {exc}",)
             exc.fatal = True
             raise exc
-        detail = str(exc).lower()
-        named = (
-            "service_tier" in detail
-            or "service tier" in detail
-            or (tier in ("flex", "priority") and tier in detail)
-        )
-        if named or exc.status_code in (400, 422):
+        if exc.tier_refused or exc.status_code in (400, 422):
             exc.args = (
                 f"request sent {tier!r} for providers.{self.route.provider}.service_tier: {exc}",
             )
-        if named:
+        if exc.tier_refused:
             exc.fatal = True
             raise exc
 
@@ -582,6 +577,7 @@ class ProviderCall:
                 f"{self.api_label} error in 2xx body: "
                 f"{self._safe_text(envelope_detail(err), headers)}",
                 status_code=envelope_status(err),
+                tier_refused=provider_types.refuses_service_tier(err, envelope_status(err)),
                 retry_after_s=provider_types.parse_retry_after(resp.headers),
             )
             self._refuse_tier(error, transcript.serving)

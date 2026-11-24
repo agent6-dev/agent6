@@ -88,6 +88,34 @@ def reported_cost(usage: Mapping[str, Any]) -> float | None:
     return None
 
 
+def refuses_service_tier(error: object, status: int | None) -> bool:
+    """Recognize a refused parameter or a request error that names the tier field.
+
+    A rate limit can name the model or tier it applies to without rejecting either.
+
+    Args:
+        error: An error frame or the scrubbed body of an HTTP error.
+        status: The HTTP status or its in-band equivalent.
+
+    Returns:
+        Whether the endpoint identified the service tier as the refused setting.
+    """
+    if isinstance(error, str):
+        with contextlib.suppress(ValueError):
+            error = json.loads(error)
+    if isinstance(error, dict):
+        error = error.get("error", error)
+    if isinstance(error, dict):
+        if error.get("param") is not None:
+            return error["param"] == "service_tier"
+        error = error.get("message")
+    return (
+        status in (400, 401, 403, 422)
+        and isinstance(error, str)
+        and "service tier" in error.lower().replace("_", " ")
+    )
+
+
 class ProviderError(Exception):
     """A provider call failed.
 
@@ -99,8 +127,8 @@ class ProviderError(Exception):
             the floor of the retry wrapper's wait; None when absent.
         provider: The configured provider name, "" until the instrumented wrapper
             stamps it, so a credential hint can name the config key.
-        fatal: A permanent failure with no HTTP status (a missing binary, a
-            signed-out login); the retry wrapper re-raises it at once.
+        fatal: A failure the retry wrapper re-raises at once.
+        tier_refused: The endpoint rejected the service tier.
         attempts: The calls the retry wrapper spent before re-raising; 1 when it
             never retried.
         usage: The failed call's reported usage; None when none was observed.
@@ -113,6 +141,7 @@ class ProviderError(Exception):
         retry_after_s: float | None = None,
         provider: str = "",
         fatal: bool = False,
+        tier_refused: bool = False,
         attempts: int = 1,
         usage: ProviderUsage | None = None,
     ) -> None:
@@ -122,6 +151,7 @@ class ProviderError(Exception):
         self.provider = provider
         self.serving = kinds.UNREPORTED
         self.fatal = fatal
+        self.tier_refused = tier_refused
         self.attempts = attempts
         self.usage = usage
 

@@ -501,6 +501,9 @@ class OpenAIProvider:
                     raise provider_types.ProviderError(
                         f"OpenAI stream error: {transport.envelope_detail(err)}",
                         status_code=transport.envelope_status(err),
+                        tier_refused=provider_types.refuses_service_tier(
+                            err, transport.envelope_status(err)
+                        ),
                     )
                 evt_usage = evt.get("usage")
                 if isinstance(evt_usage, dict):

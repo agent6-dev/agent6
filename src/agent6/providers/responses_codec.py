@@ -391,7 +391,9 @@ def stream_error(
         plan = str(err.get("plan_type") or "")
         detail += f" ({label} {plan} plan usage limit)" if plan else f" ({label} usage limit)"
     return provider_types.ProviderError(
-        f"{label} stream error: {code or 'error'}: {detail}", status_code=status
+        f"{label} stream error: {code or 'error'}: {detail}",
+        status_code=status,
+        tier_refused=provider_types.refuses_service_tier(err, status),
     )
 
 

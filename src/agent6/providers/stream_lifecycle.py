@@ -441,6 +441,9 @@ class SseCall:
                         f"{self.api_label} API error {resp.status_code}: "
                         f"{provider_types.scrub_secret_values(error_body, self.headers)[:500]}",
                         status_code=resp.status_code,
+                        tier_refused=provider_types.refuses_service_tier(
+                            error_body, resp.status_code
+                        ),
                         retry_after_s=provider_types.parse_retry_after(resp.headers),
                     )
                 try:

@@ -399,3 +399,30 @@ def test_echoed_credentials_in_serving_facts_never_reach_the_journal_or_summary(
     transcript, rows = _records(tmp_path)
     assert len(calls) == 1 and len(rows) == 2
     assert key not in json.dumps([rows, transcript]) + worker.budget.format_summary()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("context", ["model flex-worker", "the flex service tier"])
+def test_a_rate_limit_is_not_a_tier_refusal(
+    tmp_path: pathlib.Path, stream: bool, context: str
+) -> None:
+    message = f"Rate limit exceeded for {context}"
+    error = {"code": "rate_limit_exceeded", "message": message}
+    with provider_endpoint.serve({"error": error}, status=429) as (url, calls):
+        worker = _worker(tmp_path, url, "responses", stream, service_tier="flex")
+        with pytest.raises(provider_types.ProviderError, match=message) as exc:
+            worker.call(system="s", messages=[])
+    assert exc.value.status_code == 429 and not exc.value.fatal
+    assert len(calls) == 1 and "providers.work.service_tier" not in str(exc.value)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_a_tier_refusal_without_a_parameter_keeps_the_reason(
+    tmp_path: pathlib.Path, stream: bool
+) -> None:
+    message = "The flex service tier is not enabled for this project"
+    with provider_endpoint.serve({"error": {"message": message}}, status=403) as (url, calls):
+        worker = _worker(tmp_path, url, "responses", stream, service_tier="flex")
+        with pytest.raises(provider_types.ProviderError, match=message) as exc:
+            worker.call(system="s", messages=[])
+    assert exc.value.fatal and "providers.work.service_tier" in str(exc.value) and len(calls) == 1
