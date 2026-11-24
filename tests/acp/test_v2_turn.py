@@ -248,8 +248,9 @@ def _steerable_run(
             saved.session_dir
         ):
             text = ipc.take_steer_answer(saved.session_dir) or ""
+            named = ipc.take_steer_message_id(saved.session_dir)
             ipc.clear_steer_request(saved.session_dir)
-            sink.emit(journal.SteerInjected(chars=len(text), text=text))
+            sink.emit(journal.SteerInjected(chars=len(text), text=text, message_id=named))
         sink.emit(journal.SessionStop(reason="finish_session", turns=1, execution_id="e1"))
         return 0
 
@@ -273,14 +274,15 @@ def test_a_prompt_during_a_run_joins_the_steer_queue_and_is_answered_at_once(
         during = wire.collect(lambda f: f.get("id") == 4)
         message_id = during[-1]["result"]["messageId"]
         session_dir = sessions_layout.SessionLayout(paths.state_dir(cwd), session).session_dir
-        assert (session_dir / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == "also this"
+        (queued,) = ipc.queued_steers(session_dir)
+        assert (queued.text, queued.message_id) == ("also this", message_id)
         wire.prompt(session, "/compact now", req_id=5)
         during += wire.collect(lambda f: f.get("id") == 5)
         refused = during[-1]["error"]
         assert refused["code"] == -32602 and "composer" in refused["message"]
         wire.prompt(session, "abort", req_id=6)
         during += wire.collect(lambda f: f.get("id") == 6)
-        assert [entry.text for entry in ipc.queued_steers(session_dir)] == ["Task: abort"]
+        assert [entry.text for entry in ipc.queued_steers(session_dir)][1:] == ["Task: abort"]
         release.set()
         during += wire.collect(_idle(session))
         said = [
@@ -296,3 +298,85 @@ def test_a_prompt_during_a_run_joins_the_steer_queue_and_is_answered_at_once(
     finally:
         release.set()
         wire.close()
+
+
+def test_a_retry_shares_the_answer_of_the_prompt_it_repeats(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second request with the key of a prompt still held starts nothing of its own."""
+    started, release = threading.Event(), threading.Event()
+    runs: list[object] = []
+
+    def _blocking(*_a: object, **_k: object) -> int:
+        runs.append(_a)
+        started.set()
+        release.wait(timeout=10.0)
+        return 0
+
+    monkeypatch.setattr(run, "run_task", _blocking)
+    wire = _Wire()
+    try:
+        first = wire.new_session(test_runner._repo(tmp_path))
+        wire.send(id=9, method="session/new", params={"cwd": str(tmp_path)})
+        second = str(wire.recv()["result"]["sessionId"])
+        wire.prompt(first, "the long one", req_id=3)
+        assert started.wait(timeout=5.0)
+        held = {"sessionId": second, "prompt": [{"type": "text", "text": "held"}]}
+        wire.send(id=4, method="session/prompt", params=held | {"idempotencyKey": "k"})
+        wire.send(id=5, method="session/prompt", params=held | {"idempotencyKey": "k"})
+        wire.send(method="session/cancel", params={"sessionId": second})
+        frames = wire.collect(lambda f: f.get("id") == 5)
+        answers = {f["id"]: f["error"]["code"] for f in frames if "id" in f}
+        assert answers == {4: -32800, 5: -32800}
+        assert len(runs) == 1, "the retry started a run of its own"
+    finally:
+        release.set()
+        wire.close()
+
+
+def test_a_refused_prompt_leaves_its_key_unused_and_a_malformed_key_is_refused(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An error means the message was not added, so the same key may be sent again."""
+    attempts: list[object] = []
+
+    def _refusing(*_a: object, **_k: object) -> int:
+        attempts.append(_a)
+        raise RuntimeError("no provider")
+
+    monkeypatch.setattr(run, "run_task", _refusing)
+    wire = _Wire()
+    try:
+        session = wire.new_session(test_runner._repo(tmp_path))
+        prompt = {"sessionId": session, "prompt": [{"type": "text", "text": "go"}]}
+        for req_id in (3, 4):
+            wire.send(id=req_id, method="session/prompt", params=prompt | {"idempotencyKey": "k"})
+            failed = wire.collect(lambda f, req_id=req_id: f.get("id") == req_id)[-1]
+            assert failed["error"]["code"] == -32603
+        assert len(attempts) == 2
+        for req_id, key in ((5, ""), (6, "k" * 256), (7, 7)):
+            wire.send(id=req_id, method="session/prompt", params=prompt | {"idempotencyKey": key})
+            refused = wire.collect(lambda f, req_id=req_id: f.get("id") == req_id)[-1]
+            assert refused["error"]["code"] == -32602
+            assert "idempotencyKey" in refused["error"]["message"]
+        assert len(attempts) == 2
+    finally:
+        wire.close()
+
+
+def test_a_keyed_prompt_is_found_again_in_the_journal_and_in_the_steer_queue(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A restart leaves the journal and the queue: either names the message a retry repeats."""
+    cwd = test_session_lifecycle._repo(tmp_path)
+    saved = test_session_lifecycle._record(cwd, "kept-run-AAAAAA", "task", mtime=time.time())
+    sink = event_log.EventSink(saved / "logs.jsonl")
+    sink.emit(journal.SteerInjected(chars=2, text="hi", message_id="a" * 32))
+    ipc.submit_steer(saved, "queued", message_id="b" * 32)
+    sessions = acp_session.Sessions(run=lambda _s, _t: "end_turn", state_dir_for=paths.state_dir)
+    opened = acp_session.Session(acp_id=saved.name, cwd=cwd, session_id=saved.name)
+    assert sessions.has_message(opened, "a" * 32)
+    assert sessions.has_message(opened, "b" * 32)
+    assert not sessions.has_message(opened, "c" * 32)
+    ipc.promote_queued_steer(saved)
+    assert sessions.has_message(opened, "b" * 32), "promoted to the slot, it is still waiting"

@@ -110,11 +110,14 @@ class MessageIds:
             index: The item's place among that row's items.
 
         Returns:
-            The call's id for the model's words, else the row's, with the place appended
-            after the row's first item; "" for a row with no id.
+            The call's id for the model's words; for the operator's, the id their
+            front-end gave them when the row holds one; else the row's, with the place
+            appended after the row's first item. "" for a row with no id.
         """
         if item.kind in ("text", "thinking"):
             return self.call
+        if item.kind in ("operator", "task") and event.get("message_id"):
+            return str(event["message_id"])
         base = row_id(event)
         return f"{base}:{index}" if base and index else base
 

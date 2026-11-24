@@ -295,8 +295,9 @@ def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
     editor = connect(2)
     session = _open(editor, repo)
     prompt = {"sessionId": session, "prompt": _text("Finish.")}
+    keyed = prompt | {"idempotencyKey": "key-of-the-first-prompt"}
 
-    first = editor.send("session/prompt", prompt)
+    first = editor.send("session/prompt", keyed)
     turn = editor.until(_idle)
     (reply,) = [f for f in turn if f.get("id") == first]
     assert not schema_check.v2_errors("PromptResponse", reply["result"])
@@ -313,8 +314,12 @@ def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
     long = editor.send("session/prompt", {"sessionId": session, "prompt": _text("Look around.")})
     editor.reply_to(long)
     assert provider.asked.wait(_WAIT_S)
-    steer = editor.send("session/prompt", {"sessionId": session, "prompt": _text("Also say hi.")})
+    hi = {"sessionId": session, "prompt": _text("Also say hi."), "idempotencyKey": "key-of-hi"}
+    steer = editor.send("session/prompt", hi)
     steered = editor.until(lambda f: f.get("id") == steer)
+    retry = editor.send("session/prompt", hi)
+    steered += editor.until(lambda f: f.get("id") == retry)
+    assert steered_id(steered, retry) == steered_id(steered, steer)
     provider.hold.set()
     steered += editor.until(_idle)
     assert [u["state"] for u in _updates(steered, "state_update")] == ["idle"]
@@ -351,5 +356,52 @@ def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
     assert not schema_check.v2_errors("ResumeSessionResponse", replayed[-1]["result"])
     kinds = [f["params"]["update"]["sessionUpdate"] for f in replayed[:-1]]
     assert kinds[-2:] == ["replay_complete", "state_update"]
-    said = [u["content"][0]["text"] for u in _updates(replayed, "user_message")]
-    assert said[:4] == ["Finish.", "Look around.", "Also say hi.", "Wait here."]
+    said = [(u["content"][0]["text"], u["messageId"]) for u in _updates(replayed, "user_message")]
+    assert [text for text, _id in said[:4]] == [
+        "Finish.",
+        "Look around.",
+        "Also say hi.",
+        "Wait here.",
+    ]
+    assert said[0][1] == reply["result"]["messageId"], "a replayed message kept its id"
+    assert said[2][1] == steered_id(steered, steer)
+
+    asked = len(provider.requests)
+    retried = again.send("session/prompt", keyed)
+    listed = again.send("session/list", {"cwd": str(repo)})
+    after = again.until(lambda f: f.get("id") == listed)
+    assert [f.get("id") for f in after] == [retried, listed], "the retry started work"
+    assert after[0]["result"] == {"messageId": reply["result"]["messageId"]}
+    assert len(provider.requests) == asked
+
+
+def test_a_steer_its_run_never_took_reaches_the_next_execution_after_its_prompt(
+    scripted: tuple[_Provider, Callable[[int], _Editor]], tmp_path: pathlib.Path
+) -> None:
+    """A run that ends on the call a steer arrived in leaves the steer queued for a later one."""
+    provider, connect = scripted
+    editor = connect(2)
+    session = _open(editor, tmp_path / "repo")
+
+    def prompt(text: str) -> Frame:
+        return {"sessionId": session, "prompt": _text(text)}
+
+    provider.hold.clear()
+    provider.asked.clear()
+    editor.reply_to(editor.send("session/prompt", prompt("Wrap up.")))
+    assert provider.asked.wait(_WAIT_S)
+    late = editor.send("session/prompt", prompt("One more thing."))
+    first = editor.until(lambda f: f.get("id") == late)
+    provider.hold.set()
+    first += editor.until(_idle)
+    assert len(provider.requests) == 1, "the run ended on the call the steer arrived in"
+
+    provider.script.extend([LIST, FINISH])
+    editor.send("session/prompt", prompt("And then stop."))
+    second = editor.until(_idle)
+    assert "And then stop." in provider.requests[1], "the execution took its own prompt first"
+    assert "One more thing." not in provider.requests[1]
+    assert "One more thing." in provider.requests[2], "the waiting steer came at the boundary"
+    said = [u["content"][0]["text"] for u in _updates(second, "user_message")]
+    assert said == ["And then stop."], "the steer was reported when it was sent, not again"
+    assert steered_id(first, late)

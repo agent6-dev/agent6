@@ -527,11 +527,7 @@ class RunBridge:
             RpcError: The run failed, or agent6 refused the prompt.
         """
         layout = session.layout(agent6_paths.state_dir(session.cwd))
-        if session.images:
-            # Stored in the run's own directory before it starts, which finds them by its words.
-            message = operator_images.accept(layout.session_dir, text, session.images)
-            ipc.write_launch_input(layout.session_dir, message)
-            text = message.text
+        text = self._record_launch(session, layout.session_dir, text)
         journal_before = viewmodel_tail.journal_size(layout.logs_path)
 
         said: list[str] = []
@@ -622,6 +618,30 @@ class RunBridge:
         scan = session_log.scan_session_log(layout.logs_path)
         reason = scan.stop_reason if grown and scan.finished else ""
         return stop_reason(code, stop_reason=reason)
+
+    def _record_launch(
+        self, session: acp_session.Session, session_dir: pathlib.Path, text: str
+    ) -> str:
+        """Record the prompt in the run's own directory before the execution starts.
+
+        The execution finds the record by its words and journals the prompt's images and
+        its message id with them.
+
+        Args:
+            session: The session the prompt came on.
+            session_dir: The run's directory, reserved here for a new run.
+            text: The prompt.
+
+        Returns:
+            The words the execution runs: the prompt, then a label per image.
+        """
+        message_id = session.turn.message_id if session.turn is not None else ""
+        if not session.images and not message_id:
+            return text
+        message = operator_images.accept(session_dir, text, session.images)
+        named = message.model_copy(update={"message_id": message_id})
+        ipc.write_launch_input(session_dir, named)
+        return message.text
 
     def _stream(  # noqa: PLR0912
         self,
@@ -755,9 +775,8 @@ class RunBridge:
         ):
             # The execution's start row reported its own prompt; another front-end's steer is news.
             return
-        if item.kind == "operator" and item.body.strip() in session.steered:
-            session.steered.remove(item.body.strip())  # reported when this connection sent it
-            return
+        if item.kind == "operator" and sending.message_id in session.inserted:
+            return  # reported when this connection took it as a prompt
         within = updates.execution_call_id(item) if item.kind in ("tool", "verify") else ""
         wire_id = (
             updates.wire_call_id(session.session_id, announced.execution_id, within)

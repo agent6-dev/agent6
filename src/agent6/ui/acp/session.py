@@ -13,6 +13,7 @@ from __future__ import annotations
 import builtins
 import dataclasses
 import datetime
+import json
 import pathlib
 import sys
 import threading
@@ -100,8 +101,9 @@ class Session:
         turn: The prompt in flight, as the editor hears of it.
         steerable: The execution in flight has chosen its run, so a steer has a session
             directory to land in.
-        steered: The prompts delivered to the execution in flight as steers; the journal's
-            echo of one is not news to the editor that sent it.
+        inserted: The ids of the prompts this connection added to the conversation; the
+            journal's echo of one is not news to the editor that sent it, and a retry of
+            one adds nothing.
         closed: The editor closed the conversation while a prompt was in flight; the
             cancelled prompt still answers, then the entry goes.
         settled: Called once a closed conversation's execution has ended.
@@ -121,7 +123,7 @@ class Session:
     images: tuple[operator_images.EncodedImage, ...] = ()
     turn: Turn | None = None
     steerable: bool = False
-    steered: list[str] = dataclasses.field(default_factory=list[str])
+    inserted: set[str] = dataclasses.field(default_factory=set[str])
     closed: bool = False
     settled: Callable[[], None] = lambda: None
     model: str = ""
@@ -477,7 +479,6 @@ class Sessions:
                 session.images = ()
                 session.turn = None
                 session.steerable = False
-                session.steered.clear()
                 turn.end(answer)
                 closed = session.closed
             if closed:
@@ -533,10 +534,44 @@ class Sessions:
             message = operator_images.accept(session_dir, words, images)
         except (operator_images.ImageRefusedError, OSError) as exc:
             raise rpc.RpcError(rpc.INVALID_PARAMS, f"not sent: {exc}") from exc
-        if not ipc.submit_steer(session_dir, message.text, images=message.images):
+        if not ipc.submit_steer(
+            session_dir, message.text, images=message.images, message_id=turn.message_id
+        ):
             raise rpc.RpcError(rpc.INTERNAL_ERROR, "could not write the steer request")
-        session.steered.append(message.text.strip())
         turn.begin(message.text)
+
+    def has_message(self, session: Session, message_id: str) -> bool:
+        """Return whether the conversation holds the message a prompt's id names.
+
+        Args:
+            session: The session the prompt came on.
+            message_id: The id, which a prompt with an idempotency key derives from the key.
+
+        Returns:
+            True for a message this connection added, one the run's journal records, or
+            one still waiting in the run's steer queue: a retry of its prompt adds nothing.
+        """
+        if message_id in session.inserted:
+            return True
+        if not session.session_id:
+            return False
+        saved = session.layout(self.state_dir_for(session.cwd))
+        if any(entry.message_id == message_id for entry in ipc.queued_steers(saved.session_dir)):
+            return True
+        needle = message_id.encode()
+        try:
+            slot = (saved.session_dir / ipc.STEER_MESSAGE_ID_FILE).read_bytes()
+        except OSError:
+            slot = b""
+        if slot == needle:
+            return True
+        try:
+            with saved.logs_path.open("rb") as rows:
+                # The id is 32 hex digits: a row without those bytes cannot hold it.
+                hits = [row for row in rows if needle in row]
+        except OSError:
+            return False
+        return any(_row_names(row, message_id) for row in hits)
 
     def wait_for_executions(self, *, timeout_s: float) -> None:
         """Cancel live executions and let them finish before the process goes.
@@ -581,6 +616,15 @@ class Sessions:
                 return
             # A notification has no reply: stderr is the one channel left.
             print(f"[agent6] {out.message}", file=sys.stderr)
+
+
+def _row_names(row: bytes, message_id: str) -> bool:
+    """Return whether a journal row records the message with this id."""
+    try:
+        event = json.loads(row)
+    except ValueError:
+        return False
+    return isinstance(event, dict) and event.get("message_id") == message_id
 
 
 def _repository(params: dict[str, Any]) -> pathlib.Path:
