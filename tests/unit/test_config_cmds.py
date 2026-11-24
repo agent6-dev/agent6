@@ -11,6 +11,7 @@ import pytest
 from agent6 import paths
 from agent6.config import ConfigError
 from agent6.config import layer as config_layer
+from agent6.config import model as config_model
 from agent6.models import choices
 from agent6.ui.cli import config_cmds as cc
 
@@ -757,6 +758,36 @@ def test_config_fix_drops_a_refused_provider_leaf(
     text = gpath.read_text(encoding="utf-8")
     assert "idle_compact_s" not in text and "bogus" not in text and 'backend = "openai"' in text
     assert main(["config", "show"]) == 0  # the config loads again
+
+
+def test_a_load_error_names_the_provider_key_the_file_holds(tmp_path: pathlib.Path) -> None:
+    """The error named `providers.p.openai.idle_compact_s`, a key no file holds."""
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[providers.p]\nbackend = "openai"\nidle_compact_s = "soon"\n', encoding="utf-8"
+    )
+    with pytest.raises(ConfigError) as refused:
+        config_model.load_config(path)
+    assert "- providers.p.idle_compact_s: " in str(refused.value)
+
+
+def test_config_set_names_the_one_write_for_a_provider_table(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The missing fields were looked up under `providers.p.openai.oauth`, so no hint matched."""
+    from agent6.ui.cli import main
+
+    gpath = paths.global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text('[providers.p]\nbackend = "openai"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["config", "set", "providers.p.oauth.issuer", "https://issuer.example"]) != 0
+    said = capsys.readouterr()
+    text = said.out + said.err
+    assert "- providers.p.oauth.client_id: Field required" in text
+    assert "in one write: `agent6 config set providers.p.oauth '{ issuer = ..., " in text
+    assert "oauth" not in gpath.read_text(encoding="utf-8")
 
 
 def test_config_fix_labels_a_repo_layer_entry(

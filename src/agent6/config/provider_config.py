@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Annotated, Any, Literal
+from collections.abc import Iterable
+from typing import Annotated, Any, Literal, get_args
 from urllib import parse
 
 import pydantic
@@ -57,6 +58,23 @@ def provider_name_refusal(name: str) -> str:
             " (use only ASCII letters, digits, '-', '_')."
         )
     return ""
+
+
+def file_key(loc: Iterable[int | str]) -> list[str]:
+    """Return a validation error's location as the parts of the key a config file holds.
+
+    pydantic names the union member after a provider's name; no file holds that part.
+
+    Args:
+        loc: The error's location.
+
+    Returns:
+        The key's parts.
+    """
+    parts = [str(part) for part in loc]
+    if len(parts) > 3 and parts[0] == "providers" and parts[2] in get_args(Backend):
+        del parts[2]
+    return parts
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"

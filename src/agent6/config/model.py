@@ -762,7 +762,7 @@ def _format_validation_error(
     """
     lines = [f"Config validation failed: {source}"]
     for issue in err.errors():
-        loc = io.render_key(str(part) for part in issue["loc"]) or "<root>"
+        loc = io.render_key(provider_config.file_key(issue["loc"])) or "<root>"
         msg = issue["msg"]
         if issue["type"] == "union_tag_not_found" and loc.startswith("providers."):
             msg = _MISSING_BACKEND

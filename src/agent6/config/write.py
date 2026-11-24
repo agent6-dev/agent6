@@ -483,7 +483,7 @@ def _whole_table_hint(
     missing: dict[str, list[str]] = {}
     for issue in cause.errors():
         if issue["type"] == "missing":
-            *table, field = (str(part) for part in issue["loc"])
+            *table, field = provider_config.file_key(issue["loc"])
             missing.setdefault(io.render_key(table), []).append(field)
     written_parts = [io.split_key(key) for key, _ in written]
     for parts in written_parts:
