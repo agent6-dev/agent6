@@ -726,14 +726,14 @@ def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
     provider = mock.MagicMock()
     disconnect = ProviderError("Server disconnected without sending a response")
     provider.call.side_effect = [disconnect, disconnect, disconnect, _resp("recovered")]
-    wf = _wf(provider=provider)  # uses the default provider_retry_count
+    wf = _wf(provider=provider)  # uses the default retry_count
     out = wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert out.text == "recovered"
     assert provider.call.call_count == 4
 
 
 def test_call_with_retry_zero_retries_no_retry() -> None:
-    """provider_retry_count=0 -> single attempt, no retry on error."""
+    """retry_count=0 -> single attempt, no retry on error."""
     provider = mock.MagicMock()
     provider.call.side_effect = [ProviderError("nope")]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.01))
@@ -826,7 +826,7 @@ def test_call_with_retry_still_retries_transient_5xx() -> None:
 
 @pytest.mark.usefixtures("one_sleep_per_wait")
 def test_call_with_retry_exponential_backoff() -> None:
-    """Attempt N sleeps provider_retry_delay_s * 2 ** (attempt - 1), scaled by the jitter factor."""
+    """Attempt N sleeps retry_delay_s * 2 ** (attempt - 1), scaled by the jitter factor."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
         ProviderError("flake 1"),
@@ -853,7 +853,7 @@ def test_call_with_retry_exponential_backoff() -> None:
 
 @pytest.mark.usefixtures("one_sleep_per_wait")
 def test_call_with_retry_backoff_capped_at_max_delay() -> None:
-    """Exponential backoff is capped at provider_retry_max_delay_s."""
+    """Exponential backoff is capped at retry_max_delay_s."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
         ProviderError("flake 1"),
@@ -909,7 +909,7 @@ def test_default_retry_re_asks_an_empty_tool_call_response_within_five_attempts(
 
 
 def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
-    """A permanent status re-raises at once with no sleep, whatever provider_retry_count allows."""
+    """A permanent status re-raises at once with no sleep, whatever retry_count allows."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
         ProviderError("Insufficient credits", status_code=402),
