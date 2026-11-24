@@ -193,6 +193,23 @@ def test_a_cold_restart_with_nothing_to_replace_resends(
     assert "resend history" in row["message"]
 
 
+@pytest.mark.parametrize("mode", ["summarize", "truncate"])
+def test_a_cold_restart_that_would_replace_only_an_earlier_restart_resends(
+    tmp_path: pathlib.Path, mode: kinds.ColdStart
+) -> None:
+    """The helper summarized the earlier summary alone; a truncate dropped it."""
+    saved = loop_conversation.Conversation()
+    saved.restart("[harness context restart]\nEarlier handoff.")
+    saved.assistant([{"type": "text", "text": "I looked and it is fine."}])
+    previous = [rules.request(model="other")]
+    resend, _, _, _ = _resume(tmp_path, "resend", previous, saved=saved, keep_turns=-1)
+    sent, rows, _, helper = _resume(tmp_path, mode, previous, saved=saved, keep_turns=-1)
+    assert sent == resend and not helper.calls
+    assert "Earlier handoff." in sent[0]["content"][0]["text"]
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert (row["mode"], row["action"], row["chars_not_sent"]) == (mode, "resend", 0)
+
+
 @pytest.mark.parametrize("mode", ["drop", "summarize", "truncate"])
 def test_a_cold_start_states_the_verify_fact_once(
     tmp_path: pathlib.Path, mode: kinds.ColdStart

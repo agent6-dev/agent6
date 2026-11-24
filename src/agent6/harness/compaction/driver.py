@@ -324,7 +324,7 @@ class Tiered(_Scheduled):
 
         Returns:
             What happened to the history; `summarize` and `truncate` restarted it, and
-            `resend` also names a restart that had nothing to replace.
+            `resend` also names a restart that had no turn to replace.
 
         Raises:
             BudgetExceededError: The budget refused the summary.
@@ -342,8 +342,8 @@ class Tiered(_Scheduled):
         replay = retention.select(
             conversation.messages, context.settings, context.task.text, context.pins
         )
-        if not replay.replaced:
-            # The caps keep everything, so the history is sent as it is.
+        if all(retention.sole_origin(m) == "restart" for m in replay.replaced):
+            # The caps keep every turn, so the history is sent as it is, an earlier restart's too.
             return "resend"
         if mode == "truncate":
             conversation.restart(

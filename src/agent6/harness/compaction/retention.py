@@ -141,6 +141,14 @@ def _turns(
     return turns, inputs
 
 
+def sole_origin(message: history.Message) -> str | None:
+    """Return the origin of a message that is one notice, else None."""
+    if not isinstance(message, history.UserMessage) or len(message.items) != 1:
+        return None
+    notice = message.items[0]
+    return notice.origin if isinstance(notice, history.Notice) else None
+
+
 def _partition(
     messages: Sequence[history.Message],
     plan: history.UserMessage | None,
@@ -158,8 +166,7 @@ def _partition(
     prior: list[history.Message] = []
     history_messages: list[history.Message] = []
     for m in messages:
-        notice = m.items[0] if isinstance(m, history.UserMessage) and len(m.items) == 1 else None
-        origin = notice.origin if isinstance(notice, history.Notice) else None
+        origin = sole_origin(m)
         if origin == "contract":
             contract.append(m)
         elif origin == "restart":
