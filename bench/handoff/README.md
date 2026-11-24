@@ -97,3 +97,18 @@ Report the split, observed run count, all-accepted runs over known outcomes, and
 A partial column shows its coverage; `?` means no known value.
 Check the stop reasons, off-arm calls and missing evidence before comparing turns, tokens or wait at equal acceptance.
 Report no observed difference when the arms do not separate.
+
+## Results
+
+Live split on `chatgpt/gpt-6.2-sol` at `medium`, three replicates per arm.
+Every run was accepted, with no issue, stuck notice, second start, unstarted task or off-arm call.
+Quantities are the median [minimum, maximum] from the parent's journal; cache writes were unreported.
+
+| Arm | n | All accepted | Parent turns | Fresh input | Cache read | Output | Wait below two (s) |
+|---|---|---|---|---|---|---|---|
+| `text` | 3 | 3/3 | 19 [18, 21] | 38,199 [33,524, 39,503] | 68,864 [62,720, 90,624] | 607 [501, 647] | 44.2 [36.9, 57.2] |
+| `id` | 3 | 3/3 | 15 [14, 16] | 35,802 [34,762, 41,354] | 43,776 [43,008, 59,648] | 331 [329, 371] | 28.1 [27.2, 41.3] |
+
+The `id` arm used fewer parent turns and fewer output tokens: those two ranges do not overlap.
+Fresh input, cache reads and the wait overlap between the arms.
+The smoke, one run per arm and not pooled, read 19 against 14 turns and 601 against 297 output tokens.

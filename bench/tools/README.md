@@ -107,3 +107,27 @@ A missing root journal, root stop or grader result is a measurement error, not a
 Grader stdout must contain one JSON report with the task's case and component totals.
 The official `bugs` and `textkit` import-error reports count as scored failures.
 A malformed, extra or oversized report leaves that run unscored; the set continues.
+
+## Results
+
+Evaluation split on `chatgpt/gpt-6.2-sol` at `medium`, three replicates per task and arm.
+Every run passed; none was capped or errored, and no `apply_patch` or `apply_edit` call failed.
+Call counts are totals over the three runs; other quantities are the median [minimum, maximum].
+
+| Task | Arm | n | Pass | `apply_patch` calls | `apply_edit` calls | Turns | Input tokens | Output tokens |
+|---|---|---|---|---|---|---|---|---|
+| `bugs` | `control` | 3 | 3/3 | 1 | 2 | 5 [4, 5] | 43,570 [36,287, 43,573] | 664 [659, 702] |
+| `bugs` | `no-patch` | 3 | 3/3 | 0 | 3 | 4 [4, 5] | 35,617 [35,551, 42,446] | 703 [631, 716] |
+| `bugs` | `short` | 3 | 3/3 | 3 | 0 | 5 [5, 5] | 42,411 [42,375, 42,530] | 615 [599, 620] |
+| `eventflow` | `control` | 3 | 3/3 | 3 | 0 | 5 [5, 6] | 40,001 [34,221, 45,657] | 2,668 [2,306, 2,979] |
+| `eventflow` | `no-patch` | 3 | 3/3 | 0 | 15 | 6 [5, 6] | 43,135 [33,025, 43,786] | 2,535 [2,228, 2,724] |
+| `eventflow` | `short` | 3 | 3/3 | 3 | 0 | 5 [5, 7] | 33,460 [32,976, 50,579] | 2,334 [2,202, 2,490] |
+| `plan-cap` | `control` | 3 | 3/3 | 0 | 0 | 2 [2, 2] | 16,690 [16,686, 16,692] | 29 [29, 38] |
+| `plan-cap` | `no-docs` | 3 | 3/3 | 0 | 0 | 1 [1, 1] | 1,082 [1,081, 1,083] | 9 [9, 9] |
+
+- **`no-patch`:** no observed difference in passes, turns or tokens.
+  On `eventflow` the worker made 15 `apply_edit` calls where `control` made 3 `apply_patch` calls.
+- **`short`:** no observed difference; the ranges overlap on both tasks.
+- **`no-docs`:** both arms answered correctly.
+  `control` took two turns and 16,690 input tokens, `no-docs` one turn and 1,082.
+  The set holds one question.

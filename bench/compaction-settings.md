@@ -129,3 +129,24 @@ The submitted modules run inside the interpreter returning the verdicts: the rep
 
 Artifacts contain the conversation and final checkout.
 Keep each private set directory for inspection, then remove it as a unit.
+
+## Screen results
+
+The screen ran five attempts per arm on `chatgpt/gpt-6.2-sol` at `medium`.
+Five attempts ended in the measurement error `no accepted requested worker restart before the first worker request` and have no score.
+Every scored run passed with 6/6 groups and exact recall, and none had a second restart.
+Quantities are min..max over the scored runs.
+
+| Arm | Attempts | Errors | Pass | Turns | Rereads (6 calls) | Uncached input | Total tokens |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `baseline` | 5 | 2 | 3/3 | 17..18 | 0..0 | 41,924..58,426 | 134,027..142,624 |
+| `no-operator` | 5 | 1 | 4/4 | 18..20 | 0..0 | 38,772..64,980 | 140,852..162,507 |
+| `chars-20000` | 5 | 0 | 5/5 | 17..20 | 0..0 | 34,246..50,637 | 131,510..157,966 |
+| `turns-1` | 5 | 1 | 4/4 | 21..25 | 2..2 | 55,400..88,725 | 152,840..184,031 |
+| `operator-only` | 5 | 0 | 5/5 | 21..25 | 2..2 | 55,939..85,400 | 158,868..186,817 |
+| `pointers` | 5 | 1 | 4/4 | 18..21 | 0..3 | 49,178..60,189 | 138,507..159,131 |
+
+`turns-1` and `operator-only` reread two files in every scored run and took 21 to 25 turns against the baseline's 17 to 18.
+`no-operator`, `chars-20000` and `pointers` overlap the baseline on turns and tokens.
+No arm separated from the baseline on pass or recall, so no finalist was chosen and the confirmation stage did not run.
+The pilot, one `baseline` run and not a replicate, passed 6/6 with exact recall in 18 turns.
