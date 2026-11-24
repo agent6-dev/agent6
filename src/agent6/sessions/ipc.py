@@ -1262,9 +1262,9 @@ def _displace_slot(session_dir: pathlib.Path) -> bool:
 def demote_steer(session_dir: pathlib.Path) -> None:
     """Move the instruction in the slot back to the inbox's head; best-effort.
 
-    A start that parks calls this. The next start's stale-state clear drops the slot and
-    leaves the inbox, so that start reads the steers in the order this one would have. A
-    verb stays in the slot: it was for the worker that parked.
+    The next start's stale-state clear drops the slot and leaves the inbox. A refused
+    start keeps unread instructions there in order. A verb stays in the slot because it
+    addressed that worker.
 
     Args:
         session_dir: The session directory.

@@ -31,8 +31,8 @@ from agent6.viewmodel.session import log as session_log
 
 
 def discard_husk_dir(session_dir: pathlib.Path) -> None:
-    """Remove a session dir a preflight refused before a manifest or log was written."""
-    if sessions_layout.session_has_record(session_dir):
+    """Remove a refused start's directory only if it holds no record or waiting steer."""
+    if sessions_layout.session_has_record(session_dir) or ipc.queued_steers(session_dir):
         return
     with contextlib.suppress(OSError):
         shutil.rmtree(session_dir)
@@ -108,6 +108,7 @@ def read_dirty_tree(
     )
     if must_ask and not answerable:
         reporter.refuse(preflight.dirty_tree_refusal(modified, unmerged_run=unmerged_run))
+        ipc.demote_steer(layout.session_dir)
         discard_husk_dir(layout.session_dir)
         raise preflight.SessionRefusedError(2)
     return DirtyTree(modified=tuple(modified), hidden=hidden, unmerged_run=unmerged_run)

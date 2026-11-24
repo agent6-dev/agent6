@@ -696,6 +696,49 @@ def test_a_steer_survives_a_resume_that_parks_again(
     assert not ipc.steer_request_pending(layout.session_dir)
 
 
+@pytest.mark.parametrize("parked", [True, False])
+def test_an_initial_steer_survives_a_refused_start(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, parked: bool
+) -> None:
+    """The next start lost the unread follow-up when a dirty checkout refused this one."""
+    from agent6.app import resume as resume_mod
+    from agent6.sessions import ipc
+
+    sid = "run-REFUSED"
+    directory = sessions_layout.SessionLayout(paths.state_dir(repo), sid).session_dir
+    if parked:
+        _parked_run(repo, sid)
+    frontend = mock.MagicMock()
+    frontend.capabilities.can_ask = False
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
+    monkeypatch.setattr(session_runtime, "select_isolation", _full_isolation)
+    monkeypatch.setattr(execution, "run_execution", _ended)
+
+    def start(steer: str, *, later: float) -> int:
+        started_at = time.time() + later
+        if parked:
+            return resume_mod.resume_task(
+                (), sid, started_at=started_at, frontend=frontend, force=False, steer=steer
+            )
+        return app_run.run_task(
+            _load_cfg(),
+            "do the thing",
+            started_at=started_at,
+            frontend=frontend,
+            session_id=sid,
+            initial_steer=steer,
+        )
+
+    tracked = repo / "README.md"
+    clean = tracked.read_bytes()
+    tracked.write_text("operator edit\n", encoding="utf-8")
+    assert start("also update the docs", later=0) == 2
+    tracked.write_bytes(clean)
+    assert start("", later=60) == 0
+    assert ipc.queued_steers(directory) == (ipc.QueuedSteer(text="also update the docs"),)
+    assert not ipc.steer_request_pending(directory)
+
+
 def test_run_task_seeds_initial_steer_on_the_bridge(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
