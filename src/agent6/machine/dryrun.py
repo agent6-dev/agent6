@@ -4,7 +4,7 @@
 
 No jail, network, provider call or clock. Per state, the success fact the state would
 emit is synthesized and pushed through the engine's `reduce`, so the capture binds and the
-label routes to a declared state; per branch, every `when` clause is evaluated against the
+label routes to a declared state; each branch selects a clause against the
 declared defaults overlaid with the operator's fixture. A green run means the plumbing,
 schemas, captures and routing are sound.
 """
@@ -61,7 +61,7 @@ class BranchCheck:
         clause_index: The index of the clause that fired, or None on a predicate error.
         predicate: The clause's `if` text, or "else".
         goto: The state the clause routes to.
-        ok: The target is a declared state and every predicate evaluated.
+        ok: The branch selected a clause without a predicate error.
         detail: The problem, or "".
     """
 
@@ -161,10 +161,7 @@ def _check_tool(
     execution.reduce(
         spec, state, fact, blackboard
     )  # exercises capture rendering; raises on a bad template
-    goto = state.on["ok"]
-    if goto not in spec.states:
-        return StateCheck(name, "tool", False, "ok", goto, f"on.ok -> {goto!r} is not a state")
-    return StateCheck(name, "tool", True, "ok", goto, _capture_summary(state.capture))
+    return StateCheck(name, "tool", True, "ok", state.on["ok"], _capture_summary(state.capture))
 
 
 def _check_agent(
@@ -184,10 +181,7 @@ def _check_agent(
     execution.reduce(
         spec, state, fact, blackboard
     )  # exercises capture rendering; raises on a bad template
-    goto = state.on["ok"]
-    if goto not in spec.states:
-        return StateCheck(name, "agent", False, "ok", goto, f"on.ok -> {goto!r} is not a state")
-    return StateCheck(name, "agent", True, "ok", goto, _capture_summary(state.capture))
+    return StateCheck(name, "agent", True, "ok", state.on["ok"], _capture_summary(state.capture))
 
 
 def _check_state(
@@ -201,12 +195,8 @@ def _check_state(
             return _check_agent(spec, name, state, blackboard)
         if isinstance(state, schema.WaitState):
             # A wait with no timer parks until a poke (no `tick` edge).
-            forever = state.delay_s is None and state.until is None
-            label = "signal" if forever else "tick"
-            goto = state.on[label]
-            ok = goto in spec.states
-            detail = f"{label} path" if ok else f"on.{label} -> {goto!r} is not a state"
-            return StateCheck(name, "wait", ok, label, goto, detail)
+            label = "signal" if execution.is_forever(state) else "tick"
+            return StateCheck(name, "wait", True, label, state.on[label], f"{label} path")
         if isinstance(state, schema.TerminalState):
             reason = template.render_string(
                 template.parse_template(state.reason), blackboard, where="reason"
@@ -222,33 +212,16 @@ def _check_state(
 
 
 def _check_branch(
-    spec: schema.MachineSpec,
     name: str,
     state: schema.BranchState,
     blackboard: dict[str, Any],
 ) -> BranchCheck:
     """Return the check of a branch: the first clause that fires."""
     try:
-        for index, clause in enumerate(state.when):
-            if clause.else_ is not None:
-                fired, label, goto = True, "else", clause.goto
-            else:
-                assert clause.if_ is not None
-                fired, label, goto = (
-                    machine_predicate.evaluate(
-                        machine_predicate.parse_predicate(clause.if_), blackboard
-                    ),
-                    clause.if_,
-                    clause.goto,
-                )
-            if fired:
-                ok = goto in spec.states
-                detail = "" if ok else f"goto {goto!r} is not a state"
-                return BranchCheck(name, index, label, goto, ok, detail)
+        index, label, goto = execution.route_branch(state, blackboard)
+        return BranchCheck(name, index, label, goto, True, "")
     except (machine_predicate.PredicateError, template.TemplateError) as exc:
         return BranchCheck(name, None, None, None, False, f"predicate error: {exc}")
-    # validate_semantics guarantees a final else, so this is unreachable.
-    return BranchCheck(name, None, None, None, False, "no clause matched")  # pragma: no cover
 
 
 def dry_run(
@@ -275,7 +248,7 @@ def dry_run(
     branches: list[BranchCheck] = []
     for name, state in spec.states.items():
         if isinstance(state, schema.BranchState):
-            branches.append(_check_branch(spec, name, state, dict(base)))
+            branches.append(_check_branch(name, state, base))
         else:
             states.append(_check_state(spec, name, state, dict(base)))
     return DryRunReport(states=tuple(states), branches=tuple(branches))

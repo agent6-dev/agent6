@@ -13,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6.machine import MachineError, MachineSpec, ToolState, load_machine, validate_semantics
+from agent6.machine import MachineError, MachineSpec, ToolState, load_machine
 
 
 def _bundle_script_ref(element: str) -> str | None:
@@ -159,6 +159,6 @@ def summarize_machine_file(path: pathlib.Path) -> MachineFileSummary:
         spec = load_machine(path)
     except (MachineError, OSError):
         return MachineFileSummary("-", "-", "invalid")
-    problems = validate_semantics(spec) + validate_bundle(spec, path)
+    problems = validate_bundle(spec, path)
     verdict = "valid" if not problems else f"{len(problems)} issue(s)"
     return MachineFileSummary(spec.machine, str(len(spec.states)), verdict)
