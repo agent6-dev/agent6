@@ -10,7 +10,7 @@ import itertools
 import json
 import pathlib
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import Any, ClassVar
 
 SAMPLES = json.loads(
@@ -90,7 +90,7 @@ class Messages(http.server.BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def scripted(reply: Callable[[dict[str, Any]], str | tuple[str, dict[str, Any]]]) -> Iterator[str]:
+def scripted(reply: Callable[[dict[str, Any]], str | tuple[str, dict[str, Any]]]) -> Generator[str]:
     """Serve scripted local-compaction turns using the captured Messages response shape."""
     ids = itertools.count(1)
 

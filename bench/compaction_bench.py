@@ -61,8 +61,10 @@ def overlap(a: Sequence[Row], b: Sequence[Row]) -> bool:
     ):
         return False
     for key in OVERLAP:
-        x, y = [r.get(key) for r in a], [r.get(key) for r in b]
-        if None in x or None in y or max(min(x), min(y)) > min(max(x), max(y)):
+        if any(r.get(key) is None for r in (*a, *b)):
+            return False
+        x, y = [r[key] for r in a], [r[key] for r in b]
+        if max(min(x), min(y)) > min(max(x), max(y)):
             return False
     return True
 

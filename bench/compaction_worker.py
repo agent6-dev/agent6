@@ -47,11 +47,13 @@ def resume(mode: str, config: str, model: str, steer: str, route: str) -> int:
     if route != "scripted":
         full_jail()
     request = iter([""])
+
+    def once(_: pathlib.Path) -> str | None:
+        return next(request, None)
+
     with contextlib.ExitStack() as stack:
         if mode in ("keep", "pointers"):
-            stack.enter_context(
-                mock.patch.object(ipc, "read_compact_request", lambda _: next(request, None))
-            )
+            stack.enter_context(mock.patch.object(ipc, "read_compact_request", once))
         if mode == "pointers":
             stack.enter_context(
                 mock.patch.object(retention, "select", compaction_arms.pointer_tail)

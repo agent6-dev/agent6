@@ -44,6 +44,8 @@ def _project_turn(rows: list[Row]) -> Iterator[history.Message]:
                     r[k] for k in ("summary", "head_tail", "stdout_tail", "stderr_tail") if r.get(k)
                 )
                 results.append(history.ToolResultItem(uid, text, history.ToolUse(uid, name, args)))
+            case _:
+                pass
     if blocks:
         yield history.AssistantMessage(tuple(blocks), tuple(item.for_call for item in results))
     if results:

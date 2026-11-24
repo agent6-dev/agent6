@@ -10,7 +10,7 @@ import pathlib
 import shutil
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Any
 
 from bench import compaction_arms as arms
@@ -87,7 +87,7 @@ def seal(root: pathlib.Path, *, turns: int, recall: str | None) -> Opening:
 
 
 @contextlib.contextmanager
-def restored(opening: Opening, trial: pathlib.Path) -> Iterator[pathlib.Path]:
+def restored(opening: Opening, trial: pathlib.Path) -> Generator[pathlib.Path]:
     """Use the fixed, vacant active directory, never a caller's existing checkout."""
     slot = opening.slot
     trial.mkdir(parents=True, mode=0o700)
