@@ -1101,6 +1101,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Those scripts execute only via `run_in_jail`.
   pyrefly gets an empty config file, so it reads none from the bundle.
   pyrefly gets the `python3` on `PATH` as its interpreter and asks it for its version and package paths, so it runs none from a `.venv` in the bundle.
+  That interpreter starts in an empty private directory with `PYTHONSAFEPATH=1`, so no file of the bundle is on its import path.
 - `app/machine/agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
 - `ui/tui/clipboard.py`: `tmux load-buffer -w -` with fixed argv and the copied transcript text on stdin.
 - `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment, transcript text on stdin.

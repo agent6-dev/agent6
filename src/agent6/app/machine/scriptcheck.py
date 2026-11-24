@@ -83,6 +83,8 @@ def _run_static(
     """
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # An interpreter a checker starts never takes its working directory as an import path.
+    env["PYTHONSAFEPATH"] = "1"
     try:
         res = subprocess.run(
             argv, capture_output=True, text=True, timeout=180, cwd=cwd, check=False, env=env
@@ -205,7 +207,11 @@ def lint_and_typecheck(
             for directory in sorted({p.parent for p in real}):
                 argv += ["--search-path", str(directory)]
             argv += ["--output-format", "min-text", "--summary=none", *map(str, real)]
-            problem = _run_static(argv, base.parent, "pyrefly (type check)")
+            # pyrefly queries that interpreter; it starts in an empty directory, not the bundle.
+            with tempfile.TemporaryDirectory(prefix="agent6-scriptcheck-") as empty:
+                problem = _run_static(
+                    argv, pathlib.Path(empty), "pyrefly (type check)", strip=base.parent
+                )
             if problem:
                 problems.append(problem)
     else:
