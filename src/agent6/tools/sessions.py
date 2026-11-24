@@ -429,10 +429,15 @@ def read_session(
         raise tool_errors.ToolError("read_session needs the project state dir; none was wired")
     if not args.id:
         return results.SessionsResult(roster(ctx.state_dir, args.query).lines())
-    if ctx.session_dir is not None and args.id == ctx.session_id:
+    if ctx.session_dir is not None:
         bound = sessions_layout.layout_of(ctx.session_dir)
-        if bound.session_dir == ctx.session_dir:
-            return read_entries(bound, args)
+        if bound.session_dir == ctx.session_dir and bound.session_id == ctx.session_id:
+            if args.id == ctx.session_id:
+                return read_entries(bound, args)
+            if bound.state_dir != ctx.state_dir:
+                origin = resolve_reader_id(bound.state_dir, args.id)
+                if origin is not None and origin.session_id == args.id:
+                    return read_entries(origin, args)
     layout = resolve_reader_id(ctx.state_dir, args.id)
     if layout is None:
         raise tool_errors.ToolError(f"no session {args.id!r} in this project")

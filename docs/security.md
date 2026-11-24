@@ -90,7 +90,7 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tool
 - adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 
 `read_session` reads numbered entries from a project journal.
-A child can also read its own journal by its full id, without listing or searching its parent's other sessions.
+A child can also read a session in its parent's project by full id. Listing and prefix searches stay in the clone.
 Tool entries show the journal's argument preview and result summary, up to 200 characters per value.
 Only visible text is searchable.
 The reader skips its own calls and results.
@@ -934,7 +934,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - only the parent can continue an unmerged child, under its remaining allowance and approval policy
     - the private launch binds the child, parent and group to the kept or restored clone, its git directory and its state
     - a child clone must have its own Git common directory; a `commondir` pointer is refused without following it
-    - the child reads its own origin journal by exact ID; its roster and memory stay in the clone's state
+    - the parent hands down the ids, task titles and end states of the child's siblings; `read_session` accepts exact origin ids without granting writes, and memory stays in the clone
     - a continuation charges only the usage beyond its recorded baseline
     - the parent's model cannot end the run over a child: `finish_session` is refused until every task has completed and every requested merge has been reported
 - A child's config carries key references, never secret values

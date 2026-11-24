@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A child reads its bound journal without gaining a roster of its parent's sessions."""
+"""A child reads an origin journal by full id without listing the origin."""
 
 from __future__ import annotations
 
@@ -16,15 +16,20 @@ from agent6.tools import dispatch, tool_errors
 from tests import child_env, launch_env
 
 
-def test_child_reads_only_its_exact_id_outside_its_clone_state(tmp_path: pathlib.Path) -> None:
+def test_child_reads_full_origin_ids_outside_its_clone_state(tmp_path: pathlib.Path) -> None:
     origin = tmp_path / "origin"
     clone = tmp_path / "clone"
     for root in (origin, clone):
-        root.mkdir()
+        child_env.init_repo(root)
     origin_sessions = paths.state_dir(origin) / "sessions" / "runs"
     parent = origin_sessions / "calm-heron-parent"
     child = origin_sessions / "calm-heron-parent-p1-l1"
-    for directory, body in ((parent, "parent instruction"), (child, "child note")):
+    sibling = origin_sessions / "calm-heron-parent-p2-l1"
+    for directory, body in (
+        (parent, "parent instruction"),
+        (child, "child note"),
+        (sibling, "sibling note"),
+    ):
         directory.mkdir(parents=True)
         entry = {"type": "model.result", "text": body}
         (directory / "logs.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
@@ -33,7 +38,15 @@ def test_child_reads_only_its_exact_id_outside_its_clone_state(tmp_path: pathlib
     )
     page = reader.dispatch("read_session", {"id": child.name, "query": "child note"}).to_wire()
     assert "child note" in page["conversation"]
-    for other in (parent.name, child.name[:-1]):
+    assert (
+        "sibling note"
+        in reader.dispatch("read_session", {"id": sibling.name}).to_wire()["conversation"]
+    )
+    assert (
+        "parent instruction"
+        in reader.dispatch("read_session", {"id": parent.name}).to_wire()["conversation"]
+    )
+    for other in (child.name[:-1], sibling.name[:-1], "../" + parent.name):
         with pytest.raises(tool_errors.ToolError, match="no session"):
             reader.dispatch("read_session", {"id": other})
     assert not reader.dispatch("read_session", {}).to_wire()["sessions"]
@@ -65,7 +78,15 @@ def test_a_continued_child_looks_up_sessions_in_its_clone(
         local = child_env.create_record(clone, "local-run")
         (local / "logs.jsonl").write_text('{"type":"model.result","text":"clone journal"}\n')
         for steer in ("", "check session scope"):
-            child_launch.write(path.parent, launch.model_copy(update={"continuation": steer}))
+            child_launch.write(
+                path.parent,
+                launch.model_copy(
+                    update={
+                        "continuation": steer,
+                        "sibling_notice": "[harness siblings]\n[parent-p1-l2] ended: check parsing",
+                    }
+                ),
+            )
             proc = subprocess.run(
                 child_launch.bootstrap_argv(),
                 cwd=clone,
@@ -76,6 +97,11 @@ def test_a_continued_child_looks_up_sessions_in_its_clone(
             )
             assert proc.returncode == 0, proc.stdout + proc.stderr
 
+    assert any(
+        "[harness siblings]\n[parent-p1-l2] ended: check parsing" in message["content"]
+        for message in calls[0]["messages"]
+        if message["role"] == "user"
+    )
     log = paths.state_dir(repo) / "sessions" / "runs" / launch.session_id / "logs.jsonl"
     assert [json.loads(row)["type"] for row in log.read_text().splitlines()].count(
         "session.resume"
@@ -85,5 +111,5 @@ def test_a_continued_child_looks_up_sessions_in_its_clone(
     ][-len(probes) :]
     assert "worker" in own["conversation"]
     assert roster["sessions"] == ["[local-run] run: t"]
-    assert "no session" in partial["error"] and "no session" in parent["error"]
+    assert "no session" in partial["error"] and "conversation" in parent
     assert "clone journal" in local_page["conversation"]

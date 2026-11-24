@@ -17,7 +17,7 @@ from collections.abc import Callable, Generator, Sequence
 from typing import Any, Protocol
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, errors, journal_tail, kinds, paths
+from agent6 import child_records, errors, journal_tail, kinds, paths, task_text
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.app import stop, worktrees
@@ -35,6 +35,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import (
     events,
     fold_session,
@@ -47,6 +48,7 @@ from agent6.viewmodel import (
     wire,
 )
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import status as session_status
 
 
 class ParallelError(Exception):
@@ -273,6 +275,7 @@ def bridge_spawner(
                 session_id=spec.session_id,
                 task=task,
                 task_source=spec.task_source,
+                sibling_notice=spec.sibling_notice,
                 pins=tuple(pins),
                 max_usd=max_usd,
                 auto_approve=auto_approve,
@@ -1059,6 +1062,54 @@ def _watch_child(
         result.set_exception(exc)
 
 
+def _specs_with_siblings(
+    parent_dir: pathlib.Path,
+    specs: list[child_records.ChildSpec],
+    children: list[child_records.ChildTask],
+) -> list[child_records.ChildSpec]:
+    """Attach the parent's other children to each launch.
+
+    Args:
+        parent_dir: The parent whose records name the earlier children.
+        specs: The child launches in this batch.
+        children: The tasks in launch order.
+
+    Returns:
+        The specs with a notice for each child that has siblings.
+    """
+    siblings: dict[str, tuple[str, str]] = {}
+    for row in vm_children.children_of(parent_dir):
+        if row.status in {"unreadable", "unreported", "?"}:
+            state = "end unknown"
+        elif row.status in session_status.LIVE_STATUS_WORDS or row.status in {
+            "created",
+            "not started",
+            "parked",
+        }:
+            state = "not ended"
+        else:
+            state = "ended"
+        siblings[row.session_id] = (state, row.task)
+    # A new batch has ids before any of its journals exist.
+    siblings.update(
+        (spec.session_id, ("not ended", child.task))
+        for spec, child in zip(specs, children, strict=True)
+    )
+    if len(siblings) < 2:
+        return specs
+    rows = {
+        sid: f"[{sid}] {state}: {task_text.clip_title(task_text.task_headline(task))}"
+        for sid, (state, task) in siblings.items()
+    }
+    launches: list[child_records.ChildSpec] = []
+    for spec in specs:
+        lines = [line for sid, line in rows.items() if sid != spec.session_id]
+        launches.append(
+            dataclasses.replace(spec, sibling_notice="\n".join(["[harness siblings]", *lines]))
+        )
+    return launches
+
+
 def build_child_spawner(
     cfg: Config,
     origin: pathlib.Path,
@@ -1173,6 +1224,7 @@ def build_child_spawner(
             sessions_layout.bucket_dir(record_state, kinds.session_bucket(parent_mode))
             / parent_session_id
         )
+        specs = _specs_with_siblings(parent_dir, specs, children)
 
         # The parent's manifest pins the gate the children's config carries.
         gate_source = ""

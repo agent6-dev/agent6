@@ -1632,6 +1632,9 @@ def test_build_child_spawner_builds_specs_and_preserves_order(
     Children go under a per-group workdir; the order holds despite the pool.
     """
     origin_state = paths.state_dir(origin)
+    earlier = child_env.create_record(origin, "co-p1-l1", parent="co")
+    with (earlier / "logs.jsonl").open("a") as stream:
+        stream.write('{"type":"session.stop","reason":"finish_session"}\n')
     cfg = _provider_cfg("kimi")
     seen: list[tuple[int, str, str, str, str]] = []
 
@@ -1668,6 +1671,14 @@ def test_build_child_spawner_builds_specs_and_preserves_order(
         None,
     ]
     assert sorted(s[0] for s in seen) == [1, 2]  # every child ran once
+    assert (
+        results[0].spec.sibling_notice
+        == "[harness siblings]\n[co-p1-l1] ended: t\n[co-p2-l2] not ended: task b"
+    )
+    assert (
+        results[1].spec.sibling_notice
+        == "[harness siblings]\n[co-p1-l1] ended: t\n[co-p2-l1] not ended: task a"
+    )
     # One name for the group: `adopt_orphan_child` and the clone sweep both
     # derive a child's clone from the lineage its manifest recorded, so the dir
     # has to be exactly that. A bare "p2" put the clones a level deeper, and an

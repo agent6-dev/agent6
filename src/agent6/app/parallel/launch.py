@@ -96,6 +96,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         session_id: The child's session id.
         task: The task text, exactly as the child's manifest records it.
         task_source: Who supplied the task.
+        sibling_notice: The other children at launch, separate from the task and pins.
         pins: The parent's pins, out of band of the task.
         max_usd: The parent's forwarded `--max-usd`; None keeps the config's.
         allowance: What the parent had left when the child started, which sets every cap;
@@ -121,6 +122,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     session_id: str = pydantic.Field(min_length=1)
     task: str = pydantic.Field(min_length=1)
     task_source: child_records.DispatchSource = "operator"
+    sibling_notice: str = ""
     pins: tuple[str, ...] = ()
     max_usd: float | None = None
     allowance: budget.BudgetAllowance | None = None

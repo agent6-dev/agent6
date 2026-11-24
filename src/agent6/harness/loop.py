@@ -124,6 +124,7 @@ class Harness:
             finish_session payload; None leaves finishes ungated.
         bridge: What the operator can do to the run, as the front-end injects it.
         task_source: Who supplied the initial task.
+        sibling_notice: The other children as the parent saw them at launch.
         settings: The non-default settings written at each execution start.
         call: The worker call's knobs: retries, temperature, output caps.
         compactor: The in-process compaction strategy.
@@ -166,6 +167,7 @@ class Harness:
     logger: Callable[[str], None] = dataclasses.field(default=print)
     events: event_log.EventSink | None = None
     task_source: loop_conversation.TaskSource = "operator"
+    sibling_notice: str = ""
     settings: tuple[journal.SettingObservation, ...] = ()
     curator: graph_curator.GraphCurator | None = None
     budget: agent6_budget.BudgetTracker | None = None
@@ -773,6 +775,8 @@ class Harness:
                 self, state, action, before - compaction_window.context_chars(conversation)
             )
         # No roll follows the line: a second roll would drop the previous call's cache mark.
+        if ctx.turn == ctx.execution_start and self.sibling_notice:
+            conversation.notice(self.sibling_notice)
         self._show_run_state(conversation, ctx)
         if local_cold or restarted or self.contract is not None:
             conversation.roll_cache_marks()

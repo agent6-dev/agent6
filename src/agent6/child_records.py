@@ -134,6 +134,7 @@ class ChildSpec:
             for the worker's own, which the child's config carries unchanged.
         mode: The child's session mode, which names its bucket under the origin's state.
         task_source: Who supplied the task.
+        sibling_notice: The parent's snapshot of the other children, empty for a sole child.
     """
 
     number: int
@@ -142,6 +143,7 @@ class ChildSpec:
     settings: kinds.ModelSettings | None
     mode: kinds.LoopMode = "run"
     task_source: DispatchSource = "operator"
+    sibling_notice: str = ""
 
     @property
     def number_label(self) -> str:

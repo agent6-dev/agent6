@@ -2863,6 +2863,7 @@ Source: [`agent6.app.parallel.launch.ChildLaunch`](https://github.com/agent6-dev
 | `session_id` | `str` | The child's session id. |
 | `task` | `str` | The task text, exactly as the child's manifest records it. |
 | `task_source` | `Literal['operator', 'model', 'panel']` | Who supplied the task. |
+| `sibling_notice` | `str` | The other children at launch, separate from the task and pins. |
 | `pins` | `tuple[str, ...]` | The parent's pins, out of band of the task. |
 | `max_usd` | `float \| None` | The parent's forwarded `--max-usd`; None keeps the config's. |
 | `allowance` | `BudgetAllowance \| None` | What the parent had left when the child started, which sets every cap; None for the config's caps. |
