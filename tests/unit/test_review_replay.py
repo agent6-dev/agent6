@@ -219,9 +219,8 @@ def test_cli_displays_a_gateway_error_as_text(
     responses_config: pathlib.Path,
 ) -> None:
     env.record_review(tmp_path, "first", env.responses_body())
-    monkeypatch.setattr(
-        transport, "http_post", lambda *a, **kw: httpx2.Response(400, text="bad\x01 request")
-    )
+    failure = mock.Mock(return_value=httpx2.Response(400, text="bad\x01 request"))
+    monkeypatch.setattr(transport, "http_post", failure)
     assert (
         replay.main(
             [str(tmp_path), "--config", str(responses_config), "--model", "p/m", "--effort", "high"]
