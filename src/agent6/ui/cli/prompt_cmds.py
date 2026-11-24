@@ -10,7 +10,7 @@ from typing import Literal
 
 from agent6 import paths
 from agent6.config import layer
-from agent6.harness import prompt_preview
+from agent6.harness.prompt import preview as prompt_preview
 from agent6.sandbox import tool_paths
 from agent6.tools import verify_infer
 

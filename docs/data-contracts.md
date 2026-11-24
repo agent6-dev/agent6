@@ -138,7 +138,7 @@ Define immutable review evidence and validate review boundary payloads.
 Public fields: [Formats](formats.md#typed-records).
 
 - **Written by:** app/review/actions, harness/review/{gate, history, panel, verdict}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
-- **Read by:** kinds, app/execution, app/review/directive, harness/{loop, loop_state, repo_context, run_chain}, sessions/completion, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
+- **Read by:** kinds, app/execution, app/review/directive, harness/{loop, loop_state, run_chain}, harness/prompt/repo_context, sessions/completion, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
 - **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_reviewer.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_reviewer.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (23 test files exercise it)
 
 ## Conversation

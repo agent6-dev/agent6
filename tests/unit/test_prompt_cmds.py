@@ -202,7 +202,8 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
     import tempfile
 
     from agent6.config import Config
-    from agent6.harness import prompt_preview, toolset
+    from agent6.harness import toolset
+    from agent6.harness.prompt import preview as prompt_preview
     from agent6.tools import dispatch
 
     withheld = Config.model_validate(
@@ -231,7 +232,7 @@ def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: pathlib.Path
     "`run_verify_command` is not available", forty lines apart.
     """
     from agent6.config import Config
-    from agent6.harness import prompt_preview
+    from agent6.harness.prompt import preview as prompt_preview
 
     gateless = prompt_preview.model_exchange_for(
         Config(), tmp_path, "plan", state_dir=tmp_path

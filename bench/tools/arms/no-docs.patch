@@ -18,8 +18,8 @@
      )
  
  
---- a/src/agent6/harness/prompt_blocks.py
-+++ b/src/agent6/harness/prompt_blocks.py
+--- a/src/agent6/harness/prompt/blocks.py
++++ b/src/agent6/harness/prompt/blocks.py
 @@ -100,10 +100,7 @@
              " matching the schema the task names."
          )

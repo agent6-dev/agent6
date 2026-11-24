@@ -53,10 +53,8 @@ from agent6.harness import (
     operator_bridge,
     parallel_dispatch,
     parallel_rank,
-    prompt_blocks,
     provider_call,
     quiet_turns,
-    repo_context,
     run_chain,
     run_checkpoint,
     tool_effects,
@@ -66,6 +64,8 @@ from agent6.harness import compaction as harness_compaction
 from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
+from agent6.harness.prompt import blocks as prompt_blocks
+from agent6.harness.prompt import repo_context
 from agent6.harness.review import gate as harness_review_gate
 from agent6.harness.review import history as review_history
 from agent6.harness.tasks import focus as dag_focus

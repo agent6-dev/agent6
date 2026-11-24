@@ -28,7 +28,7 @@ from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError
 from agent6.context import memory
-from agent6.harness import repo_context
+from agent6.harness.prompt import repo_context
 from agent6.prompts import review
 from agent6.providers import Provider, ProviderError, ProviderResponse, TranscriptSink
 from agent6.sessions import journal

@@ -16,7 +16,8 @@ import pytest
 from agent6 import kinds
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
-from agent6.harness import prompt_blocks, tool_effects
+from agent6.harness import tool_effects
+from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.sessions import journal
 from agent6.tools import dispatch, tool_errors
 

@@ -218,7 +218,7 @@ def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: pathlib.
 
 
 def test_load_repo_summary_outside_git(tmp_path: pathlib.Path) -> None:
-    from agent6.harness import repo_context
+    from agent6.harness.prompt import repo_context
 
     (tmp_path / "notes.txt").write_text("alpha\n", encoding="utf-8")
     (tmp_path / "sub").mkdir()
@@ -233,7 +233,7 @@ def test_load_repo_summary_outside_git(tmp_path: pathlib.Path) -> None:
 def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
     from agent6 import kinds
     from agent6.config import load_config
-    from agent6.harness import prompt_blocks
+    from agent6.harness.prompt import blocks as prompt_blocks
 
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(

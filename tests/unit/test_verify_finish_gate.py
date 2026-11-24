@@ -668,7 +668,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
 
 def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
     from agent6 import kinds
-    from agent6.harness import prompt_blocks
+    from agent6.harness.prompt import blocks as prompt_blocks
 
     repo = kinds.RepoSummary(
         root=pathlib.Path("/tmp"),

@@ -105,6 +105,10 @@ Each entry is the package's docstring.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
     - `default_strategy` picks the built-in strategy for the driving route.
     - Main modules: `driver`, `strategy`, `rules`, `elision`, `window`, `retention`, `cold_start`.
+- **[`harness/prompt`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/prompt)**: The run's system prompt and first message: the block fillers, the repo context and the preview.
+    - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
+    - The text the fillers render is the leaf package `agent6.prompts`.
+    - Main modules: `blocks`, `repo_context`, `preview`.
 - **[`harness/review`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/review)**: The review panel the loop runs: its gate, reviewers and history.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
     - The reviews an operator starts (`/review`, `sessions review`) are `app.review`.

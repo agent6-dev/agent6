@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-from agent6.harness import prompt_blocks
+from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.tools import schema
 
 

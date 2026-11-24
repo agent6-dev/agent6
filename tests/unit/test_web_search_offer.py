@@ -13,16 +13,11 @@ from agent6 import budget as agent6_budget
 from agent6.app import role_providers
 from agent6.app.review import recap as review_recap
 from agent6.config import Config
-from agent6.harness import (
-    loop,
-    loop_conversation,
-    prompt_blocks,
-    provider_call,
-    repo_context,
-    run_chain,
-)
+from agent6.harness import loop, loop_conversation, provider_call, run_chain
 from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import window as compaction_window
+from agent6.harness.prompt import blocks as prompt_blocks
+from agent6.harness.prompt import repo_context
 from agent6.prompts import loop as loop_prompts
 from agent6.providers import ProviderResponse
 from tests.unit import test_loop_wire_golden as golden

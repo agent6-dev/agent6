@@ -20,7 +20,7 @@ from typing import Literal
 
 from agent6 import kinds
 from agent6.config import Config, load_config
-from agent6.harness import prompt_blocks
+from agent6.harness.prompt import blocks as prompt_blocks
 
 _INTERACTIVE: tuple[Literal["plan", "ask"], ...] = ("plan", "ask")
 

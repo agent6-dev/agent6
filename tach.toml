@@ -98,7 +98,7 @@ depends_on = [
 ]
 
 [[modules]]
-# prompt_cmds reads harness.prompt_preview for the first exchange.
+# prompt_cmds reads harness.prompt.preview for the first exchange.
 path = "agent6.ui.cli"
 depends_on = [
   "agent6",
@@ -180,8 +180,8 @@ depends_on = [
 # compaction.driver uses compaction.elision, compaction.rules and compaction.window.
 # compaction.window uses loop_conversation and compaction.elision; the result cap
 # reads review.panel and verify.gate notice sizes within this harness boundary.
-# The package re-exports prompt_preview; it uses tasks.focus, prompt_blocks,
-# repo_context and toolset within this boundary.
+# The package re-exports prompt.preview; it uses tasks.focus, prompt.blocks,
+# prompt.repo_context and toolset within this boundary.
 # parallel_dispatch shares one executor and budget reservation path for work and panels.
 # parallel_merge owns merge/DAG projections; child_repo retains descendant session records.
 path = "agent6.harness"
@@ -923,7 +923,7 @@ depends_on = []
 [[modules]]
 # Pure prompt + template text (the strings agent6 sends to models). A leaf: it
 # imports nothing from agent6, so the typed assembly that fills these templates
-# lives one layer up (harness/prompt_blocks, machine/authoring).
+# lives one layer up (harness/prompt/blocks, machine/authoring).
 path = "agent6.prompts"
 depends_on = []
 

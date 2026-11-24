@@ -7,7 +7,7 @@ import pathlib
 import shlex
 
 from agent6 import errors, review_records
-from agent6.harness import repo_context
+from agent6.harness.prompt import repo_context
 from agent6.prompts import review_directive as review_prompt
 from agent6.vcs import review
 from agent6.vcs.git import read as git_read

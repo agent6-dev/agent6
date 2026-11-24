@@ -12,7 +12,8 @@ Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel_dispa
 
 from __future__ import annotations
 
-from agent6.harness import prompt_preview, repo_context
+from agent6.harness.prompt import preview as prompt_preview
+from agent6.harness.prompt import repo_context
 
 ModelExchange = prompt_preview.ModelExchange
 agents_md_text = repo_context.agents_md_text

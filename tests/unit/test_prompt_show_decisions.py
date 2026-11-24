@@ -12,7 +12,7 @@ import subprocess
 
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import prompt_preview
+from agent6.harness.prompt import preview as prompt_preview
 
 
 def test_prompt_show_carries_the_recorded_decisions(tmp_path: pathlib.Path) -> None:

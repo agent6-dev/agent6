@@ -11,7 +11,7 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-from agent6.harness import repo_context
+from agent6.harness.prompt import repo_context
 
 
 def _git_repo(root: pathlib.Path) -> None:

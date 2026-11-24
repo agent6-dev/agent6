@@ -18,7 +18,7 @@ from agent6.app import preflight, resume_questions, stamps
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
-from agent6.harness import repo_context
+from agent6.harness.prompt import repo_context
 from agent6.providers import TranscriptSink
 from agent6.sessions import event_log, lock
 from agent6.sessions import layout as sessions_layout

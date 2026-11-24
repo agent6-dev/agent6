@@ -11,7 +11,9 @@ from typing import Never
 from agent6 import kinds
 from agent6.config import Config
 from agent6.context import memory, skills
-from agent6.harness import prompt_blocks, repo_context, toolset
+from agent6.harness import toolset
+from agent6.harness.prompt import blocks as prompt_blocks
+from agent6.harness.prompt import repo_context
 from agent6.harness.tasks import focus as dag_focus
 from agent6.providers import ToolDefinition
 from agent6.sandbox import detect, jail

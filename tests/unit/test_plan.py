@@ -16,7 +16,8 @@ import pytest
 from agent6 import directive, kinds
 from agent6.config import Config, load_config
 from agent6.harness import loop as loopmod
-from agent6.harness import loop_state, prompt_blocks, provider_call, run_chain, toolset
+from agent6.harness import loop_state, provider_call, run_chain, toolset
+from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.harness.tasks import focus as dag_focus
 from agent6.providers import ProviderResponse
 from agent6.tools import dispatch, mcp_client, results, schema, tool_errors
@@ -814,7 +815,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
     renders when none are recorded.
     """
     from agent6.config import Config
-    from agent6.harness import prompt_blocks
+    from agent6.harness.prompt import blocks as prompt_blocks
 
     repo = kinds.RepoSummary(
         root=tmp_path,

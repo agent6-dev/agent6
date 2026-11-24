@@ -9,7 +9,8 @@ from unittest import mock
 import pytest
 
 from agent6 import errors
-from agent6.harness import loop_state, repo_context, run_chain
+from agent6.harness import loop_state, run_chain
+from agent6.harness.prompt import repo_context
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.harness.review import verdict as review_verdict

@@ -9,7 +9,8 @@ import pathlib
 from agent6 import kinds
 from agent6.config import Config, load_config
 from agent6.context import skills
-from agent6.harness import prompt_blocks, run_chain
+from agent6.harness import run_chain
+from agent6.harness.prompt import blocks as prompt_blocks
 
 _VALID_TOML = """
 [agent6]

@@ -38,7 +38,8 @@ from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.harness import loop_snapshot, repo_context
+from agent6.harness import loop_snapshot
+from agent6.harness.prompt import repo_context
 from agent6.sessions import child_dispatch, id, ipc, journal, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest

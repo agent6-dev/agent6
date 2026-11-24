@@ -7566,7 +7566,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
 
 def test_load_repo_summary_tolerates_a_broken_agents_md(tmp_path: pathlib.Path) -> None:
     """A non-UTF-8 or unreadable AGENTS.md degrades instead of raising after session.start."""
-    from agent6.harness import repo_context
+    from agent6.harness.prompt import repo_context
 
     (tmp_path / "AGENTS.md").write_bytes(b"Style: use \x93smart quotes\x94\n")
     summary = repo_context.load_repo_summary(tmp_path)

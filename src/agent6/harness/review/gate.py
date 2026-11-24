@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget, child_records, errors, kinds, review_records, terminal
-from agent6.harness import parallel_dispatch, parallel_panel, repo_context, run_chain
+from agent6.harness import parallel_dispatch, parallel_panel, run_chain
+from agent6.harness.prompt import repo_context
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
 from agent6.harness.review import verdict as review_verdict
