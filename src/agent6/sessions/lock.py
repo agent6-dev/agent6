@@ -58,10 +58,11 @@ def release_single_writer(fd: int | None) -> None:
 
 SINGLE_WRITER_BUSY = (
     "REFUSING: run {rid!r} is already being driven by another agent6 process "
-    "(its worker.lock is held). Concurrent run/resume of the same run would "
-    "corrupt its state (a second curator clobbers the task graph, and commits "
-    "interleave on the run branch). Wait for that process to finish; a crashed "
-    "one releases the lock automatically."
+    "(its worker.lock is held), and a second writer would corrupt its task graph "
+    "and interleave commits on its branch. Send it an instruction with "
+    "`agent6 steer {rid} TEXT`, follow it with `agent6 attach {rid}`, or stop it "
+    "with `agent6 stop {rid}` and resume it then. A crashed process releases the "
+    "lock automatically."
 )
 
 

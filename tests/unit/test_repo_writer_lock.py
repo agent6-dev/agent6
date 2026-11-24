@@ -908,7 +908,11 @@ def test_a_start_refused_by_a_live_sessions_lock_leaves_that_workers_pid(
     finally:
         lock.release_single_writer(live_fd)
     assert rc == 2
-    assert "already being driven by another agent6 process" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "already being driven by another agent6 process" in err
+    # The refusal said to wait and named none of the commands that reach a live run.
+    for command in ("agent6 steer run-LIVE TEXT", "agent6 attach run-LIVE", "agent6 stop run-LIVE"):
+        assert f"`{command}`" in err
     assert process.read_worker_pid(layout.session_dir) == os.getpid()
     frontend.close_console_view.assert_not_called()
 
