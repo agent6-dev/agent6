@@ -113,6 +113,9 @@ class _FakeGraph:
     def nodes(self) -> dict[str, models.TaskNode]:
         return dict(self.entries)
 
+    def get(self, node_id: str) -> models.TaskNode:
+        return self.entries[node_id]
+
     def cursor(self) -> str | None:
         return None
 

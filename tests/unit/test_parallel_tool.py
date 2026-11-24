@@ -9,7 +9,6 @@ import json
 import os
 import pathlib
 import subprocess
-import types
 from typing import Any
 from unittest import mock
 
@@ -18,6 +17,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import child_records
 from agent6.config import Config
+from agent6.graph import curator as graph_curator
 from agent6.harness import (
     loop,
     operator_bridge,
@@ -28,6 +28,7 @@ from agent6.harness import (
 )
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
+from agent6.sessions import layout as sessions_layout
 from agent6.tools import background, child_tools, dispatch, schema, tool_errors
 from agent6.tools import results as tools_results
 from tests import child_env
@@ -434,28 +435,6 @@ class _Events:
         return [f for t, f in self.emitted if t == event_type]
 
 
-class _Graph:
-    def __init__(self) -> None:
-        self.rationales: list[str] = []
-        self.graph_version = 0
-
-    def nodes(self) -> dict[str, Any]:
-        return {}
-
-    def cursor(self) -> str | None:
-        return None
-
-    def add_subtask(self, intent: Any) -> Any:
-        self.rationales.append(intent.draft.rationale)
-        return types.SimpleNamespace(id=f"N{len(self.rationales)}")
-
-    def update_status(self, intent: Any) -> Any:
-        return types.SimpleNamespace(id=intent.id)
-
-    def record_commit(self, intent: Any) -> Any:
-        return types.SimpleNamespace(id=intent.id)
-
-
 def _child_result(sid: str, workdir: pathlib.Path, *, branch: str, tip: str, usd: float) -> Any:
     child = int(sid.rsplit("-l", 1)[1])
     return child_records.ChildResult(
@@ -481,8 +460,9 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
     repo = tmp_path / "repo"
     _init_repo(repo)
     base = _head(repo)
-    session_dir = tmp_path / "run-abc"
-    session_dir.mkdir()
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="run-abc")
+    graph = graph_curator.GraphCurator(layout)
+    session_dir = layout.session_dir
     seen: list[child_records.ChildTask] = []
 
     @child_env.blocking
@@ -507,7 +487,6 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
         root=repo, config=cfg, isolation="none", session_dir=session_dir, events=None
     )
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    graph = _Graph()
     events: Any = _Events(session_dir / "logs.jsonl")
     wf = loop.Harness(
         chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=base),
@@ -516,7 +495,7 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
         dispatcher=disp,
         logger=lambda _m: None,
         events=events,
-        curator=graph,  # type: ignore[arg-type]
+        curator=graph,
         budget=budget,
         resume_state_path=session_dir / "loop_state.json",
         bridge=operator_bridge.OperatorBridge(child_spawner=spawner),
@@ -554,7 +533,8 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
     assert record.source == "model" and record.state == "complete" and record.delivered
     assert (record.merge_policy, record.spec) == ("rank", "reviewer,default")
     assert [c.limits for c in record.children] == [None, None]
-    assert graph.rationales[-1] == "dispatched through /parallel by the model"
+    assert record.node_id is not None
+    assert graph.get(record.node_id).rationale == "dispatched through /parallel by the model"
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     # The first-ranked attempt alone is on the chain; the other keeps its branch.
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
