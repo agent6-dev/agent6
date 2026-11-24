@@ -586,7 +586,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "/metric [off | SPEC]",
-        f"Show the metric, set {METRIC_SYNTAX}, or use /metric off. {METRIC_POLICY}",
+        "Show, set, or turn off the run metric.",
         "sets state",
         _LIVE,
         "agent6.ui.directive_actions._metric",

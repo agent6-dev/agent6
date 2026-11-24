@@ -40,7 +40,7 @@ Use the name of an enabled skill in place of `/<skill>`.
 | <code>/help</code> | list the commands at this prompt | opens a view | pause, run -i | - |
 | <code>/init</code> | run the setup wizard in the current directory | sets state | run -i | - |
 | <code>/mcp</code> | list the MCP servers and tools in this run | opens a view | run -i | - |
-| <code>/metric [off &#124; SPEC]</code> | Show the metric, set maximize&#124;minimize ["capture pattern"] [target NUMBER] -- command, or use /metric off. The metric can refuse a finish up to three times while more than a quarter of the budget remains. A plateau can end the run. Once the best score reaches or passes the target, the metric allows a finish or a plateau stop at any budget. | sets state | pause, script, steer | acp, acp start, child, next, plan/ask, resume, start |
+| <code>/metric [off &#124; SPEC]</code> | Show, set, or turn off the run metric. | sets state | pause, script, steer | acp, acp start, child, next, plan/ask, resume, start |
 | <code>/now &lt;text&gt;</code> | steer at once, aborting the call in flight: /now &lt;text&gt; (Ctrl+Enter on the web) | controls the run | pause, script, steer | acp, acp start, child, next, plan/ask, resume, start |
 | <code>/parallel [SPEC --] TASK</code> | dispatch children: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more) | starts children | acp, acp start, next, pause, resume, run -i, script, start, steer | - |
 | <code>/pin &lt;text&gt;</code> | pin an instruction that survives compaction: /pin &lt;text&gt; | sets state | acp, next, pause, resume, script, steer | - |

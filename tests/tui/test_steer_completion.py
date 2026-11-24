@@ -158,3 +158,8 @@ def test_an_at_reference_lists_files_and_tab_accepts_one(
             assert not hint.display
 
     asyncio.run(scenario())
+
+
+def test_metric_suggestion_fits_on_one_line() -> None:
+    ((_, help_text),) = composer.steer_suggestion_rows("/met", mode="steer")
+    assert help_text == "Show, set, or turn off the run metric."
