@@ -122,7 +122,7 @@ def sample(
             row["exit_code"] = proc.returncode
     except (OSError, subprocess.SubprocessError) as exc:
         issue = str(exc)
-    row.update(journals.measure(parent.logs_path, arm))
+    row.update(journals.measure(parent.logs_path, arm, model))
     if issue:
         row["issues"].append(issue)
     return row

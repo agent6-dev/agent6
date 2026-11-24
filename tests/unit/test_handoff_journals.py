@@ -49,17 +49,24 @@ def _journal() -> list[dict[str, Any]]:
     ]
 
 
-def _measure(path: pathlib.Path, events: list[dict[str, Any]]) -> dict[str, Any]:
+def _measure(root: pathlib.Path, events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Write the parent's journal beside one journal per child, as the session directory does."""
     from bench.handoff import journals
 
+    path = root / "handoff" / "logs.jsonl"
+    path.parent.mkdir()
     path.write_text("".join(json.dumps(row) + "\n" for row in events))
-    return journals.measure(path, "text")
+    attempt = json.dumps(_event(0, "model.attempt", provider="scripted", model="worker"))
+    for child in "abc":
+        (root / child).mkdir()
+        (root / child / path.name).write_text(attempt + "\n")
+    return journals.measure(path, "text", "scripted/worker")
 
 
 def test_under_two_excludes_full_intervals_and_counts_each_waiting_task(
     tmp_path: pathlib.Path,
 ) -> None:
-    row = _measure(tmp_path / "logs.jsonl", _journal())
+    row = _measure(tmp_path, _journal())
     assert row["under_two_s"] == 9  # [1,4), [8,9), [11,16)
     assert row["wait_by_task_s"] == dict(
         zip((f"{i:04}" for i in range(2, 8)), [2, 3, 6, 6, 6, 9], strict=True)
@@ -69,7 +76,7 @@ def test_under_two_excludes_full_intervals_and_counts_each_waiting_task(
     assert (row["turns"], row["stuck_notices"], row["off_arm_calls"]) == (4, 1, 1)
     assert (row["input_tokens"], row["output_tokens"]) == (12, 4)
     assert (row["cache_read_tokens"], row["cache_write_tokens"]) == (6, 2)
-    assert row["stop_reason"] == "max_turns"
+    assert row["stop_reason"] == "max_turns" and row["issues"] == []
 
 
 @pytest.mark.parametrize(
@@ -85,7 +92,7 @@ def test_missing_fields_leave_only_their_measures_unknown(
         del next(e for e in events if e["type"] == "graph.update")["nodes"]["0007"][missing]
     else:
         del next(e for e in events if e["type"] == "model.attempt")[missing]
-    row = _measure(tmp_path / "logs.jsonl", events)
+    row = _measure(tmp_path, events)
     assert row["turns"] == 4 and row["output_tokens"] == 4
     if missing in ("ts", "detail"):
         assert row["under_two_s"] is None and row["wait_by_task_s"] is None
@@ -100,20 +107,34 @@ def test_missing_fields_leave_only_their_measures_unknown(
     assert row["issues"]
 
 
+def test_a_child_on_another_route_or_without_a_journal_is_an_issue(tmp_path: pathlib.Path) -> None:
+    """A child's route is read from its own journal; an unreadable one costs no parent measure."""
+    from bench.handoff import journals
+
+    _measure(tmp_path, _journal())
+    other = _event(0, "model.attempt", provider="scripted", model="alternate")
+    (tmp_path / "a" / "logs.jsonl").write_text(json.dumps(other) + "\n")
+    (tmp_path / "b" / "logs.jsonl").unlink()
+    row = journals.measure(tmp_path / "handoff" / "logs.jsonl", "text", "scripted/worker")
+    used, unknown = row["issues"]
+    assert used == "child a used scripted/alternate"
+    assert unknown.startswith("child b route unknown: ")
+    assert row["under_two_s"] == 9 and row["all_accepted"] is False
+
+
 @pytest.mark.parametrize("missing", ["session.stop", "task.queued", "end", "logs.jsonl"])
 def test_incomplete_runs_do_not_suggest_an_empty_queue(
     tmp_path: pathlib.Path, missing: str
 ) -> None:
     from bench.handoff import journals
 
-    log = tmp_path / "logs.jsonl"
-    if missing == log.name:
-        row = journals.measure(log, "text")
+    if missing == "logs.jsonl":
+        row = journals.measure(tmp_path / missing, "text", "scripted/worker")
     else:
         events = [e for e in _journal() if e["type"] != missing]
         if missing == "end":
             events = [e for e in events if e.get("activity") != "finished"]
-        row = _measure(log, events)
+        row = _measure(tmp_path, events)
     assert row["under_two_s"] is None and row["issues"]
     if missing != "end":
         assert row["all_accepted"] is None and row["never_started"] is None

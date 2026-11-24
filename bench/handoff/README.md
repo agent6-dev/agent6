@@ -74,6 +74,7 @@ Child activity timestamps measure when the parent observed starts and ends, not 
 `wait_by_task_s` and `starts_by_task` retain the per-task readings.
 An unmatched start, a missing endpoint or an unreadable journal leaves the affected measures unknown.
 An unreported token category is `null`, not zero.
+A started child whose own journal records another provider or model is named in `issues`; the run stays in its arm.
 Graph acceptance measures coordination, not the correctness of the codes in a live summary.
 
 The runner prints the table at the end of the set.

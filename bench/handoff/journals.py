@@ -133,7 +133,29 @@ def _usage(rows: list[Event], result: Event) -> None:
             result["issues"].append(f"unreported parent {key}")
 
 
-def measure(path: pathlib.Path, arm: str) -> dict[str, Any]:
+def _routes(path: pathlib.Path, rows: list[Event], model: str, result: Event) -> None:
+    """Name each started child whose own journal records a route other than the run's."""
+    started = {
+        e["child"]
+        for e in rows
+        if e["type"] == "parallel.child_activity" and e["activity"] == "started"
+    }
+    for child in sorted(started):
+        try:
+            with (path.parent.parent / child / path.name).open(encoding="utf-8") as stream:
+                routes = {
+                    f"{e['provider']}/{e['model']}"
+                    for line in stream
+                    if (e := json.loads(line))["type"] == "model.attempt"
+                }
+        except (OSError, ValueError, KeyError) as exc:
+            result["issues"].append(f"child {child} route unknown: {exc}")
+        else:
+            if other := sorted(routes - {model}):
+                result["issues"].append(f"child {child} used {', '.join(other)}")
+
+
+def measure(path: pathlib.Path, arm: str, model: str) -> dict[str, Any]:
     """Return full-run counts, with nulls and reasons for missing evidence."""
     result: dict[str, Any] = dict.fromkeys(
         (
@@ -165,6 +187,7 @@ def measure(path: pathlib.Path, arm: str) -> dict[str, Any]:
             stop_reason=stop["reason"], turns=stop["turns"], stuck_notices=kinds["nudge.task_stuck"]
         )
         _usage(rows, result)
+        _routes(path, rows, model, result)
         _queue(rows, result, arm)
     except (MissingEvidence, OSError, ValueError, KeyError, TypeError) as exc:
         result["issues"].append(str(exc))
