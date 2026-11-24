@@ -321,6 +321,11 @@ def test_tool_row_enter_opens_its_recorded_argument_preview(tmp_path: pathlib.Pa
     asyncio.run(scenario())
 
 
+def test_the_tool_call_modal_keeps_the_widget_name_textual_gave_it() -> None:
+    """The modal stored the tool's name in `_name`, the attribute textual's `name` reads."""
+    assert modals.ToolCallDetailModal("run_command", True, "", "").name is None
+
+
 def test_render_and_modals(tmp_path: pathlib.Path) -> None:
     # These drive a live run, so its pid belongs on disk as it would be.
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")

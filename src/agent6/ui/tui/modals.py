@@ -197,7 +197,7 @@ class ToolCallDetailModal(screen.ModalScreen[None]):
     def __init__(self, name: str, ok: bool | None, args: str, summary: str) -> None:
         """Create the view for a tool call's name, verdict, args and summary."""
         super().__init__()
-        self._name = name
+        self._tool_name = name
         self._ok = ok
         self._args = args or "(no args)"
         self._summary = summary or "(no summary)"
@@ -212,7 +212,7 @@ class ToolCallDetailModal(screen.ModalScreen[None]):
         status = "… in flight" if self._ok is None else ("✓ ok" if self._ok else "✗ failed")
         with containers.Vertical(id="toolcall-box"):
             header = rich_text.Text()
-            header.append(self._name, style="bold")
+            header.append(self._tool_name, style="bold")
             header.append(f"   {status}", style="dim")
             yield widgets.Static(header)
             yield widgets.Static("args", classes="tc-label")
