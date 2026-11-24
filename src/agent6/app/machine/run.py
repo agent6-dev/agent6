@@ -24,6 +24,7 @@ from agent6.app import confine, preflight, worktree_setup, worktrees
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
+from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError
 from agent6.harness.parallel import repo as child_repo
@@ -186,6 +187,9 @@ def machine_tool_runner(
             # Setup runs the tree's code at the chain tip, which a run state can edit: it gets
             # the tool's policy with none of its pass_env, and the state's timeout_s.
             setup_policy = tool_policy(state, policy.argv, policy.timeout_s, ())
+            session_runtime.record_git_exposure(
+                dest, target_policy.effective_controls(resolved.config, resolved.isolation)
+            )
             failed = workspace.tool_setup_failure(
                 resolved.config, _in_clone(setup_policy, dest, cwd), events_log, reporter
             )
@@ -205,6 +209,7 @@ def machine_tool_policy_factory(
     protect_paths: tuple[pathlib.Path, ...],
     data_dir: pathlib.Path | None,
     bundle_dir: pathlib.Path | None = None,
+    in_place: bool = True,
     shared_writes: tuple[pathlib.Path, ...],
 ) -> ToolPolicyFactory:
     """Return the per-call tool-jail policy builder for a machine.
@@ -221,6 +226,7 @@ def machine_tool_policy_factory(
         data_dir: The machine's writable scratch, when it has one.
         bundle_dir: The directory holding the machine file, which a command's `scripts/`
             path names; None when it is the repository.
+        in_place: Whether commands run in the repository rather than a per-call clone.
         shared_writes: The regions any state of the machine may write; a state's grant inside
             one is dropped as inside its own.
 
@@ -265,7 +271,7 @@ def machine_tool_policy_factory(
         env = {**env_base, **{k: os.environ[k] for k in pass_env if k in os.environ}}
         # A tool's processes die with its state, so its network is its own, never a shared one.
         network = target_policy.resolve_network(cfg, isolation)
-        return tools_policy.jail_policy(
+        policy = tools_policy.jail_policy(
             cwd,
             cfg,
             isolation,
@@ -277,6 +283,11 @@ def machine_tool_policy_factory(
             env_base=env,
             grants=grants[state],
         )
+        if in_place:
+            session_runtime.record_git_exposure(
+                cwd, target_policy.effective_controls(cfg, isolation)
+            )
+        return policy
 
     return build
 
@@ -725,6 +736,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 protect_paths=protect_paths,
                 data_dir=data_dir,
                 bundle_dir=path.parent,
+                in_place=not has_run_agent,
                 shared_writes=shared_writes,
             )
             world = LiveWorld(

@@ -224,6 +224,27 @@ def test_machine_tool_jail_carries_operator_grants_and_protect_git(
     assert (tmp_path / ".git").resolve() in policy.extra_protect_paths
 
 
+@pytest.mark.parametrize(("isolation", "writable"), [("none", True), ("full", False)])
+def test_tool_state_records_its_checkout_before_the_command(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolation: kinds.IsolationLevel,
+    writable: bool,
+) -> None:
+    """Only a jail that could write the checkout's git directory leaves the record."""
+    (tmp_path / ".git").mkdir()
+    world = _world(tmp_path, isolation)
+
+    def check_record(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        assert paths.git_exposure_record(policy.cwd).is_file() is writable
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0
+        )
+
+    monkeypatch.setattr(jail, "run_in_jail", check_record)
+    world.run_tool(("true",), 5.0)
+
+
 def test_liveworld_non_network_tool_is_isolated(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

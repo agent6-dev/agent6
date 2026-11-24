@@ -15,7 +15,7 @@ from typing import Any, ClassVar, Literal
 
 import pytest
 
-from agent6 import errors
+from agent6 import errors, paths
 from agent6.app import reporter, role_providers
 from agent6.app.machine import StateConfig, agent
 from agent6.config import Config
@@ -360,12 +360,14 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
     )
     states = {"check": StateConfig(cfg, "none")}
     factory = machine_run.machine_tool_policy_factory(
-        states, origin, protect_paths=(), data_dir=None, shared_writes=()
+        states, origin, protect_paths=(), data_dir=None, in_place=False, shared_writes=()
     )
     monkeypatch.setenv("X_TOKEN", "s3cret")
     seen: list[tuple[tuple[str, ...], bool]] = []
 
     def execute(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        assert paths.git_exposure_record(policy.cwd).is_file()
+        assert not paths.git_exposure_record(origin).exists()
         seen.append((policy.argv, "X_TOKEN" in dict(policy.env)))
         return kinds.CommandResult(
             argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
