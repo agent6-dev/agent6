@@ -548,6 +548,34 @@ def test_legacy_cursors_keep_their_offset_and_close_marker(
     assert cursor.read_text().split()[:2] == [str(size), "closed"]
 
 
+@pytest.mark.parametrize("machine", [True, False])
+def test_a_journal_that_replaced_another_exports_from_its_start(
+    repo: pathlib.Path, machine: bool
+) -> None:
+    """A cursor skips nothing in a journal that replaced the one it measured, shorter or longer.
+
+    `machine run --restart` starts a fresh journal under the id of the instance it archives.
+    """
+    where = "machines/demo/journal.jsonl" if machine else "sessions/runs/run-a/logs.jsonl"
+    journal = paths.state_dir(repo) / where
+    journal.parent.mkdir(parents=True)
+    first, *rest = machine_tests.journal() if machine else fold_tests._journal()
+    config = _config(logs="none", metrics="none")
+    sizes: list[int] = []
+    sent: list[int] = []
+    whole: list[int] = []
+    for day, rows in ((1, rest), (2, rest[-1:]), (3, [*rest[:1], *rest])):
+        started = {**first, "ts": f"2026-07-0{day}T00:00:00+00:00"}
+        journal.write_text("".join(json.dumps(row) + "\n" for row in [started, *rows]))
+        sizes.append(journal.stat().st_size)
+        sent.append(export.export(repo, config, post=_Collector().post).spans)
+        # An endpoint with no cursor takes the whole journal.
+        fresh = config.model_copy(update={"endpoint": f"http://127.0.0.1:{4320 + day}"})
+        whole.append(export.export(repo, fresh, post=_Collector().post).spans)
+    assert sizes[1] < sizes[0] < sizes[2]
+    assert sent == whole and all(sent)
+
+
 @pytest.mark.parametrize("selected", ["", "demo"])
 def test_machine_exports_parent_workers_and_do_not_double_count_spend(
     repo: pathlib.Path, selected: str

@@ -8,7 +8,8 @@ endpoint and writes the Prometheus textfile, as `[telemetry]` selects. It never 
 a run: the journal stays the record, and a destination that fails is reported, not retried
 forever. A cursor per endpoint, session and signal keeps a re-run from re-sending delivered
 spans and log records; the metrics reading is always the whole cumulative snapshot, dated
-from the earliest journal event so a re-run reports the same window.
+from the earliest journal event so a re-run reports the same window. A cursor counts only in
+the journal it measured, so a journal that replaced that one exports from its start.
 """
 
 from __future__ import annotations
@@ -193,28 +194,45 @@ class _Destination:
             self.notes.append(f"{path}: the collector rejected {rejected} records")
 
 
+def _journal_id(journal: pathlib.Path) -> str:
+    """Return the hash of the journal's first line: its start event, with the start time."""
+    try:
+        with journal.open("rb") as file:
+            head = file.readline()
+    except FileNotFoundError:
+        head = b""
+    return hashlib.sha256(head).hexdigest()[:16]
+
+
 @dataclasses.dataclass(slots=True)
 class _Cursor:
     """The journal offset one signal was delivered through, per endpoint and session.
 
-    `closed` records that the close's spans, the work a dead worker never ended, went out at
-    that offset too, so a re-run of an unchanged journal sends nothing. `interrupted` keeps
-    those span ids from being delivered again when a resume ends them in the journal.
+    `journal` is the hash of the first line of the file the offset measures: `machine run
+    --restart` starts a fresh journal under the same id. `closed` records that the close's
+    spans, the work a dead worker never ended, went out at that offset too, so a re-run of an
+    unchanged journal sends nothing. `interrupted` keeps those span ids from being delivered
+    again when a resume ends them in the journal.
     """
 
     path: pathlib.Path
+    journal: str
     delivered: int
     closed: bool
     interrupted: set[str] = dataclasses.field(default_factory=set)
 
     @classmethod
-    def read(cls, state_dir: pathlib.Path, endpoint: str, session_id: str, signal: str) -> _Cursor:
-        """Return the cursor for the triple, at 0 when none was written."""
+    def read(
+        cls, state_dir: pathlib.Path, endpoint: str, session_id: str, signal: str, journal: str
+    ) -> _Cursor:
+        """Return the cursor for the triple, at 0 when it is absent or names another journal."""
         key = hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:16]
         path = state_dir / CURSORS_DIR / key / f"{session_id}.{signal}.offset"
         interrupted: set[str] = set()
         try:
             words = path.read_text(encoding="utf-8").split()
+            if any(w.startswith("journal=") and w != f"journal={journal}" for w in words):
+                words.clear()  # the offset measures a file this journal replaced
             delivered = int(words[0]) if words else 0
             closed = len(words) > 1 and words[1] == "closed"
             for word in words[1:]:
@@ -222,7 +240,7 @@ class _Cursor:
                     interrupted.update(word.removeprefix("interrupted=").split(","))
         except (OSError, ValueError):
             delivered, closed = 0, False
-        return cls(path, delivered, closed, interrupted)
+        return cls(path, journal, delivered, closed, interrupted)
 
     def pending(self, position: int, *, closing: bool) -> bool:
         """Return whether records completed at `position` are still to deliver."""
@@ -238,6 +256,7 @@ class _Cursor:
         self.interrupted.update(interrupted)
         paths.mkdir_for_real_user(self.path.parent)
         suffix = f" interrupted={','.join(sorted(self.interrupted))}" if self.interrupted else ""
+        suffix += f" journal={self.journal}"
         portable.atomic_write(self.path, f"{offset}{' closed' if closed else ''}{suffix}\n")
         paths.chown_to_real_user(self.path)
 
@@ -279,10 +298,11 @@ class _Session:
         cursor_id = f"machine:{self.session_id}" if self.is_machine else self.session_id
         self.cursors: dict[str, _Cursor] = {}
         if destination is not None:
+            journal_id = _journal_id(self.journal)
             for signal, selected in (("traces", config.traces), ("logs", config.logs)):
                 if selected == "otlp":
                     self.cursors[signal] = _Cursor.read(
-                        state_dir, config.endpoint, cursor_id, signal
+                        state_dir, config.endpoint, cursor_id, signal, journal_id
                     )
         self.spans: list[telemetry_records.Span] = []
         self.interrupted: set[str] = set()
