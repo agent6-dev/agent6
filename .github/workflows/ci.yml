@@ -20,7 +20,7 @@ jobs:
     uses: ./.github/workflows/build.yml
 
   lint:
-    name: ruff + pyright + tach
+    name: ruff + pyrefly + tach
     # Arch- and version-independent static checks: run once.
     runs-on: ubuntu-24.04
     steps:
@@ -36,7 +36,7 @@ jobs:
 
       - run: uv run ruff check
       - run: uv run ruff format --check
-      - run: uv run pyright
+      - run: uv run pyrefly check
       - run: uv run tach check
 
   test:
