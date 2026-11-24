@@ -3,32 +3,26 @@
 """Tree-sitter navigation handlers: outline, find_definition and find_references.
 
 The lazily built `SymbolIndex` lives on `ToolDispatcher`, shared with the edit tools' change
-notification; each handler takes the dispatcher's ensure callable and invokes it only after the
-arguments and path validate, so a rejected call never scans the index.
+notification; handlers request it only after the arguments and path validate.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from agent6 import path_safety
 from agent6.tools import fs_tools, results, schema, tool_errors
-from agent6.tools import index as tools_index
+
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
 INDEX_RESULT_CAP = 500
 
 
-def outline(
-    ws: path_safety.Workspace,
-    ensure_index: Callable[[], tools_index.SymbolIndex],
-    raw: dict[str, Any],
-) -> results.OutlineResult:
+def outline(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.OutlineResult:
     """List the symbols of one file, capped at `INDEX_RESULT_CAP`.
 
     Args:
-        ws: The workspace the path resolves in.
-        ensure_index: Builds or returns the symbol index.
+        ctx: The workspace and its lazy symbol index.
         raw: The tool call's arguments.
 
     Returns:
@@ -38,8 +32,8 @@ def outline(
         ToolError: The path is not a file, has no parser, or lies outside the indexed workspace.
     """
     args = schema.OutlineInput.model_validate(raw)
-    sp = fs_tools.resolve_read_path(ws, args.path, "file")
-    index = ensure_index()
+    sp = fs_tools.resolve_read_path(ctx.workspace, args.path, "file")
+    index = ctx.symbol_index()
     # An empty outline over a file full of symbols misleads the model: name the cause instead.
     if index.language_of(sp.abs_path) is None:
         raise tool_errors.ToolError(
@@ -53,27 +47,22 @@ def outline(
     return results.OutlineResult(symbols=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
-def find_definition(
-    ws: path_safety.Workspace,
-    ensure_index: Callable[[], tools_index.SymbolIndex],
-    raw: dict[str, Any],
-) -> results.DefinitionsResult:
+def find_definition(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.DefinitionsResult:
     """Find where a symbol is defined, capped at `INDEX_RESULT_CAP`.
 
     Args:
-        ws: The workspace paths are reported relative to.
-        ensure_index: Builds or returns the symbol index.
+        ctx: The workspace and its lazy symbol index.
         raw: The tool call's arguments.
 
     Returns:
         The definitions inside the workspace, and whether the list was cut.
     """
     args = schema.FindDefinitionInput.model_validate(raw)
-    defs = ensure_index().find_definition(args.symbol)
+    defs = ctx.symbol_index().find_definition(args.symbol)
     out: list[dict[str, Any]] = []
     for s in defs:
         try:
-            rel = s.path.relative_to(ws.root)
+            rel = s.path.relative_to(ctx.workspace.root)
         except ValueError:
             continue
         out.append({"name": s.name, "kind": s.kind, "path": str(rel), "line": s.line, "col": s.col})
@@ -81,27 +70,22 @@ def find_definition(
     return results.DefinitionsResult(definitions=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
-def find_references(
-    ws: path_safety.Workspace,
-    ensure_index: Callable[[], tools_index.SymbolIndex],
-    raw: dict[str, Any],
-) -> results.ReferencesResult:
+def find_references(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ReferencesResult:
     """Find where a symbol is referenced, capped at `INDEX_RESULT_CAP`.
 
     Args:
-        ws: The workspace paths are reported relative to.
-        ensure_index: Builds or returns the symbol index.
+        ctx: The workspace and its lazy symbol index.
         raw: The tool call's arguments.
 
     Returns:
         The references inside the workspace, and whether the list was cut.
     """
     args = schema.FindReferencesInput.model_validate(raw)
-    refs = ensure_index().find_references(args.symbol)
+    refs = ctx.symbol_index().find_references(args.symbol)
     out: list[dict[str, Any]] = []
     for r in refs:
         try:
-            rel = r.path.relative_to(ws.root)
+            rel = r.path.relative_to(ctx.workspace.root)
         except ValueError:
             continue
         out.append({"name": r.name, "path": str(rel), "line": r.line, "col": r.col})

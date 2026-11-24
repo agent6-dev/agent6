@@ -232,15 +232,9 @@ class ToolDispatcher:
             schema.Agent6DocsInput.TOOL_NAME: fs_tools.agent6_docs,
             schema.ReadFileInput.TOOL_NAME: fs_tools.read_file,
             schema.ListDirInput.TOOL_NAME: fs_tools.list_dir,
-            schema.OutlineInput.TOOL_NAME: lambda ctx, raw: nav_tools.outline(
-                ctx.workspace, ctx.symbol_index, raw
-            ),
-            schema.FindDefinitionInput.TOOL_NAME: lambda ctx, raw: nav_tools.find_definition(
-                ctx.workspace, ctx.symbol_index, raw
-            ),
-            schema.FindReferencesInput.TOOL_NAME: lambda ctx, raw: nav_tools.find_references(
-                ctx.workspace, ctx.symbol_index, raw
-            ),
+            schema.OutlineInput.TOOL_NAME: nav_tools.outline,
+            schema.FindDefinitionInput.TOOL_NAME: nav_tools.find_definition,
+            schema.FindReferencesInput.TOOL_NAME: nav_tools.find_references,
             schema.ApplyEditInput.TOOL_NAME: fs_tools.apply_edit,
             schema.ApplyPatchInput.TOOL_NAME: fs_tools.apply_patch,
             schema.RunVerifyInput.TOOL_NAME: lambda ctx, raw: self._run_verify(raw),
