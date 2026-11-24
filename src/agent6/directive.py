@@ -348,16 +348,6 @@ def spec_fragment(text: str) -> str | None:
     return spec.rsplit(",", 1)[-1].strip()
 
 
-# Directives a front-end acts on itself; the loop parses none, so none can start an execution.
-LIVE_RUN_COMMANDS: frozenset[str] = frozenset(
-    {"/compact", "/btw", "/metric", "/now", "/retire", "/standing", "/stop", "/task"}
-)
-_FRONT_END_COMMANDS: frozenset[str] = LIVE_RUN_COMMANDS | {"/restate", "/shells"}
-_FRONT_END_TOKEN = re.compile(
-    r"\A\s*(" + "|".join(map(re.escape, sorted(_FRONT_END_COMMANDS))) + r")(?=\s|\Z)"
-)
-
-
 def stray_directive(text: str) -> str | None:
     """Return the first directive token sitting somewhere other than the start, or None.
 
@@ -451,29 +441,337 @@ def _parse_segment(raw: str) -> Segment:
     return Segment(spec=spec, task=task)
 
 
-# The words a view acts on itself; a scripted steer has no view, so `agent6 steer` refuses them.
-VIEW_COMMANDS: frozenset[str] = frozenset({"/restate", "/shells", "/undo"})
+CommandKind = Literal[
+    "starts a session", "starts children", "sets state", "controls the run", "opens a view"
+]
+Surface = Literal[
+    "start",
+    "plan/ask",
+    "pause",
+    "steer",
+    "resume",
+    "script",
+    "acp start",
+    "acp",
+    "parent",
+    "child",
+    "run -i",
+    "ask -i",
+    "next",
+]
 
-# The directives a composer completes, with their help; the web client mirrors the strings verbatim.
-STEER_COMMANDS: dict[str, str] = {
-    "/pin": "pin an instruction that survives compaction: /pin <text>",
-    "/compact": "compact the context now; /compact <focus> steers the summary",
-    "/parallel": (
-        "dispatch children: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)"
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SlashCommand:
+    """Describe one slash command without importing its handler.
+
+    Attributes:
+        usage: The command word and its arguments.
+        help: One line for the operator.
+        kind: What the command does.
+        accepts: Where a well-formed command acts rather than travelling as text.
+        handler: The dotted path of a function that carries out the command.
+        refuses: Where a task or steer explicitly refuses this command word.
+    """
+
+    usage: str
+    help: str
+    kind: CommandKind
+    accepts: frozenset[Surface]
+    handler: str
+    refuses: frozenset[Surface] = frozenset()
+
+    @property
+    def name(self) -> str:
+        """Return the word a menu completes."""
+        return self.usage.partition(" ")[0]
+
+
+def _at(*surfaces: Surface) -> frozenset[Surface]:
+    return frozenset(surfaces)
+
+
+_LIVE = _at("pause", "steer", "script")
+_STEER = _LIVE | _at("acp", "resume", "next")
+_VIEW = _at("pause", "steer", "resume")
+_TASK_REFUSAL = _at("start", "plan/ask", "acp start", "acp", "child", "next")
+
+_LIVE_ONLY = _TASK_REFUSAL | _at("resume")
+_VIEW_ONLY = _TASK_REFUSAL | _at("script")
+
+# Registry order is the completion order for a bare slash.
+COMMANDS: tuple[SlashCommand, ...] = (
+    SlashCommand(
+        "/pin <text>",
+        "pin an instruction that survives compaction: /pin <text>",
+        "sets state",
+        _STEER,
+        "agent6.harness.operator_bridge.Steering.pin",
     ),
-    "/restate": "restate the conversation since your last message (local, no model call)",
-    "/review": "review changes in this session: /review [TARGET] (a ref or A..B or A...B)",
-    "/undo": "fork back to before your last message (the text returns to edit and resend)",
-    "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
-    "/task": "queue work into the task graph: /task <text> (worked when the queue drains)",
-    "/metric": f"Show the metric, set {METRIC_SYNTAX}, or use /metric off. {METRIC_POLICY}",
-    "/standing": "set the goal the run returns to when the queue drains: /standing <text>",
-    "/retire": "drop a task from the graph: /retire <task id>, the number the task tree shows",
-    "/now": "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
-    "/stop": "stop the run now, as `agent6 stop` does (resumable)",
-    "/shells": "background commands this run started, and how they ended",
-}
+    SlashCommand(
+        "/compact [focus]",
+        "compact the context now; /compact <focus> steers the summary",
+        "controls the run",
+        _LIVE,
+        "agent6.ui.directive_actions._compact",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/parallel [SPEC --] TASK",
+        "dispatch children: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)",
+        "starts children",
+        _STEER | _at("start", "acp start", "run -i"),
+        "agent6.harness.operator_bridge.Steering.directive",
+    ),
+    SlashCommand(
+        "/restate",
+        "restate the conversation since your last message (local, no model call)",
+        "opens a view",
+        _VIEW,
+        "agent6.viewmodel.transcript.restate",
+        _VIEW_ONLY,
+    ),
+    SlashCommand(
+        "/review [TARGET]",
+        "review changes in this session: /review [TARGET] (a ref or A..B or A...B)",
+        "starts a session",
+        _STEER | _at("start", "plan/ask", "acp start", "child", "ask -i"),
+        "agent6.app.review.directive.build",
+    ),
+    SlashCommand(
+        "/undo",
+        "fork back to before your last message (the text returns to edit and resend)",
+        "starts a session",
+        _VIEW | _at("run -i", "next"),
+        "agent6.app.undo.undo_fork",
+        _at("script"),
+    ),
+    SlashCommand(
+        "/btw <question>",
+        "ask a question beside the run: /btw <question> (answers inline, later)",
+        "starts a session",
+        _LIVE,
+        "agent6.ui.btw.open_btw",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/task <text>",
+        "queue work into the task graph: /task <text> (worked when the queue drains)",
+        "sets state",
+        _LIVE,
+        "agent6.ui.directive_actions._task",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/metric [off | SPEC]",
+        f"Show the metric, set {METRIC_SYNTAX}, or use /metric off. {METRIC_POLICY}",
+        "sets state",
+        _LIVE,
+        "agent6.ui.directive_actions._metric",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/standing <text>",
+        "set the goal the run returns to when the queue drains: /standing <text>",
+        "sets state",
+        _LIVE,
+        "agent6.ui.directive_actions._standing",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/retire <task id>",
+        "drop a task from the graph: /retire <task id>, the number the task tree shows",
+        "sets state",
+        _LIVE,
+        "agent6.ui.directive_actions._retire",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/now <text>",
+        "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
+        "controls the run",
+        _LIVE,
+        "agent6.ui.directive_actions.submit_composer_line",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/stop",
+        "stop the run now, as `agent6 stop` does (resumable)",
+        "controls the run",
+        _LIVE | _at("run -i"),
+        "agent6.app.stop.stop_session",
+        _LIVE_ONLY,
+    ),
+    SlashCommand(
+        "/shells",
+        "background commands this run started, and how they ended",
+        "opens a view",
+        _VIEW,
+        "agent6.ui.cli.steer_menu._print_shells",
+        _VIEW_ONLY,
+    ),
+    SlashCommand(
+        "/<skill> [args]",
+        "use an enabled skill as the instruction",
+        "sets state",
+        _STEER,
+        "agent6.harness.operator_bridge.Steering.skill",
+    ),
+    SlashCommand(
+        "/answer <question-id> <text>...",
+        "answer a question (pause menu: /answer lists questions, /answer ID asks one)",
+        "sets state",
+        _at("pause", "acp"),
+        "agent6.ui.acp.review._answer_reply",
+        _at("acp start"),
+    ),
+    SlashCommand(
+        "/status",
+        "run status: tasks, tools, cost, context, preset",
+        "opens a view",
+        _at("pause"),
+        "agent6.ui.cli.steer_menu._print_status",
+    ),
+    SlashCommand(
+        "/tasks",
+        "the task graph with statuses",
+        "opens a view",
+        _at("pause"),
+        "agent6.ui.cli.steer_menu._print_tasks",
+    ),
+    SlashCommand(
+        "/continue",
+        "resume the run unchanged (same as Enter)",
+        "controls the run",
+        _at("pause", "run -i"),
+        "agent6.ui.cli.steer_menu._answer_line",
+    ),
+    SlashCommand(
+        "/exit",
+        "stop the session and leave the prompt",
+        "controls the run",
+        _at("pause", "run -i", "ask -i", "next"),
+        "agent6.ui.cli.session_prompt.end_of_session_prompt",
+    ),
+    SlashCommand(
+        "/detach",
+        "keep the run going in the background",
+        "controls the run",
+        _at("pause"),
+        "agent6.ui.cli.steer_menu._answer_line",
+    ),
+    SlashCommand(
+        "/help",
+        "list the commands at this prompt",
+        "opens a view",
+        _at("pause", "run -i"),
+        "agent6.ui.cli.steer_menu._print_help",
+    ),
+    SlashCommand(
+        "/cost",
+        "print the token and cost summary",
+        "opens a view",
+        _at("run -i", "ask -i"),
+        "agent6.budget.BudgetTracker.format_summary",
+    ),
+    SlashCommand(
+        "/diff",
+        "show the diff from the base commit to the run branch tip",
+        "opens a view",
+        _at("run -i"),
+        "agent6.ui.cli.repl.repl_run_diff",
+    ),
+    SlashCommand(
+        "/watch",
+        "show the last 20 audit events from this run",
+        "opens a view",
+        _at("run -i"),
+        "agent6.ui.cli.repl.repl_show_recent_events",
+    ),
+    SlashCommand(
+        "/mcp",
+        "list the MCP servers and tools in this run",
+        "opens a view",
+        _at("run -i"),
+        "agent6.ui.cli.repl.repl_list_mcp",
+    ),
+    SlashCommand(
+        "/init",
+        "run the setup wizard in the current directory",
+        "sets state",
+        _at("run -i"),
+        "agent6.ui.cli.repl.repl_run_init",
+    ),
+    SlashCommand(
+        "/quit",
+        "stop at this prompt",
+        "controls the run",
+        _at("run -i", "ask -i"),
+        "agent6.ui.cli.repl.build_repl_hook",
+    ),
+    SlashCommand(
+        "/reset",
+        "clear the prior questions and answers",
+        "sets state",
+        _at("ask -i"),
+        "agent6.ui.cli.ask.run_ask_repl",
+    ),
+    SlashCommand(
+        "/receipt",
+        "Inspect recorded testing, review and reversal evidence",
+        "opens a view",
+        _at("acp"),
+        "agent6.ui.acp.review._read_only_reply",
+        _at("acp start"),
+    ),
+    SlashCommand(
+        "/findings [--all]",
+        "List this run's open review findings",
+        "opens a view",
+        _at("acp"),
+        "agent6.ui.acp.review._read_only_reply",
+        _at("acp start"),
+    ),
+    SlashCommand(
+        "/fix <finding-id>... --resume | --all --resume",
+        "Resume an idle session to reproduce stored findings; leaves them open",
+        "starts a session",
+        _at("acp"),
+        "agent6.ui.acp.review.handle_command",
+        _at("acp start"),
+    ),
+    SlashCommand(
+        "/resolve <finding-id> --as <disposition> --reason <text> [--duplicate-of <id>]",
+        "Resolve a finding with the operator's disposition and reason",
+        "sets state",
+        _at("acp"),
+        "agent6.ui.acp.review.handle_command",
+        _at("acp start"),
+    ),
+    SlashCommand(
+        "/reopen <finding-id> --reason <text>",
+        "Reopen a finding with a reason",
+        "sets state",
+        _at("acp"),
+        "agent6.ui.acp.review.handle_command",
+        _at("acp start"),
+    ),
+)
 
+
+def commands_for(surface: Surface) -> tuple[SlashCommand, ...]:
+    """Return the built-ins for a surface. Installed skills supply their own names and help."""
+    return tuple(c for c in COMMANDS if surface in c.accepts and c.name != "/<skill>")
+
+
+STEER_COMMANDS = {c.name: c.help for c in commands_for("steer")}
+LIVE_RUN_COMMANDS = frozenset(c.name for c in commands_for("steer") if "resume" in c.refuses)
+VIEW_COMMANDS = frozenset(c.name for c in COMMANDS if "script" in c.refuses)
+_FRONT_END_TOKEN = re.compile(
+    r"\A\s*("
+    + "|".join(re.escape(c.name) for c in COMMANDS if "start" in c.refuses)
+    + r")(?=\s|\Z)"
+)
 
 # A directive token inside a line; `/parallel` is excluded, since a later one separates tasks.
 _STRAY = re.compile(
