@@ -219,11 +219,21 @@ def test_show_keeps_the_parent_chain_and_checkout_destinations_for_one_child(
     child = record.children[0].session_id
     repo = pathlib.Path.cwd()
     parent_tip = children_cli._git(repo, "rev-parse", f"refs/agent6/{parent.name}/head")
+    first = record.children[0].merge
+    assert first
+    git = children_cli._git
+    checkout = tmp_path / "child-branch"
+    git(repo, "worktree", "add", str(checkout), first.branch)
+    (checkout / "answer").write_text("extended\n")
+    git(checkout, "commit", "-qam", "Extend answer")
     assert cli_main(["sessions", "merge", child, "--into", "main", "--method", "squash"]) == 0
-    assert children_cli._git(repo, "show", "main:answer") == "done"
+    assert children_cli._git(repo, "show", "main:answer") == "extended"
     capsys.readouterr()
     assert cli_main(["sessions", "show", child, "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["merged_into_parent"] == parent.name
     assert shown["parent_merge_sha"] == parent_tip
     assert shown["merged_into_checkout"] == "main"
+    assert shown["status_label"] == "passed · merged into main"
+    assert cli_main(["attach", child, "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["status_label"] == shown["status_label"]

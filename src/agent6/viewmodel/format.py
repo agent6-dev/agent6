@@ -445,6 +445,7 @@ def listing_status_label(
     *,
     unmerged: bool = False,
     merged_into_parent: str | None = None,
+    merged_into_checkout: str | None = None,
 ) -> str:
     """Return the listing status cell every hub shows.
 
@@ -454,6 +455,7 @@ def listing_status_label(
         reason: The status detail.
         unmerged: The run holds work outside its recorded merges.
         merged_into_parent: The parent whose chain received this child.
+        merged_into_checkout: The destination of a direct merge covering the current tip.
 
     Returns:
         The mode folded in when the word does not imply it ("plan · running", a bare
@@ -466,6 +468,8 @@ def listing_status_label(
         if unmerged:
             return f"{label} · unmerged"
         if merged_into_parent:
+            if merged_into_checkout:
+                return f"{label} · merged into {merged_into_checkout}"
             return f"{label} · {parent_merge_label(merged_into_parent)}"
     return label
 

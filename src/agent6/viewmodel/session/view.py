@@ -286,6 +286,7 @@ def session_state_as_dict(
             reason,
             unmerged=bool(header and header.get("unmerged")),
             merged_into_parent=header.get("merged_into_parent") if header else None,
+            merged_into_checkout=header.get("merged_into_checkout") if header else None,
         )
         if session_dir is not None
         else format.status_label(word, reason)

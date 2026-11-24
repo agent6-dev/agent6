@@ -20,11 +20,17 @@ class MergeState:
     unmerged: bool = False
     merged_into_parent: str | None = None
     parent_merge_sha: str | None = None
+    merged_into_checkout: str | None = None
 
     def status_label(self, mode: str, status: str, reason: format.StatusReason) -> str:
         """Return the session's status with its merge mark."""
         return format.listing_status_label(
-            mode, status, reason, unmerged=self.unmerged, merged_into_parent=self.merged_into_parent
+            mode,
+            status,
+            reason,
+            unmerged=self.unmerged,
+            merged_into_parent=self.merged_into_parent,
+            merged_into_checkout=self.merged_into_checkout,
         )
 
 
@@ -57,9 +63,8 @@ def read_merge_state(
     }
     stamp = record.merged
     work = tips - {record.base_sha}
-    unmerged = bool(work) and not (
-        stamp and stamp.into and git_read.stamp_covers_tips(stamp.tip, tips)
-    )
+    checkout = stamp.into if stamp and git_read.stamp_covers_tips(stamp.tip, tips) else None
+    unmerged = bool(work) and not checkout
     lineage = record.parallel
     if lineage and all(layout.is_safe_session_id(s) for s in (lineage.parent, lineage.group)):
         parent = session_dir.parent / lineage.parent
@@ -84,5 +89,6 @@ def read_merge_state(
                     unmerged=outside,
                     merged_into_parent=parent.name,
                     parent_merge_sha=merge.sha or None,
+                    merged_into_checkout=checkout,
                 )
-    return MergeState(unmerged=unmerged)
+    return MergeState(unmerged=unmerged, merged_into_checkout=checkout)
