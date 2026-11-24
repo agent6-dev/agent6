@@ -37,10 +37,13 @@ def listed(
     for task in dispatcher.open.values():
         if task.record.parent_node == task_id and task.record.node_id is None:
             raise tool_errors.ToolError(f"task {task_id} has a pending text dispatch")
-    candidate = (
-        node.model_copy(update={"status": "pending"}) if retry and node.status == "failed" else node
-    )
-    if not order.is_focusable_subtask(nodes, candidate) or order.unresolved_children(nodes, node):
+    if not retry and (node.parent_id is None or node.status not in order.OPEN_STATUSES):
+        raise tool_errors.ToolError(f"task {task_id} is not an open subtask")
+    if (
+        node.standing
+        or order.unresolved_children(nodes, node)
+        or not order.dependencies_done(nodes, node)
+    ):
         raise tool_errors.ToolError(f"task {task_id} is not a ready ordinary subtask")
     return node
 

@@ -54,6 +54,13 @@ def unresolved_children(nodes: dict[str, models.TaskNode], node: models.TaskNode
     ]
 
 
+def dependencies_done(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> bool:
+    """Return whether each dependency exists and is done."""
+    return all(
+        (d := nodes.get(dep)) is not None and d.status in DONE_STATUSES for dep in node.depends_on
+    )
+
+
 def ready_subtask(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> bool:
     """Return whether the node is open, unheld, with its dependencies done and no open child.
 
@@ -66,11 +73,7 @@ def ready_subtask(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> b
     """
     if node.parent_id is None or node.status not in OPEN_STATUSES or node.held_by:
         return False
-    for dep in node.depends_on:
-        d = nodes.get(dep)
-        if d is None or d.status not in DONE_STATUSES:
-            return False
-    return not has_open_child(nodes, node)
+    return dependencies_done(nodes, node) and not has_open_child(nodes, node)
 
 
 def is_focusable_subtask(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> bool:
