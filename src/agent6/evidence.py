@@ -299,6 +299,18 @@ def target_record(
     )
 
 
+# What every surface says where a jailed command had write access to a checkout's `.git`.
+GIT_WRITABLE = (
+    "A model's commands could write this checkout's .git:"
+    " treat .git there like any file the model wrote."
+)
+
+
+def git_writable(controls: tuple[kinds.EffectiveControl, ...]) -> bool:
+    """Return whether the controls leave the workspace's `.git` writable to commands."""
+    return any(c.leaf == "sandbox.protect_git" and c.effective == "off" for c in controls)
+
+
 def target_lines(target_id: str, target: kinds.ExecutionTargetStamp) -> tuple[str, ...]:
     """Describe recorded target facts without probing the environment.
 
@@ -331,6 +343,8 @@ def target_lines(target_id: str, target: kinds.ExecutionTargetStamp) -> tuple[st
             lines.append(
                 f"{control.leaf}: {control.behaviour} ({control.owner}, {control.probe}){reason}"
             )
+    if git_writable(target.controls):
+        lines.append(GIT_WRITABLE)
     return tuple(lines)
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import errors, kinds, path_safety
+from agent6 import errors, evidence, kinds, path_safety
 from agent6 import paths as agent6_paths
 from agent6.app import confine, fork_worktrees
 from agent6.app.session import runtime as session_runtime
@@ -162,6 +162,7 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
     check_render.line(
         f"  memory:    {common.sgr(effective, '1')} ", f"(sandbox.memory_limit_mib = {mem})"
     )
+    _git_exposure(target_policy.effective_controls(cfg, selected))
 
 
 def _probe(
@@ -358,6 +359,17 @@ def _probe_checks(
     return [kinds.DoctorCheck(name="sandbox", status=status, detail=detail)]
 
 
+def _git_exposure(controls: tuple[kinds.EffectiveControl, ...]) -> None:
+    """Print the `.git` sentence where a run here grants the write, or one already did.
+
+    Args:
+        controls: The effective controls a run here gets.
+    """
+    checkout = agent6_paths.checkout_root(pathlib.Path.cwd())
+    if evidence.git_writable(controls) or agent6_paths.git_exposure_record(checkout).exists():
+        check_render.line("  ", evidence.GIT_WRITABLE, warning=True)
+
+
 def _container_section(cfg: Config) -> list[kinds.DoctorCheck]:
     """Print the container a run would select, inspected and never started or stopped.
 
@@ -372,6 +384,7 @@ def _container_section(cfg: Config) -> list[kinds.DoctorCheck]:
         "(sandbox.isolation = container; commands run inside the selected container, which the"
         " runtime bounds; agent6 adds no confinement there)",
     )
+    _git_exposure(target_policy.container_controls(cfg))
     out: list[kinds.DoctorCheck] = []
     root = pathlib.Path.cwd()
     try:

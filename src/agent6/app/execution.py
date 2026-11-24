@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, errors, kinds, pack, paths, review_records
+from agent6 import directive, errors, evidence, kinds, pack, paths, review_records
 from agent6.app import (
     conversation_state,
     finalize,
@@ -569,6 +569,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 if event.get("type") in journal.SESSION_START_EVENTS:
                     facts = policy.session_policy(layout.session_dir)
                     parts = [execution_settings.summary(settings), *facts.environment[:1]]
+                    parts += [e for e in facts.environment if e == evidence.GIT_WRITABLE]
                     if mode != "ask":
                         parts.append(facts.gate())
                     if line := " · ".join(p for p in parts if p):

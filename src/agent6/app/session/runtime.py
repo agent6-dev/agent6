@@ -8,6 +8,7 @@ The lifecycles keep their own workspace steps and Harness wiring.
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import functools
 import pathlib
 import shlex
@@ -16,7 +17,7 @@ from collections.abc import Callable
 
 import agent6
 from agent6 import budget as agent6_budget
-from agent6 import kinds
+from agent6 import evidence, kinds, paths
 from agent6.app import (
     confine,
     conversation_state,
@@ -302,6 +303,24 @@ class SessionTools:
     cfg: Config
 
 
+def record_git_exposure(
+    checkout: pathlib.Path, controls: tuple[kinds.EffectiveControl, ...]
+) -> None:
+    """Record that commands in a checkout could write its `.git`, before they get the access.
+
+    The record is the checkout's, in agent6's state: a later config change leaves it.
+
+    Args:
+        checkout: The workspace the commands run in.
+        controls: The effective controls the commands run under.
+    """
+    record = paths.git_exposure_record(checkout)
+    if evidence.git_writable(controls) and not record.exists():
+        paths.mkdir_for_real_user(record.parent)
+        now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+        record.write_text(f"{now}\n", encoding="utf-8")
+
+
 def prepare_local_execution(
     cfg: Config,
     root: pathlib.Path,
@@ -348,11 +367,9 @@ def prepare_local_execution(
         if policy.network == "session" and session_net is None:
             session_net = jail.SessionNetwork.open()
             own_net = True
-        session = jail_session.JailSession.open(
-            policy,
-            session_net=session_net,
-            controls=target_policy.effective_controls(cfg, isolation),
-        )
+        controls = target_policy.effective_controls(cfg, isolation)
+        record_git_exposure(root, controls)
+        session = jail_session.JailSession.open(policy, session_net=session_net, controls=controls)
     except BaseException:
         if temp is not None:
             temp.cleanup()
@@ -548,6 +565,7 @@ def prepare_container_execution(
         options=options,
     )
     try:
+        record_git_exposure(checkout or root, controls)
         container.check_checkout(acquired.discovery, checkout or root, worktree_git_dir)
         container.check_hidden_paths(acquired.discovery, cfg.sandbox.hide_paths)
         # Commands run in the session's own checkout, at its path under the mounted workspace.

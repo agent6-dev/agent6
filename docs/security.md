@@ -726,6 +726,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - a sender that gives no answer in 120 s ends with its fetch, and the import fails
     - under `none` `sandbox.isolation` nothing confines it; under `container` it runs on the host, outside the container
     - seeding reads the repository on the host: the `git clone` that makes a clone, and a fetch from the repository into its clone
+    - agent6 records the write access for the checkout before commands get it, in its own state (`$XDG_STATE_HOME/agent6/<checkout-id>/git-writable`); a later config that protects `.git` leaves the record.
+      `agent6 check sandbox`, a run's start line, `sessions show`, the receipt and the web and TUI session views say: "A model's commands could write this checkout's .git: treat .git there like any file the model wrote."
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
     - a nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file
 

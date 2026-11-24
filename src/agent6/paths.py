@@ -447,6 +447,14 @@ def state_dir(repo_root: pathlib.Path, *, allow_pack: bool = False) -> pathlib.P
     return state_base() / repo_id(project_root(repo_root, allow_pack=allow_pack))
 
 
+def git_exposure_record(checkout: pathlib.Path) -> pathlib.Path:
+    """Return the file that records a model's commands could write a checkout's `.git`.
+
+    Keyed on the checkout itself, so a session's clone has its own, removed with its state.
+    """
+    return state_base() / repo_id(checkout) / "git-writable"
+
+
 def repo_config_path(repo_root: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Path:
     """Return the per-repo config file, `<state_dir>/config.toml`, out of the repo."""
     return state_dir(repo_root, allow_pack=allow_pack) / "config.toml"
