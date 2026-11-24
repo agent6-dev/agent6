@@ -52,6 +52,14 @@ class Price:
     cache_read: float | None = None
     cache_write: float | None = None
 
+    def estimate(self, fresh: int, output: int, read: int, write: int) -> float:
+        """Return the quoted cost of one call, using cache ratios only for absent cache rates."""
+        read_rate = self.cache_read if self.cache_read is not None else self.input * 0.1
+        write_rate = self.cache_write if self.cache_write is not None else self.input * 1.25
+        return (
+            fresh * self.input + output * self.output + read * read_rate + write * write_rate
+        ) / 1e6
+
     def as_list(self) -> list[float]:
         """Return the cache file's row: `[input, output]`, plus both cache rates when known."""
         if self.cache_read is None or self.cache_write is None:
@@ -79,13 +87,17 @@ def _reference_id(model: str, vendor: str, models: set[str]) -> str | None:
 
 
 def lookup_price(
-    route: kinds.ModelRoute, providers: Mapping[str, config.ProviderEntry]
+    route: kinds.ModelRoute,
+    providers: Mapping[str, config.ProviderEntry],
+    *,
+    served_tier: str | None = None,
 ) -> Quote | None:
     """Read a bound price without touching the network.
 
     Args:
         route: The provider and model that receive the call.
         providers: The current provider entries.
+        served_tier: The observed wire tier, or None to use the request tier.
 
     Returns:
         The exact quote, a vendor-prefixed reference quote, or None when unpriced.
@@ -98,7 +110,15 @@ def lookup_price(
     if listing is None:
         return None
     data = listing_store.read(listing_store.cache_path(source))
+    tier = served_tier
+    if tier is None and isinstance(
+        entry, (config.OpenAIProviderEntry, config.ResponsesProviderEntry)
+    ):
+        tier = entry.wire_tier
     prices = data.get("pricing")
+    if tier is not None:
+        tiers = data.get("tier_pricing")
+        prices = tiers.get(tier) if isinstance(tiers, dict) else None
     if data.get("binding") != listing_store.binding(listing) or not isinstance(prices, dict):
         return None
     models = set(listing_store.model_ids(data) or ())

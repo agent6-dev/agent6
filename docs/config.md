@@ -626,6 +626,12 @@ A reference listing matches the exact model id first, then its vendor-prefixed i
 For direct Anthropic calls it also accepts the catalog spelling, such as `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`, if neither literal id matches.
 A gateway model without a known vendor needs an unambiguous match among all listed ids, including those without rates.
 A missing reference or price leaves the route unpriced.
+Provider-reported dollars take precedence, including a reported zero.
+To price a service tier, a `/models` row must name the wire tier beside `pricing`, for example `{"id":"m","service_tier":"priority","pricing":{"prompt":"0.000002","completion":"0.000008"}}`.
+A listing can publish one row per tier for the same model id.
+Preflight checks the requested tier. With `auto` it has no tier to price.
+After the call the estimate uses only the tier the endpoint reports.
+An unconfirmed tier request or a tier without listed rates counts against `max_tokens_fallback`.
 A cached price under `$XDG_CACHE_HOME/agent6/models/` must match the current provider entry.
 At startup, a missing or mismatched binding triggers a listing refresh even if the file is recent.
 

@@ -169,12 +169,11 @@ class ModelUsage:
         reported_cost_usd: The sum of provider-reported per-call cost, authoritative
             for the calls that carried one.
         reported_calls: How many calls carried a reported cost or a plan reading.
-        unreported_input_tokens: Input tokens of the calls with no reported cost; the
-            price table covers exactly this bucket, so no call is priced twice.
-        unreported_output_tokens: Output tokens of those calls.
-        unreported_cache_read_tokens: Cache-read tokens of those calls.
-        unreported_cache_write_tokens: Cache-write tokens of those calls.
-        quote: The listing used for this route during this execution, or None when unpriced.
+        estimated_cost_usd: The calls priced from a matching quote, at each call's rates.
+        estimated_calls: The number of calls priced that way.
+        price_source: The listing route behind those estimates.
+        cache_assumed: Cache tokens used the fallback cache rates.
+        served_models: Reported models that differed from the requested id.
         percent_metered: A plan reading metered a call under this route.
     """
 
@@ -186,11 +185,10 @@ class ModelUsage:
     calls: int = 0
     reported_cost_usd: float = 0.0
     reported_calls: int = 0
-    unreported_input_tokens: int = 0
-    unreported_output_tokens: int = 0
-    unreported_cache_read_tokens: int = 0
-    unreported_cache_write_tokens: int = 0
-    quote: pricing.Quote | None = None
+    estimated_cost_usd: float = 0.0
+    estimated_calls: int = 0
+    price_source: kinds.ModelRoute | None = None
+    cache_assumed: bool = False
     percent_metered: bool = False
 
 
@@ -241,57 +239,20 @@ def _billed_apart_from_plan(t: ModelUsage) -> bool:
     Returns:
         True when it holds a reported cost or unreported tokens.
     """
-    return bool(
-        t.reported_cost_usd
-        or t.unreported_input_tokens
-        or t.unreported_output_tokens
-        or t.unreported_cache_read_tokens
-        or t.unreported_cache_write_tokens
-    )
+    return bool(t.reported_cost_usd or t.reported_calls < t.calls)
 
 
 def _model_cost_usd(t: ModelUsage) -> _ModelCost | None:
-    """Return one route's cost, the one owner of the pricing arithmetic.
-
-    The enforced ceiling and the printed summary both read this. Reported cost is
-    authoritative for the calls that carried it; the price table prices only the
-    unreported calls' tokens. A cache write is priced at the listed rate, else 1.25
-    times input; cache reads at the listed rate, else 0.1 times input.
-
-    Args:
-        t: Its usage totals.
-
-    Returns:
-        The cost, or None when the model has no cached price and reported nothing.
-    """
-    if t.percent_metered and not _billed_apart_from_plan(t):
-        # Included-plan calls are an authoritative $0, never table-priced.
-        return _ModelCost(0.0, reported=True, estimated=False)
-    reported = t.reported_calls > 0
-    if t.quote is None:
-        if reported:
-            # Dropping the reported dollars would zero real spend out of the USD cap.
-            return _ModelCost(
-                t.reported_cost_usd,
-                reported=True,
-                estimated=False,
-                partial=t.reported_calls < t.calls,
-            )
+    """Return the known dollars and whether any call in the total was unpriced."""
+    priced = t.reported_calls + t.estimated_calls
+    if not priced:
         return None
-    price = t.quote.rates
-    write_rate = price.cache_write if price.cache_write is not None else price.input * 1.25
-    read_rate = price.cache_read if price.cache_read is not None else price.input * 0.1
-    cache_tokens = t.unreported_cache_write_tokens + t.unreported_cache_read_tokens
-    in_usd = t.unreported_input_tokens * price.input / 1e6
-    cache_write_usd = t.unreported_cache_write_tokens * write_rate / 1e6
-    cache_read_usd = t.unreported_cache_read_tokens * read_rate / 1e6
-    out_usd = t.unreported_output_tokens * price.output / 1e6
-    estimate = in_usd + cache_write_usd + cache_read_usd + out_usd
     return _ModelCost(
-        t.reported_cost_usd + estimate,
-        reported=reported,
-        estimated=estimate > 0.0,
-        cache_assumed=cache_tokens > 0 and (price.cache_read is None or price.cache_write is None),
+        t.reported_cost_usd + t.estimated_cost_usd,
+        reported=t.reported_calls > 0,
+        estimated=t.estimated_calls > 0,
+        partial=priced < t.calls,
+        cache_assumed=t.cache_assumed,
     )
 
 
@@ -470,6 +431,9 @@ class BudgetTracker:
         default_factory=threading.RLock, init=False, repr=False
     )
     _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    _quotes: dict[tuple[kinds.ModelRoute, str | None], pricing.Quote | None] = dataclasses.field(
+        default_factory=dict
+    )
     _per_model: dict[kinds.ModelRoute, ModelUsage] = dataclasses.field(default_factory=dict)
     _input_total: int = 0
     _output_total: int = 0
@@ -534,11 +498,8 @@ class BudgetTracker:
             cache_write_tokens = max(cache_write_tokens, 0)
             if cost_usd is not None:
                 cost_usd = max(cost_usd, 0.0)
-            if route not in self._per_model:
-                self._per_model[route] = ModelUsage(
-                    quote=pricing.lookup_price(route, self.providers)
-                )
-            totals = self._per_model[route]
+            totals = self._per_model.setdefault(route, ModelUsage())
+            metered = True
             totals.input_tokens += input_tokens
             totals.output_tokens += output_tokens
             totals.cache_read_tokens += cache_read_tokens
@@ -554,15 +515,22 @@ class BudgetTracker:
                 totals.reported_cost_usd += cost_usd
                 totals.reported_calls += 1
             else:
-                totals.unreported_input_tokens += input_tokens
-                totals.unreported_output_tokens += output_tokens
-                totals.unreported_cache_read_tokens += cache_read_tokens
-                totals.unreported_cache_write_tokens += cache_write_tokens
+                quote = self._call_quote(route, serving)
+                metered = quote is not None
+                if quote is not None:
+                    totals.price_source = quote.source
+                    totals.estimated_calls += 1
+                    totals.estimated_cost_usd += quote.rates.estimate(
+                        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
+                    )
+                    totals.cache_assumed |= bool(
+                        (cache_read_tokens and quote.rates.cache_read is None)
+                        or (cache_write_tokens and quote.rates.cache_write is None)
+                    )
             self._input_total += input_tokens
             self._output_total += output_tokens
             self._cache_read_total += cache_read_tokens
             self._cache_write_total += cache_write_tokens
-            metered = plan_usage is not None or cost_usd is not None or totals.quote is not None
             if not metered:
                 self._unmetered_tokens += input_tokens + output_tokens
             if plan_usage is None and metered and self.max_usd == 0.0:
@@ -578,6 +546,17 @@ class BudgetTracker:
             else:
                 self._check_fallback_locked()
             self._check_ceilings(route.provider, plan_usage)
+
+    def _call_quote(self, route: kinds.ModelRoute, serving: kinds.Serving) -> pricing.Quote | None:
+        """Return the served tier's quote, or None for an unconfirmed tier request."""
+        if serving.requested_tier is not None and serving.tier is None:
+            return None
+        key = (route, serving.tier)
+        if key not in self._quotes:
+            self._quotes[key] = pricing.lookup_price(
+                route, self.providers, served_tier=serving.tier
+            )
+        return self._quotes[key]
 
     def _check_fallback_locked(self) -> None:
         """Trip the fallback-token ledger at its cap, with the lock held."""
@@ -1037,7 +1016,14 @@ class BudgetTracker:
                 metered += 0 if subscription else 1
                 any_estimated = any_estimated or cost.estimated
                 if cost.partial:
-                    note = " (reported, some calls unpriced)"
+                    origin = (
+                        "reported + estimated"
+                        if cost.reported and cost.estimated
+                        else "reported"
+                        if cost.reported
+                        else "estimated"
+                    )
+                    note = f" ({origin}, some calls unpriced)"
                 elif cost.reported and cost.estimated:
                     note = " (reported + estimated)"
                 elif subscription:
@@ -1046,8 +1032,8 @@ class BudgetTracker:
                     note = " (reported)"
                 else:
                     note = ""
-                if cost.estimated and totals.quote and totals.quote.source != route:
-                    note += f" (price from {terminal.printable_name(totals.quote.source.spec)})"
+                if cost.estimated and totals.price_source and totals.price_source != route:
+                    note += f" (price from {terminal.printable_name(totals.price_source.spec)})"
                 if cost.cache_assumed:
                     note += " (cache rates assumed: 0.1x read, 1.25x write)"
                 cost_str = f"{format_usd(cost.usd, partial=cost.partial)}{note}"

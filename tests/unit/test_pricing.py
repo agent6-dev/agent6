@@ -104,7 +104,8 @@ def test_reference_quote_names_the_matched_listing(
     ).providers
     route = kinds.ModelRoute(name, model)
     rates = {listed: [1.0, 5.0]}
-    price_env.write(rates, name="openrouter", entry=providers["openrouter"])
+    tier = "default" if name in ("openai", "responses") else None
+    price_env.write(rates, name="openrouter", entry=providers["openrouter"], tier=tier)
 
     def quote() -> models_pricing.Quote | None:
         return models_pricing.lookup_price(route, providers)
@@ -112,7 +113,9 @@ def test_reference_quote_names_the_matched_listing(
     assert quote() == models_pricing.Quote(
         models_pricing.Price(1.0, 5.0), kinds.ModelRoute("openrouter", listed)
     )
-    price_env.write({**rates, model: [2.0, 3.0]}, name="openrouter", entry=providers["openrouter"])
+    price_env.write(
+        {**rates, model: [2.0, 3.0]}, name="openrouter", entry=providers["openrouter"], tier=tier
+    )
     assert quote() == models_pricing.Quote(
         models_pricing.Price(2.0, 3.0), kinds.ModelRoute("openrouter", model)
     )

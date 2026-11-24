@@ -49,6 +49,9 @@ class Listing:
     pricing: dict[str, models_pricing.Price]
     context: dict[str, int]
     modalities: dict[str, list[str]]
+    tier_pricing: dict[str, dict[str, models_pricing.Price]] = dataclasses.field(
+        default_factory=dict
+    )
 
 
 def _write_cache(path: pathlib.Path | None, listing: Listing, entry: ProviderEntry) -> None:
@@ -63,6 +66,11 @@ def _write_cache(path: pathlib.Path | None, listing: Listing, entry: ProviderEnt
         }
         if listing.pricing:
             body["pricing"] = {m: p.as_list() for m, p in listing.pricing.items()}
+        if listing.tier_pricing:
+            body["tier_pricing"] = {
+                tier: {model: price.as_list() for model, price in rates.items()}
+                for tier, rates in listing.tier_pricing.items()
+            }
         if listing.context:
             body["context"] = listing.context
         if listing.modalities:
@@ -136,7 +144,7 @@ def _parse_models(payload: object) -> list[str]:
                 mid = item.get("id")
                 if isinstance(mid, str) and mid:
                     out.append(mid)
-    return out
+    return list(dict.fromkeys(out))
 
 
 def _per_mtok(pricing: dict[str, Any], key: str) -> float | None:
@@ -159,7 +167,7 @@ def _per_mtok(pricing: dict[str, Any], key: str) -> float | None:
     return value if value >= 0 else None
 
 
-def _parse_pricing(payload: object) -> dict[str, models_pricing.Price]:
+def _parse_pricing(payload: object, *, tier: str | None = None) -> dict[str, models_pricing.Price]:
     """Return per-model prices from an OpenRouter-style `{"data": [...]}` body.
 
     A model without a usable prompt and completion pair is absent (unknown beats wrong); the
@@ -167,6 +175,7 @@ def _parse_pricing(payload: object) -> dict[str, models_pricing.Price]:
 
     Args:
         payload: The decoded JSON of a `/models` response.
+        tier: The wire tier on the price row; None reads unqualified rates.
 
     Returns:
         The prices in USD per 1M tokens, keyed by model id.
@@ -176,7 +185,7 @@ def _parse_pricing(payload: object) -> dict[str, models_pricing.Price]:
     if not isinstance(data, list):
         return out
     for item in data:
-        if not isinstance(item, dict):
+        if not isinstance(item, dict) or item.get("service_tier") != tier:
             continue
         mid = item.get("id")
         pricing = item.get("pricing")
@@ -387,6 +396,11 @@ def _fetch(
         _parse_pricing(payload),
         _parse_context(payload),
         _parse_modalities(payload),
+        {
+            tier: rates
+            for tier in ("default", "flex", "priority")
+            if (rates := _parse_pricing(payload, tier=tier))
+        },
     )
 
 

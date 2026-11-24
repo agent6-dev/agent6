@@ -75,6 +75,19 @@ class ProviderUsage:
     cost_usd: float | None = None
 
 
+def reported_cost(usage: Mapping[str, Any]) -> float | None:
+    """Return gateway-reported dollars, including a measured zero."""
+    cost = usage.get("cost")
+    if (
+        isinstance(cost, int | float)
+        and not isinstance(cost, bool)
+        and math.isfinite(cost)
+        and cost >= 0
+    ):
+        return float(cost)
+    return None
+
+
 class ProviderError(Exception):
     """A provider call failed.
 

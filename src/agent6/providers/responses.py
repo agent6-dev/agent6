@@ -150,14 +150,16 @@ class ResponsesProvider:
         if status not in ("completed", "incomplete", "done"):
             raise provider_types.ProviderError(f"{_LABEL} response ended with status {status}")
         usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
         output = data.get("output")
-        return responses_codec.parse_output_items(
+        parsed = responses_codec.parse_output_items(
             output if isinstance(output, list) else [],
-            usage=usage if isinstance(usage, dict) else {},
+            usage=usage,
             stop_reason=responses_codec.stop_reason_of(data, status),
             label=_LABEL,
             route=self._route,
         )
+        return dataclasses.replace(parsed, cost_usd=provider_types.reported_cost(usage))
 
     def call(
         self,
@@ -346,6 +348,7 @@ class ResponsesProvider:
             billed = responses_codec.parse_output_items(
                 [], usage=state.usage, stop_reason="", label=_LABEL, route=self._route
             )
+            cost = provider_types.reported_cost(state.usage)
             stream_lifecycle.record_billed_usage(
                 self.budget,
                 kinds.ModelRoute(self.provider_name, self.model),
@@ -353,15 +356,19 @@ class ResponsesProvider:
                 input_tokens=billed.input_tokens,
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
+                cost_usd=cost,
             )
-            call.transcript.usage = billed.usage
-            return billed.usage
+            call.transcript.usage = dataclasses.replace(billed.usage, cost_usd=cost)
+            return call.transcript.usage
 
         with call.recording():
             try:
                 call.run(consume)
                 parsed = responses_codec.finish_stream(
                     state, call=call, url=url, label=_LABEL, route=self._route
+                )
+                parsed = dataclasses.replace(
+                    parsed, cost_usd=provider_types.reported_cost(state.usage)
                 )
                 if self.budget is not None:
                     _require_usage(state.usage)

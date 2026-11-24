@@ -10,8 +10,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget, config
-from agent6.app import role_providers
+from agent6 import budget, config, kinds
+from agent6.app import preflight, role_providers
+from agent6.models import cache
 from agent6.providers import provider_types
 from agent6.sessions import event_log
 from tests import provider_endpoint
@@ -213,3 +214,114 @@ def test_a_2xx_tier_refusal_keeps_the_key(tmp_path: pathlib.Path, stream: bool) 
             worker.call(system="s", messages=[])
     assert exc.value.fatal and "providers.work.service_tier" in str(exc.value)
     assert "Account not enrolled" in str(exc.value) and len(calls) == 1
+
+
+def test_only_matching_tier_quotes_price_an_auto_call(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A route can serve two different prices, or no listed price, during one run."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    listing = {
+        "data": [
+            {"id": "alias", "pricing": {"prompt": "1", "completion": "1"}},
+            {
+                "id": "alias",
+                "service_tier": "priority",
+                "pricing": {"prompt": "0.01", "completion": "0.02"},
+            },
+            {
+                "id": "alias",
+                "service_tier": "flex",
+                "pricing": {"prompt": "0.001", "completion": "0.002"},
+            },
+        ]
+    }
+    with provider_endpoint.serve(listing) as (url, _calls):
+        cfg = config.Config.model_validate(
+            {
+                "models": {"default": {"model": "work/alias"}},
+                "providers": {
+                    "work": {"backend": "responses", "base_url": url, "service_tier": "auto"}
+                },
+                "budget": {"max_tokens_fallback": 0},
+            }
+        )
+        assert cache.fetch_models_live("work", cfg.providers["work"], None)
+    assert preflight.budget_preflight(cfg) is not None
+    tracker = budget.BudgetTracker(
+        providers=cfg.providers, max_usd=-1, max_tokens_fallback=12, max_plan_points=-1
+    )
+    for tier, reported in [
+        ("priority", None),
+        ("flex", None),
+        ("default", 0.25),
+        ("default", None),
+    ]:
+        tracker.record(
+            route=kinds.ModelRoute("work", "alias"),
+            serving=kinds.Serving(requested_tier="auto", tier=tier),
+            input_tokens=10,
+            output_tokens=2,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            cost_usd=reported,
+        )
+    snap = tracker.snapshot()
+    assert snap.usd_own_calls == pytest.approx(0.14 + 0.014 + 0.25)
+    assert snap.usd_partial and snap.unmetered_tokens == 12 and snap.exhausted
+
+
+@pytest.mark.parametrize("quoted_tier", [None, "flex"])
+def test_a_concrete_tier_needs_a_listed_rate_and_a_serving_tier(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, quoted_tier: str | None
+) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    row = {
+        "id": "alias",
+        "service_tier": quoted_tier,
+        "pricing": {"prompt": "1", "completion": "2"},
+    }
+    with provider_endpoint.serve({"data": [row]}) as (url, _calls):
+        worker = _worker(tmp_path, url, "responses", False, service_tier="flex")
+        providers = worker.budget.providers
+        assert cache.fetch_models_live("work", providers["work"], None)
+    cfg = config.Config.model_validate(
+        {
+            "providers": providers,
+            "models": {"default": {"model": "work/alias"}},
+            "budget": {"max_tokens_fallback": 0},
+        }
+    )
+    assert (preflight.budget_preflight(cfg) is None) == (quoted_tier == "flex")
+    tracker = budget.BudgetTracker(
+        providers=providers, max_usd=-1, max_tokens_fallback=12, max_plan_points=-1
+    )
+    tracker.record(
+        route=kinds.ModelRoute("work", "alias"),
+        serving=kinds.Serving(requested_tier="flex", tier="flex" if quoted_tier is None else None),
+        input_tokens=10,
+        output_tokens=2,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+    )
+    snap = tracker.snapshot()
+    assert snap.usd_partial and snap.unmetered_tokens == 12 and snap.exhausted
+
+
+@pytest.mark.parametrize("stream", [True, False])
+def test_responses_reported_dollars_take_precedence_over_a_missing_tier_price(
+    tmp_path: pathlib.Path, stream: bool
+) -> None:
+    body = {
+        "status": "completed",
+        "service_tier": "flex",
+        "usage": {"input_tokens": 10, "output_tokens": 2, "cost": 0.2},
+        "output": [],
+    }
+    with provider_endpoint.serve(
+        [{"type": "response.completed", "response": body}] if stream else body
+    ) as (url, _):
+        worker = _worker(tmp_path, url, "responses", stream, service_tier="flex")
+        worker.call(system="s", messages=[])
+    assert worker.budget.snapshot().usd_own_calls == 0.2
+    assert worker.budget.snapshot().unmetered_tokens == 0
