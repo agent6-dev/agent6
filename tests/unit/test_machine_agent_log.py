@@ -312,3 +312,26 @@ def test_the_authoring_agent_leaves_the_draft_log_to_machine_create(
     types = _types(log)
     assert [t for t in types if t.startswith("session.")] == ["session.start"]
     assert "model.call" in types
+
+
+def test_an_agent_state_reads_its_dollar_and_token_meters(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state's harness held no budget tracker, so its budget line named no dollar or token."""
+
+    class Records(_Finishes):
+        requests: tuple[str, ...] = ()
+
+        @override
+        def call(self, **kw: Any) -> ProviderResponse:
+            self.requests += (json.dumps(kw["messages"]),)
+            return super().call(**kw)
+
+    owner = tmp_path / "machines" / "judge"
+    owner.mkdir(parents=True)
+    log = owner / "states" / "0000-look" / "logs.jsonl"
+    request = AgentRequest(prompt="Judge.", state_name="look", timeout_s=60, remaining_usd=2.0)
+    prov = _run(tmp_path, monkeypatch, owner, log, request, Records(None))
+    assert isinstance(prov, Records)
+    line = "[harness budget] this execution: metered=$0/$2.00; fallback tokens=0/2000000"
+    assert line in prov.requests[0]

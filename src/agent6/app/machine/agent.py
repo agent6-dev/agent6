@@ -585,6 +585,7 @@ def _drive_state(
         config=cfg,
         max_turns=cfg.harness.max_turns,
         provider=provider,
+        budget=budget,
         dispatcher=dispatcher,
         task_source="operator" if r.operator_task is not None else "harness",
         prompts=prompts,
