@@ -120,7 +120,7 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[sc
     def _frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> object:
         fe = real(config_paths)
 
-        def _questioner(_sd: pathlib.Path) -> object:
+        def _questioner(_sd: pathlib.Path) -> operator_prompts.Questioner:
             def _ask(
                 request: operator_prompts.QuestionRequest, /
             ) -> operator_prompts.QuestionAnswer:

@@ -35,7 +35,7 @@ def _reply(conv: history.Conversation, text: str) -> None:
 
 
 def _restart(
-    conv: history.Conversation, *, idle: bool = False, task: str = "", **settings: int
+    conv: history.Conversation, *, idle: bool = False, task: str = "", **settings: Any
 ) -> str:
     helper = writers.Writer(writers.response("Ready."))
     ctx = writers.context(
@@ -160,7 +160,7 @@ def test_a_task_the_history_lost_returns_from_the_run() -> None:
     assert _notice(conv).count(_STATED) == str(conv.to_wire()).count("Flip the readers.") == 1
 
 
-def _restart_run(wf: Any, conv: history.Conversation, state: Any, **settings: int) -> str:
+def _restart_run(wf: Any, conv: history.Conversation, state: Any, **settings: Any) -> str:
     """Restart a conversation with the pins and facts of its own run."""
     helper = writers.Writer(writers.response("Ready."))
     wf.compaction = dataclasses.replace(

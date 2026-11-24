@@ -548,7 +548,7 @@ def test_bridge_spawner_keeps_the_task_out_of_the_argv(
     words = "Keep <file>literal</file>. " + "detail " * 800
 
     def fake_spawn(
-        argv: list[str], workdir: pathlib.Path, **_k: object
+        argv: list[str], cwd: pathlib.Path, **_k: object
     ) -> tuple[pathlib.Path, int, str]:
         captured.append(list(argv))
         env = _k["env"]
@@ -559,8 +559,8 @@ def test_bridge_spawner_keeps_the_task_out_of_the_argv(
             "--allow-root pwn",
             2.0,
         )
-        assert launch.worktree == workdir and launch.session_id == "fan-l1"
-        return workdir, 1, ""
+        assert launch.worktree == cwd and launch.session_id == "fan-l1"
+        return cwd, 1, ""
 
     cfg = Config()
     spec = child_records.ChildSpec(
@@ -604,9 +604,9 @@ def test_a_child_is_seeded_with_the_repos_memory(
     )
 
     def fake_spawn(
-        _argv: list[str], workdir: pathlib.Path, **_k: object
+        argv: list[str], cwd: pathlib.Path, **_k: object
     ) -> tuple[pathlib.Path, int, str]:
-        return workdir, 1, ""
+        return cwd, 1, ""
 
     spec = child_records.ChildSpec(
         number=1,
@@ -638,12 +638,12 @@ def test_bridge_spawner_launch_carries_auto_approve_when_set(
     captured: list[child_launch.ChildLaunch] = []
 
     def fake_spawn(
-        argv: list[str], workdir: pathlib.Path, **_k: object
+        argv: list[str], cwd: pathlib.Path, **_k: object
     ) -> tuple[pathlib.Path, int, str]:
         env = _k["env"]
         assert isinstance(env, dict)
         captured.append(_launch_of(env))
-        return workdir, 1, ""
+        return cwd, 1, ""
 
     cfg = Config()
     spec = child_records.ChildSpec(
@@ -670,12 +670,12 @@ def test_bridge_spawner_launch_omits_auto_approve_by_default(
     captured: list[child_launch.ChildLaunch] = []
 
     def fake_spawn(
-        argv: list[str], workdir: pathlib.Path, **_k: object
+        argv: list[str], cwd: pathlib.Path, **_k: object
     ) -> tuple[pathlib.Path, int, str]:
         env = _k["env"]
         assert isinstance(env, dict)
         captured.append(_launch_of(env))
-        return workdir, 1, ""
+        return cwd, 1, ""
 
     cfg = Config()
     spec = child_records.ChildSpec(
@@ -1958,12 +1958,12 @@ def test_an_unattended_group_does_not_park_its_children_on_a_question(
     captured: list[dict[str, str]] = []
 
     def fake_spawn(
-        argv: list[str], workdir: pathlib.Path, **kw: object
+        argv: list[str], cwd: pathlib.Path, **kw: object
     ) -> tuple[pathlib.Path, int, str]:
         env = kw.get("env")
         assert isinstance(env, dict)
         captured.append(env)
-        return workdir, 1, ""
+        return cwd, 1, ""
 
     for child, away in enumerate(("wait", "deny"), start=1):
         spec = child_records.ChildSpec(
@@ -2001,12 +2001,12 @@ def test_child_is_self_describing_from_birth(
     captured: list[dict[str, str]] = []
 
     def fake_spawn(
-        argv: list[str], workdir: pathlib.Path, **kw: object
+        argv: list[str], cwd: pathlib.Path, **kw: object
     ) -> tuple[pathlib.Path, int, str]:
         env = kw.get("env")
         assert isinstance(env, dict)
         captured.append(env)
-        return workdir, 1, ""
+        return cwd, 1, ""
 
     spec = child_records.ChildSpec(
         number=2,
@@ -2229,7 +2229,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     ]
 
     def fail_spawn(
-        _argv: list[str],
+        argv: list[str],
         cwd: pathlib.Path,
         *,
         ready: Callable[[int], pathlib.Path | None],

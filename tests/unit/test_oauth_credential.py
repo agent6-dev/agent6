@@ -156,8 +156,9 @@ def test_chatgpt_binding_covers_effective_profile_settings(
 ) -> None:
     entry = ChatGPTProviderEntry(backend="chatgpt")
     fingerprint = oauth.binding_fingerprint(entry)
+    changed: dict[str, Any] = {field: value}
     monkeypatch.setattr(
-        oauth_chatgpt, "PROFILE", dataclasses.replace(oauth_chatgpt.PROFILE, **{field: value})
+        oauth_chatgpt, "PROFILE", dataclasses.replace(oauth_chatgpt.PROFILE, **changed)
     )
     assert oauth.binding_fingerprint(entry) != fingerprint
 
