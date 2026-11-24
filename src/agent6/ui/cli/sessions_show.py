@@ -639,12 +639,11 @@ def _print_task_tree(session_dir: pathlib.Path) -> None:
     from agent6.graph import storage  # noqa: PLC0415
     from agent6.ui.cli import task_tree  # noqa: PLC0415
 
-    layout = sessions_layout.layout_of(session_dir)
-    nodes = storage.with_holds(storage.load_graph(layout), layout)
+    nodes, unread = storage.load_with_holds(sessions_layout.layout_of(session_dir))
     if len(nodes) <= 1:
         return
     lines = task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
     if lines:
         print("\ntasks:")
-        for line in lines:
+        for line in [*lines, *([unread] if unread else [])]:
             print(f"  {line}")

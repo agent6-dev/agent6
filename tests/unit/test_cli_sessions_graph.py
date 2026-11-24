@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import pathlib
 
@@ -12,8 +13,8 @@ import pytest
 
 from agent6 import paths
 from agent6.graph import models, storage
+from agent6.sessions import child_dispatch, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import process
 from agent6.ui.cli import main
 
 
@@ -69,6 +70,29 @@ def _seed_tree(tmp_path: pathlib.Path, session_id: str) -> None:
     nodes = {n.id: n for n in (root, s1, s2, s1a, s1b)}
     for n in nodes.values():
         storage.write_node(layout, nodes, n)
+
+
+@pytest.mark.parametrize("command", ["graph", "show"])
+def test_the_task_tree_prints_beside_a_dispatch_record_this_version_cannot_read(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    """An older version's dispatch record raised `DispatchRecordError` out of both commands."""
+    monkeypatch.chdir(tmp_path)
+    sid = "test-run-AAAA11"
+    _seed_tree(tmp_path, sid)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id=sid)
+    records = child_dispatch.records_dir(layout.session_dir)
+    records.mkdir()
+    old = {"version": 5, "identity": f"{sid}-p1", "join_policy": "merge", "segments": []}
+    (records / f"{sid}-p1.json").write_text(json.dumps(old), encoding="utf-8")
+    assert main(["sessions", command, sid]) == 0
+    out = capsys.readouterr().out
+    assert "step 1" in out and "sub 1b" in out
+    (named,) = [line for line in out.splitlines() if f"{sid}-p1.json" in line]
+    assert "holds not shown" in named
 
 
 def test_history_graph_renders_dfs_order(

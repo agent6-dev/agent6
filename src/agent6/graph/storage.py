@@ -355,6 +355,25 @@ def with_holds(
     return view
 
 
+def load_with_holds(
+    layout: sessions_layout.SessionLayout,
+) -> tuple[dict[str, models.TaskNode], str]:
+    """Return the persisted graph with its holds, for a command that prints it.
+
+    Args:
+        layout: The session.
+
+    Returns:
+        The nodes and "". When this version cannot read a dispatch record: the nodes
+        without holds, and the line that names the record.
+    """
+    nodes = load_graph(layout)
+    try:
+        return with_holds(nodes, layout), ""
+    except child_dispatch.DispatchRecordError as exc:
+        return nodes, f"holds not shown: {str(exc).splitlines()[0]}"
+
+
 def load_graph(layout: sessions_layout.SessionLayout) -> dict[str, models.TaskNode]:
     """Read every node file under the graph dir.
 

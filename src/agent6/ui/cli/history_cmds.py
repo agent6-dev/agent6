@@ -576,7 +576,7 @@ def _cmd_history_graph(session_id: str) -> int:
         )
 
     target_id = layout.session_id
-    nodes = storage.with_holds(storage.load_graph(layout), layout)
+    nodes, unread = storage.load_with_holds(layout)
     if not nodes:
         common.error(f"session {target_id} has no persisted graph nodes")
         return 2
@@ -585,4 +585,6 @@ def _cmd_history_graph(session_id: str) -> int:
     print()
     for line in task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)}):
         print(line)
+    if unread:
+        print(unread)
     return 0
