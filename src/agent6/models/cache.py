@@ -40,14 +40,6 @@ _CACHE_TTL_S = 600
 _FETCH_TIMEOUT_S = 1.5  # tab completion waits on this
 
 
-def _model_ids(data: dict[str, Any]) -> list[str] | None:
-    """Return the cached model ids, or None when the listing has none."""
-    models = data.get("models")
-    if isinstance(models, list) and all(isinstance(m, str) for m in models):
-        return models
-    return None
-
-
 @dataclasses.dataclass(frozen=True, slots=True)
 class Listing:
     """One model listing with its optional price, context and input modality facts."""
@@ -493,7 +485,7 @@ def list_models(
     """
     path = listing_store.cache_path(provider_name)
     data = listing_store.read(path)
-    cached = _model_ids(data)
+    cached = listing_store.model_ids(data)
     age = float("inf")
     if path is not None:
         with contextlib.suppress(OSError):
@@ -539,7 +531,9 @@ def fetch_models_live(
 
 def cached_models(provider_name: str) -> list[str]:
     """Return the provider's cached model ids without touching the network, or []."""
-    return _model_ids(listing_store.read(listing_store.cache_path(provider_name))) or []
+    return (
+        listing_store.model_ids(listing_store.read(listing_store.cache_path(provider_name))) or []
+    )
 
 
 def cached_context_window(provider_name: str, keys: tuple[str, ...]) -> int | None:

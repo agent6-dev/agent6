@@ -67,12 +67,15 @@ class Quote:
     source: kinds.ModelRoute
 
 
-def _prices(source: str, listing: config.ProviderEntry) -> dict[str, object]:
-    data = listing_store.read(listing_store.cache_path(source))
-    if data.get("binding") != listing_store.binding(listing):
-        return {}
-    prices = data.get("pricing")
-    return prices if isinstance(prices, dict) else {}
+def _reference_id(model: str, vendor: str, models: set[str]) -> str | None:
+    """Return the vendor-prefixed candidate when the listing has no exact match."""
+    if vendor:
+        prefixed = f"{vendor}/{model}"
+        if vendor == "anthropic" and prefixed not in models:
+            return _openrouter_alias(model)
+        return prefixed
+    matches = [key for key in models if key.partition("/")[2] == model]
+    return matches[0] if len(matches) == 1 else None
 
 
 def lookup_price(
@@ -94,20 +97,16 @@ def lookup_price(
     listing = providers.get(source)
     if listing is None:
         return None
-    prices = _prices(source, listing)
+    data = listing_store.read(listing_store.cache_path(source))
+    prices = data.get("pricing")
+    if data.get("binding") != listing_store.binding(listing) or not isinstance(prices, dict):
+        return None
+    models = set(listing_store.model_ids(data) or ())
     model = route.model
-    if model not in prices and source != route.provider and "/" not in model:
-        if vendor := entry.direct_vendor:
-            prefixed = f"{vendor}/{model}"
-            if vendor == "anthropic" and prefixed not in prices:
-                prefixed = _openrouter_alias(model) or prefixed
-            model = prefixed
-        else:
-            # Two vendors can publish the same bare id. Do not guess which one bills.
-            matches = [key for key in prices if key.partition("/")[2] == model]
-            if len(matches) != 1:
-                return None
-            model = matches[0]
+    if model not in models and source != route.provider and "/" not in model:
+        model = _reference_id(model, entry.direct_vendor, models)
+    if model is None or model not in models:
+        return None
     row = prices.get(model)
     if (
         not isinstance(row, list)

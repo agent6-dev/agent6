@@ -51,3 +51,11 @@ def read(path: pathlib.Path | None) -> dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return body if isinstance(body, dict) else {}
+
+
+def model_ids(data: dict[str, Any]) -> list[str] | None:
+    """Return all model ids, including models without rates, or None for a missing list."""
+    models = data.get("models")
+    if isinstance(models, list) and all(isinstance(m, str) for m in models):
+        return models
+    return None

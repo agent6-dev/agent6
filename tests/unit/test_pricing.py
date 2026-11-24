@@ -11,6 +11,7 @@ import pytest
 
 from agent6 import config, kinds
 from agent6.models import cache as models_cache  # pyright: ignore[reportPrivateUsage]
+from agent6.models import listing_store
 from agent6.models import pricing as models_pricing
 from tests import price_env
 
@@ -128,6 +129,37 @@ def test_gateway_reference_does_not_choose_between_vendors(
     }
     price_env.write({f"one/{model}": [0, 1], f"anthropic/{model}": [1, 2]})
     assert models_pricing.lookup_price(kinds.ModelRoute("local", model), providers) is None
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "unpriced", "rated"),
+    [
+        ("gateway", "x", "a/x", "b/x"),
+        ("gateway", "x", "x", "b/x"),
+        ("direct", "claude-x-4-5", "anthropic/claude-x-4-5", "anthropic/claude-x-4.5"),
+    ],
+)
+def test_unpriced_listing_ids_still_decide_the_match(
+    provider: str,
+    model: str,
+    unpriced: str,
+    rated: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing rate must not make another listing id the price source."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    providers = {
+        **price_env.PROVIDERS,
+        "gateway": price_env.ENTRY.model_copy(update={"price_from": "testprovider"}),
+        "direct": config.AnthropicProviderEntry(backend="anthropic", price_from="testprovider"),
+    }
+    models_cache._write_cache(
+        listing_store.cache_path("testprovider"),
+        models_cache.Listing([unpriced, rated], {rated: models_pricing.Price(1, 2)}, {}, {}),
+        price_env.ENTRY,
+    )
+    assert models_pricing.lookup_price(kinds.ModelRoute(provider, model), providers) is None
 
 
 def test_vendor_prefixed_id_precedes_a_normalized_claude_alias(
