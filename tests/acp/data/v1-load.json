@@ -1,0 +1,353 @@
+[
+ {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+   "protocolVersion": 1,
+   "agentCapabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+     "embeddedContext": false,
+     "image": true
+    },
+    "sessionCapabilities": {
+     "list": {},
+     "resume": {},
+     "close": {}
+    }
+   },
+   "agentInfo": {
+    "name": "agent6",
+    "version": "0.0.44"
+   },
+   "authMethods": []
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "user_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "# Fix the bug\n\nRestore the thing."
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "plan",
+    "entries": [
+     {
+      "content": "root",
+      "priority": "medium",
+      "status": "in_progress"
+     },
+     {
+      "content": "child",
+      "priority": "medium",
+      "status": "pending"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "agent_thought_chunk",
+    "content": {
+     "type": "text",
+     "text": "Let me read the file."
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "Reading now"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "pinned-run-AAAAAA:1:read_file",
+    "title": "read_file src/x.py",
+    "name": "read_file",
+    "kind": "read",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "pinned-run-AAAAAA:1:read_file",
+    "status": "completed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "4773 bytes"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "pinned-run-AAAAAA:1:run_command",
+    "title": "run_command ls /nope",
+    "name": "run_command",
+    "kind": "execute",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "pinned-run-AAAAAA:1:run_command",
+    "status": "failed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "exit=2\nls: /nope: No such file"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "pinned-run-AAAAAA:1:apply_patch",
+    "title": "apply_patch src/x.py",
+    "name": "apply_patch",
+    "kind": "edit",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "pinned-run-AAAAAA:1:apply_patch",
+    "status": "completed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "applied=1"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "pinned-run-AAAAAA:1:verify:1",
+    "title": "run_verify_command pytest -x -q",
+    "name": "run_verify_command",
+    "kind": "execute",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "pinned-run-AAAAAA:1:verify:1",
+    "status": "failed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "✗ exit 1 · 1.7s\n1 failed"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] committed 29251c4be62e · 3 lines\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "user_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "also add a -n alias"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] dispatched 2 parallel tasks (group p1); children run detached, listed under this session\n• fix the race\n• add a test\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] group p1 complete: 2 children\nmerged into parent chain  co-p1-l1  agent6/co-p1-l1  abcdef123456\nconflict  co-p1-l2  agent6/co-p1-l2\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "plan",
+    "entries": []
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "plan",
+    "entries": [
+     {
+      "content": "ok",
+      "priority": "medium",
+      "status": "pending"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "all green\n\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "pinned-run-AAAAAA",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] Session passed - $0 · 2s · 0 tools · 0 commits\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+   "configOptions": []
+  }
+ }
+]

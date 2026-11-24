@@ -1,0 +1,446 @@
+[
+ {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+   "protocolVersion": 1,
+   "agentCapabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+     "embeddedContext": false,
+     "image": true
+    },
+    "sessionCapabilities": {
+     "list": {},
+     "resume": {},
+     "close": {}
+    }
+   },
+   "agentInfo": {
+    "name": "agent6",
+    "version": "0.0.44"
+   },
+   "authMethods": []
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+   "sessionId": "<session>",
+   "configOptions": []
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "session_info_update",
+    "title": "Fix the bug"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "available_commands_update",
+    "availableCommands": [
+     {
+      "name": "pin",
+      "description": "pin an instruction that survives compaction: /pin <text>",
+      "input": {
+       "hint": "<text>",
+       "type": "text"
+      }
+     },
+     {
+      "name": "answer",
+      "description": "answer a question (pause menu: /answer lists questions, /answer ID asks one)",
+      "input": {
+       "hint": "<question-id> <text>..."
+      }
+     },
+     {
+      "name": "parallel",
+      "description": "dispatch children: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)",
+      "input": {
+       "hint": "[SPEC --] TASK"
+      }
+     },
+     {
+      "name": "review",
+      "description": "review changes in this session: /review [TARGET] (a ref or A..B or A...B)",
+      "input": {
+       "hint": "[TARGET]",
+       "type": "text"
+      }
+     },
+     {
+      "name": "receipt",
+      "description": "Inspect recorded testing, review and reversal evidence"
+     },
+     {
+      "name": "findings",
+      "description": "List this run's open review findings",
+      "input": {
+       "hint": "[--all]"
+      }
+     },
+     {
+      "name": "fix",
+      "description": "Resume an idle session to reproduce stored findings; leaves them open",
+      "input": {
+       "hint": "<finding-id>... --resume | --all --resume"
+      }
+     },
+     {
+      "name": "resolve",
+      "description": "Resolve a finding with the operator's disposition and reason",
+      "input": {
+       "hint": "<finding-id> --as <disposition> --reason <text> [--duplicate-of <id>]"
+      }
+     },
+     {
+      "name": "reopen",
+      "description": "Reopen a finding with a reason",
+      "input": {
+       "hint": "<finding-id> --reason <text>"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "plan",
+    "entries": [
+     {
+      "content": "root",
+      "priority": "medium",
+      "status": "in_progress"
+     },
+     {
+      "content": "child",
+      "priority": "medium",
+      "status": "pending"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_thought_chunk",
+    "content": {
+     "type": "text",
+     "text": "Let me read the file."
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "Reading now"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "<session>::read_file",
+    "title": "read_file src/x.py",
+    "name": "read_file",
+    "kind": "read",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "<session>::read_file",
+    "status": "completed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "4773 bytes"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "<session>::run_command",
+    "title": "run_command ls /nope",
+    "name": "run_command",
+    "kind": "execute",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "<session>::run_command",
+    "status": "failed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "exit=2\nls: /nope: No such file"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "<session>::apply_patch",
+    "title": "apply_patch src/x.py",
+    "name": "apply_patch",
+    "kind": "edit",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "<session>::apply_patch",
+    "status": "completed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "applied=1"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "<session>::verify:1",
+    "title": "run_verify_command pytest -x -q",
+    "name": "run_verify_command",
+    "kind": "execute",
+    "status": "in_progress"
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "<session>::verify:1",
+    "status": "failed",
+    "content": [
+     {
+      "type": "content",
+      "content": {
+       "type": "text",
+       "text": "✗ exit 1 · 1.7s\n1 failed"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] committed 29251c4be62e · 3 lines\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "user_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "also add a -n alias"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] dispatched 2 parallel tasks (group p1); children run detached, listed under this session\n• fix the race\n• add a test\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] group p1 complete: 2 children\nmerged into parent chain  co-p1-l1  agent6/co-p1-l1  abcdef123456\nconflict  co-p1-l2  agent6/co-p1-l2\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "plan",
+    "entries": []
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "plan",
+    "entries": [
+     {
+      "content": "ok",
+      "priority": "medium",
+      "status": "pending"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] Final tree not certified\nunrecorded id: failed, exit 1, full gate\nCommand: pytest -x -q\nEnvironment: unknown; execution: unknown\nTested tree: unknown; after: unknown\nSelected paths: none\nDuration: 1.71s; timeout: 600s\nOutput: capture completeness unknown\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "all green\n\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+   "sessionId": "<session>",
+   "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+     "type": "text",
+     "text": "[agent6] Session passed - $0 · 2s · 0 tools · 0 commits\n"
+    }
+   }
+  }
+ },
+ {
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+   "stopReason": "end_turn"
+  }
+ }
+]
