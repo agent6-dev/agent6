@@ -184,6 +184,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `next_turn` | `int` | required |
 | `root_task_id` | `str | None` | required |
 | `original_task` | `str` | required |
+| `task_source` | `loop_conversation.TaskSource` | `'harness'` |
 | `verify_command` | `tuple[str, ...]` | required |
 | `review_rejections_total` | `int` | `0` |
 | `verify_ever_passed` | `bool` | `False` |
@@ -215,7 +216,7 @@ Hold a session's end and the snapshot a resume re-enters.
 
 - **Written by:** harness/loop
 - **Read by:** app/{child_resume, execution, finalize, fork, frontend, resume, undo}, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, quiet_turns}, ui/acp/frontend, ui/cli/ask
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (38 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (39 test files exercise it)
 
 ## ToolResult family
 

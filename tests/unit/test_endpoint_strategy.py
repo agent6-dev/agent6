@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 import time
 from typing import Any
 
@@ -10,12 +11,13 @@ import pytest
 
 from agent6 import config
 from agent6.app import role_providers
-from agent6.harness import loop_conversation
+from agent6.harness import loop_conversation, loop_resume, loop_snapshot, loop_state
 from agent6.harness.compaction import driver, window
 from agent6.providers import anthropic_parse, provider_types
 from tests.unit import test_anthropic_compaction as captured
 from tests.unit import test_compaction_writers as fixtures
 from tests.unit import test_harness
+from tests.unit import test_restart_retention as local
 
 
 @pytest.mark.parametrize(
@@ -330,6 +332,57 @@ def test_helper_restart_after_an_endpoint_block_reads_the_prior_summary() -> Non
     after = turn.conversation.to_wire()
     assert after[0]["content"][0]["text"] == "verbatim task" and "Helper summary." in str(after[1])
     assert "compaction" not in after[0]["content"][0]
+
+
+@pytest.mark.parametrize("source", ["operator", "model", "harness"])
+def test_restored_signed_summary_does_not_change_the_task_author(
+    source: loop_conversation.TaskSource, tmp_path: pathlib.Path
+) -> None:
+    """A helper fallback reconstructs the opening without promoting the composed task."""
+    snap = tmp_path / "loop_state.json"
+    original = "Rendered context.\nAssignment."
+    words = "Assignment."
+    signed = anthropic_parse.parse_response(captured.SAMPLES["compact"]["response"])
+    helper = fixtures.Writer(fixtures.response("Ready."))
+    settings = window.CompactionSettings(
+        endpoint=provider_types.EndpointCompaction(True, True),
+        helper=helper,
+        helper_context_tokens=200000,
+        summarise_at_chars=10,
+    )
+    wf = test_harness._wf(
+        root=tmp_path,
+        provider=fixtures.Writer(signed),
+        compaction=settings,
+        task_source=source,
+        resume_state_path=snap,
+    )
+    system, conv, _ = wf._open_task(original, words)
+    state = loop_state.LoopState(original, 0, system=system, operator_task=words)
+    ctx = wf.compaction_context(conv, state, [])
+    assert driver.Endpoint().summarise_and_restart(ctx)
+    assert conv.to_wire()[0]["content"] == [signed.summary_block]
+    _with_reads(conv, 1)
+    loop_resume.save_resume_snapshot(wf, state, conv.to_wire(snapshot=True), next_turn=3)
+
+    resumed = test_harness._wf(
+        root=tmp_path,
+        provider=fixtures.Writer(fixtures.response("")),
+        compaction=settings,
+        resume_state_path=snap,
+        max_turns=1,
+    )
+    assert resumed.resume().reason == "max_turns"
+    assert len(helper.calls) == 1
+    conv = loop_conversation.Conversation.from_wire(
+        loop_snapshot.load_session_snapshot(snap).messages
+    )
+    assert conv.to_wire()[0]["content"][0]["text"] == original
+    local._reply(conv, "Done.")
+    local._restart(conv, keep_recent_chars=500, keep_recent_turns=0)
+    notice = local._notice(conv)
+    assert original not in notice
+    assert ("Operator message:\nAssignment." in notice) is (source == "operator")
 
 
 def test_rejected_sent_image_stays_in_the_prefix() -> None:

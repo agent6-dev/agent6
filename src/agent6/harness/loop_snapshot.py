@@ -162,7 +162,7 @@ class ResumeError(Exception):
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 9
+SNAPSHOT_VERSION = 10
 
 
 class SessionSnapshot(pydantic.BaseModel):
@@ -182,6 +182,7 @@ class SessionSnapshot(pydantic.BaseModel):
         next_turn: The turn the snapshot's provider call runs.
         root_task_id: The task graph's root, when the run has one.
         original_task: The composed task.
+        task_source: Who supplied the opening task, even after a summary replaces it.
         last_steer: The delivery number and text used to locate an undo checkpoint.
         operator_task: The words before composition; absent in old snapshots.
         base_sha: The base the run's work starts from, which `baseline_ok` describes; a resume
@@ -237,6 +238,7 @@ class SessionSnapshot(pydantic.BaseModel):
     next_turn: int
     root_task_id: str | None
     original_task: str
+    task_source: loop_conversation.TaskSource = "harness"
     verify_command: tuple[str, ...]
     review_rejections_total: int = 0
     verify_ever_passed: bool = False

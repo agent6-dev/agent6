@@ -437,7 +437,7 @@ class Conversation:
         keep: Sequence[Message] = (),
         *,
         quotes: tuple[str, ...] = (),
-        endpoint_task: str | None = None,
+        endpoint_task: Notice | None = None,
     ) -> None:
         """Replace the history with a restart notice and paired messages.
 
@@ -457,9 +457,7 @@ class Conversation:
         if endpoint_task is not None:
             first = self._messages[0]
             opening.append(
-                first
-                if isinstance(first, UserMessage)
-                else UserMessage((Notice(endpoint_task, "operator"),))
+                first if isinstance(first, UserMessage) else UserMessage((endpoint_task,))
             )
         self._messages[:] = [*opening, notice, *keep]
         self._marks = [m for m in self._marks if opening and m[0] == 0]

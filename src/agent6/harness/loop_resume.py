@@ -262,6 +262,7 @@ def save_resume_snapshot(
         next_turn=next_turn,
         root_task_id=state.root_task_id,
         original_task=state.original_task,
+        task_source=harness.task_source,
         operator_task=state.operator_task,
         last_steer=state.last_steer,
         base_sha=harness.chain.base_sha,

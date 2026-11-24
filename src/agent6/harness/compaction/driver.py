@@ -474,7 +474,7 @@ def write_summary(
         )
         request = writers.instruction(
             writer=writer,
-            task=context.task,
+            task=context.task.text,
             open_tasks=open_tasks,
             focus=focus,
             pins=context.pins,

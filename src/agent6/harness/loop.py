@@ -332,9 +332,13 @@ class Harness:
         conversation.notice(
             initial_user,
             origin=self.task_source,
-            operator_words=(operator_task,) if self.task_source == "operator" else (),
+            operator_words=self._task_words(operator_task),
         )
         return system, conversation, root_id
+
+    def _task_words(self, words: str) -> tuple[str, ...]:
+        """Return the uncomposed task only when the operator supplied it."""
+        return (words,) if self.task_source == "operator" else ()
 
     def _open_contract(
         self, contract: kinds.ConversationContract
@@ -406,6 +410,7 @@ class Harness:
             ) from exc
 
         # The execution's log opens with this event, so it identifies itself like session.start.
+        self.task_source = snapshot.task_source
         self._emit_start(
             journal.SessionResume(
                 session_id=self.session_id,
@@ -2057,7 +2062,9 @@ class Harness:
             conversation=conversation,
             settings=self.compaction,
             prefix_chars=compaction_window.request_prefix_chars(state.system, tools),
-            task=state.original_task,
+            task=loop_conversation.Notice(
+                state.original_task, self.task_source, self._task_words(state.operator_task)
+            ),
             pins=state.pins,
             restart_notice=notice,
             endpoint_notice=lambda: notice(task=state.original_task),

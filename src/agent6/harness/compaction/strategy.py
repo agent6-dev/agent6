@@ -38,7 +38,7 @@ class Context:
         conversation: The live history, with the current turn's notices and cache marks.
         settings: The resolved compaction settings.
         prefix_chars: The size of the system text and tool definitions.
-        task: The original task.
+        task: The composed task with its author and any verbatim operator words.
         pins: Operator instructions that survive a restart.
         endpoint_notice: Build the notice that follows a signed summary and its reply.
         restart_notice: Build the restart header with operator quotes, pins and run facts.
@@ -62,7 +62,7 @@ class Context:
     conversation: loop_conversation.Conversation
     settings: window.CompactionSettings
     prefix_chars: int
-    task: str
+    task: loop_conversation.Notice
     pins: Sequence[str]
     endpoint_notice: Callable[[], str]
     restart_notice: RestartNotice
