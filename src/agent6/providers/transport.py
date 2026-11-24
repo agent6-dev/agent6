@@ -476,7 +476,9 @@ class ProviderCall:
             if self.transcript_sink is not None
             else provider_types.TranscriptAttempt(request_headers=headers)
         )
-        transcript.serving = kinds.Serving(requested_tier=self.body.get("service_tier"))
+        transcript.serving = kinds.Serving(
+            requested_tier=provider_types.requested_tier(self.backend, self.body)
+        )
         return transcript
 
     def _response_error(
@@ -506,7 +508,7 @@ class ProviderCall:
         Raises:
             ProviderError: The endpoint named the tier in its refusal.
         """
-        tier = self.body.get("service_tier")
+        tier = provider_types.requested_tier(self.backend, self.body)
         if tier is None or exc.fatal:
             return
         if reason := _tier_mismatch(self.route, serving):

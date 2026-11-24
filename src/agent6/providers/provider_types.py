@@ -88,6 +88,22 @@ def reported_cost(usage: Mapping[str, Any]) -> float | None:
     return None
 
 
+def requested_tier(backend: str, body: Mapping[str, Any]) -> str | None:
+    """Return the tier the entry's `service_tier` key sent.
+
+    Only `openai` and `responses` entries have the key; elsewhere the body field is the
+    operator's `extra_body` value and no tier rule applies to it.
+
+    Args:
+        backend: The wire format.
+        body: The request body.
+
+    Returns:
+        The wire tier, or None.
+    """
+    return body.get("service_tier") if backend in ("openai", "responses") else None
+
+
 def refuses_service_tier(error: object, status: int | None) -> bool:
     """Recognize a refused parameter or a request error that names the tier field.
 

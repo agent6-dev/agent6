@@ -184,10 +184,12 @@ extra_query = { "api-version" = "2024-06-01" }
 ```
 
 `service_tier` applies to `openai` and `responses` entries.
+Those entries refuse `service_tier` inside `extra_body`.
 The wire values for `standard`, `flex`, `fast` and `auto` are `default`, `flex`, `priority` and `auto`.
 Direct calls to `api.openai.com` request `standard` unless configured otherwise.
 Other endpoints get no tier by default.
 A tier refusal stops the call. If the response names a different tier, agent6 records its usage and stops unless the request selected `auto` or sent no tier.
+On other backends, `extra_body.service_tier` is sent as written and none of these tier rules apply.
 A different serving model is recorded beside the requested id in the token summary without stopping the run.
 
 ### Responses API endpoint (`backend = "responses"`)

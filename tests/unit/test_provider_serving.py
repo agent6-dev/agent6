@@ -15,7 +15,7 @@ from agent6.app import preflight, role_providers
 from agent6.models import cache
 from agent6.providers import provider_types
 from agent6.sessions import event_log
-from tests import provider_endpoint
+from tests import price_env, provider_endpoint
 
 
 def _reply(
@@ -197,6 +197,37 @@ def test_the_direct_default_is_standard_and_a_tier_in_extra_body_is_refused(back
         config.Config.model_validate(
             {"providers": {"work": {**entry, "extra_body": {"service_tier": "auto"}}}}
         )
+
+
+@pytest.mark.parametrize("backend", ["anthropic", "chatgpt"])
+def test_an_entry_without_the_tier_key_takes_a_tier_in_extra_body(backend: str) -> None:
+    """The refusal named `service_tier`, a key these entries refuse."""
+    entry = {"backend": backend, "extra_body": {"service_tier": "standard_only"}}
+    cfg = config.Config.model_validate({"providers": {"work": entry}})
+    assert cfg.providers["work"].model_dump()["extra_body"] == {"service_tier": "standard_only"}
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        config.Config.model_validate(
+            {"providers": {"work": {"backend": backend, "service_tier": "standard"}}}
+        )
+
+
+@pytest.mark.parametrize("stream", [True, False])
+def test_a_tier_in_extra_body_is_only_a_body_field_on_an_entry_without_the_key(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, stream: bool
+) -> None:
+    """Read as a tier request, it left the route unpriced at the meter."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    with provider_endpoint.serve(_reply("anthropic", stream, {"model": "alias"})) as (url, calls):
+        worker = _worker(
+            tmp_path, url, "anthropic", stream, extra_body={"service_tier": "standard_only"}
+        )
+        price_env.write({"alias": [1.0, 2.0]}, name="work", entry=worker.budget.providers["work"])
+        worker.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    assert [c.get("service_tier") for c in calls] == ["standard_only"]
+    _transcript, rows = _records(tmp_path)
+    assert rows and all("requested_service_tier" not in r for r in rows)
+    snap = worker.budget.snapshot()
+    assert snap.unmetered_tokens == 0 and snap.usd_own_calls == pytest.approx(14e-6)
 
 
 @pytest.mark.parametrize("stream", [True, False])

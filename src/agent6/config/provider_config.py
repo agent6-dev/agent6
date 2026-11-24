@@ -347,10 +347,6 @@ class _ProviderBase(pydantic.BaseModel):
         Raises:
             ValueError: A value is non-finite or has a non-JSON type, such as a TOML date or time.
         """
-        if "service_tier" in v:
-            raise ValueError(
-                "set service_tier on an openai or responses entry, not extra_body.service_tier"
-            )
         for key, value in v.items():
             _require_json_shaped(value, f".{key}")
         return v
@@ -513,6 +509,24 @@ class _TieredProviderEntry(PricedProviderEntry):
             }
         },
     )
+
+    @pydantic.field_validator("extra_body")
+    @classmethod
+    def _tier_has_one_key(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """Refuse a tier in `extra_body`, which would bypass the `service_tier` key.
+
+        Args:
+            v: The table.
+
+        Returns:
+            The table unchanged.
+
+        Raises:
+            ValueError: The table holds `service_tier`.
+        """
+        if "service_tier" in v:
+            raise ValueError("set this entry's service_tier, not extra_body.service_tier")
+        return v
 
     @pydantic.model_validator(mode="after")
     def _default_tier(self) -> _TieredProviderEntry:
