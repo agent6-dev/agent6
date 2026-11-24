@@ -222,23 +222,25 @@ def _parse_frontmatter(text: str) -> models.TaskNode:
     created_at = datetime.datetime.fromisoformat(_str("created_at"))
     updated_at = datetime.datetime.fromisoformat(_str("updated_at"))
     # `status` and `created_by` are validated by pydantic on construction.
-    return models.TaskNode(
-        id=_str("id"),
-        parent_id=_opt("parent_id"),
-        title=_str("title"),
-        rationale=_str("rationale"),
-        acceptance=_str("acceptance"),
-        relevant_paths=_list("relevant_paths"),
-        depends_on=_list("depends_on"),
-        children=_list("children"),
-        status=_str("status"),  # type: ignore[arg-type]  # pydantic Literal check
-        created_at=created_at,
-        updated_at=updated_at,
-        created_by=_str("created_by"),  # type: ignore[arg-type]
-        commit_sha=_str("commit_sha"),
-        notes=notes,
-        standing=_str("standing") == "true",
-        graph_version=int(_str("graph_version") or "0"),
+    return models.TaskNode.model_validate(
+        {
+            "id": _str("id"),
+            "parent_id": _opt("parent_id"),
+            "title": _str("title"),
+            "rationale": _str("rationale"),
+            "acceptance": _str("acceptance"),
+            "relevant_paths": _list("relevant_paths"),
+            "depends_on": _list("depends_on"),
+            "children": _list("children"),
+            "status": _str("status"),
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "created_by": _str("created_by"),
+            "commit_sha": _str("commit_sha"),
+            "notes": notes,
+            "standing": _str("standing") == "true",
+            "graph_version": int(_str("graph_version") or "0"),
+        }
     )
 
 
