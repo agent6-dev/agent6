@@ -329,7 +329,7 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
     query = _find(ask, "query")
     assert query.description == "Ask a question."
     assert (_option(query, "--interactive").help or "").startswith(
-        "Keep accepting follow-up questions in this session"
+        "Keep accepting follow-up questions with earlier answers as context"
     )
 
 
