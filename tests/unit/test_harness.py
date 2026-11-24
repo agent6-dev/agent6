@@ -44,7 +44,12 @@ from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.harness.verify import verdict as verify_verdict
-from agent6.providers import ProviderError, ProviderResponse
+from agent6.providers import (
+    ProviderAborted,
+    ProviderError,
+    ProviderInterrupted,
+    ProviderResponse,
+)
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.tools import mcp_client, operator_prompts
@@ -538,6 +543,12 @@ def _call(caller: provider_call.ProviderCaller) -> ProviderResponse:
     return caller.call(system="s", messages=[], tools=[], max_tokens=16384)
 
 
+@pytest.fixture
+def one_sleep_per_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make each retry wait one sleep, so a test reads the schedule off the sleeps."""
+    monkeypatch.setattr(provider_call, "RETRY_WAIT_TICK_S", float("inf"))
+
+
 def test_caller_first_try_returns() -> None:
     """No ProviderError: one call, returned as is."""
     provider = mock.MagicMock()
@@ -587,6 +598,7 @@ def test_caller_never_retries_a_steer_interrupt() -> None:
     assert provider.call.call_args.kwargs["should_interrupt"] is _never
 
 
+@pytest.mark.usefixtures("one_sleep_per_wait")
 def test_caller_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
     """A 429 carrying retry_after_s waits at least that long, not the shorter computed backoff."""
     slept: list[float] = []
@@ -600,6 +612,7 @@ def test_caller_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
     assert slept and slept[0] >= 50.0
 
 
+@pytest.mark.usefixtures("one_sleep_per_wait")
 def test_caller_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
     """A hostile or buggy Retry-After cannot hang the run: clamped to the ceiling."""
     slept: list[float] = []
@@ -611,6 +624,30 @@ def test_caller_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -
     ]
     _call(_caller(provider, retry_count=1))
     assert slept and slept[0] <= 120.0
+
+
+@pytest.mark.parametrize("raised", [ProviderAborted, ProviderInterrupted])
+def test_caller_ends_a_retry_wait_on_a_stop_or_a_steer(
+    monkeypatch: pytest.MonkeyPatch, raised: type[ProviderError]
+) -> None:
+    """A stop or a steer ends a retry wait at its next poll, with no further attempt."""
+    slept: list[float] = []
+    monkeypatch.setattr("agent6.harness.provider_call.time.sleep", slept.append)
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        ProviderError("429 rate limited", status_code=429, retry_after_s=120.0),
+        _resp("late"),
+    ]
+    # The signal arrives once the wait has begun.
+    caller = dataclasses.replace(
+        _caller(provider, retry_count=1),
+        should_abort=lambda: raised is ProviderAborted and bool(slept),
+        should_interrupt=lambda: raised is ProviderInterrupted and bool(slept),
+    )
+    with pytest.raises(raised):
+        _call(caller)
+    assert slept == [provider_call.RETRY_WAIT_TICK_S]
+    assert provider.call.call_count == 1
 
 
 def _empty_tool_call_resp() -> ProviderResponse:
@@ -787,6 +824,7 @@ def test_call_with_retry_still_retries_transient_5xx() -> None:
 # --- exponential backoff with jitter -------------------------------------
 
 
+@pytest.mark.usefixtures("one_sleep_per_wait")
 def test_call_with_retry_exponential_backoff() -> None:
     """Attempt N sleeps provider_retry_delay_s * 2 ** (attempt - 1), scaled by the jitter factor."""
     provider = mock.MagicMock()
@@ -813,6 +851,7 @@ def test_call_with_retry_exponential_backoff() -> None:
     assert sleep_calls[2] == pytest.approx(6.0)  # 2.0 * 2**2 * 0.75
 
 
+@pytest.mark.usefixtures("one_sleep_per_wait")
 def test_call_with_retry_backoff_capped_at_max_delay() -> None:
     """Exponential backoff is capped at provider_retry_max_delay_s."""
     provider = mock.MagicMock()
@@ -841,6 +880,7 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
     assert sleep_calls[3] == pytest.approx(5.0)  # min(2.0 * 2**3, 5.0) capped
 
 
+@pytest.mark.usefixtures("one_sleep_per_wait")
 @pytest.mark.parametrize("status", [429, 503])
 def test_default_retry_waits_about_ten_minutes_on_a_transient_status(status: int) -> None:
     """The default schedule retries a 429 or a 503 for ten minutes on average: 31 attempts."""

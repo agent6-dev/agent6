@@ -201,6 +201,7 @@ Every end has one reason and a headline every surface shows; [Exit codes and end
 
 A transient provider error (a 5xx, a 429, a dropped connection) is retried 30 times, with about ten minutes of backoff in all, before the run ends `failed · provider error`.
 A `Retry-After` header sets the least wait, up to 120 s.
+A stop or a `/now` steer ends the wait between two attempts.
 
 A run whose worker exited without recording an end reads `stale`, for example after SIGKILL or a machine crash.
 `agent6 resume <id>` continues it from its last snapshot, and `agent6 sessions show <id>` prints that command.

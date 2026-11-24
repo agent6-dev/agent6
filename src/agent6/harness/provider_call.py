@@ -35,6 +35,9 @@ NON_RETRYABLE_HTTP_STATUSES = frozenset(set(range(300, 500)) - {408, 409, 425, 4
 # The longest wait an upstream Retry-After header earns, so a hostile header cannot hang a run.
 RETRY_AFTER_CEILING_S = 120.0
 
+# The longest a retry wait runs between two polls for an operator stop or steer.
+RETRY_WAIT_TICK_S = 0.25
+
 # The stop reasons that promise a tool call.
 TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
 
@@ -381,7 +384,8 @@ class ProviderCaller:
     Retry-After; a permanent one re-raises at once. An empty tool-call response is re-asked
     after a short delay within the first `EMPTY_TOOL_CALL_ATTEMPTS` attempts, and the last
     empty one is returned for the went-quiet handler. An abort, an interrupt and
-    `BudgetExceededError` are never retried.
+    `BudgetExceededError` are never retried. An operator stop or steer ends a wait between
+    attempts as it ends a call.
 
     Attributes:
         provider: The provider called.
@@ -509,8 +513,29 @@ class ProviderCaller:
                         stop_reason=resp.stop_reason,
                     )
                 )
-            time.sleep(delay)
+            self._wait(delay)
             attempt += 1
+
+    def _wait(self, delay: float) -> None:
+        """Wait out the delay before the next attempt, polling for an operator stop or steer.
+
+        Args:
+            delay: The wait in seconds.
+
+        Raises:
+            ProviderAborted: An operator stop.
+            ProviderInterrupted: An operator steer.
+        """
+        while True:
+            if self.should_abort():
+                raise ProviderAborted("run stopped by operator")
+            if self.should_interrupt():
+                raise ProviderInterrupted("steer requested during a retry wait")
+            if delay <= 0:
+                return
+            tick = min(delay, RETRY_WAIT_TICK_S)
+            time.sleep(tick)
+            delay -= tick
 
     def _backoff(self, attempt: int, retry_after_s: float | None) -> float:
         """Return the delay before the next attempt.
@@ -536,6 +561,7 @@ __all__ = [
     "EMPTY_TOOL_CALL_ATTEMPTS",
     "NON_RETRYABLE_HTTP_STATUSES",
     "RETRY_AFTER_CEILING_S",
+    "RETRY_WAIT_TICK_S",
     "TOOL_CALL_STOP_REASONS",
     "CallCounter",
     "ProviderCaller",
