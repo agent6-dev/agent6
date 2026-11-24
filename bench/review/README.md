@@ -3,24 +3,19 @@
 agent6 runs reviewer subagents over a diff and aggregates their verdicts through the in-loop `[review]` config.
 The `review` preset enables a three-reviewer `finish` panel.
 The configuration reference documents its triggers, roster and blocking rules.
-`agent6 ask "/review <range>"` is a separate markdown review, not a structured panel.
+With the panel off, `agent6 ask "/review TARGET"` returns the worker's Markdown review.
+With the panel on, reviewers record findings on the target before the worker answers.
 
 [Recorded review replay](replay.md) compares a panel reviewer's first reply under two system prompts.
 
-This file records why the panel does not reintroduce the false-blocking that got
-the pre-0.0.4 `reviewer.py` deleted, and the runs behind enabling it.
+These runs tested whether the panel blocks correct work.
 
-## Why it does not false-block
+## Which findings can block finish
 
-The old `reviewer.py` blocked correct, green-verify work because its grounding was
-prose ("do not block on speculation"), and models rationalize around prose. The
-panel makes the grounding executable in the aggregator instead. A reviewer's
-`block` gates only if a machine check passes: the cited `file_line` is actually
-present in the diff the reviewer was shown, and the category is in the allowed-block
-set (`security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`,
-`verify-uncovered-correctness`). A block that fails either check is downgraded to
-`warn` before any blocking-model counting. Taste, naming, "should add a test", and
-uncited claims cannot gate.
+The pre-0.0.4 `reviewer.py` blocked correct work that passed verification despite its instruction not to block on speculation.
+The panel drops findings that do not cite the diff.
+A block outside the allowed categories (`security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness`) becomes a warning before votes are counted.
+A finding that passes these checks can still be wrong.
 
 ## Validation
 
@@ -65,13 +60,11 @@ Keep `XDG_STATE_HOME` out of the repo (the default). An earlier A/B put it
 inside, so agent6's own logs were committed and the panel correctly blocked them
 as off-topic edits.
 
-### Explore tier, cross-file
+### Cross-file review
 
-`parse(s)` gained a required argument, breaking a caller in `main.py` that was not
-in the diff. A diff-tier reviewer passed (it cannot see the caller). An explore-tier
-reviewer (read-only `read_file` + `find_references`) found `main.py` and blocked with
-`verify-uncovered-correctness`, cited at the diff line. The explore tier adds
-value over the diff tier for cross-file impact; the diff tier is the default.
+`parse(s)` gained a required argument, breaking a caller in `main.py` that was not in the diff.
+In this experiment the diff-only reviewer missed the caller.
+The reviewer with read tools (`read_file` and `find_references`) found it and blocked with `verify-uncovered-correctness`, cited at the diff line.
 
 ## The risk-field prompt A/B (measured, then removed)
 
