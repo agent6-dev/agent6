@@ -182,7 +182,8 @@ def _keys(node: ast.AST, variable: str) -> Iterable[str]:
         if isinstance(child, ast.Assign):
             targets, value = child.targets, child.value
         elif isinstance(child, ast.AnnAssign):
-            targets, value = [child.target], child.value
+            targets = [child.target]
+            value = child.value
         for target in targets:
             for part in target.elts if isinstance(target, ast.Tuple) else [target]:
                 root, name = _target(part)
