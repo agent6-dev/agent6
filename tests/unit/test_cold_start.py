@@ -211,9 +211,29 @@ def test_endpoint_keeps_its_own_compaction_at_a_cold_start(tmp_path: pathlib.Pat
     assert row["action"] == "endpoint" and row["chars_not_sent"] == 0
 
 
-def test_a_cold_drop_does_not_run_a_second_warm_drop(tmp_path: pathlib.Path) -> None:
-    sent, _, _, _ = _resume(tmp_path, "drop", [rules.request(model="other")], drop_at=100)
+def test_a_cold_drop_takes_the_ordinary_checks_of_a_resend(tmp_path: pathlib.Path) -> None:
+    """After a route change to a smaller window, a cold drop sent three times the summary bound."""
+    prose = loop_conversation.Conversation()
+    prose.notice("Original goal.", origin="operator")
+    for i in range(10):
+        prose.assistant([{"type": "text", "text": f"analysis {i} " + "a" * 30000}])
+        prose.notice("continue")
+    previous = [rules.request(model="big-window")]
+    resend, _, _, _ = _resume(tmp_path, "resend", previous, saved=prose, summarize_at=100_000)
+    sent, rows, _, helper = _resume(tmp_path, "drop", previous, saved=prose, summarize_at=100_000)
+    assert sent == resend and len(helper.calls) == 1
+    assert window.context_chars(loop_conversation.Conversation.from_wire(sent)) < 100_000
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert (row["action"], row["chars_not_sent"]) == ("drop", 0)
+    assert [r["reason"] for r in rows if r["type"] == "compact.summarise.done"] == ["size"]
+
+    # The drop bound follows too: it takes the edited read a cold drop alone leaves whole.
+    previous = [rules.request(model="other")]
+    sent, _, _, _ = _resume(tmp_path, "drop", previous)
     assert "Edited file body." in str(sent) and "Old evidence." not in str(sent)
+    resend, _, _, _ = _resume(tmp_path, "resend", previous, drop_at=100)
+    sent, _, _, _ = _resume(tmp_path, "drop", previous, drop_at=100)
+    assert sent == resend and "Edited file body." not in str(sent)
 
 
 @pytest.mark.parametrize("mode", ["summarize", "truncate"])

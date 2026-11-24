@@ -296,7 +296,7 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
 - On a cold start, `resend` leaves the history alone and `drop` replaces all eligible results without touching reads of recently edited files.
   `summarize` gives any pending manual focus to the helper; `truncate` uses no writer.
   Either one that would replace nothing leaves the history alone and reports `resend`.
-  Only `resend` runs ordinary size and manual checks on that same request.
+  The ordinary size and manual checks follow on that same request unless the step restarted the conversation or its summary failed.
 - Outside the cold step, tier 2 checks `summarise_at_chars` before tier 1 rewrites any messages.
 - With `summariser = "worker"` (default), the driving model receives its prepared conversation and tools with a final instruction to write the summary.
   A summary tool call is never run.

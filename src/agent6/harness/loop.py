@@ -732,7 +732,7 @@ class Harness:
                 self, state, action, before - compaction_window.context_chars(conversation)
             )
         # An endpoint summary covers a request already sent, so it follows the reply instead.
-        if not endpoint and action in (None, "resend"):
+        if not endpoint and action in (None, "resend", "drop"):
             restarted = self.compactor.compact(context)
         if restarted and self.contract is None:
             state.focus.surfaced_task_id = None

@@ -571,6 +571,7 @@ The wait setting `idle_compact_min_chars` does not apply at resume.
 - `drop` (default): replace every eligible old tool result, even below `drop_at_chars`.
   The newest two results, unread results, operator answers and reads of recently edited files stay whole.
   Only `elision_gists` can call the helper during the drop.
+  The usual size and manual compaction checks follow on the same request, as after `resend`.
 - `resend`: keep the saved conversation for the usual size and manual compaction checks.
 - `summarize`: ask the helper for a summary and restart with it and the retained history.
   The helper uses a pending `/compact` focus in that summary.
@@ -582,7 +583,7 @@ The wait setting `idle_compact_min_chars` does not apply at resume.
 `summarize` and `truncate` replace only what the retention settings do not keep.
 When those settings keep the whole conversation, it is sent as it is, no helper is called, and the action reads `resend`.
 
-`drop` and `truncate` do not run a second compaction on the same request.
+A `summarize` or `truncate` restart is the only compaction on that request, and so is a failed cold summary.
 The next ordinary check handles size and any pending `/compact`.
 The start line and `compact.cold_start` journal entry report the route change or the gap and limit, the action, and the net context characters the cold step did not send to the worker.
 This is not a token count or evidence that the endpoint evicted the cache.

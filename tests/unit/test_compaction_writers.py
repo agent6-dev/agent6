@@ -128,7 +128,7 @@ def test_the_cold_helper_reads_the_pending_focus_once() -> None:
     assert kinds.index("compact.requested") < kinds.index("compact.summarise.call")
 
 
-def test_a_cold_drop_above_the_summary_bound_does_not_buy_a_writer() -> None:
+def test_a_cold_drop_makes_no_model_call_before_the_ordinary_size_check() -> None:
     worker, helper = Writer(response()), Writer(response())
     events: list[Any] = []
     turn = context(worker, helper, events, cold_start="drop", elision_gists=False)
