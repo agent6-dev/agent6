@@ -353,7 +353,7 @@ class ChatGPTProvider:
                 self.model, request_headers.responses_body_facts(body), context
             ),
             build_headers=self._build_headers,
-            adapt_400=lambda *_: False,
+            adapt_400=lambda _status, _text, _body: False,
             adapt_attempts=0,
             # Stream-only, so the non-streaming hooks are unreachable; metering happens in-stream.
             require_metered=_unreachable_hook,
