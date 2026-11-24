@@ -148,8 +148,32 @@ Quantities are min..max over the scored runs.
 
 `turns-1` and `operator-only` reread two files in every scored run and took 21 to 25 turns against the baseline's 17 to 18.
 `no-operator`, `chars-20000` and `pointers` overlap the baseline on turns and tokens.
-No arm separated from the baseline on pass or recall, so no finalist was chosen and the confirmation stage did not run.
+No arm separated from the baseline on pass or recall.
 The pilot, one `baseline` run and not a replicate, passed 6/6 with exact recall in 18 turns.
+
+## Confirmation on the six-module task
+
+The finalists were `chars-20000` and `no-operator`.
+Both had exact recall and zero rereads on every scored screen run, with five and four scores respectively against three for the baseline.
+Each finalist resumed the same generated opening three times on `chatgpt/gpt-6.2-astra` at `medium`.
+All six passed the worker gate and all six groups, repeated the exact label, and needed no second restart.
+
+| Arm | Rep | Turns | Rereads (6 calls / 10 turns) | First worker input | Uncached input | Total tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `chars-20000` | 1 | 17 | 0 / 0 | 4,900 | 40,407 | 134,796 |
+| `no-operator` | 1 | 17 | 0 / 0 | 4,906 | 34,299 | 134,963 |
+| `chars-20000` | 2 | 17 | 0 / 0 | 4,946 | 34,987 | 134,577 |
+| `no-operator` | 2 | 17 | 0 / 0 | 4,881 | 37,256 | 135,728 |
+| `chars-20000` | 3 | 17 | 0 / 0 | 4,887 | 34,840 | 135,595 |
+| `no-operator` | 3 | 17 | 0 / 0 | 4,887 | 36,596 | 134,584 |
+
+The two settings did not separate on correctness, recall, resumed turns or rereads.
+Their total token ranges overlap.
+
+There is no live result on a long recorded session.
+The worker accepts only the generated opening, since a supplied session does not establish its effective file access policy.
+The [tier-1 replay](compaction-steps.md) reads recorded requests without starting a worker.
+Neither it nor the offline retention counter can measure whether a resumed worker rereads a file or finishes correctly.
 
 ## Cold resume with a lookup from an earlier turn
 
