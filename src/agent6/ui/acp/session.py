@@ -30,6 +30,8 @@ from agent6.viewmodel import listing, tail
 
 # What a prompt answers; `cancelled` is the operator's act, not a failure.
 StopReason = str
+# How a turn ends: its stop reason, or the error a failed or refused turn answers with.
+TurnEnd = StopReason | rpc.RpcError
 # Every ACP session is an `agent6 run`; the editor cannot ask for another mode.
 ACP_MODE = "run"
 
@@ -88,8 +90,9 @@ class Sessions:
     """The connection's sessions, and how a prompt becomes a run.
 
     Attributes:
-        run: Runs a prompt on a session and returns the stop reason; injected so the
-            transport tests without a provider and the lifecycle stays in `app`.
+        run: Runs a prompt on a session and returns the stop reason, or raises the `RpcError`
+            a failed turn answers with; injected so the transport tests without a provider
+            and the lifecycle stays in `app`.
         state_dir_for: The state dir for a working directory.
         build_options: Builds a session's complete config option list; none by default.
     """
@@ -347,7 +350,7 @@ class Sessions:
         session: Session,
         text: str,
         *,
-        finish: Callable[[StopReason], None],
+        finish: Callable[[TurnEnd], None],
         require_resume: bool = False,
         images: tuple[operator_images.EncodedImage, ...] = (),
     ) -> None:
@@ -356,8 +359,8 @@ class Sessions:
         Args:
             session: The session the prompt came on.
             text: The prompt, as `prompt_text` joined it.
-            finish: Answers the prompt; called once with the stop reason, `cancelled` after
-                a cancel whatever the run returned.
+            finish: Answers the prompt; called once with the stop reason or the failed turn's
+                error, `cancelled` after a cancel whatever the run returned.
             require_resume: Refuse instead of starting new work if the resume point is missing.
             images: The prompt's image blocks, as `prompt_images` read them.
 
@@ -372,11 +375,14 @@ class Sessions:
         session.images = images
 
         def _work() -> None:
+            end: TurnEnd
             try:
-                reason = self.run(session, text)
-            except Exception:  # a run that dies must still end the execution
-                reason = "refusal"
-            answer = "cancelled" if session.cancelled else reason
+                end = self.run(session, text)
+            except rpc.RpcError as exc:
+                end = exc
+            except Exception as exc:  # a run that dies must still end the execution
+                end = rpc.RpcError(rpc.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
+            answer = "cancelled" if session.cancelled else end
             session.execution_live = False
             session.require_resume = False
             session.images = ()

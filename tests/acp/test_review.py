@@ -257,7 +257,8 @@ def test_a_disappearing_resume_point_never_starts_new_work(tmp_path: pathlib.Pat
     assert current.session_id == "review-run"
     assert "no resume point" in _notices(out)
     assert "starts a new run" not in _notices(out)
-    assert any(frame.get("result", {}).get("stopReason") == "refusal" for frame in _messages(out))
+    errors = [frame["error"]["message"] for frame in _messages(out) if "error" in frame]
+    assert errors == ["this run has no resume point; Fix cannot start a new run"]
 
 
 @pytest.mark.parametrize(

@@ -319,7 +319,7 @@ class ACPServer:
         return self._sessions().close(params)
 
     def _session_prompt(self, params: dict[str, Any], req_id: object) -> object:
-        """Serve `session/prompt`; the worker replies with the stop reason.
+        """Serve `session/prompt`; the worker replies with the stop reason or the turn's error.
 
         Args:
             params: The `sessionId` and the `prompt` content blocks.
@@ -349,20 +349,17 @@ class ACPServer:
                 operator_images.decode(images)
             except operator_images.ImageRefusedError as exc:
                 raise rpc.RpcError(rpc.INVALID_PARAMS, str(exc)) from exc
-        if review.handle_command(
-            sessions,
-            session,
-            text,
-            notify=self.notify_raw,
-            finish=lambda reason: self.reply(req_id, result={"stopReason": reason}),
-        ):
+
+        def finish(end: acp_session.TurnEnd) -> None:
+            # ACP v1 reports a failed turn as the request's error; `refusal` is a model's.
+            if isinstance(end, rpc.RpcError):
+                self.reply(req_id, error=(end.code, end.message))
+            else:
+                self.reply(req_id, result={"stopReason": end})
+
+        if review.handle_command(sessions, session, text, notify=self.notify_raw, finish=finish):
             return DEFERRED
-        sessions.start_execution(
-            session,
-            text,
-            finish=lambda reason: self.reply(req_id, result={"stopReason": reason}),
-            images=images,
-        )
+        sessions.start_execution(session, text, finish=finish, images=images)
         return DEFERRED
 
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:

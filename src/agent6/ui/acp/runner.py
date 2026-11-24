@@ -11,13 +11,14 @@ Runs are serialised on the connection and a second prompt waits.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import pathlib
 import sys
 import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any, BinaryIO
 
 from agent6 import directive, errors, kinds
@@ -30,7 +31,7 @@ from agent6.sessions import id, ipc, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap, operator_images, spawn
 from agent6.ui.acp import frontend as acp_frontend
-from agent6.ui.acp import options, updates
+from agent6.ui.acp import options, rpc, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from agent6.viewmodel import tail as viewmodel_tail
@@ -167,18 +168,20 @@ def stop_reason(code: int, *, stop_reason: str = "") -> acp_session.StopReason:
     Returns:
         `cancelled` for an operator stop (exit 130) and `max_turn_requests` for a run that
         hit its turn cap. A deliberate finish is `end_turn` even over a red gate or
-        stranded edits: those are already on the wire. `refusal` is ACP's one word for a
-        run that could not complete.
+        stranded edits: those are already on the wire.
+
+    Raises:
+        RpcError: The run failed or never started. ACP answers the prompt with an error, and
+            keeps `refusal` for a model that declines the prompt.
     """
     if code == 130:
         return "cancelled"
     if stop_reason == "max_turns":
         return "max_turn_requests"
-    return (
-        "end_turn"
-        if code in (0, finalize.EXIT_VERIFY_FAILED, finalize.EXIT_NO_COMMIT)
-        else "refusal"
-    )
+    if code in (0, finalize.EXIT_VERIFY_FAILED, finalize.EXIT_NO_COMMIT):
+        return "end_turn"
+    why = f": {stop_reason}" if stop_reason else ""
+    raise rpc.RpcError(rpc.INTERNAL_ERROR, f"the run stopped{why} (exit {code})")
 
 
 def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
@@ -463,18 +466,18 @@ class RunBridge:
 
         Returns:
             ACP's stop reason.
+
+        Raises:
+            RpcError: The run failed, or agent6 refused the prompt.
         """
         started_at = time.time()  # this execution honors a cancel written from here on
         # The id is minted before the queue, so a cancel during the wait has a run to address.
-        try:
+        with self._telling_faults(session):  # an unreadable config raises here, before any journal
             resuming = self._resumable(session)
             if session.require_resume and not resuming:
-                self.server.notify_raw(
-                    updates.message_update(
-                        session.acp_id, "this run has no resume point; Fix cannot start a new run"
-                    )
-                )
-                return "refusal"
+                why = "this run has no resume point; Fix cannot start a new run"
+                self.server.notify_raw(updates.message_update(session.acp_id, why))
+                raise rpc.RpcError(rpc.INVALID_PARAMS, why)
             if not resuming and self._recorded(session):
                 # A recorded run with no resume point is refused both ways; a new run says so.
                 self.server.notify_raw(
@@ -492,9 +495,6 @@ class RunBridge:
                 reserved = session.acp_id
                 taken = sessions_layout.session_layout(state_dir, reserved) is not None
                 session.session_id = id.unused_session_id(state_dir, bucket) if taken else reserved
-        except Exception as exc:  # an unreadable config raises here, before any journal
-            self._could_not_finish(session, exc)
-            return "refusal"
         if not self._runs.acquire(blocking=False):
             holder = self._running
             who = f"session {holder.acp_id}" if holder is not None else "another session"
@@ -511,31 +511,41 @@ class RunBridge:
             self._running = session
             if session.cancelled:
                 return self._cancelled_unstarted(session)
-            try:
+            with self._telling_faults(session):
                 # Terminal verbs have no ACP meaning; only session/cancel stops the execution.
                 if resuming and text.strip().lower() in ("abort", "exit", "detach", "/undo"):
                     text = f"Task: {text}"
                 return self._run(session, text, resuming=resuming, started_at=started_at)
-            except Exception as exc:
-                self._could_not_finish(session, exc)
-                return "refusal"
         finally:
             self._running = None
             self._runs.release()
 
-    def _could_not_finish(self, session: acp_session.Session, exc: Exception) -> None:
-        """Tell the editor why a run died before the turn returns its stop reason.
+    @contextlib.contextmanager
+    def _telling_faults(self, session: acp_session.Session) -> Generator[None]:
+        """Turn a fault in the block into the error that answers the prompt.
 
-        A non-operator fault's traceback goes to stderr.
+        The editor is told why as prose too, and a non-operator fault's traceback goes to stderr.
 
         Args:
-            session: The session whose run died.
-            exc: The error that ended the run.
+            session: The session whose run the block starts.
+
+        Yields:
+            Nothing.
+
+        Raises:
+            RpcError: The block raised; an error of its own passes through.
         """
-        what = "could not start" if not self.had_journal(session) else "failed"
-        self.server.notify_raw(updates.message_update(session.acp_id, f"the run {what}: {exc}"))
-        if not isinstance(exc, errors.OperatorError):
-            _stderr(f"[agent6] run {session.session_id}: {traceback.format_exc()}")
+        try:
+            yield
+        except rpc.RpcError:
+            raise
+        except Exception as exc:
+            what = "could not start" if not self.had_journal(session) else "failed"
+            message = f"the run {what}: {exc}"
+            self.server.notify_raw(updates.message_update(session.acp_id, message))
+            if not isinstance(exc, errors.OperatorError):
+                _stderr(f"[agent6] run {session.session_id}: {traceback.format_exc()}")
+            raise rpc.RpcError(rpc.INTERNAL_ERROR, message) from exc
 
     def _run(
         self, session: acp_session.Session, text: str, *, resuming: bool, started_at: float
@@ -553,6 +563,9 @@ class RunBridge:
 
         Returns:
             ACP's stop reason.
+
+        Raises:
+            RpcError: The run failed, or agent6 refused the prompt.
         """
         layout = session.layout(agent6_paths.state_dir(session.cwd))
         if session.images:
@@ -617,7 +630,7 @@ class RunBridge:
                     opening = directive.parse_directive(text)
                 except directive.DirectiveError as exc:
                     reporter.error(str(exc))
-                    return "refusal"
+                    raise rpc.RpcError(rpc.INVALID_PARAMS, str(exc)) from exc
                 code = app_run.run_task(
                     effective.config,
                     text,

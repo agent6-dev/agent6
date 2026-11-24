@@ -22,6 +22,7 @@ import pytest
 from agent6.app import stop
 from agent6.sandbox import jail
 from agent6.sessions import ipc, process
+from agent6.ui.acp import rpc
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 
@@ -210,7 +211,7 @@ def test_an_execution_cancelled_while_it_runs_reports_itself_as_cancelled() -> N
 
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
-    seen: list[str] = []
+    seen: list[acp_session.TurnEnd] = []
     sessions.start_execution(session, "go", finish=seen.append)
     assert started.wait(timeout=5)
     sessions.cancel(session)
@@ -227,7 +228,7 @@ def test_a_stale_cancel_does_not_kill_the_next_execution() -> None:
     """
     sessions = _sessions(_ends)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"), cancelled=True)
-    seen: list[str] = []
+    seen: list[acp_session.TurnEnd] = []
     sessions.start_execution(session, "go", finish=seen.append)
     if session.thread is not None:
         session.thread.join(timeout=5)
@@ -305,18 +306,20 @@ def test_a_cancel_while_idle_does_not_poison_the_next_execution(
 
 
 def test_a_run_that_dies_still_ends_the_execution() -> None:
-    """An editor waiting forever on a prompt is worse than a refusal."""
+    """An editor waiting forever on a prompt is worse than an error."""
 
     def _boom(_session: acp_session.Session, _text: str) -> str:
         raise RuntimeError("the provider fell over")
 
     sessions = _sessions(_boom)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
-    seen: list[str] = []
+    seen: list[acp_session.TurnEnd] = []
     sessions.start_execution(session, "go", finish=seen.append)
     if session.thread is not None:
         session.thread.join(timeout=5)
-    assert seen == ["refusal"]
+    (end,) = seen
+    assert isinstance(end, rpc.RpcError)
+    assert (end.code, end.message) == (rpc.INTERNAL_ERROR, "RuntimeError: the provider fell over")
 
 
 def test_a_second_prompt_on_a_busy_session_is_refused() -> None:
@@ -373,7 +376,7 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[bool] = []
 
-    def _finish(_reason: str) -> None:
+    def _finish(_end: acp_session.TurnEnd) -> None:
         seen.append(session.is_running())
 
     sessions.start_execution(session, "one", finish=_finish)

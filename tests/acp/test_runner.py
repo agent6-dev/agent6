@@ -26,7 +26,7 @@ from agent6.config import Config, ConfigError, layer_data
 from agent6.sessions import id, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
-from agent6.ui.acp import runner, updates
+from agent6.ui.acp import rpc, runner, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
 from agent6.viewmodel import tail as viewmodel_tail
@@ -320,7 +320,9 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
             said = wire.until("session/update")
         text = said["params"]["update"]["content"]["text"]
         assert "the run failed" in text and "exploded" in text, text
-        assert wire.until("")["result"]["stopReason"] == "refusal"
+        # ACP v1 reports a failed turn as the request's error; `refusal` is a model's.
+        error = wire.until("")["error"]
+        assert error["code"] == rpc.INTERNAL_ERROR and "exploded" in error["message"], error
     finally:
         wire.close()
     # A bug's traceback reaches stderr, the way the CLI's crash path saves one.
@@ -365,11 +367,9 @@ def test_a_resumes_own_failure_does_not_borrow_a_stale_stop_reason(
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id=session_id)
 
-    reason = bridge.run(session, "keep going")
-
-    assert reason == "refusal", (
-        f"got {reason!r}: the crash borrowed the old execution's max_turns ending"
-    )
+    # A stop reason here means the crash borrowed the old execution's max_turns ending.
+    with pytest.raises(rpc.RpcError, match=r"the run stopped \(exit 1\)"):
+        bridge.run(session, "keep going")
 
 
 def test_a_fault_after_session_end_still_keeps_its_reason(
@@ -400,7 +400,8 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
     out = io.BytesIO()
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=out))
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
-    assert bridge.run(session, "task") == "refusal"
+    with pytest.raises(rpc.RpcError, match="the run failed: the finalizer exploded"):
+        bridge.run(session, "task")
     text = out.getvalue().decode()
     assert "Session passed" in text
     assert "the run failed: the finalizer exploded" in text
@@ -426,7 +427,7 @@ def test_a_run_that_cannot_start_says_why(
         said = wire.until("session/update")
         text = said["params"]["update"]["content"]["text"]
         assert "could not start" in text and "agent6.toml" in text, text
-        assert wire.until("")["result"]["stopReason"] == "refusal"
+        assert wire.until("")["error"]["code"] == rpc.INTERNAL_ERROR
     finally:
         wire.close()
 
@@ -563,9 +564,25 @@ def test_only_the_standing_answers_are_advertised_as_always() -> None:
 
 def test_the_stop_reason_is_one_acp_defines() -> None:
     assert runner.stop_reason(0) == "end_turn"
-    assert runner.stop_reason(1) == "refusal"
-    assert runner.stop_reason(2) == "refusal"
     assert runner.stop_reason(130) == "cancelled"
+
+
+@pytest.mark.parametrize(
+    ("code", "ended", "message"),
+    [
+        (1, "", "the run stopped (exit 1)"),
+        (1, "provider_error", "the run stopped: provider_error (exit 1)"),
+        (2, "", "the run stopped (exit 2)"),
+    ],
+)
+def test_a_failed_run_is_an_error_not_a_refusal(code: int, ended: str, message: str) -> None:
+    """A failed run answered `refusal`, which ACP v1 keeps for a model that declines the prompt.
+
+    An editor drops a refused prompt from the next one; the failed run's prompt is in its journal.
+    """
+    with pytest.raises(rpc.RpcError) as failed:
+        runner.stop_reason(code, stop_reason=ended)
+    assert (failed.value.code, failed.value.message) == (rpc.INTERNAL_ERROR, message)
 
 
 def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
@@ -708,7 +725,8 @@ def test_a_refusal_that_never_reached_a_journal_still_says_why(
         wire.prompt(session_id, "do the thing")
         said = wire.until("session/update")["params"]["update"]["content"]["text"]
         assert "another writer holds this repository" in said
-        assert wire.until("")["result"]["stopReason"] == "refusal"
+        error = wire.until("")["error"]
+        assert error == {"code": rpc.INTERNAL_ERROR, "message": "the run stopped (exit 2)"}
     finally:
         wire.close()
 
@@ -1117,7 +1135,8 @@ def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
 
     assert bridge.run(session, "first task") == "max_turn_requests"
-    assert bridge.run(session, "and now this") == "refusal"
+    with pytest.raises(rpc.RpcError, match=r"the run stopped \(exit 2\)"):
+        bridge.run(session, "and now this")
 
 
 def test_a_fault_on_a_resume_still_reaches_the_editor(
@@ -1159,7 +1178,8 @@ def test_a_fault_on_a_resume_still_reaches_the_editor(
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=out))
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
     assert bridge.run(session, "first task") == "end_turn"
-    assert bridge.run(session, "and now this") == "refusal"
+    with pytest.raises(rpc.RpcError, match="the resume preflight exploded"):
+        bridge.run(session, "and now this")
     said = out.getvalue().decode()
     assert "the run failed: the resume preflight exploded" in said, said
 
@@ -1900,7 +1920,7 @@ def test_a_prompt_that_cannot_choose_its_run_says_why(
         said = wire.until("session/update")
         text = said["params"]["update"]["content"]["text"]
         assert "could not start" in text and "config.toml" in text, text
-        assert wire.until("")["result"]["stopReason"] == "refusal"
+        assert wire.until("")["error"]["code"] == rpc.INTERNAL_ERROR
     finally:
         wire.close()
 
@@ -1982,14 +2002,16 @@ def test_a_second_prompt_after_a_recorded_execution_with_no_snapshot_starts_a_ne
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
 
-    assert bridge.run(session, "first task") == "refusal"
-    assert bridge.run(session, "try again") == "refusal"  # nothing recorded: the same id
+    for task in ("first task", "try again"):  # nothing recorded: the same id
+        with pytest.raises(rpc.RpcError):
+            bridge.run(session, task)
     assert calls == ["s", "s"]  # the conversation id is the run id
 
     layout = sessions_layout.SessionLayout(tmp_path / "state", "s")
     layout.ensure()
     layout.manifest_path.write_text("{}", encoding="utf-8")  # recorded, no snapshot
-    assert bridge.run(session, "once more") == "refusal"
+    with pytest.raises(rpc.RpcError):
+        bridge.run(session, "once more")
     assert calls[-1] == "run-AAAA11" and session.session_id == "run-AAAA11"  # a fresh id
     told = [
         m["params"]["update"]["content"]["text"]
@@ -2120,7 +2142,8 @@ def test_a_missing_provider_key_refuses_the_prompt_before_any_state(
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=repo)
 
-    assert bridge.run(session, "do the thing") == "refusal"
+    with pytest.raises(rpc.RpcError):
+        bridge.run(session, "do the thing")
 
     told = [
         m["params"]["update"]["content"]["text"]

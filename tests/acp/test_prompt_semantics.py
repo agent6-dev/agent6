@@ -13,7 +13,7 @@ from agent6.app import resume
 from agent6.app.session import setup as session_setup
 from agent6.harness import loop_conversation, loop_state, operator_bridge
 from agent6.sessions import journal
-from agent6.ui.acp import runner, server, session
+from agent6.ui.acp import rpc, runner, server, session
 from tests.acp import test_runner, test_session_lifecycle
 
 
@@ -32,7 +32,8 @@ def test_composer_refusal_has_no_cli_remedy(
         (saved.session_dir / "loop_state.json").write_text("{}")
     wire = io.BytesIO()
     bridge = runner.RunBridge(server=server.ACPServer(io.BytesIO(), wire))
-    assert bridge.run(current, "/compact keep the plan") == "refusal"
+    with pytest.raises(rpc.RpcError):
+        bridge.run(current, "/compact keep the plan")
     texts = [
         json.loads(line)["params"]["update"]["content"]["text"]
         for line in wire.getvalue().splitlines()

@@ -140,6 +140,8 @@ A session is one conversation in one directory.
   `session/resume` refuses a plan, an ask, a run whose worker is alive, or a run `agent6 resume` would refuse.
   It also refuses a run this connection has open for another directory or with a prompt in flight.
 - `session/load` opens the recorded run like `session/resume`, replays its journal as ordered `session/update` notifications, then returns.
+- `session/prompt` answers `end_turn` when the run finishes, a red gate included, and `max_turn_requests` at the turn cap.
+  A run that fails or never starts answers with a JSON-RPC error (`-32603`, or `-32602` for a prompt agent6 refuses); the reason arrives first as a message.
 - `session/close` ends a conversation; a prompt in flight is cancelled first and answers `cancelled`.
 - `session/cancel` cuts a model call in flight and ends a running foreground command at once, without waiting for or signalling the worker (the ACP server itself).
   The prompt answers `cancelled` (ACP's word) and the run's record reads `stopped`, as every operator stop does; what it had not yet committed stays in the tree for the next prompt, which resumes it.

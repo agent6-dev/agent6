@@ -82,6 +82,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 
     Budget and run_commands apply.
     """
+    from agent6.ui.acp import rpc
     from agent6.ui.acp import runner as acp_runner
     from agent6.ui.acp import session as acp_session
 
@@ -108,7 +109,8 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     session = acp_session.Session(acp_id="t", cwd=tmp_path)
     # The runner moves the process to the session's cwd; the monkeypatch moves it back.
     monkeypatch.chdir(tmp_path)
-    assert bridge.run(session, "task") == "refusal"
+    with pytest.raises(rpc.RpcError, match="stop here"):
+        bridge.run(session, "task")
     assert seen == [(cfg_path,)]
 
 
