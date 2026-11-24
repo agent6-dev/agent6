@@ -15,8 +15,9 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6 import terminal
-from agent6.app import merge
+from agent6 import errors, kinds, terminal
+from agent6.app import merge, preflight, stamps
+from agent6.app import reporter as app_reporter
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
@@ -141,6 +142,61 @@ def unmerged_base(
     if not base or base == manifest.base_sha:
         return None
     return base if git_read.is_ancestor(cwd, manifest.base_sha, base) else None
+
+
+def move_base(
+    cwd: pathlib.Path,
+    layout: sessions_layout.SessionLayout,
+    manifest: sessions_manifest.SessionManifest,
+    merged: MergedStart | None,
+    identity: git_read.CommitIdentity,
+    *,
+    mode: kinds.LoopMode,
+    reporter: app_reporter.Reporter,
+) -> str:
+    """Move the run's base to where this execution's work starts, and record it.
+
+    A merged run continues from HEAD. A run whose base branch holds its earlier work keeps
+    its chain and starts its diff and next merge past that work.
+
+    Args:
+        cwd: The checkout.
+        layout: The session's directory layout.
+        manifest: The session's manifest.
+        merged: Where the run continues from when HEAD holds its merged work.
+        identity: The author of the continuation commit, if one is needed.
+        mode: The session mode; only a run's base moves.
+        reporter: Receives the refusal and the note.
+
+    Returns:
+        The base this execution runs with: the moved one, else the one the manifest records.
+
+    Raises:
+        preflight.SessionRefusedError: The run's refs could not be moved to HEAD.
+    """
+    if merged is not None:
+        try:
+            base = continue_from_head(cwd, merged, manifest, identity)
+        except errors.GitError as exc:
+            reporter.error(f"cannot continue this run from HEAD: {exc}")
+            raise preflight.SessionRefusedError(2) from exc
+        stamps.stamp_continued_from(layout.session_dir, base, merged.branch)
+        reporter.note(
+            f"this run's earlier work was merged into {merged.into}; continuing from HEAD"
+            f" ({merged.head[:12]})"
+        )
+        return base
+    moved = unmerged_base(cwd, layout, manifest) if mode == "run" else None
+    if not moved:
+        return manifest.base_sha
+    # The run's base moves to where its unmerged work starts; its chain stays.
+    current = sessions_manifest.read_manifest(layout.session_dir)
+    stamps.write_manifest(layout.manifest_path, current.model_copy(update={"base_sha": moved}))
+    reporter.note(
+        f"this run's earlier work was merged into {manifest.base_branch}; its diff and"
+        f" next merge start at {moved[:12]}"
+    )
+    return moved
 
 
 def branch_off_the_chain(

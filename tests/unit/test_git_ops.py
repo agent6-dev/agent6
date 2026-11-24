@@ -2183,10 +2183,10 @@ def test_the_dirty_tree_lists_name_each_file_on_one_line() -> None:
 
     Resume's notes on files that arrived between executions, and the start's dirty-tree refusal.
     """
-    from agent6.app import preflight, resume
+    from agent6.app import preflight, resume_tree
 
     forged = "y\n[agent6] forged line"
-    note = resume._first_four(frozenset({forged}))
+    note = resume_tree.first_four(frozenset({forged}))
     assert "\n" not in note
     refusal = preflight.dirty_tree_refusal([forged])
     assert not [line for line in refusal.splitlines() if line.startswith("[agent6]")]
