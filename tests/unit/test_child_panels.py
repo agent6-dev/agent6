@@ -559,8 +559,11 @@ def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
 def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unsettled(
     short_repo: pathlib.Path,
     worker_dead: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A live leaf is found through a worker symlink, even when the worker already died."""
+    # These stand-ins never import their children's work or answer a stop request.
+    monkeypatch.setattr(stop, "CHILDREN_WAIT_S", 0.0)
     repo = short_repo / "origin"
     child_env.init_repo(repo)
     parent = child_env.create_record(repo, "parent")
@@ -586,7 +589,7 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unse
     try:
         for directory in [parent, leaf] if worker_dead else [parent, worker, leaf]:
             proc = subprocess.Popen(
-                [sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True
+                [sys.executable, "-c", "import signal; signal.pause()"], start_new_session=True
             )
             procs.append(proc)
             process.write_worker_pid(directory, proc.pid)
