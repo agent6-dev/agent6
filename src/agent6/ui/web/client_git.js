@@ -943,7 +943,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   }
   emptySide();
   await loadGraph(true);
-  if (!app.isConnected) return;
+  // Superseded while the graph loaded: the old page may still be shown, and opening the commit would put its address back.
+  if (!app.isConnected || (gen !== undefined && gen !== routeGen)) return;
   if (link[0] === 'commit' && link[1]) await showCommit(link[1], query);
   else if (link[0] === 'worktree' && wt.files.length) showWorktree();
 }
