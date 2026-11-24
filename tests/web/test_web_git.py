@@ -426,7 +426,7 @@ def test_a_write_undone_before_the_second_read_is_still_caught(
     def swapping_patch(*args: object, **kwargs: object) -> tuple[str, bool]:
         (path / "b.txt").write_bytes(b"B while git reads\n")
         try:
-            return real_patch(*args, **kwargs)  # type: ignore[arg-type]
+            return real_patch(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
         finally:
             (path / "b.txt").write_bytes(original)
 
