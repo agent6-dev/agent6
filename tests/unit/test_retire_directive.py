@@ -61,8 +61,8 @@ def test_the_grammar_takes_the_id() -> None:
 
 
 def test_it_is_offered_only_on_a_live_run() -> None:
-    assert "/retire" in directive.STEER_COMMANDS
-    assert "/retire" in directive.LIVE_RUN_COMMANDS
+    assert "/retire" in {c.name for c in directive.commands_for("steer")}
+    assert "/retire" not in {c.name for c in directive.commands_for("resume")}
 
 
 def test_a_full_id_retires_at_the_next_turn(tmp_path: pathlib.Path) -> None:

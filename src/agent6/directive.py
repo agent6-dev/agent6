@@ -764,8 +764,6 @@ def commands_for(surface: Surface) -> tuple[SlashCommand, ...]:
     return tuple(c for c in COMMANDS if surface in c.accepts and c.name != "/<skill>")
 
 
-STEER_COMMANDS = {c.name: c.help for c in commands_for("steer")}
-LIVE_RUN_COMMANDS = frozenset(c.name for c in commands_for("steer") if "resume" in c.refuses)
 VIEW_COMMANDS = frozenset(c.name for c in COMMANDS if "script" in c.refuses)
 _FRONT_END_TOKEN = re.compile(
     r"\A\s*("
@@ -776,6 +774,6 @@ _FRONT_END_TOKEN = re.compile(
 # A directive token inside a line; `/parallel` is excluded, since a later one separates tasks.
 _STRAY = re.compile(
     r"(?<=\s)("
-    + "|".join(re.escape(c) for c in sorted(STEER_COMMANDS) if c != "/parallel")
+    + "|".join(re.escape(c.name) for c in commands_for("steer") if c.name != "/parallel")
     + r")(?=\s|\Z)"
 )

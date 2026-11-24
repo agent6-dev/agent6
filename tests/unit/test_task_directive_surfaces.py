@@ -40,8 +40,8 @@ def test_parse_task_takes_the_text_and_leaves_other_lines_alone() -> None:
 
 def test_the_directive_is_offered_only_on_a_live_run() -> None:
     """The resume composer withholds `/task` on a finished run, where nothing drains the queue."""
-    assert "/task" in directive.STEER_COMMANDS
-    assert "/task" in directive.LIVE_RUN_COMMANDS
+    assert "/task" in {c.name for c in directive.commands_for("steer")}
+    assert "/task" not in {c.name for c in directive.commands_for("resume")}
 
 
 def test_the_web_composer_queues_instead_of_steering(

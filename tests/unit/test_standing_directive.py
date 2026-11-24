@@ -37,8 +37,8 @@ def test_the_grammar_takes_the_goal() -> None:
 
 
 def test_it_is_offered_only_on_a_live_run() -> None:
-    assert "/standing" in directive.STEER_COMMANDS
-    assert "/standing" in directive.LIVE_RUN_COMMANDS
+    assert "/standing" in {c.name for c in directive.commands_for("steer")}
+    assert "/standing" not in {c.name for c in directive.commands_for("resume")}
 
 
 def test_a_bare_directive_sets_nothing(tmp_path: pathlib.Path) -> None:

@@ -356,7 +356,7 @@ def test_parse_now_carries_the_steer_and_the_urgency() -> None:
     assert directive.parse_now("  /now\tstop touching config") == "stop touching config"
     assert directive.parse_now("/now") == ""  # bare: nothing to steer with, the caller says so
     assert directive.parse_now("/nowhere") is None and directive.parse_now("now please") is None
-    assert "/now" in directive.STEER_COMMANDS
+    assert "/now" in {c.name for c in directive.commands_for("steer")}
 
 
 def test_directive_words_fold_case_once() -> None:

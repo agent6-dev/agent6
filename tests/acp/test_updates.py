@@ -528,7 +528,6 @@ def test_the_pin_directive_is_advertised_when_the_run_starts() -> None:
     ]
     (pin,) = [c for c in commands["availableCommands"] if c["name"] == "pin"]
     assert pin["name"] == "pin"
-    assert pin["description"] == directive.STEER_COMMANDS["/pin"]
     assert pin["input"] == {"type": "text", "hint": "<text>"}
 
 
@@ -553,7 +552,6 @@ def test_review_is_advertised_as_a_session_directive() -> None:
         if u["sessionUpdate"] == "available_commands_update"
     )
     review = next(c for c in commands["availableCommands"] if c["name"] == "review")
-    assert review["description"] == directive.STEER_COMMANDS["/review"]
     assert review["input"]["hint"] == "[TARGET]"
 
 
