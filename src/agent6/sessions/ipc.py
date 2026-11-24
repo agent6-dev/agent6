@@ -26,7 +26,7 @@ from typing import Literal, cast
 
 import pydantic
 
-from agent6 import paths, portable
+from agent6 import operator_input, paths, portable
 from agent6.sessions import process
 
 APPROVAL_DIR_NAME = "approvals"
@@ -234,7 +234,7 @@ def clear_pending_answers(
     answer_dirs = (session_dir / APPROVAL_DIR_NAME, session_dir / QUESTION_DIR_NAME)
     markers = (STOP_REQUEST_FILE, COMPACT_REQUEST_FILE)
     if not keep_steer:
-        markers += (STEER_ANSWER_FILE, STEER_REQUEST_FILE)
+        markers += (STEER_ANSWER_FILE, STEER_IMAGES_FILE, STEER_REQUEST_FILE)
     answers = (
         f
         for d in answer_dirs
@@ -910,11 +910,80 @@ class QueuedSteer(pydantic.BaseModel, frozen=True, extra="forbid"):
         text: The instruction.
         now: Whether it interrupts the in-flight call once it is the one in the slot.
         findings: The review findings a Fix steer carries, re-checked before delivery.
+        images: The images the operator sent with the instruction, stored in the session's
+            attachments.
     """
 
     text: str
     now: bool = False
     findings: tuple[str, ...] = ()
+    images: tuple[operator_input.ImageRef, ...] = ()
+
+
+# The images of the steer in the slot; the worker writes it when it promotes their entry.
+STEER_IMAGES_FILE = "steer.images"
+# The operator message that starts the next execution, when it carries images.
+LAUNCH_INPUT_FILE = "launch.input"
+_IMAGE_REFS = pydantic.TypeAdapter(tuple[operator_input.ImageRef, ...])
+
+
+def take_steer_images(session_dir: pathlib.Path) -> tuple[operator_input.ImageRef, ...]:
+    """Consume the images of the steer just read from the slot.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The references, in the order the operator gave them; none for a steer without images
+        or an unreadable record.
+    """
+    raw = _consume_answer(session_dir / STEER_IMAGES_FILE)
+    if raw is None:
+        return ()
+    try:
+        return _IMAGE_REFS.validate_json(raw)
+    except pydantic.ValidationError:
+        return ()
+
+
+def write_launch_input(session_dir: pathlib.Path, message: operator_input.OperatorInput) -> None:
+    """Record the operator message the next execution starts from, before it is launched.
+
+    A front-end writes this only for a message with images: the words travel as the task
+    or the `--steer` text, and the execution takes the images when those words match.
+
+    Args:
+        session_dir: The session directory, reserved by the front-end for a new session.
+        message: The message, its images already stored in the session's attachments.
+
+    Raises:
+        OSError: The record cannot be written.
+    """
+    paths.mkdir_for_real_user(session_dir)
+    portable.atomic_write(session_dir / LAUNCH_INPUT_FILE, message.model_dump_json())
+
+
+def take_launch_images(
+    session_dir: pathlib.Path, words: str
+) -> tuple[operator_input.ImageRef, ...]:
+    """Consume the launch record and return its images when it is this execution's message.
+
+    Args:
+        session_dir: The session directory.
+        words: The task or the resume steer as the operator gave it.
+
+    Returns:
+        The images of the recorded message whose text is `words`; none without a record,
+        for an unreadable one, or for one left by a launch that never started.
+    """
+    raw = _consume_answer(session_dir / LAUNCH_INPUT_FILE)
+    if raw is None:
+        return ()
+    try:
+        message = operator_input.OperatorInput.model_validate_json(raw)
+    except pydantic.ValidationError:
+        return ()
+    return message.images if message.text == words else ()
 
 
 def write_steer_answer(session_dir: pathlib.Path, answer: str) -> None:
@@ -928,13 +997,14 @@ def write_steer_answer(session_dir: pathlib.Path, answer: str) -> None:
 
 
 def clear_steer_answer(session_dir: pathlib.Path) -> None:
-    """Drop a steer answer.
+    """Drop a steer answer and the images that came with it.
 
     Args:
         session_dir: The session directory.
     """
-    with contextlib.suppress(FileNotFoundError):
-        (session_dir / STEER_ANSWER_FILE).unlink()
+    for name in (STEER_ANSWER_FILE, STEER_IMAGES_FILE):
+        with contextlib.suppress(FileNotFoundError):
+            (session_dir / name).unlink()
 
 
 def take_steer_answer(session_dir: pathlib.Path) -> str | None:
@@ -1035,32 +1105,48 @@ def steer_interrupt_pending(session_dir: pathlib.Path) -> bool:
 
 
 def submit_steer(
-    session_dir: pathlib.Path, text: str, *, now: bool = False, findings: tuple[str, ...] = ()
+    session_dir: pathlib.Path,
+    text: str,
+    *,
+    now: bool = False,
+    findings: tuple[str, ...] = (),
+    images: tuple[operator_input.ImageRef, ...] = (),
 ) -> bool:
     """Queue a steer: into the slot when it is free, else behind the one in flight.
 
     The loop finds the slot's answer the moment it notices the request and never waits on a
     modal; the worker promotes the inbox's oldest entry when the slot clears. A verb
     (`abort`, `exit`, `/undo`, `detach`) takes the slot whatever it holds; an urgent steer
-    takes it too, and the instruction it displaces moves to the head of the inbox.
+    takes it too, and the instruction it displaces moves to the head of the inbox. A steer
+    with images always enters the inbox, since only the worker pairs the slot with its images.
 
     Args:
         session_dir: The session directory.
         text: The instruction.
         now: Abort the in-flight model call to take it.
         findings: The review findings a Fix steer carries.
+        images: The images sent with the instruction, stored in the session's attachments.
 
     Returns:
         Whether the steer landed, in the slot or the inbox.
     """
     answer = session_dir / STEER_ANSWER_FILE
     try:
+        if images:
+            return queue_steer(
+                session_dir, QueuedSteer(text=text, now=now, findings=findings, images=images)
+            )
         if text.strip().lower() in STEER_VERBS:
             write_steer_answer(session_dir, text)
         elif now and steer_request_pending(session_dir):
             displaced = _consume_answer(answer)
             if displaced is not None and not _queue_steer_first(
-                session_dir, QueuedSteer(text=displaced, now=steer_interrupt_pending(session_dir))
+                session_dir,
+                QueuedSteer(
+                    text=displaced,
+                    now=steer_interrupt_pending(session_dir),
+                    images=take_steer_images(session_dir),
+                ),
             ):
                 return False
             write_steer_answer(session_dir, text)
@@ -1167,6 +1253,10 @@ def promote_queued_steer(session_dir: pathlib.Path) -> bool:
         with contextlib.suppress(OSError):
             path.unlink()
         try:
+            if entry.images:
+                portable.atomic_write(
+                    session_dir / STEER_IMAGES_FILE, _IMAGE_REFS.dump_json(entry.images)
+                )
             write_steer_answer(session_dir, entry.text)
         except OSError:
             return False

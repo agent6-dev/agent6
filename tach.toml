@@ -997,7 +997,18 @@ depends_on = ["agent6.paths", "agent6.portable"]
 path = "agent6.sessions.ipc"
 # atomic_write: the answer files need a unique-temp durable write (two live
 # front-ends answering one prompt raced on a shared .tmp).
-depends_on = ["agent6.paths", "agent6.portable", "agent6.sessions.process"]
+depends_on = ["agent6.operator_input", "agent6.paths", "agent6.portable", "agent6.sessions.process"]
+
+[[modules]]
+# The images an operator sent with a message, stored by digest under the session directory.
+path = "agent6.sessions.attachments"
+depends_on = ["agent6.kinds", "agent6.operator_input", "agent6.paths", "agent6.portable"]
+
+[[modules]]
+# The operator's input record: text parts and image references. A leaf the journal, the
+# file bridge and every front-end read.
+path = "agent6.operator_input"
+depends_on = []
 
 [[modules]]
 path = "agent6.graph.storage"
