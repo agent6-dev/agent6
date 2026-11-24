@@ -252,6 +252,7 @@ def build_harness(
             when=cfg.review.when,
             interval_turns=cfg.review.interval_turns,
             reviewers=session.reviewers,
+            repeat_provider=session.repeat_provider if cfg.review.merge_repeats else None,
             block_on=cfg.review.block_on,
             min_blocking_models=cfg.review.min_blocking_models,
             max_rejections=cfg.review.max_rejections,

@@ -388,7 +388,7 @@ def _build_agent_providers(
         budget=budget,
         stream_text=True,
     )
-    summarizer_provider = role_providers.helper_actor_provider(
+    summarizer_provider = role_providers.side_actor_provider(
         cfg, "helper:summarizer", transcript_sink=transcript_sink, budget=budget, events=events_sink
     )
     return provider, summarizer_provider, events_sink

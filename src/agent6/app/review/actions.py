@@ -122,7 +122,7 @@ def findings_result(session_dir: pathlib.Path) -> results.FindingsResult:
         raise tool_errors.ToolError(str(exc)) from exc
     note = view.legacy_notice or ("No review panel has run." if not view.panels else "")
     return results.FindingsResult(
-        findings=tuple(finding_brief(f) for f in view.findings), note=note
+        findings=tuple(finding_brief(f) for f in view.listed_findings), note=note
     )
 
 
@@ -148,7 +148,7 @@ def finding_brief(finding: review.FindingView) -> results.FindingBrief:
         severity=report.severity,
         category=report.category,
         location=str(report.location),
-        title=report.title,
+        title=finding.title,
         detail=report.detail,
         suggestion=report.suggestion or "",
         pre_existing=(

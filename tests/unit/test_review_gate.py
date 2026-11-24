@@ -979,3 +979,175 @@ def test_a_review_target_without_a_diff_is_skipped(
 @pytest.fixture(autouse=True)
 def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)
+
+
+def test_a_folded_lock_finding_returns_when_reported_again(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mistaken repeat hides neither a raw block nor the next report of that finding."""
+    from agent6.app.session import runtime
+    from agent6.config import Config
+    from agent6.providers import TranscriptSink
+    from agent6.viewmodel import review
+    from tests import launch_env
+
+    titles = ("the retry loop never stops", "the retry sleeps while it holds the lock")
+    reports = [json.loads(_REVIEWER_REPLY)["findings"][0] | {"title": t} for t in titles]
+    reports[0]["severity"] = "warn"
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    panel = _target_reviewer(tmp_path, monkeypatch, [])
+    roster = []
+    for i, report in enumerate(reports):
+        provider = mock.MagicMock()
+        provider.call.side_effect = [
+            _resp(json.dumps({"summary": "retry", "findings": rows}))
+            for rows in ([report], [report] if i else [])
+        ]
+        roster.append(review_env.reviewer("retry", "p/r", provider))
+
+    def observations(
+        panel_id: str, verdicts: Any, known: Any, **_kwargs: Any
+    ) -> tuple[review_records.FindingObservation, ...]:
+        return tuple(
+            review_records.FindingObservation(
+                f"f{v.reviewer_index}", panel_id, f, (v.reviewer_index,)
+            )
+            for v in verdicts
+            for f in v.findings
+        )
+
+    monkeypatch.setattr(review_gate.review_history, "observations", observations)
+    target = review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions")
+    state = _state()
+    with launch_env.scripted_provider(['[{"id":"f1","repeat_of":"f0"}]', "[]"]) as (url, calls):
+        cfg = Config.model_validate(
+            {
+                "providers": {"p": {"backend": "openai", "base_url": url, "auth_style": "none"}},
+                "models": {"default": {"model": "p/worker"}, "reviewer": {"model": "p/group"}},
+                "review": {"when": "finish", "merge_repeats": True},
+            }
+        )
+        session = runtime.build_session_providers(
+            cfg,
+            role="worker",
+            events=sink,
+            transcript_sink=TranscriptSink(
+                tmp_path / "transcripts", objects_dir=tmp_path / "objects"
+            ),
+            stream_text=False,
+        )
+        try:
+            panel = dataclasses.replace(
+                panel,
+                settings=dataclasses.replace(
+                    panel.settings,
+                    reviewers=roster,
+                    block_on="any",
+                    repeat_provider=session.repeat_provider,
+                ),
+                emit=sink.emit,
+            )
+            view = review.ReviewView()
+            for i, title in enumerate(titles):
+                result = panel._sit(
+                    state,
+                    {"panel_id": f"p{i}", "turn": i, "execution_id": "e1", "trigger": "finish"},
+                    target,
+                    _TARGET_DIFF,
+                    block_on="any",
+                    turn=i,
+                    trigger="finish",
+                )
+                assert result and not result.satisfied
+                label = title + (" (2 reviewers)" if i == 0 else " (1 reviewer)")
+                assert label in result.text
+                if i == 0:
+                    assert titles[1] not in result.text
+                row = {"type": "review.panel", **state.review_panels[-1].model_dump(mode="json")}
+                view = review.apply_event(view, row)
+                assert label in [f.title for f in view.listed_findings]
+                notices = "\n".join(review.notice_texts(row))
+                assert label in notices
+                if i == 0:
+                    assert "Also reported: f1" in notices and titles[1] in notices
+                assert len(view.listed_findings) == i + 1
+                assert not view.read_failure and view.merge_guard.open_block_ids == ("f1",)
+        finally:
+            session.close()
+    assert [body["model"] for body in calls] == ["group", "group"]
+    assert all("tools" not in body for body in calls)
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert (
+        len(
+            [
+                row
+                for row in rows
+                if row.get("actor") == "reviewer:repeats" and row["type"] == "model.result"
+            ]
+        )
+        == 2
+    )
+    assert len([row for row in rows if row["type"] == "budget.update"]) >= 2
+
+
+def test_review_without_grouping_keeps_the_request_bytes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Freeze the request a panel sends and the feedback returned for the worker."""
+    import hashlib
+
+    from agent6.app.session import runtime
+    from agent6.config import Config
+    from agent6.providers import TranscriptSink, transport
+    from tests import launch_env
+
+    wire: list[bytes] = []
+    post = transport.http_post
+
+    def record(url: str, *, content: bytes, **kwargs: Any) -> Any:
+        wire.append(content)
+        return post(url, content=content, **kwargs)
+
+    monkeypatch.setattr(transport, "http_post", record)
+    events: list[Any] = []
+    gate = _target_reviewer(tmp_path, monkeypatch, events)
+    with launch_env.scripted_provider([_REVIEWER_REPLY]) as (url, calls):
+        cfg = Config.model_validate(
+            {
+                "providers": {"p": {"backend": "openai", "base_url": url, "auth_style": "none"}},
+                "models": {"default": {"model": "p/review"}},
+                "review": {"when": "finish"},
+            }
+        )
+        session = runtime.build_session_providers(
+            cfg,
+            role="reviewer",
+            events=event_log.EventSink(tmp_path / "logs.jsonl"),
+            transcript_sink=TranscriptSink(
+                tmp_path / "transcripts", objects_dir=tmp_path / "objects"
+            ),
+            stream_text=False,
+        )
+        try:
+            reviewer = review_env.reviewer("correctness", "p/review", session.provider)
+            gate = dataclasses.replace(
+                gate, settings=dataclasses.replace(gate.settings, reviewers=[reviewer])
+            )
+            result = gate.review_target(
+                _state(),
+                review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions"),
+                _TARGET_DIFF,
+            )
+        finally:
+            session.close()
+    assert len(calls) == len(wire) == 1
+    assert (
+        result
+        and result.text
+        == "- [block:correctness] (a.py:1) x = 2 breaks the invariant\n    the caller expects 1"
+    )
+    assert "repeat_merge" not in events[-1].model_dump(exclude_unset=True)
+    assert (
+        hashlib.sha256(wire[0]).hexdigest()
+        == "52b0a165f403805d7e444ef994313a6ccd6b2a9a0ef18252f3d9534dc0bdb32c"
+    )

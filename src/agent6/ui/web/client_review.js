@@ -40,7 +40,7 @@ function findingCard(entry, card = el('span', 'finding')) {
   const record = card.firstChild || card.appendChild(el('span', 'finding-record'));
   const titleId = record.firstChild?.id; // the form's buttons describe themselves with this title
   record.replaceChildren();
-  const title = record.appendChild(el('span', 'finding-title', f.severity + ' · ' + entry.finding.status + ' · ' + f.title));
+  const title = record.appendChild(el('span', 'finding-title', f.severity + ' · ' + entry.finding.status + ' · ' + f.title + (entry.observation.repeat_label || '')));
   if (titleId) title.id = titleId;
   const range = loc.start_line == null ? ' (file)' : ':' + loc.start_line
     + (loc.end_line !== loc.start_line ? '-' + loc.end_line : '');
@@ -99,7 +99,7 @@ function reviewEntries(review, session_id, panel_id = '') {
   const entries = [];
   for (const finding of review.findings || []) {
     const observation = panel_id ? finding.observations.find(o => o.panel_id === panel_id) : finding.observations.at(-1);
-    if (!observation) continue;
+    if (!observation || observation.repeat_label === null) continue;
     const panel = review.panels.find(p => p.panel_id === observation.panel_id);
     if (panel?.target) entries.push({finding, observation, panel, session_id, matches: true});
   }

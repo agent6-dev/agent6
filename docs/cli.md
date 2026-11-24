@@ -99,6 +99,10 @@ For [`@` path completion](usage.md#path-completion), use the TUI or web composer
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.
 It rings the bell and sends a desktop notification (`notify-send`, when present) as the run starts waiting on an answer and as it ends; `run` does the same in the foreground.
 Ids are exact or an unambiguous prefix and default to the most recent run.
+With `review.merge_repeats = true`, the findings list shows one row per group with the number of reviewers who reported it.
+The session transcript keeps the other reports under "Also reported" for that panel.
+Grouping changes neither a finding's status nor the blocking decision.
+
 A prefix selects the single matching session whose full id prefixes every other match, provided the others have its mode or are its reviewers (for example, a parallel parent and its children).
 Children remain reachable by their own ids.
 

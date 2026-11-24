@@ -126,7 +126,7 @@ def test_role_builders_stamp_actors_and_review_resolution_stays_pure() -> None:
     )
 
     sink = mock.MagicMock()
-    role_providers.helper_actor_provider(
+    role_providers.side_actor_provider(
         cfg,
         "helper:summarizer",
         transcript_sink=sink,

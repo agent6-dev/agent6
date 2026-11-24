@@ -245,37 +245,41 @@ def aggregate_verdicts(
 
 
 def findings_within(
-    findings: tuple[review_records.Finding, ...], budget: int
+    findings: tuple[review_records.Finding, ...], budget: int, labels: dict[str, str] | None = None
 ) -> tuple[review_records.Finding, ...]:
     """Fit findings in the worker's notice.
 
     Args:
         findings: New findings, blocks first.
         budget: Bytes available for their text.
+        labels: Reviewer counts by finding key when grouping is on.
 
     Returns:
         Whole findings, or the first finding with a marked cut in its suggestion.
     """
     for n in range(len(findings), 0, -1):
-        if len(render_findings(findings[:n]).encode()) <= budget:
+        if len(render_findings(findings[:n], labels).encode()) <= budget:
             return findings[:n]
     if findings and (patch := findings[0].suggestion):
         marker = "\n[suggestion cut; full text in the recorded finding]"
         marked = findings[0].model_copy(update={"suggestion": marker})
-        room = budget - len(render_findings((marked,)).encode())
+        room = budget - len(render_findings((marked,), labels).encode())
         if room >= 0:
             head = patch.encode()[:room].decode(errors="ignore")
             return (marked.model_copy(update={"suggestion": head + marker}),)
     return ()
 
 
-def render_findings(findings: tuple[review_records.Finding, ...]) -> str:
+def render_findings(
+    findings: tuple[review_records.Finding, ...], labels: dict[str, str] | None = None
+) -> str:
     """Return merged findings as a `[review]` block for the worker or the CLI, "" when empty."""
     if not findings:
         return ""
     lines = []
     for f in findings:
-        lines.append(f"- [{f.severity}:{f.category}] ({f.location}) {f.title}")
+        label = labels.get(review_records.finding_key(f), "") if labels else ""
+        lines.append(f"- [{f.severity}:{f.category}] ({f.location}) {f.title}{label}")
         if f.detail.strip():
             lines.append(f"    {f.detail.strip()}")
         if f.suggestion:

@@ -1443,6 +1443,10 @@ class ReviewPanel(Event):
         description="The immutable review target, or provider request class.",
     )
     findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
+    repeat_merge: dict[str, Any] | None = pydantic.Field(
+        default=None,
+        description="The kept IDs, folded IDs and reviewer counts, or why grouping was skipped.",
+    )
     injected_finding_ids: Sequence[Any] = pydantic.Field(
         description="Finding identifiers supplied to the worker.",
     )

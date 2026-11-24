@@ -188,7 +188,9 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
 
     def _selected(self) -> review.FindingView | None:
         row = self.query_one("#findings", widgets.DataTable).cursor_row
-        return self._view.findings[row] if 0 <= row < len(self._view.findings) else None
+        return (
+            self._view.listed_findings[row] if 0 <= row < len(self._view.listed_findings) else None
+        )
 
     def action_refresh(self) -> None:
         """Reload evidence while keeping the selected finding."""
@@ -202,7 +204,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         if view != self._view:
             self._view = view
             table.clear()
-            for f in view.findings:
+            for f in view.listed_findings:
                 report = f.observations[-1].finding
                 table.add_row(
                     *(
@@ -212,13 +214,17 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                             f.status,
                             report.severity,
                             str(report.location),
-                            report.title,
+                            f.title,
                         )
                     )
                 )
             if selected is not None:
                 row = next(
-                    (i for i, f in enumerate(view.findings) if f.finding_id == selected.finding_id),
+                    (
+                        i
+                        for i, f in enumerate(view.listed_findings)
+                        if f.finding_id == selected.finding_id
+                    ),
                     0,
                 )
                 table.move_cursor(row=row)
@@ -251,7 +257,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             severity=report.severity,
             category=report.category,
             location=report.location,
-            title=report.title,
+            title=finding.title,
             detail=report.detail,
             fix_state=finding.fix_state,
         )

@@ -748,19 +748,21 @@ class InstrumentedProvider:
             budget_events.emit_budget_update(self.budget, self.events.emit)
 
 
-def helper_actor_provider(
+def side_actor_provider(
     cfg: Config,
     actor: str,
     *,
+    role: RoleName = "helper",
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None,
     conversations: conversation_state.Conversations | None = None,
 ) -> Provider:
-    """Build the instrumented provider for a helper actor.
+    """Build the instrumented provider for a side call.
 
     Args:
         cfg: The run's config.
+        role: The route the side call uses.
         actor: The actor to record.
         transcript_sink: The recorder the provider's round-trips go to.
         budget: The tracker the provider bills.
@@ -771,9 +773,9 @@ def helper_actor_provider(
         The instrumented provider.
     """
     inner = build_role_provider(
-        cfg, "helper", transcript_sink=transcript_sink, budget=budget, actor=actor, events=events
+        cfg, role, transcript_sink=transcript_sink, budget=budget, actor=actor, events=events
     )
-    rm = cfg.models.resolve("helper")
+    rm = cfg.models.resolve(role)
     assert rm is not None
     return InstrumentedProvider(
         inner=inner,

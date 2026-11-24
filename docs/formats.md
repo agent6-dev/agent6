@@ -1194,6 +1194,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `trigger` | `str` | The action that triggered the gate or panel. |
 | `target` | `object` | The immutable review target, or provider request class. |
 | `findings` | `list` | Grounded findings or panel observations. |
+| `repeat_merge` | `object, optional` | The kept IDs, folded IDs and reviewer counts, or why grouping was skipped. |
 | `injected_finding_ids` | `list` | Finding identifiers supplied to the worker. |
 | `block_on` | `str` | The configured panel blocking rule. |
 | `roster` | `list, optional` | The reviewers that sat: index, model route, focus and temperature. |
@@ -4348,6 +4349,7 @@ Source: [`agent6.viewmodel.review.FindingView`](https://github.com/agent6-dev/ag
 | `anchor_state` | `Literal['unknown', 'current', 'outdated']` | Whether the location matches the displayed comparison. |
 | `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | The latest fix delivery state. |
 | `opened_at` | `float \| None` | The first observation time in epoch seconds, or null when unrecorded. |
+| `repeat_label` | `str \| None` | The latest count label, empty when ungrouped or None when folded. |
 
 ### SeverityCounts
 
@@ -4521,6 +4523,7 @@ Source: [`agent6.review_records.ReviewPanel`](https://github.com/agent6-dev/agen
 | `target` | `ReviewTarget` | The immutable reviewed comparison. |
 | `roster` | `tuple[ReviewerAssignment, ...]` | The reviewers that sat; empty on a record written before rosters were kept. |
 | `findings` | `tuple[FindingObservation, ...]` | The panel's grounded finding observations. |
+| `repeat_merge` | `RepeatMerge \| None` | This panel's report groups, absent when grouping is off. |
 | `injected_finding_ids` | `tuple[str, ...]` | Findings supplied to the worker as feedback. |
 | `block_on` | `Literal['none', 'any', 'all', 'model_quorum']` | The configured worker-finish blocking rule. |
 | `raw_blocked` | `bool` | Whether the panel met the blocking rule before disarming. |
@@ -4604,6 +4607,17 @@ Source: [`agent6.review_records.Finding`](https://github.com/agent6-dev/agent6/b
 | `location` | `ReviewLocation` | The path, side and optional line range. |
 | `suggestion` | `str \| None` | An optional fix as text or a patch, up to 2,000 characters. |
 
+### RepeatMerge
+
+**Support: public.** Record one panel's grouping decision.
+
+Source: [`agent6.review_records.RepeatMerge`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `groups` | `tuple[RepeatGroup, ...]` | One group per kept finding, including singletons. |
+| `skipped` | `str` | The reason the original findings stand, empty on success. |
+
 ### LineOrigin
 
 **Support: public.** Record byte-level evidence without dating a defect or changing its severity.
@@ -4629,3 +4643,15 @@ Source: [`agent6.review_records.ReviewLocation`](https://github.com/agent6-dev/a
 | `side` | `Literal['base', 'head']` | The base or head side of the comparison. |
 | `start_line` | `int \| None` | The inclusive one-based start line, or null for a file-level finding. |
 | `end_line` | `int \| None` | The inclusive one-based end line, or null for a file-level finding. |
+
+### RepeatGroup
+
+**Support: public.** Group matching reports in a panel.
+
+Source: [`agent6.review_records.RepeatGroup`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `kept` | `str` | The finding ID the panel shows. |
+| `folded` | `tuple[str, ...]` | The other IDs in the group. |
+| `reviewers` | `int` | The number of distinct roster entries that reported the defect. |

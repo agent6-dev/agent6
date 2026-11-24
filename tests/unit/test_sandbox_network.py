@@ -108,7 +108,7 @@ def test_run_one_returns_finish_payload(
 
     monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _fake)
-    monkeypatch.setattr(role_providers, "helper_actor_provider", _fake)
+    monkeypatch.setattr(role_providers, "side_actor_provider", _fake)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _Dispatcher)
 
     req = agent.MachineAgentRequest(
@@ -159,7 +159,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(harness_loop, "Harness", _CapturingWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _prov)
-    monkeypatch.setattr(role_providers, "helper_actor_provider", _prov)
+    monkeypatch.setattr(role_providers, "side_actor_provider", _prov)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _disp)
     return captured
 

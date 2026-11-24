@@ -89,7 +89,8 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
         common.error(str(exc))
         return 2
     payload = review.as_dict(view)
-    payload["findings"] = [f for f in payload["findings"] if all_findings or f["status"] == "open"]
+    listed = {f.finding_id for f in view.listed_findings if all_findings or f.status == "open"}
+    payload["findings"] = [f for f in payload["findings"] if f["finding_id"] in listed]
     if as_json:
         # Panels retain observations of resolved findings; the listing includes only its rows.
         payload.pop("panels")
@@ -103,7 +104,7 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
         if view.completion == "skipped":
             print(view.summary)
         print("no findings" if all_findings else "no open findings")
-    for finding in view.findings:
+    for finding in view.listed_findings:
         if all_findings or finding.status == "open":
             brief = review_actions.finding_brief(finding)
             print(

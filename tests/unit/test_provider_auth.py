@@ -101,7 +101,7 @@ def _route(
             events=events if observed else None,
         )
     else:
-        wrapped = role_providers.helper_actor_provider(
+        wrapped = role_providers.side_actor_provider(
             cfg,
             "helper:summarizer",
             transcript_sink=sink,

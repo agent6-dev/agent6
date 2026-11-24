@@ -210,12 +210,15 @@ class SessionProviders:
     provider: Provider
     summarizer_provider: Provider | None
     reviewers: list[review_gate.Reviewer]
+    repeat_provider: Provider | None = None
 
     def close(self) -> None:
         """Release every provider's held process (a `claude_code` session)."""
         role_providers.close_provider(self.provider)
         if self.summarizer_provider is not None:
             role_providers.close_provider(self.summarizer_provider)
+        if self.repeat_provider is not None:
+            role_providers.close_provider(self.repeat_provider)
 
 
 def build_session_providers(
@@ -263,7 +266,7 @@ def build_session_providers(
         stream_text=stream_text,
         conversations=conversations,
     )
-    summarizer_provider = role_providers.helper_actor_provider(
+    summarizer_provider = role_providers.side_actor_provider(
         cfg,
         "helper:summarizer",
         transcript_sink=transcript_sink,
@@ -279,6 +282,17 @@ def build_session_providers(
         provider=provider,
         summarizer_provider=summarizer_provider,
         reviewers=reviewers,
+        repeat_provider=role_providers.side_actor_provider(
+            cfg,
+            "reviewer:repeats",
+            role="reviewer",
+            transcript_sink=transcript_sink,
+            budget=budget,
+            events=events,
+            conversations=conversations,
+        )
+        if cfg.review.merge_repeats and reviewers
+        else None,
     )
 
 

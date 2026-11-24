@@ -52,7 +52,7 @@ def _parse(command: str, text: str) -> argparse.Namespace | None:
 
 def _findings_text(view: review.ReviewView, *, include_resolved: bool) -> str:
     lines: list[str] = []
-    for finding in view.findings:
+    for finding in view.listed_findings:
         if finding.status != "open" and not include_resolved:
             continue
         brief = review_actions.finding_brief(finding)

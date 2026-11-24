@@ -182,7 +182,7 @@ def test_machine_agent_wires_the_summarizer_actor(
 
     monkeypatch.setattr(loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _fake_role)
-    monkeypatch.setattr(role_providers, "helper_actor_provider", _fake_summarizer)
+    monkeypatch.setattr(role_providers, "side_actor_provider", _fake_summarizer)
 
     def _fake_dispatcher(**_k: Any) -> object:
         return types.SimpleNamespace(close=lambda: None)  # the state closes its dispatcher
@@ -265,7 +265,7 @@ def test_the_machine_loop_journals_under_a_driving_actor(
         return mock.MagicMock()
 
     monkeypatch.setattr(role_providers, "build_role_provider", stub_provider)
-    monkeypatch.setattr(role_providers, "helper_actor_provider", stub_provider)
+    monkeypatch.setattr(role_providers, "side_actor_provider", stub_provider)
     req = agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,

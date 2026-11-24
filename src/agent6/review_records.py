@@ -273,6 +273,43 @@ class ReviewerAssignment:
     temperature: float | None = None
 
 
+class RepeatGroup(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """Group matching reports in a panel.
+
+    Attributes:
+        kept: The finding ID the panel shows.
+        folded: The other IDs in the group.
+        reviewers: The number of distinct roster entries that reported the defect.
+    """
+
+    kept: str
+    folded: tuple[str, ...]
+    reviewers: int = pydantic.Field(ge=1)
+
+    @property
+    def label(self) -> str:
+        """Return the panel-local attribution beside the finding."""
+        return f" ({self.reviewers} reviewer{'s' if self.reviewers != 1 else ''})"
+
+
+class RepeatMerge(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """Record one panel's grouping decision.
+
+    Attributes:
+        groups: One group per kept finding, including singletons.
+        skipped: The reason the original findings stand, empty on success.
+    """
+
+    groups: tuple[RepeatGroup, ...] = ()
+    skipped: str = ""
+
+    def labels(self) -> dict[str, str | None]:
+        """Return a label for each kept ID and None for each folded ID."""
+        labels: dict[str, str | None] = {g.kept: g.label for g in self.groups}
+        labels.update((fid, None) for g in self.groups for fid in g.folded)
+        return labels
+
+
 class ReviewPanel(pydantic.BaseModel):
     """Validate a completed panel's durable evidence, including its worker feedback.
 
@@ -286,6 +323,7 @@ class ReviewPanel(pydantic.BaseModel):
         target: The immutable reviewed comparison.
         roster: The reviewers that sat; empty on a record written before rosters were kept.
         findings: The panel's grounded finding observations.
+        repeat_merge: This panel's report groups, absent when grouping is off.
         injected_finding_ids: Findings supplied to the worker as feedback.
         block_on: The configured worker-finish blocking rule.
         raw_blocked: Whether the panel met the blocking rule before disarming.
@@ -305,6 +343,7 @@ class ReviewPanel(pydantic.BaseModel):
     target: ReviewTarget
     roster: tuple[ReviewerAssignment, ...] = ()
     findings: tuple[FindingObservation, ...]
+    repeat_merge: RepeatMerge | None = None
     injected_finding_ids: tuple[str, ...]
     block_on: Literal["none", "any", "all", "model_quorum"]
     raw_blocked: bool

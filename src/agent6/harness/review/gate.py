@@ -11,13 +11,14 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 
-from agent6 import budget, child_records, errors, kinds, review_records, terminal
+from agent6 import budget, child_records, errors, kinds, providers, review_records, terminal
 from agent6.harness import run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import panel as parallel_panel
 from agent6.harness.prompt import repo_context
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
+from agent6.harness.review import repeats
 from agent6.harness.review import verdict as review_verdict
 from agent6.prompts import review
 from agent6.sessions import completion, journal, layout
@@ -97,6 +98,7 @@ class ReviewSettings:
     min_remaining_budget_fraction: float = 0.25
     concurrency: int = 1
     max_turns: int = 20
+    repeat_provider: providers.Provider | None = None
 
 
 def run_panel(
@@ -621,7 +623,7 @@ class ReviewGate:
             for i, s in enumerate(self.settings.reviewers)
         )
         prior = reusable_panel(state.review_panels, target, roster)
-        if prior is not None:
+        if prior is not None and self.settings.repeat_provider is None:
             return self._reuse(prior, identity)
         remaining = self.budget_remaining()
         if remaining is not None and remaining < self.settings.min_remaining_budget_fraction:
@@ -694,13 +696,6 @@ class ReviewGate:
         disarmed = state.gates.review_rejections >= self.settings.max_rejections
         effective_blocked = result.blocked and not disarmed
         inconclusive = review_panel.panel_is_inconclusive(result)
-        shown = (
-            ()
-            if inconclusive
-            else review_panel.findings_within(
-                result.merged_findings, review_panel.REVIEW_NOTICE_BYTES - _NOTICE_ROOM
-            )
-        )
         observations = review_history.observations(
             prepared.panel_id,
             result.per_reviewer,
@@ -708,6 +703,29 @@ class ReviewGate:
             root=self.chain.root,
             target=target,
             hide=self.hide,
+        )
+        merged = (
+            repeats.merge(self.settings.repeat_provider, observations)
+            if self.settings.repeat_provider is not None
+            else None
+        )
+        labels: dict[str, str] = {}
+        feedback = result.merged_findings
+        if merged is not None and not merged.skipped:
+            by_id = {o.finding_id: o.finding for o in observations}
+            feedback = tuple(
+                sorted(
+                    (by_id[g.kept] for g in merged.groups),
+                    key=lambda f: (("block", "warn", "nit").index(f.severity), str(f.location)),
+                )
+            )
+            labels = {review_records.finding_key(by_id[g.kept]): g.label for g in merged.groups}
+        shown = (
+            ()
+            if inconclusive
+            else review_panel.findings_within(
+                feedback, review_panel.REVIEW_NOTICE_BYTES - _NOTICE_ROOM, labels
+            )
         )
         shown_keys = {review_records.finding_key(f) for f in shown}
         record = review_records.ReviewPanel(
@@ -718,6 +736,7 @@ class ReviewGate:
             target=target,
             roster=roster,
             findings=observations,
+            repeat_merge=merged,
             injected_finding_ids=tuple(
                 o.finding_id
                 for o in observations
@@ -731,13 +750,19 @@ class ReviewGate:
             n_abstain=result.n_abstain,
             completion="inconclusive" if inconclusive else "complete",
         )
-        self.emit(journal.ReviewPanel(**record.model_dump(mode="json")))
+        self.emit(
+            journal.ReviewPanel(
+                **record.model_dump(
+                    mode="json", exclude={"repeat_merge"} if merged is None else set()
+                )
+            )
+        )
         state.review_panels += (record,)
         if inconclusive:
             text = review_panel.inconclusive_note(result)
         else:
-            text = review_panel.render_findings(shown)
-            if cut := len(result.merged_findings) - len(shown):
+            text = review_panel.render_findings(shown, labels)
+            if cut := len(feedback) - len(shown):
                 text = (text + f"\n[{cut} more finding{'s' if cut > 1 else ''} not shown]").strip()
             elif not text:
                 text = "No new findings."
@@ -747,5 +772,5 @@ class ReviewGate:
             capped=result.blocked and disarmed and trigger == "finish",
             blocking=result.n_block,
             inconclusive=inconclusive,
-            has_findings=bool(result.merged_findings),
+            has_findings=bool(feedback),
         )

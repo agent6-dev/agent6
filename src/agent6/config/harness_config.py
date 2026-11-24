@@ -689,6 +689,14 @@ class ReviewConfig(pydantic.BaseModel):
             "distinct provider/model routes; open blocks prevent a merge unless this is `none`."
         ),
     )
+    merge_repeats: bool = pydantic.Field(
+        default=False,
+        description=(
+            "false (default): findings are shown as the reviewers gave them. true: "
+            "one more model call groups repeated findings for that review, and each "
+            "finding shows how many reviewers reported it."
+        ),
+    )
     min_blocking_models: int = pydantic.Field(
         ge=1,
         default=2,

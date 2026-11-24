@@ -70,6 +70,7 @@ class FindingView:
         anchor_state: Whether the location matches the displayed comparison.
         fix_state: The latest fix delivery state.
         opened_at: The first observation time in epoch seconds, or null when unrecorded.
+        repeat_label: The latest count label, empty when ungrouped or None when folded.
     """
 
     finding_id: str
@@ -81,6 +82,12 @@ class FindingView:
     fix_state: Literal["none", "delivery_unknown", "submitted", "failed"] = "none"
     # When the first panel recorded it, as epoch seconds; None for a row without a time.
     opened_at: float | None = None
+    repeat_label: str | None = ""
+
+    @property
+    def title(self) -> str:
+        """Return the latest title with this panel's reviewer count, if grouped."""
+        return self.observations[-1].finding.title + (self.repeat_label or "")
 
     @property
     def line_origin(self) -> review_records.LineOrigin:
@@ -193,6 +200,11 @@ class ReviewView:
     read_failure: str | None = None
     comparison: review_records.ReviewTarget | None = None
     event_ids: tuple[str, ...] = ()
+
+    @property
+    def listed_findings(self) -> tuple[FindingView, ...]:
+        """Return findings not folded by the panel that last observed them."""
+        return tuple(f for f in self.findings if f.repeat_label is not None)
 
     def in_review(self, execution_id: str | None) -> bool:
         """Return whether this execution's latest panel is still running."""
@@ -337,14 +349,16 @@ def _observe(
 ) -> ReviewView:
     findings = {f.finding_id: f for f in view.findings}
     ids: set[str] = set()
+    labels = record.repeat_merge.labels() if record.repeat_merge else {}
     for observation in record.findings:
         if observation.panel_id != record.panel_id or observation.finding_id in ids:
             raise ReviewReadError("finding observation has a conflicting panel or duplicate ID")
         ids.add(observation.finding_id)
+        label = labels.get(observation.finding_id, "")
         prior = findings.get(observation.finding_id)
         if prior is None:
             findings[observation.finding_id] = FindingView(
-                observation.finding_id, (observation,), opened_at=seen_at
+                observation.finding_id, (observation,), opened_at=seen_at, repeat_label=label
             )
         else:
             if review_records.finding_key(
@@ -352,7 +366,7 @@ def _observe(
             ) != review_records.finding_key(observation.finding):
                 raise ReviewReadError("finding ID has conflicting content or location")
             findings[observation.finding_id] = dataclasses.replace(
-                prior, observations=(*prior.observations, observation)
+                prior, observations=(*prior.observations, observation), repeat_label=label
             )
     return dataclasses.replace(view, findings=tuple(findings.values()))
 
@@ -556,6 +570,33 @@ def _panel_fate_text(kind: str, event: Mapping[str, Any]) -> str:
     )
 
 
+def _report_text(finding: review_records.Finding, label: str) -> str:
+    return (
+        f"{finding.severity} · {finding.category} · {finding.location}\n"
+        f"{finding.title}{label}\n{finding.detail}"
+        + (f"\nSuggestion: {finding.suggestion}" if finding.suggestion else "")
+    )
+
+
+def _panel_notices(panel: review_records.ReviewPanel) -> tuple[str, ...]:
+    lines = [panel_text(panel)]
+    merge = panel.repeat_merge
+    labels = merge.labels() if merge else {}
+    if merge and merge.skipped:
+        lines.append(f"Repeat grouping skipped: {merge.skipped}")
+    by_id = {o.finding_id: o.finding for o in panel.findings}
+    groups = {g.kept: g.folded for g in merge.groups} if merge else {}
+    for fid, finding in by_id.items():
+        if (label := labels.get(fid, "")) is None:
+            continue
+        line = f"Finding {fid} · {_report_text(finding, label)}"
+        for folded in groups.get(fid, ()):
+            if folded in by_id:
+                line += f"\nAlso reported: {folded} · {_report_text(by_id[folded], '')}"
+        lines.append(line)
+    return tuple(lines)
+
+
 def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
     """Render review evidence and dispositions as shared transcript notices.
 
@@ -571,15 +612,7 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
             if "target" not in event:
                 return ("Review has legacy count-only evidence; findings are unavailable.",)
             panel = review_records.ReviewPanel.model_validate(event_log.payload(event))
-            lines = [panel_text(panel)]
-            lines.extend(
-                f"Finding {o.finding_id} · {o.finding.severity} · {o.finding.category} · "
-                f"{o.finding.location}\n"
-                f"{o.finding.title}\n{o.finding.detail}"
-                + (f"\nSuggestion: {o.finding.suggestion}" if o.finding.suggestion else "")
-                for o in panel.findings
-            )
-            return tuple(lines)
+            return _panel_notices(panel)
         if kind in ("review.skipped", "review.reused"):
             return (_panel_fate_text(kind, event),)
         if kind not in _ACTION_EVENTS:
@@ -627,7 +660,17 @@ def as_dict(view: ReviewView) -> dict[str, Any]:
     result = pydantic.TypeAdapter(ReviewView).dump_python(view, mode="json")
     result["summary"] = view.summary
     result["merge_guard"] = dataclasses.asdict(view.merge_guard)
+    labels = {
+        p.panel_id: p.result.repeat_merge.labels()
+        for p in view.panels
+        if p.result and p.result.repeat_merge
+    }
     for row, finding in zip(result["findings"], view.findings, strict=True):
+        row.pop("repeat_label")
+        for obs in row["observations"]:
+            panel_labels = labels.get(obs["panel_id"], {})
+            if finding.finding_id in panel_labels:
+                obs["repeat_label"] = panel_labels[finding.finding_id]
         row["line_origin"] = finding.line_origin.model_dump(mode="json")
     result["rule_sources"] = [dataclasses.asdict(source) for source in view.rule_sources]
     result["rules_complete"] = view.rules_complete

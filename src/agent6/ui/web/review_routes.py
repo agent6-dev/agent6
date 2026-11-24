@@ -103,7 +103,9 @@ def comparison(cwd: pathlib.Path, base: str, head: str) -> dict[str, Any]:
                         matches=matches,
                     )
                 )
-            entries.append(next((e for e in reversed(candidates) if e["matches"]), candidates[-1]))
+            entry = next((e for e in reversed(candidates) if e["matches"]), candidates[-1])
+            if entry["observation"].get("repeat_label", "") is not None:
+                entries.append(entry)
     return {"findings": entries, "read_failures": failures}
 
 
