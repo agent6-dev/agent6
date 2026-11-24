@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
 
-from agent6 import errors, portable
+from agent6 import errors, kinds, portable
 from agent6.harness import (
     loop_conversation,
     loop_snapshot,
@@ -14,6 +15,7 @@ from agent6.harness import (
     metric_rules,
     operator_bridge,
 )
+from agent6.harness.compaction import cold_start
 from agent6.harness.compaction import rules as compaction_rules
 from agent6.prompts import compaction as prompts_compaction
 from agent6.sessions import journal
@@ -87,6 +89,15 @@ def seed_carryover(
     """
     if resume_from is not None:
         loop_state.restore_completion_state(state, resume_from)
+        if harness.events is not None and harness.media_input.route.provider:
+            idle = harness.compaction.idle
+            state.cold_start = cold_start.detect(
+                harness.events.path,
+                actor=kinds.session_kind(harness.mode).role,
+                route=harness.media_input.route,
+                limit=idle.seconds if idle else -1,
+                now=time.time(),
+            )
         if harness.mode == "run" and harness.events is not None:
             harness.metrics.restore(harness.events.path)
             revision = harness.metrics.revision

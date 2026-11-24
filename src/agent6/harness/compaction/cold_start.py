@@ -9,6 +9,7 @@ import pathlib
 from typing import Any, Literal
 
 from agent6 import kinds
+from agent6.sessions import journal
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -20,6 +21,44 @@ class Trigger:
     route: str
     gap_s: float | None
     idle_compact_s: float
+
+    def record(
+        self, mode: kinds.ColdStart, action: journal.ColdStartAction, saved: int
+    ) -> journal.CompactColdStart:
+        """Describe the action taken, separate from any ordinary size checks.
+
+        Args:
+            mode: The configured mode.
+            action: What happened to the prepared history.
+            saved: The reduction in its character count.
+
+        Returns:
+            The journal row with its operator-facing line.
+        """
+        cause = (
+            f"route changed from {self.previous_route} to {self.route}"
+            if self.reason == "route_changed"
+            else f"{self.gap_s:.1f}s since the last worker request (limit {self.idle_compact_s:g}s)"
+        )
+        detail = {
+            "resend": "resend history",
+            "drop": "drop eligible old results",
+            "summarize": "summarize with the helper",
+            "truncate": "truncate without a summary",
+            "summary_failed": "helper summary failed, kept history",
+            "endpoint": f"endpoint compacts, local {mode} does not apply",
+        }[action]
+        return journal.CompactColdStart(
+            reason=self.reason,
+            previous_route=self.previous_route,
+            route=self.route,
+            gap_s=self.gap_s,
+            idle_compact_s=self.idle_compact_s,
+            mode=mode,
+            action=action,
+            chars_not_sent=max(0, saved),
+            message=f"Cold start: {cause}; {detail}; {max(0, saved)} characters not sent.",
+        )
 
 
 def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:

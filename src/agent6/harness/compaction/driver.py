@@ -8,11 +8,11 @@ Tiered elides old results and restarts from prose. Endpoint adopts a signed bloc
 
 from __future__ import annotations
 
-import abc
 import dataclasses
 import functools
 import time
 import uuid
+from collections.abc import Callable
 from typing import ClassVar
 
 import pydantic
@@ -37,7 +37,7 @@ from agent6.tools import waits
 
 
 @dataclasses.dataclass(slots=True)
-class _Scheduled(abc.ABC):
+class _Scheduled:
     """Drop old results in steps and restart from one accepted summary.
 
     Attributes:
@@ -74,11 +74,14 @@ class _Scheduled(abc.ABC):
             ),
         )
 
-    def compact(self, context: strategy.Context) -> bool:
+    def _scheduled(
+        self, context: strategy.Context, *, drop: Callable[[strategy.Context], None] | None = None
+    ) -> bool:
         """Check for a restart before allowing tier 1 to rewrite the request prefix.
 
         Args:
             context: The prepared turn.
+            drop: The local drop step, if it still needs to run.
 
         Returns:
             True if a summary replaced the history.
@@ -101,12 +104,9 @@ class _Scheduled(abc.ABC):
             context.log("LOOP: manual compaction skipped: too little history to summarise")
             context.emit(journal.CompactRefused(reason="too little history to summarise"))
 
-        self.drop(context)
+        if drop is not None:
+            drop(context)
         return False
-
-    @abc.abstractmethod
-    def drop(self, context: strategy.Context) -> None:
-        """Apply the local drop, if any."""
 
     def summarise_and_restart(
         self,
@@ -115,6 +115,7 @@ class _Scheduled(abc.ABC):
         focus: str | None = None,
         idle_gap_s: float | None = None,
         sent_count: int | None = None,
+        cold: bool = False,
     ) -> bool:
         """Replace history only after either writer returns an accepted summary.
 
@@ -123,6 +124,7 @@ class _Scheduled(abc.ABC):
             focus: The operator's focus for the summary.
             idle_gap_s: Seconds since the last worker request began for an idle summary.
             sent_count: The endpoint request length at the start of the wait.
+            cold: Use the helper directly for a cold local resume.
 
         Returns:
             True if the history was replaced.
@@ -141,7 +143,11 @@ class _Scheduled(abc.ABC):
         written = write_summary(
             context,
             replay=replay,
-            writer="endpoint" if self.endpoint else context.settings.summariser,
+            writer="endpoint"
+            if self.endpoint
+            else "helper"
+            if cold
+            else context.settings.summariser,
             open_tasks=open_tasks,
             focus=focus or "",
         )
@@ -167,18 +173,10 @@ class _Scheduled(abc.ABC):
                 quotes=replay.quotes,
                 endpoint_task=context.task if self.endpoint else None,
             )
-        # Measured as the trigger is, prefix included, or tier 2 re-fires next turn.
-        self.tier2_floor_chars = int(
-            (
-                compaction_window.context_chars(conversation)
-                + conversation.pending_notice_chars
-                + context.prefix_chars
-            )
-            * 1.25
-        )
+        self._set_restart_floor(context)
         context.emit(
             journal.CompactSummariseDone(
-                reason=reason,
+                reason="cold_start" if cold else reason,
                 gap_s=idle_gap_s,
                 writer=written.writer,
                 fallback_reason=written.fallback_reason,
@@ -190,6 +188,17 @@ class _Scheduled(abc.ABC):
         if idle_gap_s is not None and written.writer != "helper":
             self._report_cold_cache(context, written.usage, idle_gap_s)
         return True
+
+    def _set_restart_floor(self, context: strategy.Context) -> None:
+        """Require growth after a restart, measured with the same prefix as its trigger."""
+        self.tier2_floor_chars = int(
+            (
+                compaction_window.context_chars(context.conversation)
+                + context.conversation.pending_notice_chars
+                + context.prefix_chars
+            )
+            * 1.25
+        )
 
     def _report_cold_cache(
         self, context: strategy.Context, usage: provider_types.ProviderUsage, gap_s: float
@@ -243,8 +252,16 @@ class Endpoint(_Scheduled):
     endpoint = True
     cleared: tuple[str, ...] = ()
 
-    def drop(self, context: strategy.Context) -> None:
-        """Leave the history intact for the clearing edit on the worker request."""
+    def compact(self, context: strategy.Context) -> bool:
+        """Check for a summary without rewriting tool results locally.
+
+        Args:
+            context: The completed worker request.
+
+        Returns:
+            True if a summary replaced the history.
+        """
+        return self._scheduled(context)
 
     def clearing(self, context: strategy.Context) -> provider_types.ClearToolResults | None:
         """Return the worker request's clearing edit, moving its point past the drop threshold.
@@ -275,12 +292,60 @@ class Endpoint(_Scheduled):
 class Tiered(_Scheduled):
     """Drop local tool results before the next worker call."""
 
-    def drop(self, context: strategy.Context) -> None:
+    def compact(self, context: strategy.Context) -> bool:
+        """Apply the cold-start rule before the ordinary size checks.
+
+        Args:
+            context: The prepared worker request.
+
+        Returns:
+            True when the worker needs fresh focus notices after a restart.
+        """
+        trigger = context.cold_start
+        if trigger is None:
+            return self._scheduled(context, drop=self.drop)
+        conversation = context.conversation
+        before = compaction_window.context_chars(conversation)
+        mode = context.settings.cold_start
+        action: journal.ColdStartAction = mode
+        restarted = False
+        match mode:
+            case "drop":
+                self.drop(context, cold=True)
+            case "summarize":
+                restarted = self.summarise_and_restart(context, cold=True)
+                if not restarted:
+                    action = "summary_failed"
+            case "truncate":
+                replay = retention.select(conversation.messages, context.settings)
+                conversation.restart(
+                    context.restart_notice(replay.quotes, truncated=True),
+                    keep=replay.tail,
+                    quotes=replay.quotes,
+                )
+                self._set_restart_floor(context)
+                restarted = True
+            case "resend":
+                pass
+        if restarted:
+            elided, gists = compaction_rules.count_elisions(conversation)
+            context.emit(journal.CompactRestored(elided=elided, gists=gists))
+        record = trigger.record(
+            mode, action, before - compaction_window.context_chars(conversation)
+        )
+        context.log(record.message)
+        context.emit(record)
+        # Do not ask a second writer to summarise the same cold request after a rejection.
+        if mode in ("summarize", "truncate") and context.compact_requested() is None:
+            return restarted
+        return self._scheduled(context, drop=self.drop if mode == "resend" else None) or restarted
+
+    def drop(self, context: strategy.Context, *, cold: bool = False) -> None:
         """Apply the first tier in place without a restart."""
         conversation = context.conversation
         stats = compaction_rules.compact_old_tool_results(
             conversation,
-            max_total_bytes=context.settings.drop_at_chars,
+            max_total_bytes=None if cold else context.settings.drop_at_chars,
             keep_recent=2,
             protect_paths=compaction_rules.recently_edited_paths(conversation),
             gister=functools.partial(distill_gists, context)

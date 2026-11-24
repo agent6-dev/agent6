@@ -114,6 +114,7 @@ def context_restart_notice(
     verification: str = "",
     metric: str = "",
     endpoint_task: str | None = None,
+    truncated: bool = False,
     session_id: str = "",
 ) -> str:
     """Build the post-compaction restart preamble.
@@ -125,27 +126,29 @@ def context_restart_notice(
         operator_messages: Retained operator words older than the kept turns.
         dag_available: The run has a curator, so `list_tasks` exists.
         endpoint_task: The task to repeat after a signed summary instead of adding prose.
+        truncated: State that earlier history was left out without a summary.
         verification: The verify fact (`VerifyVerdict.fact`), or "" for a run without a gate.
         metric: The applied metric notice, including retirement, or "" if never set.
         session_id: The id of the journal this turn can read, or "".
 
     Returns:
-        The preamble, ending with the "PROGRESS SUMMARY:" label the summary follows.
+        The restart notice with a label only when a prose summary follows.
     """
-    parts = (
-        [_CONTEXT_RESTART_HEAD]
-        if endpoint_task is None
-        else [
+    if truncated:
+        parts = ["[harness context restart] The earlier history was left out without a summary."]
+    elif endpoint_task is not None:
+        parts = [
             "[harness context restart] Continue from the endpoint summary above.",
             f"TASK (the goal, verbatim):\n{endpoint_task}",
         ]
-    )
+    else:
+        parts = [_CONTEXT_RESTART_HEAD]
     if session_id:
         parts.append(f'Earlier entries are available from read_session with id "{session_id}".')
     if dag_available and mode in ("run", "plan"):
         parts.append(
             _CONTEXT_RESTART_DAG
-            if endpoint_task is None
+            if endpoint_task is None and not truncated
             else "Use list_tasks to check the current task statuses."
         )
     parts.extend(f"Operator message:\n{text}" for text in operator_messages)
@@ -154,9 +157,10 @@ def context_restart_notice(
     if decisions.strip():
         parts.append(f"OPERATOR RULINGS (recorded, still binding):\n{decisions.strip()}\n")
     if verification:
-        parts.append(f"VERIFICATION (the harness's record, not the summary's):\n{verification}\n")
+        source = "the harness's record" if truncated else "the harness's record, not the summary's"
+        parts.append(f"VERIFICATION ({source}):\n{verification}\n")
     if metric:
         parts.append(metric)
-    if endpoint_task is None:
+    if endpoint_task is None and not truncated:
         parts.append("PROGRESS SUMMARY:\n")
     return "\n\n".join(parts)

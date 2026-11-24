@@ -727,9 +727,14 @@ class Harness:
         conversation.roll_cache_marks()
         assert self.compactor is not None
         # An endpoint summary covers a request already sent, so it follows the reply instead.
+        if endpoint and state.cold_start is not None:
+            record = state.cold_start.record(self.compaction.cold_start, "endpoint", 0)
+            self.log(record.message)
+            self.emit(record)
         restarted = not endpoint and self.compactor.compact(
             self.compaction_context(conversation, state, tools)
         )
+        state.cold_start = None
         if self.contract is not None:
             # A reviewer reads which reply this is, and on the last that it decides now.
             # Said after compaction: a restart's kept tail would otherwise repeat it.
@@ -2015,10 +2020,16 @@ class Harness:
             self.bridge.should_interrupt,
         )
 
-        def notice(operator_messages: Sequence[str] = (), *, task: str | None = None) -> str:
+        def notice(
+            operator_messages: Sequence[str] = (),
+            *,
+            truncated: bool = False,
+            task: str | None = None,
+        ) -> str:
             return compaction_prompts.context_restart_notice(
                 self.mode,
                 endpoint_task=task,
+                truncated=truncated,
                 operator_messages=operator_messages,
                 session_id=self.session_id
                 if any(t.name == schema.ReadSessionInput.TOOL_NAME for t in tools)
@@ -2032,6 +2043,7 @@ class Harness:
 
         return strategy.Context(
             execution_id=state.execution_id,
+            cold_start=state.cold_start,
             conversation=conversation,
             settings=self.compaction,
             prefix_chars=compaction_window.request_prefix_chars(state.system, tools),

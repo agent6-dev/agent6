@@ -8,10 +8,26 @@ from typing import Protocol, runtime_checkable
 
 from agent6.graph import curator as graph_curator
 from agent6.harness import loop_conversation
-from agent6.harness.compaction import window
+from agent6.harness.compaction import cold_start, window
 from agent6.providers import provider_types
 from agent6.sessions import journal
 from agent6.tools import waits
+
+
+class RestartNotice(Protocol):
+    """Build the header for a local restart."""
+
+    def __call__(self, quotes: Sequence[str], /, *, truncated: bool = False) -> str:
+        """State the run facts and the retained operator messages.
+
+        Args:
+            quotes: Older operator messages outside the kept turns.
+            truncated: No summary follows the notice.
+
+        Returns:
+            The restart notice.
+        """
+        ...
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -40,6 +56,7 @@ class Context:
         emit_graph_snapshot: Record a graph change after a check-off.
         execution_id: The execution that owns this turn.
         awaiting_reply: The reply to this request has not entered the conversation.
+        cold_start: The rule that fired for the first request after restore.
     """
 
     conversation: loop_conversation.Conversation
@@ -48,7 +65,7 @@ class Context:
     task: str
     pins: Sequence[str]
     endpoint_notice: Callable[[], str]
-    restart_notice: Callable[[Sequence[str]], str]
+    restart_notice: RestartNotice
     call_endpoint: Callable[[str, str, int], provider_types.ProviderResponse]
     call_worker: Callable[[str, str], provider_types.ProviderResponse]
     call_helper: Callable[[str, str, str], provider_types.ProviderResponse]
@@ -63,6 +80,7 @@ class Context:
     emit_graph_snapshot: Callable[[], None]
     execution_id: str
     awaiting_reply: bool = False
+    cold_start: cold_start.Trigger | None = None
 
 
 @runtime_checkable

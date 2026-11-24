@@ -14,7 +14,7 @@ from typing import Any, ClassVar, Literal
 
 import pydantic
 
-from agent6 import credit_usage
+from agent6 import credit_usage, kinds
 
 
 class Event(pydantic.BaseModel):
@@ -338,7 +338,7 @@ class CompactSummariseDone(Event):
     """A summary replaced the conversation history."""
 
     TYPE: ClassVar[str] = "compact.summarise.done"
-    reason: Literal["size", "requested", "idle", ""] = pydantic.Field(
+    reason: Literal["size", "requested", "idle", "cold_start", ""] = pydantic.Field(
         default="", description="What triggered the restart, empty when not recorded."
     )
     gap_s: float | None = pydantic.Field(
@@ -355,6 +355,28 @@ class CompactSummariseDone(Event):
     kept_messages: int = pydantic.Field(
         description="Number of recent messages kept after the summary.",
     )
+
+
+ColdStartAction = Literal[kinds.ColdStart, "endpoint", "summary_failed"]
+
+
+class CompactColdStart(Event):
+    """The history decision before a cold resume's first worker call."""
+
+    TYPE: ClassVar[str] = "compact.cold_start"
+    reason: Literal["route_changed", "idle"] = pydantic.Field(description="The rule that fired.")
+    previous_route: str = pydantic.Field(
+        description="Last ordinary request's provider/model, or empty if unknown."
+    )
+    route: str = pydantic.Field(description="The resumed provider/model.")
+    gap_s: float | None = pydantic.Field(description="Seconds since that request, null if unknown.")
+    idle_compact_s: float = pydantic.Field(description="The resumed provider's idle limit, or -1.")
+    mode: kinds.ColdStart = pydantic.Field(description="The configured cold-start mode.")
+    action: ColdStartAction = pydantic.Field(description="What happened to the history.")
+    chars_not_sent: int = pydantic.Field(
+        description="Net conversation characters removed by the cold-start step, or zero."
+    )
+    message: str = pydantic.Field(description="The start line shown to the operator.")
 
 
 class CompactIdleCacheCold(Event):
@@ -2059,6 +2081,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "checkpoint.failed": CheckpointFailed,
     "checkpoint.left_out": CheckpointLeftOut,
     "command.backgrounded": CommandBackgrounded,
+    "compact.cold_start": CompactColdStart,
     "compact.deduped": CompactDeduped,
     "compact.dropped": CompactDropped,
     "compact.gist.call": CompactGistCall,

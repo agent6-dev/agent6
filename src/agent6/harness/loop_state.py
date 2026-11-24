@@ -25,6 +25,7 @@ from agent6.harness import (
     quiet_turns,
     spiral,
 )
+from agent6.harness.compaction import cold_start
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.providers import ProviderResponse
 from agent6.tools import waits
@@ -111,6 +112,7 @@ class LoopState:
     execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
     call_context: kinds.CallContext | None = None
     idle_deadline: waits.Deadline | None = None
+    cold_start: cold_start.Trigger | None = None
     request_summarised: bool = False
     review_panels: tuple[review_records.ReviewPanel, ...] = ()
     budget_nudges: guards.BudgetNudges = dataclasses.field(default_factory=guards.BudgetNudges)
