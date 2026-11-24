@@ -11,6 +11,7 @@ function readFileTree(rev, showIgnored = recall('a6-files-ignored', 'off') === '
 function fileHash(rev, path = '') {
   return '#/files/' + encodeURIComponent(rev) + (path && '/' + path.split('/').map(encodeURIComponent).join('/'));
 }
+function plainFileClick(e) { return e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey; }
 
 function closeFilePreview() { filesState.closePreview?.(); }
 
@@ -268,7 +269,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
   };
   const refresh = el('button', 'files-refresh', 'Refresh');
   refresh.onclick = () => relist();
-  bar.append(pick.root, refresh, filter, ignoredToggle);
+  bar.append(pick.root, refresh, fileContentSearch(() => rev || filesState.rev.rev), filter, ignoredToggle);
   const body = el('div', 'files-body'); app.appendChild(body);
   const tree = el('div', 'files-tree'); tree.id = 'files-tree'; body.appendChild(tree);
   body.appendChild(resizeHandle(tree, {
@@ -322,7 +323,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     if (!linked) { row.setAttribute('aria-disabled', 'true'); row.title = f.path + note; return row; }
     row.href = filesHash(f.path);
     row.onclick = e => {
-      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      if (!plainFileClick(e)) return;
       e.preventDefault(); return showFile(f);
     };
     row.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); row.click(); } };
@@ -402,7 +403,10 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     const current = () => pane.dataset.key === key && pane.isConnected;
     shown = f.path;
     const anchor = linked ? query.get('anchor') : null;
-    setViewHash(filesHash(f.path) + (anchor ? '?' + new URLSearchParams({ anchor }) : ''), linked);
+    const number = linked ? Number(query.get('line')) : 0;
+    const line = Number.isSafeInteger(number) && number > 0 ? number : 0;
+    const at = line ? '?line=' + line : anchor ? '?' + new URLSearchParams({anchor}) : '';
+    setViewHash(filesHash(f.path) + at, linked);
     reveal(f.path);
     for (const r of tree.querySelectorAll('.gf')) {
       r.setAttribute('aria-selected', String(r.dataset.path === f.path));
@@ -435,7 +439,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
       return;
     }
     if (f.kind !== 'file') { box.appendChild(el('div', 'muted gf-note', 'a submodule: its files are in another repository')); return; }
-    if (isImagePath(f.path)) {
+    if (!line && isImagePath(f.path)) {
       // The image replaces "loading…" once loaded; one the browser cannot show becomes a note.
       const loading = el('div', 'muted gf-note', 'loading…'); box.appendChild(loading);
       blobImageData('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (ignored ? '&ignored=1' : '')).then(image => {
@@ -461,6 +465,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     blame.setAttribute('aria-pressed', 'false'); blame.disabled = true; head.insertBefore(blame, note);
     const rendersMarkdown = /\.(md|markdown)$/i.test(f.path);
     const modes = el('span', 'gview files-md-mode'), sourceBox = el('div', 'files-source');
+    const markdownMode = line ? 'source' : recall(MARKDOWN_MODE_KEY, 'rendered');
     let md = null;
     const selectMode = mode => {
       const rendered = mode !== 'source';
@@ -482,13 +487,14 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
         modes.appendChild(button);
       }
       head.insertBefore(modes, blame);
-      selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
+      selectMode(markdownMode);
     }
     let t;
     const readQuery = 'rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (whole ? '&whole=1' : '') + (ignored ? '&ignored=1' : '');
     try { t = await getJSON('/api/git/text?' + readQuery); }
     catch (e) { if (current()) { blame.remove(); modes.remove(); box.innerHTML = ''; box.appendChild(failure('err gf-note', e, () => showFile(f, whole, linked))); } return; }
     if (!current()) return;
+    if (!whole && t.truncated && line > t.lines) return showFile(f, true, linked);
     box.innerHTML = '';
     if (t.language) facts.push(t.language);
     if (t.binary) {
@@ -505,12 +511,19 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     note.textContent = facts.join(' · ');
     if (t.truncated) {
       const cut = el('div', 'err gf-note', 'the file is cut at ' + Math.round(t.max_bytes / 1024) + ' KiB ');
-      const all = el('button', 'mini', 'Show the whole file'); all.onclick = () => showFile(f, true);
+      const all = el('button', 'mini', 'Show the whole file'); all.onclick = () => showFile(f, true, linked);
       cut.appendChild(all); box.appendChild(cut);
     }
     box.appendChild(sourceBox);
     const source = renderLines(splitLines(t.text), t.spans, null);
     sourceBox.appendChild(source);
+    if (line) {
+      const row = source.querySelector(`[data-line="${line}"]`);
+      if (row) {
+        row.setAttribute('aria-current', 'location'); row.tabIndex = -1;
+        row.focus({preventScroll: true}); row.scrollIntoView({block: 'center'});
+      } else sourceBox.prepend(el('div', 'err gf-note', `Line ${line} is not in this file.`));
+    }
     blame.disabled = false;
     let blaming = false, blameRequest = 0;
     // The button reads busy while blame loads, so the code holds still; a note says why it failed.
@@ -558,7 +571,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     if (t.truncated) { modes.remove(); blame.hidden = false; return; }
     md = el('div', 'files-preview'); box.appendChild(md);
     for (const button of modes.children) button.disabled = false;
-    selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
+    selectMode(markdownMode);
   };
   // Back, Forward or a link opens another listed file, scrolls the Markdown shown, or closes the file.
   filesState.open = (file, hashQuery) => {
@@ -566,7 +579,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     app.removeAttribute('aria-busy'); // route() marked the page it expected to replace
     query = hashQuery;
     if (!file) { closeFile(); return true; }
-    if (file === shown && filesState.previewScroll) {
+    if (file === shown && filesState.previewScroll && !query.has('line')) {
       body.classList.add('viewing'); filesState.previewScroll(query.get('anchor')); return true;
     }
     shown = file; reveal(file);

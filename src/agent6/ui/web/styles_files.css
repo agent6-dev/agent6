@@ -12,6 +12,13 @@
   top: anchor(bottom); left: anchor(left); right: 0; max-width: max(30rem, anchor-size(width));
 }
 .files-bar input.filter { flex: 1 1 10rem; width: auto; min-width: 0; }
+.files-search { flex: 1 1 18rem; min-width: 0; gap: 0.5rem; }
+.files-search input { flex: 1; min-width: 0; }
+.files-matches { overflow-wrap: anywhere; }
+.files-matches ul { list-style: none; padding: 0; }
+.files-matches li { padding-block: 0.375rem; border-top: 1px solid var(--border); }
+.files-matches code { display: block; color: var(--text); overflow: hidden; white-space: pre; text-overflow: ellipsis; }
+.files-source [aria-current=location] { background: var(--surface2); box-shadow: inset 2px 0 var(--accent); }
 /* The tree toggle holds the width of "Show tree", so toggling the tree moves nothing on the bar. */
 .files-tree-toggle { min-width: 7em; }
 /* Each name keeps to one line, ending in an ellipsis where it does not fit; the row's title

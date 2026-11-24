@@ -41,6 +41,7 @@ _CLIENT_FILES = (
     "client_review.js",
     "client_git_diff.js",
     "client_git.js",
+    "client_files_search.js",
     "client_files.js",
 )
 

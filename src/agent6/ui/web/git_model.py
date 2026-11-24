@@ -19,6 +19,7 @@ from agent6.ui.web import diff_highlight, highlight
 from agent6.vcs.git import diff as git_diff
 from agent6.vcs.git import fetch as git_fetch
 from agent6.vcs.git import files as git_files
+from agent6.vcs.git import grep as git_grep
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -1063,6 +1064,35 @@ def text_payload(
         "language": language,
         "spans": highlight.spans(text, language) if text else [],
     }
+
+
+def grep_payload(repo: pathlib.Path, rev: str, query: str) -> dict[str, Any]:
+    """Find lines containing the operator's text at one revision.
+
+    Attributes:
+        rev: The resolved commit or WORKTREE.
+        hits: Matching lines as path, one-based line number and text.
+        truncated: Whether the hit or output byte limit cut the results.
+
+    Args:
+        repo: The checkout directory.
+        rev: The requested revision.
+        query: The literal, case-sensitive search text.
+
+    Returns:
+        The searched revision, hits and truncation flag.
+
+    Raises:
+        GitRequestError: The revision or search text is invalid.
+    """
+    if not query or any(c in query for c in "\0\r\n") or len(query.encode()) > 4096:
+        raise GitRequestError(
+            "search text must be one nonempty line of at most 4096 UTF-8 bytes without NUL"
+        )
+    _repo(repo)
+    sha = _resolve(repo, rev, worktree_ok=True)
+    hits, truncated = git_grep.search(repo, sha, query)
+    return {"rev": sha, "hits": [dataclasses.asdict(hit) for hit in hits], "truncated": truncated}
 
 
 def tree_payload(repo: pathlib.Path, rev: str, *, ignored: bool = False) -> dict[str, Any]:

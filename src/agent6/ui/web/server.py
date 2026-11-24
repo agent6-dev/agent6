@@ -1359,6 +1359,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 limit=arg("limit"),
                 skip=arg("skip"),
             ),
+            "grep": lambda: git_model.grep_payload(cwd, arg("rev"), arg("q")),
             "refs": lambda: git_model.refs_payload(cwd),
             "search": lambda: git_model.search_payload(cwd, arg("q")),
             "text": lambda: git_model.text_payload(

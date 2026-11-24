@@ -1046,7 +1046,10 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 <details markdown="1">
 <summary>Allowed host-side subprocesses by module</summary>
 
-- `vcs/git/command.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the queries the next line names.
+- `vcs/git/command.py`: agent6's own git operations ([Git](#7-git)).
+- `vcs/git/grep.py`: signed-in Files content searches use the same hardened argv and environment.
+  A fixed-string `git grep` reads the operator's pattern after `-e` without text conversion.
+  The reader kills git at its deadline or when its results are cut ([Files limits](web.md#the-http-api)).
 - `vcs/git/policy.py`: shared hardening flags and hook/driver policy; its fixed git queries enumerate repo content drivers and `core.worktree`, and find the checkout a call names.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/container.py`: bounded `ps`/`inspect` discovery and the fixed installation bootstrap through operator-owned prefixes ([Container transport boundary](#container-transport-boundary)).

@@ -2565,6 +2565,18 @@ Source: [`ui.web.git_model.search_payload`](https://github.com/agent6-dev/agent6
 | `commits` | `JSON` | Matching commit rows. |
 | `truncated` | `JSON` | Whether either result list reached its cap. |
 
+### `/api/git/grep` payload
+
+**Support: public.** Find lines containing the operator's text at one revision.
+
+Source: [`ui.web.git_model.grep_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `rev` | `JSON` | The resolved commit or WORKTREE. |
+| `hits` | `JSON` | Matching lines as path, one-based line number and text. |
+| `truncated` | `JSON` | Whether the hit or output byte limit cut the results. |
+
 ### `/api/git/tree` payload
 
 **Support: public.** Return the files at a revision or in the working tree.

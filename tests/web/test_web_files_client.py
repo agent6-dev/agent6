@@ -127,7 +127,15 @@ def _run(scenario: str) -> None:
     script = (
         _DOM
         + client_assets.script(
-            "controls", "router", "layout", "source", "review", "git_diff", "git", "files"
+            "controls",
+            "router",
+            "layout",
+            "source",
+            "review",
+            "git_diff",
+            "git",
+            "files_search",
+            "files",
         )
         + "\ngitPicker = picker; routeGen = 1;\nlet finished = false;\n(async () => {\n"
         + scenario

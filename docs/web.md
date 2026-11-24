@@ -158,6 +158,10 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; several lines queue up before you write and start the run
 - **Files page**: opens on the working tree of the checkout where you started `agent6 web`.
     - choose a commit in the revision box to read its files instead
+    - **Search file contents** finds literal, case-sensitive text at the selected revision when you press Enter or choose **Search**.
+      A working-tree search includes untracked files but excludes ignored files.
+      Open a match to read its source line.
+      The results say when the search was cut.
     - a symlink shows its target as a link when the revision lists it and the path is UTF-8
     - a markdown file opens rendered in a sandboxed frame, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - an HTML file opens as **Source**; **Preview** shows it in a sandboxed frame, with repository CSS and images at the listed revision
@@ -207,6 +211,8 @@ The Findings card's **Receipt** button opens a wide dialog with Testing, Review,
 - `#/git/compare/<base>..<head>` opens a comparison
 - `#/git/worktree` opens the working tree's uncommitted changes
 - `#/files/<rev>/<path>` opens a file, with `WORKTREE` for the working tree; the revision is the one picked, so a link to `HEAD` or a branch follows it
+- `?line=<number>` on a file link opens Source at that line, counted from 1.
+  Search hits at a commit link to its resolved SHA.
 - revisions and path components are URL-encoded; selecting a commit, a comparison, the working tree or a file updates the hash for copying, Back restores the selection, and a bare `#/git` shows the graph alone
 
 ## Highlighting
@@ -262,6 +268,9 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - regular worktree patches and their digests use the same checked bytes, copied privately before Git compares them; diff blame requests `whole=1` to cover hunks beyond the default text range
     - `/api/git/worktree` lists uncommitted files against HEAD: tracked changes first, then untracked files, with `.gitignore` honoured
     - `/api/git/tree?rev=` lists files at a revision or in the working tree, capped at 20000 files; the working tree includes the index and untracked files `.gitignore` does not exclude, omitting tracked files gone from disk; only mode `160000` entries are submodules, including unpopulated gitlinks
+    - `/api/git/grep?rev=&q=` searches nonbinary files for one nonempty line of literal text (up to 4096 UTF-8 bytes, no NUL).
+      The [result](formats.md#apigitgrep-payload) marks truncation at 100 hits or 256 KiB of git output.
+      A grep that takes over three seconds is killed and answers `422`.
     - `/api/git/text?rev=&path=` returns highlighted file text, cut at 1 MiB on a line boundary unless `whole=1`; binary content has no text, and a file over 20 MiB answers `413`
     - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
     - `/api/git/blame?rev=&path=` returns per-line attribution; its caps and refusals match `/api/git/text`, including `whole=1`

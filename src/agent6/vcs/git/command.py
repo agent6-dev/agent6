@@ -18,29 +18,25 @@ GIT_TIMEOUT_S = 120.0
 GIT_TERM_GRACE_S = 5.0
 
 
-def spawn(
+def invocation(
     cwd: pathlib.Path,
     args: tuple[str, ...],
-    env_extra: dict[str, str] | None,
-    stdin_text: str | None,
+    env_extra: dict[str, str] | None = None,
     repo: pathlib.Path | None = None,
-) -> tuple[tuple[str, ...], int, bytes, bytes]:
-    """Run one hardened git command.
+) -> tuple[tuple[str, ...], dict[str, str]]:
+    """Build the argv and environment for a host-side git call.
 
     Args:
         cwd: The directory git runs in: the repository, unless `repo` names it.
         args: The git subcommand and its arguments.
         env_extra: Environment entries added for this call.
-        stdin_text: Text fed to git's stdin.
-        repo: The repository whose drivers are blanked and whose index lock is awaited,
-            when git runs elsewhere; None means `cwd`.
+        repo: The repository to harden when git runs elsewhere.
 
     Returns:
-        The full argv, the exit code, stdout and stderr as bytes.
+        The hardened argv and the environment that supplies its driver overrides.
 
     Raises:
-        GitError: The command timed out, or agent6 could not list the repository's config
-            or name its checkout.
+        GitError: The repository could not be hardened.
     """
     env = git_policy.git_environment(env_extra)
     listed = git_policy.hardening(repo or cwd)
@@ -61,7 +57,32 @@ def spawn(
     if argv:
         argv[1:1] = git_policy.VERB_FLAGS.get(argv[0], ())
     # Drivers are blanked on every op: a list of driver-running verbs would enumerate badness.
-    full_argv = (git_policy.git(), *hardening, *argv)
+    return (git_policy.git(), *hardening, *argv), env
+
+
+def spawn(
+    cwd: pathlib.Path,
+    args: tuple[str, ...],
+    env_extra: dict[str, str] | None,
+    stdin_text: str | None,
+    repo: pathlib.Path | None = None,
+) -> tuple[tuple[str, ...], int, bytes, bytes]:
+    """Run one hardened git command.
+
+    Args:
+        cwd: The directory git runs in.
+        args: The git subcommand and its arguments.
+        env_extra: Environment entries added for this call.
+        stdin_text: Text fed to git's stdin.
+        repo: The repository to harden when git runs elsewhere.
+
+    Returns:
+        The full argv, exit code, stdout and stderr.
+
+    Raises:
+        GitError: The command timed out or the repository could not be hardened.
+    """
+    full_argv, env = invocation(cwd, args, env_extra, repo)
     index_lock = (repo or cwd) / ".git" / "index.lock"
     lock_preexisted = index_lock.exists()
     proc = subprocess.Popen(

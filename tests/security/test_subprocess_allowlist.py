@@ -59,6 +59,7 @@ ALLOWED = {
     "ui/cli/history_cmds.py",
     "ui/cli/plan_watch.py",
     "vcs/git/command.py",
+    "vcs/git/grep.py",
     "vcs/git/policy.py",
     "ui/cli/sessions_cmds.py",
     "ui/cli/skills_cmds.py",

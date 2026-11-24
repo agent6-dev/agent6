@@ -441,6 +441,7 @@ WEB = (
     Producer("ui.web.git_model", "worktree_payload", "`/api/git/worktree` payload"),
     Producer("ui.web.git_model", "diff_payload", "`/api/git/diff` payload"),
     Producer("ui.web.git_model", "search_payload", "`/api/git/search` payload"),
+    Producer("ui.web.git_model", "grep_payload", "`/api/git/grep` payload"),
     Producer("ui.web.git_model", "tree_payload", "`/api/git/tree` payload"),
     Producer("ui.web.git_model", "text_payload", "`/api/git/text` payload"),
     Producer("ui.web.git_model", "blame_payload", "`/api/git/blame` payload"),
