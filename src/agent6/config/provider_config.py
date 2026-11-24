@@ -148,8 +148,8 @@ IdleCompactSeconds = Annotated[
         allow_inf_nan=False,
         description=(
             "Seconds from worker request start to compact during a wait or treat a resume as "
-            "cold. Use -1 for no idle limit. Defaults: 240 for anthropic and responses, "
-            "-1 for openai and chatgpt. Neither idle setting applies to claude_code."
+            "cold; -1 for no idle limit; defaults: 240 for anthropic and responses, "
+            "-1 for openai and chatgpt; neither idle setting applies to claude_code"
         ),
     ),
 ]
@@ -172,8 +172,8 @@ class _ProviderBase(pydantic.BaseModel):
         default=240000,
         ge=0,
         description=(
-            "Character floor for compaction during a wait, including system and tools. "
-            "Does not apply on resume."
+            "Character floor for compaction during a wait, including system and tools; "
+            "does not apply on resume"
         ),
     )
     deployment: Deployment = pydantic.Field(
