@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 
 import pytest
 
@@ -76,6 +77,41 @@ def test_cleanup_requires_both_dirty_trees(
     else:
         assert (clone / "draft").read_text() == "working"
         assert cli._git(clone, "show", ":draft") == "staged"
+
+
+def test_a_sweep_under_a_weaker_level_than_the_child_ran_under_keeps_the_clone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later sweep read a `full` child's clone with the sandbox disabled.
+
+    The sweep took its level from its own environment, so the clone's side of the fetch ran
+    on the host over a `.git` the child's commands could write.
+    """
+    repo = tmp_path / "repo"
+    background._init_repo(repo)
+    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    clone = worktrees.place(cfg, repo, "parent-p1") / "child-1"
+    sid = "parent-p1-l1"
+    cli._git(repo, "clone", str(repo), str(clone))
+    record = paths.state_dir(repo) / "sessions" / "runs" / sid
+    record.mkdir(parents=True)
+    (record / "manifest.json").write_text(
+        json.dumps({"session_id": sid, "mode": "run", "policy": {"isolation": "full"}})
+    )
+    (clone / "draft").write_text("working")
+    cli._git(clone, "add", "draft")
+    tree = cli._git(clone, "write-tree")
+    stop = {"type": "session.stop", "reason": "provider_error", "tree": tree, "index_tree": tree}
+    (record / "logs.jsonl").write_text(json.dumps(stop) + "\n")
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
+
+    worktrees.sweep_group_clones(repo, cfg)
+
+    assert (clone / "draft").read_text() == "working"
+    arrived = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "-e", tree], capture_output=True, check=False
+    )
+    assert arrived.returncode != 0, "the sweep fetched the clone's tree on the host"
 
 
 @pytest.mark.parametrize("sweep", [False, True], ids=["cleanup", "prune"])

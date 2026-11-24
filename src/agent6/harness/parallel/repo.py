@@ -14,6 +14,7 @@ from agent6 import child_records, errors, kinds
 from agent6.config import Config
 from agent6.sandbox import detect, jail
 from agent6.sessions import lineage, process
+from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import policy as tools_policy
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -37,6 +38,32 @@ def clone_worktree(origin: pathlib.Path, dest: pathlib.Path) -> None:
         git_ops.clone_repo(origin, dest)
     except errors.GitError as exc:
         raise ChildRepoError(f"clone {origin} -> {dest} failed: {exc}") from exc
+
+
+def sender_jail(
+    child_worktree: pathlib.Path, child_session_dir: pathlib.Path, config: Config
+) -> kinds.JailPolicy:
+    """Return the jail the clone's side of a fetch runs under, no weaker than its child's.
+
+    Args:
+        child_worktree: The child's workspace clone.
+        child_session_dir: The child's session dir, whose manifest records the level its
+            commands last ran under.
+        config: The config of the process that fetches.
+
+    Returns:
+        The policy a command in the clone gets under that config.
+
+    Raises:
+        IsolationUnavailableError: The host cannot provide the configured level.
+        JailUnavailableError: The jail cannot be built, or the level this process resolves
+            is weaker than the recorded one.
+    """
+    try:
+        ran_under = sessions_manifest.read_manifest(child_session_dir).policy.isolation
+    except sessions_manifest.ManifestError:
+        ran_under = ""  # no readable record names a level
+    return tools_policy.workspace_jail(child_worktree, config, ran_under=ran_under)
 
 
 def import_run(
@@ -70,12 +97,13 @@ def import_run(
 
     Raises:
         ChildRepoError: When the branch already exists in the origin, a descendant is still
-            running, the clone's jail cannot be built, or a fetch fails.
+            running, the clone's jail cannot be built or would be weaker than the child's own,
+            or a fetch fails.
     """
     if not model_control and not continuing and git_read.branch_exists(origin, branch):
         raise ChildRepoError(f"branch {branch!r} already exists in {origin}")
     try:
-        sender = tools_policy.workspace_jail(child_worktree, config)
+        sender = sender_jail(child_worktree, child_session_dir, config)
     except (detect.IsolationUnavailableError, jail.JailUnavailableError) as exc:
         raise ChildRepoError(f"no jail to read {child_worktree} in: {exc}") from exc
     fetch_retained_refs(origin, child_worktree, child_session_dir, sender)

@@ -11,6 +11,7 @@ of reach. Each rigging is first shown to send the other repository's commit on t
 from __future__ import annotations
 
 import ast
+import json
 import os
 import pathlib
 import shutil
@@ -41,7 +42,8 @@ from agent6.tools import policy
 from agent6.vcs.git import command, ops
 command.GIT_TIMEOUT_S, command.GIT_TERM_GRACE_S = 3.0, 1.0
 origin, child = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-sender = policy.workspace_jail(child, Config.model_validate({"sandbox": {"isolation": "full"}}))
+full = Config.model_validate({"sandbox": {"isolation": "full"}})
+sender = policy.workspace_jail(child, full, ran_under="full")
 try:
     ops.fetch_branch(origin, child, sys.argv[3], sender=sender)
 except errors.GitError as exc:
@@ -153,6 +155,36 @@ def test_a_rigged_clone_imports_nothing_of_another_repository(
     assert git_read.chain_tip(origin, chain) is None
 
 
+@pytest.mark.parametrize("weaker", ["config", "environment"])
+def test_an_import_refuses_a_weaker_level_than_the_child_ran_under(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, weaker: str
+) -> None:
+    """A later import read a clone rigged under `full` with the host's reach.
+
+    The import took its level from its own config and environment. `sessions prune` under a
+    weaker `sandbox.isolation`, or with the sandbox disabled by the environment, ran the
+    clone's `git upload-pack` where the other repository is in reach.
+    """
+    origin, child, session = _child(tmp_path)
+    (session / "manifest.json").write_text(
+        json.dumps({"policy": {"isolation": "full"}}), encoding="utf-8"
+    )
+    other = _repo(tmp_path / "other", "notes.txt", "another repository's file\n")
+    theirs = _git(other, "rev-parse", "main")
+    _rig("alternates", child, other)
+    config = _config("agent6")
+    if weaker == "environment":
+        monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
+    else:
+        config = Config.model_validate({"sandbox": {"isolation": "none", "protect_git": "off"}})
+
+    with pytest.raises(child_repo.ChildRepoError, match=r"'full'.*'none'"):
+        child_repo.import_run(origin, child, _BRANCH, session, config)
+
+    assert not _has(origin, theirs), "the import brought another repository's commit"
+    assert not git_read.branch_exists(origin, _BRANCH)
+
+
 @_jailed
 @pytest.mark.parametrize("control", ["agent6", "model"])
 def test_a_clean_clone_still_imports_under_its_jail(tmp_path: pathlib.Path, control: str) -> None:
@@ -233,7 +265,8 @@ def test_a_sender_whose_fetch_died_while_it_started_does_not_serve(
     from agent6.vcs.git import upload_pack
 
     _origin, child, _session = _child(tmp_path)
-    sender = policy.workspace_jail(child, Config.model_validate({"sandbox": {"isolation": "none"}}))
+    unconfined = Config.model_validate({"sandbox": {"isolation": "none"}})
+    sender = policy.workspace_jail(child, unconfined, ran_under="none")
     line = upload_pack.command(sender, child, tmp_path / "sender.json")
     fetch = subprocess.Popen(
         [sys.executable, "-c", _DYING_FETCH, f"{line} '{child}'"],

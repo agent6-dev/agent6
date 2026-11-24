@@ -723,6 +723,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Your own `git` in such a checkout is your act: it follows that `.git` as git does.
     - an import copies a clone's commits into its repository: a child's, a fork's, a `run --worktree` run's, a machine state's.
       The clone's `git upload-pack` runs through `spawn_in_jail` under the policy a command in that clone gets; under `full` its network is its own and empty
+    - an import that resolves a weaker `sandbox.isolation` than the clone's commands last ran under refuses and names both levels: a later `sessions prune` under another config, or with `AGENT6_DISABLE_SANDBOX=1`, would read the clone with more reach than they had.
+      The clone's session manifest records the level; a `container` run and a session that records no level set no floor
     - a sender that gives no answer in 120 s ends with its fetch, and the import fails
     - under `none` `sandbox.isolation` nothing confines it; under `container` it runs on the host, outside the container
     - seeding reads the repository on the host: the `git clone` that makes a clone, and a fetch from the repository into its clone

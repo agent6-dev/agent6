@@ -224,6 +224,7 @@ depends_on = [
   "agent6.sessions.child_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.lineage",
+  "agent6.sessions.manifest",  # the level a child's commands ran under, read at its import
   "agent6.sessions.objects",
   "agent6.sessions.process",
   "agent6.task_text",  # the session.start headline is the operator's own words

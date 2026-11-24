@@ -576,21 +576,41 @@ def jail_policy(
     )
 
 
-def workspace_jail(root: pathlib.Path, config: Config) -> kinds.JailPolicy:
+# The local jail levels, weakest first.
+_LEVELS: tuple[kinds.IsolationLevel, ...] = ("none", "partial", "full")
+
+
+def workspace_jail(root: pathlib.Path, config: Config, *, ran_under: str) -> kinds.JailPolicy:
     """Return the policy a command gets in a workspace, at the level its config resolves to.
 
-    For a caller that runs no command there itself: a parent, about a child's clone.
+    For a caller that runs no command there itself: a parent, about a child's clone. The
+    workspace's own commands could write what the caller reads there, so a level weaker than
+    theirs would read it with more reach than they had.
 
     Args:
         root: The workspace root.
         config: The config the workspace's run loads.
+        ran_under: The level the workspace's own run recorded; any word that names none of
+            the three levels (an empty record, `container`) sets no floor.
 
     Returns:
         The policy, naming no command.
 
     Raises:
         IsolationUnavailableError: The host cannot provide the configured level.
-        JailUnavailableError: The launcher cannot be executed, or `jail_policy` refused.
+        JailUnavailableError: The launcher cannot be executed, `jail_policy` refused, or the
+            level resolved here is weaker than `ran_under`.
     """
     isolation = detect.resolve_isolation(config.sandbox.isolation, detect.probed_environment())
+    if ran_under in _LEVELS and _LEVELS.index(isolation) < _LEVELS.index(ran_under):
+        remedy = (
+            "unset AGENT6_DISABLE_SANDBOX"
+            if detect.sandbox_disabled_by_env()
+            else f"set sandbox.isolation = {ran_under!r}"
+        )
+        raise jail.JailUnavailableError(
+            f"its commands ran under sandbox.isolation = {ran_under!r} and this command"
+            f" resolves {isolation!r}, which would read what they wrote with more reach than"
+            f" they had. Run it again under {ran_under!r}: {remedy}."
+        )
     return jail_policy(root, config, isolation, ())

@@ -8,11 +8,11 @@ import re
 
 from agent6 import errors
 from agent6.config import Config
+from agent6.harness.parallel import repo as child_repo
 from agent6.sandbox import detect, jail
 from agent6.sessions import child_dispatch
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import policy as tools_policy
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
@@ -86,7 +86,7 @@ def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cf
         for kind, tree in (("end", scan.end_tree), ("index", scan.index_tree)):
             if tree:
                 ref = pin(record.name, tree)
-                sender = tools_policy.workspace_jail(clone, cfg)
+                sender = child_repo.sender_jail(clone, record, cfg)
                 git_ops.fetch_branch(origin, clone, f"{tree}:{ref}", sender=sender)
                 verify_pin(origin, record.name, kind, tree)
         head = git_read.tree_sha(clone, "HEAD")
