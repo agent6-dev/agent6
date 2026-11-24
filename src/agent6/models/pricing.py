@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import math
 import re
 from collections.abc import Mapping
+from urllib import parse
 
 from agent6 import config, kinds
 from agent6.models import listing_store
@@ -123,15 +125,67 @@ def lookup_price(
         served_tier: The observed wire tier, or None to use the request tier.
 
     Returns:
-        The exact quote, a vendor-prefixed reference quote, or None when unpriced.
+        The quote from the provider's own listing, else from its fallback price list by a
+        vendor-prefixed id, or None when unpriced.
     """
     entry = providers.get(route.provider)
     if not isinstance(entry, config.PricedProviderEntry):
         return None
-    source = entry.price_from or route.provider
-    listing = providers.get(source)
-    if listing is None:
-        return None
+    quote = _listed_price(route, entry, route.provider, entry, served_tier)
+    if quote is None and entry.price_list_fallback:
+        name, listing = price_list_source(entry.price_list_fallback)
+        quote = _listed_price(route, entry, name, listing, served_tier)
+    return quote
+
+
+@functools.lru_cache(maxsize=16)
+def price_list_source(url: str) -> tuple[str, config.OpenAIProviderEntry]:
+    """Return the cache name and the keyless listing entry of a fallback price list.
+
+    The name is the address's host: it holds a dot, so no provider name equals it.
+
+    Args:
+        url: The `price_list_fallback` address, ending in `/models`.
+
+    Returns:
+        The name the listing is cached under, and the entry whose `/models` is the address.
+    """
+    host = parse.urlsplit(url).hostname or ""
+    return host, config.OpenAIProviderEntry(backend="openai", base_url=url.removesuffix("/models"))
+
+
+def price_list_read(url: str) -> bool:
+    """Return whether a listing of the fallback price list is cached.
+
+    Args:
+        url: The `price_list_fallback` address.
+
+    Returns:
+        False when no fetch of the list has succeeded.
+    """
+    name, _ = price_list_source(url)
+    return bool(listing_store.read(listing_store.cache_path(name)))
+
+
+def _listed_price(
+    route: kinds.ModelRoute,
+    entry: config.PricedProviderEntry,
+    source: str,
+    listing: config.ProviderEntry,
+    served_tier: str | None,
+) -> Quote | None:
+    """Read the price one cached listing gives the route's model.
+
+    Args:
+        route: The provider and model that receive the call.
+        entry: The provider entry that receives the call.
+        source: The name the listing is cached under.
+        listing: The entry the cached listing must be bound to.
+        served_tier: The observed wire tier, or None to use the request tier.
+
+    Returns:
+        The quote, or None when the listing is unbound or gives the model no rate.
+    """
     data = listing_store.read(listing_store.cache_path(source))
     if data.get("binding") != listing_store.binding(listing):
         return None

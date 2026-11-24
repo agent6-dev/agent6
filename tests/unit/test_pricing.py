@@ -10,6 +10,7 @@ import pathlib
 import pytest
 
 from agent6 import config, kinds
+from agent6.config import provider_config
 from agent6.models import cache as models_cache  # pyright: ignore[reportPrivateUsage]
 from agent6.models import listing_store
 from agent6.models import pricing as models_pricing
@@ -93,11 +94,10 @@ def test_reference_quote_names_the_matched_listing(
                 "anthropic": {"backend": "anthropic"},
                 "openai": {"backend": "openai"},
                 "responses": {"backend": "responses", "base_url": "https://api.openai.com/v1"},
-                "openrouter": {"backend": "openai", "base_url": "https://prices.example"},
                 "gateway": {
                     "backend": "openai",
                     "base_url": "https://gateway.example",
-                    "price_from": "openrouter",
+                    "price_list_fallback": provider_config.DEFAULT_PRICE_LIST,
                 },
             }
         }
@@ -105,19 +105,19 @@ def test_reference_quote_names_the_matched_listing(
     route = kinds.ModelRoute(name, model)
     rates = {listed: [1.0, 5.0]}
     tier = "default" if name in ("openai", "responses") else None
-    price_env.write(rates, name="openrouter", entry=providers["openrouter"], tier=tier)
+    price_env.write_list(rates, url=provider_config.DEFAULT_PRICE_LIST, tier=tier)
 
     def quote() -> models_pricing.Quote | None:
         return models_pricing.lookup_price(route, providers)
 
     assert quote() == models_pricing.Quote(
-        models_pricing.Price(1.0, 5.0), kinds.ModelRoute("openrouter", listed)
+        models_pricing.Price(1.0, 5.0), kinds.ModelRoute("openrouter.ai", listed)
     )
-    price_env.write(
-        {**rates, model: [2.0, 3.0]}, name="openrouter", entry=providers["openrouter"], tier=tier
+    price_env.write_list(
+        {**rates, model: [2.0, 3.0]}, url=provider_config.DEFAULT_PRICE_LIST, tier=tier
     )
     assert quote() == models_pricing.Quote(
-        models_pricing.Price(2.0, 3.0), kinds.ModelRoute("openrouter", model)
+        models_pricing.Price(2.0, 3.0), kinds.ModelRoute("openrouter.ai", model)
     )
 
 
@@ -128,9 +128,9 @@ def test_gateway_reference_does_not_choose_between_vendors(
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     providers = {
         **price_env.PROVIDERS,
-        "local": price_env.ENTRY.model_copy(update={"price_from": "testprovider"}),
+        "local": price_env.ENTRY.model_copy(update={"price_list_fallback": price_env.PRICE_LIST}),
     }
-    price_env.write({f"one/{model}": [0, 1], f"anthropic/{model}": [1, 2]})
+    price_env.write_list({f"one/{model}": [0, 1], f"anthropic/{model}": [1, 2]})
     assert models_pricing.lookup_price(kinds.ModelRoute("local", model), providers) is None
 
 
@@ -154,13 +154,16 @@ def test_unpriced_listing_ids_still_decide_the_match(
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     providers = {
         **price_env.PROVIDERS,
-        "gateway": price_env.ENTRY.model_copy(update={"price_from": "testprovider"}),
-        "direct": config.AnthropicProviderEntry(backend="anthropic", price_from="testprovider"),
+        "gateway": price_env.ENTRY.model_copy(update={"price_list_fallback": price_env.PRICE_LIST}),
+        "direct": config.AnthropicProviderEntry(
+            backend="anthropic", price_list_fallback=price_env.PRICE_LIST
+        ),
     }
+    name, listing = models_pricing.price_list_source(price_env.PRICE_LIST)
     models_cache._write_cache(
-        listing_store.cache_path("testprovider"),
+        listing_store.cache_path(name),
         models_cache.Listing([unpriced, rated], {rated: models_pricing.Price(1, 2)}, {}, {}),
-        price_env.ENTRY,
+        listing,
     )
     assert models_pricing.lookup_price(kinds.ModelRoute(provider, model), providers) is None
 
@@ -172,12 +175,15 @@ def test_vendor_prefixed_id_precedes_a_normalized_claude_alias(
     model = "claude-haiku-4-5-20251001"
     providers = {
         **price_env.PROVIDERS,
-        "direct": config.AnthropicProviderEntry(backend="anthropic", price_from="testprovider"),
+        "direct": config.AnthropicProviderEntry(
+            backend="anthropic", price_list_fallback=price_env.PRICE_LIST
+        ),
     }
-    price_env.write({f"anthropic/{model}": [1, 2], "anthropic/claude-haiku-4.5": [3, 4]})
+    price_env.write_list({f"anthropic/{model}": [1, 2], "anthropic/claude-haiku-4.5": [3, 4]})
     quote = models_pricing.lookup_price(kinds.ModelRoute("direct", model), providers)
     assert quote == models_pricing.Quote(
-        models_pricing.Price(1, 2), kinds.ModelRoute("testprovider", f"anthropic/{model}")
+        models_pricing.Price(1, 2),
+        kinds.ModelRoute(price_env.PRICE_LIST_NAME, f"anthropic/{model}"),
     )
 
 
@@ -190,33 +196,34 @@ _VERTEX = {
 
 
 @pytest.mark.parametrize("settings", [{"base_url": "https://proxy.example"}, _VERTEX])
-def test_an_explicit_reference_prices_claude_behind_any_anthropic_entry(
+def test_an_explicit_price_list_prices_claude_behind_any_anthropic_entry(
     settings: dict[str, object], tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Claude on Vertex or behind a proxy stayed unpriced with `price_from` set."""
+    """Claude on Vertex or behind a proxy stayed unpriced with a fallback price list set."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     providers = config.Config.model_validate(
         {
             "providers": {
-                "named": {"backend": "anthropic", **settings, "price_from": "openrouter"},
+                "named": {
+                    "backend": "anthropic",
+                    **settings,
+                    "price_list_fallback": price_env.PRICE_LIST,
+                },
                 "unset": {"backend": "anthropic", **settings},
-                "openrouter": {"backend": "openai", "base_url": "https://prices.example"},
             }
         }
     ).providers
     listed = "anthropic/claude-sonnet-4.5"
-    price_env.write(
-        {listed: [3.0, 15.0], "z-ai/glm-x": [1.0, 2.0]},
-        name="openrouter",
-        entry=providers["openrouter"],
-    )
+    price_env.write_list({listed: [3.0, 15.0], "z-ai/glm-x": [1.0, 2.0]})
     for model, source in (
         ("claude-sonnet-4-5", listed),
         ("claude-sonnet-4-5-20250929", listed),
         ("glm-x", "z-ai/glm-x"),
     ):
         quote = models_pricing.lookup_price(kinds.ModelRoute("named", model), providers)
-        assert quote is not None and quote.source == kinds.ModelRoute("openrouter", source)
+        assert quote is not None and quote.source == kinds.ModelRoute(
+            price_env.PRICE_LIST_NAME, source
+        )
         assert models_pricing.lookup_price(kinds.ModelRoute("unset", model), providers) is None
 
 
@@ -276,3 +283,48 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     assert assumed.estimate_usd()[0] == pytest.approx(0.2)  # Anthropic's 0.1x of $2
     assert "cache rates assumed" in assumed.format_summary()
     assert "cache rates assumed" not in listed.format_summary()
+
+
+def test_only_a_vendors_own_api_defaults_to_the_public_price_list() -> None:
+    """A gateway or a local server takes no fallback list unless the operator names one.
+
+    A local model that shares a hosted model's name would otherwise be charged list prices.
+    """
+    default = provider_config.DEFAULT_PRICE_LIST
+    assert config.AnthropicProviderEntry(backend="anthropic").price_list_fallback == default
+    assert config.OpenAIProviderEntry(backend="openai").price_list_fallback == default
+    local = config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:11434/v1")
+    assert local.price_list_fallback == ""
+    gateway = config.OpenAIProviderEntry(backend="openai", base_url="https://gateway.example/v1")
+    assert gateway.price_list_fallback == ""
+    off = config.AnthropicProviderEntry(backend="anthropic", price_list_fallback="")
+    assert off.price_list_fallback == ""
+
+
+@pytest.mark.parametrize(
+    "address", ["https://prices.example/v1", "prices.example/models", "ftp://prices.example/models"]
+)
+def test_a_price_list_address_must_name_a_models_listing(address: str) -> None:
+    with pytest.raises(ValueError, match=r"price_list_fallback|base_url|http"):
+        config.OpenAIProviderEntry(
+            backend="openai", base_url="https://gateway.example/v1", price_list_fallback=address
+        )
+
+
+def test_a_providers_own_listing_prices_before_its_fallback_list(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallback list prices only a model the provider's own listing does not."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    entry = price_env.ENTRY.model_copy(update={"price_list_fallback": price_env.PRICE_LIST})
+    providers = {"gateway": entry}
+    price_env.write({"m": [1.0, 2.0], "unpriced": [0.0, 0.0]}, name="gateway", entry=entry)
+    price_env.write_list({"vendor/m": [3.0, 4.0], "vendor/other": [5.0, 6.0]})
+    own = models_pricing.lookup_price(kinds.ModelRoute("gateway", "m"), providers)
+    assert own == models_pricing.Quote(
+        models_pricing.Price(1.0, 2.0), kinds.ModelRoute("gateway", "m")
+    )
+    listed = models_pricing.lookup_price(kinds.ModelRoute("gateway", "other"), providers)
+    assert listed == models_pricing.Quote(
+        models_pricing.Price(5.0, 6.0), kinds.ModelRoute(price_env.PRICE_LIST_NAME, "vendor/other")
+    )

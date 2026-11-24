@@ -116,9 +116,12 @@ def budget_preflight(
             continue
         unpriced_roles.append((role, route.spec))
         entry = cfg.providers.get(prov)
-        if isinstance(entry, config.PricedProviderEntry) and entry.price_from:
-            reason = "no matching price" if entry.price_from in cfg.providers else "not configured"
-            sources.add(f"providers.{prov}.price_from = {entry.price_from!r} ({reason})")
+        if isinstance(entry, config.PricedProviderEntry) and entry.price_list_fallback:
+            read = pricing.price_list_read(entry.price_list_fallback)
+            reason = "no matching price" if read else "the list could not be read"
+            sources.add(
+                f"providers.{prov}.price_list_fallback = {entry.price_list_fallback!r} ({reason})"
+            )
     priced = _by_model(priced_roles)
     unpriced = _by_model(unpriced_roles)
     detail = " " + "; ".join(sorted(sources)) + "." if sources else ""

@@ -452,17 +452,42 @@ def is_openai_direct(base_url: str, deployment: str) -> bool:
     return deployment == "direct" and parse.urlsplit(base_url).hostname == "api.openai.com"
 
 
-class PricedProviderEntry(_ProviderBase):
-    """An API whose listing or reference listing can price its calls."""
+# OpenRouter's public model list: the rates of every vendor it routes, readable without a key.
+DEFAULT_PRICE_LIST = "https://openrouter.ai/api/v1/models"
 
-    price_from: str | None = pydantic.Field(
-        default=None,
-        pattern=r"^[A-Za-z0-9_-]+$",
+
+class PricedProviderEntry(_ProviderBase):
+    """An API whose own listing or a fallback price list can price its calls."""
+
+    price_list_fallback: str = pydantic.Field(
+        default="",
         description=(
-            "Configured provider whose listing supplies token rates instead of this entry's "
-            "own listing; default: openrouter for direct Anthropic and OpenAI endpoints"
+            "Address of a public model list in OpenRouter's format, fetched without a key; its "
+            "token rates price a model this entry's own listing does not; empty for none; "
+            f"default: {DEFAULT_PRICE_LIST} for direct Anthropic and OpenAI endpoints"
         ),
     )
+
+    @pydantic.field_validator("price_list_fallback")
+    @classmethod
+    def _check_price_list(cls, v: str) -> str:
+        """Require an empty string or a listing address that ends in `/models`.
+
+        Args:
+            v: The address.
+
+        Returns:
+            The address unchanged.
+
+        Raises:
+            ValueError: The address fails `sandbox_config.validate_base_url` or names no
+                `/models` listing.
+        """
+        if v:
+            sandbox_config.validate_base_url(v)
+            if not v.endswith("/models"):
+                raise ValueError("price_list_fallback must end in /models, or be empty")
+        return v
 
     @property
     def direct_vendor(self) -> str:
@@ -473,9 +498,9 @@ class PricedProviderEntry(_ProviderBase):
         return "anthropic" if self.deployment == "direct" and host == "api.anthropic.com" else ""
 
     @pydantic.model_validator(mode="after")
-    def _default_price_source(self) -> PricedProviderEntry:
-        if "price_from" not in self.model_fields_set and self.direct_vendor:
-            object.__setattr__(self, "price_from", "openrouter")
+    def _default_price_list(self) -> PricedProviderEntry:
+        if "price_list_fallback" not in self.model_fields_set and self.direct_vendor:
+            object.__setattr__(self, "price_list_fallback", DEFAULT_PRICE_LIST)
         return self
 
 

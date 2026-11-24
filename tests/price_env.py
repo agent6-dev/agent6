@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 
 from agent6 import config
-from agent6.models import listing_store
+from agent6.models import listing_store, pricing
 
 ENTRY = config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:1")
 PROVIDERS = {"testprovider": ENTRY}
+# A fallback price list address; quotes from it cite its host.
+PRICE_LIST = "https://prices.example/v1/models"
+PRICE_LIST_NAME = "prices.example"
 
 
 def write(
@@ -27,3 +30,11 @@ def write(
         json.dumps({"binding": listing_store.binding(entry), "models": list(rates), **table}),
         encoding="utf-8",
     )
+
+
+def write_list(
+    rates: dict[str, list[float]], *, url: str = PRICE_LIST, tier: str | None = None
+) -> None:
+    """Write one fallback price list's table under the test's XDG cache home."""
+    name, entry = pricing.price_list_source(url)
+    write(rates, name=name, entry=entry, tier=tier)

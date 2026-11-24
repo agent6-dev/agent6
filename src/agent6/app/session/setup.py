@@ -37,7 +37,7 @@ from agent6.config import (
     layer_data,
     secret_store,
 )
-from agent6.models import cache
+from agent6.models import cache, pricing
 from agent6.providers import claude_code, oauth, provider_types
 from agent6.sandbox import detect, jail
 from agent6.sessions import event_log, journal, manifest
@@ -355,17 +355,14 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     for name in sorted(needed):
         if (err := _provider_refusal(name, cfg.providers[name], secrets)) is not None:
             return err
-    sources = {
-        entry.price_from
+    price_lists = {
+        entry.price_list_fallback
         for name in needed
         if isinstance(entry := cfg.providers[name], PricedProviderEntry)
-        and entry.price_from is not None
     }
-    for source in sorted(sources - needed):
-        listing = cfg.providers.get(source)
-        if isinstance(listing, PricedProviderEntry):
-            key = secret_store.resolve_api_key(source, listing.api_key_env, secrets=secrets)
-            cache.list_models(source, listing, key)
+    for url in sorted(price_lists - {""}):
+        # A public list: fetched without a key and cached under its host.
+        cache.list_models(*pricing.price_list_source(url), None)
     return None
 
 

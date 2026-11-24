@@ -10,7 +10,7 @@ import pydantic
 import pytest
 
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, secret_store
+from agent6.config import Config, provider_config, secret_store
 from agent6.models import cache
 from agent6.providers import claude_code as providers_claude_code
 
@@ -24,14 +24,15 @@ def _cfg(model: str, provider_block: dict[str, object]) -> Config:
     )
 
 
-@pytest.mark.parametrize("configured", [False, True])
-def test_preflight_refreshes_only_configured_listings(
-    monkeypatch: pytest.MonkeyPatch, configured: bool
+@pytest.mark.parametrize("listed", [True, False])
+def test_the_start_fetches_the_fallback_price_list_without_a_key(
+    monkeypatch: pytest.MonkeyPatch, listed: bool
 ) -> None:
-    called: list[str] = []
+    """The public price list is fetched with no credential, and not at all when the key is empty."""
+    called: list[tuple[str, str, str | None]] = []
 
-    def models(name: str, *_args: object) -> list[str]:
-        called.append(name)
+    def models(name: str, entry: object, api_key: str | None) -> list[str]:
+        called.append((name, getattr(entry, "base_url", ""), api_key))
         return []
 
     monkeypatch.setattr(secret_store, "load_secrets", dict)
@@ -41,12 +42,14 @@ def test_preflight_refreshes_only_configured_listings(
 
     monkeypatch.setattr(secret_store, "resolve_api_key", key)
     monkeypatch.setattr(cache, "list_models", models)
-    entries = {"anthropic": {"backend": "anthropic"}}
-    if configured:
-        entries["openrouter"] = {"backend": "openai", "base_url": "https://prices.example/v1"}
-    cfg = _cfg("claude-opus-5", dict(entries))
+    entry: dict[str, object] = {"backend": "anthropic"}
+    if not listed:
+        entry["price_list_fallback"] = ""
+    cfg = _cfg("claude-opus-5", {"anthropic": entry})
     assert session_setup.check_provider_keys(cfg) is None
-    assert called == (["anthropic", "openrouter"] if configured else ["anthropic"])
+    own = ("anthropic", "https://api.anthropic.com/v1", "sk-test")
+    public = ("openrouter.ai", "https://openrouter.ai/api/v1", None)
+    assert called == ([own, public] if listed else [own])
 
 
 def test_a_reviewer_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -434,18 +437,18 @@ def test_an_unrelated_listing_cannot_refuse_a_local_call(
     tracker.check()
 
 
-@pytest.mark.parametrize("configured", [True, False])
-def test_missing_reference_warns_once_even_with_zero_usd(
-    configured: bool, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("fetched", [True, False])
+def test_an_unpriced_model_warns_once_even_with_zero_usd(
+    fetched: bool, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from agent6.app import preflight
+    from tests import price_env
 
-    providers = {"paid": {"backend": "openai"}}
-    if configured:
-        providers["openrouter"] = {"backend": "openai", "base_url": "https://prices.example"}
+    if fetched:
+        price_env.write_list({"other/model": [1.0, 2.0]}, url=provider_config.DEFAULT_PRICE_LIST)
     cfg = Config.model_validate(
         {
-            "providers": providers,
+            "providers": {"paid": {"backend": "openai"}},
             "models": {"worker": {"model": "paid/m"}, "planner": {"model": "paid/m"}},
             "budget": {"max_usd": 0},
         }
@@ -453,7 +456,7 @@ def test_missing_reference_warns_once_even_with_zero_usd(
     assert preflight.budget_preflight(cfg) is None
     text = capsys.readouterr().err
     assert text.count("no price data") == 1
-    assert "providers.paid.price_from = 'openrouter'" in text
-    assert ("no matching price" if configured else "not configured") in text
+    assert f"providers.paid.price_list_fallback = {provider_config.DEFAULT_PRICE_LIST!r}" in text
+    assert ("no matching price" if fetched else "the list could not be read") in text
     assert "fallback tokens" in text
     assert "Reported costs count toward max_usd" in text

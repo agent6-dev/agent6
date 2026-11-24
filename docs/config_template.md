@@ -197,7 +197,7 @@ A different serving model is recorded beside the requested id in the token summa
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
 `agent6 connect openai` writes this backend with `base_url = "https://api.openai.com/v1"`.
 A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it.
-The [budget](#budget) prices its tokens from its own listing or the provider named by `price_from`.
+The [budget](#budget) prices its tokens from its own listing, else from the list at `price_list_fallback`.
 
 ```toml
 [providers.work]
@@ -465,9 +465,10 @@ A top-up raises the balance for the next reading.
 The declines include other users of the account; they are not attributed to calls.
 On resume, settling an interrupted child charges only the declines it adds to the account series its launching execution used.
 The first live reading starts a fresh series, even for the same account.
-Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
+Rates come from the route's own model listing; a model it does not price takes its rate from the list at `providers.<name>.price_list_fallback`.
 Listing refreshes do not run `token_command` or substitute a static key for it.
-For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default reference is the configured `openrouter` entry.
+For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default list is OpenRouter's public one, `https://openrouter.ai/api/v1/models`; elsewhere the default is empty.
+A start fetches that list without a key; set `price_list_fallback = ""` to stop the fetch and leave those models unpriced.
 A reference listing matches the exact model id first, then its vendor-prefixed id.
 For an `anthropic` entry it also accepts the catalog spelling, such as `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`, if neither literal id matches.
 A gateway model without a known vendor needs an unambiguous match among all listed ids, including those without rates.

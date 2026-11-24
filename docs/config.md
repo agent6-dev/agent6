@@ -127,7 +127,7 @@ A minimal block is just `backend` (plus `base_url` for a non-default host).
 | `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
 | `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
 | `<name>.web_search` | `false` | Offer the provider's hosted web search on the worker's run and ask turns; billed by the provider apart from tokens; true needs backend anthropic, chatgpt or responses, and the vendor's own address for anthropic and responses |
-| `<name>.price_from` | per endpoint | Configured provider whose listing supplies token rates instead of this entry's own listing; default: openrouter for direct Anthropic and OpenAI endpoints |
+| `<name>.price_list_fallback` | per endpoint | Address of a public model list in OpenRouter's format, fetched without a key; its token rates price a model this entry's own listing does not; empty for none; default: https://openrouter.ai/api/v1/models for direct Anthropic and OpenAI endpoints |
 | `<name>.prompt_caching` | `true` | prompt caching for `backend = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
 | `<name>.server_compaction` | `true` | true on a supported model: the endpoint clears old tool results and writes the summary; agent6 changes no earlier message there; false or an unsupported model: agent6 compacts by itself; default: true for `deployment = "direct"` without a configured `base_url`, false otherwise |
 | `<name>.service_tier` | none | Processing tier on Chat Completions and Responses: standard, flex, fast, or auto for the project's choice; default: standard at api.openai.com, unset elsewhere<ul><li><code>standard</code>: Use standard processing</li><li><code>fast</code>: Request priority processing</li><li><code>flex</code>: Request flex processing</li><li><code>auto</code>: Let the project choose</li></ul> |
@@ -251,7 +251,7 @@ A different serving model is recorded beside the requested id in the token summa
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
 `agent6 connect openai` writes this backend with `base_url = "https://api.openai.com/v1"`.
 A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it.
-The [budget](#budget) prices its tokens from its own listing or the provider named by `price_from`.
+The [budget](#budget) prices its tokens from its own listing, else from the list at `price_list_fallback`.
 
 ```toml
 [providers.work]
@@ -627,9 +627,10 @@ A top-up raises the balance for the next reading.
 The declines include other users of the account; they are not attributed to calls.
 On resume, settling an interrupted child charges only the declines it adds to the account series its launching execution used.
 The first live reading starts a fresh series, even for the same account.
-Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
+Rates come from the route's own model listing; a model it does not price takes its rate from the list at `providers.<name>.price_list_fallback`.
 Listing refreshes do not run `token_command` or substitute a static key for it.
-For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default reference is the configured `openrouter` entry.
+For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default list is OpenRouter's public one, `https://openrouter.ai/api/v1/models`; elsewhere the default is empty.
+A start fetches that list without a key; set `price_list_fallback = ""` to stop the fetch and leave those models unpriced.
 A reference listing matches the exact model id first, then its vendor-prefixed id.
 For an `anthropic` entry it also accepts the catalog spelling, such as `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`, if neither literal id matches.
 A gateway model without a known vendor needs an unambiguous match among all listed ids, including those without rates.
