@@ -6,14 +6,49 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.web import captures, test_web_browser
+from tests.unit import test_git_history
+from tests.web import captures, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 git_port = test_web_browser.git_port
+
+
+def test_file_rows_link_to_the_selected_revision_in_a_new_tab(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A middle click opens the row's encoded path without selecting it in this tab."""
+    from playwright import sync_api
+
+    (tmp_path / "dir" / "a #%.txt").write_text("committed text\n")
+    test_git_history._git(tmp_path, "add", "dir/a #%.txt")
+    test_git_history._git(tmp_path, "commit", "-qm", "file with a fragment delimiter")
+    test_git_history._git(tmp_path, "branch", "topic/files")
+    (tmp_path / "dir" / "a #%.txt").write_text("disk text\n")
+    page, errors = open_page(git_port)
+    base = f"http://127.0.0.1:{git_port}/"
+    listing = "#/files/refs%2Fheads%2Ftopic%2Ffiles"
+    href = listing + "/dir/a%20%23%25.txt"
+    page.goto(base + listing)
+    row = page.get_by_role("treeitem", name="dir/a #%.txt", exact=True)
+    sync_api.expect(row).to_have_attribute("href", href)
+    assert row.evaluate("e => e.matches('a[href]')")
+    with page.context.expect_page() as opened:
+        row.click(button="middle")
+    tab = opened.value
+    sync_api.expect(tab).to_have_url(base + href)
+    sync_api.expect(tab.locator(".files-source")).to_contain_text("committed text")
+    sync_api.expect(page).to_have_url(base + listing)
+    sync_api.expect(row).to_have_attribute("aria-selected", "false")
+    tab.close()
+    row.press("Space")
+    sync_api.expect(page).to_have_url(base + href)
+    sync_api.expect(row).to_have_attribute("aria-selected", "true")
+    assert not errors
 
 
 @pytest.mark.parametrize("width", [390, 1440])

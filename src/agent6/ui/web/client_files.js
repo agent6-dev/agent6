@@ -303,13 +303,18 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     return mark;
   };
   const fileRow = (f) => {
-    const row = el('div', 'gf');
-    row.dataset.path = f.path;
+    const row = el('a', 'gf');
+    row.href = filesHash(f.path); row.dataset.path = f.path;
+    row.setAttribute('aria-label', f.path);
     row.setAttribute('aria-selected', String(shown === f.path));
     const mark = stateMark([f]); if (mark) row.appendChild(mark);
     row.appendChild(el('span', 'gf-path', f.path.slice(f.path.lastIndexOf('/') + 1)));
     row.appendChild(el('span', 'gf-counts muted', f.kind === 'file' ? fmtBytes(f.size) : f.kind));
-    actionable(row, () => showFile(f), f.path);
+    row.onclick = e => {
+      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault(); return showFile(f);
+    };
+    row.onkeydown = e => { if (e.key === ' ') { e.preventDefault(); row.click(); } };
     return row;
   };
   const folderNote = (d) => { const under = treeFiles(d); let size = 0; for (const f of under) size += f.size; return fileCount(under.length) + ' · ' + fmtBytes(size); };

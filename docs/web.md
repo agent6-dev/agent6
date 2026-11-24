@@ -162,6 +162,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - Overwrite acknowledges only the disk version shown; another change refuses it again; Save as new file never replaces an existing file
     - hidden paths, symlinks, hardlinks, binary files and invalid UTF-8 cannot be edited; saves preserve CRLF line endings and neither stage nor commit
     - the tree keeps the folders you open and opens the ones holding a linked file; ↑ and ↓ move through it, → and ← open and close a folder
+    - each file row links to the file at the selected revision, so you can open it in another browser tab
     - Back and Forward move between the files opened, and the tree keeps its filter and folds
     - **Refresh** rereads the tree and the open file at the selected revision, keeping the filter and folder folds
 

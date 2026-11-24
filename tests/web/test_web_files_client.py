@@ -58,6 +58,7 @@ class Element {
   getBoundingClientRect() {
     return {width: this.cls.has('git-diff') ? diffWidth : this.cls.has('files-body') ? 1000 : 360};
   }
+  click() { return this.onclick({button: 0, preventDefault() {}}); }
   scrollIntoView() { this.scrolled = true; }
   checkVisibility() { return false; }
   querySelectorAll(selector) {
@@ -150,7 +151,7 @@ def test_revision_change_discards_pending_content_and_errors(failed: bool) -> No
     _run(
         """
 await renderFiles(1);
-const opening = view.querySelector('.gf').onclick();
+const opening = view.querySelector('.gf').click();
 await tick();
 chooseRevision({rev: 'new', label: 'new'});
 await tick();
@@ -177,7 +178,7 @@ getJSON = async url => url.startsWith('/api/git/tree?rev=new')
   ? {rev: 'new', files: [{path: 'b.txt', kind: 'file', size: 5}], truncated: false}
   : listing(url);
 await renderFiles(1);
-const opening = view.querySelector('.gf').onclick();
+const opening = view.querySelector('.gf').click();
 await tick();
 pending[0].resolve({text: 'a', lines: 1, spans: []});
 await opening;
@@ -202,7 +203,7 @@ assert.ok(pending[0].url.includes('path=dir%2Fa%20%23%25.txt'));
 pending[0].resolve({text: 'linked content', lines: 1, spans: []});
 await opening;
 assert.ok(view.querySelector('.files-view').textContent.includes('linked content'));
-const next = view.querySelector('.gf').onclick();
+const next = view.querySelector('.gf').click();
 await tick();
 assert.equal(location.hash, '#/files/HEAD/a.txt');
 pending[1].reject(new Error('no file'));
@@ -302,7 +303,7 @@ def test_blame_toggles_a_column_on_existing_numbered_lines() -> None:
     _run(
         r"""
 await renderFiles(1);
-const opening = view.querySelector('.gf').onclick();
+const opening = view.querySelector('.gf').click();
 await tick();
 pending[0].resolve({text: 'one\ntwo\n', lines: 2, spans: [[[0,3,'keyword']],[]]});
 await opening;
@@ -393,7 +394,7 @@ await toggle.onclick();
 assert.equal(toggle['aria-pressed'], 'true');
 assert.equal(view.querySelector('.gf-st').textContent, 'I');
 assert.equal(view.querySelector('.gf-st').title, '1 ignored');
-await view.querySelector('.gf').onclick();
+await view.querySelector('.gf').click();
 assert.ok(requests.some(url => url.startsWith('/api/git/text?') && url.includes('ignored=1')));
 assert.ok(view.querySelector('.files-preview'));
 await renderFiles(1, 'WORKTREE');
@@ -677,7 +678,7 @@ def test_blame_of_other_bytes_than_the_text_shown_is_not_attached() -> None:
     _run(
         r"""
 await renderFiles(1);
-const opening = view.querySelector('.gf').onclick();
+const opening = view.querySelector('.gf').click();
 await tick();
 pending[0].resolve({text: 'one\ntwo\n', lines: 2, spans: [[], []], digest: 'd1'});
 await opening;
