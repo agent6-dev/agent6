@@ -254,8 +254,10 @@ An editor that requests `protocolVersion: 2` gets the same runs through v2's mes
 
 v2 parts agent6 does not send or serve:
 
-- `notice`, `compaction_update`, `terminal_update`, `subagent_update` and the `background` list: agent6's own lines are `[agent6]` agent messages, and child steps are labelled messages in the parent conversation
-- `tool_call/cancel`, `terminal/cancel`, `elicitation/create`, `auth/login` and `systemPrompt`
+- `notice`, `compaction_update`, `compaction_summary_chunk`, `terminal_update`, `terminal_output_chunk`, `subagent_update`, `session_message`, `session_message_chunk` and the `background` list: agent6's own lines are `[agent6]` agent messages, and child steps are labelled messages in the parent conversation
+- `tool_call_content_chunk`: a tool call's content arrives whole in a `tool_call_update`
+- `plan_removed`: the task list is the only plan, and it stays
+- `tool_call/cancel`, `terminal/cancel`, `elicitation/create`, `elicitation/complete`, `auth/login`, `auth/logout` and `systemPrompt`
 
 v2 rules agent6 does not meet:
 

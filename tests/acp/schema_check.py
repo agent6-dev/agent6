@@ -108,6 +108,11 @@ def tags(definition: str, field: str) -> set[Any]:
     }
 
 
+def methods() -> set[str]:
+    """Return every method the v2 schema defines a message for."""
+    return {entry["x-method"] for entry in _v2_definitions().values() if "x-method" in entry}
+
+
 def v2_errors(definition: str, payload: Any, *, tag: str = "") -> list[str]:
     """Return what the v2 schema rejects in the payload and in the unions nested in it.
 

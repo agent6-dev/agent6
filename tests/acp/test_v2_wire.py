@@ -155,6 +155,19 @@ def test_the_words_agent6_sends_are_ones_v2_names() -> None:
     assert {"add", "delete", "modify"} <= schema_check.tags("DiffChange", "operation")
 
 
+def test_every_v2_update_and_method_is_in_the_source_or_listed_as_absent() -> None:
+    """The page's list of what agent6 leaves out missed six update kinds and two methods."""
+    root = pathlib.Path(__file__).parents[2]
+    source = "".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((root / "src" / "agent6" / "ui" / "acp").glob("*.py"))
+    )
+    page = (root / "docs" / "acp.md").read_text(encoding="utf-8")
+    names = schema_check.tags("SessionUpdate", "sessionUpdate") | schema_check.methods()
+    assert len(names) > 40
+    assert not sorted(n for n in names if f'"{n}"' not in source and f"`{n}`" not in page)
+
+
 def test_a_usage_update_clears_a_cost_it_no_longer_has() -> None:
     """v2's cost is a patch: left out, an editor keeps showing the earlier total."""
     assert wire.v2(model.UsageUpdate(10, 100, None))["cost"] is None
