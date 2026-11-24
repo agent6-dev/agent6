@@ -76,8 +76,7 @@ def test_recording_uses_the_mode_viewport(
     kwargs = browser.new_context.call_args.kwargs
     assert kwargs["viewport"] == {"width": width, "height": height}
     assert kwargs["record_video_size"] == {"width": width, "height": height}
-    tours = {"machine": drive_machine, "workflow": drive_workflow}
-    ran = tours.get(mode, drive)
+    ran = drive_machine if mode == "machine" else drive_workflow if mode == "workflow" else drive
     assert ran.call_count == 1
     for tour in (drive, drive_machine, drive_workflow):
         assert tour is ran or not tour.called

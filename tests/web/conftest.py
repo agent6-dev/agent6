@@ -143,7 +143,7 @@ def _signed_in(
                 page.on("pageerror", lambda error: errors.append(str(error)))
 
                 def console(message: ConsoleMessage) -> None:
-                    address = str(message.location.get("url", ""))
+                    address = message.location.get("url", "")
                     if message.type == "error" and not expected(message.text, address):
                         errors.append(message.text)
 
