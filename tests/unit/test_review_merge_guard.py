@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import review_records
+from agent6 import paths, review_records
 from agent6.app import finalize, merge, reporter
 from agent6.app.review import actions as review_actions
 from agent6.config import Config
@@ -90,7 +90,9 @@ def run(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> layout.Sessi
     return saved
 
 
-def _merge(cwd: pathlib.Path, saved: layout.SessionLayout, **kwargs: Any) -> merge.MergeOutcome:
+def _merge(
+    cwd: pathlib.Path, saved: layout.SessionLayout, *, cfg: Config | None = None
+) -> merge.MergeOutcome:
     record = manifest.read_manifest(saved.session_dir)
     return merge.execute_merge(
         cwd,
@@ -101,9 +103,8 @@ def _merge(cwd: pathlib.Path, saved: layout.SessionLayout, **kwargs: Any) -> mer
         base_sha=record.base_sha,
         method="ff_only",
         message=None,
-        cfg=Config(),
+        cfg=cfg if cfg is not None else Config(),
         identity=git_read.CommitIdentity(),
-        **kwargs,
     )
 
 
@@ -135,6 +136,7 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
     base = _git(tmp_path, "rev-parse", "main")
     view = review_actions.read_review(run.session_dir)
     assert all(f.line_origin.kind == "pre_existing" for f in view.findings)
+    (paths.state_dir(tmp_path) / "config.toml").write_text('[review]\nblock_on = "any"\n')
     if surface == "cli":
         ok = main(["sessions", "merge", run.session_id]) == 0
         captured = capsys.readouterr()
@@ -144,7 +146,10 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
         ok = end.code == 0
     elif surface == "auto":
         finalize.finalize_auto_merge(
-            tmp_path, layout=run, cfg=Config(), reporter=reporter.STDIO_REPORTER
+            tmp_path,
+            layout=run,
+            cfg=Config.model_validate({"review": {"block_on": "any"}}),
+            reporter=reporter.STDIO_REPORTER,
         )
         ok = _git(tmp_path, "rev-parse", "main") != base
         text = capsys.readouterr().err
@@ -166,6 +171,17 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
     assert "f1" in text and "f2" in text and "resolve" in text.lower()
     assert _git(tmp_path, "rev-parse", "main") == base
     assert manifest.read_manifest(run.session_dir).merged is None
+
+
+def test_advisory_merge_reports_open_blocks_and_merges(
+    tmp_path: pathlib.Path, run: layout.SessionLayout, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tip = _git(tmp_path, "rev-parse", "agent6/review-run")
+    assert main(["sessions", "merge", run.session_id, "--method", "ff_only"]) == 0
+    assert _git(tmp_path, "rev-parse", "main") == tip
+    output = capsys.readouterr()
+    assert "2 open block findings" in output.out + output.err
+    assert review_actions.read_review(run.session_dir).merge_guard.open_block_ids == ("f1", "f2")
 
 
 def test_unreadable_structured_evidence_refuses_with_its_reason(
@@ -223,7 +239,7 @@ def test_merge_rechecks_dispositions_after_taking_the_writer_lock(
         return acquire(session_dir)
 
     monkeypatch.setattr(lock, "acquire_single_writer", reopen_then_acquire)
-    result = _merge(tmp_path, run)
+    result = _merge(tmp_path, run, cfg=Config.model_validate({"review": {"block_on": "all"}}))
     assert result.status == "error" and "f1" in result.error
 
 

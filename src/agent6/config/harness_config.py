@@ -677,7 +677,7 @@ class ReviewConfig(pydantic.BaseModel):
     block_on: Literal["none", "any", "model_quorum", "all"] = pydantic.Field(
         json_schema_extra={
             "choice_meanings": {
-                "none": "Treat blocking verdicts as guidance",
+                "none": "Keep block findings advisory at finish and merge",
                 "any": "One blocking reviewer rejects finish",
                 "model_quorum": "Require configured number of distinct blocking model routes",
                 "all": "Require every reviewer to block",
@@ -685,9 +685,9 @@ class ReviewConfig(pydantic.BaseModel):
         },
         default="none",
         description=(
-            "Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` "
-            "distinct provider/model routes; abstentions do not block; gating applies only to "
-            "finish-time review; panels at other moments are advisory."
+            "Rule for new grounded block findings at finish. Quorum counts "
+            "`review.min_blocking_models` distinct provider/model routes. "
+            "Open blocks prevent a merge unless this is `none`."
         ),
     )
     min_blocking_models: int = pydantic.Field(

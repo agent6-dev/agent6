@@ -456,7 +456,7 @@ def execute_merge(
         identity: The committer.
         budget: The run's tracker, when the merge runs inside one.
         events: The run's event sink, when the merge runs inside one.
-        warn: Where a degraded squash message and a renamed `pack.json` are reported.
+        warn: Where advisory findings, a degraded squash message and a renamed pack are reported.
         worker_lock_fd: The executing worker's held lock, else this call takes the lock.
 
     Returns:
@@ -486,7 +486,7 @@ def execute_merge(
                 else "open block findings: "
                 + ", ".join(guard.open_block_ids)
                 + "; resolve each with a reason before merging"
-                if guard.open_block_ids
+                if guard.open_block_ids and cfg.review.block_on != "none"
                 else NO_BASE_SHA
                 if not base_sha
                 else f"target branch {target!r} does not exist"
@@ -498,6 +498,9 @@ def execute_merge(
             if refusal:
                 return MergeOutcome("error", error=refusal)
             assert tip is not None
+            if count := len(guard.open_block_ids):
+                noun = "finding" if count == 1 else "findings"
+                warn(f'{count} open block {noun}; review.block_on = "none" permits the merge.')
             if (
                 method == "ff_only"
                 and not git_read.is_ancestor(cwd, target, tip)

@@ -93,7 +93,7 @@ function drawDiffFindings(host, entries, file, mode) {
 function reviewMergeReason(review) {
   const guard = review?.merge_guard;
   if (guard?.read_failure) return 'Cannot read review evidence: ' + guard.read_failure;
-  return guard?.open_block_ids?.length ? 'Open block findings: ' + guard.open_block_ids.join(', ') + '. Resolve with a reason before merging.' : '';
+  return '';
 }
 function reviewEntries(review, session_id, panel_id = '') {
   const entries = [];
@@ -267,7 +267,9 @@ function makeFindings(cards) {
     counts.textContent = ['block', 'warn', 'nit'].map(s => (review.open_counts?.[s] || 0) + ' ' + s).join(' · ');
     summary.textContent = review.summary || 'unknown';
     const guard = reviewMergeReason(review);
-    merge.textContent = guard || 'no open block findings'; merge.classList.toggle('err', !!guard);
+    const ids = review.merge_guard?.open_block_ids || [];
+    merge.textContent = guard || (ids.length ? 'Open block findings: ' + ids.join(', ') + '. Merge requires review.block_on = "none" or a resolution for each.' : 'no open block findings');
+    merge.classList.toggle('err', !!guard);
     legacy.textContent = review.legacy_notice || ''; legacy.hidden = !review.legacy_notice;
     all.textContent = cards._reviewDead ? 'Resume to fix all open' : 'Fix all open';
     all.hidden = !(review.findings || []).some(f => f.status === 'open');
