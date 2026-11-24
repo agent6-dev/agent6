@@ -95,7 +95,7 @@ or removed.
 - A label is resumable: a cell (task, condition, rep) with every session recorded under `results/<label>.jsonl` is skipped; a partial cell reruns whole and is named.
 - `--session-memory-max 8G` runs each session in its own `systemd-run --scope` with that MemoryMax, so an OOM kills the session, never the driver.
 
-## Running
+## Historical run commands
 
 ```bash
 # compaction A/B on the retention task
@@ -113,13 +113,17 @@ python3 run.py --model qwen/qwen3-coder-30b-a3b-instruct \
 python3 run.py --model claude-sonnet-5 --provider anthropic \
     --tasks orchard --conditions baseline,fresh_state \
     --reps 3 --parallel 2 --label mem4-sonnet
-
-python3 stats.py results/wave1.jsonl              # cells + deltas
-python3 stats.py results/wave1.jsonl --components # per-rule retention curve
 ```
 
-Providers + secrets come from the layered global `~/.config/agent6` config;
-the harness pins the three model roles and wires `["bash", "verify.sh"]` as
-the verify command. Anthropic models (unpriced) get token caps instead of
-`--max-usd`. Results are append-only JSONL; each record carries every knob,
-so any cell is reproducible from (model, condition, task, session).
+Providers and secrets come from the layered global `~/.config/agent6` config.
+The harness sets `model = "provider/model"` for the default, worker, planner and reviewer.
+Its verify command is `["bash", "verify.sh"]`.
+Anthropic models (unpriced) get token caps instead of `--max-usd`.
+
+Results are append-only JSONL and do not record the agent6 version.
+Use `stats.py` to inspect the saved results:
+
+```bash
+python3 stats.py results/wave1-qwen.jsonl              # cells + deltas
+python3 stats.py results/wave1-qwen.jsonl --components # per-rule retention curve
+```

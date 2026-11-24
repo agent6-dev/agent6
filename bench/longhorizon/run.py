@@ -298,11 +298,11 @@ CONDITIONS: dict[str, Condition] = {
 
 
 def _provider_block(provider: str, model: str) -> str:
-    """Pin all three roles to the test model and wire the verify command.
-    Providers + secrets come from the layered global ~/.config/agent6."""
+    """Pin the test model and wire the verify command."""
+    route = json.dumps(f"{provider}/{model}")
     roles = "\n".join(
-        f"[models.{role}]\nprovider = {json.dumps(provider)}\nmodel = {json.dumps(model)}\n"
-        for role in ("worker", "planner", "reviewer")
+        f"[models.{role}]\nmodel = {route}\n"
+        for role in ("default", "worker", "planner", "reviewer")
     )
     return (
         # `bash verify.sh` (not ./verify.sh): the jail PATH is /usr/bin:/bin and
