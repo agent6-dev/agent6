@@ -2,6 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import pathlib
@@ -19,6 +20,7 @@ from agent6.app import (
     child_launch,
     children,
     parallel_results,
+    role_providers,
     stop,
     worktrees,
 )
@@ -31,6 +33,8 @@ from agent6.harness import (
     parallel_recovery,
     run_chain,
 )
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
 from agent6.sessions import (
     budget_events,
     child_dispatch,
@@ -47,7 +51,7 @@ from agent6.tools import dispatch, tool_errors
 from agent6.ui.cli import parallel
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing, receipt
-from tests import child_env, launch_env
+from tests import child_env, launch_env, review_traces
 
 
 @pytest.mark.parametrize("panel_cost", [None, 2.0])
@@ -106,7 +110,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             at=child_env.git(clone, "rev-parse", "HEAD"),
         )
         assert result.dispatched and len(result.children) == 1, result.message
-        assert result.children[0].status == "no_changes"
+        assert result.children[0] is not None and result.children[0].status == "no_changes"
         record = child_dispatch.read_records(worker_dir)[0]
         assert record.source == "panel" and record.merge_policy == "record_only"
         assert record.version == child_dispatch.RECORD_VERSION
@@ -159,46 +163,72 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         )
 
 
-def test_a_later_launch_failure_keeps_the_reviewers_that_returned(short_repo: pathlib.Path) -> None:
-    """A panel returns its first reviewer even when its next batch cannot start."""
+@pytest.mark.parametrize("failure", ["launch", "watch"])
+def test_a_partial_panel_keeps_the_reviewers_that_returned(
+    short_repo: pathlib.Path, failure: str
+) -> None:
+    """A sibling's refusal or failed watch cannot erase a grounded block or its charge."""
     repo = short_repo / "repo"
     child_env.init_repo(repo)
     parent = child_env.create_record(repo, "parent")
-    with launch_env.scripted_provider(("reviewed",), cost_usd=0.1) as (url, _calls):
+    (repo / "README.md").write_text("base\nchanged\n")
+    block = review_traces.BLOCK.replace('"correctness"', '"security"')
+    with launch_env.scripted_provider((block,), cost_usd=0.1) as (url, _calls):
+        cfg = child_env.config(url)
         meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
-        executor = child_env.dispatcher(repo, parent, child_env.config(url), meter)
+        executor = child_env.dispatcher(repo, parent, cfg, meter)
         spawn = executor.child_spawner
         assert spawn is not None
 
-        def first_batch_only(
+        def partial_batch(
             children: list[child_records.ChildTask], group: str, *, at: str | None = None
         ) -> list[child_records.StartedChild]:
             if group.endswith("-b2"):
                 raise child_repo.ChildRepoError("second batch unavailable")
-            return spawn(children, group, at=at)
+            started = spawn(children, group, at=at)
+            if failure == "watch":
+                child_env.results_of(started)
+                lost: concurrent.futures.Future[child_records.ChildResult] = (
+                    concurrent.futures.Future()
+                )
+                lost.set_exception(OSError("first watch failed"))
+                started[0] = child_records.StartedChild(started[0].session_id, lost)
+            return started
 
-        executor.child_spawner = first_batch_only
-        task = child_records.ChildTask(
-            "review",
-            "reviewer",
-            contract=kinds.ConversationContract(system="s", opening="o", max_turns=1),
-        )
-        result = parallel_panel.dispatch_panel(
-            executor,
-            [task, task],
+        executor.child_spawner = partial_batch
+        target = executor.chain.review_target()
+        assert target is not None
+        (reviewer,) = role_providers.resolve_reviewers(cfg)
+        result = review_gate.run_panel(
+            [reviewer, reviewer],
+            review_panel.ReviewContext(task="review", diff=child_env.git(repo, "diff")),
+            executor=executor,
+            target=executor.chain.retain_review_target(target, "parent"),
+            block_on="any",
+            min_blocking_models=2,
             panel_id="example",
-            at=child_env.git(repo, "rev-parse", "HEAD"),
-            concurrency=1,
+            max_turns=1,
+            tools=("read_file",),
+            concurrency=1 if failure == "launch" else 2,
         )
-    assert "second batch unavailable" in result.message
     rows = [json.loads(line) for line in (parent / "logs.jsonl").read_text().splitlines()]
     (returned,) = [row for row in rows if row["type"] == "parallel.returned"]
-    first = "parent-rexample-b1-l1"
-    assert [(c["session_id"], c["status"]) for c in returned["children"]] == [(first, "no_changes")]
+    sid = "parent-rexample-b1-l1" if failure == "launch" else "parent-rexample-l2"
+    assert [(c["session_id"], c["status"]) for c in returned["children"]] == [(sid, "no_changes")]
     (record,) = child_dispatch.read_records(parent)
-    done, missing = record.children
+    done, missing = record.children if failure == "launch" else record.children[::-1]
     assert record.state == "complete" and done.settled and not missing.settled
     assert done.merge is not None and done.merge.status == "no_changes" and missing.merge is None
+    assert done.usage is not None and done.usage.usd == 0.1
+    assert meter.snapshot().settled_children == {sid} and meter.estimate_usd()[0] == 0.1
+    assert result.blocked and result.n_abstain == 1
+    block_vote, abstention = (
+        result.per_reviewer if failure == "launch" else result.per_reviewer[::-1]
+    )
+    assert (block_vote.session_id, block_vote.verdict) == (sid, "block")
+    assert str(block_vote.findings[0].location) == "README.md:2"
+    diagnostic = "second batch unavailable" if failure == "launch" else "first watch failed"
+    assert abstention.verdict == "abstain" and diagnostic in (abstention.error or "")
 
 
 class _Crash(BaseException):

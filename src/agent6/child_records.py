@@ -396,13 +396,13 @@ class DispatchResult:
     Attributes:
         group: The group id the children were stamped with; "" when nothing was dispatched.
         dispatched: Whether children ran; False for a refusal before any clone.
-        children: Each child's merge, in dispatch order.
+        children: Each child's outcome in roster order, or None for a reviewer without a result.
         message: The one notice summarizing the outcome, or the refusal.
         base: The commit the children were cut from; "" when none ran.
     """
 
     group: str
     dispatched: bool
-    children: tuple[ChildMerge, ...]
+    children: tuple[ChildMerge | None, ...]
     message: str
     base: str = ""

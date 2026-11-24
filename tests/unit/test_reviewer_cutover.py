@@ -92,7 +92,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     assert result.dispatched and len(result.children) == 5
     assert observed == [(2, 10), (2, 8), (1, 6)]
     assert meter.estimate_usd()[0] == 5 and meter.snapshot().usd_running_children == 0
-    assert [j.detail for j in result.children] == ["scripted failure"] * 5
+    assert [j.detail for j in result.children if j is not None] == ["scripted failure"] * 5
     # A later batch waits for the earlier ones: its window starts where theirs ends.
     window = parallel_panel.PANEL_BATCH_DEADLINE_S
     assert deadlines == [1000 + window] * 2 + [1000 + 2 * window] * 2 + [1000 + 3 * window]

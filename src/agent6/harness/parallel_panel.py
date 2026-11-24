@@ -12,7 +12,7 @@ import dataclasses
 from typing import TYPE_CHECKING
 
 from agent6 import child_records
-from agent6.harness import child_repo
+from agent6.harness import child_repo, parallel_merge
 from agent6.sessions import child_dispatch
 
 if TYPE_CHECKING:
@@ -143,9 +143,7 @@ def execute(
     """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
     assert dispatcher.child_spawner is not None
     record = dispatcher.announce(record, children)
-    started: list[child_records.StartedChild] = []
-    submitted: set[str] = set()
-    results: list[child_records.ChildResult] = []
+    submitted: list[child_records.StartedChild] = []
     try:
         for offset in range(0, len(children), batch_width):
             # Each batch starts under what the run has left then; its children share it.
@@ -158,22 +156,31 @@ def execute(
                 group if len(children) <= batch_width else f"{group}-b{offset // batch_width + 1}"
             )
             started = dispatcher.child_spawner(batch, batch_group, at=record.base or None)
-            submitted.update(child.session_id for child in started)
-            results.extend(child.result.result() for child in started)
-        if len(results) != len(children):
+            submitted.extend(started)
+            for child in started:
+                child.result.result()
+        if len(submitted) != len(children):
             raise child_repo.ChildRepoError(
-                f"group spawner returned {len(results)} result(s) for {len(children)} child(ren)"
+                f"group spawner returned {len(submitted)} result(s) for {len(children)} child(ren)"
             )
     except Exception as exc:
         # A submitted reviewer without a result stays unsettled.
-        for child in started:
+        for child in submitted:
             if not child.result.done():
                 child.stop()
-        failed = dispatcher.failed_launch(record, exc, submitted=submitted, reviewers=results)
-        return child_records.DispatchResult(
-            failed.identity, True, (), failed.message, base=failed.base
+        results = [
+            c.result.result()
+            for c in submitted
+            if c.result.done() and not c.result.cancelled() and c.result.exception() is None
+        ]
+        failed = dispatcher.failed_launch(
+            record, exc, submitted={c.session_id for c in submitted}, reviewers=results
         )
-    return dispatcher.complete(record, results)
+        outcomes = tuple(parallel_merge.merge_of(c) if c.merge else None for c in failed.children)
+        return child_records.DispatchResult(
+            failed.identity, True, outcomes, failed.message, base=failed.base
+        )
+    return dispatcher.complete(record, [c.result.result() for c in submitted])
 
 
 def refusal(

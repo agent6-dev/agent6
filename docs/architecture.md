@@ -813,6 +813,8 @@ A conversation contract grants neither authority, so the structure ends at the r
 It shares the work dispatch's executor, reservation, import, settlement and recovery paths; `parallel_merge` owns merge and DAG projections.
 `review.gate.run_panel` prepares ordered requests using provider-free reviewers resolved by `app.role_providers.resolve_reviewers`.
 The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, harness.parallel.max_children)` reviewers; no reviewer is dropped.
+If a launch or watch fails, the panel keeps each returned reviewer's outcome in roster order.
+A reviewer without a result abstains with the failure diagnostic.
 Every reviewer is one contract: the panel prompt, `review.max_turns` turns and the tools the parent's own model is offered at that moment (`ReviewGate.tools`), cut to the `reviewer` mode's surface (`kinds.SESSION_KINDS`, `tools.schema.mode_tools`): every base tool but the two that edit, and `use_skill`; never the task list, `parallel`, `ask_user` or an MCP tool.
 A reviewer's reply has the output limit every session's has, and its conversation compacts as a run's does; a restart keeps the opening.
 A reviewer runs on the common bounded Harness path, including media recovery and final-turn verdict handling.
