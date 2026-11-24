@@ -66,6 +66,30 @@ def test_each_checkbox_save_requires_confirmation_and_the_displayed_digest(
     assert errors == ([expected] if page.context.browser.browser_type.name == "chromium" else [])
 
 
+def test_task_checkboxes_replace_only_their_own_bullets(
+    served: tuple[pathlib.Path, int], open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """A task has no second marker, even in a loose list or under an ordinary bullet."""
+    from playwright import sync_api
+
+    repo, port = served
+    (repo / "plan.md").write_text(
+        "- Parent\n  - [x] Nested task\n\n1. [ ] Numbered task\n\n"
+        "- [ ] Loose task\n\n  Another paragraph.\n"
+    )
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/WORKTREE/plan.md")
+    frame = page.frame_locator(".files-preview iframe")
+    for task in ("Nested task", "Loose task"):
+        sync_api.expect(frame.get_by_role("checkbox", name=task)).to_be_visible()
+        sync_api.expect(frame.locator("li", has_text=task).last).to_have_css(
+            "list-style-type", "none"
+        )
+    sync_api.expect(frame.locator("li", has_text="Parent")).to_have_css("list-style-type", "disc")
+    sync_api.expect(frame.locator("ol > li")).to_have_css("list-style-type", "decimal")
+    assert not errors
+
+
 def test_only_the_open_working_markdown_can_request_its_own_save(
     served: tuple[pathlib.Path, int], open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:

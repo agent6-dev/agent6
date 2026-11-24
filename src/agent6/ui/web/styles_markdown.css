@@ -16,6 +16,7 @@ body { height: auto; padding: 1rem; }
 .md-view p, .md-view ul, .md-view ol, .md-view blockquote, .md-view pre, .md-view table { margin: 0 0 1em; }
 .md-view ul, .md-view ol { padding-left: 1.8em; }
 .md-view li + li { margin-top: .25em; }
+.md-view ul > li:has(> input[data-task-line], > p:first-child > input[data-task-line]) { list-style-type: none; }
 .md-view li > ul, .md-view li > ol { margin-bottom: 0; }
 .md-view a { text-decoration: underline; }
 .md-view blockquote { margin-left: 0; padding: .3em 1em; border-left: 3px solid var(--border); color: var(--muted); }
