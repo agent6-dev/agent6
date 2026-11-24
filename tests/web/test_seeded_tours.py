@@ -180,7 +180,10 @@ def test_recorded_tour_returns_to_the_hub(
     page.set_viewport_size(web_demo.VIEWPORTS[mode])
     page.add_init_script(web_demo.OVERLAY_INIT_SCRIPT)
     page.set_default_timeout(5000)
-    # Skip the pauses for the viewer, not the waits for the page.
-    monkeypatch.setattr(page, "wait_for_timeout", lambda _ms: None)
+
+    def skip_pause(_ms: float) -> None:
+        """Skip the pauses for the viewer, not the waits for the page."""
+
+    monkeypatch.setattr(page, "wait_for_timeout", skip_pause)
     web_demo.drive(page, page.url, mode, time.monotonic())
     expect(page.locator(".item")).to_have_count(7)
