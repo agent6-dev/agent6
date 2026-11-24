@@ -116,7 +116,8 @@ def overlay(
 ) -> str:
     provider, _ = model.split("/", 1)
     return (
-        f"[providers.{json.dumps(provider)}]\nidle_compact_s = {COLD_SECONDS if cold else -1}\n"
+        ("" if scripted_url else '[sandbox]\nisolation = "full"\n')
+        + f"[providers.{json.dumps(provider)}]\nidle_compact_s = {COLD_SECONDS if cold else -1}\n"
         + (
             f'backend = "anthropic"\nbase_url = "{scripted_url}"\nauth_style = "none"\nserver_compaction = false\n'
             if scripted_url

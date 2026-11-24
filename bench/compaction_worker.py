@@ -35,10 +35,14 @@ def full_jail() -> None:
         raise SystemExit(f"live benchmark requires full isolation; default resolved to {level}")
 
 
-def grade(repo: str) -> int:
+def grade(repo: str, route: str = "live") -> int:
     cfg = config_model.Config.model_validate_json(sys.stdin.buffer.read())
     if cfg.sandbox.run_commands == "deny":
         raise SystemExit("sandbox.run_commands denies the small scorer")
+    if route != "scripted":
+        cfg = cfg.model_copy(
+            update={"sandbox": cfg.sandbox.model_copy(update={"isolation": "full"})}
+        )
     scorer = pathlib.Path(__file__).with_name("six_modules") / "grade.py"
     return exec_cmds.exec_new(cfg, pathlib.Path(repo), ("python3", "-I", "-c", scorer.read_text()))
 

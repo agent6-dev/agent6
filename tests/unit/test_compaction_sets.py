@@ -1,14 +1,43 @@
 from __future__ import annotations
 
 import collections
+import io
 import json
 import pathlib
 import subprocess
 import sys
+import tomllib
 
 import pytest
+from bench import compaction_arms, compaction_slot, compaction_small, compaction_worker
 from bench import compaction_bench as bench
-from bench import compaction_slot, compaction_small
+
+from agent6.config import model as config_model
+from agent6.ui.cli import exec_cmds
+
+
+def test_live_worker_requires_full_in_its_own_config() -> None:
+    arm = compaction_arms.KEEP["baseline"]
+    config = compaction_slot.overlay(
+        arm, bench.SOL, cold=False, small=True, gate=compaction_small.GATE
+    )
+    assert tomllib.loads(config).get("sandbox", {}).get("isolation", "auto") == "full"
+
+
+def test_live_scorer_pins_full_at_command_launch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The final scorer launcher must refuse rather than fall back after a live worker."""
+    policy = config_model.Config()
+    assert policy.sandbox.isolation == "auto"
+    monkeypatch.setattr(
+        sys, "stdin", io.TextIOWrapper(io.BytesIO(policy.model_dump_json().encode()))
+    )
+
+    def inspect(cfg: config_model.Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
+        assert cfg.sandbox.isolation == "full"
+        return 0
+
+    monkeypatch.setattr(exec_cmds, "exec_new", inspect)
+    assert compaction_worker.grade("dummy") == 0
 
 
 def test_scripted_opening_needs_no_command_grant(

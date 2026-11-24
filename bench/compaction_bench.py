@@ -46,7 +46,9 @@ def small_case(root: pathlib.Path, *, scripted: bool = False) -> Case:
                 compaction_slot.resume(opening, session, row, gate=compaction_small.GATE)
             gate = row["passed"]
             row["passed"] = None
-            row["groups"] = compaction_small.grade(opening.slot / "repo", policy, trial)
+            row["groups"] = compaction_small.grade(
+                opening.slot / "repo", policy, trial, scripted=scripted
+            )
             row["passed"] = gate if row["groups"] == 6 else False
 
     return Case(opening, attempt)

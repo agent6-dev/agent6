@@ -123,7 +123,9 @@ def prepare(dest: pathlib.Path) -> compaction_slot.Opening:
     return compaction_slot.seal(dest, turns=3, recall=LABEL)
 
 
-def grade(repo: pathlib.Path, policy: config_model.Config, trial: pathlib.Path) -> int:
+def grade(
+    repo: pathlib.Path, policy: config_model.Config, trial: pathlib.Path, *, scripted: bool
+) -> int:
     """Run the external function and error checks under the trial's sandbox policy."""
     if policy.sandbox.run_commands == "ask" and (
         not sys.stdin.isatty()
@@ -131,7 +133,7 @@ def grade(repo: pathlib.Path, policy: config_model.Config, trial: pathlib.Path) 
     ):
         raise ValueError("the operator did not approve the six-module scorer")
     report = grading.bounded_report(
-        compaction_worker.command("grade", str(repo.resolve())),
+        compaction_worker.command("grade", str(repo.resolve()), "scripted" if scripted else "live"),
         FIXTURE.parent,
         compaction_slot.environment(repo.parent),
         policy.model_dump_json(by_alias=True).encode(),
