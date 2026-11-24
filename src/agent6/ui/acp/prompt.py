@@ -70,15 +70,23 @@ class Turn:
 
 
 class Reply(Protocol):
-    """Send the reply to one request: its result, or its error."""
+    """Send the reply to one request."""
 
-    def __call__(  # noqa: D102  # the protocol's docstring documents the call
+    def __call__(
         self,
         req_id: object,
         *,
         result: dict[str, Any] | None = None,
         error: rpc.RpcError | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Send the reply to one request: its result, or its error.
+
+        Args:
+            req_id: The request the reply answers.
+            result: The result of a request that succeeded.
+            error: The error of one that did not.
+        """
+        ...
 
 
 @dataclasses.dataclass
