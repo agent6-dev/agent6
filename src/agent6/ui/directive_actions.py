@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Act on a composer line that is not a steer.
+"""Act on a composer line: a directive beside the run, or the steer it is.
 
 `/btw`, `/task`, `/standing`, `/metric`, `/retire` and `/compact` act beside a live run and
 never reach the model as a message; `/now` is a steer that interrupts the call
 in flight. Every entry point that takes a typed line routes it through here, so
 the same words do the same thing wherever they are typed. `/pin` and
-`/parallel` and `/review` are steers the loop parses itself.
+`/parallel` and `/review` are steers the loop parses itself. An ordinary steer has its
+`@path` files inlined here.
 """
 
 from __future__ import annotations
@@ -15,10 +16,11 @@ import dataclasses
 import pathlib
 from collections.abc import Callable
 
+from agent6 import config
 from agent6 import directive as agent6_directive
 from agent6.graph import order, storage
 from agent6.sessions import ipc, layout
-from agent6.ui import btw
+from agent6.ui import btw, task_refs
 from agent6.viewmodel import format
 from agent6.viewmodel.session import log as session_log
 
@@ -173,6 +175,7 @@ def submit_composer_line(
     session_dir: pathlib.Path,
     text: str,
     *,
+    repo: pathlib.Path,
     now: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
@@ -180,9 +183,12 @@ def submit_composer_line(
 
     Args:
         session_dir: The live session.
-        text: The line.
+        text: The line as the operator typed it; text a model wrote is never passed, since
+            an `@path` in it would read a file the operator did not name.
+        repo: The repository the front-end serves.
         now: Force the urgency `/now` spells, for `agent6 steer --now`.
-        config_paths: The front-end's `--config`, which a `/btw` asks on.
+        config_paths: The front-end's `--config`, which a `/btw` asks on and which names
+            the hidden paths an `@path` cannot read.
 
     Returns:
         Whether it acted, and what to say.
@@ -195,6 +201,12 @@ def submit_composer_line(
         return False, "/now needs the instruction: /now <text>"
     now = now or urgent is not None
     sent = urgent or text
+    if "@" in sent and not sent.lstrip().startswith("/"):
+        try:
+            root, hide = task_refs.session_workspace(repo, config_paths, session_dir)
+        except config.ConfigError as exc:
+            return False, f"not sent: `@path` needs sandbox.hide_paths and the config failed: {exc}"
+        sent = task_refs.expand_task_file_refs(sent, root, hide)
     ahead = int(ipc.steer_request_pending(session_dir)) + len(ipc.queued_steers(session_dir))
     if not ipc.submit_steer(session_dir, sent, now=now):
         return False, "could not write the steer request"

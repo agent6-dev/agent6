@@ -176,7 +176,7 @@ def test_now_acts_the_same_wherever_it_is_typed(
     for text, flag in (("/now wrap up", False), ("wrap up", True)):
         d = _live_run(tmp_path / text.replace("/", "").replace(" ", "-"))
 
-        did, said = directive_actions.submit_composer_line(d, text, now=flag)
+        did, said = directive_actions.submit_composer_line(d, text, repo=tmp_path, now=flag)
 
         assert did and "interrupting the call in flight" in said
         assert ipc.steer_interrupt_pending(d)
@@ -186,7 +186,7 @@ def test_now_acts_the_same_wherever_it_is_typed(
 def test_a_bare_now_refuses_everywhere(tmp_path: pathlib.Path) -> None:
     from agent6.ui import directive_actions
 
-    did, said = directive_actions.submit_composer_line(tmp_path, "/now")
+    did, said = directive_actions.submit_composer_line(tmp_path, "/now", repo=tmp_path)
 
     assert not did and "/now needs the instruction" in said
 
@@ -197,7 +197,9 @@ def test_a_directive_typed_mid_line_is_named_in_the_reply(tmp_path: pathlib.Path
 
     d = _live_run(tmp_path)
 
-    did, said = directive_actions.submit_composer_line(d, "carry on, then /task add a --json flag")
+    did, said = directive_actions.submit_composer_line(
+        d, "carry on, then /task add a --json flag", repo=tmp_path
+    )
 
     assert did and "`/task` mid-line is text" in said
     assert ipc.take_steer_answer(d) == "carry on, then /task add a --json flag"
@@ -209,7 +211,7 @@ def test_a_directive_behind_leading_space_is_not_called_text(tmp_path: pathlib.P
 
     d = _live_run(tmp_path)
 
-    did, said = directive_actions.submit_composer_line(d, "  /now hurry")
+    did, said = directive_actions.submit_composer_line(d, "  /now hurry", repo=tmp_path)
 
     assert did and "mid-line" not in said
     assert ipc.steer_interrupt_pending(d)
@@ -220,13 +222,13 @@ def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: pathl
     from agent6.ui import directive_actions
 
     d = _live_run(tmp_path / "plain")
-    assert directive_actions.submit_composer_line(d, "focus on the parser") == (
+    assert directive_actions.submit_composer_line(d, "focus on the parser", repo=tmp_path) == (
         True,
         "steer queued, not yet delivered",
     )
     # `/parallel` separates tasks by design, so a later one is meant; it waits in the inbox.
     assert (
-        directive_actions.submit_composer_line(d, "/parallel a /parallel b")[1]
+        directive_actions.submit_composer_line(d, "/parallel a /parallel b", repo=tmp_path)[1]
         == "steer queued behind 1 other; not yet delivered"
     )
 

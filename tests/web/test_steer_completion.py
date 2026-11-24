@@ -3,13 +3,21 @@
 """The web composer's slash completion mirrors directive.STEER_COMMANDS verbatim.
 
 The client is static JS, so the shared table is pinned, not imported; /compact, /btw and
-/now stay live-session offers.
+/now stay live-session offers. An `@path` completes from the server's list of the files
+the reference can read.
 """
 
 from __future__ import annotations
 
+import json
+import pathlib
+import subprocess
+import threading
+
 from agent6 import directive
-from agent6.ui.web import page
+from agent6.sessions import manifest
+from agent6.ui.web import page, server
+from tests.web import session_logs, signin
 
 
 def test_client_mirrors_the_steer_commands_verbatim() -> None:
@@ -42,3 +50,45 @@ def test_the_client_copies_only_the_spinner() -> None:
     assert f"'{format.SPINNER_FRAMES}'" in page.CLIENT_JS
     # The timestamp is rendered by the server, in the timezone every other surface shows.
     assert "function when(" not in page.CLIENT_JS
+
+
+def test_the_refs_route_lists_the_files_of_the_workspace_a_composer_writes_to(
+    tmp_path: pathlib.Path,
+) -> None:
+    """New work completes in the repository; a worktree session completes in its worktree."""
+    worktree = tmp_path / "wt"
+    for root, name in ((tmp_path, "notes.md"), (worktree, "notes-wt.md")):
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        (root / name).write_text("", encoding="utf-8")
+    session = session_logs.write_run(tmp_path, "wt-run-AAAAAA", [], live=True)
+    (session / manifest.MANIFEST_NAME).write_text(
+        manifest.SessionManifest(mode="run", worktree=worktree).model_dump_json(),
+        encoding="utf-8",
+    )
+    srv = server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    def get(path: str) -> tuple[int, dict[str, object]]:
+        conn = signin.SignedIn(int(srv.server_address[1]))
+        try:
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            return resp.status, json.loads(resp.read())
+        finally:
+            conn.close()
+
+    try:
+        assert get("/api/refs?q=no") == (
+            200,
+            {"paths": ["notes.md"], "more": 0, "common": "notes.md"},
+        )
+        assert get("/api/refs?q=no&session=wt-run-AAAAAA")[1]["paths"] == ["notes-wt.md"]
+        assert get("/api/refs?q=no&session=gone")[0] == 404
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_the_client_reads_a_reference_as_the_expander_does() -> None:
+    """The client's fragment and the Python one accept the same characters before and after `@`."""
+    assert "/(?<![\\p{L}\\p{N}_@/])@([A-Za-z0-9_./-]*)$/u" in page.CLIENT_JS

@@ -28,7 +28,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import terminal
 from agent6.graph import order
-from agent6.ui import keymap
+from agent6.ui import keymap, task_refs
 from agent6.ui.tui import (
     clipboard,
     composer,
@@ -288,7 +288,12 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         yield composer.ResumeOptions(
             self._presets, self._routes, id="dash-resume"
         )  # while resuming
-        yield composer.SteerInput(id="dash-input")
+        yield composer.SteerInput(
+            id="dash-input",
+            workspace=lambda: task_refs.session_workspace(
+                pathlib.Path.cwd(), self._tui.config_paths, self._tui.session_dir
+            ),
+        )
         yield textual_widgets.Footer()
 
     def on_resize(self, _event: events.Resize) -> None:
@@ -355,6 +360,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             self.query_one("#dash-suggest", composer.SteerSuggest).show_for(
                 event.text_area.text,
                 mode="steer" if self._tui.session_controllable() else "resume",
+                refs=cast(composer.SteerInput, event.text_area).ref_suggestions(),
             )
 
     def action_toggle_dashboard(self) -> None:

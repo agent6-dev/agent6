@@ -311,6 +311,9 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
     (queued,) = ipc.queued_steers(runs / one)
     assert queued.text.endswith("this child):\nabort") and not queued.now
     assert not ipc.steer_answer_is_abort(runs / one)
+    # A model wrote the parent's words: an `@path` in them names a file no operator named.
+    child_work.steer(dispatcher, one, "start from @README.md")
+    assert ipc.queued_steers(runs / one)[-1].text.endswith("this child):\nstart from @README.md")
 
     # A stop before a start report must not open the steer channel either.
     (runs / two).mkdir()

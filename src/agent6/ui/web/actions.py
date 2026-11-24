@@ -192,7 +192,9 @@ def steer(
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    return directive_actions.submit_composer_line(session_dir, text, config_paths=config_paths)
+    return directive_actions.submit_composer_line(
+        session_dir, text, repo=cwd, config_paths=config_paths
+    )
 
 
 def fork_run(

@@ -85,6 +85,7 @@ function makeComposer(id) {
   const offeredCommands = STEER_COMMANDS.map(([command]) => command);
   const suggest = attachCommandSuggest(ta, root, () => finished === false, offeredCommands);
   const models = attachParallelSuggest(ta, root);
+  const refs = attachRefSuggest(ta, root, () => id);
   const apply = () => {
     const closed = !!finished && !!refused;
     ta.readOnly = busy; // not disabled: the entry keeps the keyboard focus
@@ -146,7 +147,7 @@ function makeComposer(id) {
   }
   ta.onkeydown = (e) => {
     if (composing(e)) return;
-    if (suggest.onKeyDown(e) || models.onKeyDown(e)) return;
+    if (suggest.onKeyDown(e) || models.onKeyDown(e) || refs.onKeyDown(e)) return;
     if (e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       if (!busy) openHistorySearch(id, (text) => fillAsEdit(ta, text));

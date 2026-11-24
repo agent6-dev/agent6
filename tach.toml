@@ -162,6 +162,7 @@ depends_on = [
   "agent6.ui.parallel_preview",
   "agent6.ui.spawn",
   "agent6.ui.steer",
+  "agent6.ui.task_refs",
   "agent6.ui.telemetry",
   "agent6.ui.tui",
   "agent6.ui.web",
@@ -296,7 +297,7 @@ depends_on = ["agent6.credit_usage", "agent6.kinds"]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.vcs.git.read: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.choices", "agent6.pack", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.sessions.shells", "agent6.terminal", "agent6.ui.directive_actions", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.parallel_preview", "agent6.ui.spawn", "agent6.vcs.git.files", "agent6.vcs.git.history", "agent6.vcs.git.read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
+depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.choices", "agent6.pack", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.sessions.shells", "agent6.terminal", "agent6.ui.directive_actions", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.parallel_preview", "agent6.ui.spawn", "agent6.ui.task_refs", "agent6.vcs.git.files", "agent6.vcs.git.history", "agent6.vcs.git.read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
 
 [[modules]]
 path = "agent6.ui.parallel_preview"
@@ -307,13 +308,28 @@ depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent
 # takes one (the three composers and `agent6 steer`).
 path = "agent6.ui.directive_actions"
 depends_on = [
+  "agent6.config",  # an `@path` in a steer reads under the config's hidden paths
   "agent6.directive",
   "agent6.graph.order",  # the order a task listing reads in
   "agent6.graph.storage",  # `/retire` names a task from the run's own graph
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.ui.btw",
+  "agent6.ui.task_refs",
   "agent6.viewmodel",  # the short task id an operator reads and types
+]
+
+[[modules]]
+# The `@path` references in typed words: inlined for an opening and a steer, completed by
+# the web and TUI composers.
+path = "agent6.ui.task_refs"
+depends_on = [
+  "agent6.config.layer",
+  "agent6.errors",
+  "agent6.path_safety",
+  "agent6.sessions.manifest",
+  "agent6.vcs.git.files",
+  "agent6.vcs.git.read",
 ]
 
 [[modules]]
@@ -469,6 +485,7 @@ depends_on = [
   "agent6.ui.keymap",
   "agent6.ui.parallel_preview",
   "agent6.ui.spawn",
+  "agent6.ui.task_refs",
   "agent6.ui.telemetry",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
   "agent6.vcs.git.diff",

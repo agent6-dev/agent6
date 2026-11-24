@@ -9,6 +9,7 @@ machine snapshots are the same dicts `agent6 attach --json` prints.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import re
@@ -19,6 +20,7 @@ from agent6.app import confine, merge_plan, worktrees
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
+from agent6.ui import task_refs
 from agent6.ui.web import diff_highlight
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import read as git_read
@@ -592,6 +594,36 @@ def config_payload(
             else io.format_toml_value(value)
         )
     return payload
+
+
+def ref_suggestions(
+    cwd: pathlib.Path,
+    fragment: str,
+    config_paths: tuple[pathlib.Path, ...] = (),
+    *,
+    session_dir: pathlib.Path | None = None,
+) -> dict[str, Any]:
+    """Return the workspace files an `@fragment` typed in a composer completes to.
+
+    Attributes:
+        paths: The first matching files, relative to the session's workspace.
+        more: How many matches `paths` leaves out.
+        common: The longest prefix shared by every path that starts with the fragment.
+
+    Args:
+        cwd: The repository.
+        fragment: The characters typed after the `@`.
+        config_paths: The `--config` files in command-line order.
+        session_dir: The session the composer writes to; None for new work.
+
+    Returns:
+        The suggestions, as `task_refs.RefSuggestions`.
+
+    Raises:
+        ConfigError: The config does not load, so the hidden paths are unknown.
+    """
+    root, hide = task_refs.session_workspace(cwd, config_paths, session_dir)
+    return dataclasses.asdict(task_refs.suggest_refs(root, hide, fragment))
 
 
 def config_suggestions(

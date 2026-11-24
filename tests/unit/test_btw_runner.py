@@ -88,7 +88,7 @@ def test_a_composer_s_btw_asks_on_the_front_end_s_config(
 
     monkeypatch.setattr(btw, "direct_launch", launch)
     did, _said = directive_actions.submit_composer_line(
-        session_dir, "/btw why h265", config_paths=(tmp_path / "worker.toml",)
+        session_dir, "/btw why h265", repo=tmp_path, config_paths=(tmp_path / "worker.toml",)
     )
     assert did
     assert launched[0][:3] == ["--config", str(tmp_path / "worker.toml"), "ask"]

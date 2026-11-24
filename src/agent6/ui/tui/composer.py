@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
 from rich import markup
@@ -20,9 +21,9 @@ from textual import message as textual_message
 from textual import screen as textual_screen
 from textual.css import query
 
-from agent6 import directive
+from agent6 import config, directive
 from agent6.sessions import ipc
-from agent6.ui import keymap, parallel_preview
+from agent6.ui import keymap, parallel_preview, task_refs
 from agent6.ui.tui import forms, menubar, modals
 from agent6.viewmodel import ApprovalPrompt, SessionState, approval_parts, tail, transcript
 from agent6.viewmodel.session import state as viewmodel_state
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
     from agent6.ui.tui import prompts as tui_prompts
 
 ComposerMode = Literal["steer", "resume", "start", "draft"]
+# Resolves the root and hidden paths an `@path` completes against, as `task_refs.session_workspace`.
+WorkspaceSource = Callable[[], tuple[pathlib.Path, tuple[str, ...]]]
 
 
 def composer_labels(
@@ -116,8 +119,24 @@ def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
     return lcp if len(lcp) > len(text) else text
 
 
+def ref_suggestion_line(found: task_refs.RefSuggestions) -> rich_text.Text:
+    """Return the hint line for the files an `@path` under the caret completes to.
+
+    Args:
+        found: The matches.
+
+    Returns:
+        The files as typed references, and how many more match.
+    """
+    if not found.paths:
+        return rich_text.Text("no matching files", style="dim")
+    more = f"  (+{found.more} more, keep typing)" if found.more else ""
+    shown = "  ".join(f"@{path}" for path in found.paths)
+    return rich_text.Text.assemble(("files: ", "dim"), shown, (more, "dim"))
+
+
 class SteerSuggest(widgets.Static):
-    """The unsent parallel draft or the matching commands above a composer."""
+    """The unsent parallel draft, the matching commands or the matching files above a composer."""
 
     ALLOW_SELECT = False
     DEFAULT_CSS = """
@@ -130,13 +149,14 @@ class SteerSuggest(widgets.Static):
         *,
         mode: ComposerMode,
         preview: parallel_preview.ParallelPreview | None = None,
+        refs: task_refs.RefSuggestions | None = None,
     ) -> None:
         """Show the rows matching the composer's text, or hide the line."""
         if preview is not None:
             self.show_text(rich_text.Text(preview.text))
             return
         rows = steer_suggestion_rows(text, mode=mode)
-        body: rich_text.Text | None = None
+        body: rich_text.Text | None = ref_suggestion_line(refs) if refs is not None else None
         if rows:
             body = rich_text.Text()
             for i, (cmd, help_) in enumerate(rows):
@@ -423,6 +443,38 @@ class SteerInput(widgets.TextArea):
             self.text = text
             super().__init__()
 
+    def __init__(self, *, workspace: WorkspaceSource | None = None, **kwargs: Any) -> None:
+        """Build the bar.
+
+        Args:
+            workspace: Where an `@path` completes; None completes none.
+            **kwargs: The widget's own arguments.
+        """
+        super().__init__(**kwargs)
+        self._workspace = workspace
+
+    def ref_suggestions(self) -> task_refs.RefSuggestions | None:
+        """Return the files the `@path` under the caret completes to; None outside one."""
+        if self._workspace is None:
+            return None
+        fragment = task_refs.ref_fragment(self.get_text_range((0, 0), self.cursor_location))
+        if fragment is None:
+            return None
+        try:
+            root, hide = self._workspace()
+        except config.ConfigError:
+            return None  # the hidden paths are unknown, so nothing is offered
+        return task_refs.suggest_refs(root, hide, fragment)
+
+    def _complete_ref(self, found: task_refs.RefSuggestions) -> None:
+        """Replace the fragment under the caret with the only match, else the shared prefix."""
+        row, column = self.cursor_location
+        fragment = task_refs.ref_fragment(self.get_text_range((0, 0), (row, column))) or ""
+        only = len(found.paths) == 1 and not found.more
+        completed = f"{found.paths[0]} " if only else found.common
+        if only or len(completed) > len(fragment):
+            self.replace(completed, (row, column - len(fragment)), (row, column))
+
     def on_mount(self) -> None:
         """Label for the mode and size to the content."""
         self.set_mode(mode=self.mode)
@@ -470,7 +522,7 @@ class SteerInput(widgets.TextArea):
             self.border_subtitle = subtitle
 
     def on_key(self, event: events.Key) -> None:
-        """Submit on Enter, insert a newline on Ctrl+J, complete a command on Tab."""
+        """Submit on Enter, insert a newline on Ctrl+J, complete a command or an `@path` on Tab."""
         if event.key == "enter":
             event.prevent_default()
             event.stop()
@@ -490,6 +542,10 @@ class SteerInput(widgets.TextArea):
                 if completed != self.text:
                     self.load_text(completed)
                     self.move_cursor(self.document.end)
+            elif (found := self.ref_suggestions()) is not None and found.paths:
+                event.prevent_default()
+                event.stop()
+                self._complete_ref(found)
 
     def on_text_area_changed(self, _event: widgets.TextArea.Changed) -> None:
         """Grow or shrink with the content."""

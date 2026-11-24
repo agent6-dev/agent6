@@ -24,7 +24,7 @@ from textual.css import query
 
 from agent6 import directive, kinds
 from agent6.models import choices
-from agent6.ui import parallel_preview, spawn
+from agent6.ui import parallel_preview, spawn, task_refs
 from agent6.ui.tui import composer, forms, menubar, screen_chrome
 from agent6.viewmodel import LIVE_STATUS_WORDS, listing
 
@@ -225,7 +225,10 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             yield widgets.Input(
                 placeholder="config", type="number", id="draft-max-usd", classes="picker-input"
             )
-        yield composer.SteerInput(id="draft-input")
+        yield composer.SteerInput(
+            id="draft-input",
+            workspace=lambda: task_refs.session_workspace(self.repo_cwd, self.config_paths),
+        )
         yield widgets.Footer()
 
     def on_mount(self) -> None:
@@ -269,8 +272,11 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     @textual.on(widgets.TextArea.Changed, "#draft-input")
     def _on_task_changed(self) -> None:
         """Describe the draft and keep the model matches under the caret."""
-        text = self.query_one("#draft-input", composer.SteerInput).text
+        bar = self.query_one("#draft-input", composer.SteerInput)
+        text = bar.text
         hint = model_suggestions(self._routes, text)
+        if hint is None and (refs := bar.ref_suggestions()) is not None:
+            hint = composer.ref_suggestion_line(refs)
         if self.query_one("#draft-mode", widgets.Select).value == "run":
             preset = str(self.query_one("#draft-preset", widgets.Select).value)
             preview = parallel_preview.describe(

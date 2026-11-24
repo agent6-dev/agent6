@@ -22,7 +22,7 @@ from agent6.config import (
 )
 from agent6.sessions import event_log
 from agent6.tools import operator_prompts, skill_tools
-from agent6.ui import btw, spawn, steer
+from agent6.ui import btw, spawn, steer, task_refs
 from agent6.ui.cli import (
     ask,
     common,
@@ -32,7 +32,6 @@ from agent6.ui.cli import (
     preflight_prompts,
     repl,
     steer_tty,
-    task_refs,
 )
 from agent6.ui.cli import parallel as cli_parallel
 

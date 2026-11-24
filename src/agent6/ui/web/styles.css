@@ -279,6 +279,8 @@ button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 .ac-item { padding: 0.3125rem 0.625rem; border-radius: 6px; cursor: pointer; font-size: var(--fs-m);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
+/* The count of matches a capped list leaves out: a note, not an option. */
+.ac-more { padding: 0.3125rem 0.625rem; font-size: var(--fs-m); }
 /* The option the arrows reached also takes an accent bar, which a hovered one does not. */
 .ac-item.on { box-shadow: inset 2px 0 0 var(--accent); }
 /* A picker's list box (openPicker): the autocomplete popup's rows in a dialog. Each line of an

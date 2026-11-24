@@ -1,17 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `expand_task_file_refs` (CLI @path inlining)."""
+"""An `@path` the operator typed is inlined in an opening and a steer, and completes."""
 
 from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 
 import pytest
 
 from agent6 import paths, task_text
 from agent6.config import Config, layer_data
-from agent6.ui.cli import task_refs
+from agent6.sessions import ipc, manifest
+from agent6.ui import directive_actions, task_refs
 
 
 def test_inlines_existing_file(tmp_path: pathlib.Path) -> None:
@@ -203,3 +205,125 @@ def test_a_ref_into_the_git_dir_is_left_as_typed(tmp_path: pathlib.Path) -> None
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("[remote]\n", encoding="utf-8")
     assert task_refs.expand_task_file_refs("see @.git/config", tmp_path) == "see @.git/config"
+
+
+def _session(tmp_path: pathlib.Path) -> pathlib.Path:
+    session_dir = tmp_path / "state" / "sessions" / "runs" / "one"
+    session_dir.mkdir(parents=True)
+    return session_dir
+
+
+def test_an_ordinary_steer_inlines_the_file_a_typed_ref_names(tmp_path: pathlib.Path) -> None:
+    """A steer's `@path` reached the model as typed: only `agent6 run` inlined the file."""
+    (tmp_path / "notes.md").write_text("NOTE BODY\n", encoding="utf-8")
+    session_dir = _session(tmp_path)
+
+    did, _said = directive_actions.submit_composer_line(
+        session_dir, "follow @notes.md", repo=tmp_path
+    )
+
+    assert did
+    assert ipc.take_steer_answer(session_dir) == (
+        'follow @notes.md\n<file path="notes.md">\nNOTE BODY\n\n</file>\n'
+    )
+
+
+def test_an_urgent_steer_inlines_and_a_loop_directive_does_not(tmp_path: pathlib.Path) -> None:
+    """`/now` carries an ordinary steer; a `/pin` line is text the loop keeps whole."""
+    (tmp_path / "notes.md").write_text("NOTE BODY\n", encoding="utf-8")
+    session_dir = _session(tmp_path)
+
+    assert directive_actions.submit_composer_line(
+        session_dir, "/now follow @notes.md", repo=tmp_path
+    )[0]
+    assert "NOTE BODY" in (ipc.take_steer_answer(session_dir) or "")
+    ipc.clear_steer_request(session_dir)
+    assert directive_actions.submit_composer_line(
+        session_dir, "/pin keep to @notes.md", repo=tmp_path
+    )[0]
+    assert ipc.take_steer_answer(session_dir) == "/pin keep to @notes.md"
+
+
+def test_a_steer_leaves_a_ref_to_a_hidden_path_as_typed(tmp_path: pathlib.Path) -> None:
+    """The steer reads under the same `sandbox.hide_paths` boundary the opening does."""
+    (tmp_path / ".env").write_text("TOKEN=hunter2\n", encoding="utf-8")
+    overlay = tmp_path / "overlay.toml"
+    overlay.write_text(f"[sandbox]\nhide_paths = [{str(tmp_path / '.env')!r}]\n", encoding="utf-8")
+    session_dir = _session(tmp_path)
+
+    assert directive_actions.submit_composer_line(
+        session_dir, "use @.env", repo=tmp_path, config_paths=(overlay,)
+    )[0]
+
+    assert ipc.take_steer_answer(session_dir) == "use @.env"
+
+
+def test_a_steer_to_a_worktree_session_reads_the_worktree(tmp_path: pathlib.Path) -> None:
+    """A worktree run's files are its own: the repository's copy may differ."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    (tmp_path / "notes.md").write_text("REPO COPY\n", encoding="utf-8")
+    (worktree / "notes.md").write_text("WORKTREE COPY\n", encoding="utf-8")
+    session_dir = _session(tmp_path)
+    (session_dir / manifest.MANIFEST_NAME).write_text(
+        manifest.SessionManifest(mode="run", worktree=worktree).model_dump_json(),
+        encoding="utf-8",
+    )
+
+    assert directive_actions.submit_composer_line(session_dir, "follow @notes.md", repo=tmp_path)[0]
+
+    sent = ipc.take_steer_answer(session_dir) or ""
+    assert "WORKTREE COPY" in sent and "REPO COPY" not in sent
+
+
+def _repo(root: pathlib.Path, files: dict[str, str]) -> pathlib.Path:
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    return root
+
+
+def test_ref_fragment_is_the_reference_the_text_ends_in() -> None:
+    assert task_refs.ref_fragment("read @src/ma") == "src/ma"
+    assert task_refs.ref_fragment("read @") == ""
+    assert task_refs.ref_fragment("@") == ""
+    assert task_refs.ref_fragment("mail user@exam") is None  # an address, as the expander reads it
+    assert task_refs.ref_fragment("read @src/main.py then") is None
+    assert task_refs.ref_fragment("plain words") is None
+
+
+def test_suggestions_put_prefix_matches_first_and_stop_at_the_cap(tmp_path: pathlib.Path) -> None:
+    """The completion source returns at most its cap and counts what it left out."""
+    names = {f"src/mod{i:02d}.py": "" for i in range(12)}
+    repo = _repo(tmp_path, {**names, "docs/src-notes.md": "", ".gitignore": "ignored.txt\n"})
+    (repo / "ignored.txt").write_text("", encoding="utf-8")
+
+    found = task_refs.suggest_refs(repo, (), "src")
+
+    assert len(found.paths) == task_refs.REF_SUGGESTIONS_MAX == 8
+    assert found.paths == tuple(f"src/mod{i:02d}.py" for i in range(8))
+    assert found.more == 5  # four more modules, then the path that only contains the fragment
+    assert found.common == "src/mod"
+    assert task_refs.suggest_refs(repo, (), "notes").paths == ("docs/src-notes.md",)
+    assert task_refs.suggest_refs(repo, (), "ignored").paths == ()
+    assert task_refs.suggest_refs(repo, (), "", limit=100).more == 0
+
+
+def test_suggestions_leave_out_what_the_expander_cannot_read(tmp_path: pathlib.Path) -> None:
+    """A hidden path, a symlink and a name outside the reference characters are never offered."""
+    repo = _repo(
+        tmp_path,
+        {"secrets/key.pem": "k", "open/key.txt": "t", "open/key with space.txt": "s"},
+    )
+    (repo / "open" / "key-link").symlink_to("key.txt")
+
+    found = task_refs.suggest_refs(repo, (str(repo / "secrets"),), "key")
+
+    assert found.paths == ("open/key.txt",)
+    assert task_refs.suggest_refs(repo, (), "key").paths == ("open/key.txt", "secrets/key.pem")
+
+
+def test_suggestions_are_empty_outside_a_repository(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "notes.md").write_text("", encoding="utf-8")
+    assert task_refs.suggest_refs(tmp_path, (), "no") == task_refs.RefSuggestions((), 0, "no")

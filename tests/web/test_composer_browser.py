@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
@@ -336,3 +337,35 @@ def test_unsent_parallel_shows_each_task(
     box.fill("plain instruction")
     expect(preview).to_be_hidden()
     assert not sent and not errors
+
+
+def test_an_at_reference_completes_from_the_workspace_files(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """`@` in a composer offered nothing: a path had to be typed whole."""
+    from playwright.sync_api import expect
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    for name in ("notes.md", "src/main.py"):
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_text("", encoding="utf-8")
+    session_logs.write_run(tmp_path, "live-AAA111", [], live=True)
+    page, errors = open_page(port)
+    page.route("**/api/session/*/steer", lambda route: route.fulfill(json={"message": "sent"}))
+    page.goto(f"http://127.0.0.1:{port}/#/session/live-AAA111")
+    entry = page.locator(".composer textarea")
+    entry.press_sequentially("read @no")
+    expect(page.get_by_role("option", name="@notes.md")).to_be_visible()
+    entry.press("Tab")
+    expect(entry).to_have_value("read @notes.md ")
+    expect(page.get_by_role("listbox", name="Workspace files")).to_have_count(0)
+    with page.expect_request("**/api/session/live-AAA111/steer") as request:
+        entry.press("Enter")
+    assert request.value.post_data_json == {"text": "read @notes.md"}
+    # The new-work composer completes too, and a click accepts as Tab does.
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    task = page.get_by_label("Task or question")
+    task.press_sequentially("see @src/")
+    page.get_by_role("option", name="@src/main.py").click()
+    expect(task).to_have_value("see @src/main.py ")
+    assert not errors

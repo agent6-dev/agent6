@@ -27,7 +27,7 @@ from urllib import parse
 import pydantic
 
 from agent6 import __version__, errors, kinds, pack
-from agent6.config import is_loopback_host, layer, write
+from agent6.config import ConfigError, is_loopback_host, layer, write
 from agent6.machine import MachineError
 from agent6.sessions import process
 from agent6.ui import parallel_preview, spawn
@@ -1127,6 +1127,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             )
         )
 
+    def _send_refs(self) -> None:
+        """Send `/api/refs?q=&session=`, a composer's `@path` completion; no session is new work."""
+        q = parse.parse_qs(parse.urlsplit(self.path).query, keep_blank_values=True)
+        session_id = (q.get("session") or [""])[0]
+        session_dir = model.session_dir_for(self.cwd, session_id) if session_id else None
+        if session_id and session_dir is None:
+            self._send_json({"error": f"no session {session_id!r}"}, status=404)
+            return
+        try:
+            payload = model.ref_suggestions(
+                self.cwd, (q.get("q") or [""])[0], self.config_paths, session_dir=session_dir
+            )
+        except ConfigError as exc:
+            self._send_json({"error": str(exc)}, status=422)
+            return
+        self._send_json(payload)
+
     def _route(self, path: str) -> None:  # noqa: PLR0911, PLR0912
         """Dispatch a GET by path.
 
@@ -1186,8 +1203,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/hub":
             self._send_json(model.hub_payload(self.cwd, self.config_paths))
             return
-        if path == "/api/routes":
-            self._send_routes()
+        if composer_read := {"/api/refs": self._send_refs, "/api/routes": self._send_routes}.get(
+            path
+        ):
+            composer_read()
             return
         if path == "/api/config":
             self._send_json(model.config_payload(self.cwd, self.config_paths))

@@ -101,10 +101,12 @@ function newWorkDock(presets, presetDefault, sessions) {
   root.addEventListener('input', save); root.addEventListener('change', save);
   const ac = attachParallelSuggest(task, root);
   const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
+  const refs = attachRefSuggest(task, root);
   task.onkeydown = (e) => {
     if (composing(e)) return;
     if (commands.onKeyDown(e)) return;
     if (ac.onKeyDown(e)) return;
+    if (refs.onKeyDown(e)) return;
     if (enterSends(e)) { e.preventDefault(); go.click(); }
   };
   row.appendChild(task); row.appendChild(go);

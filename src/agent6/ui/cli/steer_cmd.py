@@ -58,7 +58,7 @@ def _cmd_steer(
         return 2
     # The one owner of what a typed line does, shared with the TUI, the web and the pause menu.
     did, said = directive_actions.submit_composer_line(
-        layout.session_dir, text, now=now, config_paths=config_paths
+        layout.session_dir, text, repo=pathlib.Path.cwd(), now=now, config_paths=config_paths
     )
     if not did:
         common.error(f"{said} ({layout.session_id})")

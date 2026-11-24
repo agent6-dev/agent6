@@ -51,7 +51,7 @@ def test_run_metric_preserves_capture_and_command_arguments() -> None:
 def test_invalid_metric_is_not_queued_or_steered(tmp_path: pathlib.Path, spec: str) -> None:
     session = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="one").session_dir
     session.mkdir(parents=True)
-    did, said = directive_actions.submit_composer_line(session, f"/metric {spec}")
+    did, said = directive_actions.submit_composer_line(session, f"/metric {spec}", repo=tmp_path)
     assert not did, said
     assert not ipc.drain_requests(session)
     assert not ipc.steer_request_pending(session)
@@ -62,7 +62,7 @@ def test_only_a_leading_composer_directive_sets_the_metric(tmp_path: pathlib.Pat
     session.mkdir(parents=True)
     assert directive_actions.act_on_directive(session, "please /metric off") is None
     assert directive.steer_problem("/metric maximize -- score")
-    did, said = directive_actions.submit_composer_line(session, "/metric")
+    did, said = directive_actions.submit_composer_line(session, "/metric", repo=tmp_path)
     assert did and "off" in said
     assert not ipc.drain_requests(session)
     assert not ipc.steer_request_pending(session)
@@ -102,7 +102,9 @@ def test_live_metric_is_visible_on_adoption_and_off_resets_the_guard(
         state.metric.history.append(
             metric_rules.MetricSample(label="unrelated", score=9, returncode=0)
         )
-        did, said = directive_actions.submit_composer_line(layout.session_dir, f"/metric {text}")
+        did, said = directive_actions.submit_composer_line(
+            layout.session_dir, f"/metric {text}", repo=tmp_path
+        )
         assert did and "next" in said
         assert loop_steer.take_requests(wf, state, loop_conversation.Conversation())
         assert state.metric.history == []

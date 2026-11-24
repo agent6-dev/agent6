@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Composer slash completion is honest to what the composer parses."""
+"""Composer completion is honest to what the composer parses: commands and `@path` files."""
 
 from __future__ import annotations
 
@@ -8,6 +8,9 @@ import asyncio
 import json
 import os
 import pathlib
+import subprocess
+
+import pytest
 
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer
@@ -117,6 +120,44 @@ def test_unsent_parallel_shows_each_task_in_the_conversation(tmp_path: pathlib.P
             assert "2 attempts (2): fix parser" in rendered
             assert "1 attempt (p/m): test CLI" in rendered
             bar.load_text("plain instruction")
+            await pilot.pause()
+            assert not hint.display
+
+    asyncio.run(scenario())
+
+
+def test_an_at_reference_lists_files_and_tab_accepts_one(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`@` in the composer offered nothing: a path had to be typed whole."""
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    for name in ("notes.md", "src/main.py", "src/model.py"):
+        (repo / name).parent.mkdir(exist_ok=True)
+        (repo / name).write_text("", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "logs.jsonl").write_text('{"type":"session.start","mode":"run","user_task":"t"}\n')
+    (run / "worker.pid").write_text(str(os.getpid()))
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(run)
+        async with app.run_test(size=(100, 35)) as pilot:
+            await pilot.pause()
+            bar = app.screen.query_one("#conv-input", composer.SteerInput)
+            hint = app.screen.query_one("#conv-suggest", composer.SteerSuggest)
+            bar.insert("read @src/m")
+            await pilot.pause()
+            assert hint.display
+            assert "files: @src/main.py  @src/model.py" in str(hint.render())
+            await pilot.press("tab")  # two matches: Tab keeps what they share
+            assert bar.text == "read @src/m"
+            await pilot.press("a", "tab")
+            await pilot.pause()
+            assert bar.text == "read @src/main.py "
+            assert not hint.display
+            bar.insert("and mail a@no")  # an address is no reference
             await pilot.pause()
             assert not hint.display
 

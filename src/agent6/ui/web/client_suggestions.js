@@ -129,6 +129,78 @@ function attachParallelSuggest(task, root) {
   } };
 }
 
+// The fragment mirrors agent6.ui.task_refs; the server lists the files an `@path` can read.
+function attachRefSuggest(ta, root, session = () => '') {
+  let box = null, items = [], more = 0, active = -1, timer, generation = 0;
+  ta.setAttribute('aria-autocomplete', 'list');
+  const frag = () => {
+    const caret = ta.selectionStart;
+    const m = /(?<![\p{L}\p{N}_@/])@([A-Za-z0-9_./-]*)$/u.exec(ta.value.slice(0, caret));
+    return m ? { start: caret - m[1].length, end: caret, text: m[1] } : null;
+  };
+  const close = () => {
+    clearTimeout(timer); generation++;
+    if (box) { unpointPopup(ta, box); box.remove(); box = null; }
+    items = []; more = 0; active = -1;
+  };
+  const insert = (path) => {
+    const f = frag(); if (!f) { close(); return; }
+    ta.focus(); ta.setSelectionRange(f.start, f.end);
+    let ok = false;
+    try { ok = document.execCommand('insertText', false, path + ' '); } catch (_) { ok = false; }
+    if (!ok) {
+      ta.setRangeText(path + ' ', f.start, f.end, 'end');
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    close();
+  };
+  const paint = () => {
+    if (!items.length) { close(); return; }
+    if (active >= items.length) active = -1;
+    if (!box) {
+      box = el('div', 'ac-pop'); box.id = 'suggest-' + ++suggestLists; box.setAttribute('role', 'listbox');
+      box.setAttribute('aria-label', 'Workspace files');
+      root.appendChild(box); ta.setAttribute('aria-controls', box.id);
+    }
+    box.textContent = '';
+    items.forEach((path, i) => {
+      const o = el('div', 'ac-item' + (i === active ? ' on' : ''), '@' + path);
+      o.id = box.id + '-' + i; o.setAttribute('role', 'option'); o.setAttribute('aria-selected', String(i === active));
+      o.onmousedown = (e) => { e.preventDefault(); insert(path); };
+      box.appendChild(o);
+    });
+    if (more) box.appendChild(el('div', 'ac-more muted', '+' + more + ' more, keep typing'));
+    if (active >= 0) ta.setAttribute('aria-activedescendant', box.id + '-' + active);
+    else ta.removeAttribute('aria-activedescendant');
+  };
+  const render = () => {
+    clearTimeout(timer);
+    const current = ++generation;
+    const f = frag();
+    if (!f) { close(); return; }
+    timer = setTimeout(async () => {
+      let d;
+      try { d = await getJSON('/api/refs?q=' + encodeURIComponent(f.text) + '&session=' + encodeURIComponent(session())); }
+      catch (_) { if (current === generation) close(); return; }
+      if (current !== generation) return;
+      items = d.paths || []; more = d.more || 0; active = -1;
+      paint();
+    }, 100);
+  };
+  ta.addEventListener('input', render);
+  ta.addEventListener('click', render);
+  ta.addEventListener('blur', () => setTimeout(close, 120));
+  return { onKeyDown(e) {
+    if (!box || !items.length || composing(e)) return false;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; paint(); return true; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; paint(); return true; }
+    if (e.key === 'Tab') { e.preventDefault(); insert(items[active >= 0 ? active : 0]); return true; }
+    if (e.key === 'Enter' && active >= 0) { e.preventDefault(); insert(items[active]); return true; }
+    if (e.key === 'Escape') { e.preventDefault(); close(); return true; }
+    return false;
+  } };
+}
+
 // Completion mirrors agent6.directive, including which commands need a live run.
 const STEER_COMMANDS = [
   ['/pin', 'pin an instruction that survives compaction: /pin <text>'],

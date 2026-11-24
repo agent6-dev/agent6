@@ -90,6 +90,19 @@ The CLI start line summarizes non-default settings, the execution target and the
 It gives each role's recorded route and effort under `models`; an empty `effort_source` means the record did not capture effort.
 The web run page also reads the recorded roles, not the live config.
 
+## File references
+
+An `@path` in a task or a steer you type inlines that file after the reference: `agent6 run "fix the parser in @src/parse.py"`.
+
+- the path is relative to the session's workspace: the repository, or the run's own worktree
+- at most 64 KiB of a file is inlined; a longer one ends with the count of bytes left out, which the model reads with `read_file`
+- a path that is missing, a directory, outside the workspace, inside `.git` or under [`sandbox.hide_paths`](config.md#sandbox) stays as typed
+- it works in the task of `agent6 run`, `plan` and `ask`, started from the command line, the TUI or the web
+- it works in a steer sent to a live session with `agent6 steer`, the TUI or the web, and after `/now`
+- the web and TUI composers complete a path after `@`
+- sent as typed: the text of any other directive (`/pin`, `/task`, `/parallel`), an instruction that resumes an ended session (`resume --steer`), and a line typed at a foreground run's pause menu
+- text a model wrote is never searched: a plan run with `--from`, a seeded session, a parent's `steer_child` message
+
 ## Follow and steer a run
 
 Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).

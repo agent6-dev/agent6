@@ -25,7 +25,7 @@ from textual import app, containers, geometry, screen, timer, widgets
 from textual.css import query
 
 from agent6.sessions import journal
-from agent6.ui import parallel_preview
+from agent6.ui import parallel_preview, task_refs
 from agent6.ui.tui import clipboard, composer, logview, menubar, screen_chrome, settings
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import (
@@ -309,7 +309,12 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         yield composer.ResumeOptions(
             self._presets, self._routes, id="conv-resume"
         )  # while resuming
-        yield composer.SteerInput(id="conv-input")
+        yield composer.SteerInput(
+            id="conv-input",
+            workspace=lambda: task_refs.session_workspace(
+                pathlib.Path.cwd(), self._host.config_paths, self._logs_path.parent
+            ),
+        )
         yield _JumpButton(_JUMP_LABEL, id="conv-jump")
         yield widgets.Footer()
 
@@ -703,6 +708,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
                 )
                 if self._host.mode == "run"
                 else None,
+                refs=cast(composer.SteerInput, event.text_area).ref_suggestions(),
             )
 
     def _emit(self, seq: str) -> None:
