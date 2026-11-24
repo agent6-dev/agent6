@@ -22,6 +22,7 @@ depends_on = []
 # (see app/__init__.py: SessionFrontend, ChildRuntime).
 # machine.check shares bundle, config and jail-PATH checks with create and the CLI.
 # run uses run_preflight within the app layer.
+# run uses run_open within the app layer.
 path = "agent6.app"
 depends_on = [
   "agent6",
