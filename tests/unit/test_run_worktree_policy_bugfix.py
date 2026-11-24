@@ -330,7 +330,9 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
 
     assert run._cmd_run((), "do a thing") == 2
     err = capsys.readouterr().err
-    assert "the unmerged work of run prior-run-AAAAAA, on agent6/prior-run-AAAAAA" in err
+    assert (
+        "(they match the unmerged work of run prior-run-AAAAAA, on agent6/prior-run-AAAAAA):" in err
+    )
     assert "agent6 sessions merge prior-run-AAAAAA" in err
 
     # Answered "cancel", the parked message names the merge as well.
@@ -338,6 +340,7 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     assert run._cmd_run((), "do a thing") == 2
     parked = capsys.readouterr().err
     assert "PARKED" in parked and "agent6 sessions merge prior-run-AAAAAA" in parked, parked
+    assert "(they match the unmerged work of run prior-run-AAAAAA)" in parked, parked
 
     # A commit added to the base since (another file) does not hide the
     # match: the comparison is per modified file, not whole-tree.

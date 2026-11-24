@@ -500,8 +500,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     stash_pop = stash_pop or choice == "stash"
                 if choice == "cancel":
                     settle = (
-                        f"`agent6 sessions merge {unmerged_run}` merges them (the unmerged work"
-                        f" of run {unmerged_run})"
+                        f"`agent6 sessions merge {unmerged_run}` merges them (they match the"
+                        f" unmerged work of run {unmerged_run})"
                         if unmerged_run
                         else "commit or stash them"
                     )

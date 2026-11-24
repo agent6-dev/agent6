@@ -369,7 +369,8 @@ def _dirty_tree_listing(paths: Sequence[str], *, cap: int = 10, unmerged_run: st
     n = len(paths)
     head = f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted changes"
     head += (
-        f" (the unmerged work of run {unmerged_run}, on {git_read.run_branch_for(unmerged_run)}):"
+        f" (they match the unmerged work of run {unmerged_run},"
+        f" on {git_read.run_branch_for(unmerged_run)}):"
         if unmerged_run
         else ":"
     )
