@@ -641,6 +641,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `attempt` | `int` | The attempt's number within the call, from 1. |
 | `request_id` | `str, optional` | The HTTP attempt's id, as provider.request and the transcript name it. |
 | `ok` | `bool` | Whether the attempt returned a response. |
+| `process_reply` | `bool, optional` | The process emitted text or reasoning before this failure. |
 | `input_tokens` | `int, optional` | Input tokens the attempt used. |
 | `output_tokens` | `int, optional` | Output tokens the attempt used. |
 | `cache_read_tokens` | `int, optional` | Cached input tokens the attempt used. |

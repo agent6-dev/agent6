@@ -267,6 +267,7 @@ Both strategies use the same size, manual and idle triggers and the same growth 
 On resume, `compaction.cold_start` compares the last ordinary worker request's journal route and timestamp with the current route and its idle limit.
 An HTTP request records its own start.
 A process-backed worker's streamed output or successful attempt confirms its `model.call` opening.
+On a failed attempt, `model.attempt.process_reply` records that output began even when live text is off.
 A changed provider or model takes precedence over age.
 A positive limit fires at or beyond the limit; `-1` disables age.
 `compact.cold_start` records the cause, action and net reduction in context characters before the first worker request.

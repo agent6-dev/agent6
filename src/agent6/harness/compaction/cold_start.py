@@ -112,8 +112,8 @@ def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
             elif call_id == opening.get("model_call_id") and (
                 (
                     kind == "model.attempt"
-                    and row.get("ok") is True
                     and row.get("request_id") is None
+                    and (row.get("ok") is True or row.get("process_reply") is True)
                 )
                 or (kind in ("model.text_delta", "model.thinking_delta") and row.get("text"))
             ):

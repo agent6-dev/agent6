@@ -371,6 +371,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 attempt=as_int(raw.get("attempt")) or 1,
                 request_id=raw.get("request_id"),
                 ok=raw.get("ok") is not False,
+                process_reply=raw.get("process_reply") is True,
                 input_tokens=as_int(raw.get("input_tokens")),
                 output_tokens=as_int(raw.get("output_tokens")),
                 cache_read_tokens=as_int(raw.get("cache_read_tokens")),

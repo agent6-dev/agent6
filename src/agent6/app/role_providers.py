@@ -536,26 +536,31 @@ class InstrumentedProvider:
         actor = self.actor
         events = self.events
         identity = call_context.event_fields()
-
-        def _on_text(piece: str) -> None:
-            if events is not None:
-                events.emit(journal.ModelTextDelta(actor=actor, text=piece, **identity))
-            if text_delta_callback is not None:
-                text_delta_callback(piece)
-
-        def _on_thinking(piece: str) -> None:
-            if events is not None:
-                events.emit(journal.ModelThinkingDelta(actor=actor, text=piece, **identity))
-            if thinking_delta_callback is not None:
-                thinking_delta_callback(piece)
-
         stream = (
             self.stream_text
             or text_delta_callback is not None
             or thinking_delta_callback is not None
         )
-        effective_text_cb = _on_text if stream else None
-        effective_thinking_cb = _on_thinking if stream else None
+        # The process streams even without a live view. A reply confirms it received the call.
+        process = isinstance(self.inner, ClaudeCodeProvider) and events is not None
+        reply_started = False
+
+        def _on_text(piece: str) -> None:
+            nonlocal reply_started
+            reply_started |= bool(piece)
+            if stream and events is not None:
+                events.emit(journal.ModelTextDelta(actor=actor, text=piece, **identity))
+            if text_delta_callback is not None:
+                text_delta_callback(piece)
+
+        def _on_thinking(piece: str) -> None:
+            nonlocal reply_started
+            reply_started |= bool(piece)
+            if stream and events is not None:
+                events.emit(journal.ModelThinkingDelta(actor=actor, text=piece, **identity))
+            if thinking_delta_callback is not None:
+                thinking_delta_callback(piece)
+
         options: dict[str, Any] = {"compaction": compaction} if compaction is not None else {}
         try:
             resp = self.inner.call(
@@ -565,8 +570,8 @@ class InstrumentedProvider:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 reasoning_effort=reasoning_effort,
-                text_delta_callback=effective_text_cb,
-                thinking_delta_callback=effective_thinking_cb,
+                text_delta_callback=_on_text if stream or process else None,
+                thinking_delta_callback=_on_thinking if stream or process else None,
                 should_abort=should_abort,
                 should_interrupt=should_interrupt,
                 context=context,
@@ -586,6 +591,7 @@ class InstrumentedProvider:
                     **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
                 },
                 ends_call=provider_call.closes_call(exc, context),
+                process_reply=process and reply_started,
             )
             self._emit_budget()
             raise
@@ -617,6 +623,7 @@ class InstrumentedProvider:
         *,
         ends_call: bool,
         response: ProviderResponse | None = None,
+        process_reply: bool = False,
     ) -> None:
         """Journal one attempt's row and, when it ends the logical call, the call's result.
 
@@ -627,6 +634,7 @@ class InstrumentedProvider:
             outcome: The attempt's `ok`, usage and stop reason or error.
             ends_call: Whether no retry of the call follows.
             response: The endpoint result, absent on a failure.
+            process_reply: The process produced output before it failed.
         """
         if self.events is None:
             return
@@ -636,6 +644,7 @@ class InstrumentedProvider:
                 **identity,
                 attempt=context.attempt,
                 request_id=request_ids[-1] if request_ids else None,
+                **({"process_reply": True} if process_reply else {}),
                 **outcome,
             )
         )

@@ -550,6 +550,7 @@ The cold-start mode, summary writer, gists and history retention settings apply 
 It is also cold if the time since that request began reaches the current provider's `idle_compact_s`.
 A helper call, summary or session stop does not reset that clock.
 For a process-backed provider, streamed output or a successful attempt confirms the route and start time of its worker call.
+This also applies when live text is off.
 Set the limit to `-1` to disable the age rule but still detect a route change; `0` is not valid.
 The wait setting `idle_compact_min_chars` does not apply at resume.
 

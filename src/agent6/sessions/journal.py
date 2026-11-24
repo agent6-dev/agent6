@@ -744,6 +744,9 @@ class ModelAttempt(Event):
         description="The HTTP attempt's id, as provider.request and the transcript name it.",
     )
     ok: bool = pydantic.Field(description="Whether the attempt returned a response.")
+    process_reply: bool = pydantic.Field(
+        default=False, description="The process emitted text or reasoning before this failure."
+    )
     input_tokens: int | None = pydantic.Field(
         default=None,
         description="Input tokens the attempt used.",

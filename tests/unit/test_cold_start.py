@@ -208,9 +208,9 @@ def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None
     assert row["action"] == "summary_failed" and row["chars_not_sent"] == 0
 
 
-@pytest.mark.parametrize("fails_after_text", [False, True])
+@pytest.mark.parametrize("fails_after_text,stream", [(False, False), (True, True), (True, False)])
 def test_resume_from_a_process_worker_uses_its_last_issued_call(
-    tmp_path: pathlib.Path, fails_after_text: bool
+    tmp_path: pathlib.Path, fails_after_text: bool, stream: bool
 ) -> None:
     scenario: dict[str, Any] = {"turns": [[{"text": "part of a reply"}]]}
     if fails_after_text:
@@ -224,7 +224,7 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(
         provider_name="process",
         events=sink,
         budget=claude._budget(),
-        stream_text=fails_after_text,
+        stream_text=stream,
     )
     with (
         contextlib.closing(worker),
@@ -243,8 +243,10 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(
             ),
         )
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert any(r["type"] == "model.text_delta" and r["text"] for r in rows) is stream
     if fails_after_text:
-        assert any(r["type"] == "model.text_delta" and r["text"] for r in rows)
+        (attempt,) = [r for r in rows if r["type"] == "model.attempt"]
+        assert attempt["process_reply"] is True and attempt["ok"] is False
     for call_id, actor, ok in (("side", "helper:summariser", True), ("not_sent", "worker", False)):
         rows.extend(
             [
