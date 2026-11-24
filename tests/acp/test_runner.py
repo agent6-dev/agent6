@@ -26,7 +26,7 @@ from agent6.config import Config, ConfigError, layer_data
 from agent6.sessions import id, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
-from agent6.ui.acp import rpc, runner, updates
+from agent6.ui.acp import rpc, runner, stream, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
 from agent6.viewmodel import tail as viewmodel_tail
@@ -1418,8 +1418,8 @@ def test_a_late_tail_keeps_its_own_execution(tmp_path: pathlib.Path) -> None:
     log.write_text("", encoding="utf-8")
     done = threading.Event()
     tail = threading.Thread(
-        target=bridge._stream,
-        args=(session, log, done.is_set, False, runner.Announced(execution_id="1")),
+        target=stream.project,
+        args=(bridge.server, session, log, done.is_set, False, runner.Announced(execution_id="1")),
         daemon=True,
     )
     tail.start()
@@ -1466,8 +1466,13 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
-    bridge._stream(
-        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution_id="1")
+    stream.project(
+        bridge.server,
+        session,
+        tmp_path / "logs.jsonl",
+        lambda: True,
+        0,
+        runner.Announced(execution_id="1"),
     )
 
     chunks = [
@@ -1498,7 +1503,9 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> Non
         journal.ToolCall(name="run_command", args_preview={"argv": ["false"]}, call_id=1)
     )
 
-    bridge._stream(session, log, lambda: True, False, runner.Announced(execution_id="1"))
+    stream.project(
+        bridge.server, session, log, lambda: True, False, runner.Announced(execution_id="1")
+    )
 
     statuses = [message["params"]["update"]["status"] for message in sent]
     assert statuses == ["in_progress", "failed"]
@@ -1876,15 +1883,23 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     events = event_log.EventSink(log)
     events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
     events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["true"]}, call_id=2))
-    order = runner.ProseOrder(server, "s", log)
+    order = stream.ProseOrder(server, "s", log)
     said: list[str] = []
     reporter = runner.forwarding_reporter(server, "s", said, order=order)
     reporter.out("no changes were committed")  # said after both calls, before the tail read them
     assert sent == []
     done = threading.Event()
     tail = threading.Thread(
-        target=bridge._stream,
-        args=(session, log, done.is_set, False, runner.Announced(execution_id="1"), order),
+        target=stream.project,
+        args=(
+            bridge.server,
+            session,
+            log,
+            done.is_set,
+            False,
+            runner.Announced(execution_id="1"),
+            order,
+        ),
         daemon=True,
     )
     tail.start()
@@ -2053,7 +2068,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
         )
     )
 
-    bridge._stream(session, log, lambda: True, 0, runner.Announced(execution_id="1"))
+    stream.project(bridge.server, session, log, lambda: True, 0, runner.Announced(execution_id="1"))
 
     updates = [m["params"]["update"] for m in sent]
     located = [
@@ -2170,8 +2185,8 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
     done = threading.Event()
     info = updates.RunInfo(window=lambda _p, _m: 1000)
     tail = threading.Thread(
-        target=bridge._stream,
-        args=(session, log, done.is_set, False, runner.Announced(execution_id="1")),
+        target=stream.project,
+        args=(bridge.server, session, log, done.is_set, False, runner.Announced(execution_id="1")),
         kwargs={"info": info},
         daemon=True,
     )
@@ -2250,8 +2265,13 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
-    bridge._stream(
-        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution_id="1")
+    stream.project(
+        bridge.server,
+        session,
+        tmp_path / "logs.jsonl",
+        lambda: True,
+        0,
+        runner.Announced(execution_id="1"),
     )
 
     texts = [
@@ -2287,7 +2307,8 @@ def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
     bridge = runner.RunBridge(server=server)
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
-    bridge._stream(
+    stream.project(
+        bridge.server,
         session,
         tmp_path / "logs.jsonl",
         lambda: True,
@@ -2319,8 +2340,8 @@ def test_the_tail_stamps_calls_with_the_execution_id_it_reads(tmp_path: pathlib.
     log.write_text("", encoding="utf-8")
     done = threading.Event()
     tail = threading.Thread(
-        target=bridge._stream,
-        args=(session, log, done.is_set, False, runner.Announced()),
+        target=stream.project,
+        args=(bridge.server, session, log, done.is_set, False, runner.Announced()),
         daemon=True,
     )
     tail.start()

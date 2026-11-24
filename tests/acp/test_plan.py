@@ -9,7 +9,7 @@ import pathlib
 from typing import Any
 
 from agent6.sessions import event_log, journal
-from agent6.ui.acp import runner, updates
+from agent6.ui.acp import runner, stream, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
 from agent6.viewmodel import tail
@@ -137,7 +137,7 @@ def test_the_plan_is_sent_live_and_again_on_replay(tmp_path: pathlib.Path) -> No
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = live.append  # pyrefly: ignore[bad-assignment, method-assign]
     session = session_mod.Session(acp_id="run-x", cwd=tmp_path, session_id="run-x")
-    runner.RunBridge(server=server)._stream(session, log, lambda: True, 0, runner.Announced())
+    stream.project(server, session, log, lambda: True, 0, runner.Announced())
     replayed: list[dict[str, Any]] = []
     updates.replay(
         tail.tail_events(log, follow=False),

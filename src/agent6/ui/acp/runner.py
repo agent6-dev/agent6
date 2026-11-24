@@ -27,15 +27,14 @@ from agent6.app import finalize, frontend, resume
 from agent6.app import reporter as app_reporter
 from agent6.app import run as app_run
 from agent6.app.session import setup as session_setup
-from agent6.sessions import id, ipc, journal
+from agent6.sessions import id, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap, operator_images, spawn
 from agent6.ui.acp import frontend as acp_frontend
-from agent6.ui.acp import model, options, rpc, updates
+from agent6.ui.acp import model, options, rpc, stream, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from agent6.viewmodel import tail as viewmodel_tail
-from agent6.viewmodel import transcript, transcript_items
 from agent6.viewmodel.session import log as session_log
 
 # Bounds the join on a tail wedged on a filesystem; `_stop` ends it one read pass after the run.
@@ -49,49 +48,12 @@ def _stderr(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-@dataclasses.dataclass
-class ProseOrder:
-    """Queue the lifecycle's lines for the journal tail to emit in order.
-
-    The tail projects the journal a poll behind the run thread, so a line sent as
-    said would land before the execution's last tool calls. Each line is stamped with
-    the journal's size when said, and emitted once the tail has read past it.
-
-    Attributes:
-        server: The connection.
-        acp_session_id: The conversation the lines address.
-        logs_path: The journal.
-    """
-
-    server: acp_server.ACPServer
-    acp_session_id: str
-    logs_path: pathlib.Path
-    _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    _pending: list[tuple[int, str]] = dataclasses.field(default_factory=list)
-
-    def say(self, text: str) -> None:
-        """Queue a line, stamped with the journal's size now."""
-        with self._lock:
-            self._pending.append((viewmodel_tail.journal_size(self.logs_path), text))
-
-    def flush(self, consumed: int | None) -> None:
-        """Emit every line stamped at or before the consumed journal size; all for None."""
-        with self._lock:
-            due = [t for stamp, t in self._pending if consumed is None or stamp <= consumed]
-            self._pending = [
-                (s, t) for s, t in self._pending if consumed is not None and s > consumed
-            ]
-        for text in due:
-            # A note or warning already carries the marker `notice` adds.
-            self.server.update(self.acp_session_id, updates.notice(text.removeprefix("[agent6] ")))
-
-
 def forwarding_reporter(
     server: acp_server.ACPServer,
     acp_session_id: str,
     said: list[str],
     *,
-    order: ProseOrder | None = None,
+    order: stream.ProseOrder | None = None,
 ) -> app_reporter.Reporter:
     """Build the lifecycle's reporter: stderr, and the same line to the editor as agent6's prose.
 
@@ -220,30 +182,6 @@ class Announced:
         with self._changed:
             while tool_call_id not in self._ids and not self._closed and not abandoned():
                 self._changed.wait(0.5)  # abandonment is polled; add and close wake at once
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Sending:
-    """What the tail knows about one fold item as it sends it.
-
-    Attributes:
-        paths: The paths the tool result named.
-        spoken: The last message streamed; an end summary repeating it is not sent again,
-            and the status line keeps its own paragraph.
-        prompt: The prompt this execution runs.
-        objects_dir: The run's object directory; None sends an edit without its diffs.
-        message_id: The id of the message the item becomes.
-        call_message_id: The id of the model's message in flight.
-        cancelled: The item's row ends a run the operator stopped.
-    """
-
-    paths: tuple[str, ...]
-    spoken: str
-    prompt: str
-    objects_dir: pathlib.Path | None
-    message_id: str = ""
-    call_message_id: str = ""
-    cancelled: bool = False
 
 
 @dataclasses.dataclass
@@ -543,15 +481,15 @@ class RunBridge:
             drained.set()
             return False
 
-        order = ProseOrder(self.server, session.acp_id, layout.logs_path)
+        order = stream.ProseOrder(self.server, session.acp_id, layout.logs_path)
         start_at = journal_before if resuming else None
         banked = (
             session_log.scan_session_log(layout.logs_path).budget.session.usd if resuming else 0.0
         )
         info = updates.RunInfo(banked_usd=banked)
         tail = threading.Thread(
-            target=self._stream,
-            args=(session, layout.logs_path, _stop, start_at, announced, order),
+            target=stream.project,
+            args=(self.server, session, layout.logs_path, _stop, start_at, announced, order),
             kwargs={"info": info, "prompt": text, "objects_dir": layout.objects_dir},
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
@@ -642,176 +580,6 @@ class RunBridge:
         named = message.model_copy(update={"message_id": message_id})
         ipc.write_launch_input(session_dir, named)
         return message.text
-
-    def _stream(  # noqa: PLR0912
-        self,
-        session: acp_session.Session,
-        logs_path: pathlib.Path,
-        stop: Callable[[], bool],
-        journal_before: int | None,
-        announced: Announced,
-        order: ProseOrder | None = None,
-        info: updates.RunInfo | None = None,
-        prompt: str = "",
-        objects_dir: pathlib.Path | None = None,
-    ) -> None:
-        """Project the run's journal into `session/update` as it is written.
-
-        The lifecycle's own lines take their place between events; the ending also
-        goes to stderr, since the lifecycle prints none of its own.
-
-        Args:
-            session: The session.
-            logs_path: The journal.
-            stop: Polled by the tail; True ends it.
-            journal_before: Where to start on a resumed run, whose earlier executions the
-                editor already rendered; None replays the whole journal.
-            announced: The execution's register of announced calls.
-            order: The lifecycle's queued lines.
-            info: The title, commands and usage projection; None sends none.
-            prompt: The prompt this execution runs; the journal's echo of it is not sent back.
-            objects_dir: The run's object directory; None sends an edit without its diffs.
-        """
-        fold = transcript.TranscriptFold()
-        plan = updates.TaskPlan()
-        ids = updates.MessageIds()
-        streamed: set[str] = set()
-        # The last message streamed: an end summary repeating it is not sent again.
-        spoken: list[str] = []
-        consumed = [0]
-
-        def _at(position: int) -> None:
-            consumed[0] = position
-
-        try:
-            for event in viewmodel_tail.tail_events(
-                logs_path,
-                stop_when_finished=True,
-                should_stop=stop,
-                start_at=journal_before,
-                on_position=_at,
-            ):
-                event_type = str(event.get("type", ""))
-                ids.feed(event)
-                if event_type in journal.SESSION_START_EVENTS:
-                    announced.execution_id = str(event.get("execution_id") or "")
-                    if session.turn is not None:
-                        # The engine holds the prompt: recorded as its task, or queued as its steer.
-                        session.turn.begin(prompt)
-                for update in info.feed(event) if info is not None else ():
-                    self.server.update(session.acp_id, update)
-                for update in plan.feed(event):
-                    self.server.update(session.acp_id, update)
-                paths = updates.result_paths(event) if event_type == "tool.result" else ()
-                if event_type == "model.call":
-                    streamed.clear()
-                is_delta = event_type in ("model.thinking_delta", "model.text_delta")
-                side_delta = is_delta and kinds.is_side_actor(str(event.get("actor", "")))
-                items = [] if side_delta else fold.feed(event)
-                if is_delta and not side_delta:
-                    kind = "thinking" if event_type == "model.thinking_delta" else "text"
-                    if kind == "text":
-                        if "text" not in streamed:
-                            spoken.clear()  # a new message begins
-                        spoken.append(str(event.get("text", "")))
-                    streamed.add(kind)
-                    for update in updates.updates_for(
-                        transcript_items.TranscriptItem(kind, body=str(event.get("text", ""))),
-                        streamed=True,
-                        message_id=ids.call,
-                    ):
-                        self.server.update(session.acp_id, update)
-                for index, item in enumerate(items):
-                    if item.kind in streamed:
-                        continue
-                    sending = Sending(
-                        paths,
-                        "".join(spoken),
-                        prompt,
-                        objects_dir,
-                        message_id=ids.of(item, event, index),
-                        call_message_id=ids.call,
-                        cancelled=updates.operator_stopped(event),
-                    )
-                    self._send_item(session, item, announced, sending)
-                if event_type == "model.result":
-                    streamed.clear()
-                if order is not None:
-                    order.flush(consumed[0])
-        finally:
-            announced.close()
-            for item in fold.settle_open_calls("the run died"):
-                within = updates.execution_call_id(item)
-                for update in updates.updates_for(
-                    item,
-                    wire_id=updates.wire_call_id(
-                        session.session_id, announced.execution_id, within
-                    ),
-                    announced=within in announced,
-                    cwd=session.cwd,
-                    cancelled=session.cancelled,
-                ):
-                    self.server.update(session.acp_id, update)
-            if order is not None:
-                order.flush(None)
-
-    def _send_item(
-        self,
-        session: acp_session.Session,
-        item: transcript_items.TranscriptItem,
-        announced: Announced,
-        sending: Sending,
-    ) -> None:
-        """Send one fold item's updates; the ending also goes to stderr.
-
-        Args:
-            session: The session.
-            item: The fold item.
-            announced: The execution's register of announced calls.
-            sending: What the tail knows about the item.
-        """
-        if item.kind == "task" or (
-            item.kind == "operator" and item.body.strip() == sending.prompt.strip()
-        ):
-            # The execution's start row reported its own prompt; another front-end's steer is news.
-            return
-        if item.kind == "operator" and sending.message_id in session.inserted:
-            return  # reported when this connection took it as a prompt
-        within = updates.execution_call_id(item) if item.kind in ("tool", "verify") else ""
-        wire_id = (
-            updates.wire_call_id(session.session_id, announced.execution_id, within)
-            if within
-            else ""
-        )
-        wire_item = item
-        spoken = sending.spoken
-        if item.kind == "done" and spoken.strip() and item.body.strip() == spoken.strip():
-            wire_item = dataclasses.replace(item, body="")
-            trailing = len(spoken) - len(spoken.rstrip("\n"))
-            if pad := "\n" * max(0, 2 - trailing):
-                for update in updates.updates_for(
-                    transcript_items.TranscriptItem("text", body=pad),
-                    streamed=True,
-                    message_id=sending.call_message_id,
-                ):
-                    self.server.update(session.acp_id, update)
-        for update in updates.updates_for(
-            wire_item,
-            wire_id=wire_id,
-            announced=within in announced,
-            cwd=session.cwd,
-            paths=sending.paths,
-            objects_dir=sending.objects_dir,
-            message_id=sending.message_id,
-            cancelled=sending.cancelled,
-        ):
-            self.server.update(session.acp_id, update)
-        if within:
-            announced.add(within)
-        elif item.kind == "done":
-            _stderr(
-                "\n\n".join(part for part in (item.body.strip(), updates.status_line(item)) if part)
-            )
 
 
 def serve_acp(

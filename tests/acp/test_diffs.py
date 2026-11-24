@@ -12,7 +12,7 @@ from typing import Any
 from agent6.config import Config
 from agent6.sessions import event_log, journal
 from agent6.tools import dispatch, results
-from agent6.ui.acp import runner, updates
+from agent6.ui.acp import runner, stream, updates
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as session_mod
 from agent6.viewmodel import tail
@@ -46,8 +46,14 @@ class _Run:
         server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
         server.notify_raw = sent.append  # pyrefly: ignore[bad-assignment, method-assign]
         session = session_mod.Session(acp_id=_RUN, cwd=self.repo, session_id=_RUN)
-        runner.RunBridge(server=server)._stream(
-            session, self.logs, lambda: True, 0, runner.Announced(), objects_dir=self.objects
+        stream.project(
+            server,
+            session,
+            self.logs,
+            lambda: True,
+            0,
+            runner.Announced(),
+            objects_dir=self.objects,
         )
         return _settled(sent)
 
