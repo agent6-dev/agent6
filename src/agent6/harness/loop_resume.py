@@ -292,6 +292,12 @@ def mark_turn(harness: loop.Harness, turn: loop_state.TurnState) -> None:
         loop_snapshot.TurnInFlight(
             turn=turn.number,
             assistant=turn.assistant.raw_content,
+            unshown_answers={
+                item.tool_use_id: item.unshown_answer
+                for item in turn.tool_results
+                if isinstance(item, loop_conversation.ToolResultItem)
+                and item.unshown_answer is not None
+            },
             results=tuple(
                 item.content
                 for item in turn.tool_results

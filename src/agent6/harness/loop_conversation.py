@@ -68,12 +68,14 @@ class ToolResultItem:
         for_call: The ToolUse it answers, paired at construction so compaction
             never rebuilds an id index; in-memory only.
         attachment: The optional attachment, kept separately from the text.
+        unshown_answer: Operator words the tool payload cap or repeat stub omitted.
     """
 
     tool_use_id: str
     content: str
     for_call: ToolUse
     attachment: kinds.MediaAttachment | None = None
+    unshown_answer: str | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -564,6 +566,8 @@ class Conversation:
                             else item.content
                         ),
                     }
+                    if snapshot and item.unshown_answer is not None:
+                        block["unshown_answer"] = item.unshown_answer
                 else:
                     block = {"type": "text", "text": item.text}
                     if snapshot and item.origin != "harness":
@@ -681,7 +685,8 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
         return Notice(text=block["text"], origin=origin, operator_words=tuple(words))
     if block.get("type") == "tool_result":
         if (
-            keys != {"type", "tool_use_id", "content"}
+            keys - {"unshown_answer"} != {"type", "tool_use_id", "content"}
+            or ("unshown_answer" in block and not isinstance(block["unshown_answer"], str))
             or not isinstance(block["tool_use_id"], str)
             or not isinstance(block["content"], (str, list))
         ):
@@ -693,7 +698,7 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
             )
         call = pending.pop(0)
         text, image = _parse_result_content(block["content"], call)
-        return ToolResultItem(block["tool_use_id"], text, call, image)
+        return ToolResultItem(block["tool_use_id"], text, call, image, block.get("unshown_answer"))
     raise ValueError(f"malformed conversation: {where} has unsupported type {block.get('type')!r}")
 
 

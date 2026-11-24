@@ -7,12 +7,14 @@ from __future__ import annotations
 import dataclasses
 import json
 from typing import Any
+from unittest import mock
 
 import pytest
 
 from agent6.harness import loop_conversation as history
 from agent6.harness.compaction import driver
 from agent6.providers import anthropic, claude_code_wire, openai_messages, responses_codec
+from agent6.tools import results
 from tests.unit import test_compaction_writers as writers
 from tests.unit import test_harness
 
@@ -251,3 +253,26 @@ def test_operator_reservation_precedes_the_oversize_turn_exception() -> None:
     _restart(conv, keep_recent_chars=100, keep_operator_messages=1)
     assert f"Operator message:\n{words}" in _notice(conv)
     assert conv.to_wire()[1]["content"][0]["text"] == "r" * 200
+
+
+@pytest.mark.parametrize("operators", [0, 1])
+def test_answer_before_tool_capping_reaches_the_local_restart(operators: int) -> None:
+    words = "a" * 61000 + " end words"
+    dispatcher = mock.MagicMock()
+    dispatcher.dispatch.return_value = results.AnswersResult("q", (words,), asked=("Which?",))
+    wf = test_harness._wf(dispatcher=dispatcher)
+    conv = history.Conversation()
+    conv.notice("task", origin="operator")
+    resp = test_harness._tool_resp("ask_user", {"questions": [{"question": "Which?"}]})
+    turn = test_harness._turn(resp=resp, assistant=conv.assistant(resp.raw["content"]))
+    state = test_harness._state()
+    wf._turn_dispatch_tools(state, turn, test_harness._ctx(wf, state))
+    conv.results(turn.tool_results)
+    assert len(conv.to_wire()[-1]["content"][0]["content"].encode()) <= 60000
+    _reply(conv, "done")
+    conv = history.Conversation.from_wire(conv.to_wire(snapshot=True))
+    prompt = _restart(
+        conv, keep_operator_messages=operators, keep_recent_turns=0, keep_recent_chars=80000
+    )
+    assert words in prompt
+    assert (f"Operator message:\n{words}" in _notice(conv)) is bool(operators)

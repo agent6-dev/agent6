@@ -232,6 +232,20 @@ def instruction(
             if len(parts) + len(optional) <= limit:
                 parts += optional
         return parts
+    if writer == "worker":
+        # A worker sees the bounded tool payload, not the words carried on its snapshot block.
+        answers = [
+            item.unshown_answer
+            for m in messages
+            if isinstance(m, loop_conversation.UserMessage)
+            for item in m.items
+            if isinstance(item, loop_conversation.ToolResultItem)
+            and item.unshown_answer is not None
+        ]
+        if answers:
+            focus_req += "\n\nOperator answers omitted from the tool payload:\n" + "\n".join(
+                answers
+            )
     prior_req = _prior_summary(messages) if writer == "helper" else ""
     body = f"TASK (the goal, verbatim):\n{task}{checkoff_req}{focus_req}{pins_req}{prior_req}"
     if writer == "helper":

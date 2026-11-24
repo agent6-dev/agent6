@@ -11,13 +11,60 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from agent6 import paths, task_text
-from agent6.harness import dag_focus, finish_gates, loop_state, memory_touch, nudges
+from agent6 import kinds, paths, task_text
+from agent6.harness import (
+    dag_focus,
+    finish_gates,
+    loop_conversation,
+    loop_state,
+    memory_touch,
+    nudges,
+)
+from agent6.harness.compaction import elision
 from agent6.sessions import journal
 from agent6.tools import mcp_client, results, tool_errors
 
 if TYPE_CHECKING:
     from agent6.harness import loop
+
+
+def bounded_result(
+    call: loop_conversation.ToolUse,
+    content: str,
+    served: str | None,
+    attachment: kinds.MediaAttachment | None,
+    result: results.ToolResult | None,
+    cap: int,
+) -> loop_conversation.ToolResultItem:
+    """Keep the bounded tool payload and any operator answer it omits.
+
+    Args:
+        call: The call the result answers.
+        content: The serialized result or error.
+        served: A repeat stub, if any.
+        attachment: The accepted media, if any.
+        result: The tool's typed result, if the call returned.
+        cap: The text payload limit in bytes.
+
+    Returns:
+        A paired result with omitted operator words available for a local restart.
+    """
+    payload = (
+        content
+        if attachment is not None
+        else elision.cap_tool_result(
+            served if served is not None else content, tool_name=call.name, cap=cap
+        )
+    )
+    answer = None
+    if (
+        payload != content
+        and isinstance(result, results.AnswersResult)
+        and result.status == "answered"
+        and result.answers
+    ):
+        answer = "\n".join(result.answers)
+    return loop_conversation.ToolResultItem(call.id, payload, call, attachment, answer)
 
 
 def left_out_note(

@@ -67,7 +67,6 @@ from agent6.harness import (
 )
 from agent6.harness import compaction as harness_compaction
 from agent6.harness.compaction import calls as compaction_calls
-from agent6.harness.compaction import elision as compaction_elision
 from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
@@ -1127,6 +1126,7 @@ class Harness:
                 sig = f"{name}:<unhashable>"
             state.spiral.note_call(sig, polling=name == schema.ReadBackgroundInput.TOOL_NAME)
             served = None
+            result = None
             attachment = None
             try:
                 refusal = turn.resp.refused.get(tu.id)
@@ -1187,17 +1187,8 @@ class Harness:
             except tool_errors.OperatorCommandUnexecutableError as exc:
                 return self.unexecutable_abort(exc, turn=turn.number, state=state)
             turn.tool_results.append(
-                loop_conversation.ToolResultItem(
-                    tool_use_id=tu.id,
-                    content=content
-                    if attachment is not None
-                    else compaction_elision.cap_tool_result(
-                        served if served is not None else content,
-                        tool_name=name,
-                        cap=self.compaction.tool_result_cap_bytes,
-                    ),
-                    for_call=tu,
-                    attachment=attachment,
+                tool_effects.bounded_result(
+                    tu, content, served, attachment, result, self.compaction.tool_result_cap_bytes
                 )
             )
             loop_resume.mark_turn(self, turn)

@@ -342,6 +342,7 @@ class TurnInFlight(pydantic.BaseModel):
         turn: The turn.
         assistant: The assistant message's content blocks, verbatim.
         results: The result content of each call that returned, in call order.
+        unshown_answers: Operator answers omitted from the delivered tool payload, by call id.
     """
 
     model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
@@ -349,6 +350,7 @@ class TurnInFlight(pydantic.BaseModel):
     turn: int
     assistant: tuple[Any, ...]
     results: tuple[str, ...] = ()
+    unshown_answers: dict[str, str] = pydantic.Field(default_factory=dict)
 
 
 def write_turn_marker(path: pathlib.Path, flight: TurnInFlight) -> None:
@@ -429,6 +431,7 @@ def fold_interrupted_turn(
                 tool_use_id=call.id,
                 content=flight.results[i] if i < returned else interrupted_result(call.name),
                 for_call=call,
+                unshown_answer=flight.unshown_answers.get(call.id),
             )
             for i, call in enumerate(calls)
         ]

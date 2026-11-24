@@ -76,9 +76,23 @@ def _turns(
             inputs = []
         elif msg.items and isinstance(msg.items[0], history.ToolResultItem):
             results = tuple(it for it in msg.items if isinstance(it, history.ToolResultItem))
-            turns[-1].append(
-                msg if len(results) == len(msg.items) else history.UserMessage(results)
+            # Preserve the capped result on the wire. Carry the full operator answer beside it.
+            answers = tuple(
+                history.Notice(it.unshown_answer, "operator")
+                for it in results
+                if it.unshown_answer is not None
             )
+            if answers:
+                turns[-1].append(
+                    history.UserMessage(
+                        tuple(dataclasses.replace(it, unshown_answer=None) for it in results)
+                    )
+                )
+                turns[-1].append(history.UserMessage(answers))
+            else:
+                turns[-1].append(
+                    msg if len(results) == len(msg.items) else history.UserMessage(results)
+                )
             if len(results) < len(msg.items):
                 inputs.append(history.UserMessage(msg.items[len(results) :]))
         else:
