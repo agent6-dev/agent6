@@ -224,6 +224,12 @@ def short_repo() -> Iterator[pathlib.Path]:
 
 
 @pytest.fixture
+def tool_context(tmp_path: pathlib.Path) -> dispatch.ToolContext:
+    """Provide a bare dispatcher's context for a direct tool call."""
+    return dispatch.ToolDispatcher(root=tmp_path, config=Config()).tool_context()
+
+
+@pytest.fixture
 def build_dispatcher() -> Iterator[Callable[..., dispatch.ToolDispatcher]]:
     """Build dispatchers over a prepared local command session; teardown closes them all.
 

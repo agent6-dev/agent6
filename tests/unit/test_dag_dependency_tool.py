@@ -8,6 +8,7 @@ test_harness.py.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 
@@ -239,7 +240,9 @@ def test_dag_prompt_blocks_teach_depends_on_not_a_tool() -> None:
         assert "add_dependency" not in block
 
 
-def test_update_task_refuses_a_note_without_a_status(tmp_path: pathlib.Path) -> None:
+def test_update_task_refuses_a_note_without_a_status(
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext
+) -> None:
     """update_task refuses a note without a status.
 
     The graph records a note on a status change only.
@@ -255,5 +258,6 @@ def test_update_task_refuses_a_note_without_a_status(tmp_path: pathlib.Path) -> 
             draft=models.TaskNodeDraft(title="root", depends_on=(), created_by="planner"),
         )
     )
+    ctx = dataclasses.replace(tool_context, curator=curator)
     with pytest.raises(tool_errors.ToolError, match="a note rides along with a status"):
-        dag_tools.update_task(curator, {"id": root.id, "note": "worth remembering"})
+        dag_tools.update_task(ctx, {"id": root.id, "note": "worth remembering"})

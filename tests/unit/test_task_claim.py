@@ -8,12 +8,13 @@ bites a worker that claims its way around the graph without finishing anything.
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 
 from agent6.graph import curator, models
 from agent6.harness import dag_focus, guards
 from agent6.sessions import layout
-from agent6.tools import dag_tools
+from agent6.tools import dag_tools, dispatch
 
 
 def _graph(tmp_path: pathlib.Path) -> tuple[curator.GraphCurator, str, list[str]]:
@@ -51,7 +52,9 @@ def test_marking_a_task_in_progress_claims_it(tmp_path: pathlib.Path) -> None:
     assert dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[2]
 
 
-def test_a_claim_the_frontier_cannot_honour_says_so(tmp_path: pathlib.Path) -> None:
+def test_a_claim_the_frontier_cannot_honour_says_so(
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext
+) -> None:
     """An unworkable claim leaves the frontier's pick standing, and the tool result says so."""
     c, _root, kids = _graph(tmp_path)
     c.add_subtask(
@@ -60,7 +63,8 @@ def test_a_claim_the_frontier_cannot_honour_says_so(tmp_path: pathlib.Path) -> N
         )
     )
 
-    result = dag_tools.update_task(c, {"id": kids[1], "status": "in_progress"})
+    ctx = dataclasses.replace(tool_context, curator=c)
+    result = dag_tools.update_task(ctx, {"id": kids[1], "status": "in_progress"})
 
     assert "not workable yet" in result.to_wire()["note"]
     # A decomposed parent is not a unit of work, so the frontier's own pick
@@ -68,18 +72,24 @@ def test_a_claim_the_frontier_cannot_honour_says_so(tmp_path: pathlib.Path) -> N
     assert dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[0]
 
 
-def test_a_claim_that_took_says_so(tmp_path: pathlib.Path) -> None:
+def test_a_claim_that_took_says_so(
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext
+) -> None:
     c, _root, kids = _graph(tmp_path)
 
-    result = dag_tools.update_task(c, {"id": kids[1], "status": "in_progress"})
+    ctx = dataclasses.replace(tool_context, curator=c)
+    result = dag_tools.update_task(ctx, {"id": kids[1], "status": "in_progress"})
 
     assert result.to_wire()["note"] == "claimed: this is the task the harness works next"
 
 
-def test_an_ordinary_status_carries_no_note(tmp_path: pathlib.Path) -> None:
+def test_an_ordinary_status_carries_no_note(
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext
+) -> None:
     c, _root, kids = _graph(tmp_path)
 
-    assert "note" not in dag_tools.update_task(c, {"id": kids[0], "status": "passed"}).to_wire()
+    ctx = dataclasses.replace(tool_context, curator=c)
+    assert "note" not in dag_tools.update_task(ctx, {"id": kids[0], "status": "passed"}).to_wire()
 
 
 def test_claiming_around_the_graph_still_trips_the_anti_grind_nudge() -> None:

@@ -253,15 +253,9 @@ class ToolDispatcher:
             schema.ParallelInput.TOOL_NAME: lambda ctx, raw: self._parallel(raw),
             schema.SteerChildInput.TOOL_NAME: lambda ctx, raw: self._steer_child(raw),
             schema.MergeChildInput.TOOL_NAME: lambda ctx, raw: self._merge_child(raw),
-            schema.DagAddTaskInput.TOOL_NAME: lambda ctx, raw: dag_tools.add_task(
-                ctx.curator, ctx.run_root_node_id, raw
-            ),
-            schema.DagUpdateTaskInput.TOOL_NAME: lambda ctx, raw: dag_tools.update_task(
-                ctx.curator, raw
-            ),
-            schema.DagListTasksInput.TOOL_NAME: lambda ctx, raw: dag_tools.list_tasks(
-                ctx.curator, raw
-            ),
+            schema.DagAddTaskInput.TOOL_NAME: dag_tools.add_task,
+            schema.DagUpdateTaskInput.TOOL_NAME: dag_tools.update_task,
+            schema.DagListTasksInput.TOOL_NAME: dag_tools.list_tasks,
             schema.UseSkillInput.TOOL_NAME: lambda ctx, raw: skill_tools.use_skill(
                 ctx.workspace, ctx.resolved_skills, raw
             ),

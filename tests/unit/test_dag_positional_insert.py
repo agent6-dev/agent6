@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 
 import pytest
 
 from agent6.graph import curator, models
 from agent6.sessions import layout as sessions_layout
+from agent6.tools import dispatch
 
 
 def _curator(tmp_path: pathlib.Path) -> curator.GraphCurator:
@@ -76,7 +78,9 @@ def test_the_inserted_task_is_focused_next(tmp_path: pathlib.Path) -> None:
     assert [c for c in nodes[root].children][1] == middle
 
 
-def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: pathlib.Path) -> None:
+def test_list_tasks_reads_back_the_order_the_frontier_executes(
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext
+) -> None:
     """`list_tasks` reads back the tree order the frontier executes, not the node map's order."""
     from agent6.graph import order
     from agent6.tools import dag_tools
@@ -88,7 +92,8 @@ def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: pathlib
     middle = _add(cur, root, "middle", after=first)
     assert cur.get(root).children == (first, middle, last)
 
-    listed = [t["id"] for t in dag_tools.list_tasks(cur, {}).to_wire()["tasks"]]
+    ctx = dataclasses.replace(tool_context, curator=cur)
+    listed = [t["id"] for t in dag_tools.list_tasks(ctx, {}).to_wire()["tasks"]]
     assert listed == order.tree_order(cur.nodes()), (
         "the model reads a different order than it planned"
     )
@@ -147,7 +152,9 @@ def test_standing_survives_the_storage_round_trip(tmp_path: pathlib.Path) -> Non
     assert reloaded.nodes()[root].standing is False
 
 
-def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: pathlib.Path) -> None:
+def test_the_model_cannot_retire_the_operators_standing_goal(
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext
+) -> None:
     """update_task refuses to skip or obsolete the operator's standing goal.
 
     A model asking for a standing task of its own gets an ordinary one, which stays retirable.
@@ -173,10 +180,11 @@ def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: pathlib.P
         )
     ).id
     assert not cur.get(models_own).standing
+    ctx = dataclasses.replace(tool_context, curator=cur)
     for status in ("skipped", "obsolete"):
         with pytest.raises(tool_errors.ToolError, match="operator's standing goal"):
-            dag_tools.update_task(cur, {"id": operators, "status": status})
-    assert dag_tools.update_task(cur, {"id": models_own, "status": "skipped"}).status == "skipped"
+            dag_tools.update_task(ctx, {"id": operators, "status": status})
+    assert dag_tools.update_task(ctx, {"id": models_own, "status": "skipped"}).status == "skipped"
     # The curator (the operator's route) can still retire it.
     cur.update_status(models.UpdateStatusIntent(id=operators, new_status="skipped"))
 

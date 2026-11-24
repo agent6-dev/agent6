@@ -7,21 +7,21 @@ Each raises ToolError when no curator was wired, so a standalone dispatcher work
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent6.graph import curator as graph_curator
 from agent6.graph import models, order
 from agent6.tools import results, schema, tool_errors
 
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
-def add_task(
-    curator: graph_curator.GraphCurator | None, run_root_node_id: str | None, raw: dict[str, Any]
-) -> results.AddTaskResult:
+
+def add_task(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.AddTaskResult:
     """Add a subtask under the given parent, or under the run's root.
 
     Args:
-        curator: The graph curator, or None when this run has no graph.
-        run_root_node_id: The parent when the call names none.
+        ctx: The run's task graph.
         raw: The tool call's arguments.
 
     Returns:
@@ -30,10 +30,11 @@ def add_task(
     Raises:
         ToolError: No curator is wired.
     """
+    curator = ctx.curator
     if curator is None:
         raise tool_errors.ToolError("DAG curator not available in this run")
     args = schema.DagAddTaskInput.model_validate(raw)
-    parent_id = args.parent_id or run_root_node_id
+    parent_id = args.parent_id or ctx.run_root_node_id
     draft = models.TaskNodeDraft(
         title=args.title,
         rationale=args.rationale,
@@ -52,13 +53,11 @@ def add_task(
     )
 
 
-def update_task(
-    curator: graph_curator.GraphCurator | None, raw: dict[str, Any]
-) -> results.UpdateTaskResult:
+def update_task(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.UpdateTaskResult:
     """Change a task's status, add dependencies, or both.
 
     Args:
-        curator: The graph curator, or None when this run has no graph.
+        ctx: The run's task graph.
         raw: The tool call's arguments.
 
     Returns:
@@ -68,6 +67,7 @@ def update_task(
         ToolError: No curator is wired, a note comes without a status, the call retires a task
             the operator queued or the standing goal, or it changes nothing.
     """
+    curator = ctx.curator
     if curator is None:
         raise tool_errors.ToolError("DAG curator not available in this run")
     args = schema.DagUpdateTaskInput.model_validate(raw)
@@ -129,13 +129,11 @@ def _claim_note(curator: graph_curator.GraphCurator, node: models.TaskNode) -> s
     )
 
 
-def list_tasks(
-    curator: graph_curator.GraphCurator | None, raw: dict[str, Any]
-) -> results.ListTasksResult:
+def list_tasks(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ListTasksResult:
     """List the graph's tasks in tree order, optionally filtered by status.
 
     Args:
-        curator: The graph curator, or None when this run has no graph.
+        ctx: The run's task graph.
         raw: The tool call's arguments.
 
     Returns:
@@ -144,6 +142,7 @@ def list_tasks(
     Raises:
         ToolError: No curator is wired.
     """
+    curator = ctx.curator
     if curator is None:
         raise tool_errors.ToolError("DAG curator not available in this run")
     args = schema.DagListTasksInput.model_validate(raw)

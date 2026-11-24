@@ -8,6 +8,7 @@ operator alone, so `--standing` stays the one way to set one.
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 
 import pydantic
@@ -15,7 +16,7 @@ import pytest
 
 from agent6.graph import curator, models
 from agent6.sessions import layout
-from agent6.tools import dag_tools, schema, tool_errors
+from agent6.tools import dag_tools, dispatch, schema, tool_errors
 
 
 def _curator(tmp_path: pathlib.Path) -> tuple[curator.GraphCurator, str]:
@@ -40,14 +41,15 @@ def _queued(c: curator.GraphCurator, root: str, title: str = "add a --json flag"
 
 @pytest.mark.parametrize("retirement", ["skipped", "obsolete"])
 def test_the_model_cannot_retire_a_task_the_operator_queued(
-    tmp_path: pathlib.Path, retirement: models.NodeStatus
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext, retirement: models.NodeStatus
 ) -> None:
     """The model's route refuses; the curator stays permissive as the operator's `/retire` route."""
     c, root = _curator(tmp_path)
     queued = _queued(c, root)
 
+    ctx = dataclasses.replace(tool_context, curator=c)
     with pytest.raises(tool_errors.ToolError, match="queued by the operator"):
-        dag_tools.update_task(c, {"id": queued, "status": retirement})
+        dag_tools.update_task(ctx, {"id": queued, "status": retirement})
 
     assert c.nodes()[queued].status == "pending"
     assert c.update_status(models.UpdateStatusIntent(id=queued, new_status=retirement)).status == (
@@ -93,16 +95,19 @@ def test_the_models_standing_task_lands_as_an_ordinary_one(tmp_path: pathlib.Pat
     assert node.status == "pending"
 
 
-def test_add_task_offers_no_standing_flag(tmp_path: pathlib.Path) -> None:
+def test_add_task_offers_no_standing_flag(
+    tmp_path: pathlib.Path, tool_context: dispatch.ToolContext
+) -> None:
     """add_task carries no standing argument, and a stale call naming it is refused."""
     c, root = _curator(tmp_path)
 
+    ctx = dataclasses.replace(tool_context, curator=c, run_root_node_id=root)
     assert "standing" not in schema.DagAddTaskInput.TOOL_DESCRIPTION
     assert "standing" not in schema.DagAddTaskInput.model_fields
     with pytest.raises(pydantic.ValidationError):
-        dag_tools.add_task(c, root, {"title": "keep hunting defects", "standing": True})
+        dag_tools.add_task(ctx, {"title": "keep hunting defects", "standing": True})
 
-    assert dag_tools.add_task(c, root, {"title": "ordinary"}).to_wire()["status"] == "pending"
+    assert dag_tools.add_task(ctx, {"title": "ordinary"}).to_wire()["status"] == "pending"
 
 
 def test_a_new_sibling_lands_before_the_standing_goal(tmp_path: pathlib.Path) -> None:
