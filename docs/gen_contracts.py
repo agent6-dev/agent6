@@ -72,7 +72,7 @@ CONTRACTS: tuple[Contract, ...] = (
         title="CLI listing rows",
         module="agent6.viewmodel.listing",
         primary=("summary_row", "row_json"),
-        writers=("ui/cli/sessions_cmds.py", "ui/web/model.py"),
+        writers=("ui/cli/sessions_list.py", "ui/web/model.py"),
         pins=("tests/unit/test_cli_sessions_list.py",),
         public_format="cli-json",
     ),
