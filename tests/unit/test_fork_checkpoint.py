@@ -349,7 +349,7 @@ def _seed_source_run(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": session_id,
                 "mode": mode,
                 "user_task": "do the thing",

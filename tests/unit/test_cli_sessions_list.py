@@ -326,7 +326,7 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
         d = runs / sid
         d.mkdir(parents=True)
         manifest: dict[str, object] = {
-            "version": 2,
+            "version": 0,
             "session_id": sid,
             "mode": "run",
             "user_task": "t",
@@ -453,7 +453,7 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
         d = common._runs_dir(repo) / session_id
         d.mkdir(parents=True)
         manifest = {
-            "version": 2,
+            "version": 0,
             "session_id": session_id,
             "mode": "run",
             "user_task": session_id,
@@ -752,7 +752,7 @@ def test_continued_run_keeps_its_label(
     _run(runs, "original-task")
     d = runs / "original-task"
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
+        json.dumps({"version": 0, "session_id": d.name, "mode": "run", "user_task": "do more"})
     )
     with (d / "logs.jsonl").open("a") as f:
         f.write(json.dumps({"type": "session.resume", "steer": "do more"}) + "\n")

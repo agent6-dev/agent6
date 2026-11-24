@@ -222,7 +222,7 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
 
     layout = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
     (layout.session_dir / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": layout.session_id, "mode": mode}),
+        json.dumps({"version": 0, "session_id": layout.session_id, "mode": mode}),
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -370,7 +370,7 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
     (layout.session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": layout.session_id,
                 "mode": "run",
                 "user_task": "t",

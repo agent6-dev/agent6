@@ -45,8 +45,11 @@ def test_missing_fields_default_so_any_old_dir_renders(tmp_path: pathlib.Path) -
     assert m.merged is None and m.placement is None
 
 
-def test_legacy_version_1_and_missing_profile(tmp_path: pathlib.Path) -> None:
-    # A real pre-reshape dir: version 1, harness without `preset`.
+def test_legacy_version_1_and_missing_profile(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An older record under a newer build: version 1 of 2, harness without `preset`.
+    monkeypatch.setattr(sessions_manifest, "MANIFEST_VERSION", 2)
     _write(
         tmp_path,
         {
@@ -238,10 +241,13 @@ def test_reading_a_newer_manifest_is_refused(tmp_path: pathlib.Path) -> None:
     assert on_disk["future_key"] == {"x": 1}
 
 
-def test_rewriting_an_older_manifest_upgrades_it(tmp_path: pathlib.Path) -> None:
+def test_rewriting_an_older_manifest_upgrades_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A stamp rewrite of an older manifest upgrades the version claim to the shape it wrote."""
     from agent6.app import stamps
 
+    monkeypatch.setattr(sessions_manifest, "MANIFEST_VERSION", 2)
     _write(tmp_path, {"version": 1, "session_id": "r-old"})
     stamps.write_manifest(tmp_path / "manifest.json", sessions_manifest.read_manifest(tmp_path))
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
@@ -345,7 +351,7 @@ def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: pathlib
     The field defaulted to "run", so a manifest that lost its mode resumed or forked with the
     write-tool surface, the escalation session_mode exists to stop.
     """
-    _write(tmp_path, {"version": 3, "session_id": "r", "user_task": "t"})
+    _write(tmp_path, {"version": 0, "session_id": "r", "user_task": "t"})
     m = sessions_manifest.read_manifest(tmp_path)
     with pytest.raises(sessions_manifest.ManifestError, match="unknown session mode"):
         m.session_mode()
@@ -353,7 +359,7 @@ def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: pathlib
 
 def test_a_plan_manifest_still_gates_as_plan(tmp_path: pathlib.Path) -> None:
     for mode in ("run", "plan"):
-        _write(tmp_path, {"version": 3, "mode": mode})
+        _write(tmp_path, {"version": 0, "mode": mode})
         assert sessions_manifest.read_manifest(tmp_path).session_mode() == mode
 
 
@@ -366,7 +372,7 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: pathlib.Path) -> N
     from agent6.app import stamps
 
     (tmp_path / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "session_id": "r"}), encoding="utf-8"
+        json.dumps({"version": 0, "mode": "run", "session_id": "r"}), encoding="utf-8"
     )
     assert (
         sessions_manifest.read_manifest(tmp_path).harness.gate.source == ""

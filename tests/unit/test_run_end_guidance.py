@@ -41,7 +41,7 @@ def layout(tmp_path: pathlib.Path, repo: pathlib.Path) -> sessions_layout.Sessio
     result.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": result.session_id,
                 "mode": "run",
                 "base_sha": _git(repo, "rev-parse", "HEAD"),

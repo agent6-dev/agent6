@@ -46,7 +46,7 @@ def merged_fork(
     source.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "source",
                 "mode": "run",
                 "base_sha": base,

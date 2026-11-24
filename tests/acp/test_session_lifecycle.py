@@ -56,7 +56,7 @@ def _record(
     d.mkdir(parents=True)
     mode = bucket[:-1]
     manifest: dict[str, Any] = {
-        "version": 2,
+        "version": 0,
         "session_id": session_id,
         "mode": mode,
         "user_task": task,

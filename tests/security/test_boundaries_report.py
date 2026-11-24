@@ -419,7 +419,7 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "fork-AAAA11",
                 "mode": "run",
                 "worktree": str(worktree),

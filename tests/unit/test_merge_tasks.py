@@ -62,7 +62,7 @@ def _session(tmp_path: pathlib.Path, session_id: str, base: str) -> sessions_lay
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": session_id,
                 "base_sha": base,
                 "base_branch": "main",

@@ -133,7 +133,7 @@ def create_record(
     """Create a session record in the real repository state layout."""
     dest = layout.bucket_dir(paths.state_dir(repo), kinds.session_bucket(mode)) / sid
     dest.mkdir(parents=True)
-    data: dict[str, Any] = {"version": 2, "session_id": sid, "mode": mode, "user_task": "t"}
+    data: dict[str, Any] = {"version": 0, "session_id": sid, "mode": mode, "user_task": "t"}
     if parent:
         data["parallel"] = {"parent": parent, "group": parent + "-p1", "number": 1}
     (dest / "manifest.json").write_text(json.dumps(data))

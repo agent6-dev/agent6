@@ -26,7 +26,7 @@ def test_stop_reason_on_public_views(
     monkeypatch.chdir(tmp_path)
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="shape")
     layout.ensure()
-    layout.manifest_path.write_text(json.dumps({"version": 3, "mode": "run"}))
+    layout.manifest_path.write_text(json.dumps({"version": 0, "mode": "run"}))
     journal = [
         {"type": "session.start", "mode": "run", "execution_id": "first"},
         {"type": "session.stop", "reason": "steer_abort", "execution_id": "first"},
@@ -63,7 +63,7 @@ def test_public_verification_word(
     monkeypatch.chdir(tmp_path)
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="shape")
     layout.ensure()
-    layout.manifest_path.write_text(json.dumps({"version": 3, "mode": "run"}))
+    layout.manifest_path.write_text(json.dumps({"version": 0, "mode": "run"}))
     journal = [
         {"type": "session.start", "mode": "run", "execution_id": "execution"},
         {"type": "session.stop", "reason": "finish_session", "verification": word},

@@ -66,7 +66,7 @@ async def _ordinary_scenario(repo: pathlib.Path) -> None:
     parent = layout.SessionLayout(state_dir=state, session_id="solo")
     parent.ensure()
     parent.manifest_path.write_text(
-        json.dumps({"version": 3, "session_id": "solo", "mode": "run"}), encoding="utf-8"
+        json.dumps({"version": 0, "session_id": "solo", "mode": "run"}), encoding="utf-8"
     )
     parent.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
@@ -84,7 +84,7 @@ async def _ordinary_scenario(repo: pathlib.Path) -> None:
         child.manifest_path.write_text(
             json.dumps(
                 {
-                    "version": 3,
+                    "version": 0,
                     "session_id": "solo-p1-l1",
                     "mode": "run",
                     "models": {"driver": {"provider": "openai", "model": "child-1"}},

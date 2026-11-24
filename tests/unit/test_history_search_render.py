@@ -372,7 +372,7 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     lines: list[str] = []
     event = json.dumps({"ts": "2026-07-12T07:36:51.1Z", "type": "session.start", "user_task": task})
     lines.append(_rg_match("/s/sessions/runs/r1/logs.jsonl", event, event.index("Improve")))
-    manifest = json.dumps({"version": 2, "user_task": task})
+    manifest = json.dumps({"version": 0, "user_task": task})
     lines.append(
         _rg_match("/s/sessions/runs/r1/manifest.json", manifest, manifest.index("Improve"))
     )
@@ -434,7 +434,7 @@ def test_ascii_escaped_and_raw_utf8_encodings_share_one_key() -> None:
         {"ts": "2026-07-12T07:36:51.1Z", "type": "session.start", "user_task": task},
         ensure_ascii=False,
     )
-    escaped_manifest = json.dumps({"version": 2, "user_task": task})  # ascii-escaped
+    escaped_manifest = json.dumps({"version": 0, "user_task": task})  # ascii-escaped
     assert "\\u00e9" in escaped_manifest  # the divergence under test
     hits = history_cmds._parse_rg_matches(
         _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", raw_event, "NEEDLE")

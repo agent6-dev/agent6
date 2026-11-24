@@ -60,7 +60,7 @@ def _setup_run(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": session_id,
                 "base_sha": base_sha,
                 "base_branch": "main",
@@ -168,7 +168,7 @@ def test_a_fork_of_a_squash_merged_run_merges_only_its_own_work(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "fork-run1",
                 "base_sha": base,
                 "base_branch": "main",
@@ -1450,7 +1450,7 @@ def test_merge_adopts_an_orphaned_group_child(
     (child_state / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "fan-l1",
                 "mode": "run",
                 "user_task": "t",

@@ -549,11 +549,11 @@ def test_a_phone_opens_a_run_at_its_tail_where_a_prompt_waits(
         group = {"group": session.name, "parent": session.name}
         for number in (1, 2):
             child = session_logs.write_run(tmp_path, f"{session.name}-l{number}", [stop])
-            manifest = {"version": 3, "session_id": child.name, "mode": "run"}
+            manifest = {"version": 0, "session_id": child.name, "mode": "run"}
             (child / "manifest.json").write_text(
                 json.dumps({**manifest, "parallel": {**group, "number": number}})
             )
-        manifest = {"version": 3, "session_id": session.name, "mode": "run"}
+        manifest = {"version": 0, "session_id": session.name, "mode": "run"}
         (session / "manifest.json").write_text(json.dumps(manifest))
     page, errors = open_page(port)
     page.set_viewport_size({"width": 390, "height": 844})
@@ -716,7 +716,7 @@ def test_a_fan_out_keeps_twenty_children_in_details(
     stop = {"type": "session.stop", "verification": "passed", "reason": "finish_session"}
     for number in range(21):
         session = session_logs.write_run(tmp_path, f"fan-l{number}" if number else "fan", [stop])
-        manifest: dict[str, Any] = {"version": 3, "session_id": session.name, "mode": "run"}
+        manifest: dict[str, Any] = {"version": 0, "session_id": session.name, "mode": "run"}
         if number:
             manifest["parallel"] = {"group": "fan", "number": number, "parent": "fan"}
         (session / "manifest.json").write_text(json.dumps(manifest))
@@ -743,7 +743,7 @@ def test_a_long_child_model_wraps_on_a_phone(
     fan, model = "brisk-fjord-GRP001", "moonshotai/kimi-k2.7-code-20260612"
     for number in range(4):
         session = session_logs.write_run(tmp_path, f"{fan}-l{number}" if number else fan, [stop])
-        manifest: dict[str, Any] = {"version": 3, "session_id": session.name, "mode": "run"}
+        manifest: dict[str, Any] = {"version": 0, "session_id": session.name, "mode": "run"}
         if number:
             manifest["parallel"] = {"group": fan, "number": number, "parent": fan}
             manifest["models"] = {"driver": {"provider": "openrouter", "model": model}}

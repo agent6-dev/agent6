@@ -226,7 +226,7 @@ def test_model_git_or_a_torn_manifest_disables_fork_and_merge(
     """
     run = tmp_path / "state" / "sessions" / "runs" / "model-run"
     run.mkdir(parents=True)
-    text = json.dumps({"version": 3, "git_control": control})
+    text = json.dumps({"version": 0, "git_control": control})
     (run / "manifest.json").write_text(text[: len(text) // 2] if control == "torn" else text)
     (run / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run"})

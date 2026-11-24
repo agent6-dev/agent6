@@ -401,7 +401,7 @@ def _live_child(tmp_path: pathlib.Path, name: str, parent: str) -> pathlib.Path:
     (d / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": name,
                 "mode": "run",
                 "user_task": "t",

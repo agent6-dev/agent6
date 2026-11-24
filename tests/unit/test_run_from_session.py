@@ -110,7 +110,7 @@ def _seed_source(repo: pathlib.Path, bucket: str, session_id: str) -> None:
     (source / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": session_id,
                 "mode": mode,
                 "user_task": f"source {mode} task",

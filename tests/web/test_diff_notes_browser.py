@@ -41,7 +41,7 @@ def test_a_session_diff_line_is_quoted_into_the_sessions_composer(
     session = paths.state_dir(tmp_path) / "sessions" / "runs" / "quote-line"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "agent6"})
+        json.dumps({"version": 0, "mode": "run", "base_sha": base, "git_control": "agent6"})
     )
     events = [
         {"type": "session.start", "mode": "run", "user_task": "Quote a line"},

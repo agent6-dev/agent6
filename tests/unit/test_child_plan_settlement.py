@@ -29,7 +29,7 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
         (directory / "manifest.json").write_text(
             json.dumps(
                 {
-                    "version": 2,
+                    "version": 0,
                     "session_id": directory.name,
                     "mode": "run" if directory == worker else "reviewer",
                     "models": {"driver": {"provider": provider, "model": "base"}},

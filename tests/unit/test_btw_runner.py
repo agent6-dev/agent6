@@ -19,7 +19,7 @@ from agent6.ui.cli import console_render, steer_menu
 def _answered_ask(root: pathlib.Path, name: str, answer: str) -> pathlib.Path:
     d = root / name
     d.mkdir(parents=True)
-    (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}), encoding="utf-8")
+    (d / "manifest.json").write_text(json.dumps({"version": 0, "mode": "ask"}), encoding="utf-8")
     (d / "logs.jsonl").write_text(
         "\n".join(
             [

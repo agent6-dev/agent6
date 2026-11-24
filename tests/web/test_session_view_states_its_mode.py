@@ -24,7 +24,7 @@ def _session(state: pathlib.Path, bucket: str, session_id: str, mode: str) -> pa
     session = layout.bucket_dir(state, bucket) / session_id
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": session_id, "mode": mode, "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": session_id, "mode": mode, "user_task": "t"}),
         encoding="utf-8",
     )
     (session / "logs.jsonl").write_text(

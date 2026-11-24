@@ -59,7 +59,7 @@ def _run(repo: pathlib.Path, name: str, *, finished: bool = False) -> pathlib.Pa
         )
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": name, "mode": "run", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": name, "mode": "run", "user_task": "t"}),
         encoding="utf-8",
     )
     return d
@@ -267,7 +267,7 @@ def test_a_group_stops_only_its_live_children(
     (fan / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": fan.name,
                 "mode": "run",
                 "user_task": "t",
@@ -279,7 +279,7 @@ def test_a_group_stops_only_its_live_children(
         (child / "manifest.json").write_text(
             json.dumps(
                 {
-                    "version": 3,
+                    "version": 0,
                     "session_id": child.name,
                     "mode": "run",
                     "user_task": "t",
@@ -325,7 +325,7 @@ def _group(tmp_path: pathlib.Path, fan: str, child: str) -> tuple[pathlib.Path, 
     (fan_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": fan,
                 "mode": "run",
                 "user_task": "t",
@@ -336,7 +336,7 @@ def _group(tmp_path: pathlib.Path, fan: str, child: str) -> tuple[pathlib.Path, 
     (child_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": child,
                 "mode": "run",
                 "user_task": "t",
@@ -402,7 +402,7 @@ def _session_dir(repo: pathlib.Path, session_id: str) -> pathlib.Path:
 
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
-    layout.manifest_path.write_text('{"version": 2}', encoding="utf-8")
+    layout.manifest_path.write_text('{"version": 0}', encoding="utf-8")
     (layout.session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     return layout.session_dir
 
@@ -454,7 +454,7 @@ def test_a_parked_run_says_it_has_not_started(
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "parked-run-DDD444")
     (rd / "manifest.json").write_text(
-        '{"version": 3, "session_id": "parked-run-DDD444", "mode": "run",'
+        '{"version": 0, "session_id": "parked-run-DDD444", "mode": "run",'
         ' "parked_task": "wait for the checkout"}',
         encoding="utf-8",
     )
@@ -519,7 +519,7 @@ def test_a_bare_stop_passes_over_a_groups_child(
     (child / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": child.name,
                 "mode": "run",
                 "user_task": "t",

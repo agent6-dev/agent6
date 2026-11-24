@@ -128,7 +128,7 @@ def _seed_plan(root: pathlib.Path, session_id: str, plan_md: str) -> None:
     plan_dir.mkdir(parents=True)
     (plan_dir / "plan.md").write_text(plan_md, encoding="utf-8")
     (plan_dir / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "plan", "user_task": "plan the notes"}),
+        json.dumps({"version": 0, "mode": "plan", "user_task": "plan the notes"}),
         encoding="utf-8",
     )
     (plan_dir / "logs.jsonl").write_text(

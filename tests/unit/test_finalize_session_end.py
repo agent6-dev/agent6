@@ -260,7 +260,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
         ],
     )
     manifest = {
-        "version": 3,
+        "version": 0,
         "session_id": "r-slow",
         "mode": "run",
         "user_task": "t",
@@ -329,7 +329,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
     An unverified finish says what is missing instead.
     """
     manifest: dict[str, object] = {
-        "version": 3,
+        "version": 0,
         "session_id": "r-red",
         "mode": "run",
         "user_task": "t",
@@ -1091,7 +1091,7 @@ def test_a_session_that_ends_holding_work_names_the_next_step(
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="quiet-fox-AAAAAA")
     layout.session_dir.mkdir(parents=True)
     (layout.session_dir / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": mode}), encoding="utf-8"
+        json.dumps({"version": 0, "mode": mode}), encoding="utf-8"
     )
     (layout.session_dir / "plan.md").write_text("# The plan\n\n1. do it\n", encoding="utf-8")
     _finalize._print_next_session(layout, completed=True, reporter=reporter.STDIO_REPORTER)

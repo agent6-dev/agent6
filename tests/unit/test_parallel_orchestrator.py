@@ -95,7 +95,7 @@ def _write_fake_run(
     # the fakes mirror that for `<group>-l<N>` ids so post-import assertions
     # hold for the same reason they do live.
     manifest: dict[str, object] = {
-        "version": 2,
+        "version": 0,
         "session_id": session_dir.name,
         "mode": "run",
         "user_task": task,

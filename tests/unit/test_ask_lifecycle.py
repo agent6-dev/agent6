@@ -18,7 +18,7 @@ def _session(state: pathlib.Path, bucket: str, sid: str, mode: str) -> pathlib.P
     d = state / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": mode, "session_id": sid}), encoding="utf-8"
+        json.dumps({"version": 0, "mode": mode, "session_id": sid}), encoding="utf-8"
     )
     return d
 
@@ -91,7 +91,7 @@ def test_a_run_can_be_seeded_from_an_ask(
     ask = paths.state_dir(tmp_path) / "sessions" / "asks" / "quiet-fox-AAAAAA"
     ask.mkdir(parents=True)
     (ask / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),
+        json.dumps({"version": 0, "mode": "ask", "user_task": "how do I convert h264"}),
         encoding="utf-8",
     )
     (ask / "logs.jsonl").write_text(

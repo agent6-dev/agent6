@@ -17,7 +17,8 @@ import pydantic
 
 from agent6 import child_records, credit_usage, portable, token_usage
 
-RECORD_VERSION = 16
+# 0 while the project is alpha: the record shape changes without a bump.
+RECORD_VERSION = 0
 DIR_NAME = "dispatch"
 _COMMIT_COUNT = "commits_beyond_start"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "merging", "complete"]

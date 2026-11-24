@@ -358,7 +358,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "crashed-AAAA11",
                 "mode": "run",
                 "user_task": "t",
@@ -458,7 +458,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
-            {"version": 3, "session_id": "withheld-AAAA11", "mode": "run", "user_task": "t"}
+            {"version": 0, "session_id": "withheld-AAAA11", "mode": "run", "user_task": "t"}
         ),
         encoding="utf-8",
     )
@@ -950,7 +950,7 @@ def test_a_resumes_key_check_precedes_isolation(
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "order-AAAA11"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": "order-AAAA11", "mode": "run", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": "order-AAAA11", "mode": "run", "user_task": "t"}),
         encoding="utf-8",
     )
     (session_dir / "loop_state.json").write_text(
@@ -1019,7 +1019,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "withheld-AAAA11",
                 "mode": "run",
                 "user_task": "t",

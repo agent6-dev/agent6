@@ -50,7 +50,7 @@ def _manifest(repo: pathlib.Path, sid: str, **fields: object) -> None:
     """Write a run's manifest with `fields`."""
     run = paths.state_dir(repo) / "sessions" / "runs" / sid
     run.mkdir(parents=True, exist_ok=True)
-    manifest = {"version": 3, "session_id": sid, "mode": "run", **fields}
+    manifest = {"version": 0, "session_id": sid, "mode": "run", **fields}
     (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 

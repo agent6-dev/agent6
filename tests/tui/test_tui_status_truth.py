@@ -41,7 +41,7 @@ def _mk_parked(d: pathlib.Path) -> None:
     (d / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": d.name,
                 "mode": "run",
                 "user_task": "fix the flaky test",
@@ -91,7 +91,7 @@ def test_the_dashboard_title_word_is_the_sessions_mode(tmp_path: pathlib.Path) -
     d = tmp_path / "plan1"
     d.mkdir()
     (d / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": d.name, "mode": "plan", "user_task": "lay it out"}),
+        json.dumps({"version": 0, "session_id": d.name, "mode": "plan", "user_task": "lay it out"}),
         encoding="utf-8",
     )
     (d / "logs.jsonl").write_text(
@@ -206,7 +206,7 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: pathlib.Pa
     d = tmp_path / "plan2"
     d.mkdir()
     (d / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": d.name, "mode": "plan", "user_task": "lay it out"}),
+        json.dumps({"version": 0, "session_id": d.name, "mode": "plan", "user_task": "lay it out"}),
         encoding="utf-8",
     )
     evs = [
@@ -1467,7 +1467,7 @@ def test_a_parked_sessions_empty_view_names_the_reason() -> None:
 def _mk_created(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     (d / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": d.name, "mode": "run", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": d.name, "mode": "run", "user_task": "t"}),
         encoding="utf-8",
     )
 
@@ -1502,7 +1502,7 @@ def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: pathlib.Pat
         d = tmp_path / name / f"{mode}-one-AAAAAA"
         d.mkdir(parents=True)
         (d / "manifest.json").write_text(
-            json.dumps({"version": 3, "session_id": d.name, "mode": mode, "user_task": "t"}),
+            json.dumps({"version": 0, "session_id": d.name, "mode": mode, "user_task": "t"}),
             encoding="utf-8",
         )
         evs = [
@@ -1546,7 +1546,7 @@ def test_header_continuation_keeps_original_task(
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
+        json.dumps({"version": 0, "session_id": d.name, "mode": "run", "user_task": "do more"})
     )
 
     async def scenario() -> None:

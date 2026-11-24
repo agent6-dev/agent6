@@ -84,7 +84,7 @@ def _session_with_task(root: pathlib.Path, task: str) -> None:
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
         json.dumps(
-            {"version": 3, "session_id": "brave-oak-AAAAAA", "mode": "run", "user_task": task}
+            {"version": 0, "session_id": "brave-oak-AAAAAA", "mode": "run", "user_task": task}
         ),
         encoding="utf-8",
     )

@@ -40,7 +40,7 @@ def test_commit_picker_requests_the_selected_commit(
     session = paths.state_dir(tmp_path) / "sessions" / "runs" / "commit-picker"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "agent6"})
+        json.dumps({"version": 0, "mode": "run", "base_sha": base, "git_control": "agent6"})
     )
     events = [
         {"type": "session.start", "mode": "run", "user_task": "Select history"},
@@ -80,7 +80,7 @@ def test_git_control_gates_session_actions(
     session = paths.state_dir(tmp_path) / "sessions" / "runs" / "git-control"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "git_control": control, "run_branch": "main"})
+        json.dumps({"version": 0, "mode": "run", "git_control": control, "run_branch": "main"})
     )
     events = [{"type": "session.start", "mode": "run", "user_task": "Own git"}]
     if live:

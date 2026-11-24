@@ -16,7 +16,7 @@ from agent6.viewmodel.session import log as session_log
 
 def _manifest(session_dir: pathlib.Path, **over: object) -> None:
     data: dict[str, object] = {
-        "version": 3,
+        "version": 0,
         "mode": "run",
         "session_id": "r",
         "models": {"driver": {"provider": "anthropic", "model": "claude-x"}},

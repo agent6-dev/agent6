@@ -64,7 +64,7 @@ def _manifest(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
-        "version": 2,
+        "version": 0,
         "session_id": session_id,
         "mode": "run",
         "base_sha": base,
@@ -364,7 +364,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "pretip1",
                 "base_sha": base,
                 "base_branch": "main",
@@ -413,7 +413,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "pretip2",
                 "base_sha": base,
                 "base_branch": "main",
@@ -838,7 +838,7 @@ def _fork_with_worktree(
         )
         layout.ensure()
         data: dict[str, object] = {
-            "version": 3,
+            "version": 0,
             "session_id": session_id,
             "mode": "run",
             "base_sha": base,
@@ -997,7 +997,7 @@ def _record(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
-        "version": 3,
+        "version": 0,
         "session_id": session_id,
         "mode": "run",
         "base_sha": base,
@@ -1409,7 +1409,7 @@ def test_prune_confirms_a_forked_plans_branch_across_buckets(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "brave-oak-AAAAAA",
                 "mode": "plan",
                 "base_sha": base,

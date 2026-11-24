@@ -59,7 +59,7 @@ def _live_forever(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
     d = tmp_path / "child-state" / "sessions" / "runs" / name
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": name, "mode": "run", "user_task": "t"}) + "\n",
+        json.dumps({"version": 0, "session_id": name, "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
     (d / "logs.jsonl").write_text(

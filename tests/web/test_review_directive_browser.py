@@ -34,7 +34,7 @@ def test_review_completion_is_available_before_and_during_a_session(
     session = paths.state_dir(tmp_path) / "sessions" / "runs" / "review-completion"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "session_id": session.name}), encoding="utf-8"
+        json.dumps({"version": 0, "mode": "run", "session_id": session.name}), encoding="utf-8"
     )
     rows = [{"type": "session.start", "mode": "run", "user_task": "inspect"}]
     if mode == "live":

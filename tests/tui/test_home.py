@@ -660,7 +660,7 @@ def test_merge_action_confirms_then_merges(
     (rd / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "r1",
                 "mode": "run",
                 "user_task": "x",
@@ -1060,7 +1060,7 @@ def test_a_wide_hub_names_the_branch_and_r_opens_the_review_composer(
     (rd / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "r1",
                 "mode": "run",
                 "user_task": "x",

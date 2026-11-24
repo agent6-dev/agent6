@@ -36,7 +36,7 @@ def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
     """Two executions keep the original label and show the latest work below it."""
     (tmp_path / "manifest.json").write_text(
         json.dumps(
-            {"version": 3, "session_id": tmp_path.name, "mode": "run", "user_task": "do more"}
+            {"version": 0, "session_id": tmp_path.name, "mode": "run", "user_task": "do more"}
         )
     )
     journal = [
@@ -50,7 +50,7 @@ def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
     assert summary.task_label.task == "original task"
     assert listing.summary_row(summary)["task_line"] == "original task\ncontinued: do more"
     (tmp_path / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "user_task": "latest work"})
+        json.dumps({"version": 0, "mode": "run", "user_task": "latest work"})
     )
     with (tmp_path / "logs.jsonl").open("a") as log:
         log.write(json.dumps({"type": "session.resume", "steer": "latest work"}) + "\n")
@@ -870,7 +870,7 @@ def test_run_is_live_unstarted_dirs(tmp_path: pathlib.Path) -> None:
     rd = tmp_path / "sessions" / "runs" / "parked"
     rd.mkdir(parents=True)
     (rd / "manifest.json").write_text(
-        json.dumps({"version": 2, "parked_task": "queued work"}), encoding="utf-8"
+        json.dumps({"version": 0, "parked_task": "queued work"}), encoding="utf-8"
     )
     assert session_is_live(rd) is False
     live = _write_run(tmp_path, "runs", "launching", [])
@@ -1353,7 +1353,7 @@ def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: pa
     rd = _write_run(tmp_path, "runs", "forked-0001", [{"type": "session.resume"}])
     (rd / "manifest.json").write_text(
         json.dumps(
-            {"version": 2, "session_id": "forked-0001", "mode": "run", "user_task": "carry on"}
+            {"version": 0, "session_id": "forked-0001", "mode": "run", "user_task": "carry on"}
         ),
         encoding="utf-8",
     )
@@ -1755,7 +1755,7 @@ def test_unsteered_resume_keeps_one_task_line(tmp_path: pathlib.Path, task: str)
     (tmp_path / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "mode": "run",
                 "user_task": task,
             }

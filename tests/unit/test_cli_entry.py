@@ -274,7 +274,7 @@ def test_a_plan_task_that_names_an_existing_plan_points_at_run_from(
         state_dir=paths.state_dir(tmp_path), session_id="quiet-lake-AAAA11", subdir="plans"
     )
     plan.ensure()
-    plan.manifest_path.write_text('{"version": 3, "mode": "plan", "session_id": "x"}')
+    plan.manifest_path.write_text('{"version": 0, "mode": "plan", "session_id": "x"}')
 
     rc = cli_main(["plan", "run", "quiet-lake-AAAA11"])
 

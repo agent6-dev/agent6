@@ -331,7 +331,7 @@ def test_the_latest_commit_card_shows_no_error_under_the_logs_diff(
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     session = session_logs.write_run(tmp_path, "pruned-AAA111", rows)
-    (session / "manifest.json").write_text(json.dumps({"version": 3, "mode": "run"}))
+    (session / "manifest.json").write_text(json.dumps({"version": 0, "mode": "run"}))
     page, errors = open_page(port)
     page.set_viewport_size({"width": 1280, "height": 900})
     with page.expect_response(lambda response: "/diff?sha=" in response.url) as answer:
@@ -631,7 +631,7 @@ def test_a_picked_commit_says_its_diff_is_loading(
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     session = session_logs.write_run(tmp_path, "picked-AAA111", rows)
-    (session / "manifest.json").write_text(json.dumps({"version": 3, "mode": "run"}))
+    (session / "manifest.json").write_text(json.dumps({"version": 0, "mode": "run"}))
     page, errors = open_page(port)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"http://127.0.0.1:{port}/#/session/picked-AAA111")

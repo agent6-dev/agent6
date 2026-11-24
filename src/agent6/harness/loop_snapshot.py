@@ -161,8 +161,8 @@ class ResumeError(Exception):
     """A resume cannot proceed from the recorded session state."""
 
 
-# Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 12
+# 0 while the project is alpha: the persisted shape changes without a bump.
+SNAPSHOT_VERSION = 0
 
 
 class SessionSnapshot(pydantic.BaseModel):

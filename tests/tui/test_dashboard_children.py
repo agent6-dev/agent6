@@ -35,7 +35,7 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     start = int(time.time()) - 50
     root = layout.SessionLayout(state, "atlas")
     root.ensure()
-    root.manifest_path.write_text(json.dumps({"version": 3, "session_id": "atlas", "mode": "run"}))
+    root.manifest_path.write_text(json.dumps({"version": 0, "session_id": "atlas", "mode": "run"}))
     _events(root.session_dir, {"type": "session.start", "mode": "run", "user_task": "Audit parser"})
     process.write_worker_pid(root.session_dir, os.getpid())
     for group, tasks in (
@@ -58,7 +58,7 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
                 child.manifest_path.write_text(
                     json.dumps(
                         {
-                            "version": 3,
+                            "version": 0,
                             "mode": mode,
                             "session_id": sid,
                             "models": {"driver": {"provider": "local", "model": "swift"}},
@@ -334,7 +334,7 @@ def test_message_reaches_a_reviewer_in_a_later_batch(family: pathlib.Path) -> No
     reviewer.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "mode": "reviewer",
                 "session_id": sid,
                 "parallel": {"group": batch, "number": 1, "parent": family.name},

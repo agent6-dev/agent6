@@ -80,7 +80,7 @@ def _write_session(
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
-            {"version": 2, "session_id": session_id, "mode": "run", "user_task": "fix the parser"}
+            {"version": 0, "session_id": session_id, "mode": "run", "user_task": "fix the parser"}
         )
         + "\n",
         encoding="utf-8",
@@ -280,7 +280,7 @@ def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: pathlib.Path) -> None:
     ]
     layout = _write_session(repo, session_id="plan-1", events=plan)
     layout.manifest_path.write_text(
-        json.dumps({"version": 2, "session_id": "plan-1", "mode": "plan", "user_task": "plan it"})
+        json.dumps({"version": 0, "session_id": "plan-1", "mode": "plan", "user_task": "plan it"})
         + "\n",
         encoding="utf-8",
     )
@@ -512,7 +512,7 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     modelgit.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "run-MODEL1",
                 "mode": "run",
                 "user_task": "t",
@@ -536,7 +536,7 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     )
     plan.ensure()
     plan.manifest_path.write_text(
-        json.dumps({"version": 2, "session_id": "plan-NEWEST", "mode": "plan", "user_task": "p"})
+        json.dumps({"version": 0, "session_id": "plan-NEWEST", "mode": "plan", "user_task": "p"})
         + "\n",
         encoding="utf-8",
     )

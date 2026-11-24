@@ -43,7 +43,7 @@ def _ask(state: pathlib.Path) -> str:
     (session / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "curious-otter-AAAAAA",
                 "mode": "ask",
                 "user_task": "t",

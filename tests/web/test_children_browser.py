@@ -79,7 +79,7 @@ def seed_family(repo: pathlib.Path, prompt: str) -> pathlib.Path:
     ]
     for session, group, mode, task in groups:
         manifest = {
-            "version": 3,
+            "version": 0,
             "session_id": session.name,
             "mode": mode,
             "user_task": task,

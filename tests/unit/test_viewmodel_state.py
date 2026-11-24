@@ -694,7 +694,7 @@ def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: pathlib.Path) 
     session_dir = tmp_path / "sunny-otter-K4Q7B2"
     session_dir.mkdir()
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "user_task": "queued work"}), encoding="utf-8"
+        json.dumps({"version": 0, "user_task": "queued work"}), encoding="utf-8"
     )
     d = session_state_as_dict(viewmodel_state.fold_session([]), session_dir)
     assert d["session_id"] == "sunny-otter-K4Q7B2"

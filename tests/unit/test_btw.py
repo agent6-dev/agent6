@@ -33,7 +33,7 @@ def test_the_grammar_matches_only_a_leading_btw(text: str, expected: str | None)
 def _ask_dir(root: pathlib.Path, name: str, *, events: list[dict[str, object]]) -> pathlib.Path:
     d = root / name
     d.mkdir(parents=True)
-    (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}), encoding="utf-8")
+    (d / "manifest.json").write_text(json.dumps({"version": 0, "mode": "ask"}), encoding="utf-8")
     (d / "logs.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
     # A started ask has a live worker.pid on disk; without one the status fold reads it as exited.
     if any(e.get("type") == "session.start" for e in events):

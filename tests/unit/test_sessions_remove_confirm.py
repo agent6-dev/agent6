@@ -49,7 +49,7 @@ def _ended_unmerged_run(repo: pathlib.Path) -> sessions_layout.SessionLayout:
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": _ID,
                 "mode": "run",
                 "base_sha": base,
@@ -368,7 +368,7 @@ def _reviewer(state: pathlib.Path, reviewer_id: str, parent: str) -> pathlib.Pat
     (reviewer / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": reviewer_id,
                 "mode": "reviewer",
                 "user_task": "Review: security",
@@ -420,7 +420,7 @@ def _child(state: pathlib.Path, child_id: str, parent: str) -> pathlib.Path:
     (child / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": child_id,
                 "mode": "run",
                 "user_task": "t",

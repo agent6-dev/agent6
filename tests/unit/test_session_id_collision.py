@@ -126,7 +126,7 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
     session = paths.state_dir(repo) / "sessions" / "runs" / "done-run"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": "done-run", "mode": "run", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": "done-run", "mode": "run", "user_task": "t"}),
         encoding="utf-8",
     )
     (session / "logs.jsonl").write_text(

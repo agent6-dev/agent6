@@ -85,7 +85,7 @@ def _setup_run(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": session_id,
                 "base_sha": base_sha,
                 "base_branch": "main",

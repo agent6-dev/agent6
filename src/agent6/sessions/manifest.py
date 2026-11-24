@@ -280,8 +280,8 @@ class ComparisonStamp(pydantic.BaseModel):
     judge_cost_partial: bool = False
 
 
-# Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 15
+# 0 while the project is alpha; every stamp-rewrite re-stamps it, so the on-disk claim matches.
+MANIFEST_VERSION = 0
 MANIFEST_NAME = "manifest.json"
 
 

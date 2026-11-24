@@ -274,7 +274,7 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "run-B",
                 "mode": "run",
                 "base_sha": "",
@@ -568,7 +568,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "run-RTD",
                 "mode": "run",
                 "base_sha": "",
@@ -639,7 +639,7 @@ def test_resume_drops_a_stop_written_between_executions(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "run-C",
                 "mode": "run",
                 "base_sha": "",
@@ -747,7 +747,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "run-U",
                 "mode": "run",
                 "base_sha": "",
@@ -846,7 +846,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "run-K",
                 "mode": "run",
                 # A real base: with one, a file taken as the run's was then treated as outside.
@@ -921,7 +921,7 @@ def test_resume_of_a_child_from_the_origin_checkout_refuses(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "fan-AAAA11-l1",
                 "mode": "run",
                 "base_sha": "",

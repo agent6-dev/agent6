@@ -30,7 +30,7 @@ def _session(
     d = state / "sessions" / "runs" / session_id
     d.mkdir(parents=True)
     manifest: dict[str, object] = {
-        "version": 2,
+        "version": 0,
         "session_id": session_id,
         "mode": "run",
         "user_task": "t",

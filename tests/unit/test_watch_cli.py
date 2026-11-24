@@ -376,7 +376,7 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "parked-run-77",
                 "mode": "run",
                 "user_task": "t",
@@ -410,7 +410,7 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
-            {"version": 2, "session_id": "launching-run-88", "mode": "run", "user_task": "t"}
+            {"version": 0, "session_id": "launching-run-88", "mode": "run", "user_task": "t"}
         ),
         encoding="utf-8",
     )

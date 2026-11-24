@@ -257,7 +257,7 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
     child_dir = state_dir / "sessions" / "runs" / "run-p1-l1"
     child_dir.mkdir(parents=True)
     (child_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": "run-p1-l1", "mode": "run", "user_task": "t"})
+        json.dumps({"version": 0, "session_id": "run-p1-l1", "mode": "run", "user_task": "t"})
     )
     rows = [
         {"type": "session.start", "user_task": "write a"},

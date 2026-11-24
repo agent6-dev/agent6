@@ -20,7 +20,7 @@ def _session(repo: pathlib.Path, session_id: str, manifest: dict[str, object]) -
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
-        json.dumps({"version": 3, "session_id": session_id, "mode": "run", **manifest}),
+        json.dumps({"version": 0, "session_id": session_id, "mode": "run", **manifest}),
         encoding="utf-8",
     )
     layout.logs_path.write_text(
@@ -530,7 +530,7 @@ def test_show_offers_plan_show_only_once_the_plan_is_written(
     )
     layout.ensure()
     layout.manifest_path.write_text(
-        json.dumps({"version": 3, "session_id": "plan-AAAA11", "mode": "plan"}), encoding="utf-8"
+        json.dumps({"version": 0, "session_id": "plan-AAAA11", "mode": "plan"}), encoding="utf-8"
     )
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "plan", "user_task": "t"})

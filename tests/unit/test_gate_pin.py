@@ -173,7 +173,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
     (rd / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "r1",
                 "mode": "run",
                 "base_sha": "a" * 40,

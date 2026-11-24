@@ -704,7 +704,7 @@ def _child_record(repo: pathlib.Path, sid: str, verification: str) -> pathlib.Pa
     """Write an imported child's record: a manifest and a journal that ends with a verdict."""
     dest = sessions_layout.bucket_dir(paths.state_dir(repo), "runs") / sid
     dest.mkdir(parents=True)
-    manifest = {"version": 2, "session_id": sid, "mode": "run", "user_task": "rewrite a.txt"}
+    manifest = {"version": 0, "session_id": sid, "mode": "run", "user_task": "rewrite a.txt"}
     (dest / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     rows = [
         {"type": "session.start", "mode": "run", "user_task": "rewrite a.txt"},

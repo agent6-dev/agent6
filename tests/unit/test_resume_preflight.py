@@ -60,7 +60,7 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": "parked-AAAA11",
                 "mode": "run",
                 "user_task": "queued work",
@@ -104,7 +104,7 @@ def _park_manifest(session_dir: pathlib.Path, *, preset: str, from_flag: bool) -
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": 0,
                 "session_id": session_dir.name,
                 "mode": "run",
                 "user_task": "queued work",
@@ -212,7 +212,7 @@ def _plan_session_dir(repo: pathlib.Path, session_id: str) -> None:
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / session_id
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": session_id, "mode": "plan", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": session_id, "mode": "plan", "user_task": "t"}),
         encoding="utf-8",
     )
     (session_dir / "loop_state.json").write_text(
@@ -500,7 +500,7 @@ def test_a_resume_over_an_in_flight_record_that_does_not_parse_leaves_it_to_the_
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "note-GARBAGE",
                 "mode": "run",
                 "user_task": "t",
@@ -765,7 +765,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "note-UNTRACKED",
                 "mode": "run",
                 "user_task": "t",
@@ -838,7 +838,7 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "note-ARRIVED",
                 "mode": "run",
                 "user_task": "t",
@@ -943,7 +943,7 @@ def _session_dir(state: pathlib.Path, bucket: str, sid: str, mode: str) -> pathl
     d = state / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": sid, "mode": mode, "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": sid, "mode": mode, "user_task": "t"}),
         encoding="utf-8",
     )
     return d
@@ -1045,7 +1045,7 @@ def test_resuming_a_finished_run_without_a_steer_is_refused(
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "done-BBBB22"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": "done-BBBB22", "mode": "run", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": "done-BBBB22", "mode": "run", "user_task": "t"}),
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
@@ -1085,7 +1085,7 @@ def test_a_finished_run_still_resumes_with_a_steer(
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "done-CCCC33"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": "done-CCCC33", "mode": "run", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": "done-CCCC33", "mode": "run", "user_task": "t"}),
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
@@ -1129,7 +1129,7 @@ def test_a_steer_that_resumes_a_run_is_its_continuation(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": sid,
                 "mode": "run",
                 "user_task": "t",
@@ -1467,7 +1467,7 @@ def test_a_snapshot_written_before_the_turn_rename_refuses_by_version(
         ),
         encoding="utf-8",
     )
-    assert loop_snapshot.SNAPSHOT_VERSION > 4
+    assert loop_snapshot.SNAPSHOT_VERSION != 4
     with pytest.raises(ValueError, match="version 4, not"):
         loop_snapshot.load_session_snapshot(snap)
 
@@ -1532,7 +1532,7 @@ def test_an_unreadable_dispatch_record_refuses_the_resume_before_a_model_call(
     (session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": sid,
                 "mode": "run",
                 "user_task": "t",

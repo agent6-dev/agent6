@@ -91,7 +91,7 @@ def _run_that_moved_on(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "run-AAAA11",
                 "mode": "run",
                 "user_task": "do the thing",
@@ -148,7 +148,7 @@ def test_undo_of_a_model_controlled_run_refuses_before_committing(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "model-AAAA11",
                 "mode": "run",
                 "user_task": "do the thing",
@@ -493,7 +493,7 @@ def test_undo_of_a_live_plan_session_refuses(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "plan-AAAA11",
                 "mode": "plan",
                 "user_task": "do the thing",
@@ -605,7 +605,7 @@ def test_undo_names_the_turn_every_other_surface_names(
     fork.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "fork-BBBB22",
                 "mode": "run",
                 "user_task": "do the thing",

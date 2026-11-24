@@ -1131,7 +1131,7 @@ def test_hub_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
         ],
     )
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
+        json.dumps({"version": 0, "session_id": d.name, "mode": "run", "user_task": "do more"})
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
     assert row["task"] == "original task"

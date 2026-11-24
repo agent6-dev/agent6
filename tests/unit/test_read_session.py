@@ -25,7 +25,7 @@ def _session(
     (d / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "mode": mode,
                 "session_id": sid,
                 "user_task": task,
@@ -175,7 +175,7 @@ def test_a_torn_journal_line_does_not_break_the_read(tmp_path: pathlib.Path) -> 
 def test_a_session_with_no_conversation_says_so(tmp_path: pathlib.Path) -> None:
     d = tmp_path / "sessions" / "runs" / "empty-BBBBBB"
     d.mkdir(parents=True)
-    (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "run"}), encoding="utf-8")
+    (d / "manifest.json").write_text(json.dumps({"version": 0, "mode": "run"}), encoding="utf-8")
     layout = sessions_layout.session_layout(tmp_path, "empty-BBBBBB")
     assert layout is not None
     assert "no readable journal" in sessions.conversation(layout, max_chars=100)
@@ -516,7 +516,7 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),
+        json.dumps({"version": 0, "mode": "ask", "user_task": "how do I convert h264"}),
         encoding="utf-8",
     )
     events = event_log.EventSink(d / "logs.jsonl")

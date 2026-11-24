@@ -383,7 +383,7 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: pathlib.Path) -> None:
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dead-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        '{"version":2,"session_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
+        '{"version":0,"session_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
     )
     (session_dir / "logs.jsonl").write_text(
         '{"type":"session.start","mode":"run","user_task":"t"}\n'
@@ -407,7 +407,7 @@ def test_a_pending_question_on_an_ended_run_takes_an_answer_for_the_resume(
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "ended-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        '{"version":2,"session_id":"ended-run-A1","mode":"run","user_task":"t"}',
+        '{"version":0,"session_id":"ended-run-A1","mode":"run","user_task":"t"}',
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
@@ -438,7 +438,7 @@ def test_a_queued_question_on_a_live_run_names_the_next_turn(tmp_path: pathlib.P
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "queued-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        '{"version":2,"session_id":"queued-run-A1","mode":"run","user_task":"t"}',
+        '{"version":0,"session_id":"queued-run-A1","mode":"run","user_task":"t"}',
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
@@ -466,7 +466,7 @@ def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: pa
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "tty-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        '{"version":2,"session_id":"tty-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
+        '{"version":0,"session_id":"tty-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
     )
     (session_dir / "logs.jsonl").write_text(
         '{"type":"session.start","mode":"run","user_task":"t"}\n'
@@ -496,7 +496,7 @@ def test_an_approval_the_run_already_journaled_is_refused(tmp_path: pathlib.Path
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "approved-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        '{"version":2,"session_id":"approved-A1","mode":"run","user_task":"t"}',
+        '{"version":0,"session_id":"approved-A1","mode":"run","user_task":"t"}',
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
@@ -521,7 +521,7 @@ def test_an_approval_answer_already_on_disk_is_refused(tmp_path: pathlib.Path) -
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "approving-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        '{"version":2,"session_id":"approving-A1","mode":"run","user_task":"t"}',
+        '{"version":0,"session_id":"approving-A1","mode":"run","user_task":"t"}',
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
@@ -550,7 +550,7 @@ def test_a_question_answer_already_on_disk_is_refused(tmp_path: pathlib.Path) ->
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "asking-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        '{"version":2,"session_id":"asking-A1","mode":"run","user_task":"t"}',
+        '{"version":0,"session_id":"asking-A1","mode":"run","user_task":"t"}',
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
@@ -717,7 +717,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "done-WEB111"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": "done-WEB111", "mode": "run", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": "done-WEB111", "mode": "run", "user_task": "t"}),
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(

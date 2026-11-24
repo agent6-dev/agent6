@@ -114,7 +114,7 @@ def _recorded_run(repo: pathlib.Path, session_id: str, **manifest: Any) -> pathl
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / session_id
     session_dir.mkdir(parents=True)
     record = {
-        "version": 3,
+        "version": 0,
         "session_id": session_id,
         "mode": "run",
         "user_task": "t",

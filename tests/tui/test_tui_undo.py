@@ -332,7 +332,7 @@ def test_run_this_plan_opens_the_composer_with_the_plan_chosen(
     plan = tmp_path / "sessions" / "plans" / "planny-one-AAAAAA"
     plan.mkdir(parents=True)
     (plan / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": plan.name, "mode": "plan", "user_task": "t"}),
+        json.dumps({"version": 0, "session_id": plan.name, "mode": "plan", "user_task": "t"}),
         encoding="utf-8",
     )
     (plan / "logs.jsonl").write_text("", encoding="utf-8")

@@ -209,7 +209,7 @@ def test_a_failed_first_start_keeps_the_parked_task(
     (sd / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "pin-PARK01",
                 "mode": "run",
                 "user_task": "the operator's queued words",
@@ -265,7 +265,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     (sd / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "pin-PARK02",
                 "mode": "run",
                 "user_task": "queued",

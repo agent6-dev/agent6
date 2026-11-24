@@ -433,7 +433,7 @@ def _session(
     (d / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": sid,
                 "mode": mode,
                 "user_task": f"the {mode} task",

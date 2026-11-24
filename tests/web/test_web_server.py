@@ -339,7 +339,7 @@ def test_new_work_from_a_plan_needs_no_task_and_leaves_the_plan_unchanged(
     plan = paths.state_dir(tmp_path) / "sessions" / "plans" / "plan-http-AAAAAA"
     plan.mkdir(parents=True)
     (plan / "manifest.json").write_text(
-        json.dumps({"version": 3, "session_id": plan.name, "mode": "plan"}), encoding="utf-8"
+        json.dumps({"version": 0, "session_id": plan.name, "mode": "plan"}), encoding="utf-8"
     )
     (plan / "logs.jsonl").write_text("", encoding="utf-8")
     (plan / "plan.md").write_text("# Plan: via HTTP\n\n1. Run it.\n", encoding="utf-8")
@@ -487,7 +487,7 @@ def test_session_payload_names_the_ref_holding_the_commits(
     (runs / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": "run-chain",
                 "mode": "run",
                 "run_branch": None,
@@ -2081,7 +2081,7 @@ def test_steer_btw_opens_a_side_ask(
     def launch(cwd: pathlib.Path, argv: list[str], env: dict[str, str]) -> str:
         d = asks / "quiet-fox-DDDDDD"
         d.mkdir(parents=True)
-        (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}))
+        (d / "manifest.json").write_text(json.dumps({"version": 0, "mode": "ask"}))
         lines = [
             {"type": "session.start", "user_task": "q"},
             {"type": "model.result", "text": "no"},
@@ -2255,7 +2255,7 @@ def test_commit_diff_serves_one_commit_or_the_cumulative_chain(
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "agent6"}),
+        json.dumps({"version": 0, "mode": "run", "base_sha": base, "git_control": "agent6"}),
         encoding="utf-8",
     )
     status, raw, _ = _get(port, f"/api/session/commits-run/diff?sha={c2}")
@@ -2269,7 +2269,7 @@ def test_commit_diff_serves_one_commit_or_the_cumulative_chain(
     status, _raw, _ = _get(port, "/api/session/commits-run/diff?sha=deadbeef")
     assert status == 422
     (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "model"}),
+        json.dumps({"version": 0, "mode": "run", "base_sha": base, "git_control": "model"}),
         encoding="utf-8",
     )
     status, raw, _ = _get(port, f"/api/session/commits-run/diff?sha={c1}")
@@ -2367,7 +2367,7 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: pathlib.Path)
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps(
-            {"version": 3, "session_id": "shellrun-AAAAAA", "mode": "run", "user_task": "t"}
+            {"version": 0, "session_id": "shellrun-AAAAAA", "mode": "run", "user_task": "t"}
         ),
         encoding="utf-8",
     )
@@ -2447,7 +2447,7 @@ def test_the_stream_discovers_the_first_child_without_waiting_for_parent_log_sil
     from tests.web import session_logs
 
     parent = session_logs.write_run(tmp_path, "solo", [], live=True)
-    (parent / "manifest.json").write_text('{"version":3,"session_id":"solo","mode":"run"}')
+    (parent / "manifest.json").write_text('{"version":0,"session_id":"solo","mode":"run"}')
     done = threading.Event()
 
     def write_parent_log() -> None:
@@ -2464,7 +2464,7 @@ def test_the_stream_discovers_the_first_child_without_waiting_for_parent_log_sil
             threading.Thread(target=write_parent_log, daemon=True).start()
         child = session_logs.write_run(tmp_path, "solo-p1-l1", [], live=True)
         manifest = {
-            "version": 3,
+            "version": 0,
             "session_id": child.name,
             "mode": "run",
             "models": {"driver": {"provider": "p", "model": "m"}},
@@ -2541,7 +2541,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
         state_dir=paths.state_dir(tmp_path), session_id="mergerun-AAAAAA"
     )
     manifest = {
-        "version": 3,
+        "version": 0,
         "session_id": "mergerun-AAAAAA",
         "mode": "run",
         "user_task": "t",

@@ -64,7 +64,7 @@ def test_run_latest_commit_highlights_and_reuses_the_commit_payload(
     session = paths.state_dir(tmp_path) / "sessions" / "runs" / "highlight-run"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "agent6"})
+        json.dumps({"version": 0, "mode": "run", "base_sha": base, "git_control": "agent6"})
     )
     events = [
         {"type": "session.start", "mode": "run", "user_task": "Highlight Python"},

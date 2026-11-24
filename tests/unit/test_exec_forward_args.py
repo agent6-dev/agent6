@@ -249,7 +249,7 @@ def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
         layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=name)
         layout.ensure()
         layout.manifest_path.write_text(
-            json.dumps({"version": 3, "session_id": name, "mode": "run", "user_task": "t"}) + "\n",
+            json.dumps({"version": 0, "session_id": name, "mode": "run", "user_task": "t"}) + "\n",
             encoding="utf-8",
         )
         layout.logs_path.write_text(
@@ -373,7 +373,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": layout.session_id,
                 "mode": "run",
                 "policy": {"run_commands": "allow", "isolation": "full", "network": "host"},
@@ -443,7 +443,7 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "session_id": layout.session_id,
                 "mode": "run",
                 "policy": {"run_commands": "allow", "isolation": "full", "network": "host"},
@@ -730,7 +730,7 @@ def test_exec_refuses_a_run_stamped_with_an_isolation_level_it_does_not_know(
     (layout.session_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 0,
                 "mode": "run",
                 "session_id": "old-1",
                 "models": {"driver": {"provider": "p", "model": "m"}},
