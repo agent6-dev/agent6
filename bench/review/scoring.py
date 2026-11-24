@@ -17,7 +17,7 @@ _VERDICTS = ("pass", "block")
 
 # A lexical measure, not a judge of the claimed access. Keep the match for inspection.
 _READER = re.compile(
-    r"\b(?:reader|attacker|consumer):[ \t]*(?!(?:unknown|unspecified|none)\b)"
+    r"\b(?:reader|attacker|consumer):[ \t]*(?!(?:`[ \t]*)?(?:unknown|unspecified|none)\b)"
     r"(?:`[^`\n]+`|[\w][\w /.-]{0,60})"
     r"|\b(?:un(?:authenticated|privileged|trusted)|remote|local|another|other|downstream|API) "
     r"(?:clients?|users?|process(?:es)?|tenants?|workers?|callers?|readers?|attackers?)\b"

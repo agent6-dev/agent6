@@ -57,6 +57,7 @@ The first table on stderr counts outcomes, block findings by category and blocks
 
 - **Reader:** `names_reader` is a text measure on each block's title and detail.
   It counts a `reader:`, `attacker:` or `consumer:` label with a value, a qualified role such as “unauthenticated client”, or a role such as “operator”.
+  The labels `unknown`, `unspecified` and `none` do not name a reader, even in backticks.
   Each JSON block includes the matching `reader_evidence`, or `null`, and the finding text for inspection.
   A match does not establish that the reader gained access; the rule can miss paraphrases or count an incidental mention.
 - **Changed verdict:** Compare the two replies in the same repetition only if both have verdicts.

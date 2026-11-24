@@ -233,6 +233,20 @@ def test_cli_displays_a_gateway_error_as_text(
     assert "bad request" in err and "\x01" not in err
 
 
-@pytest.mark.parametrize("reader", ["A caller can read it", "Reader: unknown", "No reader named"])
+@pytest.mark.parametrize(
+    "reader",
+    [
+        "A caller can read it",
+        "Reader: unknown",
+        "Reader: `unknown`",
+        "Attacker: ` none `",
+        "Consumer: `unspecified`",
+        "No reader named",
+    ],
+)
 def test_generic_reader_mentions_do_not_name_one(reader: str) -> None:
     assert scoring.reader_evidence(reader) is None
+
+
+def test_a_code_span_can_name_a_reader() -> None:
+    assert scoring.reader_evidence("Reader: `build bot`") == "Reader: `build bot`"
