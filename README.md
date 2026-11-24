@@ -5,11 +5,11 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
 <table>
   <tr>
     <td align="center" width="50%" valign="top">
-      <a href="https://agent6.dev/screenshots/out/hero-tui.gif"><img src="https://agent6.dev/screenshots/out/hero-tui.gif" alt="Terminal UI showing a coding task, command approval, verification, and changes"></a>
+      <a href="https://agent6.dev/screenshots/out/hero-tui.gif"><img src="https://agent6.dev/screenshots/out/hero-tui.gif" alt="Terminal UI: a command approved, the fix verified and committed, two children started and one sent a message"></a>
       <br><sub><b>agent6 tui</b><br>terminal interface</sub>
     </td>
     <td align="center" width="50%" valign="top">
-      <a href="https://agent6.dev/screenshots/out/hero-web.gif"><img src="https://agent6.dev/screenshots/out/hero-web.gif" alt="Web UI showing sessions, tool details, and sandbox configuration"></a>
+      <a href="https://agent6.dev/screenshots/out/hero-web.gif"><img src="https://agent6.dev/screenshots/out/hero-web.gif" alt="Web UI: a session, a Markdown page ticked and edited, an HTML page previewed with scripts off, a commit, and a review's findings"></a>
       <br><sub><b>agent6 web</b><br>browser interface for desktop or phone</sub>
     </td>
   </tr>
@@ -128,7 +128,7 @@ On Ubuntu, `full` under Docker also needs the host to allow the jail launcher to
 
 [acp]: https://agent6.dev/acp/
 [budgets]: https://agent6.dev/config/#budget
-[cli-demo]: https://agent6.dev/screenshots/out/hero-cli.gif
+[cli-demo]: https://agent6.dev/screenshots/out/hero-cli.gif "A run fixes a failing test and reads its score, the count of passing tests"
 [configuration]: https://agent6.dev/config/
 [installation]: https://agent6.dev/installation/
 [mcp]: https://agent6.dev/config/#mcp-and-mcpserversname-optional

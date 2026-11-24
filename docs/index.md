@@ -56,7 +56,7 @@ hide:
 
 One run starts three children in the browser: steer one, stop one, switch sessions, read a review, merge.
 
-Also available as a [streaming CLI](screenshots/out/hero-cli.webm) and through [ACP editor integration](acp.md).
+Also available as a [streaming CLI](screenshots/out/hero-cli.webm "A run fixes a failing test and reads its score, the count of passing tests") and through [ACP editor integration](acp.md).
 
 ## [Installation](installation.md)
 
