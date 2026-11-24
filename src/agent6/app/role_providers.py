@@ -664,12 +664,13 @@ class InstrumentedProvider:
         if self.events is None:
             return
         identity = self._identity(call_context)
+        reply: dict[str, Any] = {"process_reply": True} if process_reply else {}
         self.events.emit(
             journal.ModelAttempt(
                 **identity,
                 attempt=context.attempt,
                 request_id=request_ids[-1] if request_ids else None,
-                **({"process_reply": True} if process_reply else {}),
+                **reply,
                 **outcome,
             )
         )
