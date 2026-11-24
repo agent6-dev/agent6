@@ -246,11 +246,17 @@ def emit_session_start(
 
 
 def clear_worker_pid(session_dir: pathlib.Path) -> None:
-    """Drop the worker pid record.
+    """Drop the worker pid record, unless it names another process.
+
+    A record another process wrote is that worker's: it took the session after this process
+    released the writer lock, or under a lock file this process's refusal removed.
 
     Args:
         session_dir: The session directory.
     """
+    rec = _read_pid_record(session_dir)
+    if rec is not None and rec[0] != os.getpid():
+        return
     with contextlib.suppress(FileNotFoundError):
         (session_dir / WORKER_PID_FILE).unlink()
 

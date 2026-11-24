@@ -11,6 +11,7 @@ none, and the teardown clears it on every exit path.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import time
@@ -216,3 +217,100 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
         ["git", "stash", "list"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout
     assert stashes == ""
+
+
+def test_a_failed_detach_leaves_the_pid_of_the_worker_that_took_the_session(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed detach erased the pid of the worker that had taken the session.
+
+    A detaching run releases its locks before it spawns the background resume. Another resume
+    can take the session in between: the spawned one loses the lock, and the detaching run then
+    cleared worker.pid without reading whose it was. Every surface read the live session as dead.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    _repo(repo)
+    monkeypatch.chdir(repo)
+
+    def _full(*_args: object, **_kwargs: object) -> str:
+        return "full"
+
+    def _detached(*_args: object, **_kwargs: object) -> execution.ExecutionEnd:
+        return execution.ExecutionEnd(0, detach_requested=True)
+
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
+    monkeypatch.setattr(execution, "run_execution", _detached)
+    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    runs = paths.state_dir(repo) / "sessions" / "runs"
+    winner = os.getppid()
+    at_spawn: list[int | None] = []
+
+    def _nobody_else(_cwd: pathlib.Path, session_id: str, _flags: object) -> str:
+        at_spawn.append(process.read_worker_pid(runs / session_id))
+        return "agent6 exe not found"
+
+    def _lost_the_session(_cwd: pathlib.Path, session_id: str, _flags: object) -> str:
+        process.write_worker_pid(runs / session_id, winner)
+        return f"run {session_id!r} is already being driven by another agent6 process"
+
+    for session_id, spawn, left in (
+        ("detach-alone", _nobody_else, None),
+        ("detach-lost", _lost_the_session, winner),
+    ):
+        frontend = mock.MagicMock()
+        frontend.spawn_detached_resume.side_effect = spawn
+        rc = run_mod.run_task(
+            cfg, "t", started_at=time.time(), frontend=frontend, session_id=session_id, mode="run"
+        )
+        assert rc == 0
+        assert process.read_worker_pid(runs / session_id) == left, session_id
+    # The detaching run kept its own pid through the spawn, and cleared it when nobody took over.
+    assert at_spawn == [os.getpid()]
+
+
+def test_a_refused_start_leaves_the_pid_of_the_run_that_took_its_id(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A start refused over tracked changes erased the pid of the run that took its id.
+
+    The refusal removes the session directory, the writer lock's file with it, so a second run
+    under the same id can start while the first is still closing its view. The first one's
+    teardown then cleared the pid in the new directory, though it had never written one.
+    """
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    repo = tmp_path / "repo"
+    _repo(repo)
+    monkeypatch.chdir(repo)
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+
+    def _full(*_args: object, **_kwargs: object) -> str:
+        return "full"
+
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
+    session = paths.state_dir(repo) / "sessions" / "runs" / "pid-refused"
+    replacement = os.getppid()
+
+    def _the_id_is_taken_again() -> None:
+        assert not session.exists()
+        session.mkdir(parents=True)
+        process.write_worker_pid(session, replacement)
+
+    # Nobody can answer the dirty-tree question: the start refuses and discards its directory.
+    frontend = mock.MagicMock()
+    frontend.capabilities.can_ask = False
+    frontend.should_spawn_tui.return_value = False
+    frontend.close_console_view.side_effect = _the_id_is_taken_again
+
+    rc = run_mod.run_task(
+        Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+        "t",
+        started_at=time.time(),
+        frontend=frontend,
+        session_id="pid-refused",
+        mode="run",
+    )
+
+    assert rc == 2
+    assert process.read_worker_pid(session) == replacement
