@@ -26,7 +26,8 @@ from agent6 import directive, kinds
 from agent6.models import choices
 from agent6.ui import parallel_preview, path_completion, spawn
 from agent6.ui.tui import composer, forms, menubar, screen_chrome
-from agent6.viewmodel import LIVE_STATUS_WORDS, listing
+from agent6.viewmodel import listing
+from agent6.viewmodel.session import status as session_status
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
@@ -75,7 +76,11 @@ def plan_choices(summaries: Iterable[listing.SessionSummary]) -> list[tuple[str,
         Every plan that is not live, labelled by its id and its task's first line.
     """
     plans = sorted(
-        (s for s in summaries if s.mode == "plan" and s.status not in LIVE_STATUS_WORDS),
+        (
+            s
+            for s in summaries
+            if s.mode == "plan" and s.status not in session_status.LIVE_STATUS_WORDS
+        ),
         key=lambda s: s.last_activity,
         reverse=True,
     )

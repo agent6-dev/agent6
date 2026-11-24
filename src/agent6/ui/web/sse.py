@@ -23,18 +23,11 @@ from typing import Any
 from agent6.machine import schema
 from agent6.sessions import layout
 from agent6.ui.web import model
-from agent6.viewmodel import (
-    SessionState,
-    apply_event,
-    died_without_end,
-    fold_session,
-    machine_snapshot,
-    manifest_header,
-    session_state_as_dict,
-    summarize_session_dir,
-    tail_events,
-)
+from agent6.viewmodel import listing, wire
+from agent6.viewmodel import tail as viewmodel_tail
 from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as session_state
 from agent6.viewmodel.session import status as session_status
 from agent6.viewmodel.session import view as session_view
 
@@ -82,7 +75,7 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "reasoning": fresh}
 
 
-def _fold_log(src: pathlib.Path) -> tuple[SessionState, int]:
+def _fold_log(src: pathlib.Path) -> tuple[state_types.SessionState, int]:
     """Fold a run's log as it stands.
 
     Args:
@@ -97,7 +90,9 @@ def _fold_log(src: pathlib.Path) -> tuple[SessionState, int]:
         nonlocal read_to
         read_to = end
 
-    state = fold_session(tail_events(src, follow=False, on_position=heard))
+    state = session_state.fold_session(
+        viewmodel_tail.tail_events(src, follow=False, on_position=heard)
+    )
     return state, read_to
 
 
@@ -120,7 +115,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
     def tail(start: int) -> None:
         try:
             # A resumed run logs into this same file, so the stream outlives session.stop.
-            for ev in tail_events(
+            for ev in viewmodel_tail.tail_events(
                 src, follow=True, stop_when_finished=False, should_stop=stop.is_set, start_at=start
             ):
                 events.put(ev)
@@ -128,7 +123,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
             # The sentinel goes even when the tailer raises, or the loop blocks on heartbeats.
             events.put(None)
 
-    header = manifest_header(session_dir, repo=repo)
+    header = wire.manifest_header(session_dir, repo=repo)
 
     # A frame folded from part of the log reads a finished run as stale: started, no end, no worker.
     state, read_to = _fold_log(src)
@@ -151,7 +146,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         """
         nonlocal previous
         # The dir is read per frame: a resumed parked run changes the label and `live`.
-        d = session_state_as_dict(state, session_dir, header=header)
+        d = session_view.session_state_as_dict(state, session_dir, header=header)
         if dead:
             # A transport signal, distinct from `finished`: the client closes instead of retrying.
             d["stream_dead"] = True
@@ -175,7 +170,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         nonlocal state
         last_type = ""
         while ev is not None:
-            state = apply_event(state, ev)
+            state = session_state.apply_event(state, ev)
             last_type = str(ev.get("type", ""))
             try:
                 ev = events.get_nowait()
@@ -211,12 +206,12 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
                 word, _ = session_status.status_for_session_dir(
                     session_dir, session_view.status_facts(state)
                 )
-                header = manifest_header(session_dir, repo=repo, status=word)
+                header = wire.manifest_header(session_dir, repo=repo, status=word)
                 # A stop or resume on disk can still be waiting for the tailer.
                 if (
                     word != "parked"
-                    and died_without_end(word)
-                    and summarize_session_dir(session_dir).status == word
+                    and session_status.died_without_end(word)
+                    and listing.summarize_session_dir(session_dir).status == word
                 ):
                     send_frame(dead=True)
                     return
@@ -253,7 +248,7 @@ def stream_machine(chan: SseChannel, machine_dir: pathlib.Path) -> None:
         try:
             reasoning = model.machine_reasoning_snapshot(machine_dir, fold=fold)
             payload = {
-                "machine": machine_snapshot(machine_dir, execution=fold.execution()),
+                "machine": wire.machine_snapshot(machine_dir, execution=fold.execution()),
                 "reasoning": reasoning,
             }
         except schema.MachineError as exc:

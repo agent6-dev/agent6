@@ -12,7 +12,7 @@ from agent6.app import stop
 from agent6.sessions import id
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common
-from agent6.viewmodel import session_dirs, session_is_live
+from agent6.viewmodel import listing
 
 
 def _is_child(session_dir: pathlib.Path) -> bool:
@@ -36,16 +36,18 @@ def _cmd_stop(session_id: str, *, all_sessions: bool, after_turn: bool) -> int:
     """
     cwd = pathlib.Path.cwd()
     if all_sessions:
-        targets = [d for d in session_dirs(paths.state_dir(cwd)) if session_is_live(d)]
+        targets = [
+            d for d in listing.session_dirs(paths.state_dir(cwd)) if listing.session_is_live(d)
+        ]
         if not targets:
             print("[agent6] no live session to stop.", file=sys.stderr)
             return 0
     elif not session_id:
-        every = session_dirs(paths.state_dir(cwd))
+        every = listing.session_dirs(paths.state_dir(cwd))
         if not every:
             common.print_nothing_yet()
             return 2
-        live = [d for d in every if session_is_live(d) and not _is_child(d)]
+        live = [d for d in every if listing.session_is_live(d) and not _is_child(d)]
         if not live:
             print(
                 "[agent6] no live session to stop (`agent6 sessions` lists them).", file=sys.stderr
@@ -61,7 +63,7 @@ def _cmd_stop(session_id: str, *, all_sessions: bool, after_turn: bool) -> int:
         targets = [layout.session_dir]
     code = 0
     for session_dir in targets:
-        if all_sessions and not session_is_live(session_dir):
+        if all_sessions and not listing.session_is_live(session_dir):
             continue  # a child its parent's stop ended
         out = stop.stop_session(session_dir, after_turn=after_turn)
         print(f"[agent6] {out.message}.", file=sys.stdout if out.ok else sys.stderr)

@@ -32,7 +32,8 @@ from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer, dashboard_header
-from agent6.viewmodel import format, status_facts, tail
+from agent6.viewmodel import format, tail
+from agent6.viewmodel.session import view as state_view
 from tests.tui import waits
 
 
@@ -1066,7 +1067,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
         try:
             async with app.run_test(size=(140, 40)) as pilot:
                 await _open_dash(app, pilot)
-                assert status_facts(app.state).finished
+                assert state_view.status_facts(app.state).finished
                 top = str(app._dash.query_one("#top", widgets.Static).render())
                 body = str(app._dash.query_one("#stream-body", widgets.Static).render())
                 assert "actor: worker / last-model" in top

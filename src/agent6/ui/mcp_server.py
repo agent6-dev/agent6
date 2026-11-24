@@ -32,7 +32,7 @@ from agent6.sandbox import detect, jail
 from agent6.sessions import child_dispatch, id, manifest
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch, tool_errors
-from agent6.viewmodel import listing, session_dirs
+from agent6.viewmodel import listing
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -156,7 +156,7 @@ def _no_one_to_ask(config: Config) -> Config:
 
 def _listable_sessions(agent6_dir: pathlib.Path) -> list[pathlib.Path]:
     """Return every session dir, newest first: the sessions the CLI and the web hub list."""
-    return session_dirs(agent6_dir, sessions_layout.SESSION_BUCKETS)
+    return listing.session_dirs(agent6_dir, sessions_layout.SESSION_BUCKETS)
 
 
 def _most_recent_session_id(agent6_dir: pathlib.Path) -> str | None:

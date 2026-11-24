@@ -20,7 +20,7 @@ from agent6.app import merge_plan
 from agent6.models import choices
 from agent6.sessions import ipc, process
 from agent6.ui import spawn
-from agent6.viewmodel import session_dirs, session_mtime
+from agent6.viewmodel import listing
 from tests.tui import waits
 
 # textual paints a span's colour as the ANSI colour a theme maps, and a base style's as CSS.
@@ -41,7 +41,7 @@ def test_list_runs_spans_runs_and_asks(tmp_path: pathlib.Path) -> None:
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     _write_run(a6, "asks", "a1", [{"type": "session.start", "mode": "ask"}])
-    names = {p.name for p in session_dirs(a6)}
+    names = {p.name for p in listing.session_dirs(a6)}
     assert names == {"r1", "a1"}
 
 
@@ -58,7 +58,7 @@ def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: pathlib.Path) -> None
     # Opening the dashboard writes a front-end claim, bumping the dir mtime well past the log's.
     process.register_frontend(rd, 123)
     os.utime(rd, (5000, 5000))
-    assert session_mtime(rd) == 1000.0
+    assert listing.session_mtime(rd) == 1000.0
 
 
 def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: pathlib.Path) -> None:
@@ -67,7 +67,7 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: pathlib.Path) -
     rd = tmp_path / "sessions" / "runs" / "fresh"
     rd.mkdir(parents=True)
     os.utime(rd, (2000, 2000))
-    assert session_mtime(rd) == 2000.0  # no log yet -> dir mtime
+    assert listing.session_mtime(rd) == 2000.0  # no log yet -> dir mtime
 
 
 def test_question_bridge_round_trip(tmp_path: pathlib.Path) -> None:

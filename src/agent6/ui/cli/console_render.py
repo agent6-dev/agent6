@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Render a run's event stream to a terminal as a live conversation.
 
-The CLI skin over `viewmodel.TranscriptFold`: this class streams the reasoning and
+The CLI skin over `transcript.TranscriptFold`: this class streams the reasoning and
 text deltas inline; the structural items (tool call and result, commit, verdict)
 come from the fold the TUI and web skins share. One `ConsoleView` serves `run`
 (subscribed to the EventSink) and `attach` (fed by the log tailer).

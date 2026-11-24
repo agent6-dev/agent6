@@ -20,7 +20,7 @@ from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import session_dirs
+from agent6.viewmodel import listing
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -200,7 +200,7 @@ def worktree_owners(
         Each worktree, mapped to the directory and manifest of every session naming it.
     """
     owners: dict[pathlib.Path, list[tuple[pathlib.Path, sessions_manifest.SessionManifest]]] = {}
-    for session_dir in session_dirs(state_dir):
+    for session_dir in listing.session_dirs(state_dir):
         with contextlib.suppress(sessions_manifest.ManifestError):
             manifest = sessions_manifest.read_manifest(session_dir)
             if manifest.worktree is not None:

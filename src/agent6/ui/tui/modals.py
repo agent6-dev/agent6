@@ -15,7 +15,7 @@ from rich import text as rich_text
 from textual import app, binding, containers, events, screen, widgets
 
 from agent6.ui.tui import forms
-from agent6.viewmodel import Question
+from agent6.viewmodel.session import records as state_types
 
 # The arrows move focus like Tab; a focused Input consumes left and right for its cursor.
 _ARROW_NAV = (
@@ -436,7 +436,7 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
     def __init__(
         self,
         question_id: str,
-        questions: tuple[Question, ...],
+        questions: tuple[state_types.Question, ...],
         *,
         from_harness: bool = False,
         queued: bool = False,

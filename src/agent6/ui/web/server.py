@@ -43,7 +43,7 @@ from agent6.ui.web import (
     review_routes,
     sse,
 )
-from agent6.viewmodel import machine_snapshot, wire
+from agent6.viewmodel import wire
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
 _MAX_BODY_BYTES = 1 << 20
@@ -1634,7 +1634,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         try:
             if sub == "":
-                self._send_json(machine_snapshot(machine_dir))
+                self._send_json(wire.machine_snapshot(machine_dir))
             elif sub == "reasoning":
                 self._send_json(model.machine_reasoning_snapshot(machine_dir))
             elif sub == "conversation":

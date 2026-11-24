@@ -39,16 +39,8 @@ from agent6.sessions import ipc, layout, process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, forms, menubar, modals, screen_chrome, theme
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import (
-    MachineState,
-    fold_machine,
-    format,
-    machine_verb_refusal,
-    machine_verb_refusals,
-    probe_instance,
-    verb_answer,
-)
 from agent6.viewmodel import events as viewmodel_events
+from agent6.viewmodel import format
 from agent6.viewmodel.machine import state as machine_state
 
 _VERB_ACTIONS: dict[str, machine_state.MachineVerb] = {
@@ -164,7 +156,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         self._pending = ""  # thinking and answer text, flushed in readable chunks
         self._ended = False
         # Every verb's refusal, read once per poll: the footer, the keys and the prompt gate agree.
-        self._refusals = machine_verb_refusals(self._root, self._root.name)
+        self._refusals = machine_state.machine_verb_refusals(self._root, self._root.name)
         # The newest state log, folded incrementally, one fold per poll.
         self._execution_fold = machine_logs.NewestExecutionFold()
         self._prompts = tui_prompts.PromptDispatcher(
@@ -199,7 +191,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             events: list[Any] = self._journal.read()
         except machine_journal.JournalError:
             events = []  # the first poll surfaces the corruption in the header
-        seeded = fold_machine(self._spec, events)
+        seeded = machine_state.fold_machine(self._spec, events)
         self._cursor.seed_notifications(seeded)
         # An end that predates the open is history, not news.
         self._end_notified = seeded.ended is not None
@@ -275,11 +267,11 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
     def _answerable(self) -> bool:
         """Return whether an answer reaches the worker, read fresh since it can die mid-prompt."""
-        return not machine_verb_refusal(self._root, self._root.name, "answer")
+        return not machine_state.machine_verb_refusal(self._root, self._root.name, "answer")
 
     def action_steer(self) -> None:
         """Drop a steer request and open the steer box for the current agent state."""
-        ok, refusal = verb_answer(self._root, self._root.name, "steer")
+        ok, refusal = machine_state.verb_answer(self._root, self._root.name, "steer")
         if not ok or refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
             return
@@ -299,7 +291,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
         def cb(answer: str | None) -> None:
             self._steer_open = False
-            refusal = machine_verb_refusal(self._root, self._root.name, "steer")
+            refusal = machine_state.machine_verb_refusal(self._root, self._root.name, "steer")
             if refusal:
                 self.app.notify(refusal, severity="warning", timeout=6.0)
                 return
@@ -309,7 +301,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
     def action_stop(self) -> None:
         """Ask the machine to park at its next transition; the instance stays resumable."""
-        ok, answer = verb_answer(self._root, self._root.name, "stop")
+        ok, answer = machine_state.verb_answer(self._root, self._root.name, "stop")
         if not ok:
             self.app.notify(answer, severity="warning", timeout=6.0)
             return
@@ -321,7 +313,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
 
     def action_poke(self) -> None:
         """Open the message box for a waiting machine."""
-        ok, refusal = verb_answer(self._root, self._root.name, "poke")
+        ok, refusal = machine_state.verb_answer(self._root, self._root.name, "poke")
         if not ok or refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
             return
@@ -334,7 +326,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         """Write the poke, re-reading the gate since the wait can close while the modal is open."""
         if message is None:
             return
-        refusal = machine_verb_refusal(self._root, self._root.name, "poke")
+        refusal = machine_state.machine_verb_refusal(self._root, self._root.name, "poke")
         if refusal:
             self.app.notify(refusal, severity="warning", timeout=6.0)
             return
@@ -360,7 +352,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             return
         try:
             events = self._journal.read()
-            ms = fold_machine(self._spec, events)
+            ms = machine_state.fold_machine(self._spec, events)
         except machine_journal.JournalError as exc:
             # Shown and kept polling: an append may heal or end the run.
             self.query_one("#mw-head", textual_widgets.Static).update(
@@ -371,7 +363,9 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         # One probe per poll feeds the header, the footer and the keys; a park or a worker death
         # flips a verb with no MachineEnd, so the footer follows every verb's edge.
         self._execution_fold.refresh(self._root)
-        probes = probe_instance(self._root, ms, execution=self._execution_fold.execution())
+        probes = machine_state.probe_instance(
+            self._root, ms, execution=self._execution_fold.execution()
+        )
         self._set_refusals(probes.refusals(self._root.name, ms))
         # A parked instance reads "waiting", so a paused machine never looks busy.
         if ms.ended is not None:
@@ -425,7 +419,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         self._dispatch_notifications(ms)
         self._dispatch_prompts(live=live)
 
-    def _dispatch_notifications(self, ms: MachineState) -> None:
+    def _dispatch_notifications(self, ms: machine_state.MachineState) -> None:
         """Notify each new machine.notify in-app and on the desktop, and the end once."""
         for n in self._cursor.new_notifications(ms):
             sev: SeverityLevel = (

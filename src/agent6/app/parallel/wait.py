@@ -21,7 +21,7 @@ from agent6.app import stop
 from agent6.sandbox import jail
 from agent6.sessions import child_dispatch, layout, manifest, process
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import summarize_session_dir
+from agent6.viewmodel import listing
 
 # How often the await loop polls child liveness.
 POLL_INTERVAL_S = 2.0
@@ -96,7 +96,7 @@ def await_child(
         True when the child ended, False when a stop or the deadline ended the wait.
     """
     while True:
-        summary = summarize_session_dir(res.session_dir)
+        summary = listing.summarize_session_dir(res.session_dir)
         observe_commits(res)
         if child_terminal(res.session_dir, summary.status, process.worker_is_alive):
             return True
@@ -175,7 +175,7 @@ def drain_child(
     while True:
         if hard_stop is not None and hard_stop.is_set():
             return False
-        summary = summarize_session_dir(res.session_dir)
+        summary = listing.summarize_session_dir(res.session_dir)
         if child_terminal(res.session_dir, summary.status, process.worker_is_alive):
             observe_commits(res)
             return True

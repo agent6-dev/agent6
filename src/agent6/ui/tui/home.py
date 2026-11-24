@@ -45,14 +45,7 @@ from agent6.ui.tui import (
     theme,
 )
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import (
-    LIVE_STATUS_WORDS,
-    SessionSummary,
-    format,
-    is_winner,
-    session_dirs,
-    summarize_session_dir,
-)
+from agent6.viewmodel import comparison, format
 from agent6.viewmodel import listing as viewmodel_listing
 from agent6.viewmodel.session import status as session_status
 
@@ -89,7 +82,9 @@ def _sync_columns(table: widgets.DataTable[Any], width: int) -> tuple[str, ...]:
     return labels
 
 
-def attention_notice(before: str, summary: SessionSummary) -> tuple[str, str] | None:
+def attention_notice(
+    before: str, summary: viewmodel_listing.SessionSummary
+) -> tuple[str, str] | None:
     """Return the title and body announcing a session's transition, or None for none.
 
     Args:
@@ -110,7 +105,7 @@ def attention_notice(before: str, summary: SessionSummary) -> tuple[str, str] | 
     return None
 
 
-def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
+def _status_cell(summary: viewmodel_listing.SessionSummary, *, narrow: bool = False) -> text.Text:
     """Return the status cell in its colour; a narrow table drops the reason."""
     reason = "" if narrow else summary.detail
     label = summary.merge.status_label(summary.mode, summary.status, reason)
@@ -197,7 +192,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.config_paths = config_paths  # stamped into everything the hub spawns or loads
         self._runs: list[pathlib.Path] = []
         # The poll's rows by session id, so `check_action` never re-folds a session.
-        self._summaries: dict[str, SessionSummary] = {}
+        self._summaries: dict[str, viewmodel_listing.SessionSummary] = {}
         # The last poll's status per session; None before the first, which announces nothing.
         self._statuses: dict[str, str] | None = None
         # The groups listed, by parent id, and the ones the operator expanded.
@@ -231,7 +226,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Refill on return from a pushed screen, which also restores the sub-title."""
         self.action_refresh()
 
-    def _announce(self, rows: dict[str, SessionSummary]) -> None:
+    def _announce(self, rows: dict[str, viewmodel_listing.SessionSummary]) -> None:
         """Toast and desktop-notify a session that started waiting or ended since the last poll."""
         if self._statuses is not None:
             for sid, summary in rows.items():
@@ -269,11 +264,14 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         # `_runs` stays 1:1 with the rows: a dir that vanished since the listing is dropped from
         # both, or every cursor-indexed action past the gap maps to the wrong session.
         survivors: list[pathlib.Path] = []
-        rows: dict[str, SessionSummary] = {}
+        rows: dict[str, viewmodel_listing.SessionSummary] = {}
         tips = git_read.run_ref_tips(self.repo_cwd)
-        dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
+        dirs = {
+            rd.name: rd for rd in viewmodel_listing.session_dirs(self.agent6_dir) if rd.is_dir()
+        }
         listing = viewmodel_listing.nested_rows(
-            summarize_session_dir(rd, branch_tips=tips, repo=self.repo_cwd) for rd in dirs.values()
+            viewmodel_listing.summarize_session_dir(rd, branch_tips=tips, repo=self.repo_cwd)
+            for rd in dirs.values()
         )
         self._groups = {row.summary.session_id: row for row in listing if row.children}
 
@@ -300,7 +298,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
         def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
             s = row.summary
-            marked = s.id_cell(winner=is_winner(dirs[s.session_id]))
+            marked = s.id_cell(winner=comparison.is_winner(dirs[s.session_id]))
             if depth:
                 add(row, format.child_id_cell(marked, depth))
                 for child in row.children:
@@ -447,7 +445,11 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         if action == "review_selected":
             rd = self._selected_dir()
             s = self._summaries.get(rd.name) if rd is not None else None
-            return None if s is None or not s.branch or s.status in LIVE_STATUS_WORDS else True
+            return (
+                None
+                if s is None or not s.branch or s.status in session_status.LIVE_STATUS_WORDS
+                else True
+            )
         if action in ("merge_selected", "delete_selected"):
             return self._merge_or_delete_applies(action)
         return True
@@ -465,7 +467,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 if viewmodel_listing.unreadable_reason(rd, exc):
                     return None
         s = self._summaries.get(rd.name)
-        return None if s is not None and s.status in LIVE_STATUS_WORDS else True
+        return None if s is not None and s.status in session_status.LIVE_STATUS_WORDS else True
 
     def on_data_table_row_highlighted(self, _event: widgets.DataTable.RowHighlighted) -> None:
         """Re-ask `check_action`, which textual does only on a bindings refresh."""

@@ -23,8 +23,9 @@ from agent6.ui import keymap
 from agent6.ui.tui import forms
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import SessionState, format
+from agent6.viewmodel import format
 from agent6.viewmodel.session import patches
+from agent6.viewmodel.session import records as state_types
 
 
 class DiffPane(forms.ScrollPane):
@@ -79,7 +80,7 @@ class DiffPane(forms.ScrollPane):
             return manifest.read_manifest(self._session_dir).git_control
         return "agent6"
 
-    def sync_nav(self, s: SessionState) -> None:
+    def sync_nav(self, s: state_types.SessionState) -> None:
         """Refresh the commit selector from the state's commits, newest first.
 
         Hidden while nothing is committed, and under `[git].control = "model"`, which
@@ -151,7 +152,7 @@ class DiffPane(forms.ScrollPane):
         self.cumulative = event.value
         self.post_message(self.CommitChanged())
 
-    def render_state(self, s: SessionState, *, sel: str | None, filt: str) -> None:
+    def render_state(self, s: state_types.SessionState, *, sel: str | None, filt: str) -> None:
         """Paint the pane for the state, skipping when none of its inputs changed.
 
         Built as rich Text, so a diff or verify body holding brackets is never parsed
@@ -237,7 +238,7 @@ class DiffPane(forms.ScrollPane):
         self.query_one("#diff-body", widgets.Static).update(body)
         self.scroll_home(animate=False)
 
-    def _story(self, s: SessionState, sel: str | None) -> text.Text:
+    def _story(self, s: state_types.SessionState, sel: str | None) -> text.Text:
         verify = s.last_verify
         dt = text.Text()
         if self.commit_sel:

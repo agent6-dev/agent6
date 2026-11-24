@@ -19,7 +19,9 @@ import dataclasses
 import json
 import pathlib
 
-from agent6.viewmodel import fold_session, fold_transcript, session_state_as_dict, tail_events
+from agent6.viewmodel import tail, transcript
+from agent6.viewmodel.session import state as session_state
+from agent6.viewmodel.session import view as state_view
 
 _DATA = pathlib.Path(__file__).parent / "data"
 _FIXTURE = _DATA / "golden_session_logs.jsonl"
@@ -33,17 +35,21 @@ def _wire(obj: object) -> object:
 
 
 def _folded_state() -> object:
-    return _wire(session_state_as_dict(fold_session(tail_events(_FIXTURE, follow=False))))
+    return _wire(
+        state_view.session_state_as_dict(
+            session_state.fold_session(tail.tail_events(_FIXTURE, follow=False))
+        )
+    )
 
 
 def _folded_transcript() -> object:
-    items = fold_transcript(list(tail_events(_FIXTURE, follow=False)))
+    items = transcript.fold_transcript(list(tail.tail_events(_FIXTURE, follow=False)))
     return _wire([dataclasses.asdict(i) for i in items])
 
 
 def test_tail_drops_malformed_lines_but_keeps_every_object() -> None:
     # 40 JSON objects; the 6 trailing malformed lines are dropped by the tail layer before the fold.
-    events = list(tail_events(_FIXTURE, follow=False))
+    events = list(tail.tail_events(_FIXTURE, follow=False))
     assert len(events) == 39
     assert all(isinstance(e, dict) for e in events)
 

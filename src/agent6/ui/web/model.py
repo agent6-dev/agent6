@@ -25,22 +25,11 @@ from agent6.ui import path_completion
 from agent6.ui.web import diff_highlight
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import (
-    MachineSummary,
-    config_view,
-    fold_session,
-    fold_transcript,
-    format,
-    is_session_husk,
-    listing,
-    operator_inputs,
-    restate,
-    session_state_as_dict,
-    tail_events,
-    transcript_style,
-)
+from agent6.viewmodel import config_view, format, listing, tail, transcript, transcript_style
 from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.session import patches
+from agent6.viewmodel.session import state as session_state
 from agent6.viewmodel.session import status as session_status
 from agent6.viewmodel.session import view as session_view
 
@@ -62,7 +51,7 @@ def session_dir_for(cwd: pathlib.Path, session_id: str) -> pathlib.Path | None:
     found: pathlib.Path | None = None
     for sub in layout.HUB_BUCKETS:
         d = layout.bucket_dir(paths.state_dir(cwd), sub) / session_id
-        if d.is_dir() and not is_session_husk(d):
+        if d.is_dir() and not listing.is_session_husk(d):
             if found is not None:
                 return None
             found = d
@@ -94,7 +83,7 @@ def draft_dir_for(cwd: pathlib.Path, name: str) -> pathlib.Path | None:
     if not layout.is_safe_session_id(name):
         return None
     d = layout.bucket_dir(paths.state_dir(cwd), "machines") / name
-    return d if d.is_dir() and not is_session_husk(d) else None
+    return d if d.is_dir() and not listing.is_session_husk(d) else None
 
 
 def draft_workspace(
@@ -138,7 +127,9 @@ def draft_commit_diff_payload(
         The payload and "", or None and the reason.
     """
     if not sha:
-        commits = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).commits
+        commits = session_state.fold_session(
+            tail.tail_events(session_dir / layout.LOGS_NAME, follow=False)
+        ).commits
         if not commits:
             return None, "no commit yet"
         sha = commits[-1].sha
@@ -209,7 +200,7 @@ def _list_sessions(cwd: pathlib.Path) -> list[listing.SummaryRow]:
     return [listing.row_json(r, winners=winners) for r in rows]
 
 
-def _machine_row(s: MachineSummary) -> dict[str, Any]:
+def _machine_row(s: machine_state.MachineSummary) -> dict[str, Any]:
     """Return one machine-instance row for the hub.
 
     Attributes:
@@ -395,7 +386,7 @@ def conversation_items(
         One entry per transcript item.
     """
     out: list[dict[str, Any]] = []
-    for item in fold_transcript(events, worker_dead=worker_dead):
+    for item in transcript.fold_transcript(events, worker_dead=worker_dead):
         collapsed = transcript_style.item_lines(item, detail="collapsed")
         expanded = transcript_style.item_lines(item, detail="expanded")
         entry: dict[str, Any] = {"kind": item.kind, "lines": collapsed}
@@ -418,10 +409,10 @@ def conversation_payload(session_dir: pathlib.Path) -> dict[str, Any]:
     Returns:
         The conversation and operator input history.
     """
-    events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
+    events = list(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
     return {
         "items": conversation_items(events, worker_dead=not process.worker_is_alive(session_dir)),
-        "operator_inputs": operator_inputs(events),
+        "operator_inputs": transcript.operator_inputs(events),
     }
 
 
@@ -438,11 +429,11 @@ def recent_conversation(session_dir: pathlib.Path) -> dict[str, str | bool]:
     Returns:
         The live flag and the conversation text.
     """
-    events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
-    state = fold_session(events)
+    events = list(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
+    state = session_state.fold_session(events)
     word, _ = session_status.status_for_session_dir(session_dir, session_view.status_facts(state))
     live = word in session_status.LIVE_STATUS_WORDS
-    items = fold_transcript(events, worker_dead=not process.worker_is_alive(session_dir))
+    items = transcript.fold_transcript(events, worker_dead=not process.worker_is_alive(session_dir))
     lines = [
         "".join(text for text, _ in line)
         for item in items[-6:]
@@ -467,8 +458,10 @@ def restate_payload(session_dir: pathlib.Path) -> dict[str, Any]:
     Returns:
         The restatement text.
     """
-    events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
-    return {"text": restate(events, worker_dead=not process.worker_is_alive(session_dir))}
+    events = list(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
+    return {
+        "text": transcript.restate(events, worker_dead=not process.worker_is_alive(session_dir))
+    }
 
 
 def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
@@ -486,7 +479,7 @@ def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
     log = machine_logs.newest_state_log(machine_dir)
     if log is None:
         return {"items": []}
-    events = list(tail_events(log, follow=False))
+    events = list(tail.tail_events(log, follow=False))
     # The machine's worker (one pid for every state) is the one to probe.
     items = conversation_items(events, worker_dead=not process.worker_is_alive(machine_dir))
     return {"items": items}
@@ -518,10 +511,14 @@ def machine_reasoning_snapshot(
         log, state = fold.refresh(machine_dir), fold.state
     else:
         log = machine_logs.newest_state_log(machine_dir)
-        state = fold_session(tail_events(log, follow=False)) if log is not None else None
+        state = (
+            session_state.fold_session(tail.tail_events(log, follow=False))
+            if log is not None
+            else None
+        )
     if log is None or state is None:
         return {}
-    snap = session_state_as_dict(state)
+    snap = session_view.session_state_as_dict(state)
     snap["state_dir"] = log.parent.name
     return snap
 
@@ -683,7 +680,9 @@ def commit_diff_payload(
     if m.git_control == "model":
         return None, "the model owns git in this run: no commit chain to select from"
     if not sha:
-        commits = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).commits
+        commits = session_state.fold_session(
+            tail.tail_events(session_dir / layout.LOGS_NAME, follow=False)
+        ).commits
         if not commits:
             return None, "no commit yet"
         sha = commits[-1].sha

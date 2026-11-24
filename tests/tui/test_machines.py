@@ -19,7 +19,6 @@ from agent6.sessions import process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, modals
 from agent6.ui.tui import machines as machmod
-from agent6.viewmodel import machine_files
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
 from tests.tui import waits
@@ -88,7 +87,7 @@ def test_machine_files_cwd_and_subdir(tmp_path: pathlib.Path) -> None:
     (tmp_path / "machines").mkdir()
     _write(tmp_path / "machines" / "b.asm.toml")
     (tmp_path / "not-a-machine.toml").write_text("x = 1\n", encoding="utf-8")
-    names = {p.name for p in machine_files(tmp_path)}
+    names = {p.name for p in machine_state.machine_files(tmp_path)}
     assert names == {"a.asm.toml", "b.asm.toml"}
 
 
@@ -1498,8 +1497,6 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
     import os
 
     from agent6.machine import semantics
-    from agent6.ui.tui import machines
-    from agent6.viewmodel.machine import state as vm_mod
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
@@ -1513,7 +1510,7 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
     (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
     counts = {"fold": 0, "execution": 0}
-    real_fold, real_execution = vm_mod.fold_machine, machine_logs.newest_agent_execution
+    real_fold, real_execution = machine_state.fold_machine, machine_logs.newest_agent_execution
 
     def counting_fold(*args: object, **kwargs: object) -> object:
         counts["fold"] += 1
@@ -1533,14 +1530,12 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            machines.fold_machine = counting_fold  # pyrefly: ignore[bad-assignment]
-            vm_mod.fold_machine = counting_fold  # pyrefly: ignore[bad-assignment]
+            machine_state.fold_machine = counting_fold  # pyrefly: ignore[bad-assignment]
             machine_logs.newest_agent_execution = counting_execution  # pyrefly: ignore[bad-assignment]
             try:
                 screen._poll()
             finally:
-                machines.fold_machine = real_fold
-                vm_mod.fold_machine = real_fold
+                machine_state.fold_machine = real_fold
                 machine_logs.newest_agent_execution = real_execution
             assert counts == {"fold": 1, "execution": 0}
 

@@ -25,14 +25,8 @@ from agent6.machine import journal as machine_journal
 from agent6.sessions import layout, process
 from agent6.ui import notify
 from agent6.ui.cli import common, machine_check, plan_watch
-from agent6.viewmodel import (
-    MachineState,
-    armed_wait,
-    event_epoch,
-    fold_machine,
-    format,
-    machine_word_for_dir,
-)
+from agent6.viewmodel import events as viewmodel_events
+from agent6.viewmodel import format
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.machine import watch as machine_watch
@@ -226,7 +220,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
 
 
 def _armed_wait_tolerant(
-    root: pathlib.Path, ms: MachineState
+    root: pathlib.Path, ms: machine_state.MachineState
 ) -> tuple[machine_journal.PendingWait | None, str]:
     """Return the armed wait and a note; a corrupt wait.json yields the note instead.
 
@@ -242,7 +236,7 @@ def _armed_wait_tolerant(
         and the error text.
     """
     try:
-        return armed_wait(root, ms), ""
+        return machine_state.armed_wait(root, ms), ""
     except machine_journal.JournalError as exc:
         return None, str(exc)
 
@@ -273,7 +267,7 @@ def _cmd_machine_status(machine_id: str) -> int:
     except (machine_journal.JournalError, contracts.EngineError) as exc:
         common.error(f"{exc}")
         return 1
-    ms = fold_machine(spec, events)
+    ms = machine_state.fold_machine(spec, events)
     pending, pending_note = _armed_wait_tolerant(root, ms)
 
     # The probes own running/waiting/stopped and its reason for every surface; parked beats alive.
@@ -398,7 +392,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
     return 0
 
 
-def _render_overview(ms: MachineState) -> str:
+def _render_overview(ms: machine_state.MachineState) -> str:
     """Return the state list with the current and visited states marked, from the shared fold."""
     lines = [f"machine: {ms.machine} (v{ms.version})  initial={ms.initial}", "states:"]
     for s in ms.states:
@@ -407,7 +401,9 @@ def _render_overview(ms: MachineState) -> str:
     return "\n".join(lines)
 
 
-def _watch_liveness_exit(root: pathlib.Path, machine_id: str, ms: MachineState) -> int | None:
+def _watch_liveness_exit(
+    root: pathlib.Path, machine_id: str, ms: machine_state.MachineState
+) -> int | None:
     """Return the watch's exit code when nothing will ever append to the journal.
 
     Parked (an armed `--exit-on-wait` wait, no worker) or stopped (no live worker, no end,
@@ -424,7 +420,7 @@ def _watch_liveness_exit(root: pathlib.Path, machine_id: str, ms: MachineState) 
         The exit code, or None while a live worker may still write, one blocked in a
         foreground wait included.
     """
-    word = machine_word_for_dir(ms, root)
+    word = machine_state.machine_word_for_dir(ms, root)
     current = next((st.name for st in ms.states if st.is_current), "?")
     if word == "waiting" and not process.worker_is_alive(root):
         print(
@@ -466,7 +462,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
         return machine_check._fail(source, exc.problems)
     journal = machine_journal.MachineJournal(root)
     try:
-        ms = fold_machine(spec, journal.read())
+        ms = machine_state.fold_machine(spec, journal.read())
     except machine_journal.JournalError as exc:
         common.error(f"{exc}")
         return 1
@@ -490,7 +486,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     try:
         while True:
             try:
-                ms = fold_machine(spec, journal.read())
+                ms = machine_state.fold_machine(spec, journal.read())
             except machine_journal.JournalError as exc:
                 # The same degradation `machine status` gives a corrupt journal, never a traceback.
                 common.error(f"{exc}")
@@ -510,7 +506,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
             for line in cursor.read_log_lines():
                 if anchor is None:
                     with contextlib.suppress(json.JSONDecodeError):
-                        anchor = event_epoch(json.loads(line).get("ts"))
+                        anchor = viewmodel_events.event_epoch(json.loads(line).get("ts"))
                 print(
                     "    " + plan_watch.format_plain_event(line, session_start_ts=anchor),
                     flush=True,

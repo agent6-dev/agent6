@@ -19,7 +19,7 @@ from agent6.models import cache as models_cache
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.web import model
-from agent6.viewmodel import config_view, machine_snapshot, session_snapshot
+from agent6.viewmodel import config_view, wire
 from agent6.viewmodel.session import status as session_status
 
 
@@ -75,7 +75,7 @@ def test_harness_ends_keep_their_labels_in_the_hub_and_run_view(
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
     assert (row["status"], row["status_label"]) == ("finished", label)
-    snapshot = session_snapshot(d)
+    snapshot = wire.session_snapshot(d)
     assert (snapshot["status"], snapshot["status_label"]) == ("finished", label)
     done = next(item for item in model.conversation_payload(d)["items"] if item["kind"] == "done")
     assert label in "".join(text for line in done["lines"] for text, _style in line)
@@ -261,7 +261,7 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None
         ),
         encoding="utf-8",
     )
-    snap = session_snapshot(d)
+    snap = wire.session_snapshot(d)
     assert snap["comparison"]["rationale"] == "cleanest diff"
     assert snap["comparison"]["judge_cost_usd"] == 0.01
     assert snap["placement"]["group"] == "fan"
@@ -270,7 +270,7 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None
     assert "judge_cost_usd" not in snap["placement"]
     # A run with no compare block carries no `compare` key (non-child runs).
     plain = _run(tmp_path, "plain", [{"type": "session.start", "user_task": "y"}])
-    assert "placement" not in session_snapshot(plain)
+    assert "placement" not in wire.session_snapshot(plain)
 
 
 def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: pathlib.Path) -> None:
@@ -284,7 +284,7 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: pathlib.Path
         json.dumps({"mode": "run", "user_task": "queued work", "parked_task": "queued work"}),
         encoding="utf-8",
     )
-    snap = session_snapshot(d)
+    snap = wire.session_snapshot(d)
     assert snap["task"] == "queued work"
     assert "fallback_task" not in snap
 
@@ -300,7 +300,7 @@ def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: path
     (d / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": task}), encoding="utf-8"
     )
-    snap = session_snapshot(d)
+    snap = wire.session_snapshot(d)
     assert snap["task"] == "# Fix the parser\n\nbody"
     assert snap["task_line"] == "Fix the parser"
 
@@ -312,16 +312,16 @@ def test_plan_snapshot_carries_the_plan_md(tmp_path: pathlib.Path) -> None:
     (d / "manifest.json").write_text(
         json.dumps({"mode": "plan", "user_task": "lay it out"}), encoding="utf-8"
     )
-    assert "plan_md" not in session_snapshot(d)
+    assert "plan_md" not in wire.session_snapshot(d)
     (d / "plan.md").write_text("# Plan: lay it out\n\n1. do\n", encoding="utf-8")
-    assert session_snapshot(d)["plan_md"].startswith("# Plan: lay it out")
+    assert wire.session_snapshot(d)["plan_md"].startswith("# Plan: lay it out")
     run = _bucket(tmp_path, "runs") / "run1"
     run.mkdir(parents=True)
     (run / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
     (run / "plan.md").write_text("stray\n", encoding="utf-8")
-    assert "plan_md" not in session_snapshot(run)
+    assert "plan_md" not in wire.session_snapshot(run)
 
 
 def test_hub_marks_the_group_winner(tmp_path: pathlib.Path) -> None:
@@ -400,9 +400,9 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: pathlib.Path) ->
     md.mkdir(parents=True)
     (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
     (md / "journal.jsonl").write_text("", encoding="utf-8")
-    assert machine_snapshot(md)["status"] == "stopped"  # no wait, no worker
+    assert wire.machine_snapshot(md)["status"] == "stopped"  # no wait, no worker
     (md / "wait.json").write_text('{"state":"route","wake_epoch":9999999999.0}\n', encoding="utf-8")
-    assert machine_snapshot(md)["status"] == "waiting"  # parked
+    assert wire.machine_snapshot(md)["status"] == "waiting"  # parked
 
 
 def test_machine_file_actions_follow_the_declared_machine(tmp_path: pathlib.Path) -> None:
@@ -784,7 +784,7 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: pathlib.Path) -> None
         ),
         encoding="utf-8",
     )
-    assert session_snapshot(d)["status_label"] == "parked · checkout busy"
+    assert wire.session_snapshot(d)["status_label"] == "parked · checkout busy"
     (hub_row,) = model.hub_payload(tmp_path)["sessions"]
     assert hub_row["status"] == "parked"  # the two surfaces lead with one word
 
@@ -817,7 +817,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
         ),
     )
     stamps.stamp_parked(layout.session_dir, task="t", reason="checkout busy")
-    snap = session_snapshot(layout.session_dir)
+    snap = wire.session_snapshot(layout.session_dir)
     assert snap["status_label"] == "parked · checkout busy"
     assert snap["policy"].endswith("· gate python3 -m pytest (configured, pending)")
     # A gateless config's run infers its gate at the start; parked, it has not yet.
@@ -830,7 +830,9 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
         run_branch=None,
         cfg=Config(),
     )
-    assert session_snapshot(layout.session_dir)["policy"].endswith("verify gate not settled yet")
+    assert wire.session_snapshot(layout.session_dir)["policy"].endswith(
+        "verify gate not settled yet"
+    )
 
 
 def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: pathlib.Path) -> None:
@@ -841,7 +843,7 @@ def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: pathlib.Path) -> None
     """
     d = _run(tmp_path, "crashed1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
-    assert session_snapshot(d)["status_label"] == "stale"
+    assert wire.session_snapshot(d)["status_label"] == "stale"
 
 
 def test_run_snapshot_labels_waiting_starting_created(tmp_path: pathlib.Path) -> None:
@@ -861,15 +863,15 @@ def test_run_snapshot_labels_waiting_starting_created(tmp_path: pathlib.Path) ->
         ],
     )
     process.write_worker_pid(d, os.getpid())
-    assert session_snapshot(d)["status_label"] == "waiting · needs answer"
+    assert wire.session_snapshot(d)["status_label"] == "waiting · needs answer"
 
     e = _bucket(tmp_path, "runs") / "fresh1"
     e.mkdir(parents=True)
     (e / "manifest.json").write_text(json.dumps({"session_id": "fresh1"}), encoding="utf-8")
     process.write_worker_pid(e, os.getpid())
-    assert session_snapshot(e)["status_label"] == "starting"
+    assert wire.session_snapshot(e)["status_label"] == "starting"
     (e / "worker.pid").unlink()
-    assert session_snapshot(e)["status_label"] == "created"
+    assert wire.session_snapshot(e)["status_label"] == "created"
 
 
 def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: pathlib.Path) -> None:
@@ -888,7 +890,7 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: pathlib.Path) -> Non
         ],
     )
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")
-    assert session_snapshot(d)["status_label"] == "passed"
+    assert wire.session_snapshot(d)["status_label"] == "passed"
 
 
 def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> None:
@@ -905,17 +907,17 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> Non
     (parked / "manifest.json").write_text(
         json.dumps({"session_id": "parked2", "parked_task": "do the thing"}), encoding="utf-8"
     )
-    assert session_snapshot(parked)["live"] is False
+    assert wire.session_snapshot(parked)["live"] is False
 
     crashed = _run(
         tmp_path, "crashed2", [{"type": "session.start", "mode": "run", "user_task": "t"}]
     )
     (crashed / "worker.pid").write_text("999999999", encoding="utf-8")
-    assert session_snapshot(crashed)["live"] is False
+    assert wire.session_snapshot(crashed)["live"] is False
 
     alive = _run(tmp_path, "alive2", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     process.write_worker_pid(alive, os.getpid())
-    assert session_snapshot(alive)["live"] is True
+    assert wire.session_snapshot(alive)["live"] is True
 
     done = _run(
         tmp_path,
@@ -930,7 +932,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> Non
             },
         ],
     )
-    assert session_snapshot(done)["live"] is False
+    assert wire.session_snapshot(done)["live"] is False
 
 
 def test_the_states_that_offer_resume_are_not_live(tmp_path: pathlib.Path) -> None:
@@ -952,7 +954,7 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: pathlib.Path) -> No
     (stale / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
 
     for d in (parked, stale):
-        snap = session_snapshot(d)
+        snap = wire.session_snapshot(d)
         assert snap["finished"] is False, d.name  # why the old poll fired at once
         assert snap["live"] is False, d.name  # ...and what actually distinguishes them
 
@@ -1108,7 +1110,7 @@ reason = "routed"
             fact=journal.BranchFact(clause_index=0),
         )
     )
-    snap = machine_snapshot(tmp_path)
+    snap = wire.machine_snapshot(tmp_path)
     assert snap["spend"]["cost_usd"] == 0.0
     assert "usd" not in snap["spend"]
 

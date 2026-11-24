@@ -376,7 +376,7 @@ def test_answer_releases_a_headless_approval(
     from agent6.sessions import event_log
     from agent6.tools import operator_prompts
     from agent6.ui.cli import interact
-    from agent6.viewmodel import open_approval
+    from agent6.viewmodel.session import state as session_state
 
     layout = _run_with_events(tmp_path, monkeypatch, [{"type": "session.start", "mode": "ask"}])
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
@@ -391,9 +391,12 @@ def test_answer_releases_a_headless_approval(
         waiting = pool.submit(prompts.approve, "fetch https://github.com", scope=ipc.COMMAND_SCOPE)
         try:
             deadline = time.monotonic() + 5
-            while open_approval(layout.session_dir) is None and time.monotonic() < deadline:
+            while (
+                session_state.open_approval(layout.session_dir) is None
+                and time.monotonic() < deadline
+            ):
                 time.sleep(0.01)
-            assert open_approval(layout.session_dir) is not None
+            assert session_state.open_approval(layout.session_dir) is not None
             assert not waiting.done()
             assert cli_answer_cmd._cmd_answer("curious-fox", ()) == 0
             out = capsys.readouterr().out

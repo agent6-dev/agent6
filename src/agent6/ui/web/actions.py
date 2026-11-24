@@ -26,9 +26,10 @@ from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, operator_images, spawn
 from agent6.ui.web import model
-from agent6.viewmodel import listing, open_approval, pending_questions, session_is_live
+from agent6.viewmodel import listing
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
+from agent6.viewmodel.session import state as session_state
 
 
 def spawn_machine_create(
@@ -113,7 +114,7 @@ def _live_session_dir(cwd: pathlib.Path, session_id: str) -> pathlib.Path | tupl
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
-    if not session_is_live(session_dir):
+    if not listing.session_is_live(session_dir):
         return False, "the session is not live; resume it instead"
     return session_dir
 
@@ -133,7 +134,7 @@ def approve(cwd: pathlib.Path, session_id: str, prompt_id: str, answer: str) -> 
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    prompt = open_approval(session_dir)
+    prompt = session_state.open_approval(session_dir)
     if prompt is None or prompt.id != prompt_id:
         return False, "that approval is no longer open"
     if not ipc.write_answer(session_dir, prompt_id, answer):
@@ -161,7 +162,9 @@ def answer_question(
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
-    prompt = next((q for q in pending_questions(session_dir) if q.id == question_id), None)
+    prompt = next(
+        (q for q in session_state.pending_questions(session_dir) if q.id == question_id), None
+    )
     if prompt is None:
         return False, "that question is no longer open"
     if len(answers) != len(prompt.questions):
@@ -169,7 +172,7 @@ def answer_question(
         return False, f"that prompt has {len(prompt.questions)} question(s)"
     if not ipc.write_question_answers(session_dir, question_id, answers):
         return False, ipc.ANSWERED_ELSEWHERE
-    if not session_is_live(session_dir):
+    if not listing.session_is_live(session_dir):
         return True, "saved; the resume delivers it"
     return True, "answered" if prompt.blocking else "answered; the run reads it at its next turn"
 
@@ -253,7 +256,7 @@ def undo_session(
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return None, f"no session {session_id!r}"
-    if session_is_live(session_dir):
+    if listing.session_is_live(session_dir):
         return None, "the session is live; /undo rides the steer channel from the composer"
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
@@ -295,7 +298,7 @@ def resume_run(
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
-    if session_is_live(session_dir):
+    if listing.session_is_live(session_dir):
         return False, "the session is still live; steer it instead"
     # The resume itself reads the manifest first and refuses one it cannot read.
     with contextlib.suppress(sessions_manifest.ManifestError):
@@ -482,7 +485,7 @@ def machine_approve(
     target = _state_dir_for_verb(cwd, name, "answer", state)
     if not isinstance(target, pathlib.Path):
         return target
-    prompt = open_approval(target)
+    prompt = session_state.open_approval(target)
     if prompt is None or prompt.id != prompt_id:
         return False, "that approval is no longer open"
     if not ipc.write_answer(target, prompt_id, answer):
@@ -508,7 +511,7 @@ def machine_answer(
     target = _state_dir_for_verb(cwd, name, "answer", state)
     if not isinstance(target, pathlib.Path):
         return target
-    prompt = next((q for q in pending_questions(target) if q.id == question_id), None)
+    prompt = next((q for q in session_state.pending_questions(target) if q.id == question_id), None)
     if prompt is None:
         return False, "that question is no longer open"
     if len(answers) != len(prompt.questions):

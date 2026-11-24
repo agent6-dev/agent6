@@ -31,7 +31,7 @@ from agent6.sandbox import detect, jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest, process
 from agent6.ui.cli import common, exec_cmds
-from agent6.viewmodel import session_is_live, summarize_session_dir
+from agent6.viewmodel import listing
 
 _HOLDER_POLL_S = 2.0
 
@@ -113,8 +113,8 @@ def no_session_network_reason(layout: sessions_layout.SessionLayout) -> str:
     Returns:
         The refusal text, which names the session.
     """
-    if not session_is_live(layout.session_dir):
-        word = summarize_session_dir(layout.session_dir).status
+    if not listing.session_is_live(layout.session_dir):
+        word = listing.summarize_session_dir(layout.session_dir).status
         return f"{layout.session_id} is {word}; a session network exists only while its run does."
     return (
         f"{layout.session_id} has no network of its own to reach into. A run only makes one"
@@ -327,7 +327,7 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
         The command's exit code; 2 when the run is not live or its network is gone.
     """
     # A live run only: a finished run's jail is gone with it, and a fresh one is a different place.
-    if not session_is_live(layout.session_dir):
+    if not listing.session_is_live(layout.session_dir):
         common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     pid = process.read_session_netns_pid(layout.session_dir)

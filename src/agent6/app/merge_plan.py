@@ -21,7 +21,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import listing, scan_session_log, wire
+from agent6.viewmodel import listing, wire
+from agent6.viewmodel.session import log as session_log
 
 # The gate words that mean the gate did not certify the run's final tree.
 UNVERIFIED_WARNINGS = {
@@ -141,7 +142,7 @@ def not_mergeable_now(layout: sessions_layout.SessionLayout, session_id: str) ->
             " index while the worker still edits. Stop it first:\n"
             f"    agent6 stop {session_id}"
         )
-    scan = scan_session_log(layout.logs_path)
+    scan = session_log.scan_session_log(layout.logs_path)
     if scan.finished and scan.stop_reason == "undone":
         return listing.undone_refusal(session_id, scan.undone_to)
     return ""
@@ -328,7 +329,9 @@ def run_merge(
         reporter.out(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
         return MergeEnd(0)
     # A red or missing gate warns the operator but does not block the merge.
-    if unverified := UNVERIFIED_WARNINGS.get(scan_session_log(plan.layout.logs_path).gate_word()):
+    if unverified := UNVERIFIED_WARNINGS.get(
+        session_log.scan_session_log(plan.layout.logs_path).gate_word()
+    ):
         reporter.note(f"warning: {unverified}; merging it.")
     outcome = merge.execute_merge(
         cwd,

@@ -35,7 +35,7 @@ from agent6.sessions import attachments, event_log, id, journal, layout, retenti
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import newest_session_dir
+from agent6.viewmodel import listing
 from agent6.viewmodel.session import log as session_log
 
 # The DAG artifacts copied verbatim when there is no version to rebuild at.
@@ -57,7 +57,7 @@ def resolve_source(
     """
     if not query:
         # The bucket set bare `resume` uses, so the two agree on "most recent".
-        latest = newest_session_dir(resume_record.resumable_bucket_dirs(state_dir))
+        latest = listing.newest_session_dir(resume_record.resumable_bucket_dirs(state_dir))
         if latest is None:
             reporter.err('nothing to fork yet. Start a session with `agent6 run "<task>"`.')
             return None

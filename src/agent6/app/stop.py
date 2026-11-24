@@ -27,7 +27,7 @@ import time
 
 from agent6.sandbox import jail
 from agent6.sessions import ipc, lineage, process, shells
-from agent6.viewmodel import listing, session_is_live, summarize_session_dir
+from agent6.viewmodel import listing
 from agent6.viewmodel.session import status as session_status
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
@@ -84,7 +84,7 @@ def stop_session(
     # Children are found by lineage, so a dead parent's count too.
     children = _live_children(session_dir)
     child_count = f"{len(children)} live {'children' if len(children) > 1 else 'child'}"
-    if not session_is_live(session_dir):
+    if not listing.session_is_live(session_dir):
         if not children:
             return StopOutcome(
                 rid, False, "not_live", f"{rid} {_not_live_state(session_dir)}; nothing to stop"
@@ -179,7 +179,7 @@ def _ended(
 
 def _not_live_state(session_dir: pathlib.Path) -> str:
     """Return the phrase for a session that is not running."""
-    summary = summarize_session_dir(session_dir)
+    summary = listing.summarize_session_dir(session_dir)
     if summary.status == "parked":
         return "is parked and has not started"
     if session_status.produced_result(summary.status):
@@ -189,7 +189,9 @@ def _not_live_state(session_dir: pathlib.Path) -> str:
 
 def _live_children(session_dir: pathlib.Path) -> list[pathlib.Path]:
     """Return live descendants across buckets and clone links, including dead intermediaries."""
-    return [child for child in lineage.descendants_of(session_dir) if session_is_live(child)]
+    return [
+        child for child in lineage.descendants_of(session_dir) if listing.session_is_live(child)
+    ]
 
 
 def _ended_within(
@@ -197,7 +199,7 @@ def _ended_within(
 ) -> bool:
     """Return whether the run ended, or its worker changed, within the wait."""
     deadline = time.monotonic() + wait_s
-    while session_is_live(session_dir):
+    while listing.session_is_live(session_dir):
         if process.read_live_worker_identity(session_dir) != worker:
             return True
         if time.monotonic() >= deadline:

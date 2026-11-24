@@ -24,7 +24,7 @@ from agent6.ui.cli import common, steer_tty
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import policy as git_policy
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import format, newest_session_dir, session_dirs, summarize_session_dir
+from agent6.viewmodel import format, listing
 from agent6.viewmodel.session import patches
 
 
@@ -170,11 +170,11 @@ def _resolve_session_manifest(
     runs_dir = common._runs_dir(cwd)
     if not session_id:
         # No id: the most recent run; a plan or an ask has no branch for these verbs.
-        latest = newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
+        latest = listing.newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
         if latest is None:
             # Only branchless sessions: say so; a fresh state dir keeps the first-contact copy.
             common.print_nothing_yet(
-                "runs" if session_dirs(agent6_paths.state_dir(cwd)) else "sessions"
+                "runs" if listing.session_dirs(agent6_paths.state_dir(cwd)) else "sessions"
             )
             return 2
         layout = sessions_layout.layout_of(latest)
@@ -461,7 +461,7 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
         branch keeps them.
     """
     tips = git_read.run_ref_tips(cwd)
-    summary = summarize_session_dir(layout.session_dir, branch_tips=tips, repo=cwd)
+    summary = listing.summarize_session_dir(layout.session_dir, branch_tips=tips, repo=cwd)
     task = summary.task_label.line(100).replace("\n", "\n" + " " * 11)
     lines = [
         f"sessions remove will delete {layout.session_id}",

@@ -29,7 +29,7 @@ from agent6.sessions import ipc, manifest, process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer, dashboard_header, modals, prompts
-from agent6.viewmodel import Question, QuestionPrompt
+from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state
 from tests.tui import waits
 
@@ -84,7 +84,7 @@ def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
         def on_mount(self) -> None:
             self.push_screen(
                 modals.QuestionModal(
-                    "q1", (Question(question="pick?", options=("alpha", "beta")),)
+                    "q1", (state_types.Question(question="pick?", options=("alpha", "beta")),)
                 ),
                 lambda v: result.__setitem__("v", v),
             )
@@ -186,7 +186,7 @@ def test_consequential_modal_buttons_name_their_answers() -> None:
         assert await labels(
             modals.QuestionModal(
                 "q",
-                (Question(question="Choose one", options=("literal [one]", "two")),),
+                (state_types.Question(question="Choose one", options=("literal [one]", "two")),),
             )
         ) == ["literal [one]", "two", "Submit (ctrl+s)"]
 
@@ -213,7 +213,7 @@ def test_each_consequential_modal_delivers_one_result() -> None:
 
         question_modal = modals.QuestionModal(
             "q",
-            (Question(question="Choose one", options=("literal [one]", "two")),),
+            (state_types.Question(question="Choose one", options=("literal [one]", "two")),),
         )
         question = _ModalHost(question_modal)
         async with question.run_test() as pilot:
@@ -573,7 +573,9 @@ def test_a_submit_on_a_question_answered_elsewhere_writes_nothing(tmp_path: path
         answerable=lambda: True,
         lost="lost",
     )
-    question = QuestionPrompt(id="question-1", questions=(Question("Which?"),))
+    question = state_types.QuestionPrompt(
+        id="question-1", questions=(state_types.Question("Which?"),)
+    )
     fold = state.initial_state()
     dispatcher.dispatch(tmp_path, dataclasses.replace(fold, questions=(question,)))
     closed = dataclasses.replace(question, answered=True)
@@ -600,7 +602,9 @@ def test_a_covered_modal_whose_question_closed_elsewhere_goes_when_uncovered(
         app = _Host()
         async with app.run_test() as pilot:
             dispatcher = prompts.PromptDispatcher(app, answerable=lambda: True, lost="lost")
-            question = QuestionPrompt(id="question-1", questions=(Question("Which?"),))
+            question = state_types.QuestionPrompt(
+                id="question-1", questions=(state_types.Question("Which?"),)
+            )
             fold = state.initial_state()
             dispatcher.dispatch(tmp_path, dataclasses.replace(fold, questions=(question,)))
             await pilot.pause()
@@ -1534,8 +1538,8 @@ def test_question_modal_multi_collects_all_answers() -> None:
     """A multi-question prompt returns every answer as a tuple aligned to the questions."""
     result: dict[str, tuple[str, ...] | None] = {}
     qs = (
-        Question(question="Framework?", options=("React", "Vue")),
-        Question(question="Component name?", options=()),
+        state_types.Question(question="Framework?", options=("React", "Vue")),
+        state_types.Question(question="Component name?", options=()),
     )
 
     class _Host(textual_app.App[None]):

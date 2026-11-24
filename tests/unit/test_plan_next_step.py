@@ -9,6 +9,7 @@ import pathlib
 import pytest
 
 from agent6.ui.cli import plan_watch
+from agent6.viewmodel import listing
 
 
 @pytest.mark.parametrize(
@@ -27,5 +28,5 @@ def test_the_next_step_follows_a_live_plan_and_resumes_a_stopped_one(
     def _is_live(_d: pathlib.Path) -> bool:
         return live
 
-    monkeypatch.setattr(plan_watch, "session_is_live", _is_live)
+    monkeypatch.setattr(listing, "session_is_live", _is_live)
     assert plan_watch._plan_next("plan-AAAA11") == expected

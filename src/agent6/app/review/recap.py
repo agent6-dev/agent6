@@ -35,7 +35,8 @@ from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import sessions
 from agent6.viewmodel import events as viewmodel_events
-from agent6.viewmodel import scan_session_log, session_is_live, summarize_session_dir
+from agent6.viewmodel import listing
+from agent6.viewmodel.session import log as session_log
 
 # The harness's own interventions, named with their counts.
 _NOTICE_EVENTS = (
@@ -257,7 +258,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     Returns:
         The digest.
     """
-    summary = summarize_session_dir(layout.session_dir)
+    summary = listing.summarize_session_dir(layout.session_dir)
     steers: list[str] = []
     decisions: list[tuple[str, str]] = []
     prompts: dict[str, tuple[str, ...]] = {}
@@ -469,12 +470,12 @@ def save_review(reviews_dir: pathlib.Path, *, label: str, body: str) -> pathlib.
 
 def _not_reviewable(layout: sessions_layout.SessionLayout) -> str | None:
     """Return why the session's record cannot be reviewed yet, or None when it can."""
-    if session_is_live(layout.session_dir):
+    if listing.session_is_live(layout.session_dir):
         return (
             f"{layout.session_id} is live; its record is not complete. Review it once it"
             f" has ended (`agent6 stop {layout.session_id}` ends it now)."
         )
-    if not scan_session_log(layout.logs_path).saw_start:
+    if not session_log.scan_session_log(layout.logs_path).saw_start:
         return f"{layout.session_id} never started; there is no record to review."
     return None
 

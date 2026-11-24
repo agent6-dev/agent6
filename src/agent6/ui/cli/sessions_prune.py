@@ -20,7 +20,7 @@ from agent6.sessions import process
 from agent6.ui.cli import common
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import scan_session_log
+from agent6.viewmodel.session import log as session_log
 
 _UNSTARTED_FORK = "unmerged; fork has not started"
 _NO_RECORD = "no session record"
@@ -44,7 +44,7 @@ def _session_stamp(
         manifest = sessions_manifest.read_manifest(layout.session_dir)
     except sessions_manifest.ManifestError:
         return None, "unreadable manifest"
-    if manifest.parent_session_id and not scan_session_log(layout.logs_path).saw_start:
+    if manifest.parent_session_id and not session_log.scan_session_log(layout.logs_path).saw_start:
         return manifest.merged, _UNSTARTED_FORK
     return manifest.merged, ""
 

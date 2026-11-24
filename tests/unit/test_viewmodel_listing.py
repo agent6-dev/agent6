@@ -15,21 +15,10 @@ import pytest
 
 from agent6.sessions import ipc
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import (
-    format,
-    is_session_husk,
-    is_winner,
-    listing,
-    manifest_branches,
-    session_is_live,
-    session_mtime,
-    session_placement,
-    session_state_as_dict,
-    summarize_session_dir,
-    task_snippet,
-)
+from agent6.viewmodel import comparison, format, listing, wire
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import status as session_status
+from agent6.viewmodel.session import view as state_view
 
 
 def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
@@ -65,7 +54,7 @@ def test_run_mtime_prefers_log_over_dir(tmp_path: pathlib.Path) -> None:
     log.write_text("{}\n", encoding="utf-8")
     os.utime(log, (1000.0, 1000.0))
     os.utime(d, (5000.0, 5000.0))  # dir bumped later (a viewer wrote frontend.pid)
-    assert session_mtime(d) == 1000.0  # keyed off the log, not the dir
+    assert listing.session_mtime(d) == 1000.0  # keyed off the log, not the dir
 
 
 def test_run_mtime_of_a_log_less_session_is_its_manifest(tmp_path: pathlib.Path) -> None:
@@ -80,12 +69,12 @@ def test_run_mtime_of_a_log_less_session_is_its_manifest(tmp_path: pathlib.Path)
     os.utime(manifest, (2000.0, 2000.0))
     os.utime(d, (9000.0, 9000.0))  # a viewer's claim bumped the dir
 
-    assert session_mtime(d) == 2000.0
+    assert listing.session_mtime(d) == 2000.0
 
     bare = tmp_path / "husk"
     bare.mkdir()
     os.utime(bare, (2000.0, 2000.0))
-    assert session_mtime(bare) == 2000.0  # nothing but the dir -> the dir
+    assert listing.session_mtime(bare) == 2000.0  # nothing but the dir -> the dir
 
 
 def test_task_snippet_skips_seeded_file_block() -> None:
@@ -94,7 +83,7 @@ def test_task_snippet_skips_seeded_file_block() -> None:
         '<file path="a.py">\ndef f(): pass\nSHOULD NOT SHOW\n</file>\n\n'
         "why is the broker slow?\n\n## Answer\n"
     )
-    assert task_snippet(task) == "why is the broker slow?"
+    assert session_status.task_snippet(task) == "why is the broker slow?"
 
 
 def test_task_snippet_is_the_operators_words_under_a_from_seed_and_skills() -> None:
@@ -109,22 +98,22 @@ def test_task_snippet_is_the_operators_words_under_a_from_seed_and_skills() -> N
         "## Run task\nhow many functions?\n</prior-run>\n\n"
         "add a module docstring to calc.py"
     )
-    assert task_snippet(seeded) == "add a module docstring to calc.py"
+    assert session_status.task_snippet(seeded) == "add a module docstring to calc.py"
     skilled = (
         "Apply the operator-installed skill(s) below to this task.\n\n"
         '<skill name="tdd">\nwrite the test first\n</skill>\n\n---\n\n'
         "add a --json flag\nmore detail"
     )
-    assert task_snippet(skilled) == "add a --json flag"
+    assert session_status.task_snippet(skilled) == "add a --json flag"
     assert task_text.operator_task_text(skilled) == "add a --json flag\nmore detail"
     assert (
         task_text.operator_task_text(seeded[:60]) == ""
     )  # clipped inside the block: nothing invented
-    assert task_snippet("plain words") == "plain words"
+    assert session_status.task_snippet("plain words") == "plain words"
 
 
 def test_task_snippet_plain_task() -> None:
-    assert task_snippet("add a --json flag\nmore detail") == "add a --json flag"
+    assert session_status.task_snippet("add a --json flag\nmore detail") == "add a --json flag"
 
 
 def test_task_snippet_drops_a_markdown_heading_mark() -> None:
@@ -132,21 +121,24 @@ def test_task_snippet_drops_a_markdown_heading_mark() -> None:
 
     A `#` with no space after it (`#include`) is not a heading.
     """
-    assert task_snippet("# Implement `parse_url` per RFC 3986\n\nbody") == (
+    assert session_status.task_snippet("# Implement `parse_url` per RFC 3986\n\nbody") == (
         "Implement `parse_url` per RFC 3986"
     )
-    assert task_snippet("### deep heading") == "deep heading"
-    assert task_snippet("#include <stdio.h> fails, why?") == "#include <stdio.h> fails, why?"
+    assert session_status.task_snippet("### deep heading") == "deep heading"
+    assert (
+        session_status.task_snippet("#include <stdio.h> fails, why?")
+        == "#include <stdio.h> fails, why?"
+    )
 
 
 def test_task_snippet_falls_back_to_stripped_text() -> None:
-    assert task_snippet("   ") == ""
+    assert session_status.task_snippet("   ") == ""
 
 
 def test_task_snippet_of_a_task_that_is_only_a_file_block_is_its_first_line() -> None:
     """With no words of the operator's, the headline is the block's opener naming the file."""
     task = '<file path="question.md">\nWhy is the broker slow?\n</file>'
-    assert task_snippet(task) == '<file path="question.md">'
+    assert session_status.task_snippet(task) == '<file path="question.md">'
 
 
 def _stamp(session_dir: pathlib.Path, placement: object) -> None:
@@ -160,15 +152,15 @@ def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: pathlib.Pat
     """A child keeps its placement and group reference without the group facts."""
     win = tmp_path / "win"
     _stamp(win, {"group": "fan", "rank": 1, "of": 2, "winner": True})
-    assert is_winner(win) is True
-    assert isinstance(session_placement(win), sessions_manifest.PlacementStamp)
+    assert comparison.is_winner(win) is True
+    assert isinstance(comparison.session_placement(win), sessions_manifest.PlacementStamp)
     loser = tmp_path / "loser"
     _stamp(loser, {"group": "fan", "rank": 2, "of": 2, "winner": False})
-    assert is_winner(loser) is False
+    assert comparison.is_winner(loser) is False
     # A run outside any group (no manifest / no placement block) reads as None.
     plain = tmp_path / "plain"
     plain.mkdir()
-    assert session_placement(plain) is None and is_winner(plain) is False
+    assert comparison.session_placement(plain) is None and comparison.is_winner(plain) is False
 
 
 def test_group_facts_require_the_recorded_owner_and_group(tmp_path: pathlib.Path) -> None:
@@ -178,7 +170,7 @@ def test_group_facts_require_the_recorded_owner_and_group(tmp_path: pathlib.Path
     runs = tmp_path / "sessions" / "runs"
     child = runs / "child"
     _stamp(child, {"group": "fan", "rank": 1, "of": 2, "winner": True})
-    placement = session_placement(child)
+    placement = comparison.session_placement(child)
     assert comparison.session_comparison(child) is None
     assert format.format_compare(placement) == ("rank 1/2 · winner", "")
     owner = runs / "fan-longer"
@@ -242,20 +234,20 @@ def test_format_branch_is_the_one_wording_and_manifest_branches_carries_it(
     (d / "manifest.json").write_text(
         json.dumps({"mode": "run", "run_branch": "agent6/x", "base_branch": "main"})
     )
-    assert manifest_branches(d) == {
+    assert wire.manifest_branches(d) == {
         "run_branch": "agent6/x",
         "base_branch": "main",
         "branch_line": "agent6/x → merges into main",
     }
     (d / "manifest.json").write_text(json.dumps({"mode": "ask"}))
-    assert manifest_branches(d) == {}
+    assert wire.manifest_branches(d) == {}
 
 
 def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: pathlib.Path) -> None:
     """`forked_from` is `<parent>@turn <n> (<sha12>)` on every header of a fork, else absent."""
     import json
 
-    from agent6.viewmodel import manifest_header
+    from agent6.viewmodel import wire
 
     assert (
         format.format_lineage("orig-run-AAAAAA", 3, "a" * 40)
@@ -275,9 +267,9 @@ def test_manifest_header_carries_the_fork_lineage_in_one_wording(tmp_path: pathl
             }
         )
     )
-    assert manifest_header(d)["forked_from"] == "orig-run-AAAAAA@turn 3 (bbbbbbbbbbbb)"
+    assert wire.manifest_header(d)["forked_from"] == "orig-run-AAAAAA@turn 3 (bbbbbbbbbbbb)"
     (d / "manifest.json").write_text(json.dumps({"mode": "run"}))
-    assert "forked_from" not in manifest_header(d)
+    assert "forked_from" not in wire.manifest_header(d)
 
 
 def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: pathlib.Path) -> None:
@@ -308,15 +300,15 @@ def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: pa
         "merged": {"into": "main", "sha": tip, "tip": tip},
     }
     (d / "manifest.json").write_text(json.dumps(stamped))
-    assert manifest_branches(d, repo=repo)["branch_line"] == "agent6/x (merged into main)"
+    assert wire.manifest_branches(d, repo=repo)["branch_line"] == "agent6/x (merged into main)"
     # A later commit on the run branch: the stamp no longer describes it.
     subprocess.run([*git, "checkout", "-q", "agent6/x"], check=True)
     subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "more"], check=True, env=env)
-    got = manifest_branches(d, repo=repo)
+    got = wire.manifest_branches(d, repo=repo)
     assert "merged_into_checkout" not in got
     assert got["branch_line"] == "agent6/x → merges into main"
     # Without the repo the manifest fact stands as recorded.
-    assert manifest_branches(d)["merged_into_checkout"] == "main"
+    assert wire.manifest_branches(d)["merged_into_checkout"] == "main"
 
 
 def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.Path) -> None:
@@ -343,17 +335,17 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.P
     (d / "manifest.json").write_text(
         json.dumps({"session_id": "x", "run_branch": None, "base_branch": "main"}), encoding="utf-8"
     )
-    assert "commits_ref" not in manifest_branches(d, repo=repo)
+    assert "commits_ref" not in wire.manifest_branches(d, repo=repo)
     chain = git_read.chain_ref_for("x")
     subprocess.run(["git", "-C", str(repo), "update-ref", chain, "HEAD"], check=True)
-    assert manifest_branches(d, repo=repo)["commits_ref"] == chain
+    assert wire.manifest_branches(d, repo=repo)["commits_ref"] == chain
     (d / "manifest.json").write_text(
         json.dumps({"session_id": "x", "run_branch": "agent6/x", "base_branch": "main"}),
         encoding="utf-8",
     )
-    assert manifest_branches(d, repo=repo)["commits_ref"] == chain  # the branch does not exist
+    assert wire.manifest_branches(d, repo=repo)["commits_ref"] == chain  # the branch does not exist
     subprocess.run(["git", "-C", str(repo), "branch", "agent6/x"], check=True)
-    assert manifest_branches(d, repo=repo)["commits_ref"] == "agent6/x"
+    assert wire.manifest_branches(d, repo=repo)["commits_ref"] == "agent6/x"
 
 
 def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: pathlib.Path) -> None:
@@ -366,7 +358,7 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: pathlib.
     import json
     import subprocess
 
-    from agent6.viewmodel import existing_run_branch, session_snapshot
+    from agent6.viewmodel import wire
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -383,17 +375,17 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: pathlib.
         + json.dumps({"type": "session.stop", "reason": "steer_abort"})
         + "\n"
     )
-    assert existing_run_branch(sessions_manifest.read_manifest(d), repo) == ""
-    assert manifest_branches(d, repo=repo) == {"base_branch": "main"}
-    snap = session_snapshot(d, repo=repo)
+    assert wire.existing_run_branch(sessions_manifest.read_manifest(d), repo) == ""
+    assert wire.manifest_branches(d, repo=repo) == {"base_branch": "main"}
+    snap = wire.session_snapshot(d, repo=repo)
     assert "run_branch" not in snap and "branch_line" not in snap
     # The first commit creates it: from here the header names it and Merge works.
     env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t"}
     env["GIT_COMMITTER_EMAIL"] = "t@t"
     subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)
     subprocess.run([*git, "branch", "agent6/x"], check=True)
-    assert existing_run_branch(sessions_manifest.read_manifest(d), repo) == "agent6/x"
-    assert session_snapshot(d, repo=repo)["branch_line"] == "agent6/x → merges into main"
+    assert wire.existing_run_branch(sessions_manifest.read_manifest(d), repo) == "agent6/x"
+    assert wire.session_snapshot(d, repo=repo)["branch_line"] == "agent6/x → merges into main"
 
 
 # --- summarize_session_dir / status_word (shared by TUI hub, web hub, runs list) --
@@ -429,7 +421,7 @@ def test_summary_reads_mode_task_and_passed(tmp_path: pathlib.Path) -> None:
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.mode, s.task_label.task, s.status, s.detail) == ("run", "fix [the] bug", "passed", "")
     assert s.cost_usd == 0.12
 
@@ -445,12 +437,12 @@ def test_the_row_names_the_branch_while_the_tips_hold_it(tmp_path: pathlib.Path)
         ),
         encoding="utf-8",
     )
-    assert summarize_session_dir(rd).branch == ""
-    assert summarize_session_dir(rd, branch_tips={}).branch == ""
-    held = summarize_session_dir(rd, branch_tips={"agent6/r1": "a" * 40})
+    assert listing.summarize_session_dir(rd).branch == ""
+    assert listing.summarize_session_dir(rd, branch_tips={}).branch == ""
+    held = listing.summarize_session_dir(rd, branch_tips={"agent6/r1": "a" * 40})
     assert held.branch == "agent6/r1"
     assert listing.summary_row(held)["branch"] == "agent6/r1"
-    assert listing.summary_row(summarize_session_dir(rd))["branch"] is None
+    assert listing.summary_row(listing.summarize_session_dir(rd))["branch"] is None
 
 
 def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathlib.Path) -> None:
@@ -465,7 +457,9 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
         {"type": "session.stop", "verification": "failed", "reason": "finish_session"},
     ]
     rd = _write_run(tmp_path, "runs", "r-red", red_finish)
-    assert summarize_session_dir(rd).verification == "failed", "a red gate read as no-verify"
+    assert listing.summarize_session_dir(rd).verification == "failed", (
+        "a red gate read as no-verify"
+    )
 
     green: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -474,7 +468,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
         {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
     assert (
-        summarize_session_dir(_write_run(tmp_path, "runs", "r-green", green)).verification
+        listing.summarize_session_dir(_write_run(tmp_path, "runs", "r-green", green)).verification
         == "passed"
     )
 
@@ -483,7 +477,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
         {"type": "session.stop", "verification": "not_applicable", "reason": "settled"},
     ]
     assert (
-        summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless)).verification
+        listing.summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless)).verification
         == "not_applicable"
     )
 
@@ -493,7 +487,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
         {"type": "session.stop", "verification": "not_applicable", "reason": "finish_planning"},
     ]
     assert (
-        summarize_session_dir(_write_run(tmp_path, "plans", "p1", plan)).verification
+        listing.summarize_session_dir(_write_run(tmp_path, "plans", "p1", plan)).verification
         == "not_applicable"
     )
 
@@ -506,7 +500,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
         {"type": "session.stop", "verification": None, "reason": "finish_session"},
     ]
     rd = _write_run(tmp_path, "runs", "r-executions", resumed)
-    assert summarize_session_dir(rd).verification is None
+    assert listing.summarize_session_dir(rd).verification is None
 
 
 def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: pathlib.Path) -> None:
@@ -580,13 +574,13 @@ def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) -> None
         {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
         {"type": "session.stop", "verification": "failed", "reason": "finish_session"},
     ]
-    s = summarize_session_dir(_write_run(tmp_path, "runs", "r-red", red))
+    s = listing.summarize_session_dir(_write_run(tmp_path, "runs", "r-red", red))
     assert (s.status, s.detail) == ("finished", "gate red")
     gateless: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "session.stop", "verification": "not_applicable", "reason": "finish_session"},
     ]
-    s = summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless))
+    s = listing.summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless))
     assert (s.status, s.detail) == ("finished", "")
 
 
@@ -610,7 +604,7 @@ def test_implicit_clean_ends_do_not_read_as_failures(
             "reason": reason,
         },
     ]
-    s = summarize_session_dir(_write_run(tmp_path, "runs", reason, events))
+    s = listing.summarize_session_dir(_write_run(tmp_path, "runs", reason, events))
     assert (s.status, s.detail) == ("finished", detail)
 
 
@@ -626,7 +620,7 @@ def test_summary_ask_reads_answered_not_passed(tmp_path: pathlib.Path) -> None:
             {"type": "session.stop", "verification": "passed", "reason": "answered"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.mode, s.status, s.detail) == ("ask", "answered", "")
 
 
@@ -641,7 +635,7 @@ def test_summary_failure_carries_its_reason(tmp_path: pathlib.Path) -> None:
             {"type": "session.stop", "verification": "unverified", "reason": "provider_error"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.detail) == ("failed", format.StopCode("provider_error"))
 
 
@@ -655,7 +649,7 @@ def test_summary_stop_is_not_a_failure(tmp_path: pathlib.Path) -> None:
             {"type": "session.stop", "verification": "unverified", "reason": "steer_abort"},
         ],
     )
-    assert summarize_session_dir(rd).status == "stopped"
+    assert listing.summarize_session_dir(rd).status == "stopped"
 
 
 def test_summary_interrupt_reads_as_stopped(tmp_path: pathlib.Path) -> None:
@@ -670,7 +664,7 @@ def test_summary_interrupt_reads_as_stopped(tmp_path: pathlib.Path) -> None:
             {"type": "session.stop", "verification": "unverified", "reason": "interrupted"},
         ],
     )
-    assert summarize_session_dir(rd).status == "stopped"
+    assert listing.summarize_session_dir(rd).status == "stopped"
 
 
 def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: pathlib.Path) -> None:
@@ -690,7 +684,7 @@ def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: pathlib.Path) 
         ),
         encoding="utf-8",
     )
-    s = summarize_session_dir(rd, branch_tips={"agent6/r": "c" * 40})
+    s = listing.summarize_session_dir(rd, branch_tips={"agent6/r": "c" * 40})
     assert (s.status, s.detail, s.unmerged) == ("undone", "", False)
     assert format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged) == "undone"
 
@@ -727,7 +721,7 @@ def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> 
         cfg=Config(),
         mode="run",
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.mode, s.task_label.task, s.status) == (
         "run",
         task_text.operator_task_text(composed)[: task_text.TASK_DISPLAY_CHARS],
@@ -747,15 +741,15 @@ def test_summary_resume_unfinishes(tmp_path: pathlib.Path) -> None:
             {"type": "session.resume", "turn": 2},
         ],
     )
-    assert summarize_session_dir(rd).status == "running"
+    assert listing.summarize_session_dir(rd).status == "running"
 
 
 def test_summary_running_and_stale(tmp_path: pathlib.Path) -> None:
     """Liveness is the worker, not log silence: a live pid file separates running from stale."""
     rd = _write_run(tmp_path, "runs", "r2", [{"type": "session.start", "mode": "plan"}])
-    assert summarize_session_dir(rd).status == "running"
+    assert listing.summarize_session_dir(rd).status == "running"
     (rd / "worker.pid").unlink()  # the worker's finally cleared it on the way out
-    assert summarize_session_dir(rd).status == "stale"
+    assert listing.summarize_session_dir(rd).status == "stale"
 
 
 def test_summary_unanswered_approval_reads_waiting(tmp_path: pathlib.Path) -> None:
@@ -771,12 +765,12 @@ def test_summary_unanswered_approval_reads_waiting(tmp_path: pathlib.Path) -> No
             {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.detail) == ("waiting", "needs answer")
     # Once answered, the run is running again (the approver appends the answer).
     with (rd / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "approval.answer", "id": "a1", "approved": true}\n')
-    assert summarize_session_dir(rd).status == "running"
+    assert listing.summarize_session_dir(rd).status == "running"
 
 
 def test_summary_dead_worker_reads_stale_at_once(tmp_path: pathlib.Path) -> None:
@@ -784,7 +778,7 @@ def test_summary_dead_worker_reads_stale_at_once(tmp_path: pathlib.Path) -> None
     # read "running" for the whole silence window; the pid probe settles it now.
     rd = _write_run(tmp_path, "runs", "r3", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max: never alive
-    assert summarize_session_dir(rd).status == "stale"
+    assert listing.summarize_session_dir(rd).status == "stale"
 
 
 def test_summary_live_worker_with_a_silent_log_stays_running(tmp_path: pathlib.Path) -> None:
@@ -794,7 +788,7 @@ def test_summary_live_worker_with_a_silent_log_stays_running(tmp_path: pathlib.P
 
     rd = _write_run(tmp_path, "runs", "r4", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert summarize_session_dir(rd).status == "running"
+    assert listing.summarize_session_dir(rd).status == "running"
 
 
 def test_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None:
@@ -809,7 +803,7 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
-    assert summarize_session_dir(rd).usd_partial is True
+    assert listing.summarize_session_dir(rd).usd_partial is True
     clean = _write_run(
         tmp_path,
         "runs",
@@ -820,7 +814,7 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
-    assert summarize_session_dir(clean).usd_partial is False
+    assert listing.summarize_session_dir(clean).usd_partial is False
 
 
 def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: pathlib.Path) -> None:
@@ -839,7 +833,7 @@ def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: pathl
         ],
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert session_is_live(rd) is False
+    assert listing.session_is_live(rd) is False
 
 
 def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: pathlib.Path) -> None:
@@ -855,13 +849,13 @@ def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: pathlib.Path) -> Non
         ],
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert session_is_live(rd) is True
+    assert listing.session_is_live(rd) is True
 
 
 def test_run_is_live_dead_worker_is_not_live(tmp_path: pathlib.Path) -> None:
     rd = _write_run(tmp_path, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max
-    assert session_is_live(rd) is False
+    assert listing.session_is_live(rd) is False
 
 
 def test_run_is_live_unstarted_dirs(tmp_path: pathlib.Path) -> None:
@@ -872,10 +866,10 @@ def test_run_is_live_unstarted_dirs(tmp_path: pathlib.Path) -> None:
     (rd / "manifest.json").write_text(
         json.dumps({"version": 0, "parked_task": "queued work"}), encoding="utf-8"
     )
-    assert session_is_live(rd) is False
+    assert listing.session_is_live(rd) is False
     live = _write_run(tmp_path, "runs", "launching", [])
     (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert session_is_live(live) is True
+    assert listing.session_is_live(live) is True
 
 
 def test_summary_ask_task_comes_from_journal(tmp_path: pathlib.Path) -> None:
@@ -891,8 +885,8 @@ def test_summary_ask_task_comes_from_journal(tmp_path: pathlib.Path) -> None:
     (rd / "transcript.md").write_text(
         "# agent6 ask\n\n## Question\n\nwhat is the default port?\n", encoding="utf-8"
     )
-    s = summarize_session_dir(rd)
-    assert task_snippet(s.task_label.task) == "what is the default port?"
+    s = listing.summarize_session_dir(rd)
+    assert session_status.task_snippet(s.task_label.task) == "what is the default port?"
 
 
 def test_summary_ask_task_is_the_question_behind_a_prior_run_block(tmp_path: pathlib.Path) -> None:
@@ -915,13 +909,13 @@ def test_summary_ask_task_is_the_question_behind_a_prior_run_block(tmp_path: pat
         "</prior-run>\nin one line, what does __all__ do?\n\n## Answer\n\nThe export list.\n",
         encoding="utf-8",
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert s.task_label.task == "in one line, what does __all__ do?"
     (rd / "transcript.md").write_text(
         "# agent6 ask\n\n## Question\n\n<div> is not centered, why?\n\n## Answer\n\nFlex.\n",
         encoding="utf-8",
     )
-    assert summarize_session_dir(rd).task_label.task == "in one line, what does __all__ do?"
+    assert listing.summarize_session_dir(rd).task_label.task == "in one line, what does __all__ do?"
 
 
 def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
@@ -946,14 +940,17 @@ def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
         "## Answer\n\nThe header search path is wrong.\n",
         encoding="utf-8",
     )
-    s = summarize_session_dir(rd)
-    assert task_snippet(s.task_label.task) == "#include <stdio.h> fails to compile, why?"
+    s = listing.summarize_session_dir(rd)
+    assert (
+        session_status.task_snippet(s.task_label.task)
+        == "#include <stdio.h> fails to compile, why?"
+    )
 
 
 def test_summary_no_logs(tmp_path: pathlib.Path) -> None:
     rd = tmp_path / "sessions" / "runs" / "empty"
     rd.mkdir(parents=True)
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.task_label.task) == ("created", "(no logs)")
 
 
@@ -966,12 +963,12 @@ def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: pathlib.Pa
     rd = tmp_path / "sessions" / "runs" / "torn"
     rd.mkdir(parents=True)
     (rd / "manifest.json").write_text("{not json", encoding="utf-8")
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert s.status == "unreadable"
     # The reason is a status cell on every surface: a four-line pydantic
     # report widened every row's column and put a URL in the state line.
     (rd / "manifest.json").write_text('{"mode": 5}', encoding="utf-8")
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert s.status == "unreadable"
     assert isinstance(s.detail, str)
     assert "\n" not in s.detail and 0 < len(s.detail) <= 60
@@ -989,7 +986,7 @@ def test_summary_plan_reads_planned_not_passed(tmp_path: pathlib.Path) -> None:
             {"type": "session.stop", "verification": "passed", "reason": "finish_planning"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.mode, s.status, s.detail) == ("plan", "planned", "")
     # A real run still reads "passed" (finish_session + verification) -- unchanged.
     rd2 = _write_run(
@@ -1001,7 +998,7 @@ def test_summary_plan_reads_planned_not_passed(tmp_path: pathlib.Path) -> None:
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
-    assert summarize_session_dir(rd2).status == "passed"
+    assert listing.summarize_session_dir(rd2).status == "passed"
 
 
 def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: pathlib.Path) -> None:
@@ -1012,7 +1009,7 @@ def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: pathlib.Path) 
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "plan", "user_task": "carry this forward"}), encoding="utf-8"
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.mode, s.task_label.task, s.status) == ("plan", "carry this forward", "created")
 
 
@@ -1028,7 +1025,7 @@ def test_summary_launching_run_reads_starting(tmp_path: pathlib.Path) -> None:
         json.dumps({"mode": "run", "user_task": "refactor the loop"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.mode, s.task_label.task, s.status) == ("run", "refactor the loop", "starting")
 
 
@@ -1045,12 +1042,12 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: pathlib.
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.detail) == ("stale", "died launching")
 
     never_launched = _write_run(tmp_path, "runs", "husk", [])
     (never_launched / "worker.pid").unlink(missing_ok=True)
-    assert summarize_session_dir(never_launched).status == "created"
+    assert listing.summarize_session_dir(never_launched).status == "created"
 
 
 def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> None:
@@ -1114,7 +1111,7 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: path
     scan = session_log.scan_session_log(rd / "logs.jsonl")
     assert scan.mode == "run"
     assert scan.verification == "passed"
-    assert listing.summary_row(summarize_session_dir(rd))["verification"] == "passed"
+    assert listing.summary_row(listing.summarize_session_dir(rd))["verification"] == "passed"
 
 
 def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> None:
@@ -1135,7 +1132,7 @@ def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> N
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert abs(s.cost_usd - 0.027) < 1e-9  # 0.02 (execution 1) + 0.007 (execution 2), not 0.007
 
 
@@ -1167,7 +1164,7 @@ def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert s.usage_cell == "1pt"
     assert listing.summary_row(s)["plan_observed_points"] == 1.0
 
@@ -1195,34 +1192,34 @@ def test_cost_cell_keeps_points_between_a_resume_and_its_first_budget_update(
             {"type": "session.resume", "turn": 3},
         ],
     )
-    assert summarize_session_dir(rd).usage_cell == "1pt"
+    assert listing.summarize_session_dir(rd).usage_cell == "1pt"
 
 
 def test_is_run_husk(tmp_path: pathlib.Path) -> None:
     # Neither manifest nor logs: never started, a husk.
     husk = tmp_path / "husk"
     husk.mkdir()
-    assert is_session_husk(husk)
+    assert listing.is_session_husk(husk)
     # Either file makes it a real run.
     with_logs = tmp_path / "with-logs"
     with_logs.mkdir()
     (with_logs / "logs.jsonl").write_text("", encoding="utf-8")
-    assert not is_session_husk(with_logs)
+    assert not listing.is_session_husk(with_logs)
     with_manifest = tmp_path / "with-manifest"
     with_manifest.mkdir()
     (with_manifest / "manifest.json").write_text("{}", encoding="utf-8")
-    assert not is_session_husk(with_manifest)
+    assert not listing.is_session_husk(with_manifest)
     # A dir with neither file but a LIVE worker.pid is a launching run in its
     # pre-manifest preflight window, not a husk -- keep it listed (as "starting").
     launching = tmp_path / "launching"
     launching.mkdir()
     (launching / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert not is_session_husk(launching)
+    assert not listing.is_session_husk(launching)
     # ... but a dead worker.pid with no files is still a husk.
     dead = tmp_path / "dead-husk"
     dead.mkdir()
     (dead / "worker.pid").write_text("999999999", encoding="utf-8")
-    assert is_session_husk(dead)
+    assert listing.is_session_husk(dead)
 
 
 def test_summary_survives_a_valid_json_non_object_line(tmp_path: pathlib.Path) -> None:
@@ -1240,7 +1237,7 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: pathlib.Path) -
         + "\n",
         encoding="utf-8",
     )
-    s = summarize_session_dir(rd)  # must not raise
+    s = listing.summarize_session_dir(rd)  # must not raise
     assert s.task_label.task == "do a thing"
     assert s.status == "passed"
 
@@ -1269,7 +1266,7 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: pathlib.Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    s = summarize_session_dir(rd)  # must not raise
+    s = listing.summarize_session_dir(rd)  # must not raise
     assert s.status == "passed"
     assert s.cost_usd == 0.25  # the last good figure, not 0 and not a crash
 
@@ -1288,7 +1285,7 @@ def test_summary_gateless_settle_reads_finished_unverified(tmp_path: pathlib.Pat
             {"type": "session.stop", "verification": "unverified", "reason": "settled"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.detail) == ("finished", "unverified")
 
 
@@ -1304,7 +1301,7 @@ def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) 
             {"type": "session.stop", "verification": "failed", "reason": "settled"},
         ],
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.detail, s.verification) == ("finished", "gate red", "failed")
 
 
@@ -1321,7 +1318,7 @@ def test_summary_second_run_start_reads_running(tmp_path: pathlib.Path) -> None:
             {"type": "model.call", "actor": "worker", "model": "m"},
         ],
     )
-    assert summarize_session_dir(rd).status == "running"
+    assert listing.summarize_session_dir(rd).status == "running"
 
 
 def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: pathlib.Path) -> None:
@@ -1357,7 +1354,7 @@ def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: pa
         ),
         encoding="utf-8",
     )
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.mode, s.task_label.task) == ("run", "carry on")
 
 
@@ -1397,9 +1394,9 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: pathlib.Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    summary = summarize_session_dir(session_dir)
+    summary = listing.summarize_session_dir(session_dir)
     assert (summary.status, summary.detail) == ("failed", format.StopCode("crashed"))
-    assert session_is_live(session_dir) is False
+    assert listing.session_is_live(session_dir) is False
 
 
 def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
@@ -1418,7 +1415,10 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
             {"type": "session.stop", "reason": "silent_finish", "verification": "not_applicable"},
         ],
     )
-    assert (summarize_session_dir(ungated).status, summarize_session_dir(ungated).detail) == (
+    assert (
+        listing.summarize_session_dir(ungated).status,
+        listing.summarize_session_dir(ungated).detail,
+    ) == (
         "finished",
         "no finish call",
     )
@@ -1431,7 +1431,7 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
             {"type": "session.stop", "reason": "went_quiet"},
         ],
     )
-    assert summarize_session_dir(legacy).status == "failed"
+    assert listing.summarize_session_dir(legacy).status == "failed"
 
 
 def _summary(session_id: str, *, mtime: float, parent: str = "", number: int | None = None):
@@ -1576,7 +1576,7 @@ def test_summary_names_the_questions_nobody_answered(tmp_path: pathlib.Path) -> 
 
     (rd / "worker.pid").unlink()
     assert session_log.scan_session_log(rd / "logs.jsonl").unattended_questions == 1
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.detail) == ("passed", "1 question unanswered")
 
 
@@ -1607,7 +1607,7 @@ def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> N
     )
     (rd / "worker.pid").unlink()
     assert session_log.scan_session_log(rd / "logs.jsonl").unattended_questions == 0
-    s = summarize_session_dir(rd)
+    s = listing.summarize_session_dir(rd)
     assert (s.status, s.detail) == ("passed", "")
 
 
@@ -1639,7 +1639,7 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
             [*asked, {"type": "session.stop", "reason": reason, "verification": "unverified"}],
         )
         (rd / "worker.pid").unlink()
-        s = summarize_session_dir(rd)
+        s = listing.summarize_session_dir(rd)
         assert (s.status, s.detail) == expected
         if reason == "max_turns":
             row = listing.summary_row(s)
@@ -1804,7 +1804,7 @@ def test_empty_start_does_not_claim_the_task(tmp_path: pathlib.Path, manifest_ta
     folded = state.fold_session(journal)
     assert folded.task_label.task == "original task"
     assert folded.task_label.continued_task == "latest work"
-    payload = session_state_as_dict(folded, tmp_path)
+    payload = state_view.session_state_as_dict(folded, tmp_path)
     assert payload["task"] == "original task"
     assert payload["continued_task"] == "latest work"
     assert "original_task" not in payload
@@ -1837,7 +1837,7 @@ def test_ask_repl_questions_are_not_continuations(tmp_path: pathlib.Path) -> Non
     )
     summary = listing.summarize_session_dir(tmp_path)
     assert summary.task_label.line() == "first question"
-    payload = session_state_as_dict(state.fold_session(journal), tmp_path)
+    payload = state_view.session_state_as_dict(state.fold_session(journal), tmp_path)
     assert payload["task_line"] == "first question"
     assert payload["continued_task"] == ""
 
@@ -1859,7 +1859,7 @@ def test_old_journals_keep_their_clip_and_missing_journals_use_the_manifest(
     row = listing.summary_row(summary)
     assert row["task"] == "x" * (200 if started else 240)
     assert "task_clipped" not in row
-    payload = session_state_as_dict(state.fold_session(journal), tmp_path)
+    payload = state_view.session_state_as_dict(state.fold_session(journal), tmp_path)
     assert payload["task"] == row["task"]
 
 
@@ -2048,6 +2048,6 @@ def test_a_merged_sessions_pruned_worktree_is_not_a_resume_problem(
         encoding="utf-8",
     )
 
-    cell = summarize_session_dir(session).id_cell(winner=False)
+    cell = listing.summarize_session_dir(session).id_cell(winner=False)
 
     assert cell == ("wt-run" if merged else f"wt-run (worktree {gone} not found; resume needs it)")

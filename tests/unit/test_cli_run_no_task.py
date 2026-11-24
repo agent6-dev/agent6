@@ -11,17 +11,17 @@ import pytest
 
 from agent6 import paths
 from agent6.ui.cli import common, main, plan_watch
-from agent6.viewmodel import newest_session_dir
+from agent6.viewmodel import listing
 
 
 def test_newest_run_dir_none_for_missing_bucket(tmp_path: pathlib.Path) -> None:
-    assert newest_session_dir([tmp_path / "missing"]) is None
+    assert listing.newest_session_dir([tmp_path / "missing"]) is None
 
 
 def test_newest_run_dir_none_when_empty(tmp_path: pathlib.Path) -> None:
     runs = paths.state_dir(tmp_path) / "sessions" / "runs"
     runs.mkdir(parents=True)
-    assert newest_session_dir([runs]) is None
+    assert listing.newest_session_dir([runs]) is None
 
 
 def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: pathlib.Path) -> None:
@@ -36,7 +36,7 @@ def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: pathl
     os.utime(older / "logs.jsonl", (100, 100))
     os.utime(newer / "logs.jsonl", (1000, 1000))
     (older / "frontend.pid").write_text("12345", encoding="utf-8")
-    newest = newest_session_dir([runs])
+    newest = listing.newest_session_dir([runs])
     assert newest is not None
     assert newest.name == "delta-echo-foxtrot"
 

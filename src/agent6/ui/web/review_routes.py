@@ -20,7 +20,8 @@ from agent6.vcs.git import diff as git_diff
 from agent6.vcs.git import files as git_files
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import listing, receipt, review, scan_session_log
+from agent6.viewmodel import listing, receipt, review
+from agent6.viewmodel.session import log as session_log
 
 
 def findings(session_dir: pathlib.Path, status: str) -> tuple[int, dict[str, Any]]:
@@ -40,9 +41,9 @@ def findings(session_dir: pathlib.Path, status: str) -> tuple[int, dict[str, Any
 def _records(cwd: pathlib.Path) -> Iterator[tuple[str, review.ReviewView]]:
     state = paths.state_dir(cwd)
     for directory in listing.session_dirs(state):
-        yield directory.name, scan_session_log(directory / layout.LOGS_NAME).review
+        yield directory.name, session_log.scan_session_log(directory / layout.LOGS_NAME).review
     for journal in sorted((state / "reviews").glob("*.jsonl")):
-        yield "", scan_session_log(journal).review
+        yield "", session_log.scan_session_log(journal).review
 
 
 def _tree(cwd: pathlib.Path, revision: str) -> str:

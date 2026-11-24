@@ -32,6 +32,8 @@ from agent6.sessions import process, shells
 from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.web import server as web_server
+from agent6.viewmodel import tail as viewmodel_tail
+from agent6.viewmodel import wire
 from tests import child_env, child_patch_env
 from tests.web import signin
 
@@ -1274,7 +1276,7 @@ def test_the_first_stream_frame_folds_the_whole_log(
     """
     from agent6.ui.web import sse
 
-    tail_events = sse.tail_events
+    tail_events = viewmodel_tail.tail_events
 
     def slow(*args: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
         for i, event in enumerate(tail_events(*args, **kwargs)):
@@ -1282,7 +1284,7 @@ def test_the_first_stream_frame_folds_the_whole_log(
             if i == 0:
                 time.sleep(0.3)  # a reader preempted after its first event
 
-    monkeypatch.setattr(sse, "tail_events", slow)
+    monkeypatch.setattr(viewmodel_tail, "tail_events", slow)
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "t"}]
     for i in range(20):
         events.append({"type": "tool.call", "name": f"t{i}", "args_preview": {}})
@@ -1308,16 +1310,15 @@ def test_sse_run_closes_even_if_tailer_dies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The tail thread always enqueues its None sentinel, so a raise there closes the stream.
-    from agent6.ui.web import sse
 
-    tail_events = sse.tail_events
+    tail_events = viewmodel_tail.tail_events
 
     def _boom(*args: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
         if kwargs.get("follow"):  # the thread's tail, after the first frame's read
             raise RuntimeError("tailer died")
         return tail_events(*args, **kwargs)
 
-    monkeypatch.setattr(sse, "tail_events", _boom)
+    monkeypatch.setattr(viewmodel_tail, "tail_events", _boom)
     _srv, port = server
     _make_run(tmp_path, "dead-tail", [{"type": "session.start", "user_task": "x"}])
     conn = signin.SignedIn(port, timeout=5)
@@ -2732,7 +2733,7 @@ def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
     monkeypatch.setattr(
         sse, "threading", types.SimpleNamespace(Thread=FakeThread, Event=threading.Event)
     )
-    monkeypatch.setattr(sse, "manifest_header", boom)
+    monkeypatch.setattr(wire, "manifest_header", boom)
     channel = sse.SseChannel(send=lambda _frame: True, ping=lambda: True)
 
     with pytest.raises(RuntimeError, match="bad manifest"):
@@ -2747,12 +2748,11 @@ def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A stream that raises after `_begin_sse` reports its reason in the event body, not a 500."""
-    from agent6.ui.web import sse
 
     def boom(*_a: object, **_k: object) -> object:
         raise RuntimeError("header exploded")
 
-    monkeypatch.setattr(sse, "manifest_header", boom)
+    monkeypatch.setattr(wire, "manifest_header", boom)
     _srv, port = server
     _make_run(tmp_path, "sse-err", [{"type": "session.start", "user_task": "t"}])
     conn = signin.SignedIn(port, timeout=10)

@@ -20,7 +20,7 @@ from textual import app as textual_app
 
 from agent6.sessions import ipc
 from agent6.ui.tui import modals
-from agent6.viewmodel import SessionState
+from agent6.viewmodel.session import records as state_types
 
 
 class PromptDispatcher:
@@ -47,7 +47,7 @@ class PromptDispatcher:
         """Forget every claimed prompt, at a session boundary."""
         self._seen.clear()
 
-    def dispatch(self, session_dir: pathlib.Path, state: SessionState) -> None:
+    def dispatch(self, session_dir: pathlib.Path, state: state_types.SessionState) -> None:
         """Push a modal for each waiting, unclaimed question; announce a queued one once.
 
         A question answered elsewhere closes its modal. A question a dead run left
@@ -75,7 +75,7 @@ class PromptDispatcher:
                 self._open[key] = modal
                 self._app.push_screen(modal, self._on_question(session_dir, qp.id))
 
-    def open_queued(self, session_dir: pathlib.Path, state: SessionState) -> bool:
+    def open_queued(self, session_dir: pathlib.Path, state: state_types.SessionState) -> bool:
         """Push the modal for the oldest queued question not already open.
 
         Args:

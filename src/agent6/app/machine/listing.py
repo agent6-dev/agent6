@@ -12,7 +12,6 @@ import dataclasses
 import pathlib
 
 from agent6.app.machine import bundle
-from agent6.viewmodel import machine_files, machine_instance_dirs, summarize_machine_dir
 from agent6.viewmodel.machine import state as machine_state
 
 
@@ -45,7 +44,10 @@ class MachineRow:
 
 def machine_summaries(state_dir: pathlib.Path) -> list[machine_state.MachineSummary]:
     """Return the summaries of a project's instances, newest first."""
-    return [summarize_machine_dir(d) for d in machine_instance_dirs(state_dir)]
+    return [
+        machine_state.summarize_machine_dir(d)
+        for d in machine_state.machine_instance_dirs(state_dir)
+    ]
 
 
 def machine_rows(cwd: pathlib.Path, state_dir: pathlib.Path) -> list[MachineRow]:
@@ -76,7 +78,7 @@ def join_machine_rows(
     Returns:
         The rows in listing order.
     """
-    files = [(p, bundle.summarize_machine_file(p)) for p in machine_files(cwd)]
+    files = [(p, bundle.summarize_machine_file(p)) for p in machine_state.machine_files(cwd)]
     rows: list[MachineRow] = []
     joined: set[pathlib.Path] = set()
     starts = {inst.name: inst.start_actions for inst in instances}

@@ -25,19 +25,11 @@ from agent6.sessions import ipc, layout, manifest, shells
 from agent6.tools import schema, skill_tools
 from agent6.ui import directive_actions
 from agent6.ui.cli import common, menu_input
-from agent6.viewmodel import (
-    SessionState,
-    context_fill,
-    fold_session,
-    format,
-    operator_inputs,
-    pending_questions,
-    restate,
-    status_facts,
-    status_for_session_dir,
-    tail_events,
-)
+from agent6.viewmodel import format, tail, transcript
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as session_state
 from agent6.viewmodel.session import status as session_status
+from agent6.viewmodel.session import view as state_view
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
@@ -88,23 +80,29 @@ class _Recall:
         if self.seeded_from == str(session_dir):
             return
         self.seeded_from = str(session_dir)
-        recorded = operator_inputs(tail_events(session_dir / layout.LOGS_NAME, follow=False))
+        recorded = transcript.operator_inputs(
+            tail.tail_events(session_dir / layout.LOGS_NAME, follow=False)
+        )
         self.lines[:] = [" ".join(text.split()) for text in recorded]
 
 
 _RECALL = _Recall()
 
 
-def _fold(session_dir: pathlib.Path) -> SessionState:
+def _fold(session_dir: pathlib.Path) -> state_types.SessionState:
     """Return the session's state, folded from its log."""
-    return fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False))
+    return session_state.fold_session(
+        tail.tail_events(session_dir / layout.LOGS_NAME, follow=False)
+    )
 
 
 def _print_status(session_dir: pathlib.Path) -> None:
     """Print the run's status line: tasks, tools, cost, context and preset."""
     s = _fold(session_dir)
     # The dir's probes too: a gone worker reads as running from the fold alone.
-    label = format.status_label(*status_for_session_dir(session_dir, status_facts(s)))
+    label = format.status_label(
+        *session_status.status_for_session_dir(session_dir, state_view.status_facts(s))
+    )
     done = sum(1 for t in s.tasks if t.status in order.DONE_STATUSES)
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     call = s.last_model_call
@@ -118,7 +116,7 @@ def _print_status(session_dir: pathlib.Path) -> None:
     )
     ctx = ""
     if call is not None and call.context_tokens > 0:
-        fill = context_fill(s)
+        fill = state_view.context_fill(s)
         pct = f" ({fill}%)" if fill is not None else ""
         ctx = f" · ctx {call.context_tokens:,} tok{pct}"
     if s.compact_elided:
@@ -163,7 +161,7 @@ def _answer_pending(session_dir: pathlib.Path, question_id: str = "") -> str:
     """
     from agent6.ui.cli import interact  # noqa: PLC0415  # `steer_tty` imports this module through it
 
-    prompts = pending_questions(session_dir)
+    prompts = session_state.pending_questions(session_dir)
     if not prompts:
         return "[agent6] no pending question"
     if not question_id:
@@ -266,7 +264,9 @@ def _run_info_command(
     elif cmd == "/shells":
         _print_shells(session_dir)
     elif cmd == "/restate":
-        print(restate(list(tail_events(session_dir / layout.LOGS_NAME, follow=False))))
+        print(
+            transcript.restate(list(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False)))
+        )
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
     elif cmd.startswith(("/task", "/standing", "/retire", "/metric")):

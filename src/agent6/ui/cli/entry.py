@@ -819,7 +819,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
     from agent6.sessions import id
     from agent6.ui.cli import resume as cli_resume
     from agent6.ui.cli import session_prompt
-    from agent6.viewmodel import newest_session_dir
+    from agent6.viewmodel import listing
 
     if getattr(args, "interactive", False) and args.tui:
         common.error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
@@ -836,7 +836,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
             session_id = id.resolve_session(state, session_id).session_id
     else:
         # Every resumable bucket, so a plan or an ask is found too.
-        latest = newest_session_dir(resume_record.resumable_bucket_dirs(state))
+        latest = listing.newest_session_dir(resume_record.resumable_bucket_dirs(state))
         if latest is None:
             # An empty state dir is not a fault.
             print(

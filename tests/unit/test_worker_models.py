@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import worker_models
+from agent6.viewmodel import transcript
 
 
 def test_first_seen_unique_workers_only() -> None:
@@ -15,5 +15,5 @@ def test_first_seen_unique_workers_only() -> None:
         {"type": "model.call", "actor": "worker", "model": "m1"},
         {"type": "model.call", "actor": "worker"},  # no model field: skipped, never blank
     ]
-    assert worker_models(events) == ("m1", "m2")
-    assert worker_models([]) == ()
+    assert transcript.worker_models(events) == ("m1", "m2")
+    assert transcript.worker_models([]) == ()

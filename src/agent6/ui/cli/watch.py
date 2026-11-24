@@ -20,10 +20,7 @@ from agent6.machine import journal as machine_journal
 from agent6.machine import schema, semantics
 from agent6.sessions import id
 from agent6.ui.cli import common, machine_cmds, plan_watch
-from agent6.viewmodel import (
-    machine_snapshot,
-    session_snapshot,
-)
+from agent6.viewmodel import wire
 
 
 def _run_intent(repo_root: pathlib.Path, target: str) -> tuple[bool, str | None]:
@@ -55,7 +52,7 @@ def _machine_json_snapshot(machine_dir: pathlib.Path) -> int:
         The exit code; 1 when the machine or its journal cannot be read.
     """
     try:
-        snap = machine_snapshot(machine_dir)
+        snap = wire.machine_snapshot(machine_dir)
     except (
         machine_journal.JournalError
     ) as exc:  # a MachineError too: the corrupt-journal wording first
@@ -142,7 +139,7 @@ def _cmd_watch_target(  # noqa: PLR0911
             return 2
         session_dir = layout.session_dir
         # The wire form the web serves, the merged claim checked against the repo.
-        print(json.dumps(session_snapshot(session_dir, repo=cwd)))
+        print(json.dumps(wire.session_snapshot(session_dir, repo=cwd)))
         return 0
 
     # Else a machine by name.

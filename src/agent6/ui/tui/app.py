@@ -43,19 +43,10 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, new_work, prompts, theme
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import (
-    SessionState,
-    context_fill,
-    format,
-    listing,
-    merges,
-    restate,
-    status_facts,
-    tail,
-    transcript,
-    transcript_items,
-)
+from agent6.viewmodel import format, listing, merges, tail, transcript, transcript_items
+from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state
+from agent6.viewmodel.session import view as state_view
 
 # An answer submitted after the worker died: the next resume re-asks the prompt.
 _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re-asks the prompt)"
@@ -128,7 +119,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # From the hub loop, Esc returns to it and q quits it; standalone, both close the view.
         self.from_hub = from_hub
         self.logs_path = session_dir / layout.LOGS_NAME
-        self.state: SessionState = state.initial_state()
+        self.state: state_types.SessionState = state.initial_state()
         self._transcript = transcript.TranscriptFold()
         self.verification_item: transcript_items.TranscriptItem | None = None
         self._prompts = prompts.PromptDispatcher(
@@ -151,7 +142,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
         self.dir_status: tuple[str, format.StatusReason] = session_status.status_for_session_dir(
-            session_dir, status_facts(self.state)
+            session_dir, state_view.status_facts(self.state)
         )
         # The journal prefix folded at open; the reader starts after it.
         self._seed_log_count = 0
@@ -368,7 +359,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         except errors.PackError as exc:
             self.sub_title = str(exc)
             return
-        status = session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
+        status = session_status.status_for_session_dir(
+            self.session_dir, state_view.status_facts(self.state)
+        )
         merge = self._merge if self.state.finished else merges.MergeState()
         unreadable = self.unreadable
         blocker = self.manifest_resume_blocker
@@ -486,7 +479,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
     def _restate(self) -> None:
         """Show what happened since the last operator message, rendered from the journal."""
-        rendered = restate(list(tail.tail_events(self.logs_path, follow=False)))
+        rendered = transcript.restate(list(tail.tail_events(self.logs_path, follow=False)))
         self.push_screen(modals.TextModal("since your last message", rendered))
 
     def _show_shells(self) -> None:
@@ -865,7 +858,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
     def context_used_percent(self) -> int | None:
         """Return the context-window fill in percent at the last completed model call."""
-        return context_fill(self.state)
+        return state_view.context_fill(self.state)
 
     def action_answer_question(self) -> None:
         """Open the oldest queued question for an answer on this terminal."""

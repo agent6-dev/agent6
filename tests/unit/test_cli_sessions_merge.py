@@ -745,7 +745,7 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     the branch tip it covers; a later merge leaves the record alone.
     """
     from agent6.sessions import manifest
-    from agent6.viewmodel import summarize_session_dir
+    from agent6.viewmodel import listing
 
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-SAME11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
@@ -768,7 +768,9 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
         manifest.NO_MERGE_COMMIT,
         branch_tip,
     )
-    row = summarize_session_dir(layout.session_dir, branch_tips=git_read.run_ref_tips(tmp_path))
+    row = listing.summarize_session_dir(
+        layout.session_dir, branch_tips=git_read.run_ref_tips(tmp_path)
+    )
     assert row.unmerged is False
 
     assert main(["sessions", "merge", "run-SAME11"]) == 0
@@ -791,7 +793,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     A no-op over the tip already recorded leaves the record alone.
     """
     from agent6.sessions import manifest
-    from agent6.viewmodel import summarize_session_dir
+    from agent6.viewmodel import listing
 
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-RSTP11", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
@@ -817,7 +819,9 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", manifest.NO_MERGE_COMMIT, tip2)
     assert stamp["tip"] != first["tip"] and main_tip[:12] not in stamp["sha"]
-    row = summarize_session_dir(layout.session_dir, branch_tips=git_read.run_ref_tips(tmp_path))
+    row = listing.summarize_session_dir(
+        layout.session_dir, branch_tips=git_read.run_ref_tips(tmp_path)
+    )
     assert row.unmerged is False
 
     assert main(["sessions", "merge", "run-RSTP11", "--method", "squash"]) == 0

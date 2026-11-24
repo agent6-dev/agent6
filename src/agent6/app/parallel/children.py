@@ -36,18 +36,9 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import children as vm_children
-from agent6.viewmodel import (
-    events,
-    fold_session,
-    format,
-    produced_result,
-    session_is_live,
-    summarize_session_dir,
-    tail,
-    tail_events,
-    wire,
-)
+from agent6.viewmodel import events, format, listing, tail, wire
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import state as session_state
 from agent6.viewmodel.session import status as session_status
 
 
@@ -650,15 +641,17 @@ def recorded_result(
     Returns:
         `ok` only for a deliberate end; the usage is read either way.
     """
-    summary = summarize_session_dir(dest)
+    summary = listing.summarize_session_dir(dest)
     usage = child_usage(dest)
-    recorded = fold_session(tail_events(dest / sessions_layout.LOGS_NAME, follow=False))
+    recorded = session_state.fold_session(
+        tail.tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
+    )
     call = recorded.last_model_call
     context = child_records.ChildContext(
         tokens=call.context_tokens if call is not None and call.context_tokens > 0 else None,
         last_run_at=recorded.last_event_at,
     )
-    ok = produced_result(summary.status)
+    ok = session_status.produced_result(summary.status)
     commits = child_commits(origin, dest, imported)
     noun = "commit" if commits == 1 else "commits"
     held = (
@@ -730,7 +723,7 @@ def child_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | No
         return None
     readings: list[tuple[float, str, agent6_budget.PlanUsage]] = []
     for directory in (session_dir, *lineage.descendants_of(session_dir)):
-        for raw in tail_events(directory / sessions_layout.LOGS_NAME, follow=False):
+        for raw in tail.tail_events(directory / sessions_layout.LOGS_NAME, follow=False):
             if raw.get("type") != "budget.update":
                 continue
             event = events.parse_event(raw)
@@ -797,7 +790,7 @@ def recover_children(
             child, session_id, worktree_root / f"child-{child}", None, mode=mode
         )
         branch = git_read.run_branch_for(session_id)
-        if session_is_live(child_dir):
+        if listing.session_is_live(child_dir):
             outcome = stop.stop_session(child_dir, wait_s=child_wait.STOP_GRACE_S)
             reporter.note(f"child {child} [{session_id}]: {outcome.message}")
         if (spec.worktree / ".git").exists():
@@ -937,7 +930,9 @@ def build_rank_recorder(
         group: str,
     ) -> None:
         briefs = list(candidates)
-        rows = {res.spec.session_id: summarize_session_dir(res.session_dir) for res in results}
+        rows = {
+            res.spec.session_id: listing.summarize_session_dir(res.session_dir) for res in results
+        }
         outcome = app_compare.outcome_of(ranking)
         if ranking.fallback and len(briefs) > 1:
             reporter.note(f"ranked by verify result, then cost: {ranking.fallback}")

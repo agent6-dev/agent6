@@ -28,16 +28,9 @@ from agent6.sessions import journal
 from agent6.ui import parallel_preview, path_completion
 from agent6.ui.tui import clipboard, composer, logview, menubar, screen_chrome, settings
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import (
-    ApprovalPrompt,
-    approval_parts,
-    format,
-    policy,
-    transcript,
-    transcript_items,
-    transcript_style,
-)
+from agent6.viewmodel import format, policy, transcript, transcript_items, transcript_style
 from agent6.viewmodel import tail as viewmodel_tail
+from agent6.viewmodel.session import records as state_types
 
 if TYPE_CHECKING:
     from agent6.ui.tui import app as tui_app
@@ -439,7 +432,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         elif etype == "model.text_delta":
             self._live_text.append(str(event.get("text", "")))
 
-    def _open_approval(self) -> ApprovalPrompt | None:
+    def _open_approval(self) -> state_types.ApprovalPrompt | None:
         """Return the approval awaiting an answer, from the host's fold."""
         state = self._host.state
         if self._approval is not None:
@@ -469,7 +462,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         """Collapse the open approval to one dim line: the verdict and the command it judged."""
         if self._approval is None:
             return
-        head, payload = approval_parts(self._approval[1])
+        head, payload = state_types.approval_parts(self._approval[1])
         self._approval_done = f"{verdict} · {(payload or head).splitlines()[0][:60]}"
         self._approval = None
 

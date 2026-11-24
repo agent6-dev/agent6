@@ -313,9 +313,9 @@ def resolve_session_layout(
         SessionIdError: No session matches, several do, or the match is a husk.
     """
     layout = id.resolve_session(paths.state_dir(repo_root), query)
-    from agent6.viewmodel import is_session_husk  # noqa: PLC0415
+    from agent6.viewmodel import listing  # noqa: PLC0415
 
-    if not allow_husk and is_session_husk(layout.session_dir):
+    if not allow_husk and listing.is_session_husk(layout.session_dir):
         raise id.SessionIdError(
             f"session {layout.session_id} crashed before it ever started (no log, nothing"
             f" to resume); `agent6 sessions remove {layout.session_id}` removes it"
@@ -348,9 +348,9 @@ def newest_layout_holding(
     ]
     if not candidates:
         return None
-    from agent6.viewmodel import session_mtime  # noqa: PLC0415
+    from agent6.viewmodel import listing  # noqa: PLC0415
 
-    return sessions_layout.layout_of(max(candidates, key=session_mtime))
+    return sessions_layout.layout_of(max(candidates, key=listing.session_mtime))
 
 
 def resolve_or_newest_layout(
@@ -371,9 +371,9 @@ def resolve_or_newest_layout(
     """
     if session_id:
         return resolve_session_layout(repo_root, session_id, allow_husk=allow_husk)
-    from agent6.viewmodel import newest_session_dir  # noqa: PLC0415
+    from agent6.viewmodel import listing  # noqa: PLC0415
 
-    newest = newest_session_dir(_default_bucket_dirs(repo_root))
+    newest = listing.newest_session_dir(_default_bucket_dirs(repo_root))
     if newest is None:
         return None
     return sessions_layout.layout_of(newest)

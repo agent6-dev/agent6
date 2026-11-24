@@ -21,21 +21,15 @@ from textual import widgets
 from agent6 import kinds
 from agent6.sessions import manifest, process
 from agent6.ui.tui import theme
-from agent6.viewmodel import (
-    SessionState,
-    comparison,
-    format,
-    manifest_branches,
-    manifest_header,
-    policy,
-)
+from agent6.viewmodel import comparison, format, policy, wire
+from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import status as session_status
 
 if TYPE_CHECKING:
     from agent6.ui.tui import app
 
 
-def _elsewhere(ds: SessionState) -> tuple[str, ...]:
+def _elsewhere(ds: state_types.SessionState) -> tuple[str, ...]:
     """Return the lines that say where commands run, for a run not on the plain local host.
 
     Args:
@@ -79,8 +73,8 @@ class RunHeader(widgets.Static):
 
     def refresh_lines(
         self,
-        s: SessionState,
-        ds: SessionState,
+        s: state_types.SessionState,
+        ds: state_types.SessionState,
         as_of: str,
         *,
         active: bool,
@@ -192,7 +186,7 @@ class RunHeader(widgets.Static):
     def _lineage_top(self) -> str:
         """Return the fork lineage line, read once; the web header and `sessions show` share it."""
         if self._lineage_line is None:
-            lineage = manifest_header(self._tui.session_dir).get("forked_from", "")
+            lineage = wire.manifest_header(self._tui.session_dir).get("forked_from", "")
             self._lineage_line = f"\nforked from: {lineage}" if lineage else ""
         return self._lineage_line
 
@@ -214,7 +208,7 @@ class RunHeader(widgets.Static):
         now = time.monotonic()
         if self._branch_line is not None and (not finished or now < self._branch_recheck_at):
             return self._branch_line
-        line = manifest_branches(self._tui.session_dir, repo=pathlib.Path.cwd()).get(
+        line = wire.manifest_branches(self._tui.session_dir, repo=pathlib.Path.cwd()).get(
             "branch_line", ""
         )
         if not line:
@@ -224,7 +218,7 @@ class RunHeader(widgets.Static):
         return self._branch_line
 
     @staticmethod
-    def _pins_top(s: SessionState) -> str:
+    def _pins_top(s: state_types.SessionState) -> str:
         """Return the pinned instructions line."""
         return f"\npins: {' | '.join(s.pins)}" if s.pins else ""
 

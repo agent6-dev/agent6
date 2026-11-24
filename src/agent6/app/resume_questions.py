@@ -9,7 +9,8 @@ import pathlib
 import re
 
 from agent6.tools import operator_prompts, schema
-from agent6.viewmodel import QuestionPrompt, tail
+from agent6.viewmodel import tail
+from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state as viewmodel_state
 
 
@@ -46,7 +47,7 @@ def carried_questions(logs_path: pathlib.Path) -> CarriedQuestions:
         int(match.group(1)) for q in asked if (match := re.fullmatch(r"question-(\d+)", q.id))
     ]
 
-    def questions(prompt: QuestionPrompt) -> tuple[schema.UserQuestion, ...]:
+    def questions(prompt: state_types.QuestionPrompt) -> tuple[schema.UserQuestion, ...]:
         return tuple(
             schema.UserQuestion(question=q.question, options=q.options) for q in prompt.questions
         )

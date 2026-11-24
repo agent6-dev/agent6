@@ -16,9 +16,9 @@ from typing import Any
 
 import pytest
 
-from agent6.viewmodel import status_facts
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import state as viewmodel_state
+from agent6.viewmodel.session import view as state_view
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_session_logs.jsonl"
 
@@ -218,8 +218,8 @@ def _shared_facts(
         "stop_reason": state.stop_reason if state.finished else "",
         "verification": state.verification if state.finished else None,
         "verify_scoped": state.verify_scoped,
-        "gate_red": status_facts(state).gate_red,
-        "gate_timed_out": status_facts(state).gate_timed_out,
+        "gate_red": state_view.status_facts(state).gate_red,
+        "gate_timed_out": state_view.status_facts(state).gate_timed_out,
         "budget": state.budget,
         "pins": state.pins,
         "blocked": any(not p.answered for p in (*state.approvals, *state.questions)),
@@ -344,7 +344,7 @@ def test_the_folds_agree_that_a_queued_question_blocks_nothing(tmp_path: pathlib
         log = tmp_path / "logs.jsonl"
         log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
         scan = session_log.scan_session_log(log).status_facts()
-        viewer = status_facts(viewmodel_state.fold_session(events))
+        viewer = state_view.status_facts(viewmodel_state.fold_session(events))
         assert (scan.operator_blocked, scan.blocked_kind) == (
             blocked,
             "question" if blocked else "",

@@ -1046,7 +1046,7 @@ def test_the_ranked_table_spells_a_children_cost_and_outcome_as_the_listing_does
         "t", children, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
     summaries = {
-        res.spec.session_id: app_children.summarize_session_dir(res.session_dir) for res in results
+        res.spec.session_id: listing.summarize_session_dir(res.session_dir) for res in results
     }
     capsys.readouterr()
 
@@ -1171,7 +1171,7 @@ def test_await_waits_for_worker_pid_to_clear(
 
     # Clear the live pid only on the SECOND status poll of the child's session dir,
     # so poll 1 exercises the race window deterministically.
-    real_summarize = child_wait.summarize_session_dir
+    real_summarize = listing.summarize_session_dir
     polls = {"n": 0}
 
     def summarize_then_clear_pid(session_dir: pathlib.Path) -> object:
@@ -1182,7 +1182,7 @@ def test_await_waits_for_worker_pid_to_clear(
                 (session_dir / "worker.pid").unlink(missing_ok=True)
         return summary
 
-    monkeypatch.setattr(child_wait, "summarize_session_dir", summarize_then_clear_pid)
+    monkeypatch.setattr(listing, "summarize_session_dir", summarize_then_clear_pid)
 
     (result,) = _run_children(
         "t", children, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
@@ -1263,15 +1263,14 @@ def test_run_child_to_completion_imports_and_stamps(
 
     # The await polls summarize_session_dir; the child's record is in the origin's state then.
     record = origin_state / "sessions" / "runs" / "co-p1-l1"
-    real_summarize = app_children.summarize_session_dir
+    real_summarize = listing.summarize_session_dir
     seen: dict[str, bool] = {}
 
     def observe(session_dir: pathlib.Path) -> object:
         seen.setdefault("record_during_life", record.is_dir() and not record.is_symlink())
         return real_summarize(session_dir)
 
-    monkeypatch.setattr(app_children, "summarize_session_dir", observe)
-    monkeypatch.setattr(child_wait, "summarize_session_dir", observe)
+    monkeypatch.setattr(listing, "summarize_session_dir", observe)
 
     res = app_children.run_child_to_completion(
         spec,

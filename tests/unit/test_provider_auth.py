@@ -30,7 +30,7 @@ from agent6.providers import (
     transport,
 )
 from agent6.sessions import event_log
-from agent6.viewmodel import fold_transcript
+from agent6.viewmodel import transcript
 
 _AT = "issuer-bearer-secret"
 _RT = "refresh-token-secret"
@@ -187,7 +187,7 @@ def test_refresh_journals_only_the_persisted_or_refused_outcome(
     assert _auth(events) == [_fact("refresh", "success" if status == 200 else "failure")]
     assert persisted == [_NEW if status == 200 else _AT]
     raw = [json.loads(line) for line in events.path.read_text().splitlines()]
-    assert fold_transcript(raw) == []
+    assert transcript.fold_transcript(raw) == []
 
 
 @pytest.mark.parametrize("status", [200, 500])

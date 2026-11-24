@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable
 
 from agent6.sessions import layout
-from agent6.viewmodel import format, summarize_session_dir
+from agent6.viewmodel import format, listing
 
 # Starts a btw: (cwd, agent6 argv without the exe, env extras) -> "" or an error.
 BtwLaunch = Callable[[pathlib.Path, list[str], dict[str, str]], str]
@@ -110,7 +110,7 @@ def btw_answer(session: BtwSession) -> str | None:
         The answer text, or None while the btw is still running.
     """
     # "created" spans the dir appearing and the worker pid landing; it is not an ending.
-    summary = summarize_session_dir(session.dir)
+    summary = listing.summarize_session_dir(session.dir)
     if summary.status in {"created", "running", "starting", "waiting"}:
         return None
     label = format.status_label(summary.status, summary.detail)

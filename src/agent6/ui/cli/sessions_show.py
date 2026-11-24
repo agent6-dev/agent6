@@ -22,21 +22,17 @@ from agent6.sessions import process
 from agent6.ui.cli import common, sessions_children
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import (
-    LogScan,
-    SessionSummary,
     comparison,
     execution_settings,
-    existing_run_branch,
     format,
     listing,
     merges,
     receipt,
-    scan_session_log,
-    summarize_session_dir,
     tail,
     transcript,
     wire,
 )
+from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import patches, status
 from agent6.viewmodel.session import view as state_view
 
@@ -94,7 +90,7 @@ def _print_parallel_compare(
 
 
 def _status_state(
-    row: SessionSummary, scan: LogScan, *, last_age: float | None
+    row: listing.SessionSummary, scan: session_log.LogScan, *, last_age: float | None
 ) -> tuple[str, str, str]:
     """Return the run's state as `(status, label, detail)`.
 
@@ -176,7 +172,7 @@ _VERIFY_LINES = {
 
 
 def _print_end_facts(
-    scan: LogScan,
+    scan: session_log.LogScan,
     session_id: str,
     *,
     gated: bool,
@@ -231,7 +227,7 @@ def _print_end_facts(
         print(f"resume:     {resume}")
 
 
-def _usage_line(scan: LogScan) -> str:
+def _usage_line(scan: session_log.LogScan) -> str:
     """Return the run's tokens and cost line.
 
     Token counters and the points against the cap are per execution and the cost is banked
@@ -386,7 +382,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     manifest = loaded or sessions_manifest.SessionManifest()
     mode_display = loaded.mode if loaded is not None else None
 
-    scan = scan_session_log(layout.logs_path) if layout.logs_path.is_file() else LogScan()
+    scan = (
+        session_log.scan_session_log(layout.logs_path)
+        if layout.logs_path.is_file()
+        else session_log.LogScan()
+    )
 
     pid = process.read_worker_pid(target)
     alive = process.worker_is_alive(target)
@@ -403,7 +403,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     changes = _changes(target, manifest, undone=scan.finished and scan.stop_reason == "undone")
     repo = pathlib.Path.cwd()
     tips = git_read.run_ref_tips(repo)
-    summary = summarize_session_dir(target, branch_tips=tips, repo=repo)
+    summary = listing.summarize_session_dir(target, branch_tips=tips, repo=repo)
     children = sessions_children.read_children(target, tips=tips)
     status, status_cell, status_detail = _status_state(summary, scan, last_age=last_age)
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
@@ -452,7 +452,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             else None,
             "parallel": manifest.parallel.model_dump(mode="json") if manifest.parallel else None,
             "children": [child.as_dict() for child in children],
-            "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
+            "run_branch": wire.existing_run_branch(manifest, pathlib.Path.cwd()) or None,
             "base_branch": manifest.base_branch or None,
             "merged_into_checkout": changes.merged_into_checkout or None,
             "retained_ref": summary.retained_ref or None,

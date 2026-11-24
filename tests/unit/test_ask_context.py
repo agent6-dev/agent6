@@ -115,28 +115,31 @@ def test_seed_files_wraps_and_skips_missing(tmp_path: pathlib.Path) -> None:
 
 def test_ask_transcript_snippet_skips_digest_tags() -> None:
     """The ask snippet is the question, past the headers and a seeded block."""
-    from agent6.viewmodel import task_snippet
+    from agent6.viewmodel.session import status as session_status
 
     t = (
         "# agent6 ask\n\n## Question\n\n"
         '<prior-run id="x">stuff</prior-run>\n\nwhy is the broker slow?\n\n'
         "## Answer\n\nbecause\n"
     )
-    assert task_snippet(t) == "why is the broker slow?"
+    assert session_status.task_snippet(t) == "why is the broker slow?"
     # plain question (no tags)
-    assert task_snippet("## Question\n\nwhat does fib do?\n\n## Answer\n") == "what does fib do?"
+    assert (
+        session_status.task_snippet("## Question\n\nwhat does fib do?\n\n## Answer\n")
+        == "what does fib do?"
+    )
     with_file = (
         "# agent6 ask\n\n## Question\n\n"
         '<file path="a.py">\nprint("a")\n</file>\n\n'
         "what does this file do?\n\n## Answer\n\nprints a\n"
     )
-    assert task_snippet(with_file) == "what does this file do?"
+    assert session_status.task_snippet(with_file) == "what does this file do?"
     with_answer_heading_in_file = (
         "# agent6 ask\n\n## Question\n\n"
         '<file path="notes.md">\n## Answer\nbody\n</file>\n\n'
         "what does this note say?\n\n## Answer\n\nbody\n"
     )
-    assert task_snippet(with_answer_heading_in_file) == "what does this note say?"
+    assert session_status.task_snippet(with_answer_heading_in_file) == "what does this note say?"
 
 
 def test_ask_repl_multi_turn_carries_context(
@@ -203,7 +206,7 @@ def test_ask_repl_multi_turn_carries_context(
 def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: pathlib.Path) -> None:
     """The ask snippet skips the REPL headers `## Q1` and `## A1` too."""
     from agent6.sessions import layout as sessions_layout
-    from agent6.viewmodel import task_snippet
+    from agent6.viewmodel.session import status as session_status
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="ask-x")
     layout.ensure()
@@ -211,7 +214,7 @@ def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: pathlib.
         layout, [("why is the broker slow?", "because"), ("more?", "sure")]
     )
     text = (layout.session_dir / "transcript.md").read_text(encoding="utf-8")
-    assert task_snippet(text) == "why is the broker slow?"
+    assert session_status.task_snippet(text) == "why is the broker slow?"
 
 
 # `agent6 ask` runs in any directory; the context loader and prompt degrade instead of raising.

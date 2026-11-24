@@ -11,19 +11,10 @@ from typing import Any
 import pytest
 
 from agent6.sessions import process
-from agent6.viewmodel import (
-    ApprovalPrompt,
-    BudgetView,
-    SessionState,
-    TaskNodeView,
-    approval_parts,
-    context_fill,
-    fold_transcript,
-    log_line,
-    session_state_as_dict,
-)
+from agent6.viewmodel import log_line, transcript
 from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state as viewmodel_state
+from agent6.viewmodel.session import view as state_view
 
 
 def test_tool_results_match_the_execution_and_call_together() -> None:
@@ -109,7 +100,7 @@ def test_expanded_tool_args_print_a_multi_line_string_as_its_lines() -> None:
     )
     call = {"type": "tool.call", "name": "apply_edit", "args_preview": args}
     assert viewmodel_state.fold_session([call]).tool_calls[0].args_detail == whole
-    (item,) = fold_transcript([call])
+    (item,) = transcript.fold_transcript([call])
     assert item.args_detail == whole
     assert log_line.render_args(args) == (
         "path=a.py, edits=replace, patch=-a\n\n+b, argv=python -c 'import os\nprint(os.sep)'"
@@ -125,7 +116,7 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
 
     def ended(verification: str | None) -> dict[str, object]:
         end = {"type": "session.stop", "reason": "finish_session", "verification": verification}
-        return session_state_as_dict(
+        return state_view.session_state_as_dict(
             viewmodel_state.apply_event(
                 viewmodel_state.apply_event(viewmodel_state.initial_state(), start), end
             )
@@ -135,9 +126,9 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
     assert ended("passed")["needs_new_work"] is True
     assert ended("not_applicable")["needs_new_work"] is True
     assert (
-        session_state_as_dict(viewmodel_state.apply_event(viewmodel_state.initial_state(), start))[
-            "needs_new_work"
-        ]
+        state_view.session_state_as_dict(
+            viewmodel_state.apply_event(viewmodel_state.initial_state(), start)
+        )["needs_new_work"]
         is False
     )
 
@@ -151,9 +142,9 @@ def test_end_summary_reaches_the_wire_and_clears_on_resume() -> None:
             {"type": "session.stop", "reason": "steer_abort", "summary": summary},
         ]
     )
-    assert session_state_as_dict(s)["end_summary"] == summary
+    assert state_view.session_state_as_dict(s)["end_summary"] == summary
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
-    assert session_state_as_dict(s)["end_summary"] == ""
+    assert state_view.session_state_as_dict(s)["end_summary"] == ""
 
 
 def test_a_log_line_is_one_line() -> None:
@@ -225,7 +216,7 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
 
     monkeypatch.setattr("agent6.viewmodel.session.view.cached_context_window", _known)
     s = viewmodel_state.initial_state()
-    assert context_fill(s) is None  # no call yet
+    assert state_view.context_fill(s) is None  # no call yet
     for ev in (
         {"type": "session.start", "user_task": "x", "mode": "run"},
         {"type": "model.call", "actor": "worker", "model": "m", "provider": "p"},
@@ -238,10 +229,10 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
         },
     ):
         s = viewmodel_state.apply_event(s, ev)
-    assert context_fill(s) == 41
-    assert session_state_as_dict(s)["context_used_percent"] == 41
+    assert state_view.context_fill(s) == 41
+    assert state_view.session_state_as_dict(s)["context_used_percent"] == 41
     monkeypatch.setattr("agent6.viewmodel.session.view.cached_context_window", _unknown)
-    assert context_fill(s) is None  # an unknown window is not a percent
+    assert state_view.context_fill(s) is None  # an unknown window is not a percent
 
 
 def test_format_log_line_names_the_pins_in_force() -> None:
@@ -283,9 +274,9 @@ def _graph_event(nodes: dict[str, Any], cursor: str | None = None) -> dict[str, 
 
 def test_initial_state_is_empty() -> None:
     s = viewmodel_state.initial_state()
-    assert s == SessionState()
+    assert s == state_types.SessionState()
     assert s.tasks == ()
-    assert s.budget == BudgetView()
+    assert s.budget == state_types.BudgetView()
 
 
 def test_run_start_records_task() -> None:
@@ -323,12 +314,14 @@ def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
     )
     assert s.cursor_task_id == "a1"
     assert s.tasks == (
-        TaskNodeView(id="root", title="root", status="in_progress", depth=0, short_id="root"),
-        TaskNodeView(id="a", title="task a", status="passed", depth=1, short_id="a"),
-        TaskNodeView(
+        state_types.TaskNodeView(
+            id="root", title="root", status="in_progress", depth=0, short_id="root"
+        ),
+        state_types.TaskNodeView(id="a", title="task a", status="passed", depth=1, short_id="a"),
+        state_types.TaskNodeView(
             id="a1", title="task a1", status="pending", depth=2, is_cursor=True, short_id="a1"
         ),
-        TaskNodeView(id="b", title="task b", status="failed", depth=1, short_id="b"),
+        state_types.TaskNodeView(id="b", title="task b", status="failed", depth=1, short_id="b"),
     )
 
 
@@ -474,7 +467,7 @@ def test_last_model_call_keeps_the_actor_when_the_call_ends() -> None:
         },
     )
     assert s.last_model_call is not None
-    assert session_state_as_dict(s)["last_model_call"]["actor"] == "helper:summarizer"
+    assert state_view.session_state_as_dict(s)["last_model_call"]["actor"] == "helper:summarizer"
     assert s.last_model_call.in_flight is False
 
 
@@ -576,7 +569,7 @@ def test_approval_prompt_then_answer() -> None:
         {"type": "approval.prompt", "id": "a001", "prompt": "Allow run_command?"},
     )
     assert len(s.approvals) == 1
-    assert s.approvals[0] == ApprovalPrompt(id="a001", prompt="Allow run_command?")
+    assert s.approvals[0] == state_types.ApprovalPrompt(id="a001", prompt="Allow run_command?")
     assert s.approvals[0].head == "Allow run_command?"
     assert s.approvals[0].payload == ""
     s = viewmodel_state.apply_event(s, {"type": "approval.answer", "id": "a001", "approved": True})
@@ -693,7 +686,7 @@ def test_run_state_as_dict_is_json_serializable() -> None:
             {"type": "tool.call", "name": "grep", "args_preview": {"q": "x"}},
         ]
     )
-    d = session_state_as_dict(state)
+    d = state_view.session_state_as_dict(state)
     assert d["task"] == "t"
     assert d["tool_calls"][0]["name"] == "grep"  # tuple -> list, dataclass -> dict
     json.dumps(d)  # the wire form must serialize
@@ -711,7 +704,7 @@ def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: pathlib.Path) 
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 0, "user_task": "queued work"}), encoding="utf-8"
     )
-    d = session_state_as_dict(viewmodel_state.fold_session([]), session_dir)
+    d = state_view.session_state_as_dict(viewmodel_state.fold_session([]), session_dir)
     assert d["session_id"] == "sunny-otter-K4Q7B2"
     assert d["task"] == "queued work"
     assert d["live"] is False  # no worker: the dir word is not live
@@ -720,19 +713,21 @@ def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: pathlib.Path) 
 def test_run_state_as_dict_always_carries_live(tmp_path: pathlib.Path) -> None:
     # `live` is part of the wire shape: None (unknowable) without a dir, a real
     # bool with one -- never an absent key a client must typeof-probe.
-    assert session_state_as_dict(viewmodel_state.fold_session([]))["live"] is None
+    assert state_view.session_state_as_dict(viewmodel_state.fold_session([]))["live"] is None
     d = tmp_path / "r"
     d.mkdir()
-    assert isinstance(session_state_as_dict(viewmodel_state.fold_session([]), d)["live"], bool)
+    assert isinstance(
+        state_view.session_state_as_dict(viewmodel_state.fold_session([]), d)["live"], bool
+    )
 
 
 def test_run_state_as_dict_flags_operator_blocked() -> None:
     """The wire carries operator_blocked from the fold for a dir-less consumer."""
-    idle = session_state_as_dict(
+    idle = state_view.session_state_as_dict(
         viewmodel_state.fold_session([{"type": "session.start", "user_task": "t"}])
     )
     assert idle["operator_blocked"] is False
-    blocked = session_state_as_dict(
+    blocked = state_view.session_state_as_dict(
         viewmodel_state.fold_session(
             [
                 {"type": "session.start", "user_task": "t"},
@@ -746,7 +741,9 @@ def test_run_state_as_dict_flags_operator_blocked() -> None:
 def test_run_status_label_distinguishes_stop_finish_error() -> None:
     # All of these set finished=True; the reason is what a user needs to tell them
     # apart. A stopped run must never read as a bare "finished" (looks completed).
-    def end(reason: str, verification: str, *, verify_rc: int | None = None) -> SessionState:
+    def end(
+        reason: str, verification: str, *, verify_rc: int | None = None
+    ) -> state_types.SessionState:
         s = viewmodel_state.apply_event(
             viewmodel_state.initial_state(), {"type": "session.start", "user_task": "t"}
         )
@@ -759,22 +756,31 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
             s, {"type": "session.stop", "reason": reason, "verification": verification}
         )
 
-    assert session_state_as_dict(viewmodel_state.initial_state())["status_label"] == "running"
-    assert session_state_as_dict(end("steer_abort", "unverified"))["status_label"] == "stopped"
-    assert session_state_as_dict(end("finish_session", "passed"))["status_label"] == "passed"
+    assert (
+        state_view.session_state_as_dict(viewmodel_state.initial_state())["status_label"]
+        == "running"
+    )
+    assert (
+        state_view.session_state_as_dict(end("steer_abort", "unverified"))["status_label"]
+        == "stopped"
+    )
+    assert (
+        state_view.session_state_as_dict(end("finish_session", "passed"))["status_label"]
+        == "passed"
+    )
     # verification False is "not certified green": an observed red names the gate,
     # a stale green or a gate nothing ran reads unverified.
-    assert session_state_as_dict(end("finish_session", "failed", verify_rc=1))["status_label"] == (
-        "finished · gate red"
-    )
-    assert session_state_as_dict(end("finish_session", "unverified"))["status_label"] == (
-        "finished · unverified"
-    )
-    assert session_state_as_dict(end("finish_session", "unverified", verify_rc=0))[
+    assert state_view.session_state_as_dict(end("finish_session", "failed", verify_rc=1))[
+        "status_label"
+    ] == ("finished · gate red")
+    assert state_view.session_state_as_dict(end("finish_session", "unverified"))[
+        "status_label"
+    ] == ("finished · unverified")
+    assert state_view.session_state_as_dict(end("finish_session", "unverified", verify_rc=0))[
         "status_label"
     ] == ("finished · unverified")
     assert (
-        session_state_as_dict(end("provider_error", "unverified"))["status_label"]
+        state_view.session_state_as_dict(end("provider_error", "unverified"))["status_label"]
         == "failed · provider error"
     )
     scoped = viewmodel_state.apply_event(
@@ -786,13 +792,13 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
             "scoped": True,
         },
     )
-    assert session_state_as_dict(scoped)["status_label"] == "passed · scoped gate"
+    assert state_view.session_state_as_dict(scoped)["status_label"] == "passed · scoped gate"
     # the raw status WORD rides along too, so a client can branch on it (the web
     # heartbeat goes quiet on "waiting" instead of painting "working" over a run
     # blocked on the operator).
-    assert session_state_as_dict(viewmodel_state.initial_state())["status"] == "running"
-    assert session_state_as_dict(end("steer_abort", "unverified"))["status"] == "stopped"
-    assert session_state_as_dict(end("finish_session", "passed"))["status"] == "passed"
+    assert state_view.session_state_as_dict(viewmodel_state.initial_state())["status"] == "running"
+    assert state_view.session_state_as_dict(end("steer_abort", "unverified"))["status"] == "stopped"
+    assert state_view.session_state_as_dict(end("finish_session", "passed"))["status"] == "passed"
 
 
 def test_resume_start_unfinishes_the_run() -> None:
@@ -804,7 +810,7 @@ def test_resume_start_unfinishes_the_run() -> None:
     assert s.finished and s.stop_reason == "steer_abort"
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert not s.finished and s.stop_reason == ""
-    assert session_state_as_dict(s)["status_label"] == "running"
+    assert state_view.session_state_as_dict(s)["status_label"] == "running"
 
 
 def test_model_result_tracks_context_tokens_and_provider() -> None:
@@ -860,7 +866,7 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
     s = viewmodel_state.apply_event(s, {"type": "model.call", "actor": "worker", "model": "m"})
     assert s.finished is False
     assert s.stop_reason == ""
-    assert session_state_as_dict(s)["status_label"] == "running"
+    assert state_view.session_state_as_dict(s)["status_label"] == "running"
     s = viewmodel_state.apply_event(s, {"type": "budget.update", "usd_total": 0.03})
     assert s.budget.session.usd == pytest.approx(0.03)
     assert s.budget.execution.usd == pytest.approx(0.03)  # nothing banked: one tracker
@@ -890,7 +896,7 @@ def test_resume_resets_the_execution_token_counters() -> None:
         s, {"type": "session.stop", "verification": "unverified", "reason": "budget_exhausted"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
-    assert s.budget.execution == BudgetView().execution  # zeros, the caps unknown again
+    assert s.budget.execution == state_types.BudgetView().execution  # zeros, the caps unknown again
     assert s.budget.session.usd == pytest.approx(0.2)
 
 
@@ -1152,27 +1158,29 @@ def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: pathlib.Path) -
 
     d = tmp_path / "r"
     d.mkdir()
-    assert session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"] == []
+    assert state_view.session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"] == []
     with socket.socket() as srv:
         srv.bind(("127.0.0.1", 0))
         srv.listen(1)
         port = srv.getsockname()[1]
         # this process stands in for the holder
         process.write_session_netns_pid(d, os.getpid())
-        assert port in session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"]
+        assert (
+            port in state_view.session_state_as_dict(viewmodel_state.fold_session([]), d)["ports"]
+        )
 
 
 def test_approval_parts_is_the_one_shape_every_surface_renders() -> None:
     """A dispatch prompt splits into the "Allow <tool>" head and the payload; JSON carries both."""
-    assert approval_parts("Allow run_command: pytest -q tests") == (
+    assert state_types.approval_parts("Allow run_command: pytest -q tests") == (
         "Allow run_command",
         "pytest -q tests",
     )
-    assert approval_parts("Allow run_command: sh -c 'a\nb'") == (
+    assert state_types.approval_parts("Allow run_command: sh -c 'a\nb'") == (
         "Allow run_command",
         "sh -c 'a\nb'",
     )
-    assert approval_parts("Allow fetch?") == ("Allow fetch?", "")
+    assert state_types.approval_parts("Allow fetch?") == ("Allow fetch?", "")
 
 
 def test_auto_commits_fold_into_the_commit_list() -> None:
@@ -1308,7 +1316,7 @@ def test_the_snapshot_keeps_the_folded_original_task(tmp_path: pathlib.Path) -> 
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(), {"type": "session.start", "user_task": "the first task"}
     )
-    d = session_state_as_dict(s, session_dir)
+    d = state_view.session_state_as_dict(s, session_dir)
     assert d["task"] == "the first task"
     assert d["task_line"] == "the first task"
 
@@ -1335,7 +1343,7 @@ def test_task_identity_survives_missing_or_invalid_manifest(
             {"type": "session.resume"},
         ]
     )
-    payload = session_state_as_dict(folded, tmp_path)
+    payload = state_view.session_state_as_dict(folded, tmp_path)
     assert payload["task"] == payload["task_line"] == "original task"
     assert payload["continued_task"] == ""
 
@@ -1357,7 +1365,7 @@ def test_snapshot_reads_manifest_once(
     (tmp_path / "manifest.json").write_text(json.dumps({"user_task": "original task"}))
     monkeypatch.setattr(manifest, "read_manifest", counted)
     folded = viewmodel_state.fold_session([{"type": "session.start", "user_task": "original task"}])
-    session_state_as_dict(folded, tmp_path)
+    state_view.session_state_as_dict(folded, tmp_path)
     assert calls == 1
 
 
@@ -1485,7 +1493,7 @@ def test_the_state_names_its_execution_from_the_start_rows() -> None:
     assert s.execution_id == "first"
     s = viewmodel_state.apply_event(s, {"type": "session.resume", "execution_id": "second"})
     assert s.execution_id == "second"
-    assert session_state_as_dict(s)["execution_id"] == "second"
+    assert state_view.session_state_as_dict(s)["execution_id"] == "second"
 
 
 def test_the_account_reading_names_its_provider_and_survives_a_resume() -> None:

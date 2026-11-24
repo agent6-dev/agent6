@@ -18,9 +18,11 @@ from agent6.config import Config, ConfigError, io, layer, layer_data, layer_pres
 from agent6.models import choices as models_choices
 from agent6.sessions import id, layout, process
 from agent6.ui.cli import common, config_secrets
-from agent6.viewmodel import listing, open_approval, session_is_live
+from agent6.viewmodel import listing
+from agent6.viewmodel import listing as viewmodel_listing
 from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import state as session_state
 
 
 def complete_finding_ids(prefix: str, **kw: Any) -> list[str]:
@@ -410,7 +412,7 @@ def _complete_answerable_ids(prefix: str, **_kw: object) -> list[str]:
         if d.name.startswith(prefix)
         and (
             session_log.scan_session_log(d / layout.LOGS_NAME).pending_questions > 0
-            or (session_is_live(d) and open_approval(d) is not None)
+            or (viewmodel_listing.session_is_live(d) and session_state.open_approval(d) is not None)
         )
     )
 

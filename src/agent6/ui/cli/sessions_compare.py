@@ -17,15 +17,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, compare_ranking, sessions_cmds
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import (
-    LIVE_STATUS_WORDS,
-    comparison,
-    died_without_end,
-    format,
-    listing,
-    summarize_session_dir,
-    wire,
-)
+from agent6.viewmodel import comparison, format, listing, wire
+from agent6.viewmodel.session import status as session_status
 
 
 def _candidate_diff(
@@ -82,14 +75,14 @@ def _screen_candidates(
     rows: dict[str, listing.SessionSummary] = {}
     notes: list[str] = []
     for layout, manifest in resolved:
-        summary = summarize_session_dir(layout.session_dir)
-        if summary.status in LIVE_STATUS_WORDS:
+        summary = listing.summarize_session_dir(layout.session_dir)
+        if summary.status in session_status.LIVE_STATUS_WORDS:
             notes.append(
                 f"note: {layout.session_id} is still {summary.status};"
                 " excluded (stop it or let it finish first)"
             )
             continue
-        if died_without_end(summary.status):
+        if session_status.died_without_end(summary.status):
             notes.append(
                 f"note: {layout.session_id} never finished ({summary.status});"
                 " excluded from the ranking"

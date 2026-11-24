@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.viewmodel import task_tree_views
+from agent6.viewmodel.session import state as session_state
 
 
 def task_tree_lines(nodes: dict[str, Any], cursor: str | None = None) -> list[str]:
@@ -27,7 +27,7 @@ def task_tree_lines(nodes: dict[str, Any], cursor: str | None = None) -> list[st
         `<id> <indent><glyph> <title>` per node, plus the note and the commit's short sha.
     """
     out: list[str] = []
-    for view in task_tree_views(nodes, cursor):
+    for view in session_state.task_tree_views(nodes, cursor):
         node = nodes.get(view.id)
         sha = node.get("commit_sha") if isinstance(node, dict) else None
         commit = f"  ({sha[:7]})" if isinstance(sha, str) and sha else ""

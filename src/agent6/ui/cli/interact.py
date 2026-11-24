@@ -16,7 +16,7 @@ from agent6.tools import operator_prompts, schema
 from agent6.ui import keymap
 from agent6.ui import steer as ui_steer
 from agent6.ui.cli import console_render, steer_tty
-from agent6.viewmodel import approval_parts
+from agent6.viewmodel.session import records as state_types
 
 
 def _pause(cv: console_render.ConsoleView | None) -> contextlib.AbstractContextManager[None]:
@@ -60,7 +60,7 @@ def default_stdin_approver(
     suffix = keymap.approval_prompt_suffix(standing=standing)
     bold, dim, yellow, reset = "\033[1m", "\033[2m", "\033[33m", "\033[0m"
     # The text under judgment carries no sequence at all: conceal (SGR 8) hides what it wraps.
-    head, payload = approval_parts(terminal.scrub_terminal_controls(prompt))
+    head, payload = state_types.approval_parts(terminal.scrub_terminal_controls(prompt))
     if payload:
         body = "\n".join(f"    {ln}" for ln in payload.splitlines())
         rendered = (
@@ -143,7 +143,7 @@ def build_approver(
             nonlocal parked
             if parked:
                 return
-            head, payload = approval_parts(request.prompt)
+            head, payload = state_types.approval_parts(request.prompt)
             requester, allow, tool = head.partition("Allow ")
             who = requester.strip() if allow and requester else f"[session {session_dir.name}]"
             what = terminal.line_preview(tool or head)

@@ -82,7 +82,7 @@ def test_bare_resume_finds_the_newest_session_in_every_resumable_bucket(
     Splitting plans/ out of runs/ must not hide a plan from bare `resume`; a machine draft is
     deliberately absent, since `machine` is not resumable.
     """
-    from agent6.viewmodel import newest_session_dir
+    from agent6.viewmodel import listing
 
     session = sessions_layout.bucket_dir(tmp_path, bucket) / "brave-oak-AAAAAA"
     session.mkdir(parents=True)
@@ -92,7 +92,7 @@ def test_bare_resume_finds_the_newest_session_in_every_resumable_bucket(
         sessions_layout.bucket_dir(tmp_path, "machines") / "quiet-fox-BBBBBB" / "logs.jsonl"
     ).write_text("{}\n", encoding="utf-8")
 
-    found = newest_session_dir(resume_record.resumable_bucket_dirs(tmp_path))
+    found = listing.newest_session_dir(resume_record.resumable_bucket_dirs(tmp_path))
     assert found == session
 
 
@@ -110,7 +110,7 @@ def test_every_hub_lists_every_hub_bucket(
     """
     from agent6.ui.cli import main
     from agent6.ui.web import model as web_model
-    from agent6.viewmodel import session_dirs
+    from agent6.viewmodel import listing
 
     monkeypatch.chdir(tmp_path)
     state = paths.state_dir(tmp_path)
@@ -122,7 +122,7 @@ def test_every_hub_lists_every_hub_bucket(
 
     assert main(["sessions", "list"]) == 0
     assert "brave-oak-AAAAAA" in capsys.readouterr().out
-    assert [p.name for p in session_dirs(state)] == ["brave-oak-AAAAAA"]
+    assert [p.name for p in listing.session_dirs(state)] == ["brave-oak-AAAAAA"]
     hub_ids = [s["session_id"] for s in web_model.hub_payload(tmp_path)["sessions"]]
     assert hub_ids == ["brave-oak-AAAAAA"]
 

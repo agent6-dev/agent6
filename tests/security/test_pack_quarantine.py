@@ -34,7 +34,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main, exec_cmds
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import fold_transcript, format_log_line
+from agent6.viewmodel import log_line, transcript
 
 _MANIFEST = (
     json.dumps(
@@ -312,9 +312,9 @@ def test_a_session_says_it_once_through_its_journal(tmp_path: pathlib.Path) -> N
     assert row["warning"].startswith(f"found {forged}.")
     assert said == []
     assert printed == [f"[agent6] WARNING: {row['warning']}"]
-    (item,) = fold_transcript([row])
+    (item,) = transcript.fold_transcript([row])
     assert (item.kind, item.body) == ("marker", f"WARNING: {row['warning']}")
-    assert "pack.quarantined   found " in format_log_line(row)
+    assert "pack.quarantined   found " in log_line.format_log_line(row)
 
     blocker = tmp_path / "blocker"
     blocker.write_text("a file where the session directory would be", encoding="utf-8")

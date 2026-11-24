@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import operator_inputs
+from agent6.viewmodel import transcript
 
 
 def test_task_then_steers_in_order_across_executions() -> None:
@@ -17,7 +17,7 @@ def test_task_then_steers_in_order_across_executions() -> None:
         {"type": "session.resume"},
         {"type": "steer.injected", "chars": 7, "text": "ship it"},
     ]
-    assert operator_inputs(events) == ["polish the TUI", "focus on tests", "ship it"]
+    assert transcript.operator_inputs(events) == ["polish the TUI", "focus on tests", "ship it"]
 
 
 def test_blank_countonly_and_consecutive_repeats_drop() -> None:
@@ -31,4 +31,4 @@ def test_blank_countonly_and_consecutive_repeats_drop() -> None:
     ]
     # The blank and count-only entries render nothing, so the final "again"
     # still sits next to the first and collapses with it.
-    assert operator_inputs(events) == ["t", "again"]
+    assert transcript.operator_inputs(events) == ["t", "again"]

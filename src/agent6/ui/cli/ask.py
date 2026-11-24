@@ -20,7 +20,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, steer_tty
 from agent6.vcs.git import policy as git_policy
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import events, newest_session_dir
+from agent6.viewmodel import events, listing
 from agent6.viewmodel.session import log as session_log
 
 
@@ -176,7 +176,7 @@ def build_session_seed(cwd: pathlib.Path, session_id: str, *, latest: bool) -> S
     state = paths.state_dir(cwd)
     if latest:
         # A machine draft is an authoring log, not a session with a task and an outcome.
-        newest = newest_session_dir(
+        newest = listing.newest_session_dir(
             [sessions_layout.bucket_dir(state, "runs"), sessions_layout.bucket_dir(state, "asks")]
         )
         if newest is None:

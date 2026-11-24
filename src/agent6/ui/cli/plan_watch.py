@@ -17,23 +17,14 @@ from agent6.sessions import id, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema
 from agent6.ui.cli import common, console_render, interact, sessions_children
-from agent6.viewmodel import (
-    StatusFacts,
-    event_epoch,
-    format,
-    scan_session_log,
-    session_is_live,
-    session_mtime,
-    session_policy,
-    status_for_session_dir,
-    tail_events,
-    tail_lines,
-)
+from agent6.viewmodel import events, format, listing, policy, tail
+from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import status as session_status
 
 
 def _plan_next(session_id: str) -> str:
     """Return what to do with a plan that has not written its page: follow it, or resume it."""
-    if session_is_live(common._plans_dir(pathlib.Path.cwd()) / session_id):
+    if listing.session_is_live(common._plans_dir(pathlib.Path.cwd()) / session_id):
         return f"it is still running (`agent6 attach {session_id}` follows it)"
     return f"`agent6 resume {session_id}` continues it"
 
@@ -138,7 +129,7 @@ def _most_recent_plan_session_id(plans_dir: pathlib.Path) -> str | None:
         return None
     candidates = sorted(
         (p for p in plans_dir.iterdir() if p.is_dir() and (p / "plan.md").is_file()),
-        key=session_mtime,
+        key=listing.session_mtime,
         reverse=True,
     )
     return candidates[0].name if candidates else None
@@ -251,7 +242,7 @@ def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
         return raw
     if not isinstance(obj, dict):
         return raw
-    ts = event_epoch(obj.get("ts"))
+    ts = events.event_epoch(obj.get("ts"))
     event = str(obj.get("event") or obj.get("type") or "?")
     if ts is not None and session_start_ts is not None:
         elapsed = max(0.0, ts - session_start_ts)
@@ -323,7 +314,7 @@ class _PromptWatch:
             return True
         # Liveness first: a worker that answers and exits between the two reads shows its answer.
         alive = process.worker_is_alive(self.session_dir)
-        for event in tail_events(
+        for event in tail.tail_events(
             self.session_dir / sessions_layout.LOGS_NAME,
             follow=False,
             start_at=self.read_to,
@@ -382,7 +373,7 @@ class _CliFrontEnd:
         """
         open_prompts: dict[str, dict[str, object]] = {}
         scanned = 0
-        for ev in tail_events(events_path, follow=False, on_position=self.heard):
+        for ev in tail.tail_events(events_path, follow=False, on_position=self.heard):
             scanned += 1
             etype = str(ev.get("type", ""))
             pid = str(ev.get("id", ""))
@@ -509,10 +500,10 @@ def _render_over_session(target: pathlib.Path, events_path: pathlib.Path, *, fin
         The exit code, 0.
     """
     view = console_render.ConsoleView(
-        sys.stdout, policy=lambda: session_policy(target).line(), session_id=target.name
+        sys.stdout, policy=lambda: policy.session_policy(target).line(), session_id=target.name
     )
     try:
-        for event in tail_events(events_path, follow=False):
+        for event in tail.tail_events(events_path, follow=False):
             view.feed(event)
         if not finished:
             # No session.stop settled the call the worker died on.
@@ -573,7 +564,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
     events_path = target / sessions_layout.LOGS_NAME
     if not events_path.is_file():
         # Not an error: a parked submission, a `fork --no-run` or a launching run has no log yet.
-        word, reason = status_for_session_dir(target, StatusFacts())
+        word, reason = session_status.status_for_session_dir(target, session_status.StatusFacts())
         print(f"{target.name}: {format.status_label(word, reason)}")
         if word == "starting":
             # A live worker mid-preflight is running, not resumable; it has no log to follow yet.
@@ -583,8 +574,8 @@ def _watch_transcript(target: pathlib.Path) -> int:
         return 0
 
     # Liveness as every surface answers it; whether the run ended is a separate fact.
-    if not session_is_live(target):
-        scan = scan_session_log(events_path)
+    if not listing.session_is_live(target):
+        scan = session_log.scan_session_log(events_path)
         return _render_over_session(target, events_path, finished=scan.finished)
 
     def worker_dead() -> bool:
@@ -593,7 +584,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
         return not process.worker_is_alive(target)
 
     view = console_render.ConsoleView(
-        sys.stdout, policy=lambda: session_policy(target).line(), session_id=target.name
+        sys.stdout, policy=lambda: policy.session_policy(target).line(), session_id=target.name
     )
     front_end = _install_front_end(target, view)
     interrupted = False
@@ -601,7 +592,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
         if front_end is not None:
             for event in front_end.open_prompts_at_attach(events_path):
                 front_end.handle(event)
-        for event in tail_events(
+        for event in tail.tail_events(
             events_path,
             follow=True,
             stop_when_finished=True,
@@ -619,7 +610,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
         if front_end is not None:
             # our claim only
             process.unregister_frontend(target, os.getpid())
-    if not interrupted and not scan_session_log(events_path).finished:
+    if not interrupted and not session_log.scan_session_log(events_path).finished:
         # No session.stop settled the call the worker died on.
         view.settle_dead("the run died")
         _print_crashed_line(target)
@@ -664,19 +655,19 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:
         with contextlib.suppress(UnicodeDecodeError, json.JSONDecodeError):
             obj0 = json.loads(lines[0].decode("utf-8"))
             if isinstance(obj0, dict):
-                session_start_ts = event_epoch(obj0.get("ts"))
+                session_start_ts = events.event_epoch(obj0.get("ts"))
     print(f"[agent6] tailing {events_path}. Ctrl-C to exit.", file=sys.stderr)
     try:
         for raw in lines[-since:] if since > 0 else []:
             # Piped output must not lose the replay to the block buffer while the run is idle.
             line = raw.decode("utf-8", errors="replace")
             print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
-        if scan_session_log(events_path).finished:
+        if session_log.scan_session_log(events_path).finished:
             if since == 0:
                 print("[agent6] run already finished.", file=sys.stderr)
             return 0
         # Follow from the last complete line; a torn tail is read whole once its newline lands.
-        for raw in tail_lines(
+        for raw in tail.tail_lines(
             events_path,
             start_at=len(data) - len(torn),
             should_stop=lambda: not process.worker_is_alive(target),

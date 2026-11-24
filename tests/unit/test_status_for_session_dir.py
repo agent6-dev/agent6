@@ -21,10 +21,11 @@ import pytest
 
 from agent6 import kinds
 from agent6.sessions import ipc
-from agent6.viewmodel import format, listing, session_state_as_dict, status_facts, transcript
+from agent6.viewmodel import format, listing, transcript
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import state as viewmodel_state
 from agent6.viewmodel.session import status as session_status
+from agent6.viewmodel.session import view as state_view
 
 LIVE = os.getpid()
 DEAD = 999999999
@@ -204,7 +205,7 @@ def test_both_fact_producers_and_the_listing_agree(
     scan = session_log.scan_session_log(logs) if logs.is_file() else session_log.LogScan()
     fold = viewmodel_state.fold_session([] if events is None else events)
     assert session_status.status_for_session_dir(d, scan.status_facts()) == (word, reason)
-    assert session_status.status_for_session_dir(d, status_facts(fold)) == (word, reason)
+    assert session_status.status_for_session_dir(d, state_view.status_facts(fold)) == (word, reason)
     summary = listing.summarize_session_dir(d)
     assert (summary.status, summary.detail) == (word, reason)
 
@@ -220,7 +221,7 @@ def test_parked_detail_is_not_a_stop_code(tmp_path: pathlib.Path, detail: str) -
     row = listing.summary_row(listing.summarize_session_dir(d))
     assert row["status_detail"] == detail
     assert row["status_label"] == f"parked · {detail}"
-    assert session_state_as_dict(viewmodel_state.initial_state(), d)["status_label"] == (
+    assert state_view.session_state_as_dict(viewmodel_state.initial_state(), d)["status_label"] == (
         f"parked · {detail}"
     )
 
@@ -270,7 +271,7 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
     fold = viewmodel_state.fold_session(events)
     expected = ("finished", gate_detail or detail)
     assert session_status.status_for_session_dir(d, scan.status_facts()) == expected
-    assert session_status.status_for_session_dir(d, status_facts(fold)) == expected
+    assert session_status.status_for_session_dir(d, state_view.status_facts(fold)) == expected
     summary = listing.summarize_session_dir(d)
     assert (summary.status, summary.detail) == expected
     label = f"finished · {gate_detail or detail}"
@@ -305,10 +306,12 @@ def test_pending_step_stop_labels_agree_in_the_listing_and_typed_fold(
     fold = viewmodel_state.fold_session(events)
     scan = session_log.scan_session_log(d / "logs.jsonl")
     assert session_status.status_for_session_dir(d, scan.status_facts()) == (word, reason)
-    assert session_status.status_for_session_dir(d, status_facts(fold)) == (word, reason)
+    assert session_status.status_for_session_dir(d, state_view.status_facts(fold)) == (word, reason)
     row = listing.summarize_session_dir(d)
     assert (row.status, row.detail) == (word, reason)
-    assert session_state_as_dict(fold, d)["status_label"] == format.status_label(word, reason)
+    assert state_view.session_state_as_dict(fold, d)["status_label"] == format.status_label(
+        word, reason
+    )
     assert listing.summary_row(row)["status_label"] == format.status_label(word, reason)
 
 
@@ -325,7 +328,7 @@ def test_a_verify_cut_short_leaves_no_verdict_in_either_producer(tmp_path: pathl
     ]
     d = _mk(tmp_path, "cut-short", events)
     scan_facts = session_log.scan_session_log(d / "logs.jsonl").status_facts()
-    fold_facts = status_facts(viewmodel_state.fold_session(events))
+    fold_facts = state_view.status_facts(viewmodel_state.fold_session(events))
     assert (scan_facts.gate_red, fold_facts.gate_red) == (False, False)
     assert session_status.status_for_session_dir(
         d, scan_facts
@@ -338,10 +341,12 @@ def test_clearing_a_pending_step_stop_clears_its_label(tmp_path: pathlib.Path) -
     d = _mk(tmp_path, "clear-AAAAAA", events, pid=LIVE)
     fold = viewmodel_state.fold_session(events)
     assert ipc.request_stop(d)
-    assert session_state_as_dict(fold, d)["status_label"] == ("running · stopping after this turn")
+    assert state_view.session_state_as_dict(fold, d)["status_label"] == (
+        "running · stopping after this turn"
+    )
     ipc.clear_stop_request(d)
     assert listing.summarize_session_dir(d).detail == ""
-    assert session_state_as_dict(fold, d)["status_label"] == "running"
+    assert state_view.session_state_as_dict(fold, d)["status_label"] == "running"
 
 
 @pytest.mark.parametrize(("verification", "word"), [("passed", "passed"), (None, "finished")])
@@ -362,7 +367,7 @@ def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
     d = _mk(tmp_path, "strand-AAAAAA", events)
     scan = session_log.scan_session_log(d / "logs.jsonl")
     fold = viewmodel_state.fold_session(events)
-    for facts in (scan.status_facts(), status_facts(fold)):
+    for facts in (scan.status_facts(), state_view.status_facts(fold)):
         assert session_status.status_for_session_dir(d, facts) == (word, "not committed")
     row = listing.summarize_session_dir(d)
     assert format.status_label(row.status, row.detail) == f"{word} · not committed"
@@ -371,7 +376,7 @@ def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
     scan = session_log.scan_session_log(d / "logs.jsonl")
     fold = viewmodel_state.fold_session(resumed)
-    for facts in (scan.status_facts(), status_facts(fold)):
+    for facts in (scan.status_facts(), state_view.status_facts(fold)):
         assert session_status.status_for_session_dir(d, facts) == (word, "")
 
 
@@ -393,7 +398,10 @@ def test_resume_clears_orphaned_approvals_and_carries_questions() -> None:
     assert len(state.approvals) == 1  # the new execution's, not the orphan + a dup
     (question,) = state.questions
     assert not question.answered and question.blocking is False
-    assert status_facts(state).operator_blocked and status_facts(state).blocked_kind == "approval"
+    assert (
+        state_view.status_facts(state).operator_blocked
+        and state_view.status_facts(state).blocked_kind == "approval"
+    )
 
 
 def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: pathlib.Path) -> None:
@@ -420,7 +428,7 @@ def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: pathl
         fold = viewmodel_state.fold_session(events)
         expect = ("waiting", f"{kind} 5m")
         assert session_status.status_for_session_dir(d, scan.status_facts()) == expect
-        assert session_status.status_for_session_dir(d, status_facts(fold)) == expect
+        assert session_status.status_for_session_dir(d, state_view.status_facts(fold)) == expect
 
     no_ts: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -454,14 +462,17 @@ def test_pending_questions_are_counted_in_both_producers(tmp_path: pathlib.Path)
     expect = ("running", "1 question pending")
     assert session_status.status_for_session_dir(d, scan.status_facts()) == expect
     fold = viewmodel_state.fold_session(running)
-    assert session_status.status_for_session_dir(d, status_facts(fold)) == expect
+    assert session_status.status_for_session_dir(d, state_view.status_facts(fold)) == expect
     ended: list[dict[str, object]] = [
         *running,
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     d = _mk(tmp_path, "ended-pending", ended, parked="", pid=os.getpid())
     scan = session_log.scan_session_log(d / "logs.jsonl")
-    for facts in (scan.status_facts(), status_facts(viewmodel_state.fold_session(ended))):
+    for facts in (
+        scan.status_facts(),
+        state_view.status_facts(viewmodel_state.fold_session(ended)),
+    ):
         word, reason = session_status.status_for_session_dir(d, facts)
         assert word != "waiting" and str(reason).endswith("1 question pending")
     stale = _mk(tmp_path, "stale-pending", running, parked="", pid=999_999_999)
@@ -486,7 +497,10 @@ def test_a_saved_answer_reads_as_saved_not_pending(tmp_path: pathlib.Path) -> No
     d = _mk(tmp_path, "saved-answer", ended, parked="", pid=os.getpid())
     assert ipc.write_question_answers(d, "question-1", ["x"])
     scan = session_log.scan_session_log(d / "logs.jsonl")
-    for facts in (scan.status_facts(), status_facts(viewmodel_state.fold_session(ended))):
+    for facts in (
+        scan.status_facts(),
+        state_view.status_facts(viewmodel_state.fold_session(ended)),
+    ):
         word, reason = session_status.status_for_session_dir(d, facts)
         assert word != "waiting" and str(reason).endswith("1 answer saved for the resume")
         assert "pending" not in str(reason)
@@ -501,15 +515,15 @@ def test_pending_steer_is_visible_until_consumed(tmp_path: pathlib.Path) -> None
     assert ipc.submit_steer(d, "Please finish the tests")
     expected = "steer queued, not yet delivered: Please finish the tests"
     for facts in (
-        status_facts(fold),
+        state_view.status_facts(fold),
         session_log.scan_session_log(d / "logs.jsonl").status_facts(),
     ):
         assert session_status.status_for_session_dir(d, facts) == ("running", expected)
-    assert expected in str(session_state_as_dict(fold, d)["status_label"])
+    assert expected in str(state_view.session_state_as_dict(fold, d)["status_label"])
     assert listing.summarize_session_dir(d).detail == expected
     assert ipc.take_steer_answer(d) == "Please finish the tests"
     ipc.clear_steer_request(d)
     events.append({"type": "steer.injected", "text": "Please finish the tests"})
     assert session_status.status_for_session_dir(
-        d, status_facts(viewmodel_state.fold_session(events))
+        d, state_view.status_facts(viewmodel_state.fold_session(events))
     ) == ("running", "")

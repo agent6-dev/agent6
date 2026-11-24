@@ -13,7 +13,8 @@ from agent6 import review_records
 from agent6.app.review import actions as review_actions
 from agent6.sessions import ipc, process
 from agent6.ui.acp import model, prompt, rpc, session, updates
-from agent6.viewmodel import pending_questions, receipt, review, tail, transcript
+from agent6.viewmodel import receipt, review, tail, transcript
+from agent6.viewmodel.session import state as session_state
 
 
 class _CommandParser(argparse.ArgumentParser):
@@ -121,7 +122,7 @@ def _answer_reply(
     if not current.session_id:
         raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
     saved = current.layout(sessions.state_dir_for(current.cwd))
-    prompts = pending_questions(saved.session_dir)
+    prompts = session_state.pending_questions(saved.session_dir)
     prompt = next((p for p in prompts if p.id == args.question_id), None)
     if prompt is None:
         pending = ", ".join(p.id for p in prompts) or "none"

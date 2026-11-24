@@ -24,7 +24,8 @@ from agent6 import config, directive
 from agent6.sessions import ipc
 from agent6.ui import keymap, parallel_preview, path_completion
 from agent6.ui.tui import forms, menubar, modals
-from agent6.viewmodel import ApprovalPrompt, SessionState, approval_parts, tail, transcript
+from agent6.viewmodel import tail, transcript
+from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state as viewmodel_state
 
 if TYPE_CHECKING:
@@ -327,7 +328,7 @@ class ApprovalKeys:
     def approval_answered(self, verdict: str) -> None:
         """Follow up a written answer: "allowed", "denied" or "answered elsewhere"."""
 
-    def open_approval(self, state: SessionState) -> ApprovalPrompt | None:
+    def open_approval(self, state: state_types.SessionState) -> state_types.ApprovalPrompt | None:
         """Return the oldest unanswered approval this view has not answered already."""
         prompts = self._prompts
         if prompts is None:
@@ -337,7 +338,7 @@ class ApprovalKeys:
             state, taken=lambda aid: prompts.seen(session_dir, aid)
         )
 
-    def sync_approval(self, current: ApprovalPrompt | None) -> None:
+    def sync_approval(self, current: state_types.ApprovalPrompt | None) -> None:
         """Dock one row for the open approval, or none.
 
         A new id gets a fresh row, since a resumed execution reuses prompt ids and the
@@ -607,7 +608,7 @@ def approval_text(
     Returns:
         The text, each payload line indented four spaces.
     """
-    head, payload = approval_parts(prompt)
+    head, payload = state_types.approval_parts(prompt)
     if dim:
         body = rich_text.Text(f"? {head}: {note}", style="dim")
     else:

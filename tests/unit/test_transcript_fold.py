@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.viewmodel import fold_transcript, restate, transcript_text
+from agent6.viewmodel import transcript, transcript_text
 from agent6.viewmodel.session import status as session_status
 
 
@@ -32,13 +32,15 @@ def test_memory_tool_paths_keep_the_filename_on_every_surface() -> None:
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "created"},
     ]
     label = "repo memory/calculator-validation.md"
-    item = fold_transcript(events)[0]
+    item = transcript.fold_transcript(events)[0]
     assert item.arg == label
     rendered = "".join(
         text for line in transcript_style.item_lines(item, detail="collapsed") for text, _ in line
     )
     assert label in rendered
-    assert label in restate([{"type": "session.start", "user_task": "remember"}, *events])
+    assert label in transcript.restate(
+        [{"type": "session.start", "user_task": "remember"}, *events]
+    )
     assert label in log_line.render_args(args)
     turns = transcript_render.fold_conversation(
         [
@@ -82,7 +84,7 @@ def test_session_start_opens_the_conversation_with_the_task() -> None:
     from agent6.viewmodel import transcript, transcript_style
 
     task = "x" * 230 + "\nsecond line"
-    items = fold_transcript([{"type": "session.start", "user_task": task}])
+    items = transcript.fold_transcript([{"type": "session.start", "user_task": task}])
     assert len(items) == 1
     assert items[0].kind == "task"
     assert items[0].body == task
@@ -92,12 +94,12 @@ def test_session_start_opens_the_conversation_with_the_task() -> None:
     expanded = transcript_style.item_lines(items[0], detail="expanded")
     assert task.splitlines()[0] in expanded[0][0][0]
     assert "second line" in expanded[1][0][0]
-    assert fold_transcript([{"type": "session.start", "user_task": ""}]) == []
+    assert transcript.fold_transcript([{"type": "session.start", "user_task": ""}]) == []
 
 
 def test_done_line_says_why_a_stopped_run_ended() -> None:
     """A stop carries its journaled summary, never an earlier finish call's success prose."""
-    items = fold_transcript(
+    items = transcript.fold_transcript(
         [
             {
                 "type": "tool.call",
@@ -124,7 +126,7 @@ def test_a_marker_inside_a_stream_does_not_repeat_the_speech() -> None:
         {"type": "model.result", "text": "Two children are working."},
         {"type": "tool.call", "name": "read_background", "args_preview": {"wait_s": 30}},
     ]
-    items = fold_transcript(events)
+    items = transcript.fold_transcript(events)
     assert [i.body for i in items if i.kind == "text"] == ["Two children are working."]
     assert [i.body for i in items if i.kind == "marker"] == ["child run-p2-l1 started"]
 
@@ -132,7 +134,7 @@ def test_a_marker_inside_a_stream_does_not_repeat_the_speech() -> None:
 def test_tool_only_turn_has_no_empty_text_item() -> None:
     # A turn that reasons then calls a tool, emitting NO assistant text, must not
     # produce a blank `text` item -- the bug behind the empty response blocks.
-    items = fold_transcript(_read("a.py"))
+    items = transcript.fold_transcript(_read("a.py"))
     kinds = [i.kind for i in items]
     assert kinds == ["thinking", "tool"]
     assert not any(i.kind == "text" and not i.body for i in items)
@@ -148,7 +150,7 @@ def test_verify_badge_replaces_the_tool_item() -> None:
         {"type": "verify.end", "exit_code": 0, "duration_s": 0.2},
         {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit=0"},
     ]
-    (item,) = fold_transcript(events)
+    (item,) = transcript.fold_transcript(events)
     assert item.kind == "verify" and item.ok is True
     assert item.body == "verify: ✓ pass · 0.2s"
 
@@ -159,7 +161,7 @@ def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "finish_session"},
         {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
-    items = fold_transcript(events)
+    items = transcript.fold_transcript(events)
     assert [i.kind for i in items] == ["done"]
     done = items[0]
     assert done.ok is True and done.body == "all green"
@@ -180,7 +182,7 @@ def test_a_plans_finish_summary_pairs_with_its_done_line() -> None:
         {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
         {"type": "session.stop", "verification": "passed", "reason": "finish_planning"},
     ]
-    (done,) = fold_transcript(events)
+    (done,) = transcript.fold_transcript(events)
     assert done.kind == "done" and done.ok is True and done.body == "Plan seeded."
 
 
@@ -195,7 +197,7 @@ def test_failed_tool_keeps_a_tail() -> None:
             "stderr_tail": "ls: /nope: No such file",
         },
     ]
-    (item,) = fold_transcript(events)
+    (item,) = transcript.fold_transcript(events)
     assert item.ok is False and "No such file" in item.tail
 
 
@@ -212,7 +214,7 @@ def test_tool_output_ansi_is_stripped_from_the_fold() -> None:
             "stdout_tail": "\x1b[36m[Tach]\x1b[0m 10 tests \x1b[1mpass\x1b[0m",
         },
     ]
-    (item,) = fold_transcript(events)
+    (item,) = transcript.fold_transcript(events)
     assert "\x1b" not in item.tail and item.tail == "[Tach] 10 tests pass"
     assert "\x1b" not in item.detail and item.detail == "ok"
 
@@ -255,14 +257,16 @@ def test_the_scrub_is_default_deny_not_a_csi_blocklist() -> None:
 
 def test_a_jail_degradation_is_a_marker_in_the_fold() -> None:
     """The conversation carries a degraded sandbox notice, not only the log view."""
-    items = fold_transcript([{"type": "jail.degraded", "detail": "fresh /proc\nmount failed"}])
+    items = transcript.fold_transcript(
+        [{"type": "jail.degraded", "detail": "fresh /proc\nmount failed"}]
+    )
     assert [i.kind for i in items] == ["marker"]
     assert items[0].body == "sandbox degraded: fresh /proc mount failed"
 
 
 def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     """Without a recorded child count, the marker names the recorded tasks."""
-    items = fold_transcript(
+    items = transcript.fold_transcript(
         [{"type": "parallel.dispatched", "group": "p1", "tasks": ["fix the bug", "add tests"]}]
     )
     (item,) = items
@@ -273,7 +277,7 @@ def test_parallel_dispatched_renders_a_truthful_marker() -> None:
 
 
 def test_parallel_returned_names_child_ids_branches_shas() -> None:
-    items = fold_transcript(
+    items = transcript.fold_transcript(
         [
             {
                 "type": "parallel.returned",
@@ -296,7 +300,7 @@ def test_parallel_returned_names_child_ids_branches_shas() -> None:
 
 def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
     """A panel lists its reviewers under the session without claiming to merge their work."""
-    dispatched, merged = fold_transcript(
+    dispatched, merged = transcript.fold_transcript(
         [
             {
                 "type": "parallel.dispatched",
@@ -333,9 +337,14 @@ def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
 def test_parallel_failed_renders_the_dispatch_error_but_not_the_merge_subset() -> None:
     # A dispatch failure (carries `error`) renders; a post-merge failure (carries
     # only `children`, already shown by the merged marker) is not double-rendered.
-    (item,) = fold_transcript([{"type": "parallel.failed", "group": "p2", "error": "dirty tree"}])
+    (item,) = transcript.fold_transcript(
+        [{"type": "parallel.failed", "group": "p2", "error": "dirty tree"}]
+    )
     assert item.kind == "marker" and "group p2 dispatch failed: dirty tree" in item.body
-    assert fold_transcript([{"type": "parallel.failed", "group": "p2", "children": [{}]}]) == []
+    assert (
+        transcript.fold_transcript([{"type": "parallel.failed", "group": "p2", "children": [{}]}])
+        == []
+    )
 
 
 def test_salient_arg_prefers_a_primary_key() -> None:
@@ -383,7 +392,7 @@ def test_a_call_lists_its_arguments_only_when_the_head_leaves_some_out() -> None
             {"type": "tool.call", "name": "t", "args_preview": args},
             {"type": "tool.result", "name": "t", "ok": True, "summary": "ok"},
         ]
-        (item,) = fold_transcript(events)
+        (item,) = transcript.fold_transcript(events)
         assert (item.args_detail == "") is (args in whole), args
 
 
@@ -397,7 +406,7 @@ def test_interleaved_tool_calls_pair_by_name() -> None:
         {"type": "tool.result", "name": "grep", "ok": False, "summary": "no match"},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     ]
-    tools = {i.name: i for i in fold_transcript(events) if i.kind == "tool"}
+    tools = {i.name: i for i in transcript.fold_transcript(events) if i.kind == "tool"}
     assert len(tools) == 2  # both paired; none dropped or mislabelled
     assert tools["grep"].ok is False and tools["grep"].detail == "no match"
     assert tools["read_file"].ok is True and tools["read_file"].detail == "12 bytes"
@@ -426,7 +435,7 @@ def test_same_name_concurrent_calls_pair_by_call_id() -> None:
             "call_id": 1,
         },
     ]
-    tools = {i.arg: i for i in fold_transcript(events) if i.kind == "tool"}
+    tools = {i.arg: i for i in transcript.fold_transcript(events) if i.kind == "tool"}
     assert set(tools) == {"a.py", "b.py"}  # both rendered; neither dropped
     assert tools["b.py"].ok is True and tools["b.py"].detail == "b bytes"
     assert tools["a.py"].ok is False and "a boom" in tools["a.py"].detail
@@ -434,13 +443,13 @@ def test_same_name_concurrent_calls_pair_by_call_id() -> None:
 
 def test_unmatched_tool_result_is_dropped() -> None:
     # A result with no matching pending call must not crash or emit a bogus item.
-    assert fold_transcript([{"type": "tool.result", "name": "ghost", "ok": True}]) == []
+    assert transcript.fold_transcript([{"type": "tool.result", "name": "ghost", "ok": True}]) == []
 
 
 def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
     # A steer_abort run must render "stopped", not the raw "steer_abort" nor a
     # failure -- the CLI/TUI done line shows item.name for a not-ok run.
-    (done,) = fold_transcript(
+    (done,) = transcript.fold_transcript(
         [{"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}]
     )
     assert done.kind == "done" and done.ok is None and done.name == "stopped"
@@ -453,7 +462,7 @@ def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     from agent6.harness import loop_snapshot
 
     assert "interrupted" in get_args(loop_snapshot.SessionEndReason)
-    (done,) = fold_transcript(
+    (done,) = transcript.fold_transcript(
         [{"type": "session.stop", "reason": "interrupted", "verification": "unverified"}]
     )
     assert done.kind == "done" and done.ok is None and done.name == "stopped"
@@ -514,7 +523,7 @@ def test_an_internal_side_call_is_not_rendered_as_agent_speech() -> None:
         {"type": "model.call", "actor": "worker", "model": "m"},
         {"type": "model.result", "actor": "worker", "ok": True, "text": "the real answer"},
     ]
-    bodies = [i.body for i in fold_transcript(events) if i.kind == "text"]
+    bodies = [i.body for i in transcript.fold_transcript(events) if i.kind == "text"]
     assert "the real answer" in bodies, "the driving actor must still speak"
     assert "[]" not in bodies, f"a side call was rendered as agent speech: {bodies}"
 
@@ -530,7 +539,9 @@ def test_a_streamed_reply_still_renders_when_the_actor_is_unnamed() -> None:
         {"type": "model.text_delta", "text": "streamed prose"},
         {"type": "model.result"},
     ]
-    assert "streamed prose" in [i.body for i in fold_transcript(events) if i.kind == "text"]
+    assert "streamed prose" in [
+        i.body for i in transcript.fold_transcript(events) if i.kind == "text"
+    ]
 
 
 def test_a_focused_reviewer_speaks_only_in_its_own_session() -> None:
@@ -542,7 +553,7 @@ def test_a_focused_reviewer_speaks_only_in_its_own_session() -> None:
     }
     for mode in ("run", "reviewer"):
         events: list[dict[str, object]] = [{"type": "session.start", "mode": mode}, reply]
-        replies = [item.body for item in fold_transcript(events) if item.kind == "text"]
+        replies = [item.body for item in transcript.fold_transcript(events) if item.kind == "text"]
         assert replies == (["verdict"] if mode == "reviewer" else [])
 
 
@@ -596,7 +607,7 @@ def test_restate_compacts_since_the_last_operator_input() -> None:
         {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "parser.py"}},
         {"type": "tool.result", "name": "apply_edit", "ok": False, "summary": "no match"},
     ]
-    text = restate(events)
+    text = transcript.restate(events)
     assert text.startswith("you said: focus on the parser")
     assert "early work" not in text
     assert "on it" in text
@@ -605,7 +616,7 @@ def test_restate_compacts_since_the_last_operator_input() -> None:
 
 
 def test_restate_with_no_operator_input_says_so() -> None:
-    assert restate([]).startswith("nothing to restate")
+    assert transcript.restate([]).startswith("nothing to restate")
 
 
 def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
@@ -632,7 +643,7 @@ def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
             "verification": "passed",
         },
     ]
-    done = next(it for it in fold_transcript(events) if it.kind == "done")
+    done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
     assert done.ok is True
     assert done.body == "Fixed."
     assert done.detail == "$0.01 · 45s · 1 tool · 1 commit · fix median for even length"
@@ -648,7 +659,7 @@ def test_the_receipt_spells_dollars_the_way_every_other_surface_does() -> None:
         {"type": "budget.update", "usd_total": 0.25, "usd_partial": True},
         {"type": "session.stop", "ts": "2026-08-09T20:01:00+00:00", "reason": "finish_session"},
     ]
-    done = next(it for it in fold_transcript(events) if it.kind == "done")
+    done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
     assert done.detail.startswith("~$0.25 · ")
 
 
@@ -668,7 +679,7 @@ def test_the_receipt_carries_a_journaled_zero_and_an_unknown_one() -> None:
                 "verification": "unverified",
             },
         ]
-        done = next(it for it in fold_transcript(events) if it.kind == "done")
+        done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
         assert done.detail == f"{cost} · 30s · 0 tools · 0 commits"
 
 
@@ -711,7 +722,7 @@ def test_a_plan_metered_execution_closes_on_its_points() -> None:
             {"type": "budget.update", **row},
             {"type": "session.stop", "ts": "2026-08-09T20:00:30+00:00", "reason": "finish_session"},
         ]
-        done = next(it for it in fold_transcript(events) if it.kind == "done")
+        done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
         assert done.detail == f"{usage} · 30s · 0 tools · 0 commits"
 
 
@@ -722,7 +733,7 @@ def test_a_done_item_without_a_budget_row_reads_nothing_spent() -> None:
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
-    done = next(it for it in fold_transcript(events) if it.kind == "done")
+    done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
     assert done.detail == "$0 · 1 tool · 0 commits"
 
 
@@ -756,7 +767,7 @@ def test_tool_items_carry_bounded_previews() -> None:
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": "old.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     ]
-    tools = [it for it in fold_transcript(events) if it.kind == "tool"]
+    tools = [it for it in transcript.fold_transcript(events) if it.kind == "tool"]
     assert tools[0].tail == "def f():\n    return 1\n…(961 lines)"
     assert tools[1].tail == "- return 1\n+ return 2\n…(+1 more edit)"
     assert tools[2].tail == ""  # an old journal: no preview fields, no tail
@@ -783,7 +794,7 @@ def test_edit_preview_shows_the_changed_lines_only() -> None:
         },
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
     ]
-    (tool,) = [it for it in fold_transcript(events) if it.kind == "tool"]
+    (tool,) = [it for it in transcript.fold_transcript(events) if it.kind == "tool"]
     assert tool.tail == "+ def mul(a, b):\n+ return a * b"
 
 
@@ -806,10 +817,10 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
         {"type": "session.stop", "reason": "answered", "verification": "unverified"},
     ]
-    done = next(it for it in fold_transcript(ask) if it.kind == "done")
+    done = next(it for it in transcript.fold_transcript(ask) if it.kind == "done")
     assert done.detail == "$0 · 1 tool"
     run = [{**ask[0], "mode": "run"}, *ask[1:]]
-    done = next(it for it in fold_transcript(run) if it.kind == "done")
+    done = next(it for it in transcript.fold_transcript(run) if it.kind == "done")
     assert done.detail == "$0 · 1 tool · 0 commits"
     # A resumed execution starts with session.resume (never a second
     # session.start): the mode rides on it too, or the resumed plan's receipt
@@ -818,7 +829,7 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
         {"type": "session.resume", "mode": "plan", "turn": 3},
         {"type": "session.stop", "reason": "finish_planning", "verification": "unverified"},
     ]
-    done = next(it for it in fold_transcript(resumed_plan) if it.kind == "done")
+    done = next(it for it in transcript.fold_transcript(resumed_plan) if it.kind == "done")
     assert done.detail == "$0 · 0 tools"
 
 
@@ -875,7 +886,7 @@ def test_every_stop_reason_has_a_done_line_label() -> None:
         )
         done = next(
             it
-            for it in fold_transcript(
+            for it in transcript.fold_transcript(
                 [{"type": "session.stop", "reason": reason, "verification": verification}]
             )
             if it.kind == "done"
@@ -906,7 +917,7 @@ def test_a_resumed_executions_receipt_is_its_own() -> None:
             "verification": "passed",
         },
     ]
-    dones = [it for it in fold_transcript(events) if it.kind == "done"]
+    dones = [it for it in transcript.fold_transcript(events) if it.kind == "done"]
     assert dones[-1].detail == "$0.0020 · 3s · 0 tools · 0 commits"
 
 
@@ -933,7 +944,7 @@ def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> N
             "verification": "unverified",
         },
     ]
-    dones = [it for it in fold_transcript(events) if it.kind == "done"]
+    dones = [it for it in transcript.fold_transcript(events) if it.kind == "done"]
     assert dones[-1].detail == "$0 · 1s · 0 tools · 0 commits"
 
 
@@ -955,7 +966,7 @@ def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:
     # Batch order is stream order: the settled item lands where the stream is
     # when the result arrives, after anything that landed during the call.
     aside = {"type": "btw.answered", "block": "--- btw: why\nbecause"}
-    items = fold_transcript([{**call, "call_id": 7}, aside, {**result, "call_id": 7}])
+    items = transcript.fold_transcript([{**call, "call_id": 7}, aside, {**result, "call_id": 7}])
     assert [(i.kind, i.ok) for i in items] == [("marker", None), ("tool", True)]
 
 
@@ -985,11 +996,13 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
     assert (waiting.ok, waiting.call_id, waiting.detail) == (None, "1", "awaiting approval")
     (running,) = fold.feed(answer)
     assert (running.ok, running.call_id, running.detail) == (None, "1", "")
-    (item,) = fold_transcript([call, prompt])
+    (item,) = transcript.fold_transcript([call, prompt])
     assert item.detail == "awaiting approval"
     events = [{"type": "session.start", "user_task": "list"}, call, prompt]
-    assert "[awaiting approval] run_command ls" in restate(events)
-    assert fold_transcript([prompt]) == []  # a prompt gating no call (a pre-run confirmation)
+    assert "[awaiting approval] run_command ls" in transcript.restate(events)
+    assert (
+        transcript.fold_transcript([prompt]) == []
+    )  # a prompt gating no call (a pre-run confirmation)
 
 
 def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
@@ -1016,10 +1029,10 @@ def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
     assert waiting.detail == "awaiting approval"
     (running,) = fold.feed(answer)
     assert (running.name, running.call_id, running.detail) == ("run_command", "1", "")
-    items = fold_transcript([gated, newest, prompt])
+    items = transcript.fold_transcript([gated, newest, prompt])
     assert {i.call_id: i.detail for i in items} == {"1": "awaiting approval", "2": ""}
     unnamed = {"type": "approval.prompt", "id": "approval-2", "prompt": "Allow"}
-    (item,) = fold_transcript([gated, unnamed])
+    (item,) = transcript.fold_transcript([gated, unnamed])
     assert item.detail == ""
 
 
@@ -1046,11 +1059,13 @@ def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
     assert (waiting.ok, waiting.call_id, waiting.detail) == (None, "1", "awaiting answer")
     (running,) = fold.feed(answer)
     assert (running.ok, running.call_id, running.detail) == (None, "1", "")
-    (item,) = fold_transcript([call, prompt])
+    (item,) = transcript.fold_transcript([call, prompt])
     assert item.detail == "awaiting answer"
     events = [{"type": "session.start", "user_task": "pick"}, call, prompt]
-    assert "[awaiting answer] ask_user" in restate(events)
-    assert fold_transcript([prompt]) == []  # a question gating no call (a machine's own ask)
+    assert "[awaiting answer] ask_user" in transcript.restate(events)
+    assert (
+        transcript.fold_transcript([prompt]) == []
+    )  # a question gating no call (a machine's own ask)
 
 
 def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
@@ -1059,12 +1074,12 @@ def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
         {"type": "session.start", "user_task": "x"},
         {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}},
     ]
-    (_headline, item) = fold_transcript(events)
+    (_headline, item) = transcript.fold_transcript(events)
     assert item.ok is None
-    (headline, item) = fold_transcript(events, worker_dead=True)
+    (headline, item) = transcript.fold_transcript(events, worker_dead=True)
     assert headline.kind == "task"
     assert item.ok is False and item.detail == "no result (the run died)"
-    assert "[FAILED] run_command sleep 60: no result (the run died)" in restate(
+    assert "[FAILED] run_command sleep 60: no result (the run died)" in transcript.restate(
         events, worker_dead=True
     )
 
@@ -1076,7 +1091,7 @@ def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": "b.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "b bytes"},
     ]
-    assert [(i.arg, i.ok, i.detail) for i in fold_transcript(events)] == [
+    assert [(i.arg, i.ok, i.detail) for i in transcript.fold_transcript(events)] == [
         ("a.py", False, "no result (superseded)"),
         ("b.py", True, "b bytes"),
     ]
@@ -1090,10 +1105,10 @@ def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
         "args_preview": {},
         "call_id": 3,
     }
-    items = fold_transcript([call, {"type": "session.stop", "reason": "crashed"}])
+    items = transcript.fold_transcript([call, {"type": "session.stop", "reason": "crashed"}])
     assert [i.kind for i in items] == ["tool", "done"]
     assert items[0].ok is False and items[0].call_id == "3" and "no result" in items[0].detail
-    items = fold_transcript([call, {"type": "session.resume"}])
+    items = transcript.fold_transcript([call, {"type": "session.resume"}])
     assert [(i.kind, i.ok) for i in items] == [("tool", False)]
 
 
@@ -1102,7 +1117,7 @@ def test_restate_names_a_call_still_running() -> None:
         {"type": "session.start", "user_task": "wait a bit"},
         {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}},
     ]
-    assert "[running] run_command sleep 60" in restate(events)
+    assert "[running] run_command sleep 60" in transcript.restate(events)
 
 
 def test_compaction_renders_as_markers_on_the_conversation() -> None:
@@ -1111,7 +1126,7 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
     The surfaces showed nothing when tier 2 replaced the history, the summarizer failed, or a
     promised `/compact` was refused; only the log pane said so.
     """
-    items = fold_transcript(
+    items = transcript.fold_transcript(
         [
             {"type": "compact.requested", "focus": "the parser"},
             {"type": "compact.refused", "reason": "too little history to summarize"},
@@ -1137,7 +1152,7 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
 
 def test_parallel_compared_renders_the_ranking() -> None:
     """A group's auto-compare marker lists the candidates best first and names the judge."""
-    (item,) = fold_transcript(
+    (item,) = transcript.fold_transcript(
         [
             {
                 "type": "parallel.compared",
@@ -1166,11 +1181,11 @@ def test_parallel_dispatched_counts_children_when_the_event_carries_them() -> No
 
     The task count alone said "dispatched 1 parallel task" over two children.
     """
-    (item,) = fold_transcript(
+    (item,) = transcript.fold_transcript(
         [{"type": "parallel.dispatched", "group": "fan", "children": 2, "tasks": ["t"]}]
     )
     assert "dispatched 2 children (group fan)" in item.body
-    (item,) = fold_transcript(
+    (item,) = transcript.fold_transcript(
         [{"type": "parallel.dispatched", "group": "p1", "children": 3, "tasks": ["a", "b"]}]
     )
     assert "dispatched 3 children for 2 tasks (group p1)" in item.body
@@ -1178,7 +1193,7 @@ def test_parallel_dispatched_counts_children_when_the_event_carries_them() -> No
 
 def test_parallel_returned_renders_a_failed_children_reason() -> None:
     """A failed child's event distinguishes a failed start, a crash and no result."""
-    (item,) = fold_transcript(
+    (item,) = transcript.fold_transcript(
         [
             {
                 "type": "parallel.returned",
@@ -1205,7 +1220,7 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
     `unverified` for `gate timed out`; a stranded finish read `passed` for `passed · not
     committed`.
     """
-    items = fold_transcript(
+    items = transcript.fold_transcript(
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "tool.call", "name": "run_verify_command", "args_preview": {}, "call_id": 1},
@@ -1222,7 +1237,7 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
     )
     assert [i.name for i in items if i.kind == "done"] == ["finished · gate timed out"]
     # The stranded fact is journaled after the end: the end line is out, so it gets a line.
-    items = fold_transcript(
+    items = transcript.fold_transcript(
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
@@ -1303,7 +1318,7 @@ def test_media_result_renders_metadata_on_shared_and_acp_surfaces() -> None:
             **tails,
         },
     ]
-    item = fold_transcript(events)[0]
+    item = transcript.fold_transcript(events)[0]
     assert item.tail == "image: page.png, 2 KiB"
     rendered = "".join(
         text for line in transcript_style.item_lines(item, detail="expanded") for text, _ in line
@@ -1338,7 +1353,7 @@ def test_child_activity_names_the_child_and_the_merge_result() -> None:
             "detail": "merge conflict in a.py",
         },
     ]
-    assert [i.body for i in fold_transcript(actions)] == [
+    assert [i.body for i in transcript.fold_transcript(actions)] == [
         "child c steered: inspect the diff",
         "parent: inspect the diff",
         "finish_session refused: pending children: a, c",
@@ -1350,7 +1365,7 @@ def test_child_activity_names_the_child_and_the_merge_result() -> None:
 
 def test_an_unknown_child_merge_outcome_is_not_reported_as_a_failure() -> None:
     """An unsupported result does not establish whether the child merged."""
-    (item,) = fold_transcript(
+    (item,) = transcript.fold_transcript(
         [{"type": "parallel.child_merged", "child": "c", "status": "other", "sha": "abc"}]
     )
     assert item.body == "child c: unsupported merge outcome 'other'"

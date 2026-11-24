@@ -11,24 +11,20 @@ from agent6.sessions import id, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap
 from agent6.ui.cli import common
-from agent6.viewmodel import (
-    ApprovalPrompt,
-    QuestionPrompt,
-    open_approval,
-    pending_questions,
-    session_is_live,
-)
+from agent6.viewmodel import listing
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as session_state
 
 
 def _print_pending(
-    layout: sessions_layout.SessionLayout, prompts: tuple[QuestionPrompt, ...]
+    layout: sessions_layout.SessionLayout, prompts: tuple[state_types.QuestionPrompt, ...]
 ) -> None:
     """Print each pending question set and the command that answers it."""
     session_id = layout.session_id
     for prompt in prompts:
         if ipc.question_answers_written(layout.session_dir, prompt.id):
             kind = "answer saved"
-        elif session_is_live(layout.session_dir):
+        elif listing.session_is_live(layout.session_dir):
             kind = prompt.kind()
         else:
             kind = "the run has ended; a resume reads the answer"
@@ -42,7 +38,9 @@ def _print_pending(
         print(f"  answer with: agent6 answer {session_id}{pick} {texts}")
 
 
-def _select(prompts: tuple[QuestionPrompt, ...], question_id: str) -> QuestionPrompt | str:
+def _select(
+    prompts: tuple[state_types.QuestionPrompt, ...], question_id: str
+) -> state_types.QuestionPrompt | str:
     """Return the set to answer, or the refusal when the choice is missing or unknown."""
     if question_id:
         for prompt in prompts:
@@ -56,7 +54,9 @@ def _select(prompts: tuple[QuestionPrompt, ...], question_id: str) -> QuestionPr
 
 
 def _write(
-    layout: sessions_layout.SessionLayout, prompt: QuestionPrompt, answers: tuple[str, ...]
+    layout: sessions_layout.SessionLayout,
+    prompt: state_types.QuestionPrompt,
+    answers: tuple[str, ...],
 ) -> int:
     """Write the answers to one set and say when the run reads them.
 
@@ -84,7 +84,7 @@ def _write(
         common.refuse(f"{session_id}: {ipc.ANSWERED_ELSEWHERE}.")
         return 2
     given = f"answered {session_id} {prompt.id}: {', '.join(answers)}"
-    if not session_is_live(layout.session_dir):
+    if not listing.session_is_live(layout.session_dir):
         print(f"{given}; saved: `agent6 resume {session_id}` delivers it")
     elif prompt.blocking:
         print(given)
@@ -94,7 +94,9 @@ def _write(
 
 
 def _answer_approval(
-    layout: sessions_layout.SessionLayout, prompt: ApprovalPrompt, answers: tuple[str, ...]
+    layout: sessions_layout.SessionLayout,
+    prompt: state_types.ApprovalPrompt,
+    answers: tuple[str, ...],
 ) -> int:
     """Print or answer the live approval through the shared bridge.
 
@@ -144,8 +146,12 @@ def _cmd_answer(target: str, answers: tuple[str, ...], question_id: str | None =
         common.error(f"{exc}")
         return 2
     session_id = layout.session_id
-    prompts = pending_questions(layout.session_dir)
-    approval = open_approval(layout.session_dir) if session_is_live(layout.session_dir) else None
+    prompts = session_state.pending_questions(layout.session_dir)
+    approval = (
+        session_state.open_approval(layout.session_dir)
+        if listing.session_is_live(layout.session_dir)
+        else None
+    )
     if approval is not None and question_id is None:
         if not answers and prompts:
             _print_pending(layout, prompts)

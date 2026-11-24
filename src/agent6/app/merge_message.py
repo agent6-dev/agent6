@@ -8,7 +8,7 @@ import pathlib
 from collections.abc import Callable
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, viewmodel
+from agent6 import errors
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, secret_store
@@ -19,6 +19,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import commit_message
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import tail
+from agent6.viewmodel.session import state as session_state
 
 
 def squash_message(
@@ -194,10 +196,10 @@ def model_squash_message(
 
 def finish_summaries(layout: sessions_layout.SessionLayout) -> tuple[str, ...]:
     """Return the summaries of executions that ended on a successful finish call."""
-    state = viewmodel.initial_state()
+    state = session_state.initial_state()
     summaries: list[str] = []
-    for event in viewmodel.tail_events(layout.logs_path, follow=False):
-        state = viewmodel.apply_event(state, event)
+    for event in tail.tail_events(layout.logs_path, follow=False):
+        state = session_state.apply_event(state, event)
         if (
             event.get("type") == "session.stop"
             and state.stop_reason == "finish_session"

@@ -17,7 +17,7 @@ from agent6.app import stop
 from agent6.sessions import id
 from agent6.ui import directive_actions
 from agent6.ui.cli import common
-from agent6.viewmodel import listing, session_is_live
+from agent6.viewmodel import listing
 
 
 def _cmd_steer(
@@ -49,7 +49,7 @@ def _cmd_steer(
             " type it in the TUI, the web, or a live run's pause menu (Ctrl-C)"
         )
         return 2
-    if not session_is_live(layout.session_dir):
+    if not listing.session_is_live(layout.session_dir):
         common.refuse(
             f"session {layout.session_id} is not running; a steer needs a"
             f" live run. Queue one for its next execution instead:"

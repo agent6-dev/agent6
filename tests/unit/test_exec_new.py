@@ -19,6 +19,7 @@ from agent6.sessions import lock
 from agent6.tools import policy as tools_policy
 from agent6.ui import cli
 from agent6.ui.cli import exec_cmds
+from agent6.viewmodel import listing
 
 
 @pytest.mark.parametrize("isolation", ["none", "partial", "full"])
@@ -71,7 +72,7 @@ def test_disable_sandbox_reaches_the_executed_policy(
 ) -> None:
     """Both exec forms carry the explicit opt-out into the command's real policy."""
     from agent6.sessions import layout as sessions_layout
-    from agent6.ui.cli import common, net_cmds
+    from agent6.ui.cli import common
 
     monkeypatch.chdir(tmp_path)
     layout = sessions_layout.SessionLayout(tmp_path / "state", "test-session")
@@ -83,7 +84,7 @@ def test_disable_sandbox_reaches_the_executed_policy(
         return True
 
     monkeypatch.setattr(common, "resolve_target", target)
-    monkeypatch.setattr(net_cmds, "session_is_live", live)
+    monkeypatch.setattr(listing, "session_is_live", live)
     seen: list[kinds.JailPolicy] = []
 
     def attached(policy: kinds.JailPolicy, *_args: object, **_kwargs: object) -> int:

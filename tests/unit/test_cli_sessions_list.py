@@ -640,7 +640,7 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
 
     from agent6.vcs.git import ops as git_ops
     from agent6.vcs.git import read as git_read
-    from agent6.viewmodel import summarize_session_dir
+    from agent6.viewmodel import listing
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -683,12 +683,13 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     }
     (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert (
-        summarize_session_dir(session_dir, branch_tips=git_read.run_ref_tips(repo)).unmerged is True
+        listing.summarize_session_dir(session_dir, branch_tips=git_read.run_ref_tips(repo)).unmerged
+        is True
     )
     manifest["merged"] = {"into": "main", "sha": own, "tip": own}
     (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert (
-        summarize_session_dir(session_dir, branch_tips=git_read.run_ref_tips(repo)).unmerged
+        listing.summarize_session_dir(session_dir, branch_tips=git_read.run_ref_tips(repo)).unmerged
         is False
     )
 
