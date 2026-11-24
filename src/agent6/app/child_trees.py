@@ -7,6 +7,7 @@ import re
 
 from agent6 import errors
 from agent6.config import Config
+from agent6.sessions import child_dispatch
 from agent6.sessions import layout as sessions_layout
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -14,17 +15,53 @@ from agent6.viewmodel.session import log as session_log
 
 
 def pin(session_id: str, tree: str) -> str:
-    """Return the session-owned ref for this exact tree, not a moving execution tip."""
+    """Return the session-owned ref for this exact tree, not a moving execution tip.
+
+    Args:
+        session_id: The child whose refs hold the tree.
+        tree: The recorded tree id.
+
+    Returns:
+        The full ref name.
+
+    Raises:
+        GitError: The recorded id is not a full Git object id.
+    """
     if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", tree):
         raise errors.GitError(f"invalid recorded tree id: {tree!r}")
     return f"refs/agent6/{session_id}/trees/{tree}"
 
 
 def verify_pin(repo: pathlib.Path, session_id: str, kind: str, tree: str) -> None:
-    """Refuse a recorded tree whose ref is missing or holds different content."""
+    """Refuse a recorded tree whose ref is missing or holds different content.
+
+    Args:
+        repo: The parent repository.
+        session_id: The child's session id.
+        kind: The tree named in a refusal.
+        tree: The recorded tree id.
+
+    Raises:
+        GitError: The parent does not have the recorded tree on its session ref.
+    """
     ref = pin(session_id, tree)
     if not git_read.object_exists(repo, ref) or git_read.tree_sha(repo, ref) != tree:
         raise errors.GitError(f"the child's recorded {kind} tree is missing from {ref}")
+
+
+def awaits_steer(record: pathlib.Path, group: str) -> bool:
+    """Return whether the parent still owns a pending or stopped child in this checkout."""
+    parent_id, _, _ = group.rpartition("-p")
+    if not parent_id or not sessions_layout.is_safe_session_id(parent_id):
+        return False
+    path = child_dispatch.record_path(record.with_name(parent_id), group)
+    if not path.is_file():
+        return False
+    dispatch = child_dispatch.read_record(path)
+    return any(
+        c.session_id == record.name and (c.merge is None or c.merge.status == "stopped")
+        for c in dispatch.children
+    )
 
 
 def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cfg: Config) -> str:

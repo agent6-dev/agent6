@@ -15,8 +15,8 @@ from agent6 import child_records, errors, kinds, paths
 from agent6.app import child_launch, child_trees
 from agent6.config import Config, child_snapshot
 from agent6.harness import child_repo
+from agent6.sessions import child_dispatch, lineage, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import lineage, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -320,8 +320,18 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
                     if why:
                         break
                 records = () if machine_id else clone_sessions(paths.state_dir(origin), clone)
-                if records and (why := child_trees.preserve(origin, clone, records[0], cfg)):
-                    break
+                if not machine_id:
+                    session = (
+                        records[0]
+                        if records
+                        else sessions_layout.bucket_dir(paths.state_dir(origin), "runs")
+                        / f"{group_dir.name}-l{clone.name.removeprefix('child-')}"
+                    )
+                    if why := child_trees.preserve(origin, clone, session, cfg):
+                        break
+                    if child_trees.awaits_steer(session, group_dir.name):
+                        why = "the parent still needs this clone for its pending or stopped child"
+                        break
                 tips = list(git_read.commit_tips(clone))
                 # Reachability, not existence: a loose object is one `git gc` from gone.
                 if any(
@@ -331,6 +341,9 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
                 ):
                     why = "commits this repo cannot reach; merge or archive the clone first"
                     break
+            except child_dispatch.DispatchRecordError as exc:
+                why = str(exc)
+                break
             except errors.GitError as exc:
                 why = (
                     f"git could not check its commits: {exc}; review this clone before removing it"
@@ -433,6 +446,14 @@ def cleanup(
         if any(process.worker_is_alive(record) for record in records):
             note_keep(spec.worktree, "live descendant; stop it before cleanup")
             continue
+        session = (
+            records[0]
+            if records
+            else sessions_layout.bucket_dir(record_state, "runs") / spec.session_id
+        )
+        if why := child_trees.preserve(origin, spec.worktree, session, cfg):
+            note_keep(spec.worktree, why)
+            continue
         try:
             tips = git_read.commit_tips(spec.worktree)
             if any(
@@ -448,9 +469,6 @@ def cleanup(
                 continue
         except errors.GitError as exc:
             note_keep(spec.worktree, f"git could not check its commits: {exc}")
-            continue
-        if records and (why := child_trees.preserve(origin, spec.worktree, records[0], cfg)):
-            note_keep(spec.worktree, why)
             continue
         shutil.rmtree(paths.state_dir(spec.worktree), ignore_errors=True)
         shutil.rmtree(paths.jail_cache_home(spec.worktree), ignore_errors=True)
