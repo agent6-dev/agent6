@@ -53,7 +53,7 @@
 +        " Give task text or a ready task_id from list_tasks."
      )
  
-     task: str = pydantic.Field(default="", min_length=1, max_length=20_000)
+     task: str = pydantic.Field(default="", max_length=20_000)
 @@ -639,17 +631,12 @@
  
      TOOL_NAME: ClassVar[str] = "ask_user"
