@@ -176,15 +176,21 @@ def pack_dirs(root: pathlib.Path, *, onerror: Callable[[OSError], None]) -> Iter
     """Walk a project tree for the directories that hold an `.agent6`, the root's first.
 
     The walk follows no link and enters neither `.git` nor `.agent6`.
+    A directory removed since its parent listed it holds no pack, so it is no error.
 
     Args:
         root: The project root.
-        onerror: Receives each directory the walk cannot list.
+        onerror: Receives each existing directory the walk cannot list.
 
     Yields:
         Each directory with an `.agent6` directory in it.
     """
-    for directory, children, _files in os.walk(root, followlinks=False, onerror=onerror):
+
+    def report(exc: OSError) -> None:
+        if not isinstance(exc, FileNotFoundError):
+            onerror(exc)
+
+    for directory, children, _files in os.walk(root, followlinks=False, onerror=report):
         if ".agent6" in children:
             yield pathlib.Path(directory)
         children[:] = sorted(name for name in children if name not in (".git", ".agent6"))

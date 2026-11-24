@@ -990,3 +990,32 @@ def test_a_real_pack_is_never_renamed_and_unpack_accepts_it(
     assert entry.cli_main(["unpack", "--yes"]) == 0
     assert note.read_text(encoding="utf-8") == "carried"
     assert "WARNING" not in capsys.readouterr().err
+
+
+def test_a_directory_removed_during_the_pack_walk_is_not_a_walk_error(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A run refused when a directory vanished between its parent's listing and its own."""
+    (tmp_path / ".agent6").mkdir()
+    (tmp_path / "gone").mkdir()
+    walk_errors: list[OSError] = []
+    walk = pack_manifest.pack_dirs(tmp_path, onerror=walk_errors.append)
+    assert next(walk) == tmp_path  # the root is listed; its children are scanned next
+    (tmp_path / "gone").rmdir()
+    assert list(walk) == []
+    assert walk_errors == []
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root lists a directory without its read bit")
+def test_a_directory_the_pack_walk_cannot_list_is_still_a_walk_error(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A directory that exists and cannot be read may hold a pack, so the run still refuses."""
+    closed = tmp_path / "closed"
+    closed.mkdir()
+    closed.chmod(0)
+    try:
+        refusal = confine.check_workspace_packs(tmp_path)
+    finally:
+        closed.chmod(0o700)
+    assert refusal is not None and "Cannot check workspace packs" in refusal
