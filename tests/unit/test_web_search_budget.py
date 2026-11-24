@@ -14,22 +14,23 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.app import preflight
-from agent6.config import Config
+from agent6.config import Config, provider_config
 from agent6.models import cache, listing_store, pricing
 from agent6.providers import AnthropicProvider, ProviderError, responses
 from tests.unit import test_web_search_messages as messages_reply
 from tests.unit import test_web_search_responses as responses_reply
 
 _ROUTE = kinds.ModelRoute("anthropic", "claude-x")
-_OPENROUTER = {"backend": "openai", "base_url": "https://openrouter.ai/api/v1"}
+# The cache name of the default fallback price list.
+_PRICE_LIST = "openrouter.ai"
 
 
 def _cfg(worker: dict[str, Any] | None = None, **extra: Any) -> Config:
-    """Return a config whose direct Anthropic worker is priced from the openrouter listing."""
+    """Return a config whose direct Anthropic worker is priced from the fallback price list."""
     entry = {"backend": "anthropic", "web_search": True} if worker is None else worker
     return Config.model_validate(
         {
-            "providers": {"anthropic": entry, "openrouter": _OPENROUTER},
+            "providers": {"anthropic": entry},
             "models": {"default": {"model": "anthropic/claude-x"}},
             **extra,
         }
@@ -37,7 +38,7 @@ def _cfg(worker: dict[str, Any] | None = None, **extra: Any) -> Config:
 
 
 def _list_prices(monkeypatch: pytest.MonkeyPatch, cfg: Config, web_search: object) -> None:
-    """Fetch the openrouter listing, with one model and its `pricing.web_search` as given."""
+    """Fetch the fallback price list, with one model and its `pricing.web_search` as given."""
     row: dict[str, Any] = {"prompt": "0.000003", "completion": "0.000015"}
     if web_search is not None:
         row["web_search"] = web_search
@@ -49,7 +50,8 @@ def _list_prices(monkeypatch: pytest.MonkeyPatch, cfg: Config, web_search: objec
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_request", fake_request)
-    assert cache.fetch_models_live("openrouter", cfg.providers["openrouter"], None)
+    source = pricing.price_list_source(provider_config.DEFAULT_PRICE_LIST)
+    assert cache.fetch_models_live(*source, None)
 
 
 @pytest.fixture
@@ -73,7 +75,7 @@ def test_the_listing_gives_the_per_search_rate(
     """A positive `pricing.web_search` is the rate; a zero or an absent one is no rate."""
     cfg = _cfg()
     _list_prices(monkeypatch, cfg, listed)
-    stored = listing_store.read(listing_store.cache_path("openrouter"))
+    stored = listing_store.read(listing_store.cache_path(_PRICE_LIST))
     assert stored.get("search_pricing") == ({"anthropic/claude-x": rate} if rate else None)
     quote = pricing.lookup_price(_ROUTE, cfg.providers)
     assert quote is not None and quote.web_search_usd == rate
@@ -125,7 +127,7 @@ def test_an_unpriced_search_marks_the_total_a_lower_bound(
     assert snap.usd_total == pytest.approx(0.006)
     assert tracker.estimate_usd() == (pytest.approx(0.006), True)
     summary = tracker.format_summary()
-    assert "calls=2 searches=1 ~$0.0060 (price from openrouter/anthropic/claude-x)" in summary
+    assert "calls=2 searches=1 ~$0.0060 (price from openrouter.ai/anthropic/claude-x)" in summary
     assert "(search fee unpriced)" in summary
     assert "cost~$0.0060+ of unlimited (search fee unpriced; figure is a lower bound)" in summary
 
