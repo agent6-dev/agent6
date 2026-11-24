@@ -18,11 +18,21 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records
+from agent6 import child_records, paths
+from agent6.app import child_watch, children
 from agent6.config import Config
-from agent6.harness import loop, operator_bridge, parallel_dispatch, provider_call, run_chain
+from agent6.harness import (
+    loop,
+    loop_conversation,
+    loop_state,
+    operator_bridge,
+    parallel_dispatch,
+    parallel_recovery,
+    provider_call,
+    run_chain,
+)
 from agent6.providers import ProviderResponse
-from agent6.sessions import child_dispatch, journal
+from agent6.sessions import budget_events, child_dispatch, event_log, journal
 from agent6.tools import results as tools_results
 from tests import child_env
 
@@ -202,6 +212,90 @@ def _no_children(group: str, children: Sequence[str]) -> list[child_records.Chil
 
 def _tracker() -> agent6_budget.BudgetTracker:
     return agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+
+
+@pytest.mark.parametrize(("extra_reading", "new_charge"), [(None, 0), ((30, 7), 1), ((15, 12), 2)])
+def test_resume_settles_only_credit_movement_missing_from_the_parent_journal(
+    short_repo: pathlib.Path, extra_reading: tuple[int, int] | None, new_charge: int
+) -> None:
+    """A watch can journal a decline before the parent settles the child that observed it."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    child = child_env.create_record(repo, "parent-r1-l1", parent=parent.name, mode="reviewer")
+    child_dispatch.write_record(
+        parent,
+        child_dispatch.DispatchRecord(
+            identity="parent-r1",
+            source="panel",
+            merge_policy="record_only",
+            owner="first",
+            turn=1,
+            base="",
+            state="running",
+            children=(child_dispatch.ChildRecord(session_id=child.name, number=1, task="review"),),
+        ),
+        now=1,
+    )
+    meter = _tracker()
+    child_sink = event_log.EventSink(child / "logs.jsonl")
+
+    def balance(at: int, dollars: int) -> None:
+        meter.record_plan_preflight(
+            "p",
+            agent6_budget.PlanUsage.single(
+                0, 300, 0, observed_ns=at, credits_balance=f"${dollars}"
+            ),
+        )
+        budget_events.emit_budget_update(meter, child_sink.emit)
+
+    balance(10, 10)
+    balance(20, 8)
+    first = _tracker()
+    first.record_plan_preflight(
+        "other", agent6_budget.PlanUsage.single(0, 300, 0, credits_balance="$5")
+    )
+    first.note_running(child.name, child_watch.running_usage(child))
+    parent_sink = event_log.EventSink(parent / "logs.jsonl")
+    budget_events.emit_budget_update(first, parent_sink.emit)
+    assert first.estimate_usd()[0] == 2
+    if extra_reading is not None:
+        balance(*extra_reading)
+    parent_sink.emit(
+        journal.SessionResume(
+            session_id=parent.name,
+            user_task="t",
+            steer="",
+            mode="run",
+            turn=1,
+            messages=0,
+            execution_id="next",
+        )
+    )
+    fresh = _tracker()
+    cfg = child_env.config()
+    dispatcher = child_env.dispatcher(repo, parent, cfg, fresh)
+    dispatcher.child_recoverer = children.build_child_recoverer(
+        cfg, repo, paths.state_dir(repo), mode="run"
+    )
+    parallel_recovery.reconcile(
+        dispatcher,
+        loop_state.LoopState(original_task="t", tool_calls=0),
+        loop_conversation.Conversation(),
+        turn=1,
+    )
+    usage = children.child_usage(parent)
+    assert usage is not None
+    assert (usage.usd, fresh.available().usd) == (2 + new_charge, 10 - new_charge)
+    rows = [json.loads(line) for line in parent_sink.path.read_text().splitlines()]
+    settled = next(row for row in rows if child.name in row.get("settled_children", ()))
+    assert [(r["observed_ns"], r["balance_usd"]) for r in settled["credit_readings"]] == (
+        [extra_reading] if extra_reading else []
+    )
+    fresh.record_plan_preflight(
+        "other", agent6_budget.PlanUsage.single(0, 300, 0, credits_balance="$1")
+    )
+    assert fresh.available().usd == 10 - new_charge
 
 
 def test_a_failed_record_write_launches_nothing(

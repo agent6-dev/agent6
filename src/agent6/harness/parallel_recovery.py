@@ -127,6 +127,16 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
             if dispatcher.child_recoverer is not None
             else []
         )
+        if dispatcher.budget is not None:
+            unsettled = {c.session_id for c in record.children if c.account_id not in accounted}
+            dispatcher.budget.restore_child_credits(
+                scan.budget.session.credit_readings,
+                (
+                    r.usage
+                    for r in results
+                    if r.spec.session_id in unsettled and r.usage is not None
+                ),
+            )
         if (
             record.state in ("prepared", "running")
             and dispatcher.child_recoverer is not None

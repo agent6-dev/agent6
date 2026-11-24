@@ -670,6 +670,19 @@ class BudgetTracker:
             self._check_fallback_locked()
             self._check_ceilings(provider)
 
+    def restore_child_credits(
+        self, journaled: Iterable[credit_usage.Reading], recovered: Iterable[UsageSettlement]
+    ) -> None:
+        """Restore the account series needed to settle interrupted children.
+
+        Args:
+            journaled: Balance observations already recorded by the parent.
+            recovered: Usage to replay. Other accounts start with a fresh baseline.
+        """
+        accounts = {r.account for usage in recovered for r in usage.credit_readings}
+        with self._lock:
+            self._credits.observe((r for r in journaled if r.account in accounts), banked=True)
+
     def mark_settled(self, children: Iterable[str]) -> None:
         """Take children an earlier execution of the session charged as settled.
 

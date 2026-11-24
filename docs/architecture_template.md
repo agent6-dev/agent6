@@ -657,6 +657,8 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
   A continuation contributes only its increase over `usage_before`.
 - `usd_own_calls` is the cost of this execution's calls alone.
   The parent folds child credit readings into its own account series instead of adding the child's observed declines.
+  When a resume recovers a child's balances, the parent uses its journaled readings for those accounts as the baseline.
+  Only additional declines count against the fresh USD cap.
 - Before launching children, `sessions/child_dispatch.py` writes `<session_dir>/dispatch/<group>.json` atomically (version 15); a failed write refuses the dispatch.
     - A work record holds one task: its identity, source, `merge_policy`, owner execution, base, spec, parent DAG node, and each child's limits and whether its end was reported.
     - The state advances from `prepared` to `running` across the parent's turns, then `settling` as each child's usage is charged once or marked outstanding, and `ranking` while a task's judges run.

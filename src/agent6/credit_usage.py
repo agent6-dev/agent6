@@ -30,24 +30,35 @@ class Ledger:
     """The ordered union of the balances this execution and its children observed."""
 
     spent_usd: float = 0.0
+    _banked_usd: float = 0.0
     _seen: set[Reading] = dataclasses.field(default_factory=set)
     _unpublished: set[Reading] = dataclasses.field(default_factory=set)
 
     def __len__(self) -> int:
         return len(self._seen)
 
-    def observe(self, readings: Iterable[Reading]) -> None:
-        """Count each decline once, including a decline after a top-up."""
+    def observe(self, readings: Iterable[Reading], *, banked: bool = False) -> None:
+        """Fold readings in observation order, including declines after top-ups.
+
+        Args:
+            readings: The balances to add to the account series.
+            banked: Restore a series from the parent journal before replaying a child.
+                Its declines do not draw on this execution's cap.
+        """
         new = set(readings).difference(self._seen)
         if not new:
             return
-        self._unpublished.update(new)
         self._seen.update(new)
-        self.spent_usd = math.fsum(
+        declines = math.fsum(
             max(earlier.balance_usd - later.balance_usd, 0.0)
             for _, series in itertools.groupby(sorted(self._seen), key=lambda r: r.account)
             for earlier, later in itertools.pairwise(series)
         )
+        if banked:
+            self._banked_usd = declines - self.spent_usd
+        else:
+            self._unpublished.update(new)
+            self.spent_usd = declines - self._banked_usd
 
     @property
     def unpublished(self) -> tuple[Reading, ...]:
