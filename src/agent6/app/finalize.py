@@ -476,9 +476,9 @@ def print_session_end(
             continue
         # The gate counts blocking model routes; two reviewers can share a route.
         votes = collections.Counter(reviewer.verdict for reviewer in panel.reviewers)
-        labels = {"block": "voted block", "pass": "voted pass", "abstain": "abstained"}
+        labels = {"block": "with block findings", "pass": "passed", "abstain": "abstained"}
         counted = ", ".join(f"{votes[v]} {label}" for v, label in labels.items() if votes[v])
-        outcome = counted or "no votes recorded"
+        outcome = counted or "no reviewer replies recorded"
         if panel.completion == "inconclusive":
             outcome = f"inconclusive ({outcome})"
         reporter.out(f"  last review panel: {outcome}")

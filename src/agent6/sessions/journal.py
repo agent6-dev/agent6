@@ -1519,7 +1519,7 @@ class ReviewStart(Event):
 
 
 class ReviewVerdict(Event):
-    """A reviewer returned a grounded verdict or abstained."""
+    """A reviewer reported grounded findings or abstained with an error."""
 
     TYPE: ClassVar[str] = "review.verdict"
     panel_id: str = pydantic.Field(description="Review panel identifier.")
@@ -1532,7 +1532,6 @@ class ReviewVerdict(Event):
     reviewer_index: int = pydantic.Field(description="Zero-based reviewer index.")
     focus: str = pydantic.Field(description="The requested summary or review focus.")
     model_route: str = pydantic.Field(description="The reviewer's configured model route.")
-    verdict: str = pydantic.Field(description="Reviewer verdict: pass, block or abstain.")
     findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
     summary: str = pydantic.Field(description="The result or outcome in words.")
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")

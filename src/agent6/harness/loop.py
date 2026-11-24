@@ -861,7 +861,12 @@ class Harness:
         """
         if self.contract is not None:
             conversation.notice(
-                review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
+                review_prompts.reply_notice(
+                    ctx.turn,
+                    self.contract.max_turns,
+                    panel=self.contract.review_binding is not None,
+                ),
+                origin="reply_count",
             )
             return
         line = nudges.budget_line(

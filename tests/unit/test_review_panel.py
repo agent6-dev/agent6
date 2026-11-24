@@ -1,12 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Unit tests for the grounded review-panel aggregator (the false-block defense).
-
-These lock in the property that got the pre-0.0.4 reviewer.py deleted once it was
-fixed here: a reviewer can only GATE (block a finish) when its objection is
-grounded in the actual diff AND in a category we allow to block. Taste, test
-gaps, and uncited claims are mechanically downgraded and can never stall a run.
-"""
+"""Tests for grounding, grouping and counting panel findings."""
 
 from __future__ import annotations
 
@@ -41,14 +35,10 @@ def _ctx(**kw: Any) -> review_panel.ReviewContext:
 def _reviewer(
     model: str, *findings: review_records.Finding, reviewer: str = "s", error: str | None = None
 ) -> review_records.ReviewVerdict:
-    verdict = (
-        "abstain" if error else "block" if any(f.severity == "block" for f in findings) else "pass"
-    )
     return review_records.ReviewVerdict(
         reviewer_index=0,
         focus=reviewer,
         model_route=model,
-        verdict=verdict,
         findings=findings,
         error=error,
     )
@@ -126,22 +116,30 @@ def test_ungrounded_block_is_not_reported_and_does_not_gate() -> None:
     res = _agg([_reviewer("m1", _block("security", _location("foo.py", 99)))], block_on="any")
     assert res.blocked is False and res.n_block == 0
     assert res.merged_findings == ()
+    assert res.per_reviewer[0].verdict == "pass"
 
 
-def test_non_gating_category_block_is_downgraded() -> None:
-    # a "test-gap" can never block even if grounded in the diff.
-    res = _agg([_reviewer("m1", _block("test-gap", _location("foo.py", 11)))], block_on="any")
-    assert res.blocked is False
-    assert res.merged_findings[0].severity == "warn"
+def test_a_grounded_block_in_the_reviewers_own_category_gates() -> None:
+    finding = _block("Rounding", _location("foo.py", 11))
+    res = _agg([_reviewer("m1", finding)], block_on="any")
+    assert res.blocked and res.n_block == 1
+    assert res.merged_findings == (finding,)
 
 
-def test_verify_uncovered_requires_verify_passed() -> None:
-    f = _block("verify-uncovered-correctness", _location("foo.py", 11))
-    # verify failed (or unknown) -> the claim is incoherent -> downgraded.
-    assert _agg([_reviewer("m1", f)], ctx=_ctx(verification="unverified")).blocked is False
-    assert _agg([_reviewer("m1", f)], ctx=_ctx(verification=None)).blocked is False
-    # verify passed -> a grounded uncovered-correctness block may gate.
-    assert _agg([_reviewer("m1", f)], ctx=_ctx(verification="passed")).blocked is True
+def test_verify_status_does_not_change_a_findings_severity() -> None:
+    finding = _block("verify-uncovered-correctness", _location("foo.py", 11))
+    assert _agg([_reviewer("m1", finding)], ctx=_ctx(verification="failed")).blocked
+
+
+def test_a_large_patch_does_not_hide_the_block_from_the_worker() -> None:
+    patch = "+" + "界" * 1_999
+    finding = _block("Bounds", _location("foo.py", 11)).model_copy(update={"suggestion": patch})
+    (shown,) = review_panel.findings_within((finding,), 512)
+    notice = review_panel.render_findings((shown,))
+    assert len(notice.encode()) <= 512
+    assert "[block:Bounds]" in notice and "Suggestion: +界" in notice and "cut" in notice
+    assert finding.suggestion == patch
+    assert review_records.finding_key(shown) == review_records.finding_key(finding)
 
 
 # --- block_on policies --------------------------------------------------------
@@ -218,7 +216,7 @@ def test_dedup_across_reviewers_and_against_prior_findings() -> None:
     res = _agg(
         [_reviewer("m1", f, reviewer="a"), _reviewer("m2", f, reviewer="b")], block_on="none"
     )
-    assert len(res.merged_findings) == 1  # same (path, category) merged
+    assert len(res.merged_findings) == 1
     prior = (f,)
     res2 = review_panel.aggregate_verdicts(
         [_reviewer("m1", f)],
@@ -235,7 +233,7 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
     # not gate: otherwise blocked=True ships with merged_findings=() and the
     # worker is rejected while being told "No blocking findings.".
     f = _block("security", _location("foo.py", 11))
-    prior = (f,)
+    prior = (f.model_copy(update={"category": "Privacy", "suggestion": "Limit access."}),)
     for block_on in ("any", "model_quorum", "all"):
         res = review_panel.aggregate_verdicts(
             [_reviewer("m1", f)],
@@ -303,13 +301,15 @@ def test_render_findings_distinguishes_base_and_head_locations() -> None:
     )
 
 
-def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
-    finding = _block("security", _location("foo.py", 11))
-    contradictory = review_records.ReviewVerdict(
-        reviewer_index=0, focus="s", model_route="m1", verdict="pass", findings=(finding,)
+def test_only_block_severity_counts_toward_the_gate() -> None:
+    location = _location("foo.py", 11)
+    findings = tuple(
+        review_records.Finding(severity=severity, category="Bounds", location=location, title="x")
+        for severity in ("warn", "nit")
     )
-    res = _agg([contradictory], block_on="any")
-    assert res.blocked is False and res.n_block == 0
+    result = _agg([_reviewer("m1", *findings)])
+    assert not result.blocked and result.n_block == 0
+    assert result.merged_findings == findings
 
 
 # --- diff-parsing edge cases ------
@@ -546,11 +546,9 @@ def test_output_cap_truncated_case_folds_both_spellings() -> None:
 
 def test_panel_is_inconclusive_owner() -> None:
     abstain = review_records.ReviewVerdict(
-        reviewer_index=0, focus="s", model_route="m", verdict="abstain", error="starved"
+        reviewer_index=0, focus="s", model_route="m", error="starved"
     )
-    passing = review_records.ReviewVerdict(
-        reviewer_index=0, focus="s2", model_route="m2", verdict="pass"
-    )
+    passing = review_records.ReviewVerdict(reviewer_index=0, focus="s2", model_route="m2")
     all_abstain = review_panel.PanelResult(
         panel_id="p",
         block_on="none",
@@ -635,7 +633,7 @@ def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
         _block("security", _location("foo.py", 11)),
     )
     prompt = review_verdict.build_user_message(_ctx(prior_findings=prior))
-    assert "ALREADY RAISED (do not repeat): foo.py:11 (base) security; foo.py:11 security" in prompt
+    assert "ALREADY RAISED: foo.py:11 (base) [security] x; foo.py:11 [security] x" in prompt
 
 
 def test_the_reviewer_prompt_carries_the_whole_large_diff() -> None:

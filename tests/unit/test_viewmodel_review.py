@@ -499,7 +499,6 @@ def test_start_and_reviewer_keep_the_roster_and_full_verdict() -> None:
         "reviewer_index": 0,
         "model_route": "p/m",
         "focus": "security",
-        "verdict": "block",
         "summary": "leak",
         "error": None,
         "findings": [panel["findings"][0]["finding"]],

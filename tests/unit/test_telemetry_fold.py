@@ -217,7 +217,6 @@ def test_panel_telemetry_counts_distinct_blocking_routes() -> None:
                 reviewer_index=index,
                 focus="security",
                 model_route=route,
-                verdict="block",
                 findings=(finding,),
             )
             for index, route in enumerate(("m@p1", "m@p1", "m@p2"))

@@ -9,6 +9,8 @@ from typing import Annotated, Literal, Self
 import pydantic
 
 Severity = Literal["block", "warn", "nit"]
+CATEGORY_CHARS = 64
+SUGGESTION_CHARS = 2_000
 Reason = Annotated[
     str, pydantic.StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
 ]
@@ -139,41 +141,46 @@ class Finding(pydantic.BaseModel):
     """Hold one review finding at a structured location.
 
     Attributes:
-        category: The finding's issue category.
+        category: The reviewer's label, one word of up to 64 characters.
         severity: The grounded block, warn or nit severity.
         title: The short finding title.
         detail: The supporting explanation and evidence.
         location: The path, side and optional line range.
+        suggestion: An optional fix as text or a patch, up to 2,000 characters.
     """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
-    category: str
+    category: Annotated[
+        str,
+        pydantic.StringConstraints(
+            strip_whitespace=True, pattern=r"^\S+$", max_length=CATEGORY_CHARS
+        ),
+    ]
     severity: Severity
     title: str = pydantic.Field(max_length=200)
     detail: str = pydantic.Field(default="", max_length=1000)
     location: ReviewLocation
+    suggestion: str | None = pydantic.Field(default=None, max_length=SUGGESTION_CHARS)
 
 
 class ReviewerReply(pydantic.BaseModel):
-    """Validate the verdict and findings returned by a reviewer."""
+    """Validate the summary and findings returned by a reviewer."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
-    verdict: Literal["pass", "block"]
     summary: str
     findings: tuple[Finding, ...]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewVerdict:
-    """Hold one indexed reviewer's verdict, including an explicit abstention on failure.
+    """Hold one reviewer's findings or the reason it abstained.
 
     Attributes:
         reviewer_index: The reviewer's zero-based position in the roster.
         focus: The reviewer's assigned review focus.
         model_route: The provider/model route that reviewed.
-        verdict: The reviewer's pass, block or abstention decision.
         findings: The grounded findings from this reviewer.
         summary: The reviewer's closing summary.
         error: The failure diagnostic for an abstention, or null.
@@ -183,11 +190,17 @@ class ReviewVerdict:
     reviewer_index: int
     focus: str
     model_route: str
-    verdict: Literal["pass", "block", "abstain"]
     findings: tuple[Finding, ...] = ()
     summary: str = ""
     error: str | None = None
     session_id: str = ""
+
+    @property
+    def verdict(self) -> Literal["pass", "block", "abstain"]:
+        """Return the outcome of the findings this record holds."""
+        if self.error is not None:
+            return "abstain"
+        return "block" if any(f.severity == "block" for f in self.findings) else "pass"
 
 
 class LineOrigin(pydantic.BaseModel):
@@ -301,14 +314,13 @@ class ReviewPanel(pydantic.BaseModel):
 
 
 def finding_key(finding: Finding) -> str:
-    """Return exact finding content and location with surrounding whitespace stripped."""
+    """Return the key for a defect, independent of its label and suggested fix."""
     return finding.model_copy(
         update={
-            "category": finding.category.strip(),
             "title": finding.title.strip(),
             "detail": finding.detail.strip(),
         }
-    ).model_dump_json()
+    ).model_dump_json(exclude={"category", "suggestion"})
 
 
 class FindingResolution(pydantic.BaseModel):

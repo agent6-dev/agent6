@@ -53,7 +53,8 @@ def _panel(*votes: str, blocks: int = 0, warnings: int = 0) -> list[dict[str, An
             "panel_id": "p",
             "execution_id": "e",
             **reviewer,
-            "verdict": vote,
+            "findings": [result["findings"][0]["finding"]] if vote == "block" else [],
+            "error": "no reply" if vote == "abstain" else None,
         }
         for reviewer, vote in zip(roster, votes, strict=True)
     ]
@@ -78,14 +79,15 @@ def test_advisory_panel_votes_and_still_open_findings_reach_the_end(
     )
     out = _end(tmp_path, rows, streaming=streaming)
     assert (
-        out.splitlines().count("  last review panel: 2 voted block, 1 voted pass, 1 abstained") == 1
+        out.splitlines().count("  last review panel: 2 with block findings, 1 passed, 1 abstained")
+        == 1
     )
     assert out.splitlines().count("  open findings: 1 block, 1 warn") == 1
     assert out.count("agent6 sessions receipt review-end") == 1
 
 
 @pytest.mark.parametrize(
-    ("vote", "outcome"), [("pass", "1 voted pass"), ("abstain", "inconclusive (1 abstained)")]
+    ("vote", "outcome"), [("pass", "1 passed"), ("abstain", "inconclusive (1 abstained)")]
 )
 def test_review_without_findings_still_reports_what_returned(
     tmp_path: pathlib.Path, vote: str, outcome: str

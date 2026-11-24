@@ -14,7 +14,8 @@ def _finding() -> review_records.Finding:
         category="security",
         severity="block",
         title="Secret in source",
-        detail="Remove the credential.",
+        detail="Access no longer needs a login.",
+        suggestion="- allow()\n+ authenticate()",
         location=review_records.ReviewLocation(
             path="old/name.py", side="base", start_line=11, end_line=13
         ),
@@ -86,18 +87,25 @@ def test_locations_render_without_an_ambiguous_stored_citation(
 
 def test_findings_and_reviewer_replies_round_trip() -> None:
     finding = _finding()
-    reply = review_records.ReviewerReply(
-        verdict="block", summary="Credential leak", findings=(finding,)
-    )
+    reply = review_records.ReviewerReply(summary="Credential leak", findings=(finding,))
     restored = review_records.ReviewerReply.model_validate_json(reply.model_dump_json())
     assert restored == reply
     assert restored.findings[0].location.side == "base"
-    assert set(finding.model_dump()) == {"category", "severity", "title", "detail", "location"}
+    assert set(finding.model_dump()) == {
+        "category",
+        "severity",
+        "title",
+        "detail",
+        "location",
+        "suggestion",
+    }
     with pytest.raises(pydantic.ValidationError):
         review_records.Finding.model_validate({**finding.model_dump(), "file_line": "a.py:1"})
 
 
-@pytest.mark.parametrize(("field", "limit"), [("title", 200), ("detail", 1000)])
+@pytest.mark.parametrize(
+    ("field", "limit"), [("title", 200), ("detail", 1000), ("category", 64), ("suggestion", 2000)]
+)
 def test_findings_keep_the_text_limits(field: str, limit: int) -> None:
     payload = _finding().model_dump()
     payload[field] = "x" * limit
@@ -121,7 +129,6 @@ def test_frozen_records_round_trip() -> None:
         reviewer_index=2,
         focus="security",
         model_route="provider/model",
-        verdict="block",
         findings=(_finding(),),
         summary="Leak",
         error=None,
@@ -181,7 +188,6 @@ def test_abstentions_are_distinct_from_passes() -> None:
         reviewer_index=0,
         focus="security",
         model_route="provider/model",
-        verdict="abstain",
         findings=(),
         summary="",
         error="provider unavailable",
@@ -265,7 +271,7 @@ def test_boundary_models_are_frozen_and_reject_unknown_fields() -> None:
     models = (
         _finding(),
         _finding().location,
-        review_records.ReviewerReply(verdict="pass", summary="", findings=()),
+        review_records.ReviewerReply(summary="", findings=()),
         review_records.FindingResolution(disposition="fixed", reason="Corrected."),
         review_records.FindingAction(request_id="request-1", expected_version=0, action="fix"),
     )

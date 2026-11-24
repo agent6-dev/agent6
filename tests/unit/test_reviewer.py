@@ -31,7 +31,7 @@ SAMPLE_DIFF = """\
 """
 
 _BLOCK_JSON = (
-    '{"verdict":"block","summary":"leak","findings":[{"category":"security",'
+    '{"summary":"leak","findings":[{"category":"security",'
     '"severity":"block","location":{"path":"foo.py","side":"head","start_line":11,"end_line":11},'
     '"title":"secret leak","detail":"hardcoded"}]}'
 )
@@ -94,6 +94,15 @@ def test_structured_review_parses_fenced_json_with_prose() -> None:
     assert v.error is None and v.verdict == "block" and len(v.findings) == 1
 
 
+def test_an_extra_verdict_field_has_no_vote() -> None:
+    reply = json.loads(_BLOCK_JSON)
+    reply["verdict"] = "pass"
+    report = review_verdict.verdict_from_obj(reply, 0, "s", "m")
+    assert report.verdict == "block" and report.error is None
+    report = review_verdict.verdict_from_obj({"verdict": "block", "findings": []}, 0, "s", "m")
+    assert report.verdict == "pass" and report.error is None
+
+
 def test_structured_review_junk_output_abstains() -> None:
     v = review_env.single_verdict(
         _prov("I could not produce JSON, sorry."),
@@ -105,12 +114,12 @@ def test_structured_review_junk_output_abstains() -> None:
     assert v.error is not None and v.verdict == "abstain"  # abstain, never a false pass-as-real
 
 
-@pytest.mark.parametrize("text", ["{}", '{"findings": []}', '{"verdict": "maybe"}'])
-def test_structured_review_without_a_verdict_abstains(text: str) -> None:
+@pytest.mark.parametrize("text", ["{}", '{"findings": "invalid"}', '{"verdict": "pass"}'])
+def test_structured_review_without_a_findings_array_abstains(text: str) -> None:
     v = review_env.single_verdict(
         _prov(text), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
-    assert v.error == "invalid reviewer verdict"
+    assert v.error == "invalid reviewer findings: expected an array"
 
 
 def test_structured_review_provider_error_abstains() -> None:
@@ -185,10 +194,10 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     assert "30,175 chars of it in the reasoning channel" in v2.error
 
 
-def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
+def test_coerce_findings_keeps_the_reviewer_label_and_normalizes_unknown_severity() -> None:
     raw = [
         {
-            "category": "bogus",
+            "category": "  Bounds  ",
             "severity": "critical",
             "location": {"path": "a", "side": "head", "start_line": 1, "end_line": 1},
             "title": "t",
@@ -203,7 +212,7 @@ def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
     ]
     fs = review_verdict.coerce_findings(raw)
     assert len(fs) == 2
-    assert fs[0].category == "other" and fs[0].severity == "warn"  # normalized
+    assert fs[0].category == "Bounds" and fs[0].severity == "warn"  # normalized
     assert fs[1].category == "security" and fs[1].severity == "block"
 
 
@@ -229,13 +238,17 @@ def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
 
 def test_provider_findings_keep_the_title_and_detail_caps() -> None:
     payload = json.loads(_BLOCK_JSON)
-    payload["findings"][0].update(title="t" * 201, detail="d" * 1001)
+    payload["findings"][0].update(
+        title="t" * 201, detail="d" * 1001, category="L" * 65, suggestion="s" * 2001
+    )
     verdict = review_env.single_verdict(
         _prov(json.dumps(payload)), _ctx(), reviewer_index=0, focus="security", model_route="m1"
     )
     assert verdict.error is None
     assert verdict.findings[0].title == "t" * 200
     assert verdict.findings[0].detail == "d" * 1000
+    assert verdict.findings[0].category == "L" * 64
+    assert verdict.findings[0].suggestion == "s" * 2000
 
 
 def test_finding_text_is_one_line() -> None:
@@ -432,7 +445,7 @@ class _ReviewerProvider:
 
 @pytest.mark.parametrize("max_turns", [1, 2, 20])
 def test_reviewer_first_request_names_the_call_budget(max_turns: int) -> None:
-    """The reviewer knows its total call budget and that the last call must be its verdict."""
+    """The panel reviewer sees its reply budget without a request for a separate vote."""
     provider = mock.MagicMock()
     provider.call.return_value = _ReviewerResp(text=_BLOCK_JSON)
     verdict = review_env.single_verdict(
@@ -446,8 +459,15 @@ def test_reviewer_first_request_names_the_call_budget(max_turns: int) -> None:
     )
     assert verdict.error is None
     system = provider.call.call_args_list[0].kwargs["system"]
-    assert f"at most {max_turns} replies" in system
-    assert "by the last reply at the latest, reply with ONLY the JSON verdict" in system
+    assert system.startswith(
+        "Review the change in the first message against its task. Focus: security."
+    )
+    assert f"You have {max_turns} replies, tool calls included." in system
+    assert "A tool call in the last reply is not run." in system
+    assert "verdict" not in system
+    if max_turns == 1:
+        messages = json.dumps(provider.call.call_args_list[0].kwargs["messages"])
+        assert "[harness] reply 1 of 1, the last. A tool call here is not run." in messages
 
 
 def test_reviewer_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -44,7 +44,7 @@ _DIFF = """\
 _BLOCK = (
     '{"verdict":"block","summary":"leak","findings":[{"category":"security",'
     '"severity":"block","location":{"path":"foo.py","side":"head","start_line":11,"end_line":11},'
-    '"title":"hardcoded key","detail":"x"}]}'
+    '"title":"hardcoded key","detail":"x","suggestion":"Read the key from the environment."}]}'
 )
 _PASS = '{"verdict":"pass","summary":"ok","findings":[]}'
 _BLOCK_AND_NEW = json.dumps(
@@ -62,11 +62,6 @@ _BLOCK_AND_NEW = json.dumps(
             },
         ],
     }
-)
-_NONGATING = (  # grounded but a non-block-eligible category -> downgraded, never gates
-    '{"verdict":"block","summary":"style","findings":[{"category":"style",'
-    '"severity":"block","location":{"path":"foo.py","side":"head","start_line":11,"end_line":11},'
-    '"title":"rename it","detail":"x"}]}'
 )
 
 
@@ -170,6 +165,7 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
         b.get("text", "") for m in messages for b in (m.get("content") or []) if isinstance(b, dict)
     )
     assert "rejected your finish_session" in injected and "hardcoded key" in injected
+    assert "Suggestion: Read the key from the environment." in injected
 
 
 @pytest.mark.parametrize(
@@ -358,7 +354,7 @@ def test_second_panel_prompt_names_prior_finding() -> None:
     )
     _drive(wf, _begin())
     prompt = reviewer_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
-    assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
+    assert "ALREADY RAISED: foo.py:11 [security] hardcoded key" in prompt
 
 
 @pytest.mark.usefixtures("immutable_target")
@@ -445,7 +441,7 @@ def test_observe_only_panels_do_not_repeat_findings(
     )
     assert feedback.count("hardcoded key") == 1
     prompt = reviewer_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
-    assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
+    assert "ALREADY RAISED: foo.py:11 [security] hardcoded key" in prompt
 
 
 @pytest.mark.usefixtures("immutable_target")
@@ -512,15 +508,15 @@ def test_an_ask_ends_without_the_in_loop_panel() -> None:
 
 
 @pytest.mark.usefixtures("immutable_target")
-def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
-    """A grounded 'style' block never stalls a finish, even under veto.
-
-    The aggregator downgrades it, so the finish is accepted on the first turn.
-    """
+@pytest.mark.parametrize("severity", ["warn", "nit"])
+def test_an_advisory_finding_reaches_the_accepted_finish(severity: str) -> None:
+    """Only a block finding can reject a finish."""
     worker = mock.MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
     reviewer_provider = mock.MagicMock()
-    reviewer_provider.call.return_value = _resp(_NONGATING)
+    reviewer_provider.call.return_value = _resp(
+        _BLOCK.replace('"severity":"block"', f'"severity":"{severity}"')
+    )
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
@@ -529,8 +525,10 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
         ),
         base_sha="b",
     )
-    result = _drive(wf, _begin())
+    messages = _begin()
+    result = _drive(wf, messages)
     assert result.reason == "finish_session" and result.turns == 1
+    assert f"[{severity}:security] (foo.py:11) hardcoded key" in json.dumps(messages)
 
 
 @pytest.mark.parametrize("cap", [2, 4])
@@ -548,14 +546,7 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
     ]
     reviewer_provider = mock.MagicMock()
     reviewer_provider.call.side_effect = [
-        _resp(_BLOCK.replace('"security"', f'"{category}"'))
-        for category in (
-            "security",
-            "sandbox-bypass",
-            "off-topic-edit",
-            "data-loss",
-            "verify-uncovered-correctness",
-        )
+        _resp(_BLOCK.replace("hardcoded key", f"defect {i}")) for i in range(cap + 1)
     ]
     wf = _wf(
         provider=worker,
@@ -585,7 +576,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     from agent6.harness.review import panel as review_panel
 
     abstain = review_records.ReviewVerdict(
-        reviewer_index=0, focus="s", model_route="m", verdict="abstain", error="output hit the cap"
+        reviewer_index=0, focus="s", model_route="m", error="output hit the cap"
     )
     res = review_panel.PanelResult(
         panel_id="p",
@@ -675,8 +666,8 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
     assert "not shown" not in notices[2]
     category = {"finding 1": "security", "finding 2": "data-loss", "finding 3": "sandbox-bypass"}
     prompt = reviewer_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
-    assert f"foo.py:11 {category[shown[0][0]]}" in prompt
-    assert all(f"foo.py:11 {category[t[0]]}" not in prompt for t in shown[1:])
+    assert f"foo.py:11 [{category[shown[0][0]]}] {shown[0][0]}" in prompt
+    assert all(t[0] not in prompt for t in shown[1:])
 
 
 @pytest.fixture(autouse=True)

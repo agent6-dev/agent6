@@ -26,23 +26,28 @@ def build_user_message(ctx: review_panel.ReviewContext) -> str:
         out = ctx.verify_output.strip()[-2000:]
         parts.append(f"VERIFY: {status}\n{out}" if out else f"VERIFY: {status}")
     if ctx.prior_findings:
-        already = "; ".join(f"{f.location} {f.category}" for f in ctx.prior_findings[:20])
-        parts.append(f"ALREADY RAISED (do not repeat): {already}")
+        already = "; ".join(
+            f"{f.location} [{f.category}] {f.title}" for f in ctx.prior_findings[:20]
+        )
+        parts.append(f"ALREADY RAISED: {already}")
     parts.append(f"DIFF:\n{ctx.diff}")
     return "\n\n".join(parts)
 
 
 def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
-    """Return findings with normalized categories, severities and single-line text."""
+    """Return bounded findings, preserving line breaks in suggested patches."""
     out: list[review_records.Finding] = []
     if not isinstance(raw, list):
         return ()
     for item in raw:
         if not isinstance(item, dict):
             continue
-        category = str(item.get("category", "other"))
-        if category not in review_panel.ALL_CATEGORIES:
-            category = "other"
+        category = item.get("category")
+        if isinstance(category, str):
+            category = category.strip()[: review_records.CATEGORY_CHARS]
+        suggestion = item.get("suggestion")
+        if isinstance(suggestion, str):
+            suggestion = suggestion[: review_records.SUGGESTION_CHARS] or None
         severity = str(item.get("severity", "warn"))
         if severity not in ("block", "warn", "nit"):
             severity = "warn"
@@ -54,12 +59,15 @@ def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
             if "\\" in cited:
                 location = {**location, "path": git_files.unquote_git_path(cited)}
         out.append(
-            review_records.Finding(
-                category=category,
-                severity=severity,  # type: ignore[arg-type]
-                location=review_records.ReviewLocation.model_validate(location),
-                title=" ".join(str(item.get("title", "")).split())[:200],
-                detail=" ".join(str(item.get("detail", "")).split())[:1000],
+            review_records.Finding.model_validate(
+                {
+                    "category": category,
+                    "suggestion": suggestion,
+                    "severity": severity,
+                    "location": location,
+                    "title": " ".join(str(item.get("title", "")).split())[:200],
+                    "detail": " ".join(str(item.get("detail", "")).split())[:1000],
+                }
             )
         )
     return tuple(out)
@@ -101,19 +109,14 @@ def verdict_from_obj(
     obj: dict[str, Any], reviewer_index: int, focus: str, model_route: str
 ) -> review_records.ReviewVerdict:
     """Return the parsed verdict, or an abstention for an invalid reply."""
-    raw_verdict = obj.get("verdict")
-    if not isinstance(raw_verdict, str) or raw_verdict.lower() not in ("pass", "block"):
+    raw = obj.get("findings")
+    if not isinstance(raw, list):
         return review_records.ReviewVerdict(
-            reviewer_index=reviewer_index,
-            focus=focus,
-            model_route=model_route,
-            verdict="abstain",
-            error="invalid reviewer verdict",
+            reviewer_index, focus, model_route, error="invalid reviewer findings: expected an array"
         )
     try:
         reply = review_records.ReviewerReply(
-            verdict="block" if raw_verdict.lower() == "block" else "pass",
-            findings=coerce_findings(obj.get("findings")),
+            findings=coerce_findings(raw),
             summary=str(obj.get("summary", "")).strip()[:300],
         )
     except pydantic.ValidationError as exc:
@@ -121,14 +124,12 @@ def verdict_from_obj(
             reviewer_index=reviewer_index,
             focus=focus,
             model_route=model_route,
-            verdict="abstain",
             error=f"invalid reviewer findings: {exc}",
         )
     return review_records.ReviewVerdict(
         reviewer_index=reviewer_index,
         focus=focus,
         model_route=model_route,
-        verdict=reply.verdict,
         findings=reply.findings,
         summary=reply.summary,
     )
@@ -172,13 +173,12 @@ def verdict_from_completion(
             binding.reviewer_index,
             focus,
             model_route,
-            "abstain",
             error=error,
             session_id=session_id,
         )
     assert record is not None
-    obj = llm_json.extract_json(record.text, prefer=("verdict", "findings"))
-    if obj is None or (record.asked_for_tools and not ({"verdict", "findings"} & obj.keys())):
+    obj = llm_json.extract_json(record.text, prefer=("findings",))
+    if obj is None or (record.asked_for_tools and "findings" not in obj):
         error = (
             f"no verdict within {max_turns} turns"
             if record.asked_for_tools
@@ -188,7 +188,6 @@ def verdict_from_completion(
             binding.reviewer_index,
             focus,
             model_route,
-            "abstain",
             error=error,
             session_id=session_id,
         )

@@ -430,15 +430,25 @@ class TelemetryFold:
     def _review_verdict(self, step: telemetry_records.Step) -> None:
         execution, event = step.execution, step.event
         panel = execution.panels.get(str(event.get("panel_id") or ""))
-        verdict = str(event.get("verdict", ""))
-        findings = event.get("findings")
+        report = next(
+            (
+                r
+                for p in self._review.panels
+                if p.panel_id == event.get("panel_id")
+                for r in p.reviewers
+                if r.reviewer_index == event.get("reviewer_index")
+            ),
+            None,
+        )
+        if report is None:
+            return
         fields: dict[str, telemetry_records.AttributeValue | None] = {
-            "agent6.reviewer": telemetry_records.as_int(event.get("reviewer_index")),
-            "agent6.verdict": verdict or None,
-            "agent6.findings": len(findings) if isinstance(findings, list) else 0,
+            "agent6.reviewer": report.reviewer_index,
+            "agent6.verdict": report.verdict,
+            "agent6.findings": len(report.findings),
         }
-        severity: telemetry_records.Severity = "WARN" if verdict == "block" else "INFO"
-        body = f"reviewer {verdict or 'abstained'}"
+        severity: telemetry_records.Severity = "WARN" if report.verdict == "block" else "INFO"
+        body = f"reviewer {report.verdict}"
         span_id = panel.span_id if panel is not None else ""
         step.logs.append(execution.log(step.now, severity, body, fields, span_id))
 

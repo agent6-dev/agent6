@@ -626,7 +626,7 @@ def test_an_advising_panel_that_returns_block_is_not_logged_as_approval() -> Non
     wf.mode = "run"
     unread = "review inconclusive: all 1 reviewers abstained; nothing was reviewed"
     cases = (
-        (review_gate.CritiqueResult("* a fault", True, blocking=1), "1 of 1 reviewers returned"),
+        (review_gate.CritiqueResult("* a fault", True, blocking=1), "routes with a new block: 1"),
         (review_gate.CritiqueResult("* none", True), "review approved"),
         (review_gate.CritiqueResult(unread, True, inconclusive=True), "nothing was reviewed"),
     )

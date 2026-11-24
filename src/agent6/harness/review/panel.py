@@ -2,10 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Aggregate the review panel's verdicts with executable grounding.
 
-A finding is reported only when its citation is in the diff (a touched path, or a line on
-either side of a hunk), and a `block` gates only in an allowed category; a block elsewhere is
-downgraded to `warn`, and `warn` and `nit` never gate. Network-free; `run_panel` calls the
-models.
+Only findings on the reviewed diff are kept. Only new block findings count toward the gate.
 """
 
 from __future__ import annotations
@@ -17,13 +14,6 @@ from agent6 import kinds, review_records
 from agent6.vcs import review
 
 ReviewBlockOn = Literal["none", "any", "model_quorum", "all"]
-
-# Only the first set may gate; the rest advise, being too noisy to block on.
-ALLOWED_BLOCK_CATEGORIES: frozenset[str] = frozenset(
-    {"security", "sandbox-bypass", "off-topic-edit", "data-loss", "verify-uncovered-correctness"}
-)
-ADVISORY_CATEGORIES: frozenset[str] = frozenset({"test-gap", "style", "over-eng", "other"})
-ALL_CATEGORIES: frozenset[str] = ALLOWED_BLOCK_CATEGORIES | ADVISORY_CATEGORIES
 
 
 def rules_message(rules: review_records.ReviewRules) -> str:
@@ -146,73 +136,6 @@ def is_grounded(location: review_records.ReviewLocation, hunks: review.Hunks) ->
 _SEV_ORDER = {"block": 0, "warn": 1, "nit": 2}
 
 
-def _ground_severity(f: review_records.Finding, ctx: ReviewContext) -> review_records.Severity:
-    """Return the severity a finding keeps after grounding.
-
-    A `block` survives only in a gating category, and `verify-uncovered-correctness` only when
-    verify passed; otherwise it becomes `warn`. `warn` and `nit` pass through.
-
-    Args:
-        f: The finding.
-        ctx: The review context, for the verify result.
-
-    Returns:
-        The severity.
-    """
-    if f.severity != "block":
-        return f.severity
-    coherent = f.category != "verify-uncovered-correctness" or ctx.verification == "passed"
-    if f.category in ALLOWED_BLOCK_CATEGORIES and coherent:
-        return "block"
-    return "warn"
-
-
-def _ground_reviewer(
-    v: review_records.ReviewVerdict, ctx: ReviewContext, hunks: review.Hunks
-) -> review_records.ReviewVerdict:
-    """Ground one reviewer's findings.
-
-    An uncited finding is dropped; a block the category cannot carry, or one on a reviewer whose
-    verdict is pass, becomes a warn.
-
-    Args:
-        v: The reviewer's verdict.
-        ctx: The review context.
-        hunks: The diff's hunks by repo path.
-
-    Returns:
-        The verdict with its grounded findings.
-    """
-    out: list[review_records.Finding] = []
-    for f in v.findings:
-        if not is_grounded(f.location, hunks):
-            continue
-        sev = _ground_severity(f, ctx)
-        if v.verdict != "block" and sev == "block":
-            sev = "warn"
-        out.append(f if sev == f.severity else f.model_copy(update={"severity": sev}))
-    return dataclasses.replace(v, findings=tuple(out))
-
-
-def _has_new_block(v: review_records.ReviewVerdict, prior_keys: set[str]) -> bool:
-    """Return whether the reviewer carries a surviving block that is not a prior finding.
-
-    A block whose key dedups away is dropped from `merged_findings`, so letting it gate would
-    reject the work while reporting no blocking findings.
-
-    Args:
-        v: The reviewer's grounded verdict.
-        prior_keys: The keys of the already-injected findings.
-
-    Returns:
-        Whether a new block survives.
-    """
-    return v.verdict == "block" and any(
-        f.severity == "block" and review_records.finding_key(f) not in prior_keys
-        for f in v.findings
-    )
-
-
 def _decide(
     block_on: ReviewBlockOn,
     n_block: int,
@@ -254,8 +177,7 @@ def aggregate_verdicts(
 ) -> PanelResult:
     """Fold per-reviewer verdicts into one panel result with executable grounding.
 
-    Every finding whose citation is not in the diff is dropped, and a block outside a gating
-    category becomes a warn. Exact normalized content and location identify a repeat.
+    A finding whose citation is outside the diff is dropped.
     An already-injected block neither re-surfaces nor counts toward the gate.
     `none` never blocks; `any` blocks on any surviving block. `model_quorum` needs
     `min_blocking_models` distinct provider/model routes to block. `all` needs every reviewer
@@ -278,13 +200,18 @@ def aggregate_verdicts(
     blocking_models: set[str] = set()  # distinct routes with >=1 surviving non-prior block
     n_abstain = n_reviewers_blocking = 0
     for v in per_reviewer:
-        if v.error is not None or v.verdict == "abstain":
+        if v.error is not None:
             n_abstain += 1
-            grounded_reviewers.append(dataclasses.replace(v, verdict="abstain", findings=()))
+            grounded_reviewers.append(dataclasses.replace(v, findings=()))
             continue
-        gv = _ground_reviewer(v, ctx, hunks)
+        gv = dataclasses.replace(
+            v, findings=tuple(f for f in v.findings if is_grounded(f.location, hunks))
+        )
         grounded_reviewers.append(gv)
-        if _has_new_block(gv, prior_keys):
+        if any(
+            f.severity == "block" and review_records.finding_key(f) not in prior_keys
+            for f in gv.findings
+        ):
             blocking_models.add(v.model_route)
             n_reviewers_blocking += 1
 
@@ -295,11 +222,9 @@ def aggregate_verdicts(
             key = review_records.finding_key(f)
             if key in prior_keys:
                 continue
-            cur = merged.get(key)
-            if cur is None or _SEV_ORDER[f.severity] < _SEV_ORDER[cur.severity]:
-                merged[key] = f
+            merged.setdefault(key, f)
     merged_findings = tuple(
-        sorted(merged.values(), key=lambda f: (_SEV_ORDER[f.severity], str(f.location), f.category))
+        sorted(merged.values(), key=lambda f: (_SEV_ORDER[f.severity], str(f.location)))
     )
 
     n_block = len(blocking_models)  # distinct blocking provider/model routes
@@ -325,10 +250,25 @@ def aggregate_verdicts(
 def findings_within(
     findings: tuple[review_records.Finding, ...], budget: int
 ) -> tuple[review_records.Finding, ...]:
-    """Return the longest leading run of findings whose rendering fits the budget in bytes."""
+    """Fit findings in the worker's notice.
+
+    Args:
+        findings: New findings, blocks first.
+        budget: Bytes available for their text.
+
+    Returns:
+        Whole findings, or the first finding with a marked cut in its suggestion.
+    """
     for n in range(len(findings), 0, -1):
         if len(render_findings(findings[:n]).encode()) <= budget:
             return findings[:n]
+    if findings and (patch := findings[0].suggestion):
+        marker = "\n[suggestion cut; full text in list_findings]"
+        marked = findings[0].model_copy(update={"suggestion": marker})
+        room = budget - len(render_findings((marked,)).encode())
+        if room >= 0:
+            head = patch.encode()[:room].decode(errors="ignore")
+            return (marked.model_copy(update={"suggestion": head + marker}),)
     return ()
 
 
@@ -341,12 +281,12 @@ def render_findings(findings: tuple[review_records.Finding, ...]) -> str:
         lines.append(f"- [{f.severity}:{f.category}] ({f.location}) {f.title}")
         if f.detail.strip():
             lines.append(f"    {f.detail.strip()}")
+        if f.suggestion:
+            lines.append(f"    Suggestion: {f.suggestion}")
     return "\n".join(lines)
 
 
 __all__ = [
-    "ALLOWED_BLOCK_CATEGORIES",
-    "ALL_CATEGORIES",
     "PanelResult",
     "ReviewBlockOn",
     "ReviewContext",

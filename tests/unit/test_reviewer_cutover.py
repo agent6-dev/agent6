@@ -131,7 +131,7 @@ def test_real_panel_runs_bound_reviewer_sessions(short_repo: pathlib.Path) -> No
     # The parent's list, within the reviewer mode's surface: no edit, no child, no finish tool.
     names = {t["function"]["name"] for t in calls[0].get("tools", [])}
     assert names == {"read_file", "run_command"}
-    assert "You may run commands" in calls[0]["messages"][0]["content"]
+    assert "You can run commands in it." in calls[0]["messages"][0]["content"]
     child = receipt.read_receipt(directory, repo).children[0]
     record = completion.read_completion(directory.parent.parent / "reviewers" / child.session_id)
     assert record is not None and record.review_binding is not None

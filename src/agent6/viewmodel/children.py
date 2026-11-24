@@ -272,7 +272,7 @@ def _session_child(
             row = dataclasses.replace(row, error=str(exc))
         else:
             obj = (
-                llm_json.extract_json(verdict.text, prefer=("order", "verdict"))
+                llm_json.extract_json(verdict.text, prefer=("order", "findings"))
                 if verdict
                 else None
             )

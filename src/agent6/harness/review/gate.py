@@ -34,8 +34,9 @@ class CritiqueResult:
         satisfied: False only when a blocking block_on mode rejects.
         capped: The panel blocked but the run's rejected finishes reached the cap, so the end
             stands with the findings.
-        blocking: The reviewers that returned the verdict block.
+        blocking: The number of distinct routes reporting a new grounded block.
         inconclusive: Every reviewer abstained or failed, so nothing was reviewed.
+        has_findings: The critique carries findings for the worker.
     """
 
     text: str
@@ -43,6 +44,7 @@ class CritiqueResult:
     capped: bool = False
     blocking: int = 0
     inconclusive: bool = False
+    has_findings: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -405,6 +407,8 @@ class ReviewGate:
             self.emit(journal.FinishRefusedReview(turn=turn.number, ending=ending))
             turn.review_text = REVIEW_REJECTED[ending] + critique.text
             return True
+        if critique.has_findings:
+            turn.review_text = critique.text
         if critique.capped:
             self.log(
                 f"  review rejected {ending} at turn {turn.number} but the rejection cap"
@@ -425,8 +429,7 @@ class ReviewGate:
         elif critique.blocking:
             # An advising panel never rejects: the log says what it returned.
             self.log(
-                f"  review did not reject {ending}: {critique.blocking} of"
-                f" {len(self.settings.reviewers)} reviewers returned block;"
+                f"  review did not reject {ending}: routes with a new block: {critique.blocking};"
                 f' review.block_on = "{self.settings.block_on}", the end stands'
             )
         else:
@@ -705,13 +708,16 @@ class ReviewGate:
         if inconclusive:
             text = review_panel.inconclusive_note(result)
         else:
-            text = review_panel.render_findings(shown) or "No new findings."
+            text = review_panel.render_findings(shown)
             if cut := len(result.merged_findings) - len(shown):
-                text += f"\n[{cut} more finding{'s' if cut > 1 else ''} not shown]"
+                text = (text + f"\n[{cut} more finding{'s' if cut > 1 else ''} not shown]").strip()
+            elif not text:
+                text = "No new findings."
         return CritiqueResult(
             text=text,
             satisfied=not effective_blocked,
             capped=result.blocked and disarmed and trigger == "finish",
             blocking=result.n_block,
             inconclusive=inconclusive,
+            has_findings=bool(result.merged_findings),
         )

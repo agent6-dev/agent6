@@ -72,6 +72,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     start = next(row for row in rows if row["type"] == "review.start")
     reviewer_row = next(row for row in rows if row["type"] == "review.verdict")
     assert start["panel_id"] == panel["panel_id"] == reviewer_row["panel_id"]
+    assert "verdict" not in reviewer_row
     assert reviewer_row["summary"] == "ok"
     assert reviewer_row["findings"] == []
     assert reviewer_row["reviewer_index"] == 0

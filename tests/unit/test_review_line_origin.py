@@ -50,7 +50,7 @@ def _observe(
             path=path, side=side, start_line=start, end_line=end if end is not None else start
         ),
     )
-    verdict = review_records.ReviewVerdict(0, "security", "model", "block", (finding,))
+    verdict = review_records.ReviewVerdict(0, "security", "model", (finding,))
     return review_history.observations("panel", (verdict,), {}, root=root, target=target, hide=())[
         0
     ]
