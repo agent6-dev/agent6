@@ -142,8 +142,11 @@ def test_a_sessions_crumb_leads_with_its_state_as_a_status_pill(
     expect(state).to_have_class("pill active")
     expect(name).to_have_text("crumb-AAA111")
     expect(page).to_have_title("running · crumb-AAA111 · agent6")
-    first, second = state.bounding_box(), name.bounding_box()
-    assert first and second
+    # One round trip: the live page redraws the crumb, and two reads could straddle a redraw.
+    first, second = page.locator("#crumb").evaluate(
+        "crumb => [...crumb.querySelectorAll(':scope > .pill, :scope > .pill + span')]"
+        ".map(part => part.getBoundingClientRect().toJSON())"
+    )
     assert first["y"] == second["y"] and first["x"] < second["x"]
     stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
     with (session / "logs.jsonl").open("a") as log:
