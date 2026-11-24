@@ -28,9 +28,10 @@ def test_confirm_retirement_of_the_selected_task(tmp_path: pathlib.Path) -> None
             dashboard = tui.screen
             tree = dashboard.query_one("#plan", widgets.Tree)
             tree.focus()
-            tree.move_cursor(tree.root.children[1])
-            await pilot.press("enter")
-            assert tree.render_line(1).text.rstrip().endswith("Link pages")
+            await pilot.press("home", "down", "enter")
+            await pilot.pause()
+            assert tree.render_line(tree.cursor_line).text.rstrip().endswith("Link pages")
+            assert tree.cursor_node is not None and tree.cursor_node.data == "0002"
             assert dashboard.query_one("#log").border_title == "log · task: Link pages"
             await pilot.press("r")
             assert isinstance(tui.screen, modals.ConfirmModal)
@@ -45,8 +46,7 @@ def test_confirm_retirement_of_the_selected_task(tmp_path: pathlib.Path) -> None
             ]
             assert not ipc.steer_request_pending(run.session_dir)
             assert not ipc.stop_request_pending(run.session_dir)
-            tree.move_cursor(tree.root.children[2])
-            await pilot.press("enter", "r")
+            await pilot.press("down", "enter", "r")
             assert tui.screen is dashboard
 
     asyncio.run(scenario())

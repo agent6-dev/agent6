@@ -33,7 +33,8 @@ class TaskTree(widgets.Tree[str]):
         done = sum(t.status in order.DONE_STATUSES for t in tasks)
         self.border_title = (f"tasks: {done}/{len(tasks)}" if tasks else "tasks") + as_of
         self.root.expand()
-        for task in tasks:
+        cursor_line = None
+        for line, task in enumerate(tasks):
             indent = "  " * task.depth
             title = terminal.scrub_terminal_controls(task.title)
             label = text.Text(f"{task.short_id:>3} {indent}{task.glyph} {title}")
@@ -41,6 +42,8 @@ class TaskTree(widgets.Tree[str]):
                 label.append(f"  {task.note}", style="dim italic")
             if task.id == selected:
                 label.stylize("bold reverse")
-            node = self.root.add_leaf(label, data=task.id)
+            self.root.add_leaf(label, data=task.id)
             if task.id == cursor:
-                self.move_cursor(node)
+                cursor_line = line
+        if cursor_line is not None:
+            self.move_cursor_to_line(cursor_line)
