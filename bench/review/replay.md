@@ -10,10 +10,21 @@ Use finished reviews from one route and effort per run.
 To select a subset, copy the chosen reviewer directories, including `objects/`, into the same layout in a fresh state directory.
 Copy the recording files themselves: replay refuses symlinks on recording paths below `STATE` before making any calls.
 
+The call records include private finding text.
+Keep the agent6 state base (`${XDG_STATE_HOME:-$HOME/.local/state}/agent6`) outside the worktree for the output.
+
 ```sh
-uv run python -m bench.review.replay "$STATE" \
-  --model chatgpt/gpt-6-astra --effort high --repeats 3 \
-  > calls.jsonl 2> comparison.txt
+(
+  set -e
+  umask 077
+  base="${XDG_STATE_HOME:-$HOME/.local/state}/agent6"
+  mkdir -p "$base"
+  out=$(mktemp -d "$base/review-replay.XXXXXXXX")
+  printf 'Replay output: %s\n' "$out"
+  uv run python -m bench.review.replay "$STATE" \
+    --model chatgpt/gpt-6-astra --effort high --repeats 3 \
+    > "$out/calls.jsonl" 2> "$out/comparison.txt"
+)
 ```
 
 Use the recorded provider/model and effort in place of the example.
