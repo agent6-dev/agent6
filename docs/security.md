@@ -1149,7 +1149,7 @@ The read uses `Workspace.resolve_read` and `open_contained`, retaining hidden-pa
 It reads media under the 10 MiB document cap plus one byte, checks image containers without decoding pixels, and recognizes PDFs by their header.
 
 Transcripts, snapshots, checkpoints and shared message objects omit recognized payloads and retain metadata (path, media type, SHA-256 and byte size).
-A resume or fork needs a fresh `read_file`; it never reopens a saved path automatically.
+A resume or fork needs a fresh `read_file`; it never reopens a saved workspace path automatically.
 Streaming error excerpts that reach 8 KiB on a media request are omitted because clipping can split an echoed payload.
 
 **Pixels and PDF contents are sent upstream unscrubbed.**
@@ -1160,3 +1160,21 @@ The Claude Code binary runs outside the jail and receives the original attachmen
 The adapter sends images as MCP image items and PDFs as embedded resource items, not base64 text tool results.
 Its 50,000-byte text guard and 8 MiB line cap remain in force; the line cap includes base64, envelopes and notices on both continuation and replay.
 The installed binary's forwarding and storage behavior require a live check; agent6's retention policy covers its own records, not the child or upstream provider.
+
+### Images an operator sends
+
+The web composer and an ACP prompt send [images with a message](usage.md#images-with-a-message).
+
+- The bytes come from the request alone: a client's path or URL is never opened or fetched.
+- A web upload needs the sign-in token every write needs; an unsigned request is refused before its body is read.
+- Each image's base64 is bounded to the length of 2 MiB before it is decoded, and the decode is strict.
+- The container check is `read_file`'s, without decoding pixels: a static PNG, JPEG, GIF or WebP whose bytes are the type the client declared.
+  An SVG, a PDF, an animation, a fifth image and more than 4 MiB together are refused, and a refused message stores nothing.
+- An accepted image is written to `<session directory>/attachments/<sha256>`, mode `0600`, through a temp file and a rename.
+  The name is the digest, never a client's.
+- The session directory is under the state base, outside the workspace: no commit holds an image.
+- The journal, snapshots, checkpoints and transcripts hold the reference (media type, byte size, SHA-256) and never the bytes.
+- A resume reloads each image from that file and checks its size and digest; a missing or changed file is said to the model and the operator.
+  A fork copies the files its checkpoint names; a workspace pack copies the session directory, attachments included.
+- **Pixels are sent upstream unscrubbed**, as a `read_file` image's are.
+- A jailed command reads the file only where it reads the state base: never under `full` `sandbox.isolation`, which masks it; under `partial` only through a grant that covers it; under `none` always.

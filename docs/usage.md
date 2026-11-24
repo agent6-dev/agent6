@@ -103,6 +103,22 @@ An `@path` in a task or a steer you type inlines that file after the reference: 
 - sent as typed: the text of any other directive (`/pin`, `/task`, `/parallel`), an instruction that resumes an ended session (`resume --steer`), and a line typed at a foreground run's pause menu
 - text a model wrote is never searched: a plan run with `--from`, a seeded session, a parent's `steer_child` message
 
+## Images with a message
+
+The web composer and an editor over ACP send images with a task or an instruction.
+The model receives each as an image, as it does one `read_file` reads.
+
+- on the web, paste or drop an image on a composer, or press **Image**; an editor puts `image` blocks in its prompt
+- a message carries at most four images: static PNG, JPEG, GIF or WebP, each at most 2 MiB, 4 MiB together
+- an image can be the whole message
+- anything else is refused with the reason and nothing is sent: an SVG, a PDF, an animation, an image whose bytes are not the type it was sent as
+- an image goes with the task of a run or a plan, with an instruction to a live session, and with the instruction that resumes an ended one
+- an answer to a question, `/btw` and every other directive, an `ask` started from the web, and a `/parallel` task take no image and say so
+- the message's text names each image, as `[image image/png, 34 KiB, sha256 1a2b3c4d5e6f]`; the journal, `sessions transcript` and every conversation view show that label
+- the bytes are stored in the session directory, outside the workspace ([security](security.md#images-an-operator-sends)); a resume reloads them, a fork copies them, and a workspace pack carries them with the rest of the session
+- when the model is not shown an image, its message gains a line that says why, and the conversation shows the same line: a model route without image input, a provider's rejection, a missing or changed file, an image older than the newest four of a request
+- the CLI and the TUI send no image: name the file's workspace path and the model reads it with `read_file`
+
 ## Follow and steer a run
 
 Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).

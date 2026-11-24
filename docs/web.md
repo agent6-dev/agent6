@@ -76,6 +76,7 @@ While a prompt waits and another card shows, a dot marks the menu button and its
 In a composer, Enter sends and Shift+Enter types a new line; on a touch screen, Enter types the new line, and a button or Ctrl+Enter sends.
 In the Sessions or run composer, type `/` for commands and use the arrow keys to scroll through the choices.
 Type `@` there for the workspace's files: Tab, Enter on a chosen row or a click inserts the path as a [file reference](usage.md#file-references).
+Paste or drop an image there, or press **Image** on the entry's label line, to send [images with the message](usage.md#images-with-a-message); each shows above the entry with a button that removes it.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 A failure, a warning and Prune's undelete commands stay on screen until dismissed, the newest by Esc; any other message fades 4 seconds after it shows or after the pointer leaves it.
 When the server stops answering, the Sessions and State machines lists, a session and a machine keep what they last showed, under a line that names the reason and the time of the last update, until the next answer.
@@ -306,6 +307,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - other resource types gain no remote permission; scheme-relative image addresses use HTTPS
 - composer preview: `POST` `/api/parallel-preview` reads the draft and returns its tasks and attempt counts without starting a run
 - writes, small JSON `POST`s: `/api/git/{stage,unstage,discard,commit,branch,switch}` (409 while a session is live in the checkout, 422 for git's own refusal), `/api/git/fetch`, `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,review,stop,compact,rm}`, `/api/session/<id>/findings/<fid>/{fix,resolve,reopen}`, `/api/session/<id>/findings/fix`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
+- `/api/new`, `/api/session/<id>/steer` and `/api/session/<id>/resume` take `images`, a list of [inline images](formats.md#imagebody); their body may be 1 MiB plus the base64 of 4 MiB, and every other `POST` body at most 1 MiB
 - session rows, session snapshots and machine snapshots list their fields, the operator's words and the spend among them, on [Formats](formats.md#cli-json)
 - roster writes use the [typed request bodies](formats.md#reviewerbody) for additions and [removals](formats.md#removereviewerbody)
 - writes use the shared config writer or the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component

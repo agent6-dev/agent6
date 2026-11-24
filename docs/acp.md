@@ -59,6 +59,16 @@ Four more updates ride the journal.
     - a failed task reads `pending` with ` (failed)` after its title, since ACP has no failed status
     - skipped and obsolete tasks are left out
 
+## Images in a prompt
+
+`initialize` answers `promptCapabilities.image`: a `session/prompt` may carry `image` blocks.
+
+- the block's inline `data` is read; its `uri` is never opened
+- the images go with the task a first prompt starts, or with the instruction a later prompt resumes the run with, after the prompt's text
+- the limits and the refusals are the ones [every image has](usage.md#images-with-a-message); a refused image answers the request with a JSON-RPC error that names it
+- a prompt that is a directive (`/review`, `/parallel`) takes no image
+- a request line may be 4 MiB plus the base64 of 4 MiB
+
 ## Parallel work
 
 `/parallel [SPEC --] TASK` starts child attempts on the [same terms as a run](usage.md#parallel-directive).
@@ -160,8 +170,8 @@ A session is one conversation in one directory.
 - Mid-run steering: ACP has no message for a prompt while the previous prompt is running.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
 - Free-text answers to a waiting `ask_user` question: the editor gets option buttons only, so a waiting question without options is unanswered and not queued (see the [frontend cases](#approvals)); `/answer` takes any text.
-- Embedded resources in a prompt: text and `resource_link` blocks are read (a link rides in as its uri; the workspace boundary still decides what it reaches)
-    - images and embedded resources are dropped; `promptCapabilities.embeddedContext` says so
+- Embedded resources in a prompt: text, `resource_link` and `image` blocks are read (a link rides in as its uri; the workspace boundary still decides what it reaches)
+    - embedded resources are dropped; `promptCapabilities.embeddedContext` says so
 
 ## Troubleshooting
 
