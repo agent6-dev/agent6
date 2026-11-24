@@ -118,10 +118,10 @@ def test_a_child_pass_does_not_cancel_the_parents_finish_gate(
     assert receipt["child_verification"] is None
 
 
-def test_model_git_completed_task_passes_with_its_retained_ref(
+def test_model_git_task_waits_for_a_mark_with_its_retained_ref(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The DAG failed a finished task solely because there was no parent chain."""
+    """A retained ref supplies work to inspect, not a task verdict."""
     parent = _run(tmp_path, monkeypatch, "model")
     (record,) = child_dispatch.read_records(parent)
     merge = record.children[0].merge
@@ -129,10 +129,11 @@ def test_model_git_completed_task_passes_with_its_retained_ref(
         merge and children_cli._git(pathlib.Path.cwd(), "show", f"{merge.branch}:answer") == "done"
     )
     node = storage.load_graph(layout.layout_of(parent))[record.node_id or ""]
-    assert node.status == "passed"
+    assert node.status == "pending" and merge.branch in node.notes and not node.commit_sha
     assert entry.cli_main(["sessions", "show", parent.name]) == 0
     out = capsys.readouterr().out
     assert "no_child_result" not in out and f"retained on {merge.branch}" in out
+    assert "1 open task(s): write answer" in out
     assert not (pathlib.Path.cwd() / "answer").exists()
     assert entry.cli_main(["sessions", "show", parent.name, "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)

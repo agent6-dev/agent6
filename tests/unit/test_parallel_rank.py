@@ -686,7 +686,9 @@ def test_a_task_with_one_child_merges_without_a_ranking(
 def test_a_ranked_child_reads_as_its_place_in_the_task_graph_note() -> None:
     """The DAG note says where the child placed, not that it failed."""
     merge = child_records.ChildMerge(ONE, f"agent6/{ONE}", "ranked", "", "3 of 3")
-    assert parallel_merge.child_note(merge) == f"{ONE} ranked 3 of 3; not merged"
+    assert parallel_merge.child_note(merge) == (
+        f"{ONE} finished; ranked 3 of 3; not merged; agent6/{ONE} holds its work"
+    )
 
 
 def test_the_rank_summary_states_a_failed_childs_reason_once() -> None:
