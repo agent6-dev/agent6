@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -48,6 +49,33 @@ def test_file_rows_link_to_the_selected_revision_in_a_new_tab(
     row.press("Space")
     sync_api.expect(page).to_have_url(base + href)
     sync_api.expect(row).to_have_attribute("aria-selected", "true")
+    assert not errors
+
+
+def test_a_non_utf8_name_does_not_hide_or_link_to_another_file(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A Git name that has no UTF-8 URL stays distinct from a literal replacement character."""
+    from playwright import sync_api
+
+    raw = os.fsdecode(b"caf\xe9.txt")
+    (tmp_path / raw).write_text("raw bytes\n")
+    (tmp_path / "caf\ufffd.txt").write_text("Unicode name\n")
+    (tmp_path / "alias").symlink_to(raw)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files")
+    tree = page.get_by_role("tree", name="Files")
+    disabled = tree.locator('[aria-disabled="true"]')
+    sync_api.expect(disabled).to_be_visible()
+    assert not disabled.evaluate("e => e.hasAttribute('href')")
+    sync_api.expect(disabled).to_contain_text("not UTF-8")
+    row = tree.get_by_role("treeitem", name="caf\ufffd.txt", exact=True)
+    sync_api.expect(row).to_have_attribute("href", "#/files/WORKTREE/caf%EF%BF%BD.txt")
+    row.click()
+    sync_api.expect(page.locator(".files-source")).to_contain_text("Unicode name")
+    tree.get_by_role("treeitem", name="alias", exact=True).click()
+    sync_api.expect(page.locator(".files-text")).to_contain_text("symlink to")
+    sync_api.expect(page.locator(".files-text a")).to_have_count(0)
     assert not errors
 
 

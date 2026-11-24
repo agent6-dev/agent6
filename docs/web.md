@@ -136,7 +136,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; several lines queue up before you write and start the run
 - **Files page**: opens on the working tree of the checkout where you started `agent6 web`.
     - choose a commit in the revision box to read its files instead
-    - a symlink shows its target as a link when the revision lists it
+    - a symlink shows its target as a link when the revision lists it and the path is UTF-8
     - a markdown file opens rendered in a sandboxed frame, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - an HTML file opens as **Source**; **Preview** shows it in a sandboxed frame, with repository CSS and images at the listed revision
     - HTML scripts are off by default; previews need HTTPS or localhost and refuse direct tabs
@@ -163,6 +163,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - hidden paths, symlinks, hardlinks, binary files and invalid UTF-8 cannot be edited; saves preserve CRLF line endings and neither stage nor commit
     - the tree keeps the folders you open and opens the ones holding a linked file; ↑ and ↓ move through it, → and ← open and close a folder
     - each file row links to the file at the selected revision, so you can open it in another browser tab
+      A path that is not UTF-8 has no Files URL, so its row shows the reason instead.
     - Back and Forward move between the files opened, and the tree keeps its filter and folds
     - **Refresh** rereads the tree and the open file at the selected revision, keeping the filter and folder folds
 

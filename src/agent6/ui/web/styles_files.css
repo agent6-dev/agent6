@@ -19,6 +19,7 @@
    sizes go first. */
 .files-tree { container: files-tree / inline-size; --tree-inset: var(--files-inset); }
 .files-tree :is(.gtree-name, .gf-path) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files-tree .gf[aria-disabled=true] { cursor: default; color: var(--muted); }
 @container files-tree (width < 20rem) { .gtree-note, .gf-counts { display: none; } }
 /* The count heads the tree, in line with the sizes under it; the first row's line sets it off. */
 .files-counts { padding: 0.375rem var(--files-inset); font-size: var(--fs-s); text-align: end; font-variant-numeric: tabular-nums; }

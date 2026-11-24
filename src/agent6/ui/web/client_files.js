@@ -304,13 +304,15 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
     return mark;
   };
   const fileRow = (f) => {
-    const row = el('a', 'gf');
-    row.href = filesHash(f.path); row.dataset.path = f.path;
-    row.setAttribute('aria-label', f.path);
+    const linked = f.path.isWellFormed(), note = linked ? '' : ' (path is not UTF-8)';
+    const row = el(linked ? 'a' : 'div', 'gf'); row.dataset.path = f.path;
+    row.setAttribute('aria-label', f.path + note);
     row.setAttribute('aria-selected', String(shown === f.path));
     const mark = stateMark([f]); if (mark) row.appendChild(mark);
-    row.appendChild(el('span', 'gf-path', f.path.slice(f.path.lastIndexOf('/') + 1)));
+    row.appendChild(el('span', 'gf-path', f.path.slice(f.path.lastIndexOf('/') + 1) + note));
     row.appendChild(el('span', 'gf-counts muted', f.kind === 'file' ? fmtBytes(f.size) : f.kind));
+    if (!linked) { row.setAttribute('aria-disabled', 'true'); row.title = f.path + note; return row; }
+    row.href = filesHash(f.path);
     row.onclick = e => {
       if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       e.preventDefault(); return showFile(f);
@@ -375,7 +377,7 @@ async function renderFiles(gen, revision, path = '', query = new URLSearchParams
       if (part === '..') { if (!parts.pop()) return null; } else if (part && part !== '.') parts.push(part);
     }
     const path = parts.join('/');
-    return entries.some(e => e.path === path) ? path : null;
+    return path.isWellFormed() && entries.some(e => e.path === path) ? path : null;
   };
   // Open a file's folders, so its row shows in every later paint of the tree.
   const reveal = (path) => {
