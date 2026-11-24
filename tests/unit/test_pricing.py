@@ -9,57 +9,45 @@ import pathlib
 
 import pytest
 
-from agent6 import kinds
+from agent6 import config, kinds
 from agent6.models import cache as models_cache  # pyright: ignore[reportPrivateUsage]
 from agent6.models import pricing as models_pricing
+from tests import price_env
 
 
-def _write_pricing(cache: pathlib.Path, name: str, pricing: dict[str, list[float]]) -> None:
-    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    (cache / "agent6" / "models" / f"{name}.json").write_text(
-        json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
-    )
-
-
-def test_lookup_price_reads_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
-    assert models_pricing.lookup_price("a/model") == models_pricing.Price(0.5, 2.5)
-    assert models_pricing.lookup_price("nobody/else") is None
-
-
-def test_lookup_price_sees_cache_written_after_first_miss(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+def test_price_needs_the_listing_entry_binding(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The CLI preflight refreshes the cache AFTER config construction already
-    # did a lookup; the memo must not pin the early empty result.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    assert models_pricing.lookup_price("a/model") is None
-    _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
-    assert models_pricing.lookup_price("a/model") == models_pricing.Price(0.5, 2.5)
+    route = kinds.ModelRoute("testprovider", "a/model")
+    rates = {route.model: [0.5, 2.5]}
+    assert models_pricing.lookup_price(route, price_env.PROVIDERS) is None
+    path = tmp_path / "agent6/models/testprovider.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"pricing": rates}), encoding="utf-8")
+    assert models_pricing.lookup_price(route, price_env.PROVIDERS) is None
+    price_env.write(
+        rates, entry=config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:2")
+    )
+    assert models_pricing.lookup_price(route, price_env.PROVIDERS) is None
+    price_env.write(rates)
+    assert models_pricing.lookup_price(route, price_env.PROVIDERS) == models_pricing.Quote(
+        models_pricing.Price(0.5, 2.5), route
+    )
 
 
 def test_lookup_price_ignores_malformed_entries(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "agent6" / "models" / "bad.json").write_text(
-        json.dumps(
-            {
-                "pricing": {
-                    "neg/model": [-1.0, 2.0],
-                    "str/model": ["x", "y"],
-                    "short/model": [1.0],
-                    "ok/model": [1.0, 2.0],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert models_pricing.lookup_price("ok/model") == models_pricing.Price(1.0, 2.0)
-    for bad in ("neg/model", "str/model", "short/model"):
-        assert models_pricing.lookup_price(bad) is None
+    price_env.write({"neg": [-1, 2], "short": [1], "infinite": [1.0, float("inf")]})
+    for model in ("neg", "short", "infinite", "missing"):
+        assert (
+            models_pricing.lookup_price(
+                kinds.ModelRoute("testprovider", model), price_env.PROVIDERS
+            )
+            is None
+        )
 
 
 def test_parse_pricing_openrouter_shape() -> None:
@@ -84,88 +72,61 @@ def test_parse_pricing_openrouter_shape() -> None:
     assert "bad-pricing" not in got
 
 
-def test_lookup_price_direct_anthropic_alias(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+@pytest.mark.parametrize(
+    ("name", "model", "listed"),
+    [
+        ("anthropic", "claude-haiku-4-5-20251001", "anthropic/claude-haiku-4.5"),
+        ("anthropic", "claude-opus-4-8", "anthropic/claude-opus-4.8"),
+        ("openai", "gpt-x", "openai/gpt-x"),
+        ("responses", "gpt-x", "openai/gpt-x"),
+        ("gateway", "m", "vendor/m"),
+    ],
+)
+def test_reference_quote_names_the_matched_listing(
+    name: str, model: str, listed: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A direct-Anthropic id resolves through its OpenRouter listing: date
-    # suffix stripped, trailing version dotted, `anthropic/` prefixed.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    _write_pricing(
-        tmp_path,
-        "openrouter",
+    providers = config.Config.model_validate(
         {
-            "anthropic/claude-haiku-4.5": [1.0, 5.0],
-            "anthropic/claude-opus-4.8": [5.0, 25.0],
-            "anthropic/claude-sonnet-5": [2.0, 10.0],
-        },
+            "providers": {
+                "anthropic": {"backend": "anthropic"},
+                "openai": {"backend": "openai"},
+                "responses": {"backend": "responses", "base_url": "https://api.openai.com/v1"},
+                "openrouter": {"backend": "openai", "base_url": "https://prices.example"},
+                "gateway": {
+                    "backend": "openai",
+                    "base_url": "https://gateway.example",
+                    "price_from": "openrouter",
+                },
+            }
+        }
+    ).providers
+    route = kinds.ModelRoute(name, model)
+    rates = {listed: [1.0, 5.0]}
+    price_env.write(rates, name="openrouter", entry=providers["openrouter"])
+
+    def quote() -> models_pricing.Quote | None:
+        return models_pricing.lookup_price(route, providers)
+
+    assert quote() == models_pricing.Quote(
+        models_pricing.Price(1.0, 5.0), kinds.ModelRoute("openrouter", listed)
     )
-    assert models_pricing.lookup_price("claude-haiku-4-5-20251001") == models_pricing.Price(
-        1.0, 5.0
+    price_env.write({**rates, model: [2.0, 3.0]}, name="openrouter", entry=providers["openrouter"])
+    assert quote() == models_pricing.Quote(
+        models_pricing.Price(2.0, 3.0), kinds.ModelRoute("openrouter", model)
     )
-    assert models_pricing.lookup_price("claude-opus-4-8") == models_pricing.Price(5.0, 25.0)
-    assert models_pricing.lookup_price("claude-sonnet-5") == models_pricing.Price(2.0, 10.0)
 
 
-def test_lookup_price_alias_never_shadows_exact(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    _write_pricing(
-        tmp_path,
-        "openrouter",
-        {"claude-opus-4-8": [9.0, 9.0], "anthropic/claude-opus-4.8": [5.0, 25.0]},
-    )
-    assert models_pricing.lookup_price("claude-opus-4-8") == models_pricing.Price(9.0, 9.0)
-
-
-def test_lookup_price_alias_misses_stay_unpriced(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    _write_pricing(tmp_path, "openrouter", {"anthropic/claude-3.5-sonnet": [3.0, 15.0]})
-    # Legacy version-first naming is deliberately not mapped.
-    assert models_pricing.lookup_price("claude-3-5-sonnet-20241022") is None
-    # Namespaced ids are never rewritten.
-    assert models_pricing.lookup_price("someorg/claude-haiku-4-5") is None
-
-
-def test_a_model_two_providers_list_is_priced_by_its_route(
+def test_gateway_reference_does_not_choose_between_vendors(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A model two providers list is priced by its route.
-
-    Merging every provider cache by model id with the first file name winning lets a cheap gateway's
-    listing price a call that went through OpenRouter, a 41x under-count of the enforced `max_usd`.
-    """
-    import json
-
-    from agent6 import budget as agent6_budget
-
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "agent6" / "models" / "aaa_cheap.json").write_text(
-        json.dumps({"models": ["openai/gpt-4o"], "pricing": {"openai/gpt-4o": [0.10, 0.20]}}),
-        encoding="utf-8",
-    )
-    (tmp_path / "agent6" / "models" / "openrouter.json").write_text(
-        json.dumps({"models": ["openai/gpt-4o"], "pricing": {"openai/gpt-4o": [2.50, 10.00]}}),
-        encoding="utf-8",
-    )
-    assert models_pricing.lookup_price("openai/gpt-4o", "openrouter") == models_pricing.Price(
-        2.5, 10.0
-    )
-    assert models_pricing.lookup_price("openai/gpt-4o", "aaa_cheap") == models_pricing.Price(
-        0.1, 0.2
-    )
-    budget = agent6_budget.BudgetTracker(max_usd=100.0, max_tokens_fallback=-1, max_plan_points=-1)
-    budget.record(
-        route=kinds.ModelRoute("openrouter", "openai/gpt-4o"),
-        input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        cache_read_tokens=0,
-        cache_write_tokens=0,
-    )
-    assert budget.estimate_usd()[0] == pytest.approx(12.5)
+    providers = {
+        **price_env.PROVIDERS,
+        "local": price_env.ENTRY.model_copy(update={"price_from": "testprovider"}),
+    }
+    price_env.write({"one/x": [0, 1], "two/x": [1, 2]})
+    assert models_pricing.lookup_price(kinds.ModelRoute("local", "x"), providers) is None
 
 
 def test_a_listing_that_publishes_cache_rates_prices_them(
@@ -177,8 +138,6 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     cached input is 0.5x and carries no write premium); Anthropic's multipliers (0.1x read, 1.25x
     write) apply only where a listing publishes none.
     """
-    import json
-
     from agent6 import budget as agent6_budget
 
     got = models_cache._parse_pricing(
@@ -201,28 +160,23 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     assert price.as_list() == pytest.approx([2.0, 8.0, 1.0, 2.0])
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "agent6" / "models" / "openrouter.json").write_text(
-        json.dumps(
-            {
-                "models": ["openai/gpt-x", "listed-only/plain"],
-                "pricing": {"openai/gpt-x": [2.0, 8.0, 1.0, 2.0], "listed-only/plain": [2.0, 8.0]},
-            }
-        ),
-        encoding="utf-8",
+    price_env.write({"openai/gpt-x": [2.0, 8.0, 1.0, 2.0], "listed-only/plain": [2.0, 8.0]})
+    listed = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    listed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     listed.record(
-        route=kinds.ModelRoute("openai/gpt-x", "openai/gpt-x"),
+        route=kinds.ModelRoute("testprovider", "openai/gpt-x"),
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,
         cache_write_tokens=0,
     )
     assert listed.estimate_usd()[0] == pytest.approx(1.0)  # the listed 0.5x, not 0.1x
-    assumed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    assumed = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
     assumed.record(
-        route=kinds.ModelRoute("listed-only/plain", "listed-only/plain"),
+        route=kinds.ModelRoute("testprovider", "listed-only/plain"),
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,
@@ -231,22 +185,3 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     assert assumed.estimate_usd()[0] == pytest.approx(0.2)  # Anthropic's 0.1x of $2
     assert "cache rates assumed" in assumed.format_summary()
     assert "cache rates assumed" not in listed.format_summary()
-
-
-def test_a_route_with_its_own_card_never_prices_from_another(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    """A route with its own card never prices from another.
-
-    A provider whose cached listing lacks the model must not fall through to the first listing by
-    file name that has it, or the ceiling and the receipt read another provider's rate instead of
-    "$?". The cross-listing answer is for a route with no cached card at all (the direct-Anthropic
-    alias).
-    """
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    _write_pricing(tmp_path, "aaa-gateway", {"other/model": [0.1, 0.2]})
-    _write_pricing(tmp_path, "openrouter", {"x/model": [0.3, 0.6]})
-    assert models_pricing.lookup_price("x/model", "aaa-gateway") is None
-    assert models_pricing.lookup_price("x/model", "openrouter") == models_pricing.Price(0.3, 0.6)
-    assert models_pricing.lookup_price("x/model", "no-card") == models_pricing.Price(0.3, 0.6)
-    assert models_pricing.lookup_price("x/model") == models_pricing.Price(0.3, 0.6)

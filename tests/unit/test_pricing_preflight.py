@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The preflight fetches the OpenRouter pricing catalog for bare claude-* ids.
-
-Prices for direct-Anthropic ids live only in that catalog (pricing's alias);
-a config with just [providers.anthropic] refreshed nothing that carries
-prices, so the $ cap ran unpriced on a cold cache.
-"""
+"""The preflight checks credentials and resolves each route's budget ledger."""
 
 from __future__ import annotations
 
@@ -29,54 +24,25 @@ def _cfg(model: str, provider_block: dict[str, object]) -> Config:
     )
 
 
-def test_claude_only_config_refreshes_the_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    called: list[bool] = []
+@pytest.mark.parametrize("configured", [False, True])
+def test_preflight_refreshes_only_configured_listings(
+    monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
+    called: list[str] = []
 
-    def _key(*_a: object, **_k: object) -> str:
-        return "sk-test"
-
-    def _models(*_a: object, **_k: object) -> list[str]:
+    def models(name: str, *_args: object) -> list[str]:
+        called.append(name)
         return []
 
-    monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
     monkeypatch.setattr(secret_store, "load_secrets", dict)
-    monkeypatch.setattr(secret_store, "resolve_api_key", _key)
-    monkeypatch.setattr(cache, "list_models", _models)
-    cfg = _cfg(
-        "claude-opus-5",
-        {"anthropic": {"backend": "anthropic", "api_key_env": "X_KEY"}},
-    )
+    monkeypatch.setattr(secret_store, "resolve_api_key", lambda *_a, **_k: "sk-test")
+    monkeypatch.setattr(cache, "list_models", models)
+    entries = {"anthropic": {"backend": "anthropic"}}
+    if configured:
+        entries["openrouter"] = {"backend": "openai", "base_url": "https://prices.example/v1"}
+    cfg = _cfg("claude-opus-5", dict(entries))
     assert session_setup.check_provider_keys(cfg) is None
-    assert called, "bare claude-* with no openrouter provider must refresh the catalog"
-
-
-def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
-    called: list[bool] = []
-
-    def _key(*_a: object, **_k: object) -> str:
-        return "sk-test"
-
-    def _models(*_a: object, **_k: object) -> list[str]:
-        return []
-
-    monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
-    monkeypatch.setattr(secret_store, "load_secrets", dict)
-    monkeypatch.setattr(secret_store, "resolve_api_key", _key)
-    monkeypatch.setattr(cache, "list_models", _models)
-    # A BARE claude-* id through openrouter: the one shape where the guard
-    # decides (a non-claude model skips the refresh before the guard is read).
-    cfg = _cfg(
-        "claude-opus-5",
-        {
-            "openrouter": {
-                "backend": "openai",
-                "api_key_env": "X_KEY",
-                "base_url": "https://openrouter.ai/api/v1",
-            }
-        },
-    )
-    assert session_setup.check_provider_keys(cfg) is None
-    assert not called, "a configured openrouter provider already refreshes with a key"
+    assert called == (["anthropic", "openrouter"] if configured else ["anthropic"])
 
 
 def test_a_reviewer_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,7 +176,7 @@ def test_budget_notices_name_every_configured_role(capsys: pytest.CaptureFixture
     assert preflight.budget_preflight(cfg) is None
     notices = capsys.readouterr().err
     assert "'plan-model' (planner, worker) draws on a subscription plan" in notices
-    assert "'unpriced-model' (reviewer) has no price data" in notices
+    assert "'local/unpriced-model' (reviewer) has no price data" in notices
 
 
 def test_plan_metered_routes_skip_the_fallback_note(
@@ -302,7 +268,7 @@ def test_claude_code_routes_are_plan_metered(
     assert err is not None and "the plan cap is 0" in err and "claude-haiku-4-5" in err
 
     called: list[bool] = []
-    monkeypatch.setattr(cache, "refresh_pricing_catalog", lambda: called.append(True))
+    monkeypatch.setattr(cache, "list_models", lambda *_: called.append(True))
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     # The sign-in probe is the next test's subject; here the binary need not exist.
     monkeypatch.setattr(providers_claude_code, "login_status", _signed_in)
@@ -388,3 +354,62 @@ def test_budget_preflight_prices_a_route_from_its_own_card(
     )
     err = preflight.budget_preflight(cfg)
     assert err is not None and "x/model" in err
+
+
+def test_an_unrelated_listing_cannot_refuse_a_local_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A local model stays on fallback tokens even if a paid gateway lists its exact id."""
+    from agent6 import kinds
+    from agent6.app import preflight
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "local": {"backend": "openai", "base_url": "http://localhost:1"},
+                "gateway": {"backend": "openai", "base_url": "https://gateway.example/v1"},
+            },
+            "models": {"worker": {"model": "local/x/model"}},
+            "budget": {"max_usd": 0, "max_tokens_fallback": 10},
+        }
+    )
+    from tests import price_env
+
+    price_env.write({"x/model": [1.0, 2.0]}, name="gateway", entry=cfg.providers["gateway"])
+    assert preflight.budget_preflight(cfg) is None
+    tracker = session_setup.budget_tracker(cfg)
+    tracker.record(
+        route=kinds.ModelRoute("local", "x/model"),
+        input_tokens=6,
+        output_tokens=3,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+    )
+    assert tracker.estimate_usd() == (0.0, True)
+    assert tracker.available().tokens == 1
+    tracker.check()
+
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_missing_reference_warns_once_even_with_zero_usd(
+    configured: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.app import preflight
+
+    providers = {"paid": {"backend": "openai"}}
+    if configured:
+        providers["openrouter"] = {"backend": "openai", "base_url": "https://prices.example"}
+    cfg = Config.model_validate(
+        {
+            "providers": providers,
+            "models": {"worker": {"model": "paid/m"}, "planner": {"model": "paid/m"}},
+            "budget": {"max_usd": 0},
+        }
+    )
+    assert preflight.budget_preflight(cfg) is None
+    text = capsys.readouterr().err
+    assert text.count("no price data") == 1
+    assert "providers.paid.price_from = 'openrouter'" in text
+    assert ("no matching price" if configured else "not configured") in text
+    assert "fallback tokens" in text

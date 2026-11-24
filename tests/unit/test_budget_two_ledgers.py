@@ -8,30 +8,24 @@ that ledger, > 0 = the cap.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from agent6 import budget, kinds
+from tests import price_env
 
 
 @pytest.fixture(autouse=True)
 def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
     """Priced: claude-sonnet-4-5. Anything else is unpriced (no static table)."""
-    cache = tmp_path_factory.mktemp("price-cache")
-    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    (cache / "agent6" / "models" / "testprovider.json").write_text(
-        json.dumps({"models": [], "pricing": {"claude-sonnet-4-5": [3.0, 15.0]}}),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("price-cache")))
+    price_env.write({"claude-sonnet-4-5": [3.0, 15.0], "claude-sonnet-4-20250514": [3.0, 15.0]})
 
 
 def _rec(
     bt: budget.BudgetTracker, model: str, tokens_in: int, tokens_out: int, cost: float | None = None
 ) -> None:
     bt.record(
-        route=kinds.ModelRoute(model, model),
+        route=kinds.ModelRoute("testprovider", model),
         input_tokens=tokens_in,
         output_tokens=tokens_out,
         cache_read_tokens=0,
@@ -42,7 +36,9 @@ def _rec(
 
 def test_unmetered_calls_count_only_against_the_fallback() -> None:
     # local-model is unpriced and reports no cost, so its tokens land in the fallback ledger.
-    bt = budget.BudgetTracker(max_usd=0.01, max_tokens_fallback=1_000, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=0.01, max_tokens_fallback=1_000, max_plan_points=-1
+    )
     _rec(bt, "local-model", 400, 300)
     bt.check()  # 700 < 1000 and $0 < $0.01: both ledgers have room
     _rec(bt, "local-model", 200, 200)
@@ -52,7 +48,9 @@ def test_unmetered_calls_count_only_against_the_fallback() -> None:
 
 def test_metered_calls_count_only_against_max_usd() -> None:
     # A priced model never touches the fallback ledger, however many tokens.
-    bt = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1
+    )
     _rec(bt, "claude-sonnet-4-5", 5_000, 5_000)  # >> fallback cap, but metered
     bt.check()  # fallback ledger untouched; ~$0.09 < $1
     _rec(bt, "claude-sonnet-4-5", 250_000, 20_000)  # ~$1.05 more -> over $1 total
@@ -62,13 +60,17 @@ def test_metered_calls_count_only_against_max_usd() -> None:
 
 def test_reported_cost_makes_an_unpriced_model_metered() -> None:
     # A gateway-reported per-call cost is real billing: metered with no table price.
-    bt = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1
+    )
     _rec(bt, "exotic-model", 5_000, 5_000, cost=0.02)
     bt.check()
 
 
 def test_minus_one_means_unlimited_in_both_ledgers() -> None:
-    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1
+    )
     _rec(bt, "claude-sonnet-4-5", 10_000_000, 1_000_000)  # ~$45 metered
     _rec(bt, "local-model", 50_000_000, 1_000_000)  # 51M unmetered tokens
     bt.check()
@@ -76,7 +78,9 @@ def test_minus_one_means_unlimited_in_both_ledgers() -> None:
 
 def test_zero_fallback_refuses_any_unmetered_call() -> None:
     # max_tokens_fallback = 0 allows zero unmetered tokens, the runtime backstop for the promise.
-    bt = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=0, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=0, max_plan_points=-1
+    )
     _rec(bt, "local-model", 1, 0)
     with pytest.raises(budget.BudgetExceededError, match="unmetered"):
         bt.check()
@@ -84,7 +88,12 @@ def test_zero_fallback_refuses_any_unmetered_call() -> None:
 
 def test_zero_usd_refuses_any_metered_call() -> None:
     # max_usd = 0: a run-nothing-metered policy (local-only rig).
-    bt = budget.BudgetTracker(max_usd=0.0, max_tokens_fallback=1_000_000, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS,
+        max_usd=0.0,
+        max_tokens_fallback=1_000_000,
+        max_plan_points=-1,
+    )
     _rec(bt, "claude-sonnet-4-5", 10, 10)
     with pytest.raises(budget.BudgetExceededError, match="USD"):
         bt.check()
@@ -96,7 +105,9 @@ def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
     One model id reaches both a subscription provider and a paid API; the API dollars under that id
     stay on the receipt and the ceiling.
     """
-    bt = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
     bt.record(
         route=kinds.ModelRoute("plan", "claude-sonnet-4-5"),
         input_tokens=10,
@@ -118,7 +129,9 @@ def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
 
 def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:
     """An unpriced plan call reads $0, not "$? (unknown price)", and never draws on the fallback."""
-    bt = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1
+    )
     for _ in range(3):
         bt.record(
             route=kinds.ModelRoute("unpriced-plan-model", "unpriced-plan-model"),
@@ -138,6 +151,8 @@ def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:
 
 
 def test_fraction_remaining_tracks_the_tighter_ledger() -> None:
-    bt = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=1_000, max_plan_points=-1)
+    bt = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=1.0, max_tokens_fallback=1_000, max_plan_points=-1
+    )
     _rec(bt, "local-model", 500, 400)  # fallback 90% used; USD 0%
     assert bt.fraction_remaining() == pytest.approx(0.1, abs=0.01)

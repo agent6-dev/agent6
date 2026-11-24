@@ -31,6 +31,7 @@ from agent6.providers import (
 )
 from agent6.sessions import event_log
 from agent6.viewmodel import telemetry
+from tests import price_env
 from tests.unit.test_anthropic_streaming import FakeStreamResponse
 
 
@@ -203,11 +204,7 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
 ) -> None:
     # The USD assertion needs a table price; the suite isolates the model-price cache, so seed one.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    pricing = {"claude-sonnet-4-5": [3.0, 15.0]}
-    (tmp_path / "agent6" / "models" / "anthropic.json").write_text(
-        json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
-    )
+    price_env.write({"claude-sonnet-4-5": [3.0, 15.0], "gpt-4o": [3.0, 15.0]})
     lines = _sse(
         "message_start",
         {
@@ -228,8 +225,12 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
         "content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "partial"}}
     )
 
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    budget = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
+    provider = AnthropicProvider(
+        api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
+    )
     with (
         mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=9)),
         pytest.raises(Exception),
@@ -257,7 +258,9 @@ def test_anthropic_cut_stream_keeps_message_start_output_usage() -> None:
         "content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}
     )
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    provider = AnthropicProvider(
+        api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
+    )
     with (
         mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=6)),
         pytest.raises(Exception),
@@ -293,8 +296,12 @@ def test_openai_records_a_cut_stream_and_keeps_the_cached_split() -> None:
     )
     lines += chunk({"choices": [{"index": 0, "delta": {"content": " more"}}]})
 
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
+    budget = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
+    provider = OpenAIProvider(
+        api_key="k", model="gpt-4o", budget=budget, provider_name="testprovider"
+    )
     with (
         mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=6)),
         pytest.raises(Exception),
@@ -317,8 +324,12 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     """A stream that reported nothing records nothing: an unknown amount is not invented."""
     lines = _sse("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}})
 
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    budget = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
+    provider = AnthropicProvider(
+        api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
+    )
     with (
         mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=1)),
         pytest.raises(Exception),
@@ -340,11 +351,7 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
 
 def _pricing(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    pricing = {"claude-sonnet-4-5": [3.0, 15.0], "gpt-4o": [3.0, 15.0]}
-    (tmp_path / "agent6" / "models" / "x.json").write_text(
-        json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
-    )
+    price_env.write({"claude-sonnet-4-5": [3.0, 15.0], "gpt-4o": [3.0, 15.0]})
 
 
 def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
@@ -381,8 +388,12 @@ def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
         "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 800}}
     )
     lines += _sse("message_stop", {})
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    budget = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
+    provider = AnthropicProvider(
+        api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
+    )
     with (
         mock.patch(
             "agent6.providers.stream_lifecycle.http_stream",
@@ -420,8 +431,12 @@ def test_openai_records_a_completed_stream_its_meter_guard_refuses(
         "data: [DONE]",
         "",
     ]
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
+    budget = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
+    provider = OpenAIProvider(
+        api_key="k", model="gpt-4o", budget=budget, provider_name="testprovider"
+    )
     with (
         mock.patch(
             "agent6.providers.stream_lifecycle.http_stream",
@@ -468,8 +483,12 @@ def test_anthropic_meters_a_completed_stream_once(
         "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 20}}
     )
     lines += _sse("message_stop", {})
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    budget = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
+    provider = AnthropicProvider(
+        api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
+    )
     with mock.patch(
         "agent6.providers.stream_lifecycle.http_stream",
         return_value=FakeStreamResponse(status_code=200, lines=lines),
@@ -500,7 +519,9 @@ def test_anthropic_records_a_completed_malformed_stream() -> None:
     )
     lines += _sse("message_stop", {})
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    provider = AnthropicProvider(
+        api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
+    )
     with (
         mock.patch(
             "agent6.providers.stream_lifecycle.http_stream",
@@ -533,8 +554,12 @@ def test_openai_meters_a_completed_stream_once(
         "data: [DONE]",
         "",
     ]
-    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
+    budget = agent6_budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
+    provider = OpenAIProvider(
+        api_key="k", model="gpt-4o", budget=budget, provider_name="testprovider"
+    )
     with mock.patch(
         "agent6.providers.stream_lifecycle.http_stream",
         return_value=FakeStreamResponse(status_code=200, lines=lines),

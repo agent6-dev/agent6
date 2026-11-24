@@ -41,6 +41,7 @@ _PRESETS_MARKER = "<!-- presets-table -->"
 _RUNTIME_DEFAULTS = {
     "compaction.drop_at_chars": "_adaptive_",
     "compaction.summarise_at_chars": "_adaptive_",
+    "providers.<name>.price_from": "per endpoint",
     "providers.<name>.base_url": "per (format, deployment)",
     "providers.<name>.idle_compact_s": "per backend",
     "providers.<name>.auth_style": "per (format, deployment)",

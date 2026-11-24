@@ -20,6 +20,7 @@ from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.app import role_providers
 from agent6.providers import ProviderResponse
+from tests import price_env
 
 
 def _resp() -> ProviderResponse:
@@ -173,19 +174,18 @@ def test_a_failed_call_still_reports_what_it_spent(
 
     # The USD assertion needs a table price; the suite isolates the price cache, so seed one.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    pricing = {"anthropic/claude-haiku-4.5": [1.0, 5.0]}
-    (tmp_path / "agent6" / "models" / "anthropic.json").write_text(
-        json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
-    )
+    price_env.write({"anthropic/claude-haiku-4.5": [1.0, 5.0]}, name="anthropic")
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     budget = agent6_budget.BudgetTracker(
-        max_usd=10.0, max_tokens_fallback=2_000_000, max_plan_points=-1
+        providers={"anthropic": price_env.ENTRY},
+        max_usd=10.0,
+        max_tokens_fallback=2_000_000,
+        max_plan_points=-1,
     )
 
     def _cut_stream(**_: object) -> ProviderResponse:
         budget.record(
-            route=kinds.ModelRoute("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
+            route=kinds.ModelRoute("anthropic", "anthropic/claude-haiku-4.5"),
             input_tokens=50_000,
             output_tokens=120,
             cache_read_tokens=7_000,

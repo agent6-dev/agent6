@@ -126,6 +126,7 @@ A minimal block is just `backend` (plus `base_url` for a non-default host).
 | `<name>.extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
 | `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
+| `<name>.price_from` | per endpoint | Configured provider whose listing supplies token rates instead of this entry's own listing; default: openrouter for direct Anthropic and OpenAI endpoints |
 | `<name>.prompt_caching` | `true` | prompt caching for `backend = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
 | `<name>.server_compaction` | `true` | true on a supported model: the endpoint clears old tool results and writes the summary; agent6 changes no earlier message there; false or an unsupported model: agent6 compacts by itself; default: true for `deployment = "direct"` without a configured `base_url`, false otherwise |
 | `<name>.binary` | `"claude"` | executable for `backend = "claude_code"` only; a name on PATH or an absolute path |
@@ -597,7 +598,12 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 `--max-usd` / `--max-tokens-fallback` / `--max-plan-points` override per run.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
 Purchased-credit spend and API cost share the USD ceiling.
-Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.
+Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
+For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default reference is the configured `openrouter` entry.
+A reference listing matches the exact model id first, then its vendor-prefixed id (for example, `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`).
+A gateway model without a known vendor needs an unambiguous match.
+A missing reference or price leaves the route unpriced.
+A cached price under `$XDG_CACHE_HOME/agent6/models/` must match the current provider entry.
 
 ## `[machine]`
 

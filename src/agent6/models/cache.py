@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import hashlib
 import json
 import pathlib
 import time
@@ -21,7 +20,7 @@ from urllib import parse
 
 import httpx2
 
-from agent6 import kinds, media, paths
+from agent6 import kinds, media
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -30,6 +29,7 @@ from agent6.config import (
     ProviderEntry,
     ResponsesProviderEntry,
 )
+from agent6.models import listing_store
 from agent6.models import pricing as models_pricing
 from agent6.providers import oauth, provider_types, request_headers, transport, wire
 
@@ -38,22 +38,6 @@ __all__ = ["cached_context_window", "list_models"]
 _ANTHROPIC_VERSION = "2023-06-01"
 _CACHE_TTL_S = 600
 _FETCH_TIMEOUT_S = 1.5  # tab completion waits on this
-
-
-def _cache_path(provider_name: str) -> pathlib.Path | None:
-    """Return the provider's cache file, or None when the name is not one path component.
-
-    Provider names are config table keys; a `/` or `..` would write outside the cache dir.
-
-    Args:
-        provider_name: The provider's config name.
-
-    Returns:
-        `<cache dir>/models/<provider_name>.json`, or None.
-    """
-    if provider_name in ("", ".", "..") or provider_name != pathlib.Path(provider_name).name:
-        return None
-    return paths.cache_dir() / "models" / f"{provider_name}.json"
 
 
 def _read_cache(path: pathlib.Path | None) -> list[str] | None:
@@ -80,19 +64,16 @@ class Listing:
     modalities: dict[str, list[str]]
 
 
-def _binding(entry: ProviderEntry) -> str:
-    return hashlib.sha256(
-        json.dumps(entry.model_dump(mode="json"), sort_keys=True).encode()
-    ).hexdigest()
-
-
 def _write_cache(path: pathlib.Path | None, listing: Listing, entry: ProviderEntry) -> None:
     """Write listing facts together, bound to the complete configured provider entry."""
     if path is None:
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        body: dict[str, object] = {"models": listing.models, "binding": _binding(entry)}
+        body: dict[str, object] = {
+            "models": listing.models,
+            "binding": listing_store.binding(entry),
+        }
         if listing.pricing:
             body["pricing"] = {m: p.as_list() for m, p in listing.pricing.items()}
         if listing.context:
@@ -135,7 +116,7 @@ def cached_input_capabilities(
         Explicit supported or unsupported facts, unknown on any absent or unbound data.
     """
     unknown = media.InputCapabilities(kinds.ModelRoute(provider_name, model))
-    path = _cache_path(provider_name)
+    path = listing_store.cache_path(provider_name)
     if path is None:
         return unknown
     try:
@@ -146,7 +127,7 @@ def cached_input_capabilities(
     if (
         not 0 <= age < _CACHE_TTL_S
         or not isinstance(body, dict)
-        or body.get("binding") != _binding(entry)
+        or body.get("binding") != listing_store.binding(entry)
     ):
         return unknown
     modalities = body.get("modalities")
@@ -513,7 +494,7 @@ def list_models(
     Returns:
         A fresh cache, else the live listing (cached), else the stale cache, else [].
     """
-    path = _cache_path(provider_name)
+    path = listing_store.cache_path(provider_name)
     cached = _read_cache(path)
     age = float("inf")
     if path is not None:
@@ -550,31 +531,13 @@ def fetch_models_live(
         return None
     if not listing.models:
         return None
-    _write_cache(_cache_path(provider_name), listing, entry)
+    _write_cache(listing_store.cache_path(provider_name), listing, entry)
     return listing.models
-
-
-# The price source for bare `claude-*` ids: the public OpenRouter listing, fetched keyless.
-# Security: a fixed host, a keyless GET, nothing from the response is executed.
-_PRICING_CATALOG_BASE_URL = "https://openrouter.ai/api/v1"
-
-
-def refresh_pricing_catalog(*, ttl_s: int = _CACHE_TTL_S) -> None:
-    """Refresh the OpenRouter catalog cache keyless, under the TTL.
-
-    Bare `claude-*` ids are priced through this catalog, which a config with only
-    `[providers.anthropic]` would otherwise never fetch.
-
-    Args:
-        ttl_s: How old the cache may be before a fetch.
-    """
-    entry = OpenAIProviderEntry(backend="openai", base_url=_PRICING_CATALOG_BASE_URL)
-    list_models("openrouter", entry, None, ttl_s=ttl_s)
 
 
 def cached_models(provider_name: str) -> list[str]:
     """Return the provider's cached model ids without touching the network, or []."""
-    return _read_cache(_cache_path(provider_name)) or []
+    return _read_cache(listing_store.cache_path(provider_name)) or []
 
 
 def cached_context_window(provider_name: str, keys: tuple[str, ...]) -> int | None:
@@ -587,7 +550,7 @@ def cached_context_window(provider_name: str, keys: tuple[str, ...]) -> int | No
     Returns:
         The window in tokens, or None on any miss.
     """
-    path = _cache_path(provider_name)
+    path = listing_store.cache_path(provider_name)
     if path is None:
         return None
     try:

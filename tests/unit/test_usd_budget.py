@@ -9,11 +9,12 @@ cache file, the path production uses.
 
 from __future__ import annotations
 
-import json
 import pathlib
 from typing import Any
 
 import pytest
+
+from tests import price_env
 
 PRICED_MODEL = "test/priced-model"
 CHEAP_MODEL = "test/cheap-model"
@@ -22,17 +23,8 @@ CHEAP_MODEL = "test/cheap-model"
 @pytest.fixture
 def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     cache = tmp_path / "cache"
-    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    (cache / "agent6" / "models" / "testprovider.json").write_text(
-        json.dumps(
-            {
-                "models": [PRICED_MODEL, CHEAP_MODEL],
-                "pricing": {PRICED_MODEL: [3.0, 15.0], CHEAP_MODEL: [0.27, 1.10]},
-            }
-        ),
-        encoding="utf-8",
-    )
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    price_env.write({PRICED_MODEL: [3.0, 15.0], CHEAP_MODEL: [0.27, 1.10]}, name="p")
     return cache
 
 

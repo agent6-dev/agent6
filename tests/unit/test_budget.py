@@ -4,47 +4,37 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest import mock
 
 import pytest
 
 from agent6 import budget, kinds
+from tests import price_env
 
 
 @pytest.fixture(autouse=True)
 def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
     """Inject prices via a real models-cache file (there is no static table)."""
-    cache = tmp_path_factory.mktemp("price-cache")
-    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
-    (cache / "agent6" / "models" / "testprovider.json").write_text(
-        json.dumps(
-            {
-                "models": [],
-                "pricing": {
-                    "claude-sonnet-4-5": [3.0, 15.0],
-                    "claude-sonnet-4-20250514": [3.0, 15.0],
-                    "free-or-unpriced": [0.0, 0.0],  # OpenRouter reports 0/0 for some routes
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("price-cache")))
+    price_env.write({"claude-sonnet-4-5": [3.0, 15.0], "claude-sonnet-4-20250514": [3.0, 15.0]})
 
 
 def _t(*, fallback: int = 100) -> budget.BudgetTracker:
     # Model "m" is unpriced in the fixture cache, so its tokens land in the fallback ledger.
-    return budget.BudgetTracker(max_usd=-1, max_tokens_fallback=fallback, max_plan_points=-1)
+    return budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=-1, max_tokens_fallback=fallback, max_plan_points=-1
+    )
 
 
 def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
     # Token caps huge and fresh input ~0, but cache_write alone costs over $1.
-    t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
+    t = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
     # sonnet-4 input $3/M, cache_write 1.25x = $3.75/M; 300k * 3.75/1e6 = $1.125 > $1.
     t.record(
-        route=kinds.ModelRoute("claude-sonnet-4-20250514", "claude-sonnet-4-20250514"),
+        route=kinds.ModelRoute("testprovider", "claude-sonnet-4-20250514"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
@@ -57,9 +47,11 @@ def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
 
 def test_usd_ceiling_off_when_unlimited() -> None:
     # max_usd = -1 (unlimited): the same heavy-cache call trips nothing.
-    t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    t = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1
+    )
     t.record(
-        route=kinds.ModelRoute("claude-sonnet-4-20250514", "claude-sonnet-4-20250514"),
+        route=kinds.ModelRoute("testprovider", "claude-sonnet-4-20250514"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
@@ -173,7 +165,7 @@ def test_format_summary_renders_known_and_unknown_prices() -> None:
     # claude-sonnet-4-5 is priced by the fixture: 1000 in + 100 out = $0.003 + $0.0015 = $0.0045.
     t = _t(fallback=10000)
     t.record(
-        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
+        route=kinds.ModelRoute("testprovider", "claude-sonnet-4-5"),
         input_tokens=1000,
         output_tokens=100,
         cache_read_tokens=0,
@@ -865,7 +857,9 @@ def test_running_children_share_what_is_left_and_their_sum_trips_the_cap() -> No
 
     A reading replaces the child's last one and is not yet the run's own spend.
     """
-    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    t = budget.BudgetTracker(
+        providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
+    )
     t.record(
         route=kinds.ModelRoute("testprovider", "claude-sonnet-4-5"),
         input_tokens=0,

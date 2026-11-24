@@ -24,10 +24,10 @@ import dataclasses
 import math
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from agent6 import kinds, token_usage
+from agent6 import config, kinds, token_usage
 from agent6.models import pricing
 
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
@@ -170,6 +170,7 @@ class ModelUsage:
         unreported_output_tokens: Output tokens of those calls.
         unreported_cache_read_tokens: Cache-read tokens of those calls.
         unreported_cache_write_tokens: Cache-write tokens of those calls.
+        quote: The listing used for this route during this execution, or None when unpriced.
         percent_metered: A plan reading metered a call under this route.
     """
 
@@ -184,6 +185,7 @@ class ModelUsage:
     unreported_output_tokens: int = 0
     unreported_cache_read_tokens: int = 0
     unreported_cache_write_tokens: int = 0
+    quote: pricing.Quote | None = None
     percent_metered: bool = False
 
 
@@ -243,7 +245,7 @@ def _billed_apart_from_plan(t: ModelUsage) -> bool:
     )
 
 
-def _model_cost_usd(route: kinds.ModelRoute, t: ModelUsage) -> _ModelCost | None:
+def _model_cost_usd(t: ModelUsage) -> _ModelCost | None:
     """Return one route's cost, the one owner of the pricing arithmetic.
 
     The enforced ceiling and the printed summary both read this. Reported cost is
@@ -252,7 +254,6 @@ def _model_cost_usd(route: kinds.ModelRoute, t: ModelUsage) -> _ModelCost | None
     times input; cache reads at the listed rate, else 0.1 times input.
 
     Args:
-        route: The provider and model billed.
         t: Its usage totals.
 
     Returns:
@@ -262,8 +263,7 @@ def _model_cost_usd(route: kinds.ModelRoute, t: ModelUsage) -> _ModelCost | None
         # Included-plan calls are an authoritative $0, never table-priced.
         return _ModelCost(0.0, reported=True, estimated=False)
     reported = t.reported_calls > 0
-    price = pricing.lookup_price(route.model, route.provider)
-    if price is None:
+    if t.quote is None:
         if reported:
             # Dropping the reported dollars would zero real spend out of the USD cap.
             return _ModelCost(
@@ -273,6 +273,7 @@ def _model_cost_usd(route: kinds.ModelRoute, t: ModelUsage) -> _ModelCost | None
                 partial=t.reported_calls < t.calls,
             )
         return None
+    price = t.quote.rates
     write_rate = price.cache_write if price.cache_write is not None else price.input * 1.25
     read_rate = price.cache_read if price.cache_read is not None else price.input * 0.1
     cache_tokens = t.unreported_cache_write_tokens + t.unreported_cache_read_tokens
@@ -433,6 +434,7 @@ class BudgetTracker:
     max_tokens_fallback: int
     max_plan_points: float
     allow_plan_overage: bool = False
+    providers: Mapping[str, config.ProviderEntry] = dataclasses.field(default_factory=dict)
     _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _per_model: dict[kinds.ModelRoute, ModelUsage] = dataclasses.field(default_factory=dict)
     _input_total: int = 0
@@ -494,7 +496,11 @@ class BudgetTracker:
             cache_write_tokens = max(cache_write_tokens, 0)
             if cost_usd is not None:
                 cost_usd = max(cost_usd, 0.0)
-            totals = self._per_model.setdefault(route, ModelUsage())
+            if route not in self._per_model:
+                self._per_model[route] = ModelUsage(
+                    quote=pricing.lookup_price(route, self.providers)
+                )
+            totals = self._per_model[route]
             totals.input_tokens += input_tokens
             totals.output_tokens += output_tokens
             totals.cache_read_tokens += cache_read_tokens
@@ -516,11 +522,7 @@ class BudgetTracker:
             self._output_total += output_tokens
             self._cache_read_total += cache_read_tokens
             self._cache_write_total += cache_write_tokens
-            metered = (
-                plan_usage is not None
-                or cost_usd is not None
-                or pricing.lookup_price(route.model, route.provider) is not None
-            )
+            metered = plan_usage is not None or cost_usd is not None or totals.quote is not None
             if not metered:
                 self._unmetered_tokens += input_tokens + output_tokens
             if plan_usage is None and metered and self.max_usd == 0.0:
@@ -918,8 +920,8 @@ class BudgetTracker:
         """
         total_usd = self._credits_spent_usd + self._children_usd
         any_unknown = False
-        for route, t in self._per_model.items():
-            cost = _model_cost_usd(route, t)
+        for t in self._per_model.values():
+            cost = _model_cost_usd(t)
             if cost is None:
                 any_unknown = True
                 continue
@@ -942,7 +944,7 @@ class BudgetTracker:
         metered = 0
         any_estimated = False
         for route, totals in snap.per_model.items():
-            cost = _model_cost_usd(route, totals)
+            cost = _model_cost_usd(totals)
             subscription = totals.percent_metered and not _billed_apart_from_plan(totals)
             if cost is None:
                 cost_str = "$? (unknown price)"
@@ -960,6 +962,8 @@ class BudgetTracker:
                     note = " (reported)"
                 else:
                     note = ""
+                if cost.estimated and totals.quote and totals.quote.source != route:
+                    note += f" (price from {totals.quote.source.spec})"
                 if cost.cache_assumed:
                     note += " (cache rates assumed: 0.1x read, 1.25x write)"
                 cost_str = f"{format_usd(cost.usd, partial=cost.partial)}{note}"

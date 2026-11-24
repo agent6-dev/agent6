@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import pathlib
 from unittest import mock
 
@@ -12,6 +11,7 @@ from agent6.app import role_providers
 from agent6.config import model as config_model
 from agent6.providers import provider_types
 from agent6.sessions import budget_events
+from tests import price_env
 
 
 def test_shared_model_id_keeps_each_routes_price(
@@ -19,18 +19,19 @@ def test_shared_model_id_keeps_each_routes_price(
 ) -> None:
     """Building a cheaper reviewer cannot reprice the worker's earlier calls."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    cache = tmp_path / "agent6" / "models"
-    cache.mkdir(parents=True)
-    for name, price in (("expensive", 10.0), ("cheap", 1.0)):
-        (cache / f"{name}.json").write_text(
-            json.dumps({"models": ["shared"], "pricing": {"shared": [price, price]}}),
-            encoding="utf-8",
-        )
     cfg = config_model.Config.model_validate(
         {
             "providers": {
-                "expensive": {"backend": "openai", "auth_style": "none"},
-                "cheap": {"backend": "openai", "auth_style": "none"},
+                "expensive": {
+                    "backend": "openai",
+                    "auth_style": "none",
+                    "base_url": "http://localhost:1",
+                },
+                "cheap": {
+                    "backend": "openai",
+                    "auth_style": "none",
+                    "base_url": "http://localhost:1",
+                },
             },
             "models": {
                 "default": {"model": "expensive/shared"},
@@ -38,7 +39,11 @@ def test_shared_model_id_keeps_each_routes_price(
             },
         }
     )
-    tracker = budget.BudgetTracker(max_usd=20, max_tokens_fallback=-1, max_plan_points=-1)
+    for name, price in (("expensive", 10.0), ("cheap", 1.0)):
+        price_env.write({"shared": [price, price]}, name=name, entry=cfg.providers[name])
+    tracker = budget.BudgetTracker(
+        providers=cfg.providers, max_usd=20, max_tokens_fallback=-1, max_plan_points=-1
+    )
     sink = provider_types.TranscriptSink(
         tmp_path / "transcript.jsonl", objects_dir=tmp_path / "objects"
     )

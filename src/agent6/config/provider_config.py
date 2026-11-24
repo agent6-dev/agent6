@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 import re
 from typing import Annotated, Any, Literal
+from urllib import parse
 
 import pydantic
 
@@ -407,7 +408,38 @@ class _ProviderBase(pydantic.BaseModel):
         return self
 
 
-class AnthropicProviderEntry(_ProviderBase):
+class PricedProviderEntry(_ProviderBase):
+    """An API whose listing or reference listing can price its calls."""
+
+    price_from: str | None = pydantic.Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description=(
+            "Configured provider whose listing supplies token rates instead of this entry's "
+            "own listing; default: openrouter for direct Anthropic and OpenAI endpoints"
+        ),
+    )
+
+    @property
+    def direct_vendor(self) -> str:
+        """The vendor of a direct API endpoint, or an empty string for a gateway."""
+        if self.deployment != "direct":
+            return ""
+        host = parse.urlsplit(self.base_url).hostname
+        if self.backend == "anthropic" and host == "api.anthropic.com":
+            return "anthropic"
+        return (
+            "openai" if self.backend in ("openai", "responses") and host == "api.openai.com" else ""
+        )
+
+    @pydantic.model_validator(mode="after")
+    def _default_price_source(self) -> PricedProviderEntry:
+        if "price_from" not in self.model_fields_set and self.direct_vendor:
+            object.__setattr__(self, "price_from", "openrouter")
+        return self
+
+
+class AnthropicProviderEntry(PricedProviderEntry):
     """The Anthropic Messages wire format.
 
     `direct` dials api.anthropic.com; `vertex` is Claude on Vertex (the model id in the URL,
@@ -440,7 +472,7 @@ class AnthropicProviderEntry(_ProviderBase):
     )
 
 
-class OpenAIProviderEntry(_ProviderBase):
+class OpenAIProviderEntry(PricedProviderEntry):
     """The OpenAI Chat Completions wire format.
 
     `direct` serves OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp and Gemini's
@@ -545,7 +577,7 @@ class ChatGPTProviderEntry(_ProviderBase):
         return self
 
 
-class ResponsesProviderEntry(_ProviderBase):
+class ResponsesProviderEntry(PricedProviderEntry):
     """The Responses API on a configured endpoint.
 
     `/responses` is appended to `base_url`, which has no vendor default; `direct` is the only

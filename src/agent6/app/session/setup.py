@@ -28,13 +28,13 @@ from agent6.config import (
     ConfigError,
     MCPServerEntry,
     OpenAIProviderEntry,
+    PricedProviderEntry,
     ProviderEntry,
     ResponsesProviderEntry,
     child_snapshot,
     io,
     layer,
     layer_data,
-    plan_metered,
     secret_store,
 )
 from agent6.models import cache
@@ -50,6 +50,7 @@ def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> agent6_budge
     return agent6_budget.BudgetTracker(
         max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
         max_plan_points=cfg.budget.max_plan_points,
+        providers=cfg.providers,
         allow_plan_overage=cfg.budget.allow_plan_overage,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
     )
@@ -349,14 +350,17 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     for name in sorted(needed):
         if (err := _provider_refusal(name, cfg.providers[name], secrets)) is not None:
             return err
-    if "openrouter" not in needed and any(
-        rm.model.startswith("claude-")
-        and "/" not in rm.model
-        and not plan_metered(cfg.providers.get(rm.provider))
-        for rm in cfg.models.configured().values()
-    ):
-        # Bare claude-* ids price through the OpenRouter catalog, which nothing above fetched.
-        cache.refresh_pricing_catalog()
+    sources = {
+        entry.price_from
+        for name in needed
+        if isinstance(entry := cfg.providers[name], PricedProviderEntry)
+        and entry.price_from is not None
+    }
+    for source in sorted(sources - needed):
+        listing = cfg.providers.get(source)
+        if isinstance(listing, PricedProviderEntry):
+            key = secret_store.resolve_api_key(source, listing.api_key_env, secrets=secrets)
+            cache.list_models(source, listing, key)
     return None
 
 

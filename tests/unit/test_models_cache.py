@@ -13,6 +13,7 @@ from unittest import mock
 import httpx2
 import pytest
 
+from agent6 import kinds
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -20,6 +21,7 @@ from agent6.config import (
     secret_store,
 )
 from agent6.models import cache as models_cache
+from agent6.models import listing_store
 from agent6.models import registry as models_registry
 from agent6.providers import oauth, oauth_protocol, provider_types, transport
 
@@ -224,7 +226,7 @@ def test_never_raises_on_bad_payload(
 def test_unsafe_provider_name_has_no_cache_path() -> None:
     # A provider name with path separators / traversal must not form a cache
     # path (no writing the cache outside cache_dir/models).
-    cache_path = models_cache._cache_path  # pyright: ignore[reportPrivateUsage]
+    cache_path = listing_store.cache_path
     assert cache_path("../../etc/cron") is None
     assert cache_path("a/b") is None
     assert cache_path("..") is None
@@ -330,12 +332,7 @@ def test_boolean_context_and_pricing_values_are_rejected(tmp_path: pathlib.Path)
 def test_pricing_catalog_refresh_prices_a_bare_claude_id(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The pricing catalog refresh prices a bare claude id.
-
-    A config with only `[providers.anthropic]` must still fetch the OpenRouter catalog, or every
-    claude-* run is unpriced on a cold cache and the $ cap never binds (an unmetered opus run inside
-    a container).
-    """
+    """A configured reference listing supplies the direct model's rate."""
     from agent6.models import pricing as models_pricing
 
     def _get(
@@ -357,11 +354,13 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
         )
 
     monkeypatch.setattr(transport, "http_request", _get)
-    assert models_pricing.lookup_price("claude-opus-5") is None
-    models_cache.refresh_pricing_catalog()
-    price = models_pricing.lookup_price("claude-opus-5")
-    assert price is not None
-    assert price.input > 0 and price.output > 0
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://openrouter.ai/api/v1")
+    providers = {"openrouter": entry, "direct": AnthropicProviderEntry(backend="anthropic")}
+    route = kinds.ModelRoute("direct", "claude-opus-5")
+    assert models_pricing.lookup_price(route, providers) is None
+    models_cache.list_models("openrouter", entry, None)
+    quote = models_pricing.lookup_price(route, providers)
+    assert quote is not None and quote.rates.input > 0 and quote.rates.output > 0
 
 
 def test_chatgpt_listing_fetches_with_the_sign_in(

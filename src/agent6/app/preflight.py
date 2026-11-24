@@ -17,7 +17,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, kinds, terminal
+from agent6 import config, errors, kinds, terminal
 from agent6.app import reporter as app_reporter
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
@@ -106,17 +106,27 @@ def budget_preflight(
             f"{'s' if len(plan_models) == 1 else ''} through a subscription plan."
             " Raise --max-plan-points or [budget].max_plan_points, or reroute those roles."
         )
-    unpriced = _by_model(
-        (role, m) for role, prov, m in metered if pricing.lookup_price(m, prov) is None
-    )
-    priced = _by_model(
-        (role, m) for role, prov, m in metered if pricing.lookup_price(m, prov) is not None
-    )
+    priced_roles: list[tuple[str, str]] = []
+    unpriced_roles: list[tuple[str, str]] = []
+    sources: set[str] = set()
+    for role, prov, model in metered:
+        route = kinds.ModelRoute(prov, model)
+        if pricing.lookup_price(route, cfg.providers) is not None:
+            priced_roles.append((role, route.spec))
+            continue
+        unpriced_roles.append((role, route.spec))
+        entry = cfg.providers.get(prov)
+        if isinstance(entry, config.PricedProviderEntry) and entry.price_from:
+            reason = "no matching price" if entry.price_from in cfg.providers else "not configured"
+            sources.add(f"providers.{prov}.price_from = {entry.price_from!r} ({reason})")
+    priced = _by_model(priced_roles)
+    unpriced = _by_model(unpriced_roles)
+    detail = " " + "; ".join(sorted(sources)) + "." if sources else ""
     if cfg.budget.max_tokens_fallback == 0 and unpriced:
         return (
             "[budget].max_tokens_fallback is 0 (unmetered calls refused), but "
             f"{', '.join(unpriced)} carr{'ies' if len(unpriced) == 1 else 'y'}"
-            " no price data. Raise max_tokens_fallback or use priced models."
+            f" no price data.{detail} Raise max_tokens_fallback or use priced models."
         )
     if cfg.budget.max_usd == 0.0 and priced:
         return (
@@ -124,13 +134,13 @@ def budget_preflight(
             f"{', '.join(priced)} {'is' if len(priced) == 1 else 'are'} priced."
             " Raise max_usd or use unpriced/local models."
         )
-    if unpriced and cfg.budget.max_usd != 0.0:
+    if unpriced:
         fb = cfg.budget.max_tokens_fallback
         bound = "unlimited tokens" if fb == -1 else f"{fb:,} fallback tokens"
         reporter.note(
             f"{', '.join(unpriced)} ha"
             f"{'s' if len(unpriced) == 1 else 've'} no price data: that spend is not"
-            f" metered by max_usd and is bounded by {bound} instead."
+            f" metered by max_usd and is bounded by {bound} instead.{detail}"
         )
     if plan_models:
         pct = cfg.budget.max_plan_points

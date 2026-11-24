@@ -1310,11 +1310,13 @@ def test_machine_preflight_judges_the_states_routes(
             ),
         )
     monkeypatch.setattr(cache, "list_models", listed)
-    cards = paths.cache_dir() / "models"
-    cards.mkdir(parents=True, exist_ok=True)
-    (cards / "paid.json").write_text(
-        json.dumps({"models": ["priced-model"], "pricing": {"priced-model": [1, 2]}}),
-        encoding="utf-8",
+    from agent6 import config as agent6_config
+    from tests import price_env
+
+    price_env.write(
+        {"priced-model": [1, 2]},
+        name="paid",
+        entry=agent6_config.OpenAIProviderEntry(backend="openai", base_url="http://127.0.0.1:9"),
     )
     config = tmp_path / "config.toml"
     config.write_text(
