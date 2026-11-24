@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import select
 import selectors
 import subprocess
 import time
@@ -121,10 +122,10 @@ def grade(
     grants.write_text(
         f"[sandbox]\nextra_read_paths = {json.dumps([str(repo)])}\n", encoding="utf-8"
     )
+    pending = memoryview(scorer.read_bytes())
     report = bytearray()
     deadline = time.monotonic() + 120
     with (
-        scorer.open("rb") as script,
         (trial / "grader.stderr").open("xb") as log,
         subprocess.Popen(
             [
@@ -142,22 +143,33 @@ def grade(
             ],
             cwd=workspace,
             env=env,
-            stdin=script,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
         ) as proc,
         selectors.DefaultSelector() as pipes,
     ):
-        assert proc.stdout is not None and proc.stderr is not None
-        pipes.register(proc.stdout, selectors.EVENT_READ)
-        pipes.register(proc.stderr, selectors.EVENT_READ)
+        assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
         try:
+            pipes.register(proc.stdin, selectors.EVENT_WRITE)
+            pipes.register(proc.stdout, selectors.EVENT_READ)
+            pipes.register(proc.stderr, selectors.EVENT_READ)
             while pipes.get_map():
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or not (ready := pipes.select(remaining)):
                     raise journals.MeasurementError("grader timed out")
                 for key, _ in ready:
+                    if key.fileobj is proc.stdin:
+                        try:
+                            written = os.write(key.fd, pending[: select.PIPE_BUF])
+                        except BrokenPipeError:
+                            written = 0  # Drain the diagnostics before reporting the failure.
+                        pending = pending[written:]
+                        if not pending or not written:
+                            pipes.unregister(key.fd)
+                            proc.stdin.close()
+                        continue
                     chunk = os.read(key.fd, 8192)
                     if not chunk:
                         pipes.unregister(key.fd)
@@ -169,7 +181,7 @@ def grade(
                         log.write(chunk)
                     else:
                         raise journals.MeasurementError("grader stderr exceeded 64 KiB")
-            if proc.wait(timeout=max(0.0, deadline - time.monotonic())) != 0:
+            if proc.wait(timeout=max(0.0, deadline - time.monotonic())) != 0 or pending:
                 raise journals.MeasurementError("grader failed; see grader.stderr")
         except subprocess.TimeoutExpired as exc:
             raise journals.MeasurementError("grader timed out") from exc

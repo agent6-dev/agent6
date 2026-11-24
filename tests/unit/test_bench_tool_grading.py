@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -37,20 +38,42 @@ def _report() -> dict[str, Any]:
     )
 
 
-def _grade(where: pathlib.Path, output: bytes) -> dict[str, Any]:
+def _grade(
+    where: pathlib.Path,
+    script: bytes,
+    fixture: str = (
+        "sys.stderr.write('fixture diagnostic\\n')\n"
+        "sys.stdout.buffer.write(sys.stdin.buffer.read())\n"
+    ),
+) -> dict[str, Any]:
     repo = where / "repo"
     repo.mkdir()
     scorer = where / "textkit/grade.py"
     scorer.parent.mkdir()
-    scorer.write_bytes(output)
+    scorer.write_bytes(script)
     # A fixed local command exercises the runner's pipes without executing the submission.
     binary = where / "fixture"
-    binary.write_text(
-        f"#!{sys.executable} -I\nimport sys\nsys.stderr.write('fixture diagnostic\\n')\n"
-        "sys.stdout.buffer.write(sys.stdin.buffer.read())\n"
-    )
+    binary.write_text(f"#!{sys.executable} -I\nimport sys\n{fixture}")
     binary.chmod(0o700)
     return grading.grade(binary, where / "run.toml", repo, os.environ.copy(), scorer)
+
+
+def test_grader_gets_only_pipe_stdio_and_unchanged_script_bytes(tmp_path: pathlib.Path) -> None:
+    """A script larger than a pipe arrives intact without an open scorer file."""
+    script = b"# pipe fixture\r\n" * 16384
+    fixture = (
+        "import hashlib, os, stat\n"
+        "sys.stderr.write('.' * 48000 + '\\n')\n"
+        "print(*(stat.S_ISFIFO(os.fstat(fd).st_mode) for fd in (0, 1, 2)), file=sys.stderr)\n"
+        "print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest(), file=sys.stderr)\n"
+        f"print({json.dumps(_report())!r})\n"
+    )
+    assert _grade(tmp_path, script, fixture)["cases_total"] == 30
+    assert (tmp_path / "grader.stderr").read_text().splitlines() == [
+        "." * 48000,
+        "True True True",
+        hashlib.sha256(script).hexdigest(),
+    ]
 
 
 def test_grader_stderr_is_private(
@@ -59,6 +82,19 @@ def test_grader_stderr_is_private(
     assert _grade(tmp_path, json.dumps(_report()).encode())["cases_total"] == 30
     assert "fixture diagnostic" not in capfd.readouterr().err
     assert (tmp_path / "grader.stderr").read_bytes() == b"fixture diagnostic\n"
+
+
+def test_grader_refusal_before_reading_stdin_keeps_its_diagnostic(tmp_path: pathlib.Path) -> None:
+    fixture = "print('fixture unavailable', file=sys.stderr)\nsys.exit(2)\n"
+    with pytest.raises(journals.MeasurementError, match=r"grader failed; see grader\.stderr"):
+        _grade(tmp_path, b"# fixture\n" * 32768, fixture)
+    assert (tmp_path / "grader.stderr").read_text() == "fixture unavailable\n"
+
+
+def test_grader_stderr_limit_applies_during_input(tmp_path: pathlib.Path) -> None:
+    with pytest.raises(journals.MeasurementError, match="grader stderr exceeded 64 KiB"):
+        _grade(tmp_path, b"# fixture\n" * 32768, "sys.stderr.buffer.write(b'.' * 65537)\n")
+    assert (tmp_path / "grader.stderr").stat().st_size <= 65536
 
 
 @pytest.mark.parametrize(
