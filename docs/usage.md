@@ -550,7 +550,7 @@ A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` i
 It is refused for an id that is no child of the run, or one that has not started.
 `stop_background` with a child's id stops the child; its work does not merge, and its branch holds what it committed.
 The roster and resumed parent state show the same stopped-child facts as its end notice, with the age updated.
-The two tools' descriptions mention children only in a run that has the `parallel` tool.
+The two tools' descriptions mention children when the run can start a child or already has one.
 `finish_session` is refused while a child runs or its task awaits completion at a turn boundary, and the refusal names the children that hold it.
 A stopped child holds no end unless its parent requests a merge or continues it.
 `merge_child(id)` requests the merge of a stopped or continued child's commits at the next turn boundary and holds the end until its outcome is reported.
