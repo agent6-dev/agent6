@@ -1145,7 +1145,7 @@ The structural defenses above confine a model that follows an injection.
       A managed hook, or a managed MCP server exposing no tool, passes it
 - Side channels: no claim about timing, cache, or speculative side channels.
 - Supply chain: pin your install
-    - runtime deps `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `ty`; build dep `hatchling`; jail crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`, `serde_json`
+    - runtime deps `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `pyrefly`; build dep `hatchling`; jail crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`, `serde_json`
 
 ## Media retention
 

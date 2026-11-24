@@ -59,7 +59,7 @@
   `ui/cli` is the entry point that wires a run.
 - **[tach](https://docs.gauge.sh/) (`tach.toml`) maps the design.** Like a call graph (`pyan3`, a dev dep), it makes a change's edges reviewable.
   A red `tach check` = stale map: record the edge and move on.
-  Write the code the design wants and let tach and strict pyright follow it.
+  Write the code the design wants and let tach and strict pyrefly follow it.
   When new edges read as complex, redesign on the design's merits.
 
 ### Validation and reporting
@@ -120,7 +120,7 @@
 
 - **Language**: Python 3.13+, the three most recent releases.
   Every `.py` file starts with `from __future__ import annotations`.
-  Strict pyright.
+  Strict pyrefly.
 - **Layout**: src layout under `src/agent6/`; tests under `tests/`; Rust sandbox launcher under `src/agent6/jail/`.
 - **Style**: ruff is the only formatter and linter, line length 100; run `uv run ruff check` and `uv run ruff format` before committing.
   The select list in `pyproject.toml` is the rule set: docstrings in the Google shape (a one-line imperative summary, a blank line, short lines; Args, Returns, Yields, Raises with names only, the types in the annotations), everything typed, module-style imports (`from agent6.pkg import module`, `module.name` at the call site), pep8 names.
@@ -132,8 +132,8 @@
 - **Errors**: fail loudly, through a custom exception class per subsystem; every `except` names what it catches and re-raises what it cannot handle.
 - **Versioning**: `__version__` in `src/agent6/__init__.py` is the single source of truth; everything else reads it.
 - **A new runtime dependency is discussed first.**
-  Current: `pydantic`, `httpx2`, `argcomplete`, `markdown-it-py`, the `tree-sitter` pair, `textual`, and `ruff` + `ty` (they validate `machine create` output).
-  `hatchling` builds; `pyright` stays dev-only.
+  Current: `pydantic`, `httpx2`, `argcomplete`, `markdown-it-py`, the `tree-sitter` pair, `textual`, and `ruff` + `pyrefly` (they validate `machine create` output; `pyrefly` also checks this tree).
+  `hatchling` builds.
 - **Order-free lists stay sorted**, by Python's string order: pyproject.toml's dependencies, includes and rule lists, tach.toml's lists.
   A list whose order carries meaning (a nav, a pipeline, the CI steps) keeps it.
 - **Touch only what the task needs.**
@@ -178,14 +178,14 @@
 
 ```bash
 uv run ruff check && uv run ruff format --check && \
-  uv run pyright && uv run tach check && uv run pytest
+  uv run pyrefly check && uv run tach check && uv run pytest
 ```
 
 - All five must pass; a red `tach check` means the module map is stale: record the new edge in `tach.toml` and move on.
 - Read the gate's own exit status: capture to a file and test `$?`, or `set -o pipefail`, since a bare pipe through `tail`/`head`/`grep` reports the filter's code instead.
 - Scoped runs guide iteration; the full gate certifies a series of commits, at the end of the batch and before calling master push-ready.
 - On failure, fix at HEAD; fold into the offending commit when easy.
-- Push-ready adds the CI mirror: pyright at its latest release (`PYRIGHT_PYTHON_FORCE_VERSION=<latest> uv run pyright`), and, when `src/agent6/jail/` or `Cargo.*` changed, both musl target builds plus the wheel with the bundled jail binary exercised.
+- Push-ready adds the CI mirror: when `src/agent6/jail/` or `Cargo.*` changed, both musl target builds plus the wheel with the bundled jail binary exercised.
 
 ### Self-review
 

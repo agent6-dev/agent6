@@ -3,7 +3,7 @@
 """Every patch target in the suite resolves the way monkeypatch resolves it.
 
 A module reads the names it uses at call time, so a test that patches a name on the module
-that merely imported it patches nothing; pyright cannot see a string target, so this pin walks
+that merely imported it patches nothing; pyrefly cannot see a string target, so this pin walks
 every `monkeypatch.setattr`, `mock.patch.object` and `mock.patch("dotted.name")` in the tests.
 """
 
@@ -111,7 +111,7 @@ def test_every_patch_target_resolves() -> None:
                 if isinstance(t := _resolve(m), types.ModuleType)
             ]
             if not targets:
-                continue  # a class or object attribute, checked by pyright
+                continue  # a class or object attribute, checked by pyrefly
             names = "|".join(dict.fromkeys(modules))
             where = f"{path.relative_to(_TESTS.parent)}:{line}: {names}.{name}"
             if not any(hasattr(t, name) for t in targets):

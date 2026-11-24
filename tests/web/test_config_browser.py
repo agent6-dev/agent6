@@ -335,7 +335,7 @@ def test_a_long_list_value_shows_whole_in_its_editor(
     Enter still saves; Shift+Enter breaks the line.
     """
     command = (
-        '["sh", "-c", "uv run ruff check && uv run ruff format --check && uv run pyright'
+        '["sh", "-c", "uv run ruff check && uv run ruff format --check && uv run pyrefly check'
         ' && uv run tach check && uv run pytest"]'
     )
     _global_config(f"[harness.verify]\ncommand = {command}\n")

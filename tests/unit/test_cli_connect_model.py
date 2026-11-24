@@ -664,7 +664,7 @@ def test_model_rejects_unknown_role(iso: pathlib.Path) -> None:
 
 
 def _models_stub(models: list[str]) -> Callable[..., list[str]]:
-    """A typed list_models stand-in (strict pyright rejects bare lambdas here)."""
+    """A typed list_models stand-in (strict pyrefly rejects bare lambdas here)."""
 
     def _list(*_a: object, **_k: object) -> list[str]:
         return models
