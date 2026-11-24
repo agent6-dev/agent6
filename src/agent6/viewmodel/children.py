@@ -359,7 +359,8 @@ def _recorded_child(
             label += f" (ranked {merge.detail})"
         elif merge.status in ("conflict", "failed"):
             error = merge.detail
-        else:
+        elif merge.detail not in label:
+            # An operator's stop records the status word as its detail.
             label += f": {merge.detail}"
     return dataclasses.replace(
         row,

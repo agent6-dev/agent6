@@ -159,6 +159,16 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
         ("finish_session", "passed", "conflict", "a.py", "passed", "passed · conflict"),
         ("answered", None, "no_changes", "", "answered", "answered · no changes"),
         ("provider_error", None, "failed", "no import", "failed", "failed · provider error"),
+        # A stop the operator asked for records the status word as its detail.
+        ("steer_abort", None, "stopped", "stopped", "stopped", "stopped"),
+        (
+            "steer_abort",
+            None,
+            "stopped",
+            "stopped by its parent",
+            "stopped",
+            "stopped: stopped by its parent",
+        ),
     ],
 )
 def test_parent_outcome_does_not_replace_the_childs_gate_or_stop_reason(
