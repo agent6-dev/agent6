@@ -599,6 +599,8 @@ class ProviderCall:
             if isinstance(usage, dict) and usage:
                 try:
                     billed = self.parse({"usage": usage})
+                    if self.budget is not None and billed.cost_usd is None:
+                        self.require_metered(data)
                 except (
                     provider_types.ProviderError,
                     AttributeError,
