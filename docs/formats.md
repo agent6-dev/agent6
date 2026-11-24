@@ -2507,6 +2507,7 @@ Source: [`ui.web.git_model.compare_payload`](https://github.com/agent6-dev/agent
 | `commit_range.head` | `JSON` | The resolved head commit. A working-tree head uses HEAD. |
 | `commit_range.ahead` | `JSON` | Commits reachable only from the head. |
 | `commit_range.behind` | `JSON` | Commits reachable only from the base. |
+| `worktree_dirty` | `JSON` | True for a working-tree head with uncommitted changes against HEAD. |
 | `files` | `JSON` | Changed-file rows between the endpoints. |
 | `truncated` | `JSON` | Whether the file list reached its cap. |
 

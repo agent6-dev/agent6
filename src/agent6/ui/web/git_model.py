@@ -243,16 +243,16 @@ def _file_row(f: git_history.ChangedFile, state: str = "") -> dict[str, Any]:
     }
 
 
-def _files(repo: pathlib.Path, base: str, head: str) -> tuple[list[dict[str, Any]], bool]:
-    """Return the files that differ from the base, cut at `FILES_MAX`, and whether they were."""
+def _files(repo: pathlib.Path, base: str, head: str) -> tuple[list[dict[str, Any]], bool, bool]:
+    """Return the changed files, whether the list was cut and whether the head has local edits."""
     if head == git_history.WORKTREE:
         rows = git_history.worktree_files(repo, base)
         states = {rel: code for code, rel in git_read.porcelain_entries(repo)}
-        return [_file_row(f, states.get(f.path, "")) for f in rows[:FILES_MAX]], (
-            len(rows) > FILES_MAX
-        )
-    rows = git_history.changed_files(repo, base, head)
-    return [_file_row(f) for f in rows[:FILES_MAX]], len(rows) > FILES_MAX
+    else:
+        rows = git_history.changed_files(repo, base, head)
+        states = {}
+    files = [_file_row(f, states.get(f.path, "")) for f in rows[:FILES_MAX]]
+    return files, len(rows) > FILES_MAX, bool(states)
 
 
 def _log_row(c: git_history.LogCommit) -> dict[str, Any]:
@@ -440,7 +440,7 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     sha = _resolve(repo, rev)
     info = git_history.commit_info(repo, sha)
     base = info.parents[0] if info.parents else git_read.empty_tree(repo)
-    files, truncated = _files(repo, base, sha)
+    files, truncated, _ = _files(repo, base, sha)
     return {
         "sha": sha,
         "short": sha[:7],
@@ -478,7 +478,7 @@ def worktree_payload(repo: pathlib.Path) -> dict[str, Any]:
     _repo(repo)
     sha, _branch = git_history.head_commit(repo)
     base = sha or git_read.empty_tree(repo)
-    files, truncated = _files(repo, base, git_history.WORKTREE)
+    files, truncated, _ = _files(repo, base, git_history.WORKTREE)
     return {"base": base, "files": files, "truncated": truncated}
 
 
@@ -727,6 +727,7 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
         commit_range.head: The resolved head commit. A working-tree head uses HEAD.
         commit_range.ahead: Commits reachable only from the head.
         commit_range.behind: Commits reachable only from the base.
+        worktree_dirty: True for a working-tree head with uncommitted changes against HEAD.
 
     Args:
         repo: The repository.
@@ -742,7 +743,7 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
     _repo(repo)
     base_sha = _resolve(repo, base, tree_ok=True)
     head_sha = _resolve(repo, head, worktree_ok=True)
-    files, truncated = _files(repo, base_sha, head_sha)
+    files, truncated, worktree_dirty = _files(repo, base_sha, head_sha)
     empty_tree = git_read.empty_tree(repo)
     tip = git_history.resolve_commit(repo, "HEAD") if head_sha == git_history.WORKTREE else head_sha
     commit_range = None
@@ -753,6 +754,7 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
         "base": _endpoint(repo, base, base_sha, empty_tree),
         "head": _endpoint(repo, head, head_sha, empty_tree),
         "commit_range": commit_range,
+        "worktree_dirty": worktree_dirty,
         "files": files,
         "truncated": truncated,
     }

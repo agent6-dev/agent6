@@ -245,6 +245,7 @@ def test_compare_reads_like_the_commits_own_diff(
         "subject": "root commit",
     }
     assert body["head"]["sha"] == shas["feature"] and body["head"]["rev"] == "feature"
+    assert body["worktree_dirty"] is False
     assert body["commit_range"] == {
         "base": shas["root"],
         "head": shas["feature"],
@@ -489,6 +490,7 @@ def test_compare_and_diff_take_the_working_tree_as_head(
         "subject": "(working tree)",
     }
     assert cmp["base"]["sha"] == shas["merge"]
+    assert cmp["worktree_dirty"] is True
     assert cmp["commit_range"] == {
         "base": shas["merge"],
         "head": shas["merge"],

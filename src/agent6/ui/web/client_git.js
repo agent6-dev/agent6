@@ -846,8 +846,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
           const {ahead, behind} = d.commit_range;
           const count = behind ? (ahead ? ahead + ' ahead, ' : '') + behind + ' behind'
             : ahead + (ahead === 1 ? ' commit' : ' commits');
-          const dirty = d.head.sha === GIT_WORKTREE && wt.files.length > 0;
-          sum.appendChild(el('div', null, count + (dirty ? ' and uncommitted changes' : '')));
+          sum.appendChild(el('div', null, count + (d.worktree_dirty ? ' and uncommitted changes' : '')));
         }
         result.appendChild(sum);
         if (reviewed) result.appendChild(reviewRules(panel.panel));

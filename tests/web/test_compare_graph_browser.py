@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,31 @@ def test_compare_counts_commits_on_each_side(
     ]:
         page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/compare/{revisions}")
         sync_api.expect(page.locator(".gcmp-result").get_by_text(count, exact=True)).to_be_visible()
+    assert not errors
+
+
+def test_reopening_compare_reads_current_working_tree_status(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """Changes between commits are not dirty files, and a later untracked file is one."""
+    from playwright import sync_api
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/v1..WORKTREE")
+    result = page.locator(".gcmp-result")
+    close = page.get_by_role("button", name="Close Compare", exact=True)
+    reopen = page.get_by_role("button", name="Compare", exact=True)
+    sync_api.expect(result.get_by_text("3 commits", exact=True)).to_be_visible()
+    close.click()
+    new = tmp_path / "untracked.txt"
+    new.write_text("not in HEAD\n")
+    reopen.click()
+    sync_api.expect(result).to_contain_text(new.name)
+    sync_api.expect(result).to_contain_text("3 commits and uncommitted changes")
+    close.click()
+    new.unlink()
+    reopen.click()
+    sync_api.expect(result.get_by_text("3 commits", exact=True)).to_be_visible()
     assert not errors
 
 

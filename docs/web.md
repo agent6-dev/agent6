@@ -125,7 +125,8 @@ When the server stops answering, the Sessions and State machines lists, a sessio
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
     - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge
     - **Compare** counts the commits between the base and head. If the histories diverge, it shows how many commits the head is ahead and behind.
-      A working-tree head counts to `HEAD` and notes uncommitted changes. An empty tree or recorded review tree has no commit count.
+      A working-tree head counts to `HEAD` and checks for uncommitted changes at the time of the comparison.
+      An empty tree or recorded review tree has no commit count.
     - **Compared commits** lists the commits reachable from just one side, including commits outside the selected refs.
       **Show all commits** returns to the graph for your selected refs without closing Compare.
       Closing Compare also restores that graph.
