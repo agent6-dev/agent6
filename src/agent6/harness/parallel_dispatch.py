@@ -620,9 +620,10 @@ class ParallelDispatcher:
             turn: The turn the charge is journaled at; None for the turn of the dispatch.
 
         Returns:
-            The record in the `settling` state.
+            The record with updated charges. A completed dispatch stays complete.
         """
-        record = record.advanced("settling")
+        if record.state != "complete":
+            record = record.advanced("settling")
         children: list[child_dispatch.ChildRecord] = []
         for child in record.children:
             if child.settled:

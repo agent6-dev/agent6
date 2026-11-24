@@ -873,6 +873,37 @@ def test_a_merge_committed_before_the_record_is_not_merged_twice(
     assert budget2.available().usd == 10.0
 
 
+@pytest.mark.parametrize("work", [False, True], ids=["panel", "work"])
+def test_recovering_unknown_usage_does_not_return_a_completed_group_again(
+    short_repo: pathlib.Path, work: bool
+) -> None:
+    """Recovery can charge a child without replacing its group's launch diagnostic."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    child = _running_child(repo, parent, "parent-p1", work=work)
+    (running,) = _records(parent)
+    absent = child_dispatch.ChildRecord(session_id="parent-p1-l2", number=2, task="audit")
+    running = running.model_copy(update={"children": (*running.children, absent)})
+    dispatcher = child_env.dispatcher(repo, parent, child_env.config(), _tracker())
+    failed = dispatcher.failed_launch(running, OSError("launch refused"), submitted={child.name})
+    with (child / "logs.jsonl").open("a") as log:
+        log.write('{"type":"budget.update","usd_total":0.5}\n')
+    _resume(parent, "next")
+    meter = _tracker()
+    for _ in range(2):
+        _reconcile(repo, parent, meter)
+    rows = [json.loads(line) for line in (parent / "logs.jsonl").read_text().splitlines()]
+    assert len([row for row in rows if row["type"] == "parallel.returned"]) == 1
+    (record,) = _records(parent)
+    assert record.state == "complete" and record.delivered and record.message == failed.message
+    done, missing = record.children
+    assert done.merge is missing.merge is None
+    assert done.settled and done.usage is not None and done.usage.usd == 0.5
+    assert not missing.settled and missing.usage is None
+    assert meter.estimate_usd()[0] == 0.5
+
+
 def test_a_result_completed_but_undelivered_is_delivered_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -703,6 +703,8 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - A stopped child keeps outcome `stopped` without a merge; if the parent chain already contains a finished child's work, recovery records `merged` at its merge commit without repeating the merge.
     - A task whose children ended by themselves completes under its git policy, as at a turn boundary; a record with no child found completes as `dispatch interrupted before launch; nothing ran`.
     - Recovery delivers each outcome notice once, including for a record already complete; a session older than the records has none to reconcile.
+    - A complete dispatch with outstanding usage keeps its outcome and notice while recovery settles the charge.
+      It does not emit another `parallel.returned`.
 - a child's `ContinuationRecord` keeps its owner execution, instruction, sequence and already charged usage; its settlement key is `<child>:<sequence>`, so live readings and recovery count only new spend and an earlier execution's settlement cannot suppress the continuation's charge
   Without a recorded owner, recovery uses the `parallel.child_continued` row for that group, child and sequence.
   If neither identifies the execution, a resume refuses to settle new credit readings before its first model call.

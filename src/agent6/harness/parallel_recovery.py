@@ -201,8 +201,7 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
     history = None
     for found in child_dispatch.read_records(dispatcher.session_dir):
         record = found
-        scan = session_log.scan_session_log(logs)
-        accounted = scan.budget.session.settled_children
+        accounted = session_log.scan_session_log(logs).budget.session.settled_children
         if record.source == "panel":
             record = record.model_copy(
                 update={
@@ -301,15 +300,21 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                 child_records.DispatchResult(record.identity, True, (), message, base=record.base),
             )
             continue
-        if record.source == "panel":
+        if record.state == "complete":
+            dispatcher.settled(record, {r.spec.session_id: r for r in results})
+            completed = child_records.DispatchResult(
+                record.identity, True, (), record.message, base=record.base
+            )
+        elif record.source == "panel":
             completed = dispatcher.complete(
                 dispatcher.reported(conversation, record, results), results
             )
-            # A task's judges are written delivered: their result is the task's own notice.
-            if not record.delivered:
-                dispatcher.deliver(conversation, completed)
+        else:
+            dispatcher.open[record.identity] = reopened(record, results)
             continue
-        dispatcher.open[record.identity] = reopened(record, results)
+        # A task's judges are written delivered: their result is the task's own notice.
+        if not record.delivered:
+            dispatcher.deliver(conversation, completed)
     dispatcher.settle(conversation, turn)
     available = [
         f"  - {child.session_id}: {parallel_merge.merge_words(parallel_merge.merge_of(child))}"
