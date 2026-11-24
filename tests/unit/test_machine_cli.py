@@ -1802,6 +1802,34 @@ def test_offline_validation_prints_sandbox_and_pass_env_notes(
     assert "receives the environment variable(s) TOKEN when [machine].pass_env allows them" in out
 
 
+@pytest.mark.parametrize("verb", ["check", "test"])
+def test_script_findings_are_warnings_under_an_ok_verdict(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    verb: str,
+) -> None:
+    """A lint or type finding in a script failed `machine check` and `machine test`."""
+    from agent6.app.machine import scriptcheck
+
+    if set(scriptcheck.available_tools()) != {"ruff", "pyrefly"}:
+        pytest.skip("ruff and pyrefly are not both installed")
+    monkeypatch.chdir(tmp_path)
+    machine = tmp_path / "tiny.asm.toml"
+    machine.write_text(TINY, encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "loose.py").write_text("import os\n\n\ndef f(x):\n    return x\n", encoding="utf-8")
+    assert main(["machine", verb, str(machine)]) == 0
+    out = capsys.readouterr()
+    assert "FAIL" not in out.err
+    assert "[agent6] WARNING: the scripts have lint or type findings" in out.err
+    assert "do not fail the check" in out.err
+    assert "scripts/loose.py:1:8: F401" in out.err
+    assert "ERROR scripts/loose.py:4:7" in out.err
+    assert f"OK: {machine}" in out.out
+
+
 def test_machine_test_uses_the_resolved_isolation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

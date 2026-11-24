@@ -70,8 +70,17 @@ def _print_notes(checked: check.CheckedBundle) -> None:
             )
 
 
+def _warn_script_findings(findings: list[str]) -> None:
+    """Print what ruff and pyrefly found in the scripts; a machine is valid with findings."""
+    if not findings:
+        return
+    common.warn("the scripts have lint or type findings, which do not fail the check:")
+    for finding in findings:
+        print(f"  - {finding}", file=sys.stderr)
+
+
 def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, ...] = ()) -> int:
-    """Validate a machine file offline and print OK or FAIL.
+    """Validate a machine file offline and print OK or FAIL; script findings only warn.
 
     Args:
         path: The machine file.
@@ -85,10 +94,8 @@ def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, 
     except check.CheckError as exc:
         return _fail(path, exc.problems, exc.label)
     spec = checked.spec
-    script_problems = scriptcheck.lint_and_typecheck(path.parent / "scripts")
-    if script_problems:
-        return _fail(path, script_problems, "scripts")
     _print_notes(checked)
+    _warn_script_findings(scriptcheck.lint_and_typecheck(path.parent / "scripts"))
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
     return 0
 
@@ -99,7 +106,7 @@ def _cmd_machine_test(
     blackboard: pathlib.Path | None,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
-    """Run the offline simulation: validation, script lint and types, mock tests, dry-run.
+    """Run the offline simulation: validation, mock tests, script findings, dry-run.
 
     Args:
         path: The machine file.
@@ -117,12 +124,11 @@ def _cmd_machine_test(
     except check.CheckError as exc:
         return _fail(path, exc.problems, exc.label)
     spec = checked.spec
-    script_problems = scriptcheck.lint_and_typecheck(path.parent / "scripts")
     offline = scriptcheck.run_offline_tests(path.parent, checked.configs.machine.isolation)
-    script_problems.extend(offline.problems)
-    if script_problems:
-        return _fail(path, script_problems, "scripts")
+    if offline.problems:
+        return _fail(path, list(offline.problems), "scripts")
     _print_notes(checked)
+    _warn_script_findings(scriptcheck.lint_and_typecheck(path.parent / "scripts"))
     fixture: dict[str, Any] | None = None
     if blackboard is not None:
         try:
