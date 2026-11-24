@@ -102,7 +102,9 @@ To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 ### Sandboxed commands
 
 Runs the model's commands in a Linux sandbox with the file and network access you set.
-Under `full` or `partial` isolation, commands cannot read your provider keys.
+Under `full` isolation, the jail hides agent6's secrets file.
+Under `partial`, commands can read the keys stored there if a granted path contains the file.
+agent6 warns about that grant.
 [Security model](security.md)
 
 </div>

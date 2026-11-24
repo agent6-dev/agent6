@@ -290,7 +290,9 @@ agent6 model default claude/claude-sonnet-4-5
 ```
 
 - agent6's own loop, tools, jail, verify gate, and approvals drive the run; the binary supplies the model.
-  Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
+  agent6 disables Claude Code's built-in tools, skips user and project settings, and supplies its own tools over MCP.
+  Managed settings still apply.
+  A managed hook or a managed MCP server that offers no tools can pass the startup audit.
 - agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
 - Spend is plan-metered: every round reports the account's 5-hour and 7-day windows.
   `[budget].max_plan_points` caps the plan movement observed during one run (`--max-plan-points` per run).
