@@ -509,6 +509,9 @@ def test_start_and_reviewer_keep_the_roster_and_full_verdict() -> None:
     finished = state.fold_session([start, reviewer, panel]).review
     assert finished.panels[0].reviewers[0].summary == "leak"
     assert finished.panels[0].reviewers[0].findings[0].title == "leak"
+    del reviewer["findings"]
+    guard = state.fold_session([start, reviewer, panel]).review.merge_guard
+    assert guard.read_failure and "findings" in guard.read_failure
 
 
 def test_a_reused_panel_covers_the_trees_of_the_panel_it_names() -> None:

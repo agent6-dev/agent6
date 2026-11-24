@@ -190,7 +190,7 @@ class ReviewVerdict:
     reviewer_index: int
     focus: str
     model_route: str
-    findings: tuple[Finding, ...] = ()
+    findings: tuple[Finding, ...]
     summary: str = ""
     error: str | None = None
     session_id: str = ""

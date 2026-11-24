@@ -103,6 +103,11 @@ def test_an_extra_verdict_field_has_no_vote() -> None:
     assert report.verdict == "pass" and report.error is None
 
 
+def test_a_non_object_finding_is_not_an_empty_review() -> None:
+    report = review_verdict.verdict_from_obj({"findings": [None]}, 0, "s", "m")
+    assert report.error and report.verdict == "abstain"
+
+
 def test_structured_review_junk_output_abstains() -> None:
     v = review_env.single_verdict(
         _prov("I could not produce JSON, sorry."),
@@ -202,7 +207,6 @@ def test_coerce_findings_keeps_the_reviewer_label_and_normalizes_unknown_severit
             "location": {"path": "a", "side": "head", "start_line": 1, "end_line": 1},
             "title": "t",
         },
-        "not a dict",
         {
             "category": "security",
             "severity": "block",

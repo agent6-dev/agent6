@@ -546,9 +546,11 @@ def test_output_cap_truncated_case_folds_both_spellings() -> None:
 
 def test_panel_is_inconclusive_owner() -> None:
     abstain = review_records.ReviewVerdict(
-        reviewer_index=0, focus="s", model_route="m", error="starved"
+        reviewer_index=0, focus="s", model_route="m", findings=(), error="starved"
     )
-    passing = review_records.ReviewVerdict(reviewer_index=0, focus="s2", model_route="m2")
+    passing = review_records.ReviewVerdict(
+        reviewer_index=0, focus="s2", model_route="m2", findings=()
+    )
     all_abstain = review_panel.PanelResult(
         panel_id="p",
         block_on="none",

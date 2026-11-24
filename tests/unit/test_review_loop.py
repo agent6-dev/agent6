@@ -576,7 +576,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     from agent6.harness.review import panel as review_panel
 
     abstain = review_records.ReviewVerdict(
-        reviewer_index=0, focus="s", model_route="m", error="output hit the cap"
+        reviewer_index=0, focus="s", model_route="m", findings=(), error="output hit the cap"
     )
     res = review_panel.PanelResult(
         panel_id="p",

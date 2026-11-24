@@ -37,11 +37,7 @@ def build_user_message(ctx: review_panel.ReviewContext) -> str:
 def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
     """Return bounded findings, preserving line breaks in suggested patches."""
     out: list[review_records.Finding] = []
-    if not isinstance(raw, list):
-        return ()
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
+    for item in pydantic.TypeAdapter(list[dict[str, Any]]).validate_python(raw, strict=True):
         category = item.get("category")
         if isinstance(category, str):
             category = category.strip()[: review_records.CATEGORY_CHARS]
@@ -112,7 +108,11 @@ def verdict_from_obj(
     raw = obj.get("findings")
     if not isinstance(raw, list):
         return review_records.ReviewVerdict(
-            reviewer_index, focus, model_route, error="invalid reviewer findings: expected an array"
+            reviewer_index,
+            focus,
+            model_route,
+            (),
+            error="invalid reviewer findings: expected an array",
         )
     try:
         reply = review_records.ReviewerReply(
@@ -124,6 +124,7 @@ def verdict_from_obj(
             reviewer_index=reviewer_index,
             focus=focus,
             model_route=model_route,
+            findings=(),
             error=f"invalid reviewer findings: {exc}",
         )
     return review_records.ReviewVerdict(
@@ -173,6 +174,7 @@ def verdict_from_completion(
             binding.reviewer_index,
             focus,
             model_route,
+            (),
             error=error,
             session_id=session_id,
         )
@@ -188,6 +190,7 @@ def verdict_from_completion(
             binding.reviewer_index,
             focus,
             model_route,
+            (),
             error=error,
             session_id=session_id,
         )
