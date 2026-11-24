@@ -145,9 +145,12 @@ def test_hero_run_enables_the_tapes_baseline_approval() -> None:
 
 
 def _run_hero(
-    tmp_path: pathlib.Path, space: str, gif_bytes: int = 7
+    tmp_path: pathlib.Path, space: str, gif_bytes: int | str = 7
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
-    """Run hero.sh over stub tools; ffprobe reports `space`, ffmpeg writes `gif_bytes` per gif."""
+    """Run hero.sh over stub tools; ffprobe reports `space`, ffmpeg writes `gif_bytes` per gif.
+
+    `gif_bytes` is a size, or an expression over the stub's `sys.argv` that gives one.
+    """
     screenshots = tmp_path / "docs" / "screenshots"
     out = screenshots / "out"
     out.mkdir(parents=True)
@@ -212,9 +215,22 @@ def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, sp
             )
 
 
+def _gif_rates(encodes: list[list[str]]) -> list[str]:
+    return [a[a.index("-vf") + 1].split(",")[0] for a in encodes if a[-1].endswith(".gif")]
+
+
 def test_hero_refuses_a_gif_over_the_image_proxy_cap(tmp_path: pathlib.Path) -> None:
-    """A gif over 5 MiB fails the build: GitHub's image proxy would answer 404 for it."""
+    """A gif over 5 MiB at every rate fails the build: GitHub's image proxy would answer 404."""
     result, encodes = _run_hero(tmp_path, "bt709", gif_bytes=5 * 1024 * 1024 + 1)
     assert result.returncode != 0
     assert "image proxy serves at most 5242880" in result.stderr
-    assert len(encodes) == 6
+    assert _gif_rates(encodes) == ["fps=10", "fps=8", "fps=6", "fps=5", "fps=4"] * 3
+
+
+def test_hero_lowers_a_gifs_frame_rate_until_it_fits_the_cap(tmp_path: pathlib.Path) -> None:
+    """A gif over the cap at 10 fps failed the build, though recordings differ and 8 fps fits."""
+    over_at_ten = "(5242881 if any(a.startswith('fps=10,') for a in sys.argv) else 7)"
+    result, encodes = _run_hero(tmp_path, "bt709", gif_bytes=over_at_ten)
+    assert result.returncode == 0, result.stderr
+    assert _gif_rates(encodes) == ["fps=10", "fps=8"] * 3
+    assert result.stdout.count("at 8 fps") == 3

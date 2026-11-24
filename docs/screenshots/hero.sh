@@ -54,9 +54,10 @@ BG="0x0f1414"   # agent6-dark's background; see src/agent6/ui/tui/theme.py
 WIDTH=1440
 HEIGHT=810
 FPS=24
-GIF_FPS=10      # every frame of a scrolling transcript is a full redraw, so the
-                # gif's size scales with fps; 10 keeps the web hero at 4.7 MB (12 gave 5.3 MB)
 GIF_CAP=5242880 # bytes; GitHub's image proxy answers 404 for anything larger
+# Every frame of a scrolling transcript is a full redraw, so a gif's size scales with its fps,
+# and one recording differs from the next by 15%. A gif takes the first rate that fits the cap.
+GIF_FPS_STEPS=(10 8 6 5 4)
 
 # Segment spec: src : cut-in : window length : target length : hold.
 TUI_SEGMENTS=(
@@ -114,20 +115,23 @@ build() {
     -colorspace bt709 -color_primaries bt709 -color_trc bt709 "$OUT/hero-$name.webm" || return 1
   python3 docs/screenshots/webm.py --check "$OUT/hero-$name.webm" || return 1
 
-  ffmpeg -v error -y -i "$OUT/hero-$name.webm" \
-    -vf "fps=${GIF_FPS},split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
-    "$OUT/hero-$name.gif" || return 1
-  local gif_bytes
-  gif_bytes=$(stat -c %s "$OUT/hero-$name.gif")
+  local gif_fps gif_bytes
+  for gif_fps in "${GIF_FPS_STEPS[@]}"; do
+    ffmpeg -v error -y -i "$OUT/hero-$name.webm" \
+      -vf "fps=${gif_fps},split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
+      "$OUT/hero-$name.gif" || return 1
+    gif_bytes=$(stat -c %s "$OUT/hero-$name.gif")
+    if [ "$gif_bytes" -le "$GIF_CAP" ]; then break; fi
+  done
   if [ "$gif_bytes" -gt "$GIF_CAP" ]; then
-    echo "hero.sh: hero-$name.gif is $gif_bytes bytes; GitHub's image proxy serves at most $GIF_CAP" >&2
+    echo "hero.sh: hero-$name.gif is $gif_bytes bytes at $gif_fps fps; GitHub's image proxy serves at most $GIF_CAP" >&2
     return 1
   fi
 
-  printf 'hero-%s: %s (%ss), gif %s\n' "$name" \
+  printf 'hero-%s: %s (%ss), gif %s at %s fps\n' "$name" \
     "$(du -h "$OUT/hero-$name.webm" | cut -f1)" \
     "$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/hero-$name.webm")" \
-    "$(du -h "$OUT/hero-$name.gif" | cut -f1)"
+    "$(du -h "$OUT/hero-$name.gif" | cut -f1)" "$gif_fps"
 }
 
 # All three sources record at 1600x900; WebM and GIF share the 1440x810 canvas.
