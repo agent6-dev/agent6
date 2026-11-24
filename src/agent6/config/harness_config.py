@@ -692,9 +692,9 @@ class ReviewConfig(pydantic.BaseModel):
     merge_repeats: bool = pydantic.Field(
         default=False,
         description=(
-            "false (default): findings are shown as the reviewers gave them. true: "
+            "false (default): findings are shown as the reviewers gave them; true: "
             "one more model call groups repeated findings for that review, and each "
-            "finding shows how many reviewers reported it."
+            "finding shows how many reviewers reported it"
         ),
     )
     min_blocking_models: int = pydantic.Field(
