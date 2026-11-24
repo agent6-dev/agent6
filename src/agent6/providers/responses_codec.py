@@ -26,6 +26,7 @@ from agent6.providers import openai_messages, openai_recovery, provider_types, s
 REPLAY_KEY = "reasoning_replay"
 # Each carries the final response object; `response.failed` carries an envelope instead.
 TERMINAL_EVENTS = frozenset({"response.completed", "response.done", "response.incomplete"})
+MAX_OUTPUT_TOKENS_FIELD = "max_output_tokens"
 # Body keys the adapter or the harness owns; `extra_body` never reaches them: retention,
 # remote continuation, the output cap and the output format stay agent6's.
 RESERVED_BODY = frozenset(
@@ -35,7 +36,7 @@ RESERVED_BODY = frozenset(
         "include",
         "input",
         "instructions",
-        "max_output_tokens",
+        MAX_OUTPUT_TOKENS_FIELD,
         "model",
         "parallel_tool_calls",
         "previous_response_id",

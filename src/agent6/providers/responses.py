@@ -215,7 +215,7 @@ class ResponsesProvider:
             "input": responses_codec.responses_input(messages, route=self._route),
             "tool_choice": "auto",
             "store": False,
-            "max_output_tokens": max_tokens,
+            responses_codec.MAX_OUTPUT_TOKENS_FIELD: max_tokens,
             # The encrypted reasoning items replayed for continuity across tool calls.
             "include": ["reasoning.encrypted_content"],
         }

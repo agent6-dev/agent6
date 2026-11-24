@@ -9,7 +9,7 @@ import re
 from typing import Any
 
 from agent6.prompts import review
-from agent6.providers import provider_types
+from agent6.providers import provider_types, responses_codec
 from agent6.sessions import completion, layout, objects
 
 
@@ -94,7 +94,10 @@ def _opening(path: pathlib.Path, body: dict[str, Any], focus: str) -> Opening:
     tree = review.panel_prompt(
         focus, max_turns=int(limit[1]), commands=any(t.name == "run_command" for t in tools)
     )
-    cap = body.get("max_output_tokens", body.get("max_completion_tokens", body.get("max_tokens")))
+    cap = body.get(
+        responses_codec.MAX_OUTPUT_TOKENS_FIELD,
+        body.get("max_completion_tokens", body.get("max_tokens")),
+    )
     if cap is not None and (type(cap) is not int or cap < 1):
         raise RecordingError("expected a positive output token cap")
     temperature = body.get("temperature")
