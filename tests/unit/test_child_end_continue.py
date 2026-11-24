@@ -207,7 +207,8 @@ def test_parent_resumes_then_steers_its_ended_child(
                 "harness": {
                     "parallel": {"tool": True, "judges": []},
                     "verify": {"infer": False},
-                    "max_turns": 4 if ending == "turn limit" else -1,
+                    # Room for the parent: its finish waits while the child's task is unmarked.
+                    "max_turns": 8 if ending == "turn limit" else -1,
                 },
                 "review": {"when": "never"},
             }
