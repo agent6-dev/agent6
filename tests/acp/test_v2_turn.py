@@ -395,3 +395,24 @@ def test_a_keyed_prompt_is_found_again_in_the_journal_and_in_the_steer_queue(
     assert prompt.holds(opened, paths.state_dir, "b" * 32), (
         "promoted to the slot, it is still waiting"
     )
+
+
+def test_a_retry_is_answered_after_the_first_request_faulted(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Left registered, the faulted prompt took its retry in and never answered either."""
+
+    def _no_thread(*_a: object, **_k: object) -> None:
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(acp_session.Sessions, "start_execution", _no_thread)
+    wire = _Wire()
+    try:
+        session = wire.new_session(test_runner._repo(tmp_path))
+        keyed = {"sessionId": session, "prompt": [{"type": "text", "text": "go"}]}
+        for req_id in (3, 4):
+            wire.send(id=req_id, method="session/prompt", params=keyed | {"idempotencyKey": "k"})
+            answer = wire.collect(lambda f, req_id=req_id: f.get("id") == req_id)[-1]
+            assert "can't start new thread" in answer["error"]["message"]
+    finally:
+        wire.close()

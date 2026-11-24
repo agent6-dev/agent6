@@ -486,6 +486,10 @@ class ACPServer:
                 sessions.start_execution(session, text, turn=turn, images=images)
         except rpc.RpcError as exc:
             answer.ended(exc)  # refused before its message was added: its retries hear it too
+        except Exception:
+            # The handler's own fault answers this request; nothing will answer a retry that joined.
+            self.unanswered.pop((session.acp_id, message_id), None)
+            raise
         return DEFERRED
 
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
@@ -495,8 +499,8 @@ class ACPServer:
             params: The `sessionId` of the session to cancel.
 
         Returns:
-            An empty result, never sent; a v1 editor is told of an unknown session, and v2
-            has a cancel for one ignored.
+            An empty result, never sent. A v1 editor is told of an unknown session; under
+            v2 a cancel for one is ignored.
         """
         sessions = self._sessions()
         try:
