@@ -169,22 +169,25 @@ def drain_child(
         hard_stop: A process teardown, which skips the wait.
 
     Returns:
-        True when the child ended in time, False to leave it running un-imported.
+        True when the worker is gone, False when its work is not safe to import.
     """
     deadline = time.monotonic() + STOP_GRACE_S
-    while time.monotonic() < deadline:
+    while True:
         if hard_stop is not None and hard_stop.is_set():
             return False
         summary = summarize_session_dir(res.session_dir)
         if child_terminal(res.session_dir, summary.status, process.worker_is_alive):
             observe_commits(res)
             return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        interval = min(poll_interval_s, remaining)
         if hard_stop is not None:
-            if hard_stop.wait(poll_interval_s):
+            if hard_stop.wait(interval):
                 return False
         else:
-            time.sleep(poll_interval_s)
-    return False
+            time.sleep(interval)
 
 
 def child_dir(record_state: pathlib.Path, session_id: str, *, mode: str) -> pathlib.Path:

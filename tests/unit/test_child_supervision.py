@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from collections.abc import Callable
 from typing import Any
 
@@ -235,6 +236,26 @@ def _spec(tmp_path: pathlib.Path, name: str) -> child_records.ChildSpec:
     return child_records.ChildSpec(
         number=1, session_id=name, worktree=tmp_path / "w", settings=None
     )
+
+
+def test_a_child_that_ended_during_the_last_poll_can_import(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    d = _live_forever(tmp_path, "late-l1")
+    res = child_records.ChildResult(_spec(tmp_path, d.name), d, "agent6/late-l1", True, "")
+    now = 0.0
+
+    def late_wakeup(_interval: float) -> None:
+        nonlocal now
+        with (d / "logs.jsonl").open("a", encoding="utf-8") as log:
+            log.write('{"type":"session.stop","reason":"operator_stop"}\n')
+        (d / "worker.pid").unlink()
+        now += child_wait.STOP_GRACE_S + 1
+
+    monkeypatch.setattr(
+        child_wait, "time", types.SimpleNamespace(monotonic=lambda: now, sleep=late_wakeup)
+    )
+    assert child_wait.drain_child(res, poll_interval_s=1.0, hard_stop=None)
 
 
 def test_a_child_past_its_deadline_is_stopped_and_reported_failed(

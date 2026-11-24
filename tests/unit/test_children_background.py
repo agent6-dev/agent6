@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import dataclasses
+import functools
 import json
 import pathlib
 import subprocess
@@ -318,6 +319,20 @@ def test_tasks_that_end_before_one_boundary_merge_in_the_order_written(
     assert list(dispatcher.open) == ["root-p1"]
 
 
+def test_the_stop_sentence_does_not_claim_a_missing_branch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "run")
+    stop = children.stop
+    monkeypatch.setattr(children, "stop", functools.partial(stop, path=""))
+    script = _Script((None, _calls(("parallel", {"task": "write a"}))), (None, _calls(READ)))
+    result = _harness(repo, tmp_path / "run", script, children, max_turns=2).run("start")
+    assert not _git(repo, "branch", "--list", "agent6/run-p1-l1")
+    assert result.summary.endswith("; stopped with the run: run-p1-l1")
+
+
 def test_an_end_stops_the_children_still_running_and_a_resume_merges_nothing_of_theirs(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -339,9 +354,7 @@ def test_an_end_stops_the_children_still_running_and_a_resume_merges_nothing_of_
 
     assert result.reason == "max_turns"
     assert children.stopped == [child]
-    assert result.summary.endswith(
-        "; 1 child(ren) stopped with the run, their branches hold their work"
-    )
+    assert result.summary.endswith(f"; stopped with the run: {child}")
     (record,) = child_dispatch.read_records(tmp_path / "run")
     # Charged, not merged: the chain holds none of its work.
     assert (record.state, record.delivered, record.children[0].settled) == (

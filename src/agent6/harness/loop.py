@@ -1711,8 +1711,7 @@ class Harness:
             self.log(f"LOOP: {len(stopped)} child(ren) stopped with the run: {', '.join(stopped)}")
             end = dataclasses.replace(
                 end,
-                summary=f"{end.summary}; {len(stopped)} child(ren) stopped with the run,"
-                " their branches hold their work",
+                summary=f"{end.summary}; stopped with the run: {', '.join(stopped)}",
             )
         if ended:
             self.log(f"LOOP: {len(ended)} child(ren) ended with pending tasks: {', '.join(ended)}")
