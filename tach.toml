@@ -231,6 +231,8 @@ depends_on = [
   "agent6.providers",
   "agent6.review_records",
   "agent6.sandbox",
+  # prompt show resolves the isolation a run here would get, so the preview
+  # renders the same level-aware blocks the loop does
   "agent6.sandbox.detect",
   "agent6.sessions.attachments",  # the images an operator sent, loaded at delivery and resume
   "agent6.sessions.budget_events",
@@ -239,10 +241,12 @@ depends_on = [
   "agent6.sessions.event_log",
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
+  # Child records use the origin's state directory and the shared session layout.
   "agent6.sessions.layout",
   "agent6.sessions.lineage",
   "agent6.sessions.manifest",  # the level a child's commands ran under, read at its import
   "agent6.sessions.objects",
+  # the start-family emitter stamps worker.pid before the event is readable
   "agent6.sessions.process",
   "agent6.task_text",  # the session.start headline is the operator's own words
   "agent6.terminal",  # a changed path's name printed on one line
@@ -448,20 +452,32 @@ depends_on = [
   "agent6.evidence",
   "agent6.harness",
   "agent6.kinds",
+  # The model picker offers the routes every other front-end's picker offers.
   "agent6.models.choices",
   "agent6.paths",
   "agent6.review_records",
   "agent6.sessions.event_log",
   "agent6.sessions.id",
+  # session/cancel drops the same stop marker the TUI and web do: a marker,
+  # not a kill, so the finished step lands first.
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
   "agent6.sessions.layout",
   "agent6.sessions.process",
+  # The approver and questioner the seam takes are
+  # `tools.operator_prompts` protocols; building them names their values.
   "agent6.tools",
+  # A scoped approval offers the four answers every front-end shares.
   "agent6.ui.keymap",
+  # A prompt's image blocks pass the intake the web's uploads pass.
   "agent6.ui.operator_images",
+  # The same detached-resume spawner ui.cli uses: `--detach` is a lifecycle
+  # affordance, not a CLI one.
   "agent6.ui.spawn",
   "agent6.ui.steer",
+  # session/update is the shared transcript fold, projected. Reading the
+  # journal again with ACP's own rules is how a fourth surface starts
+  # disagreeing with the other three about what happened.
   "agent6.viewmodel",
   "agent6.viewmodel.receipt",
 ]
@@ -475,7 +491,9 @@ depends_on = [
 path = "agent6.ui.web"
 depends_on = [
   "agent6",
+  # /undo forks in-process (app.fork), the same direction ui.acp already uses.
   "agent6.app",
+  # The variable naming the operator's own secret, kept out of every child.
   "agent6.child_env",
   "agent6.config.io",
   "agent6.config.layer",
@@ -491,6 +509,8 @@ depends_on = [
   "agent6.machine.journal",
   "agent6.machine.schema",
   "agent6.machine.semantics",
+  # config-editor value suggestions: the one owner every editor and TAB
+  # completion read
   "agent6.models.choices",
   "agent6.pack",
   "agent6.path_safety",
@@ -514,8 +534,10 @@ depends_on = [
   "agent6.vcs.git.history",
   "agent6.vcs.git.ops",
   "agent6.vcs.git.read",
+  # One branch-tips snapshot per hub poll (the listing's unmerged mark).
   "agent6.viewmodel",
   "agent6.viewmodel.receipt",
+  # The sign-in secret is minted from the session-id wordlist.
   "agent6.words",
 ]
 
