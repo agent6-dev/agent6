@@ -812,6 +812,13 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
         // A side names its commit, or the working tree as the picker does.
         const endpoint = (e) => e.sha === GIT_WORKTREE ? [GIT_WORKTREE_PICK.label] : [el('span', 'mono', e.short), ' ' + e.subject];
         sum.append(...endpoint(d.base), '  →  ', ...endpoint(d.head));
+        if (d.commit_range) {
+          const {ahead, behind} = d.commit_range;
+          const count = behind ? (ahead ? ahead + ' ahead, ' : '') + behind + ' behind'
+            : ahead + (ahead === 1 ? ' commit' : ' commits');
+          const dirty = d.head.sha === GIT_WORKTREE && wt.files.length > 0;
+          sum.appendChild(el('div', null, count + (dirty ? ' and uncommitted changes' : '')));
+        }
         result.appendChild(sum);
         if (reviewed) result.appendChild(reviewRules(panel.panel));
         const path = query.get('path');

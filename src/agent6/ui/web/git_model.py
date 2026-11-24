@@ -671,7 +671,7 @@ def _count(rel_paths: Sequence[str]) -> str:
     return f"{len(rel_paths)} file{'' if len(rel_paths) == 1 else 's'}"
 
 
-def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
+def _endpoint(repo: pathlib.Path, rev: str, sha: str, empty_tree: str) -> dict[str, Any]:
     """Return one side of a compare: the rev as sent, the sha it names, and its subject.
 
     Attributes:
@@ -684,13 +684,14 @@ def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
         repo: The repository.
         rev: The requested revision.
         sha: The resolved revision.
+        empty_tree: The repository's empty tree identifier.
 
     Returns:
         The comparison endpoint.
     """
     if sha == git_history.WORKTREE:
         subject = "(working tree)"
-    elif sha == git_read.empty_tree(repo):
+    elif sha == empty_tree:
         subject = "(empty tree)"
     else:
         subject = git_history.commit_info(repo, sha).subject
@@ -707,6 +708,11 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
 
         base: The base revision as an endpoint object.
         head: The head revision as an endpoint object.
+        commit_range: The counted commits, or null when an endpoint has no commit.
+        commit_range.base: The resolved base commit.
+        commit_range.head: The resolved head commit. A working-tree head uses HEAD.
+        commit_range.ahead: Commits reachable only from the head.
+        commit_range.behind: Commits reachable only from the base.
 
     Args:
         repo: The repository.
@@ -714,7 +720,7 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
         head: The newer revision as the browser sent it; `WORKTREE` is the working tree.
 
     Returns:
-        `base` and `head` as sent and resolved, then `files` and `truncated`.
+        The endpoints, commit range and changed files.
 
     Raises:
         GitRequestError: A revision is malformed, unknown, or (for `head`) not a commit.
@@ -723,9 +729,16 @@ def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
     base_sha = _resolve(repo, base, tree_ok=True)
     head_sha = _resolve(repo, head, worktree_ok=True)
     files, truncated = _files(repo, base_sha, head_sha)
+    empty_tree = git_read.empty_tree(repo)
+    tip = git_history.resolve_commit(repo, "HEAD") if head_sha == git_history.WORKTREE else head_sha
+    commit_range = None
+    if base_sha != empty_tree and tip:
+        ahead, behind = git_history.ahead_behind(repo, base_sha, tip)
+        commit_range = {"base": base_sha, "head": tip, "ahead": ahead, "behind": behind}
     return {
-        "base": _endpoint(repo, base, base_sha),
-        "head": _endpoint(repo, head, head_sha),
+        "base": _endpoint(repo, base, base_sha, empty_tree),
+        "head": _endpoint(repo, head, head_sha, empty_tree),
+        "commit_range": commit_range,
         "files": files,
         "truncated": truncated,
     }

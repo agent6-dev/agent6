@@ -225,6 +225,12 @@ def test_compare_reads_like_the_commits_own_diff(
         "subject": "root commit",
     }
     assert body["head"]["sha"] == shas["feature"] and body["head"]["rev"] == "feature"
+    assert body["commit_range"] == {
+        "base": shas["root"],
+        "head": shas["feature"],
+        "ahead": 1,
+        "behind": 0,
+    }
     own = _ok(port, f"/api/git/commit/{shas['feature']}")["files"]
     assert body["files"] == own
     across = _ok(port, "/api/git/compare?base=refs/tags/v1&head=refs/tags/v2")
@@ -237,6 +243,7 @@ def test_compare_reads_like_the_commits_own_diff(
     ]
     empty = _ok(port, f"/api/git/compare?base={git_read.empty_tree(path)}&head=v1")
     assert empty["base"]["subject"] == "(empty tree)"
+    assert empty["commit_range"] is None
     assert len(empty["files"]) == 3
     assert _ok(port, "/api/git/compare?base=main&head=main")["files"] == []
 
@@ -462,6 +469,12 @@ def test_compare_and_diff_take_the_working_tree_as_head(
         "subject": "(working tree)",
     }
     assert cmp["base"]["sha"] == shas["merge"]
+    assert cmp["commit_range"] == {
+        "base": shas["merge"],
+        "head": shas["merge"],
+        "ahead": 0,
+        "behind": 0,
+    }
     assert cmp["files"] == _ok(port, "/api/git/worktree")["files"]
     q = f"base={shas['merge']}&head=WORKTREE"
     new = _ok(port, f"/api/git/diff?{q}&path=new.txt")

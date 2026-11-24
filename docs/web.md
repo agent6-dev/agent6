@@ -123,6 +123,8 @@ When the server stops answering, the Sessions and State machines lists, a sessio
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
     - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge
+    - **Compare** counts the commits between the base and head. If the histories diverge, it shows how many commits the head is ahead and behind.
+      A working-tree head counts to `HEAD` and notes uncommitted changes. An empty tree or recorded review tree has no commit count.
     - your own hands, file by file: the working-tree panel stages and unstages a file, discards one tracked file's unstaged edits after a confirm (restored from the index; no untracked file is ever deleted), and commits the index with the message you type under the repository's own identity; the toolbar switches branches, creates one at HEAD, and **Review** fills the new-work composer with `/review <branch>`
     - each working-tree row says when its changes are staged or partly staged, and an untracked file reads `U`
     - every write is refused while a session is live in this checkout (a worktree run, a fork or a child works elsewhere and does not block); push, pull, rebase, amend and reset stay in your terminal

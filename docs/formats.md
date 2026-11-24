@@ -2502,6 +2502,11 @@ Source: [`ui.web.git_model.compare_payload`](https://github.com/agent6-dev/agent
 | --- | --- | --- |
 | `base` | `JSON` | The base revision as an endpoint object. |
 | `head` | `JSON` | The head revision as an endpoint object. |
+| `commit_range` | `JSON` | The counted commits, or null when an endpoint has no commit. |
+| `commit_range.base` | `JSON` | The resolved base commit. |
+| `commit_range.head` | `JSON` | The resolved head commit. A working-tree head uses HEAD. |
+| `commit_range.ahead` | `JSON` | Commits reachable only from the head. |
+| `commit_range.behind` | `JSON` | Commits reachable only from the base. |
 | `files` | `JSON` | Changed-file rows between the endpoints. |
 | `truncated` | `JSON` | Whether the file list reached its cap. |
 

@@ -141,6 +141,24 @@ def resolve_commit(path: pathlib.Path, rev: str) -> str:
     return res.stdout.strip() if res.ok else ""
 
 
+def ahead_behind(path: pathlib.Path, base: str, head: str) -> tuple[int, int]:
+    """Count commits unique to the head and to the base.
+
+    Args:
+        path: The repository.
+        base: The resolved base commit.
+        head: The resolved head commit.
+
+    Returns:
+        The head's ahead and behind counts, in that order.
+    """
+    counts = git_command.run(
+        path, "rev-list", "--left-right", "--count", "--end-of-options", f"{base}...{head}", "--"
+    ).stdout
+    behind, ahead = counts.split()
+    return int(ahead), int(behind)
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class LogCommit:
     """One commit of a log walk.
