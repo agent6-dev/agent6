@@ -56,7 +56,11 @@ def test_config_show_prints_the_clamped_local_restart_cap(
     """The configured cap remains editable when a small worker window lowers it."""
     path = tmp_path / "small.toml"
     path.write_text('[providers.o]\nbackend = "openai"\n[models.worker]\nmodel = "o/small"\n')
-    monkeypatch.setattr(registry, "context_window", lambda *_: 32768)
+
+    def small_window(_provider_name: str, _model_id: str) -> int:
+        return 32768
+
+    monkeypatch.setattr(registry, "context_window", small_window)
     monkeypatch.chdir(tmp_path)
     assert main(["--config", str(path), "config", "show"]) == 0
     row = next(
