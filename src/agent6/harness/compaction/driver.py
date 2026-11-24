@@ -181,7 +181,7 @@ class _Scheduled:
             )
         else:
             conversation.restart(
-                context.restart_notice(replay.quotes, task=replay.task) + summary,
+                context.restart_notice(replay.quotes, task=replay.task, kept=keep) + summary,
                 keep=keep,
                 quotes=replay.quotes,
                 endpoint_task=context.task if self.endpoint else None,
@@ -347,7 +347,9 @@ class Tiered(_Scheduled):
             return "resend"
         if mode == "truncate":
             conversation.restart(
-                context.restart_notice(replay.quotes, task=replay.task, truncated=True),
+                context.restart_notice(
+                    replay.quotes, task=replay.task, kept=replay.tail, truncated=True
+                ),
                 keep=replay.tail,
                 quotes=replay.quotes,
             )

@@ -12,6 +12,7 @@ from unittest import mock
 
 import pytest
 
+from agent6 import directive
 from agent6.context import skills
 from agent6.harness import loop_conversation as history
 from agent6.harness import loop_resume, loop_snapshot, tool_effects
@@ -201,6 +202,27 @@ def test_a_steered_skill_is_quoted_by_name_without_its_text(tmp_path: pathlib.Pa
         " run.\nSkill arguments: v2\n\n"
     ) in notice
     assert "SKILL-BODY" not in notice and "/release" not in notice
+
+
+def test_a_fact_a_kept_notice_states_is_not_repeated_by_the_restart() -> None:
+    """A cold restart stated the verify fact and the metric twice: its notice and the resume's."""
+    wf, state = test_harness._wf(), test_harness._state(original_task="")
+    state.verify.last_ok = False
+    wf.metrics.change(directive.parse_metric_spec("minimize -- old"))
+    facts = [wf.verify_fact(state), wf.metrics.notice()]
+    conv = history.Conversation()
+    conv.notice("steer", origin="operator")
+    _reply(conv, "ok")
+    notice = _restart_run(wf, conv, state, keep_recent_turns=0)
+    assert all(fact in notice for fact in facts)
+    _reply(conv, "ok")
+    # A resume states both before its first request; the restart keeps those unread notices.
+    conv.notice(f"[harness verify] {facts[0]}")
+    conv.notice(facts[1])
+    notice = _restart_run(wf, conv, state, keep_recent_turns=0)
+    whole = "\n".join(b["text"] for m in conv.to_wire() for b in m["content"] if "text" in b)
+    assert [whole.count(fact) for fact in facts] == [1, 1]
+    assert not any(fact in notice for fact in facts) and "VERIFICATION" not in notice
 
 
 def test_first_turn_that_does_not_fit_ends_replay() -> None:

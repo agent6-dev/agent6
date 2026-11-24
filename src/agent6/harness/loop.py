@@ -2062,9 +2062,22 @@ class Harness:
             operator_messages: Sequence[str] = (),
             *,
             task: str = "",
+            kept: Sequence[loop_conversation.Message] = (),
             truncated: bool = False,
             endpoint: bool = False,
         ) -> str:
+            stated = [
+                item.text
+                for message in kept
+                if isinstance(message, loop_conversation.UserMessage)
+                for item in message.items
+                if isinstance(item, loop_conversation.Notice)
+            ]
+
+            def unstated(fact: str) -> str:
+                # A resume states these before its first request; a kept copy is enough.
+                return "" if any(fact in text for text in stated) else fact
+
             return compaction_prompts.context_restart_notice(
                 self.mode,
                 task=task,
@@ -2077,8 +2090,8 @@ class Harness:
                 pins=state.pins,
                 decisions=self._load_decisions(),
                 dag_available=self.dispatcher.dag_available,
-                verification=self.verify_fact(state),
-                metric=self.metrics.notice() if self.metrics.revision else "",
+                verification=unstated(self.verify_fact(state)),
+                metric=unstated(self.metrics.notice() if self.metrics.revision else ""),
             )
 
         return strategy.Context(

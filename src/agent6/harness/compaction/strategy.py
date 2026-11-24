@@ -17,12 +17,21 @@ from agent6.tools import waits
 class RestartNotice(Protocol):
     """Build the header for a local restart."""
 
-    def __call__(self, quotes: Sequence[str], /, *, task: str = "", truncated: bool = False) -> str:
+    def __call__(
+        self,
+        quotes: Sequence[str],
+        /,
+        *,
+        task: str = "",
+        kept: Sequence[loop_conversation.Message] = (),
+        truncated: bool = False,
+    ) -> str:
         """State the run facts, the task and the retained operator messages.
 
         Args:
             quotes: Older operator messages outside the kept turns.
             task: The run's task when no kept turn states it.
+            kept: The messages replayed after the notice; a fact one states is not repeated.
             truncated: No summary follows the notice.
 
         Returns:

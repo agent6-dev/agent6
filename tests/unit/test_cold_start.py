@@ -54,6 +54,7 @@ def _resume(
     saved: loop_conversation.Conversation | None = None,
     summarize_at: int = 10**9,
     keep_turns: int = 0,
+    verify: tuple[str, ...] = (),
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], writers.Writer]:
     path = directory / "logs.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
@@ -63,6 +64,7 @@ def _resume(
             messages=(saved or _history()).to_wire(snapshot=True),
             pins=["Binding pin."],
             original_task="Original goal.",
+            verify_command=verify,
         ).model_dump_json()
     )
     worker = mock.MagicMock()
@@ -189,6 +191,16 @@ def test_a_cold_restart_with_nothing_to_replace_resends(
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
     assert (row["mode"], row["action"], row["chars_not_sent"]) == (mode, "resend", 0)
     assert "resend history" in row["message"]
+
+
+@pytest.mark.parametrize("mode", ["drop", "summarize", "truncate"])
+def test_a_cold_start_states_the_verify_fact_once(
+    tmp_path: pathlib.Path, mode: kinds.ColdStart
+) -> None:
+    """A cold restart stated the fact in its notice and again in the resume's verify notice."""
+    sent, _, _, _ = _resume(tmp_path, mode, [rules.request(model="other")], verify=("pytest",))
+    texts = [b["text"] for m in sent for b in m["content"] if b.get("type") == "text"]
+    assert sum("No verification verdict covers the tree as it stands." in t for t in texts) == 1
 
 
 @pytest.mark.parametrize("forks", [1, 2])

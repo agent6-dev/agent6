@@ -261,6 +261,7 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
 - `retention.select` applies the same operator, turn and character caps to size, manual, idle and cold restarts.
   The run's task is the oldest reservable message at every restart, read from the run's state.
   The restart notice holds the pointers, the task when no kept turn states it, older reserved operator messages, pins, rulings, verify fact, metric and any summary in that order.
+  It leaves out a verify fact or metric notice that a kept message already states.
   Recent turns follow with calls and results paired, followed by any unread inputs.
   A reviewer's opening is its contract, not operator text. Each local restart keeps it once and the next request supplies the current reply count.
   `keep_thinking_turns` limits replayed thinking by assistant turn.
