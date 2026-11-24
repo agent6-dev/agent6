@@ -12,7 +12,7 @@ import pytest
 
 from agent6 import child_env
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.ui.cli import ask, sessions_cmds, skills_cmds
 from agent6.vcs.git import command as git_command
 from agent6.vcs.git import policy as git_policy
@@ -50,7 +50,7 @@ def test_a_configured_provider_key_is_stripped_from_gits_environment(
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret-should-not-reach-git")
     session_setup.apply_git_ops_policy(
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {
                     "anthropic": {"backend": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}
@@ -69,7 +69,7 @@ def test_a_variable_that_is_not_a_provider_key_is_left_alone(
     monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i /home/me/.ssh/id_ed25519")
     monkeypatch.setenv("SOME_OTHER_TOKEN", "not-a-configured-key")
     session_setup.apply_git_ops_policy(
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {
                     "anthropic": {"backend": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}
@@ -87,7 +87,7 @@ def test_no_providers_configured_strips_nothing(
 ) -> None:
     """Keys living only in secrets.toml never enter the environment; a same-named var stays."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "from-the-shell")
-    session_setup.apply_git_ops_policy(Config())
+    session_setup.apply_git_ops_policy(config_model.Config())
     for env in _captured_git_envs(monkeypatch, tmp_path):
         assert env.get("ANTHROPIC_API_KEY") == "from-the-shell"
 
@@ -189,7 +189,7 @@ def test_a_loaded_config_keeps_its_provider_key_out_of_git_without_the_git_ops_p
 ) -> None:
     """`sessions diff` and `skills install` spawn git and never call `apply_git_ops_policy`."""
     monkeypatch.setenv("PROBE_PROVIDER_KEY", "sk-secret")
-    Config.model_validate(
+    config_model.Config.model_validate(
         {"providers": {"probe": {"backend": "anthropic", "api_key_env": "PROBE_PROVIDER_KEY"}}}
     )
     for env in _captured_git_envs(monkeypatch, tmp_path):

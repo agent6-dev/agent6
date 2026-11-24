@@ -20,7 +20,7 @@ from xdist import workermanage
 
 from agent6 import kinds
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import tool_paths
 from agent6.sessions import lock
 from agent6.tools import dispatch
@@ -225,7 +225,7 @@ def short_repo() -> Iterator[pathlib.Path]:
 @pytest.fixture
 def tool_context(tmp_path: pathlib.Path) -> dispatch.ToolContext:
     """Provide a bare dispatcher's context for a direct tool call."""
-    return dispatch.ToolDispatcher(root=tmp_path, config=Config()).tool_context()
+    return dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config()).tool_context()
 
 
 @pytest.fixture
@@ -240,7 +240,7 @@ def build_dispatcher() -> Iterator[Callable[..., dispatch.ToolDispatcher]]:
     def build(
         *,
         root: pathlib.Path,
-        config: Config,
+        config: config_model.Config,
         isolation: kinds.IsolationLevel = "none",
         **kwargs: Any,
     ) -> dispatch.ToolDispatcher:

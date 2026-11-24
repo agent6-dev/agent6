@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import config as agent6_config
+from agent6.config import model as config_model
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "bench" / "realworld" / "run_realworld.sh"
@@ -256,7 +256,7 @@ def test_worker_and_caps_use_operator_config_and_explicit_overrides(
     assert "providers" not in config
     assert "models" not in config
     assert config["budget"].get("max_plan_points") == (2 if override else None)
-    loaded = agent6_config.Config.model_validate(config)
+    loaded = config_model.Config.model_validate(config)
     assert loaded.budget.max_usd == (2.5 if override else 1.0)
     assert loaded.budget.max_plan_points == (2.0 if override else -1.0)
     calls = [json.loads(line) for line in (bench_repo / "calls.jsonl").read_text().splitlines()]

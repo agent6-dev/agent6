@@ -23,7 +23,7 @@ from agent6 import paths
 from agent6.app import execution
 from agent6.app import run as run_mod
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import process
 from agent6.tools import operator_prompts
 
@@ -61,7 +61,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
         raise RuntimeError("stop here")
 
     monkeypatch.setattr(execution, "run_execution", _execution)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
 
     def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         order.append("ask")
@@ -113,7 +113,7 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
 
     assert (
         run_mod.run_task(
-            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+            config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}}),
             "t",
             started_at=time.time(),
             frontend=frontend,
@@ -157,7 +157,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
 
     with pytest.raises(OSError, match="console teardown failed"):
         run_mod.run_task(
-            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+            config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}}),
             "t",
             started_at=time.time(),
             frontend=frontend,
@@ -195,7 +195,7 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     monkeypatch.setattr(execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "allow"},
             "git": {"dirty_tree": "stash", "auto_stash_pop": True},
@@ -241,7 +241,7 @@ def test_a_failed_detach_leaves_the_pid_of_the_worker_that_took_the_session(
 
     monkeypatch.setattr(session_runtime, "select_isolation", _full)
     monkeypatch.setattr(execution, "run_execution", _detached)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     runs = paths.state_dir(repo) / "sessions" / "runs"
     winner = os.getppid()
     at_spawn: list[int | None] = []
@@ -304,7 +304,7 @@ def test_a_refused_start_leaves_the_pid_of_the_run_that_took_its_id(
     frontend.close_console_view.side_effect = _the_id_is_taken_again
 
     rc = run_mod.run_task(
-        Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+        config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}}),
         "t",
         started_at=time.time(),
         frontend=frontend,

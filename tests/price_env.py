@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 
-from agent6 import config
+from agent6.config import provider_config
 from agent6.models import listing_store, pricing
 
-ENTRY = config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:1")
+ENTRY = provider_config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:1")
 PROVIDERS = {"testprovider": ENTRY}
 # A fallback price list address; quotes from it cite its host.
 PRICE_LIST = "https://prices.example/v1/models"
@@ -18,7 +18,7 @@ def write(
     rates: dict[str, list[float]],
     *,
     name: str = "testprovider",
-    entry: config.ProviderEntry = ENTRY,
+    entry: provider_config.ProviderEntry = ENTRY,
     tier: str | None = None,
 ) -> None:
     """Write one price table under the test's XDG cache home."""

@@ -693,7 +693,7 @@ def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> 
     """The journal owns the listing task, even when the manifest holds a longer copy."""
     from agent6 import task_text
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sessions import layout
 
     words = "fix the bug in the parser " * 12
@@ -718,7 +718,7 @@ def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> 
         base_sha="",
         base_branch="main",
         run_branch=None,
-        cfg=Config(),
+        cfg=config_model.Config(),
         mode="run",
     )
     s = listing.summarize_session_dir(rd)

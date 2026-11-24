@@ -7,11 +7,11 @@ from __future__ import annotations
 from typing import Literal
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 
 
 def jail_home_kind(
-    config: Config, isolation: kinds.IsolationLevel
+    config: config_model.Config, isolation: kinds.IsolationLevel
 ) -> Literal["tmp", "cache", "host"]:
     """Return which HOME a command gets: `auto` is each level's own.
 
@@ -34,7 +34,10 @@ def jail_home_kind(
 
 
 def resolve_network(
-    config: Config, isolation: kinds.IsolationLevel, *, override: kinds.NetworkMode | None = None
+    config: config_model.Config,
+    isolation: kinds.IsolationLevel,
+    *,
+    override: kinds.NetworkMode | None = None,
 ) -> kinds.NetworkMode:
     """Return the network a child gets.
 
@@ -60,7 +63,7 @@ def resolve_network(
 
 
 def effective_controls(
-    config: Config, isolation: kinds.IsolationLevel
+    config: config_model.Config, isolation: kinds.IsolationLevel
 ) -> tuple[kinds.EffectiveControl, ...]:
     """Describe every local sandbox leaf without starting or probing a launcher.
 
@@ -173,7 +176,7 @@ def effective_controls(
     return tuple(sorted(rows, key=lambda control: control.leaf))
 
 
-def container_controls(config: Config) -> tuple[kinds.EffectiveControl, ...]:
+def container_controls(config: config_model.Config) -> tuple[kinds.EffectiveControl, ...]:
     """Describe every sandbox leaf as a container run resolves it, without probing.
 
     The runtime and the container's mounts bound commands; agent6 enforces only what the

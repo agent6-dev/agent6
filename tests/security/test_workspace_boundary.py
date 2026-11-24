@@ -20,23 +20,27 @@ from typing import Any
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import dispatch, tool_errors
 
 _SECRET = "AWS_SECRET_ACCESS_KEY=leaked-xyz"
 
 
 def _dispatcher(
-    root: pathlib.Path, cfg: Config, isolation: kinds.IsolationLevel = "none"
+    root: pathlib.Path, cfg: config_model.Config, isolation: kinds.IsolationLevel = "none"
 ) -> dispatch.ToolDispatcher:
     return dispatch.ToolDispatcher(root=root, config=cfg, isolation=isolation)
 
 
-def _hiding(root: pathlib.Path, *rel: str) -> Config:
-    return Config.model_validate({"sandbox": {"hide_paths": [str(root / r) for r in rel]}})
+def _hiding(root: pathlib.Path, *rel: str) -> config_model.Config:
+    return config_model.Config.model_validate(
+        {"sandbox": {"hide_paths": [str(root / r) for r in rel]}}
+    )
 
 
-def _dispatch(root: pathlib.Path, cfg: Config, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+def _dispatch(
+    root: pathlib.Path, cfg: config_model.Config, tool: str, args: dict[str, Any]
+) -> dict[str, Any]:
     d = _dispatcher(root, cfg)
     try:
         return d.dispatch(tool, args).to_wire()
@@ -64,7 +68,7 @@ def test_list_dir_hides_the_entry_but_says_how_many(tmp_path: pathlib.Path) -> N
 
 def test_list_dir_omits_the_count_when_nothing_is_hidden(tmp_path: pathlib.Path) -> None:
     (tmp_path / "main.py").write_text("x = 1\n", encoding="utf-8")
-    out = _dispatch(tmp_path, Config(), "list_dir", {"path": "."})
+    out = _dispatch(tmp_path, config_model.Config(), "list_dir", {"path": "."})
     assert out["entries"] == ["main.py"]
     assert "hidden" not in out
 
@@ -139,7 +143,7 @@ def test_agent6s_own_secrets_are_denied_when_the_workspace_contains_them(
     (cfg_dir / "secrets.toml").write_text('[fake]\nKEY="fake-not-real"\n', encoding="utf-8")
 
     with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
-        _dispatch(root, Config(), "read_file", {"path": ".config/agent6/secrets.toml"})
+        _dispatch(root, config_model.Config(), "read_file", {"path": ".config/agent6/secrets.toml"})
 
 
 def test_the_config_a_later_run_loads_cannot_be_written(
@@ -161,7 +165,7 @@ def test_the_config_a_later_run_loads_cannot_be_written(
     with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
         _dispatch(
             root,
-            Config(),
+            config_model.Config(),
             "apply_edit",
             {
                 "path": ".config/agent6/config.toml",
@@ -226,26 +230,30 @@ def test_a_workspace_under_a_hidden_path_refuses_at_preflight(
     workspace = hidden / "repo"
     workspace.mkdir(parents=True)
     for entry in (hidden, workspace):
-        cfg = Config.model_validate({"sandbox": {"hide_paths": [str(entry)]}})
+        cfg = config_model.Config.model_validate({"sandbox": {"hide_paths": [str(entry)]}})
         refusal = confine.config_refusal(cfg, isolation, workspace)
         assert refusal is not None
         assert f"the workspace {str(workspace)!r} is under {str(entry)!r}" in refusal
         assert "Drop the entry from sandbox.hide_paths, or work in a directory outside" in refusal
     # An entry inside the workspace is what the key is for.
-    inside = Config.model_validate({"sandbox": {"hide_paths": [str(workspace / ".env")]}})
+    inside = config_model.Config.model_validate(
+        {"sandbox": {"hide_paths": [str(workspace / ".env")]}}
+    )
     assert confine.check_workspace_outside_hidden_paths(inside, workspace) is None
 
 
 # --- operator grants ---------------------------------------------------------
 
 
-def _granting(read: pathlib.Path | None = None, write: pathlib.Path | None = None) -> Config:
+def _granting(
+    read: pathlib.Path | None = None, write: pathlib.Path | None = None
+) -> config_model.Config:
     sb: dict[str, Any] = {}
     if read is not None:
         sb["extra_read_paths"] = [str(read)]
     if write is not None:
         sb["extra_write_paths"] = [str(write)]
-    return Config.model_validate({"sandbox": sb})
+    return config_model.Config.model_validate({"sandbox": sb})
 
 
 def test_an_absolute_path_inside_a_grant_is_readable(tmp_path: pathlib.Path) -> None:
@@ -324,7 +332,7 @@ def test_denied_beats_a_grant(tmp_path: pathlib.Path) -> None:
     granted = tmp_path / "granted"
     (granted / "keys").mkdir(parents=True)
     (granted / "keys" / "id_rsa").write_text("PRIVATE\n", encoding="utf-8")
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "extra_read_paths": [str(granted)],
@@ -342,7 +350,9 @@ def _hide_on_partial(
     from agent6.app import confine
 
     data: dict[str, object] = {"sandbox": {"hide_paths": [path], **(extra or {})}}
-    return confine.check_hide_paths_support(Config.model_validate(data), "partial", root)
+    return confine.check_hide_paths_support(
+        config_model.Config.model_validate(data), "partial", root
+    )
 
 
 def test_hide_paths_refuses_the_launcher_grant_regions(
@@ -419,12 +429,12 @@ def test_full_refuses_a_grant_inside_a_hidden_path_and_masks_one_inside_a_grant(
 
     monkeypatch.chdir(tmp_path)
     vault = pathlib.Path("/nonexistent-vault")
-    inside = Config.model_validate(
+    inside = config_model.Config.model_validate(
         {"sandbox": {"hide_paths": [str(vault)], "extra_read_paths": [str(vault / "inner")]}}
     )
     r = confine.check_hide_paths_support(inside, "full", tmp_path)
     assert r is not None and "lies inside it" in r and "extra_read_paths" in r
-    holds = Config.model_validate(
+    holds = config_model.Config.model_validate(
         {"sandbox": {"hide_paths": [str(vault / "secret")], "extra_read_paths": [str(vault)]}}
     )
     assert confine.check_hide_paths_support(holds, "full", tmp_path) is None
@@ -438,7 +448,7 @@ def test_hide_paths_refuses_an_mcp_server_grant(
 
     monkeypatch.chdir(tmp_path)
     mcp_dir = pathlib.Path("/nonexistent-mcp-data")
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"hide_paths": [str(mcp_dir / "creds")]},
             "mcp": {

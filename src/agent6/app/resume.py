@@ -29,7 +29,7 @@ from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop_snapshot
 from agent6.harness.prompt import repo_context
 from agent6.sessions import event_log, process
@@ -39,7 +39,7 @@ from agent6.vcs.git import ops as git_ops
 
 
 def replay_gate(
-    cfg: Config,
+    cfg: config_model.Config,
     _budget: budget.BudgetTracker,
     _available: Callable[[str], bool],
     *,
@@ -47,7 +47,7 @@ def replay_gate(
     snapshot: loop_snapshot.SessionSnapshot,
     events: event_log.EventSink,
     reporter: app_reporter.Reporter,
-) -> Config:
+) -> config_model.Config:
     """Run a resumed execution's gate step: reuse the run's gate, then pin what it runs with.
 
     Args:

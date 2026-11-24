@@ -17,7 +17,7 @@ from agent6 import child_records, kinds, paths
 from agent6.app import worktrees
 from agent6.app.parallel import launch as child_launch
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.providers import provider_types
@@ -78,7 +78,7 @@ def _harness(
     compaction: compaction_window.CompactionSettings | None = None,
 ) -> tuple[loop.Harness, dispatch.ToolDispatcher]:
     session_dir.mkdir(parents=True, exist_ok=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "none", "run_commands": "allow", "protect_git": "off"}}
     )
     disp = dispatch.ToolDispatcher(
@@ -355,7 +355,7 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
         '{"verdict": "pass"}',
     ]
     with launch_env.scripted_provider(replies) as (base_url, calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/base"}},

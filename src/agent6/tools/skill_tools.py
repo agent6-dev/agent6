@@ -15,7 +15,7 @@ import pathlib
 from typing import TYPE_CHECKING, Any
 
 from agent6 import path_safety, paths
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import skills
 from agent6.tools import results, schema, tool_errors
 
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from agent6.tools import dispatch
 
 
-def configured_skills(cfg: Config) -> skills.ResolvedSkills:
+def configured_skills(cfg: config_model.Config) -> skills.ResolvedSkills:
     """Return the skills a session under this config has, hidden trees left out.
 
     Args:

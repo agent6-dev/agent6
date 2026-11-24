@@ -17,7 +17,8 @@ from agent6.app.machine import agent, draft
 from agent6.app.machine import create as _create
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, layer, layer_data
+from agent6.config import layer, layer_data
+from agent6.config import model as config_model
 from agent6.machine import authoring, contracts
 from agent6.sandbox import detect
 from agent6.sessions import budget_events, event_log
@@ -165,7 +166,7 @@ def _stub_preflight(
 ) -> None:
     def _load(_root: object, _explicit: object = None) -> layer_data.EffectiveConfig:
         # A real Config: the authoring execution materializes it as its overlay.
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "sandbox": {"isolation": "none", **(sandbox or {})},
                 "budget": {"max_usd": 10.0},
@@ -295,7 +296,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     assert entry.main(["machine", "create", "Greet the user"]) == 0
-    assert seen == [Config().harness.max_turns]
+    assert seen == [config_model.Config().harness.max_turns]
 
 
 def test_create_takes_the_budget_flags_run_takes(
@@ -1527,19 +1528,22 @@ def test_create_runs_the_shared_isolation_preflight(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`machine create` goes through the run lifecycle's preflight, so the shared refusals apply."""
-    from agent6.config import Config, ModelsConfig, OpenAIProviderEntry, RoleModel, layer
+    from agent6.config import harness_config, layer, model_roles, provider_config
+    from agent6.config import model as config_model
     from agent6.sandbox import detect
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "inside-state"))
     monkeypatch.chdir(tmp_path)
-    cfg = Config(
+    cfg = config_model.Config(
         providers={
-            "openrouter": OpenAIProviderEntry(
+            "openrouter": provider_config.OpenAIProviderEntry(
                 backend="openai", base_url="https://openrouter.ai/api/v1"
             )
         },
-        models=ModelsConfig(default=RoleModel(provider="openrouter", model="kimi")),
+        models=model_roles.ModelsConfig(
+            default=harness_config.RoleModel(provider="openrouter", model="kimi")
+        ),
     )
 
     def _load(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
@@ -1628,11 +1632,11 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     )
     monkeypatch.setenv("OR_KEY", "unused")
 
-    def no_preflight(_cfg: Config, **_kw: object) -> str:
+    def no_preflight(_cfg: config_model.Config, **_kw: object) -> str:
         return "none"
 
     monkeypatch.setattr(session_runtime, "select_isolation", no_preflight)
-    captured: list[tuple[contracts.AgentRequest, pathlib.Path, Config]] = []
+    captured: list[tuple[contracts.AgentRequest, pathlib.Path, config_model.Config]] = []
 
     seen: list[bool] = []
 
@@ -1685,9 +1689,9 @@ def test_create_confirms_unconfined_autorun_before_drafting(
     _stub_preflight(monkeypatch, sandbox={"run_commands": "allow"})
 
     def select(
-        cfg: Config,
+        cfg: config_model.Config,
         *,
-        confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
+        confirm_unconfined: Callable[[kinds.IsolationLevel, config_model.Config], bool],
         **_kw: object,
     ) -> str:
         if not confirm_unconfined("none", cfg):
@@ -1696,7 +1700,7 @@ def test_create_confirms_unconfined_autorun_before_drafting(
 
     monkeypatch.setattr(session_runtime, "select_isolation", select)
 
-    def decline(_isolation: kinds.IsolationLevel, _cfg: Config) -> bool:
+    def decline(_isolation: kinds.IsolationLevel, _cfg: config_model.Config) -> bool:
         return False
 
     monkeypatch.setattr(preflight_prompts, "confirm_unconfined_autorun", decline)

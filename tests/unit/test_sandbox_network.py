@@ -16,15 +16,16 @@ import pytest
 from agent6 import kinds
 from agent6.app import confine, role_providers
 from agent6.app.machine import agent
-from agent6.config import Config, ConfigError, validate_config
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.harness import loop as harness_loop
 from agent6.machine import contracts
 from agent6.tools import dispatch
 from agent6.vcs.git import read as git_read
 
 
-def _cfg(network: str = "session") -> Config:
-    return validate_config({"sandbox": {"network": network}})
+def _cfg(network: str = "session") -> config_model.Config:
+    return config_model.validate_config({"sandbox": {"network": network}})
 
 
 # --- _is_loopback ----------------------------------------------------------
@@ -52,7 +53,7 @@ def test_check_network_support_refuses_an_explicit_session_below_full(
 
 def test_only_explicit_states_fails_naming_sandbox_network() -> None:
     """`only_explicit_states` is refused: a state sets its own network in its config table."""
-    with pytest.raises(ConfigError, match=r"sandbox\.network"):
+    with pytest.raises(validation.ConfigError, match=r"sandbox\.network"):
         _cfg("only_explicit_states")
 
 

@@ -47,13 +47,13 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
 
     Forced directly: a bad config under cwd never reaches the raising path.
     """
-    from agent6.config import ConfigError
+    from agent6.config import validation
 
     calls: list[pathlib.Path] = []
 
     def _boom(root: pathlib.Path) -> pathlib.Path:
         calls.append(root)
-        raise ConfigError("config is not valid TOML")
+        raise validation.ConfigError("config is not valid TOML")
 
     monkeypatch.setattr(paths, "state_dir", _boom)
     monkeypatch.setattr(paths, "state_dir", _boom)

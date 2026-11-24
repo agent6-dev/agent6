@@ -29,7 +29,8 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from agent6 import config, credit_usage, kinds, terminal, token_usage
+from agent6 import credit_usage, kinds, terminal, token_usage
+from agent6.config import provider_config
 from agent6.models import pricing
 
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
@@ -441,7 +442,7 @@ class BudgetTracker:
     max_tokens_fallback: int
     max_plan_points: float
     allow_plan_overage: bool = False
-    providers: Mapping[str, config.ProviderEntry] = dataclasses.field(default_factory=dict)
+    providers: Mapping[str, provider_config.ProviderEntry] = dataclasses.field(default_factory=dict)
     journal_lock: threading.RLock = dataclasses.field(
         default_factory=threading.RLock, init=False, repr=False
     )

@@ -137,7 +137,6 @@ Each entry is the package's docstring.
     - Main modules: `jail`, `jail_session`, `detect`, `container`, `landlock`.
 - **[`config`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config)**: The config models, file IO and layered resolve.
     - A shared package: any layer may import it, and it imports no layer.
-    - The models are the package's public API and are re-exported here.
     - The IO and layering are imported from `agent6.config.io` and `agent6.config.layer`.
     - Main modules: `model`, `layer`, `io`, `write`, `secret_store`.
 - **[`context`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/context)**: Store repository memory and discover operator-installed skills.

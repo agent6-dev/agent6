@@ -14,7 +14,8 @@ from agent6 import child_records, kinds, paths
 from agent6.app import stop
 from agent6.app.parallel import children
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.sessions import manifest, process
 from agent6.ui.cli import parallel
 from agent6.viewmodel.session import log as session_log
@@ -47,7 +48,7 @@ def test_detached_child_loads_snapshot_and_records_notes(
         '[models.worker]\neffort="max"\n'
     )
     base_url, calls = local_provider
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": base_url}},
             "models": {"default": {"model": "p/base", "effort": "high", "temperature": 0.7}},
@@ -59,7 +60,7 @@ def test_detached_child_loads_snapshot_and_records_notes(
     cfg = cfg.model_copy(
         update={
             "models": cfg.models.model_copy(
-                update={"worker": RoleModel(effort=None, temperature=None)}
+                update={"worker": harness_config.RoleModel(effort=None, temperature=None)}
             )
         }
     )

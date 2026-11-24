@@ -8,8 +8,8 @@ import contextlib
 import dataclasses
 import pathlib
 
-from agent6 import config, directive, terminal
-from agent6.config import layer
+from agent6 import directive, terminal
+from agent6.config import layer, validation
 from agent6.sessions import manifest
 
 
@@ -54,7 +54,7 @@ def describe(
             cwd, config_paths, preset=preset
         ).config.harness.parallel.max_children
         counts = [len(directive.parse_spec(t.spec, limit=limit)) for t in tasks]
-    except (directive.DirectiveError, config.ConfigError) as exc:
+    except (directive.DirectiveError, validation.ConfigError) as exc:
         return ParallelPreview(terminal.scrub_terminal_controls(str(exc)), False)
     total = sum(counts)
     if not new_work and total > limit:

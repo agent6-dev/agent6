@@ -15,7 +15,8 @@ import pytest
 
 from agent6 import paths
 from agent6.app.parallel import launch as child_launch
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.sessions import child_dispatch
 from agent6.ui.cli import entry
 from tests import launch_env
@@ -185,7 +186,7 @@ def test_parent_resumes_then_steers_its_ended_child(
         return _first_execution(cli._turn(body), control, ending, runs)
 
     with launch_env.scripted_provider(reply_for=reply) as (url, _):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": url}},
                 "models": {"default": {"model": "p/m"}},

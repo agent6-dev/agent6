@@ -8,7 +8,7 @@ import pathlib
 from typing import Any
 
 from agent6.app import stamps, undo
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 
@@ -160,7 +160,7 @@ def test_repeated_undo_follows_the_fork_lineage(tmp_path: pathlib.Path) -> None:
         base_sha="",
         base_branch="",
         run_branch=None,
-        cfg=Config(),
+        cfg=config_model.Config(),
         mode="run",
         effective_preset="none",
         preset_from_flag=False,
@@ -184,7 +184,7 @@ def test_a_cyclic_lineage_does_not_crash(tmp_path: pathlib.Path) -> None:
         base_sha="",
         base_branch="",
         run_branch=None,
-        cfg=Config(),
+        cfg=config_model.Config(),
         mode="run",
         effective_preset="none",
         preset_from_flag=False,

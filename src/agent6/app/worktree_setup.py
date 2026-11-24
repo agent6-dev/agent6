@@ -23,7 +23,7 @@ from typing import Protocol
 
 from agent6 import kinds
 from agent6.app import reporter as app_reporter
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import tool_paths
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import target_policy, tool_errors, verify_infer
@@ -40,8 +40,12 @@ def _output_tail(res: kinds.CommandResult) -> list[str]:
 
 
 def read_if_unset(
-    cfg: Config, origin: pathlib.Path, *, reporter: app_reporter.Reporter, at: str | None = None
-) -> Config:
+    cfg: config_model.Config,
+    origin: pathlib.Path,
+    *,
+    reporter: app_reporter.Reporter,
+    at: str | None = None,
+) -> config_model.Config:
     """Return the config with the setup command AGENTS.md states, when none is configured.
 
     Read once, in the origin, and carried in the config, so the worktree and every child
@@ -99,7 +103,7 @@ def _no_setup_text(path: str, worktree: str) -> str:
     )
 
 
-def origin_gate(cfg: Config, origin: pathlib.Path) -> tuple[str, ...]:
+def origin_gate(cfg: config_model.Config, origin: pathlib.Path) -> tuple[str, ...]:
     """Return the gate the config pins or the origin's own files give, with no model call."""
     if cfg.harness.verify.command or not cfg.harness.verify.infer:
         return cfg.harness.verify.command
@@ -111,7 +115,12 @@ def origin_gate(cfg: Config, origin: pathlib.Path) -> tuple[str, ...]:
 
 
 def gate_refusal(
-    cfg: Config, origin: pathlib.Path, gate: Sequence[str], *, worktree: str, at: str | None = None
+    cfg: config_model.Config,
+    origin: pathlib.Path,
+    gate: Sequence[str],
+    *,
+    worktree: str,
+    at: str | None = None,
 ) -> str | None:
     """Return why a session could never run its gate in a new worktree, or None.
 
@@ -199,7 +208,7 @@ class SetupRunner(Protocol):
 
 
 def prepare(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     *,
     runner: SetupRunner,
@@ -236,7 +245,9 @@ def prepare(
     return Prepared(_no_setup_text(gate[0], f"this worktree ({root})"), ran=False)
 
 
-def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) -> Prepared:
+def setup(
+    cfg: config_model.Config, *, runner: SetupRunner, reporter: app_reporter.Reporter
+) -> Prepared:
     """Run setup without the session-specific gate-path check.
 
     Args:
@@ -274,7 +285,7 @@ def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) 
     return Prepared(None, ran=bool(argv), result=result)
 
 
-def _no_route_line(cfg: Config, isolation: kinds.IsolationLevel) -> str:
+def _no_route_line(cfg: config_model.Config, isolation: kinds.IsolationLevel) -> str:
     """Return the line a failed setup command ends on where commands have no route out.
 
     Args:

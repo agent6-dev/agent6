@@ -12,7 +12,8 @@ import pathlib
 
 import pytest
 
-from agent6 import config, kinds
+from agent6 import kinds
+from agent6.config import model as config_model
 from agent6.tools import policy
 
 _IDENTITY = {
@@ -23,8 +24,8 @@ _IDENTITY = {
 }
 
 
-def _model_control(**commit: str) -> config.Config:
-    return config.Config.model_validate(
+def _model_control(**commit: str) -> config_model.Config:
+    return config_model.Config.model_validate(
         {"git": {"control": "model", "commit": commit}, "sandbox": {"protect_git": "off"}}
     )
 

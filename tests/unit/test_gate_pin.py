@@ -13,7 +13,7 @@ import pytest
 
 from agent6.app import reporter as app_reporter
 from agent6.app import stamps
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -29,7 +29,7 @@ def _layout(tmp_path: pathlib.Path) -> sessions_layout.SessionLayout:
         base_sha="0" * 40,
         base_branch="main",
         run_branch=None,
-        cfg=Config(),
+        cfg=config_model.Config(),
     )
     return layout
 
@@ -115,7 +115,7 @@ def test_a_fork_inherits_the_gate_its_source_was_judged_by(tmp_path: pathlib.Pat
         base_sha="0" * 40,
         base_branch="main",
         run_branch=None,
-        cfg=Config(),  # no verify_command configured, as the source had none
+        cfg=config_model.Config(),  # no verify_command configured, as the source had none
         gate=sessions_manifest.GateStamp(command=("pytest", "-q"), source="adopted"),
     )
     pinned = sessions_manifest.read_manifest(dst.session_dir).harness
@@ -329,7 +329,7 @@ def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: pathlib.Pat
         base_sha="0" * 40,
         base_branch="main",
         run_branch=None,
-        cfg=Config(),  # sandbox.isolation defaults to "auto"
+        cfg=config_model.Config(),  # sandbox.isolation defaults to "auto"
         isolation="partial",
     )
     assert sessions_manifest.read_manifest(layout.session_dir).policy.isolation == "partial"
@@ -349,7 +349,7 @@ def test_a_fresh_gateless_manifest_leaves_the_gate_pending(tmp_path: pathlib.Pat
             base_sha="0" * 40,
             base_branch="main",
             run_branch=None,
-            cfg=Config(),
+            cfg=config_model.Config(),
             mode=mode,
         )
         assert (

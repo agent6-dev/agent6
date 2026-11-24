@@ -12,7 +12,7 @@ import httpx2
 import pytest
 
 from agent6 import kinds
-from agent6.config import OAuthExchangeConfig
+from agent6.config import oauth_config
 from agent6.providers import (
     oauth_chatgpt,
     oauth_exchange,
@@ -152,7 +152,7 @@ def test_an_exchange_transport_error_scrubs_the_issuer_token(
     monkeypatch.setattr(transport, "http_request", failing_post)
     with pytest.raises(provider_types.ProviderError, match="could not reach") as refused:
         oauth_exchange.run_exchange(
-            OAuthExchangeConfig(endpoint="https://credentials.example/token"), token
+            oauth_config.OAuthExchangeConfig(endpoint="https://credentials.example/token"), token
         )
     assert token not in str(refused.value) and "<REDACTED>" in str(refused.value)
 

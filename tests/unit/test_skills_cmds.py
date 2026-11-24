@@ -648,7 +648,7 @@ def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrade
     A config read that catches every exception makes a defect inside the config subsystem read as
     nothing at all, and `skills install` closes with "Enabled and active now".
     """
-    from agent6.config import ConfigError
+    from agent6.config import validation
 
     def broken(*_a: object, **_k: object) -> object:
         raise AttributeError("a defect in the config subsystem")
@@ -660,7 +660,7 @@ def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrade
         cli_skills_cmds._cmd_skills_list()
 
     def unreadable(*_a: object, **_k: object) -> object:
-        raise ConfigError("bad toml")
+        raise validation.ConfigError("bad toml")
 
     monkeypatch.setattr("agent6.config.layer.load_effective", unreadable)
     assert cli_skills_cmds._state_map(()) == {}

@@ -13,7 +13,7 @@ import pytest
 from agent6 import evidence, kinds, paths
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import container, jail_session
 from agent6.tools import target_policy
 from agent6.ui.cli import check_sandbox
@@ -21,7 +21,7 @@ from tests.unit import test_environment_lease as lease
 
 
 def _controls(raw: dict[str, object], isolation: str) -> tuple[kinds.EffectiveControl, ...]:
-    cfg = Config.model_validate(raw)
+    cfg = config_model.Config.model_validate(raw)
     if isolation == "container":
         return target_policy.container_controls(cfg)
     levels: dict[str, kinds.IsolationLevel] = {"full": "full", "partial": "partial", "none": "none"}
@@ -104,7 +104,7 @@ def test_a_local_execution_records_the_access_before_its_session_opens(
 
     monkeypatch.setattr(jail_session.JailSession, "open", _open)
 
-    session_runtime.prepare_local_execution(Config(), checkout, "none").close()
+    session_runtime.prepare_local_execution(config_model.Config(), checkout, "none").close()
 
     assert recorded == [True]
 
@@ -130,7 +130,7 @@ def _recorded_when_a_clones_container_is_prepared(
 
     monkeypatch.setattr(container, "prepare", _prepare)
     session_runtime.prepare_container_execution(
-        Config(),
+        config_model.Config(),
         workspace,
         fake.options(),
         state_dir=paths.state_dir(workspace),

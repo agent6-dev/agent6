@@ -8,7 +8,7 @@ The list comes from the dispatcher's availability plus the mode's extras.
 from __future__ import annotations
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.providers import provider_types
 from agent6.tools import dispatch as tools_dispatch
 from agent6.tools import schema as tools_schema
@@ -102,7 +102,7 @@ def tool_definitions(
     return out
 
 
-def parallel_description(cfg: Config) -> str:
+def parallel_description(cfg: config_model.Config) -> str:
     """Return the `parallel` tool's description with the run's resolved roles and providers.
 
     Args:

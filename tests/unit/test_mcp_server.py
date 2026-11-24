@@ -13,7 +13,8 @@ from typing import Any, override
 import pytest
 
 from agent6 import paths
-from agent6.config import Config, layer, load_config
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.graph import models, storage
 from agent6.sessions import child_dispatch, manifest, process
 from agent6.sessions import layout as sessions_layout
@@ -45,11 +46,11 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: pathlib.Path, *, run_commands: str = "deny") -> Config:
+def _config(tmp_path: pathlib.Path, *, run_commands: str = "deny") -> config_model.Config:
     toml = _VALID_TOML.replace('run_commands = "deny"', f'run_commands = "{run_commands}"')
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
-    return load_config(p)
+    return config_model.load_config(p)
 
 
 def _server(tmp_path: pathlib.Path, **kwargs: Any) -> ui_mcp_server.MCPServer:
@@ -158,7 +159,7 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
         encoding="utf-8",
     )
     server = ui_mcp_server.MCPServer(
-        root=tmp_path, config=load_config(p), stdin=io.BytesIO(), stdout=io.BytesIO()
+        root=tmp_path, config=config_model.load_config(p), stdin=io.BytesIO(), stdout=io.BytesIO()
     )
     resps = _roundtrip(
         server,
@@ -710,9 +711,9 @@ def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bo
     apply_patch_in_sandbox applies the patch and then errors on verify, leaving the workspace
     changed and the call failed.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": configured},
             "harness": {
@@ -834,14 +835,14 @@ def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
     A `ConfigError` is already an operator error printed at exit 2, and a bug belongs on the crash
     path (exit 1, traceback saved); catching every exception around the config load pre-empts both.
     """
-    from agent6.config import ConfigError
+    from agent6.config import validation
     from agent6.ui import mcp_server
     from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     bad = tmp_path / "bad.toml"
     bad.write_text("[agent6]\nnope = 1\n", encoding="utf-8")
-    with pytest.raises(ConfigError):
+    with pytest.raises(validation.ConfigError):
         mcp_server.run_server((bad,))
     assert entry.cli_main(["--config", str(bad), "mcp", "serve"]) == 2
     err = capsys.readouterr().err

@@ -795,7 +795,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
     A fresh manifest carries the configured command with no origin until the execution pins it.
     """
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="parked-two-AAAAAA"
@@ -808,7 +808,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
         base_sha="0" * 40,
         base_branch="main",
         run_branch=None,
-        cfg=Config.model_validate(
+        cfg=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["python3", "-m", "pytest"]},
@@ -828,7 +828,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
         base_sha="0" * 40,
         base_branch="main",
         run_branch=None,
-        cfg=Config(),
+        cfg=config_model.Config(),
     )
     assert wire.session_snapshot(layout.session_dir)["policy"].endswith(
         "verify gate not settled yet"

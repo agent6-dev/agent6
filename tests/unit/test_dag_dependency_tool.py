@@ -14,7 +14,7 @@ import pathlib
 
 import pytest
 
-from agent6.config import Config, load_config
+from agent6.config import model as config_model
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import toolset
@@ -38,10 +38,10 @@ verify.command = ["true"]
 _B = "01" + "B" * 24
 
 
-def _config(tmp_path: pathlib.Path) -> Config:
+def _config(tmp_path: pathlib.Path) -> config_model.Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML, encoding="utf-8")
-    return load_config(p)
+    return config_model.load_config(p)
 
 
 def _curator(tmp_path: pathlib.Path) -> graph_curator.GraphCurator:

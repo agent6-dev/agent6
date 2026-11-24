@@ -11,7 +11,7 @@ from collections.abc import Callable
 from agent6 import budget, kinds, path_safety
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import check, scriptcheck
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.machine import authoring, contracts, dryrun, schema
 from agent6.sessions import event_log, journal
 
@@ -115,7 +115,7 @@ class Draft:
     reporter: app_reporter.Reporter
     cwd: pathlib.Path
     output: pathlib.Path | None
-    cfg: Config
+    cfg: config_model.Config
     isolation: kinds.IsolationLevel
     config_paths: tuple[pathlib.Path, ...]
     attempt: int = 0

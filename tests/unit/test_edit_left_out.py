@@ -14,7 +14,7 @@ import pytest
 
 from agent6 import budget
 from agent6.app import finalize, reporter
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory
 from agent6.harness import loop_conversation, loop_snapshot, loop_state, run_chain
 from agent6.sessions import journal
@@ -188,7 +188,7 @@ def test_a_write_under_a_grant_carries_no_note(tmp_path: pathlib.Path) -> None:
     (repo / "notes.md").write_text("the operator's\n", encoding="utf-8")
     granted = tmp_path / "granted"
     granted.mkdir()
-    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    config = config_model.Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
     target = str(granted / "notes.md")
     result = dispatch.ToolDispatcher(root=repo, config=config).dispatch(
         "apply_edit", {"path": target, "edits": [{"kind": "create", "new_string": "x"}]}

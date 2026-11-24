@@ -101,7 +101,7 @@ def test_rulings_live_outside_the_memory_write_grant(tmp_path: pathlib.Path) -> 
 
     A write to it refuses because no grant holds it, through a symlinked state dir too.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.context import memory
     from agent6.tools import policy
 
@@ -112,14 +112,14 @@ def test_rulings_live_outside_the_memory_write_grant(tmp_path: pathlib.Path) -> 
     mem.mkdir(parents=True)
     decisions = memory.decisions_path(state)
     decisions.write_text("- ruling\n", encoding="utf-8")
-    ws = policy.workspace_for(Config(), root, memory_dir=mem)
+    ws = policy.workspace_for(config_model.Config(), root, memory_dir=mem)
     assert not decisions.is_relative_to(mem)
     ws.resolve_write(str(mem / "fact.md"))
     with pytest.raises(path_safety.ContainmentError, match="only allowed inside a granted path"):
         ws.resolve_write(str(decisions))
     link = tmp_path / "link"
     link.symlink_to(state, target_is_directory=True)
-    ws = policy.workspace_for(Config(), root, memory_dir=link / "memory")
+    ws = policy.workspace_for(config_model.Config(), root, memory_dir=link / "memory")
     with pytest.raises(path_safety.ContainmentError, match="only allowed inside a granted path"):
         ws.resolve_write(str(link / "decisions.md"))
 
@@ -133,7 +133,7 @@ def test_the_rulings_file_is_hidden_even_where_a_grant_reaches_it(
     through its exemption.
     """
     from agent6 import paths
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.context import memory
     from agent6.tools import policy
 
@@ -146,7 +146,7 @@ def test_the_rulings_file_is_hidden_even_where_a_grant_reaches_it(
     (mem / "fact.md").write_text("- a fact\n", encoding="utf-8")
     decisions = memory.decisions_path(state)
     decisions.write_text("- ruling\n", encoding="utf-8")
-    ws = policy.workspace_for(Config(), root, memory_dir=mem)
+    ws = policy.workspace_for(config_model.Config(), root, memory_dir=mem)
     assert ws.resolve_read(str(mem / "fact.md")).abs_path == (mem / "fact.md").resolve()
     ws.resolve_write(str(mem / "fact.md"))
     with pytest.raises(path_safety.ContainmentError, match="hidden from this run"):
@@ -212,7 +212,7 @@ def test_write_contained_keeps_the_files_line_ending(tmp_path: pathlib.Path) -> 
 def _granted(
     tmp_path: pathlib.Path, read: pathlib.Path, write: pathlib.Path
 ) -> path_safety.Workspace:
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import policy
 
     # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
@@ -223,7 +223,7 @@ def _granted(
     }
     repo = tmp_path / "repo"
     repo.mkdir(exist_ok=True)
-    return policy.workspace_for(Config.model_validate({"sandbox": grants}), repo)
+    return policy.workspace_for(config_model.Config.model_validate({"sandbox": grants}), repo)
 
 
 def test_a_grant_repointed_below_a_write_grant_is_dropped(tmp_path: pathlib.Path) -> None:
@@ -271,7 +271,7 @@ def test_a_repointed_grant_never_reaches_the_jail_launcher(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A re-pointed grant the file tools drop never reaches the next jail launch."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import policy
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -286,7 +286,7 @@ def test_a_repointed_grant_never_reaches_the_jail_launcher(
         "extra_read_paths": [str(shared / "inbox")],
         "extra_write_paths": [str(shared), str(repo / "out")],
     }
-    config = Config.model_validate({"sandbox": grants})
+    config = config_model.Config.model_validate({"sandbox": grants})
     jail = policy.jail_policy(repo, config, "full", ("true",))
     assert shared / "inbox" not in jail.extra_ro_paths
     assert shared in jail.extra_rw_paths and repo / "out" not in jail.extra_rw_paths

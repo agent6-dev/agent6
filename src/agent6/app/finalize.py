@@ -19,7 +19,7 @@ from agent6 import budget as agent6_budget
 from agent6 import errors, terminal
 from agent6.app import merge
 from agent6.app import reporter as app_reporter
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import advice, loop_snapshot
 from agent6.sessions import budget_events, event_log
 from agent6.sessions import layout as sessions_layout
@@ -758,7 +758,7 @@ def finalize_auto_merge(
     cwd: pathlib.Path,
     *,
     layout: sessions_layout.SessionLayout,
-    cfg: Config,
+    cfg: config_model.Config,
     reporter: app_reporter.Reporter,
     budget: agent6_budget.BudgetTracker | None = None,
     events: event_log.EventSink | None = None,

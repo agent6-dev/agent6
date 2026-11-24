@@ -16,7 +16,7 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.graph import curator as graph_curator
 from agent6.harness import loop, operator_bridge, provider_call, run_chain, toolset
 from agent6.harness.parallel import merge as parallel_merge
@@ -57,8 +57,8 @@ def _make_branch(repo: pathlib.Path, branch: str, base: str, fname: str, wt: pat
     return _git(repo, "rev-parse", branch)
 
 
-def _config(*, tool: bool, extra: dict[str, Any] | None = None) -> Config:
-    return Config.model_validate(
+def _config(*, tool: bool, extra: dict[str, Any] | None = None) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {
                 "p": {"backend": "openai", "base_url": "http://localhost:1/v1"},
@@ -105,7 +105,7 @@ class _Work:
 
 def _dispatcher(
     tmp_path: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     mode: kinds.SessionMode = "run",
     work: Any = None,

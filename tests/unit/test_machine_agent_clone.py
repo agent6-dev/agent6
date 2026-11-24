@@ -18,7 +18,7 @@ import pytest
 from agent6 import errors, paths
 from agent6.app import reporter, role_providers
 from agent6.app.machine import agent, state_configs
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.machine import contracts
 from agent6.providers import provider_types
 from agent6.sandbox import jail as sandbox_jail
@@ -229,7 +229,7 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
         origin,
         "m1",
         tmp_path / "clones",
-        {"check": state_configs.StateConfig(Config(), "none")},
+        {"check": state_configs.StateConfig(config_model.Config(), "none")},
         reporter.STDIO_REPORTER,
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
@@ -258,9 +258,9 @@ def test_tool_clone_runs_setup_before_reading_environment(
     command = (
         f"echo broken >&2; exit {setup_exit}" if fail_setup else "echo ready > environment.txt"
     )
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
-        ("sh", "-c", command)
-    )
+    cfg = config_model.Config.model_validate(
+        {"sandbox": {"run_commands": "allow"}}
+    ).with_setup_command(("sh", "-c", command))
     expected_setup = cfg.git.worktree.setup_command
     calls: list[tuple[str, ...]] = []
 
@@ -364,9 +364,9 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
     from agent6.app.machine import run as machine_run
 
     origin = _origin(tmp_path)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
-        ("sh", "-c", "true")
-    )
+    cfg = config_model.Config.model_validate(
+        {"sandbox": {"run_commands": "allow"}}
+    ).with_setup_command(("sh", "-c", "true"))
     states = {"check": state_configs.StateConfig(cfg, "none")}
     factory = machine_run.machine_tool_policy_factory(
         states, origin, protect_paths=(), data_dir=None, in_place=False, shared_writes=()
@@ -438,7 +438,7 @@ def test_tool_clone_host_failure_aborts_the_machine(
             origin,
             "m1",
             tmp_path / "clones",
-            {"check": state_configs.StateConfig(Config(), "none")},
+            {"check": state_configs.StateConfig(config_model.Config(), "none")},
             reporter.STDIO_REPORTER,
             tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         ),
@@ -458,9 +458,9 @@ def test_tool_setup_logs_share_numeric_state_log_pruning(
     from agent6.machine import live_world
 
     origin = _origin(tmp_path)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
-        ("true",)
-    )
+    cfg = config_model.Config.model_validate(
+        {"sandbox": {"run_commands": "allow"}}
+    ).with_setup_command(("true",))
 
     def execute(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return kinds.CommandResult(
@@ -504,7 +504,7 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
     from agent6.machine import journal as machine_journal
 
     origin = _origin(tmp_path)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "allow"},
             "git": {"worktree": {"setup_command": ["setup"]}},
@@ -648,7 +648,7 @@ def test_prune_handles_a_machine_clone_after_failed_import(
     origin = _origin(tmp_path)
     monkeypatch.chdir(origin)
     monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
-    group = worktrees.child_worktree_root(Config(), origin, "machine-m1")
+    group = worktrees.child_worktree_root(config_model.Config(), origin, "machine-m1")
     instance = layout.machines_root(paths.state_dir(origin)) / "m1"
     runner = agent.build_machine_agent_runner(
         _OVERLAYS,

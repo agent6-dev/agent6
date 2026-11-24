@@ -1097,7 +1097,7 @@ def test_jail_fork_worktree_reads_the_repository_git(
     agent6 recorded for the worktree read-only, and a policy without the grant cannot find
     the repository.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import policy as tools_policy
     from agent6.vcs.git import ops as git_ops
 
@@ -1116,7 +1116,7 @@ def test_jail_fork_worktree_reads_the_repository_git(
         policy = (
             tools_policy.jail_policy(
                 wt,
-                Config(),
+                config_model.Config(),
                 "full",
                 argv,
                 timeout_s=30.0,

@@ -440,10 +440,10 @@ def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
     A direct TOML edit naming a provider's api_key_env in a server's pass_env is rejected at load,
     so it cannot hand a third-party server a provider API key.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     with pytest.raises(Exception, match="never passes a provider key"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "ANTH_KEY"}},
                 "mcp": {"servers": {"s": {"command": ["srv"], "pass_env": ["ANTH_KEY"]}}},

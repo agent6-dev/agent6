@@ -10,7 +10,7 @@ from collections.abc import Callable
 import pytest
 
 from agent6.app import role_providers
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.models import registry as models_registry
 
 
@@ -20,8 +20,8 @@ def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathl
     return tmp_path / "cache"
 
 
-def _cfg(model: str, decompose: str = "auto") -> Config:
-    return Config.model_validate(
+def _cfg(model: str, decompose: str = "auto") -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"worker": {"model": "o/" + model}},
@@ -56,7 +56,7 @@ def test_claude_minor_versions_size_compaction_from_family(
     cache_home: pathlib.Path, model: str, suffix: str
 ) -> None:
     """Claude minor ids inherit the family's window instead of fixed compaction defaults."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"claude": {"backend": "claude_code"}},
             "models": {"worker": {"model": "claude/" + model + suffix}},
@@ -131,13 +131,14 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     A small window sizes exactly that pair from the 80,000-char default, and under it the restart
     kept NO verbatim turns at all, the freshest tool results, paraphrased away, every restart.
     """
-    from agent6.config import Config, RoleModel
+    from agent6.config import harness_config
+    from agent6.config import model as config_model
 
     monkeypatch.setattr(models_registry, "context_window", _window(32_768))
     logs: list[str] = []
 
     drop, summarize, keep = role_providers.resolve_compaction_thresholds(
-        Config(), RoleModel(provider="p", model="m"), log=logs.append
+        config_model.Config(), harness_config.RoleModel(provider="p", model="m"), log=logs.append
     )
 
     assert drop < summarize
@@ -147,9 +148,9 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     # A window the default already fits inside keeps the operator's number.
     monkeypatch.setattr(models_registry, "context_window", _window(262_144))
     assert (
-        role_providers.resolve_compaction_thresholds(Config(), RoleModel(provider="p", model="m"))[
-            2
-        ]
+        role_providers.resolve_compaction_thresholds(
+            config_model.Config(), harness_config.RoleModel(provider="p", model="m")
+        )[2]
         == 80_000
     )
 
@@ -206,8 +207,8 @@ def test_resolve_decompose_explicit_setting_passes_through() -> None:
 
 
 def test_with_decompose_pins_value() -> None:
-    assert Config().with_decompose("on").harness.prompt.decompose == "on"
-    assert Config().with_decompose("off").harness.prompt.decompose == "off"
+    assert config_model.Config().with_decompose("on").harness.prompt.decompose == "on"
+    assert config_model.Config().with_decompose("off").harness.prompt.decompose == "off"
 
 
 def test_resolved_adaptive_values_reports_auto_decompose(cache_home: pathlib.Path) -> None:

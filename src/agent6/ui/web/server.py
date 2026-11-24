@@ -27,7 +27,7 @@ from urllib import parse
 import pydantic
 
 from agent6 import __version__, errors, kinds, pack
-from agent6.config import ConfigError, is_loopback_host, layer, write
+from agent6.config import layer, surface_config, validation, write
 from agent6.machine import schema
 from agent6.sessions import process
 from agent6.ui import operator_images, parallel_preview, spawn
@@ -1198,7 +1198,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             payload = model.ref_suggestions(
                 self.cwd, (q.get("q") or [""])[0], self.config_paths, session_dir=session_dir
             )
-        except ConfigError as exc:
+        except validation.ConfigError as exc:
             self._send_json({"error": str(exc)}, status=422)
             return
         self._send_json(payload)
@@ -1832,7 +1832,7 @@ def run_web(
         return 2
     for line in _launch_lines(f"http://{_display_host(bind_host)}:{port}", secret):
         print(f"agent6 web: {line}", file=sys.stderr)
-    if not is_loopback_host(bind_host):
+    if not surface_config.is_loopback_host(bind_host):
         print(
             "agent6 web: WARNING bound to a non-loopback address; the secret and the sign-in"
             f" token cross the network to {bind_host}:{port} in plain HTTP, and anyone who"

@@ -16,7 +16,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6.config import ChatGPTProviderEntry, secret_store
+from agent6.config import provider_config, secret_store
 from agent6.providers import (
     anthropic,
     chatgpt,
@@ -113,7 +113,7 @@ def chatgpt_credential(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> oauth.OAuthCredential:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("AT0", "RT1", 3600), entry, now=time.time()
     )

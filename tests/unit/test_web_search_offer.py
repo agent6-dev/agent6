@@ -12,7 +12,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6.app import role_providers
 from agent6.app.review import recap as review_recap
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_conversation, provider_call, run_chain
 from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import window as compaction_window
@@ -116,15 +116,17 @@ def test_a_summary_call_and_a_reviewer_are_never_offered_search() -> None:
 def test_the_prompt_states_the_search_only_where_it_is_offered(tmp_path: pathlib.Path) -> None:
     """One sentence in the run and ask prompts of a worker entry that sets the key."""
     providers: dict[str, Any] = {"p": {"backend": "anthropic", "web_search": True}}
-    on = Config.model_validate({"providers": providers, "models": {"default": {"model": "p/m"}}})
-    off = Config.model_validate(
+    on = config_model.Config.model_validate(
+        {"providers": providers, "models": {"default": {"model": "p/m"}}}
+    )
+    off = config_model.Config.model_validate(
         {"providers": {"p": {"backend": "anthropic"}}, "models": {"default": {"model": "p/m"}}}
     )
     repo = repo_context.load_repo_summary(tmp_path, ())
     line = loop_prompts.WEB_SEARCH_LINE
     assert line == "The provider's web search is available.\n"
 
-    def prompt(cfg: Config, mode: Any) -> str:
+    def prompt(cfg: config_model.Config, mode: Any) -> str:
         return prompt_blocks.build_system_prompt(
             config=cfg, repo=repo, mode=mode, skills=None, web_search=cfg.offers_web_search(mode)
         )

@@ -33,7 +33,7 @@ from agent6 import (
     task_text,
     terminal,
 )
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory as agent6_memory
 from agent6.context import skills
 from agent6.graph import curator as graph_curator
@@ -154,7 +154,7 @@ class Harness:
     """
 
     chain: run_chain.RunChain
-    config: Config
+    config: config_model.Config
     provider: provider_calls.Provider
     dispatcher: dispatch.ToolDispatcher
     logger: Callable[[str], None] = dataclasses.field(default=print)

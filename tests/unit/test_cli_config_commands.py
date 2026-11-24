@@ -806,9 +806,9 @@ def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: pathl
     review = filled["review"]
     assert isinstance(review, dict)
     # The fill keeps the default; the preset applies on load.
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    assert review["when"] == Config().review.when
+    assert review["when"] == config_model.Config().review.when
 
 
 def test_fill_keeps_authored_preset_bodies(iso: pathlib.Path) -> None:

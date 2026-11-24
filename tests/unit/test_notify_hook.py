@@ -11,10 +11,11 @@ import pytest
 
 from agent6.app import notify_hook, reporter
 from agent6.app.machine import host_preflight
-from agent6.config import Config, NotifyConfig, load_config
+from agent6.config import model as config_model
+from agent6.config import surface_config
 
 
-def _end(notify: NotifyConfig, tmp_path: pathlib.Path, **over: object) -> None:
+def _end(notify: surface_config.NotifyConfig, tmp_path: pathlib.Path, **over: object) -> None:
     fields: dict[str, object] = dict(
         session_id="run-xyz",
         session_dir=tmp_path,
@@ -29,14 +30,17 @@ def _end(notify: NotifyConfig, tmp_path: pathlib.Path, **over: object) -> None:
 
 def test_notify_noop_when_unconfigured(tmp_path: pathlib.Path) -> None:
     """An empty `on_event` is a no-op: no subprocess, no error."""
-    _end(NotifyConfig(), tmp_path)
+    _end(surface_config.NotifyConfig(), tmp_path)
 
 
 def test_notify_failure_does_not_raise(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A failing argv (nonexistent binary) is noted, never raised."""
-    _end(NotifyConfig(on_event=("/nonexistent/agent6-notify-binary",), timeout_s=5.0), tmp_path)
+    _end(
+        surface_config.NotifyConfig(on_event=("/nonexistent/agent6-notify-binary",), timeout_s=5.0),
+        tmp_path,
+    )
     assert "notify.on_event failed" in capsys.readouterr().err
 
 
@@ -50,8 +54,8 @@ def test_both_callers_run_the_same_hook(
     that is the JSON-RPC stream.
     """
     argv = ("sh", "-c", "echo HOOK_STDOUT; exit 3")
-    _end(NotifyConfig(on_event=argv, timeout_s=5.0), tmp_path)
-    cfg = Config.model_validate({"notify": {"on_event": list(argv)}})
+    _end(surface_config.NotifyConfig(on_event=argv, timeout_s=5.0), tmp_path)
+    cfg = config_model.Config.model_validate({"notify": {"on_event": list(argv)}})
     fire = host_preflight.build_machine_notify_hook(cfg, "machine-1", tmp_path)
     assert fire is not None
     fire("end", "done", "", "ok")
@@ -65,7 +69,12 @@ def test_notify_ok_zero_when_failed(tmp_path: pathlib.Path) -> None:
     """ok=False sets AGENT6_SESSION_OK=0 and the level `failed`."""
     out = tmp_path / "ok.txt"
     argv = ("sh", "-c", f'printf "%s %s" "$AGENT6_SESSION_OK" "$AGENT6_NOTIFY_LEVEL" > {out}')
-    _end(NotifyConfig(on_event=argv, timeout_s=5.0), tmp_path, ok=False, reason="provider_error")
+    _end(
+        surface_config.NotifyConfig(on_event=argv, timeout_s=5.0),
+        tmp_path,
+        ok=False,
+        reason="provider_error",
+    )
     assert out.read_text(encoding="utf-8") == "0 failed"
 
 
@@ -98,11 +107,11 @@ _DUMP_AGENT6_VARS = (
 )
 
 
-def _config(tmp_path: pathlib.Path, script: str, out: pathlib.Path) -> Config:
+def _config(tmp_path: pathlib.Path, script: str, out: pathlib.Path) -> config_model.Config:
     body = _CFG_BODY.replace('"PLACEHOLDER"', f'"{script}", "{out}"')
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(body, encoding="utf-8")
-    return load_config(cfg_path)
+    return config_model.load_config(cfg_path)
 
 
 def test_machine_notify_hook_fires_with_env(tmp_path: pathlib.Path) -> None:
@@ -145,7 +154,10 @@ def test_machine_notify_hook_none_when_unconfigured(tmp_path: pathlib.Path) -> N
     )
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(body, encoding="utf-8")
-    assert host_preflight.build_machine_notify_hook(load_config(cfg_path), "m", tmp_path) is None
+    assert (
+        host_preflight.build_machine_notify_hook(config_model.load_config(cfg_path), "m", tmp_path)
+        is None
+    )
 
 
 def test_notify_in_config_loads(tmp_path: pathlib.Path) -> None:
@@ -171,7 +183,7 @@ def test_the_old_hook_keys_are_refused_with_the_replacement(
     """`[notify].on_complete` and `[machine.notify]` name their replacement, not an unknown key."""
     with pytest.raises(ValueError, match=r".*"):
         try:
-            Config.model_validate(raw)
+            config_model.Config.model_validate(raw)
         except ValueError as exc:
             assert message in str(exc)
             raise
@@ -181,7 +193,7 @@ def test_a_prompt_opening_fires_session_waiting(tmp_path: pathlib.Path) -> None:
     """The listener fires `session.waiting` with the prompt's first line; other rows pass."""
     out = tmp_path / "waiting.json"
     listen = notify_hook.attention(
-        NotifyConfig(on_event=("python3", "-c", _DUMP_AGENT6_VARS, str(out))),
+        surface_config.NotifyConfig(on_event=("python3", "-c", _DUMP_AGENT6_VARS, str(out))),
         session_id="r1",
         session_dir=tmp_path,
         note=reporter.STDIO_REPORTER.note,
@@ -233,7 +245,7 @@ def test_notify_hook_env_carries_no_secrets(
         "}, open(sys.argv[1], 'w'))",
         str(out),
     )
-    _end(NotifyConfig(on_event=argv, timeout_s=10.0), tmp_path, session_id="r1")
+    _end(surface_config.NotifyConfig(on_event=argv, timeout_s=10.0), tmp_path, session_id="r1")
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload == {"key": None, "or_key": None, "path": True, "home": True, "id": "r1"}
 
@@ -272,7 +284,12 @@ def test_hook_env_separates_deliberate_from_verified(tmp_path: pathlib.Path) -> 
         f'#!/bin/sh\necho "$AGENT6_SESSION_OK $AGENT6_SESSION_VERIFIED" > {out}\n', encoding="utf-8"
     )
     script.chmod(0o755)
-    _end(NotifyConfig(on_event=(str(script),)), tmp_path, session_id="r1", verification="failed")
+    _end(
+        surface_config.NotifyConfig(on_event=(str(script),)),
+        tmp_path,
+        session_id="r1",
+        verification="failed",
+    )
     assert out.read_text(encoding="utf-8").strip() == "1 failed"
 
 
@@ -284,7 +301,7 @@ def test_the_hook_env_names_the_session_not_the_run(tmp_path: pathlib.Path) -> N
     """
     out = tmp_path / "env.json"
     argv = ("python3", "-c", _DUMP_AGENT6_VARS, str(out))
-    _end(NotifyConfig(on_event=argv), tmp_path, session_id="brave-oak-AAAAAA")
+    _end(surface_config.NotifyConfig(on_event=argv), tmp_path, session_id="brave-oak-AAAAAA")
     env = json.loads(out.read_text(encoding="utf-8"))
     assert env == {
         "AGENT6_NOTIFY_EVENT": "session.stop",

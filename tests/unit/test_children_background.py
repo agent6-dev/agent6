@@ -23,7 +23,7 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, token_usage
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import (
@@ -176,8 +176,8 @@ class _Script:
         return response
 
 
-def _config(judges: Sequence[str] = ()) -> Config:
-    return Config.model_validate(
+def _config(judges: Sequence[str] = ()) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {"default": {"model": "p/base"}},

@@ -14,7 +14,7 @@ import subprocess
 import pytest
 
 from agent6.app import confine
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
 from agent6.vcs.git import ops as git_ops
@@ -47,10 +47,10 @@ def test_the_recorded_git_dir_is_granted_read_only(tmp_path: pathlib.Path) -> No
     repo, worktree = _repo_and_worktree(tmp_path)
     git_dir = (repo / ".git").resolve()
     policy = tools_policy.jail_policy(
-        worktree, Config(), "full", ("true",), worktree_git_dir=git_dir
+        worktree, config_model.Config(), "full", ("true",), worktree_git_dir=git_dir
     )
     assert git_dir in policy.extra_ro_paths and git_dir not in policy.extra_rw_paths
-    regions = dict(confine._grant_regions(Config(), worktree, "partial", git_dir))
+    regions = dict(confine._grant_regions(config_model.Config(), worktree, "partial", git_dir))
     assert regions[git_dir].startswith("the repository's .git")
 
 
@@ -62,7 +62,7 @@ def test_a_write_grant_inside_the_recorded_git_dir_refuses_the_start(
     repo, worktree = _repo_and_worktree(tmp_path)
     git_dir = repo / ".git"
     admin = git_dir / "worktrees" / worktree.name
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "isolation": "full",
@@ -84,18 +84,25 @@ def test_a_rewritten_pointer_refuses_instead_of_granting(tmp_path: pathlib.Path)
     git_dir = (repo / ".git").resolve()
     _rewrite_pointer(worktree, "/etc")
     with pytest.raises(jail.JailUnavailableError, match="/etc") as refused:
-        tools_policy.jail_policy(worktree, Config(), "partial", ("true",), worktree_git_dir=git_dir)
+        tools_policy.jail_policy(
+            worktree, config_model.Config(), "partial", ("true",), worktree_git_dir=git_dir
+        )
     assert str(git_dir) in str(refused.value)
     with pytest.raises(jail.JailUnavailableError):
-        confine._grant_regions(Config(), worktree, "partial", git_dir)
+        confine._grant_regions(config_model.Config(), worktree, "partial", git_dir)
 
 
 def test_a_linked_worktree_agent6_did_not_record_gets_no_grant(tmp_path: pathlib.Path) -> None:
     """Without a record there is nothing to grant: a foreign worktree gets only the workspace."""
     repo, worktree = _repo_and_worktree(tmp_path)
-    assert tools_policy.jail_policy(worktree, Config(), "full", ("true",)).extra_ro_paths == ()
+    assert (
+        tools_policy.jail_policy(worktree, config_model.Config(), "full", ("true",)).extra_ro_paths
+        == ()
+    )
     _rewrite_pointer(worktree, "/etc")
     # `partial` shares the host network, whose resolver and CA store reads are the only grants.
-    partial = tools_policy.jail_policy(worktree, Config(), "partial", ("true",))
+    partial = tools_policy.jail_policy(worktree, config_model.Config(), "partial", ("true",))
     assert partial.extra_ro_paths == tools_policy.host_network_reads()
-    assert (repo / ".git").resolve() not in dict(confine._grant_regions(Config(), repo, "partial"))
+    assert (repo / ".git").resolve() not in dict(
+        confine._grant_regions(config_model.Config(), repo, "partial")
+    )

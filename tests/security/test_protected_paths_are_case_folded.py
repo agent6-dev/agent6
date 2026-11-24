@@ -18,7 +18,7 @@ import subprocess
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import dispatch, tool_errors
 
 CASINGS = [".git", ".GIT", ".Git", ".gIt"]
@@ -33,7 +33,7 @@ def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
 @pytest.mark.parametrize("cased", CASINGS)
 def test_the_git_dir_is_refused_in_any_casing(tmp_path: pathlib.Path, cased: str) -> None:
     root = _repo(tmp_path)
-    d = dispatch.ToolDispatcher(root=root, config=Config(), isolation="none")
+    d = dispatch.ToolDispatcher(root=root, config=config_model.Config(), isolation="none")
     payload = '[filter "pwn"]\n\tclean = touch /tmp/pwned\n[core]'
     try:
         with pytest.raises(tool_errors.ToolError, match="Refusing to write under"):
@@ -62,7 +62,7 @@ def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: pathlib
     (protected / "build.sh").write_text("echo real\n", encoding="utf-8")
     d = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config(),
+        config=config_model.Config(),
         isolation="none",
         extra_protect_paths=(protected.resolve(),),
     )
@@ -87,7 +87,7 @@ def test_an_installed_package_tree_is_refused_in_any_casing(tmp_path: pathlib.Pa
         tree = tmp_path / "lib" / cased / "pkg"
         tree.mkdir(parents=True)
         (tree / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
-        d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
+        d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config(), isolation="none")
         try:
             with pytest.raises(tool_errors.ToolError, match="installed-package tree"):
                 d.dispatch(
@@ -107,7 +107,7 @@ def test_a_neighbour_that_merely_starts_the_same_is_untouched(tmp_path: pathlib.
     root = _repo(tmp_path)
     (root / ".github" / "workflows").mkdir(parents=True)
     (root / ".github" / "workflows" / "ci.yml").write_text("on: push\n", encoding="utf-8")
-    d = dispatch.ToolDispatcher(root=root, config=Config(), isolation="none")
+    d = dispatch.ToolDispatcher(root=root, config=config_model.Config(), isolation="none")
     try:
         d.dispatch(
             "apply_edit",

@@ -12,7 +12,7 @@ from agent6.app import stamps, worktrees
 from agent6.app.parallel import launch as child_launch
 from agent6.app.parallel import trees as child_trees
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop_snapshot
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, manifest, process
@@ -224,7 +224,7 @@ def recoverable(
     group: str,
     child: child_dispatch.ChildRecord,
     *,
-    cfg: Config,
+    cfg: config_model.Config,
     origin: pathlib.Path,
     record_state: pathlib.Path,
     parent: str,

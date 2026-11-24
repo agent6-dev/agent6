@@ -14,7 +14,8 @@ from unittest import mock
 
 import pytest
 
-from agent6 import config, directive
+from agent6 import directive
+from agent6.config import model as config_model
 from agent6.harness import (
     advice,
     finish_gates,
@@ -145,7 +146,7 @@ def _configured_context(
     """Build the advisor's context through the harness with a configured stop."""
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=config.Config.model_validate({"harness": {"settled_stop_after": stop_after}}),
+        config=config_model.Config.model_validate({"harness": {"settled_stop_after": stop_after}}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -214,7 +215,7 @@ def test_only_the_returned_command_handle_holds_the_settled_streak(
     """A live sibling cannot make a completed or operator-stopped foreground call neutral."""
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=config.Config.model_validate({"harness": {"settled_stop_after": 3}}),
+        config=config_model.Config.model_validate({"harness": {"settled_stop_after": 3}}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -271,7 +272,7 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
     )
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=config.Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -298,7 +299,7 @@ def test_waits_accumulate_within_a_turn_but_progress_restarts_the_streak(
 ) -> None:
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=config.Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -351,7 +352,7 @@ def test_a_memory_store_write_restarts_the_idle_streak() -> None:
     """The settled nudge followed the memory advisory: the writes it asked for counted as idle."""
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=config.Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -462,7 +463,7 @@ def _steered(tmp_path: pathlib.Path, text: str | None) -> loop_state.LoopState:
     """Return a state one turn short of the settled stop, after the operator's steer landed."""
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=config.Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False

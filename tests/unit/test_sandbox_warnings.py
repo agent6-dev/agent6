@@ -15,7 +15,8 @@ import pytest
 
 from agent6 import kinds, paths
 from agent6.app import confine
-from agent6.config import Config, GitConfig, SandboxConfig
+from agent6.config import git_config, sandbox_config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, tool_paths
 from agent6.tools import policy
 
@@ -35,8 +36,10 @@ def _env(landlock_abi: int) -> detect.Environment:
 def _cfg(
     tool_network: Literal["auto", "host", "session"] = "auto",
     isolation: kinds.IsolationLevel | Literal["auto", "container"] = "auto",
-) -> Config:
-    return Config(sandbox=SandboxConfig(network=tool_network, isolation=isolation))
+) -> config_model.Config:
+    return config_model.Config(
+        sandbox=sandbox_config.SandboxConfig(network=tool_network, isolation=isolation)
+    )
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])
@@ -48,7 +51,7 @@ def test_git_control_without_sandbox(
     Whether the model can also commit is the sandbox's business, so the warning rides the
     `none` banner and nothing refuses: the same config behaves the same however it was written.
     """
-    cfg = Config(git=GitConfig(control=control))
+    cfg = config_model.Config(git=git_config.GitConfig(control=control))
     assert confine.config_refusal(cfg, "none", tmp_path) is None
     confine.warn_sandbox_gaps("none", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
@@ -208,7 +211,10 @@ def test_partial_warning_names_shared_tmp_and_persistent_home(
     cache dir. The HOME warning stands on its own rather than riding the .git warning, which
     `protect_git = "off"` removes.
     """
-    for cfg in (_cfg(), Config(sandbox=SandboxConfig(protect_git="off"))):
+    for cfg in (
+        _cfg(),
+        config_model.Config(sandbox=sandbox_config.SandboxConfig(protect_git="off")),
+    ):
         confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
         err = capsys.readouterr().err
         assert str(paths.jail_cache_home(tmp_path)) in err
@@ -226,7 +232,10 @@ def test_full_cache_home_warns_naming_the_cost(
     under `full` warns nothing.
     """
     confine.warn_sandbox_gaps(
-        "full", _env(4), Config(sandbox=SandboxConfig(home="cache")), root=tmp_path
+        "full",
+        _env(4),
+        config_model.Config(sandbox=sandbox_config.SandboxConfig(home="cache")),
+        root=tmp_path,
     )
     err = capsys.readouterr().err
     assert "sandbox.home = 'cache'" in err and str(paths.jail_cache_home(tmp_path)) in err
@@ -244,7 +253,7 @@ def test_a_cleartext_credential_endpoint_warns_at_run_entry(
     Sending a credential over plaintext http to a non-loopback host is explicit but discouraged
     config: the warning names the endpoint and the cost. A clean config warns nothing.
     """
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "corp": {
@@ -258,7 +267,7 @@ def test_a_cleartext_credential_endpoint_warns_at_run_entry(
     confine.warn_cleartext_credential_endpoints(cfg)
     err = capsys.readouterr().err
     assert "WARNING" in err and "[providers.corp]" in err and "plaintext http" in err
-    confine.warn_cleartext_credential_endpoints(Config())
+    confine.warn_cleartext_credential_endpoints(config_model.Config())
     assert capsys.readouterr().err == ""
 
 
@@ -319,7 +328,7 @@ def test_partial_warns_loudly_when_a_grant_exposes_the_private_dirs(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(home),)))
+    cfg = config_model.Config(sandbox=sandbox_config.SandboxConfig(extra_read_paths=(str(home),)))
 
     confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err
@@ -346,7 +355,7 @@ def test_the_workspace_itself_counts_as_a_granted_region(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
 
-    confine.warn_sandbox_gaps("partial", _env(4), Config(), root=tmp_path)
+    confine.warn_sandbox_gaps("partial", _env(4), config_model.Config(), root=tmp_path)
     assert str(cfg_dir) in capsys.readouterr().err
 
 
@@ -364,7 +373,7 @@ def test_partial_refuses_an_explicit_hide_entry_it_cannot_mask(
     ws.mkdir()
     monkeypatch.chdir(ws)
     hidden = ws / "cred.txt"
-    cfg = Config(sandbox=SandboxConfig(hide_paths=(str(hidden),)))
+    cfg = config_model.Config(sandbox=sandbox_config.SandboxConfig(hide_paths=(str(hidden),)))
     err = confine.check_hide_paths_support(cfg, "partial", tmp_path)
     assert err is not None and str(hidden) in err
     assert confine.check_hide_paths_support(cfg, "full", tmp_path) is None
@@ -384,7 +393,9 @@ def test_a_plain_partial_run_neither_warns_nor_refuses(
     ws.mkdir()
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
+    cfg = config_model.Config(
+        sandbox=sandbox_config.SandboxConfig(network="host", protect_git="off")
+    )
     confine.warn_sandbox_gaps("partial", _env(6), cfg, root=tmp_path)
     err = capsys.readouterr().err
     # `partial`'s persistent HOME is the one notice every such run carries;
@@ -416,7 +427,9 @@ def test_unscoped_abstract_sockets_are_warned_where_the_host_network_is_shared(
     for var in ("CONFIG", "STATE", "DATA"):
         monkeypatch.setenv(f"XDG_{var}_HOME", f"/nonexistent-private/{var.lower()}")
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(network=network, protect_git="off"))
+    cfg = config_model.Config(
+        sandbox=sandbox_config.SandboxConfig(network=network, protect_git="off")
+    )
     confine.warn_sandbox_gaps(isolation, _env(abi), cfg, root=tmp_path)
     err = capsys.readouterr().err
     assert ("abstract unix sockets stay reachable" in err) is reachable, err
@@ -450,7 +463,9 @@ def test_partial_warns_when_private_state_sits_in_a_granted_region(
         assert private.is_relative_to(pathlib.Path("/tmp").resolve())
         assert not private.is_relative_to(ws.resolve())
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
+    cfg = config_model.Config(
+        sandbox=sandbox_config.SandboxConfig(network="host", protect_git="off")
+    )
     confine.warn_sandbox_gaps("partial", _env(4), cfg, root=ws)
     err = capsys.readouterr().err
     for private in (config_dir, state_dir):
@@ -473,7 +488,9 @@ def test_partial_names_the_workspace_when_it_sits_inside_a_private_dir(
     ws.mkdir(parents=True)
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
+    cfg = config_model.Config(
+        sandbox=sandbox_config.SandboxConfig(network="host", protect_git="off")
+    )
     confine.warn_sandbox_gaps("partial", _env(4), cfg, root=ws)
     err = capsys.readouterr().err
     expected = (
@@ -489,7 +506,7 @@ def test_the_unsandboxed_warning_names_the_variable_that_disabled_the_jail(
     """Under AGENT6_DISABLE_SANDBOX=1 the warning blamed `auto` for finding no mechanism."""
     monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
-    confine.warn_sandbox_gaps("none", _env(4), Config(), root=tmp_path)
+    confine.warn_sandbox_gaps("none", _env(4), config_model.Config(), root=tmp_path)
     err = capsys.readouterr().err
     banner = next(line for line in err.splitlines() if "UNSANDBOXED" in line)
     assert "running UNSANDBOXED (AGENT6_DISABLE_SANDBOX=1 is set)" in banner, err
@@ -510,7 +527,10 @@ def test_root_on_partial_names_what_it_costs(
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.paths.is_root", lambda: True)
     confine.warn_sandbox_gaps(
-        "partial", _env(4), Config(sandbox=SandboxConfig(protect_git="off")), root=tmp_path
+        "partial",
+        _env(4),
+        config_model.Config(sandbox=sandbox_config.SandboxConfig(protect_git="off")),
+        root=tmp_path,
     )
     err = capsys.readouterr().err
     assert "running as root" in err
@@ -527,7 +547,7 @@ def test_root_on_full_says_nothing_about_it(
     """
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.paths.is_root", lambda: True)
-    confine.warn_sandbox_gaps("full", _env(4), Config(), root=tmp_path)
+    confine.warn_sandbox_gaps("full", _env(4), config_model.Config(), root=tmp_path)
     assert capsys.readouterr().err == ""
 
 
@@ -537,7 +557,10 @@ def test_a_normal_user_on_partial_is_not_told_about_root(
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     monkeypatch.setattr("agent6.paths.is_root", lambda: False)
     confine.warn_sandbox_gaps(
-        "partial", _env(4), Config(sandbox=SandboxConfig(protect_git="off")), root=tmp_path
+        "partial",
+        _env(4),
+        config_model.Config(sandbox=sandbox_config.SandboxConfig(protect_git="off")),
+        root=tmp_path,
     )
     assert "running as root" not in capsys.readouterr().err
 
@@ -608,8 +631,8 @@ def test_a_grant_of_the_home_directory_or_above_it_warns(
     monkeypatch.setenv("HOME", str(home))
 
     def lines(read: tuple[str, ...] = (), write: tuple[str, ...] = ()) -> tuple[str, ...]:
-        sandbox = SandboxConfig(extra_read_paths=read, extra_write_paths=write)
-        return confine.home_grant_warnings(Config(sandbox=sandbox))
+        sandbox = sandbox_config.SandboxConfig(extra_read_paths=read, extra_write_paths=write)
+        return confine.home_grant_warnings(config_model.Config(sandbox=sandbox))
 
     (line,) = lines(read=(str(home),))
     assert line.startswith(f"sandbox.extra_read_paths grants {str(home)!r}, your home directory:")
@@ -635,7 +658,7 @@ def test_a_run_start_prints_the_home_grant_warning(
     def _detected() -> detect.Environment:
         return _env(4)
 
-    def _confirmed(_level: str, _cfg: Config) -> bool:
+    def _confirmed(_level: str, _cfg: config_model.Config) -> bool:
         return True
 
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -643,7 +666,9 @@ def test_a_run_start_prints_the_home_grant_warning(
     workspace = tmp_path / "repo"
     workspace.mkdir()
     said: list[str] = []
-    cfg = Config(sandbox=SandboxConfig(isolation="full", extra_read_paths=(str(tmp_path),)))
+    cfg = config_model.Config(
+        sandbox=sandbox_config.SandboxConfig(isolation="full", extra_read_paths=(str(tmp_path),))
+    )
     session_runtime.select_isolation(
         cfg,
         cwd=workspace,
@@ -666,7 +691,7 @@ def test_a_grant_whose_target_sits_in_the_workspace_is_dropped_and_the_run_says_
     repo, link = tmp_path / "repo", tmp_path / "link"
     (repo / "data").mkdir(parents=True)
     link.symlink_to(repo / "data", target_is_directory=True)
-    cfg = Config.model_validate({"sandbox": {"extra_read_paths": [str(link)]}})
+    cfg = config_model.Config.model_validate({"sandbox": {"extra_read_paths": [str(link)]}})
     built = policy.jail_policy(repo, cfg, "full", ("true",))
     assert link not in built.extra_ro_paths
     assert policy.workspace_for(cfg, repo).read_roots == ()

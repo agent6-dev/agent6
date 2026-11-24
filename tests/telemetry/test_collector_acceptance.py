@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.config import TelemetryConfig
+from agent6.config import surface_config
 from agent6.ui.telemetry import export
 from tests import collector_env
 from tests.unit import test_telemetry_fold as fold_tests
@@ -142,7 +142,7 @@ def test_otlp_collector_receives_the_golden_counts(golden: _Golden, tmp_path: pa
                 )
             report = export.export(
                 golden.repo,
-                TelemetryConfig(
+                surface_config.TelemetryConfig(
                     traces="otlp",
                     metrics="otlp",
                     logs="otlp",
@@ -179,7 +179,8 @@ def test_promtool_accepts_the_exported_textfile(golden: _Golden, tmp_path: pathl
     binary = collector_env.require_collector("promtool")
     target = tmp_path / "agent6.prom"
     report = export.export(
-        golden.repo, TelemetryConfig(metrics="prometheus", prometheus_file=str(target))
+        golden.repo,
+        surface_config.TelemetryConfig(metrics="prometheus", prometheus_file=str(target)),
     )
     assert report.sessions == 1 and report.prometheus_file == str(target) and report.notes == ()
     assert target.stat().st_size > 0

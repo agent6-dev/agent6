@@ -19,12 +19,12 @@ def _policy(
     argv: tuple[str, ...],
     devices: tuple[str, ...],
 ):
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import policy
 
     base = policy.jail_policy(
         tmp_path,
-        Config(),
+        config_model.Config(),
         level,
         argv,
         network="none",

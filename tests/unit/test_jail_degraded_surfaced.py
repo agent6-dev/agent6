@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import event_log
 from agent6.tools import dispatch
@@ -20,7 +20,7 @@ def test_prepared_session_surfaces_startup_stderr_once(
     tmp_path: pathlib.Path, warning: str
 ) -> None:
     """A prepared session emits its startup diagnostic on injection, not per command."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"}}
     )
     access = session_runtime.prepare_local_execution(cfg, tmp_path, "none")
@@ -63,14 +63,14 @@ def test_failed_preparation_never_invokes_one_shot(
 
     monkeypatch.setattr(jail_session.JailSession, "open", refuse)
     monkeypatch.setattr(jail, "run_in_jail", one_shot)
-    cfg = Config.model_validate({"sandbox": {"isolation": "none", "network": "host"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "none", "network": "host"}})
     with pytest.raises(jail.JailUnavailableError, match="preparation refused"):
         session_runtime.prepare_local_execution(cfg, tmp_path, "none")
 
 
 def test_a_container_session_reports_no_degraded_sandbox(tmp_path: pathlib.Path) -> None:
     """The launcher runs unconfined inside a container by design; its notice is no degrade."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"}}
     )
     access = session_runtime.prepare_local_execution(cfg, tmp_path, "none")

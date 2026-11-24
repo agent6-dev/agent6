@@ -193,11 +193,11 @@ def test_no_path_from_the_model_reaches_the_filesystem(tmp_path: pathlib.Path, e
 
 def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: pathlib.Path) -> None:
     """An id lookup returns just the requested conversation or a refusal."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import dispatch, tool_errors
 
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "video question", ["use ffmpeg"])
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), state_dir=tmp_path)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config(), state_dir=tmp_path)
     out = d.dispatch("read_session", {}).to_wire()
     assert out["sessions"] == ["[quiet-fox-AAAAAA] ask · 2026-07-31T01:00: video question"]
     assert "conversation" not in out
@@ -209,12 +209,12 @@ def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: pathlib
 
 
 def _reader(state: pathlib.Path, rows: list[dict[str, Any]]) -> Callable[..., dict[str, Any]]:
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import dispatch
 
     session = _session(state, "runs", "calm-owl-AAAAAA", "run", "the task", [])
     (session / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    d = dispatch.ToolDispatcher(root=state, config=Config(), state_dir=state)
+    d = dispatch.ToolDispatcher(root=state, config=config_model.Config(), state_dir=state)
 
     def read(**filters: Any) -> dict[str, Any]:
         return d.dispatch("read_session", {"id": session.name, **filters}).to_wire()
@@ -355,13 +355,13 @@ def test_both_readers_keep_recorded_values_searchable_on_one_line(tmp_path: path
 
 def test_search_does_not_page_through_its_own_calls_and_results(tmp_path: pathlib.Path) -> None:
     """Dispatch journals the lookup in the same file before the reader opens it."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import dispatch
 
     d = _session(tmp_path, "runs", "calm-owl-AAAAAA", "run", "remember the label", ["label-42"])
     dispatcher = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config(),
+        config=config_model.Config(),
         state_dir=tmp_path,
         events=event_log.EventSink(d / "logs.jsonl"),
     )
@@ -426,10 +426,10 @@ def test_max_chars_keeps_the_entry_header_and_the_next_page(tmp_path: pathlib.Pa
 
 
 def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: pathlib.Path) -> None:
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import dispatch, tool_errors
 
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config())
     with pytest.raises(tool_errors.ToolError, match="state dir"):
         d.dispatch("read_session", {})
 
@@ -555,7 +555,8 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
 
 def test_dispatch_task_has_the_author_who_requested_it(tmp_path: pathlib.Path) -> None:
     """A child task from a model is not an operator instruction."""
-    from agent6 import config, paths
+    from agent6 import paths
+    from agent6.config import model as config_model
     from agent6.tools import dispatch
 
     state = paths.state_dir(tmp_path)
@@ -566,7 +567,7 @@ def test_dispatch_task_has_the_author_who_requested_it(tmp_path: pathlib.Path) -
         for source in ("operator", "model", "panel")
     ]
     (child / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    reader = dispatch.ToolDispatcher(root=tmp_path, state_dir=state, config=config.Config())
+    reader = dispatch.ToolDispatcher(root=tmp_path, state_dir=state, config=config_model.Config())
     for kind in ("operator", "model"):
         page = reader.dispatch("read_session", {"id": child.name, "kinds": [kind]}).to_wire()
         assert f"{kind} task" in page["conversation"]

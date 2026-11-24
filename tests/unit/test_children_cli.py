@@ -20,7 +20,8 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.harness.parallel import merge as parallel_merge
 from agent6.sessions import child_dispatch
 from agent6.tools import schema
@@ -157,7 +158,7 @@ def test_three_listed_tasks_two_children_and_no_refill(
         return ("finish_session", {"summary": "inventory complete"})
 
     with launch_env.scripted_provider(reply_for=reply) as (url, _calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": url}},
                 "models": {"default": {"model": "p/m"}},
@@ -257,7 +258,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         return [("apply_edit", {"path": name, "old_string": "", "new_string": f"{who}\n"})]
 
     with launch_env.scripted_provider(reply_for=reply) as (base_url, _calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/m"}},
@@ -436,7 +437,7 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
         return [("finish_session", {"summary": "wrote what was asked"})]
 
     with launch_env.scripted_provider(reply_for=reply) as (base_url, _calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/m"}},
@@ -542,7 +543,7 @@ def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
     with launch_env.scripted_provider(
         reply_for=reply, usage={"prompt_tokens": 9, "completion_tokens": 3}, cost_usd=0.01
     ) as (base_url, _calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/m"}},

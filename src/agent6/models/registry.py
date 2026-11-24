@@ -12,7 +12,8 @@ from __future__ import annotations
 import re
 
 from agent6 import kinds
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.models import cache
 from agent6.providers import openai
 
@@ -158,7 +159,7 @@ def decompose_default(model_id: str) -> bool:
     return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
 
 
-def model_effort(cfg: Config, rm: RoleModel | None) -> str | None:
+def model_effort(cfg: config_model.Config, rm: harness_config.RoleModel | None) -> str | None:
     """Return the reasoning effort a resolved role or reviewer carries.
 
     The configured `[models.<role>].effort` when set, else each wire's default: `low` for an
@@ -189,7 +190,7 @@ def model_effort(cfg: Config, rm: RoleModel | None) -> str | None:
             )
 
 
-def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
+def resolved_adaptive_values(cfg: config_model.Config) -> dict[str, object]:
     """Return the config leaves whose effective value resolves at runtime.
 
     `config show` and the config pages print these in place of the adaptive placeholder.

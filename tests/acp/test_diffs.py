@@ -9,7 +9,7 @@ import pathlib
 import shutil
 from typing import Any
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log, journal
 from agent6.tools import dispatch, results
 from agent6.ui.acp import runner, stream, updates
@@ -24,14 +24,17 @@ _RUN = "run-x"
 class _Run:
     """A recorded run: a workspace, and a session dir a real dispatcher journals into."""
 
-    def __init__(self, tmp_path: pathlib.Path, config: Config | None = None) -> None:
+    def __init__(self, tmp_path: pathlib.Path, config: config_model.Config | None = None) -> None:
         self.repo, self.session_dir = tmp_path / "repo", tmp_path / "session"
         self.repo.mkdir()
         self.session_dir.mkdir()
         self.logs, self.objects = self.session_dir / "logs.jsonl", self.session_dir / "objects"
         sink = event_log.EventSink(self.logs)
         self.tools = dispatch.ToolDispatcher(
-            root=self.repo, config=config or Config(), session_dir=self.session_dir, events=sink
+            root=self.repo,
+            config=config or config_model.Config(),
+            session_dir=self.session_dir,
+            events=sink,
         )
         sink.emit(
             journal.SessionStart(mode="run", user_task="t", execution_id=self.tools.execution_id)
@@ -135,7 +138,7 @@ def test_a_write_outside_the_workspace_shows_the_file_it_wrote(tmp_path: pathlib
     """A write under a grant shows the granted file, not the workspace's file of that name."""
     granted = tmp_path / "granted"
     granted.mkdir()
-    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    config = config_model.Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
     run = _Run(tmp_path, config)
     (run.repo / "note.txt").write_text("the workspace's own\n", encoding="utf-8")
     run.edit(str(granted / "note.txt"), kind="create", new_string="x\n")

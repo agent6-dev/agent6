@@ -286,10 +286,10 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: pathlib.Path) -> No
     never ran, disagreeing with both the web (which reads the role events) and its own cost block.
     """
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sessions import layout as sessions_layout
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"anthropic": {"backend": "anthropic"}},
             "models": {
@@ -323,7 +323,7 @@ def test_write_session_manifest_stores_the_operators_words(tmp_path: pathlib.Pat
     """
     from agent6 import task_text
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sessions import layout as sessions_layout
 
     words = "fix the parser " * 20  # past the event's 200-char clip
@@ -340,7 +340,7 @@ def test_write_session_manifest_stores_the_operators_words(tmp_path: pathlib.Pat
         base_sha="",
         base_branch="main",
         run_branch=None,
-        cfg=Config(),
+        cfg=config_model.Config(),
         mode="run",
     )
     assert sessions_manifest.read_manifest(layout.session_dir).user_task == words.strip()
@@ -423,7 +423,7 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
 def test_a_execution_restamps_a_config_selected_preset(tmp_path: pathlib.Path) -> None:
     """A plain resume replaces the prior execution's preset name with the one it re-resolved."""
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     _write(
         tmp_path,
@@ -436,7 +436,10 @@ def test_a_execution_restamps_a_config_selected_preset(tmp_path: pathlib.Path) -
     )
 
     stamps.stamp_execution(
-        tmp_path, Config.model_validate({"agent6": {"preset": "new-config"}}), "run", "full"
+        tmp_path,
+        config_model.Config.model_validate({"agent6": {"preset": "new-config"}}),
+        "run",
+        "full",
     )
 
     harness = sessions_manifest.read_manifest(tmp_path).harness
@@ -451,7 +454,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
     jailed agent, and every policy surface named a model another one answered for.
     """
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     _write(
         tmp_path,
@@ -464,7 +467,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
             "policy": {"run_commands": "allow", "isolation": "none", "network": "auto"},
         },
     )
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "models": {"worker": {"model": "anthropic/new-model"}},
             "sandbox": {"run_commands": "ask"},
@@ -488,10 +491,10 @@ def test_the_stamp_records_the_network_the_commands_join(tmp_path: pathlib.Path)
     would make both guess from today's config.
     """
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sessions import layout as sessions_layout
 
-    cfg = Config.model_validate({"sandbox": {"network": "auto"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"network": "auto"}})
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runs-net-AAAAAA")
     layout.ensure()
     stamps.write_session_manifest(

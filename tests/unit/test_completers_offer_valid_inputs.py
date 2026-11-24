@@ -98,7 +98,8 @@ def test_enum_value_completion_is_derived_from_the_schema(
     """Enum value completion comes from the schema, so a new Literal leaf completes for free."""
     import argparse
 
-    from agent6.config import Config, layer
+    from agent6.config import layer
+    from agent6.config import model as config_model
     from agent6.viewmodel import config_view
 
     monkeypatch.chdir(tmp_path)
@@ -132,7 +133,7 @@ def test_enum_value_completion_is_derived_from_the_schema(
     )
     assert "none" in iso
     assert set(iso) == set(schema) == {"auto", "full", "partial", "none", "container"}
-    assert Config()  # the schema loaded
+    assert config_model.Config()  # the schema loaded
 
 
 def test_live_only_verbs_offer_only_live_sessions(

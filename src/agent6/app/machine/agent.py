@@ -37,7 +37,8 @@ from agent6.app import reporter as app_reporter
 from agent6.app.machine import state_configs
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, layer, layer_data
+from agent6.config import layer, layer_data, validation
+from agent6.config import model as config_model
 from agent6.harness import loop, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.parallel import repo as child_repo
@@ -95,7 +96,9 @@ class MachineAgentRequest(pydantic.BaseModel):
     commit_identity: git_read.CommitIdentity | None = None
     request: contracts.AgentRequest
 
-    def settings(self, cfg: Config, base: Config) -> tuple[journal.SettingObservation, ...]:
+    def settings(
+        self, cfg: config_model.Config, base: config_model.Config
+    ) -> tuple[journal.SettingObservation, ...]:
         """Keep the host source for each setting the state runs unchanged.
 
         Args:
@@ -224,7 +227,7 @@ def _result(
     )
 
 
-def _apply_operator_env_grants(cfg: Config) -> Config:
+def _apply_operator_env_grants(cfg: config_model.Config) -> config_model.Config:
     """Apply the operator's `AGENT6_AUTO_APPROVE=1` and `AGENT6_NO_COMMANDS=1` from the env.
 
     The flags travel in the state's overlay; the two env names are the operator's own, read
@@ -353,7 +356,7 @@ def _build_machine_bridges(
 
 
 def _build_agent_providers(
-    cfg: Config,
+    cfg: config_model.Config,
     req: MachineAgentRequest,
     *,
     budget: agent6_budget.BudgetTracker,
@@ -428,7 +431,7 @@ def run_one(
             max_plan_points=r.max_plan_points,
         )
         cfg = _apply_operator_env_grants(cfg)
-    except (ConfigError, pydantic.ValidationError) as exc:
+    except (validation.ConfigError, pydantic.ValidationError) as exc:
         reporter.refuse(f"machine agent config error: {exc}")
         return _result("error", None, None)
     session_setup.apply_git_ops_policy(cfg)
@@ -440,7 +443,7 @@ def run_one(
         data.setdefault("git", {}).setdefault("commit", {}).update(
             {key: value for key, value in given.items() if value}
         )
-        cfg = Config.model_validate(data)
+        cfg = config_model.Config.model_validate(data)
     # The engine validated the isolation already; re-check and fail closed.
     net_err = confine.check_network_support(cfg, isolation)
     if net_err is not None:
@@ -521,10 +524,10 @@ def run_one(
 def _drive_state(
     req: MachineAgentRequest,
     r: contracts.AgentRequest,
-    cfg: Config,
+    cfg: config_model.Config,
     dispatcher: dispatch.ToolDispatcher,
     *,
-    base_config: Config,
+    base_config: config_model.Config,
     prompts: operator_prompts.OperatorPrompts,
     bridges: _MachineBridges | None,
     provider: provider_calls.Provider,
@@ -881,7 +884,7 @@ def _import_machine_clone(
         drop_clone(clone)
         return result
     try:
-        cfg = Config.model_validate(state.overlay)
+        cfg = config_model.Config.model_validate(state.overlay)
         sender = tools_policy.jail_policy(
             clone,
             cfg,

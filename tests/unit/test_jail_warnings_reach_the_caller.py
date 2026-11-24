@@ -14,7 +14,7 @@ import tempfile
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy
 
@@ -46,7 +46,7 @@ def test_a_real_jailed_command_carries_no_launcher_noise() -> None:
     result = jail.run_in_jail(
         policy.jail_policy(
             pathlib.Path(tempfile.mkdtemp()),
-            Config(),
+            config_model.Config(),
             "full",
             ("/bin/echo", "hi"),
             network="none",

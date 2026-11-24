@@ -21,7 +21,7 @@ from agent6 import kinds, paths
 from agent6.app import role_providers
 from agent6.app.review import recap as review_recap
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory
 from agent6.providers import provider_types
 from agent6.sessions import journal, process
@@ -443,8 +443,8 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
         review_recap.review_digest(_FakeProvider(response_text="  "), digest="x")  # pyrefly: ignore[bad-argument-type]
 
 
-def _reviewer_config() -> Config:
-    return Config.model_validate(
+def _reviewer_config() -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"local": {"backend": "openai", "base_url": "https://example.test/v1"}},
             "models": {"default": {"model": "local/base"}, "reviewer": {"model": "local/reviewer"}},
@@ -560,7 +560,7 @@ def test_the_model_flag_reaches_the_reviewer(
         return types.SimpleNamespace(config=cfg)
 
     def build(
-        cfg_used: Config, role: kinds.RoleName, *, actor: str = "", **_k: object
+        cfg_used: config_model.Config, role: kinds.RoleName, *, actor: str = "", **_k: object
     ) -> _FakeProvider:
         assert (role, actor) == ("reviewer", "reviewer:recap")
         route = cfg_used.models.resolve(role)

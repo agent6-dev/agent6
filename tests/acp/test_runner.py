@@ -22,7 +22,8 @@ from agent6 import paths
 from agent6.app import execution, resume, run, stop
 from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, layer_data
+from agent6.config import layer_data, validation
+from agent6.config import model as config_model
 from agent6.sessions import id, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
@@ -100,7 +101,7 @@ def _repo(path: pathlib.Path) -> pathlib.Path:
 
 def _loaded(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
     """The loader's result for a test that stubs `run_task`: the real type, unconfigured."""
-    return layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    return layer_data.EffectiveConfig(config=config_model.Config(), sources={}, layers=())
 
 
 @pytest.mark.parametrize("resuming", [False, True])
@@ -417,7 +418,7 @@ def test_a_run_that_cannot_start_says_why(
     monkeypatch.chdir(tmp_path)
 
     def _broken(*_a: object, **_kw: object) -> object:
-        raise ConfigError("Config file is not valid TOML (agent6.toml)")
+        raise validation.ConfigError("Config file is not valid TOML (agent6.toml)")
 
     monkeypatch.setattr(session_setup, "load_session_config", _broken)
     wire = _Wire()
@@ -613,9 +614,9 @@ def test_an_editor_driven_run_is_not_refused_for_lack_of_a_terminal() -> None:
     `run_commands = "ask"` refused every editor-driven run before it started.
     """
     from agent6.app import preflight
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    cfg = Config.model_validate({"sandbox": {"run_commands": "ask"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "ask"}})
     caps = acp_server.capabilities_from({})  # a client that declared nothing
     assert caps.can_ask is True, "every ACP client must answer session/request_permission"
     assert (
@@ -1018,10 +1019,12 @@ def test_the_unsandboxed_gate_is_never_offered_as_remember_me() -> None:
 
     ACP's `allow_always` is exactly the button that would let one click silence it forever.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     front, asked = _acp_front(reply="allow once")
-    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "allow"}})
+    dangerous = config_model.Config.model_validate(
+        {"sandbox": {"isolation": "none", "run_commands": "allow"}}
+    )
     assert front.confirm_unconfined_autorun("none", dangerous) is True
     assert asked[-1][2] is False, "the sandbox-off gate must not be a standing approval"
 
@@ -1925,7 +1928,7 @@ def test_a_prompt_that_cannot_choose_its_run_says_why(
     monkeypatch.chdir(tmp_path)
 
     def _broken(*_a: object, **_kw: object) -> object:
-        raise ConfigError("Config file cannot be read (config.toml)")
+        raise validation.ConfigError("Config file cannot be read (config.toml)")
 
     monkeypatch.setattr(paths, "state_dir", _broken)
     wire = _Wire()
@@ -2085,7 +2088,7 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
     from agent6.app import execution
     from agent6.sessions import ipc
 
-    def _no_keys(_cfg: Config) -> None:
+    def _no_keys(_cfg: config_model.Config) -> None:
         return None
 
     monkeypatch.setattr(session_setup, "check_provider_keys", _no_keys)  # no key here
@@ -2105,7 +2108,7 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
     seen: list[tuple[bool, bool, bool]] = []
     real_run_task = run.run_task
 
-    def _cancelled_while_starting(cfg: Config, text: str, **kw: Any) -> int:
+    def _cancelled_while_starting(cfg: config_model.Config, text: str, **kw: Any) -> int:
         bridge.sessions().cancel(session)
         time.sleep(2 * ipc.TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the execution's start
         return real_run_task(cfg, text, **kw)

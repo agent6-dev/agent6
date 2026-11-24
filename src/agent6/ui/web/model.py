@@ -18,7 +18,7 @@ from typing import Any
 from agent6 import paths
 from agent6.app import confine, merge_plan, worktrees
 from agent6.app.machine import listing as machine_listing
-from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
+from agent6.config import io, layer, layer_data, layer_presets, validation, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
 from agent6.ui import path_completion
@@ -104,7 +104,7 @@ def draft_workspace(
     """
     try:
         cfg = layer.load_effective(cwd, config_paths).config
-    except ConfigError:
+    except validation.ConfigError:
         return None
     workspace = worktrees.child_worktree_root(cfg, cwd, name)
     return workspace if (workspace / ".git").exists() else None
@@ -645,7 +645,7 @@ def config_suggestions(
         return layer_presets.available_preset_names(cwd, config_paths)
     try:
         eff = layer.load_effective(cwd, config_paths)
-    except ConfigError:
+    except validation.ConfigError:
         return []
     if provider is not None and re.fullmatch(r"models\.(planner|worker|reviewer)\.model", key):
         return (

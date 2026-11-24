@@ -20,7 +20,7 @@ import time
 import pytest
 
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
@@ -45,11 +45,11 @@ def _serving(
     process.write_session_netns_pid(session_dir, net.holder_pid)
     dispatcher = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+        config=config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}}),
         isolation="full",
         session_dir=session_dir,
         command_access=session_runtime.prepare_local_execution(
-            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+            config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}}),
             tmp_path,
             "full",
             session_net=net,
@@ -89,7 +89,7 @@ def test_exec_runs_where_the_agent_runs(tmp_path: pathlib.Path) -> None:
     try:
         code = net_cmds.exec_in_session(
             layout,
-            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+            config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}}),
             tmp_path,
             (
                 "/usr/bin/python3",

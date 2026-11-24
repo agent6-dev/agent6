@@ -192,10 +192,10 @@ def test_git_ops_skips_repo_hooks_by_default(tmp_path: pathlib.Path) -> None:
 
     Calling set_policy first would pin only the explicit path.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     assert "core.hooksPath=/dev/null" in git_policy.git_hardening_flags(tmp_path)
-    assert Config().git.run_repo_hooks is False  # the config default that sets it
+    assert config_model.Config().git.run_repo_hooks is False  # the config default that sets it
 
     _init_repo(tmp_path)
     marker = tmp_path / "HOOK_FIRED"

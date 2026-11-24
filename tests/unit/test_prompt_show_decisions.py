@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory
 from agent6.harness.prompt import preview as prompt_preview
 
@@ -21,7 +21,7 @@ def test_prompt_show_carries_the_recorded_decisions(tmp_path: pathlib.Path) -> N
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     state_dir = tmp_path / "state"
     memory.record_decision(state_dir, question="Which greeting?", answer="Hi NAME", session="s1")
-    cfg = Config()
+    cfg = config_model.Config()
     prompt = prompt_preview.system_prompt_for(cfg, root, "run", state_dir=state_dir)
     assert "<decisions>" in prompt
     assert "A: Hi NAME" in prompt

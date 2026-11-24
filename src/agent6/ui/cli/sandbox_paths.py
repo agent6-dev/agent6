@@ -11,7 +11,7 @@ from collections.abc import Callable
 from agent6 import kinds, path_safety
 from agent6 import paths as agent6_paths
 from agent6.app import confine
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import tool_paths
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import policy as tools_policy
@@ -83,7 +83,7 @@ def _grant_rows(grants: tools_policy.Grants) -> list[Row]:
 
 
 def _home_row(
-    cfg: Config,
+    cfg: config_model.Config,
     selected: kinds.IsolationLevel,
     root: pathlib.Path,
     git_grant: pathlib.Path | None,
@@ -144,7 +144,7 @@ def file_tool_rows(ws: path_safety.Workspace, grants: tools_policy.Grants) -> li
 
 
 def _git_rows(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     selected: kinds.IsolationLevel,
     git_grant: pathlib.Path | None,
@@ -175,7 +175,7 @@ def _git_rows(
     return rows
 
 
-def unconfined_rows(cfg: Config, root: pathlib.Path) -> list[Row]:
+def unconfined_rows(cfg: config_model.Config, root: pathlib.Path) -> list[Row]:
     """Return the deliberate boundary entries for commands running without a jail."""
     user = agent6_paths.effective_user()
     rows = [
@@ -264,7 +264,7 @@ def _system_rows(
 
 
 def command_rows(
-    cfg: Config,
+    cfg: config_model.Config,
     ws: path_safety.Workspace,
     grants: tools_policy.Grants,
     selected: kinds.IsolationLevel,

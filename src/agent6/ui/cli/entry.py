@@ -565,10 +565,7 @@ def _dispatch_answer(args: argparse.Namespace) -> int:
 
 def _dispatch_exec_new(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 exec --new [CMD...]`, run in a fresh sandbox."""
-    from agent6.config import (
-        ConfigError,
-        layer,
-    )
+    from agent6.config import layer, validation
     from agent6.ui.cli import exec_cmds
 
     rest: list[str] = list(args.rest)
@@ -581,7 +578,7 @@ def _dispatch_exec_new(args: argparse.Namespace) -> int:
         return 2
     try:
         eff = layer.load_effective(pathlib.Path.cwd(), args.config)
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         common.error(f"{exc}")
         return 2
     argv = tuple(rest[1:] if rest[:1] == ["--"] else rest)
@@ -602,10 +599,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     Returns:
         The command's exit code; 2 when agent6 cannot run it.
     """
-    from agent6.config import (
-        ConfigError,
-        layer,
-    )
+    from agent6.config import layer, validation
     from agent6.ui.cli import net_cmds
 
     if args.new:
@@ -631,7 +625,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
         return 2
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), args.config).config
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         common.error(f"{exc}")
         return 2
     return net_cmds.exec_in_session(

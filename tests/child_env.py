@@ -21,7 +21,7 @@ from agent6 import budget, child_records, directive, kinds, paths
 from agent6.app import worktrees
 from agent6.app.parallel import children
 from agent6.app.parallel import launch as child_launch
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop_conversation, loop_state, run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import panel as parallel_panel
@@ -139,9 +139,9 @@ def create_record(
     return dest
 
 
-def config(url: str = "http://127.0.0.1:1/v1", *, tool: bool = False) -> Config:
+def config(url: str = "http://127.0.0.1:1/v1", *, tool: bool = False) -> config_model.Config:
     """Configure a local provider and a child's review authority."""
-    return Config.model_validate(
+    return config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": url}},
             "models": {"default": {"model": "p/base"}},
@@ -153,7 +153,10 @@ def config(url: str = "http://127.0.0.1:1/v1", *, tool: bool = False) -> Config:
 
 
 def launch_worker(
-    repo: pathlib.Path, clone: pathlib.Path, cfg: Config, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path,
+    clone: pathlib.Path,
+    cfg: config_model.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[pathlib.Path, child_launch.ChildLaunch]:
     """Create a private worker launch and install its provenance in the environment."""
     child_repo.clone_worktree(repo, clone)
@@ -180,7 +183,10 @@ def launch_worker(
 
 
 def dispatcher(
-    repo: pathlib.Path, session_dir: pathlib.Path, cfg: Config, meter: budget.BudgetTracker
+    repo: pathlib.Path,
+    session_dir: pathlib.Path,
+    cfg: config_model.Config,
+    meter: budget.BudgetTracker,
 ) -> parallel_dispatch.ParallelDispatcher:
     """Build the common dispatcher with the worker launch authority."""
     spawner = children.build_parent_spawner(

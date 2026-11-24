@@ -23,7 +23,8 @@ from agent6.app.machine import agent, bundle
 from agent6.app.machine import draft as drafting
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, layer
+from agent6.config import layer, validation
+from agent6.config import model as config_model
 from agent6.machine import schema
 from agent6.sessions import event_log, id, journal, layout, lock, process
 from agent6.vcs.git import ops as git_ops
@@ -123,7 +124,7 @@ def _open_draft(
     config_paths: tuple[pathlib.Path, ...],
     budget_overrides: session_setup.BudgetOverrides | None,
     reporter: app_reporter.Reporter,
-    confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
+    confirm_unconfined: Callable[[kinds.IsolationLevel, config_model.Config], bool],
 ) -> drafting.Draft:
     """Check the config and open the draft journal before preparing the workspace.
 
@@ -148,7 +149,7 @@ def _open_draft(
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
         cfg.require_runnable("worker")
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         reporter.error(str(exc))
         raise preflight.SessionRefusedError(2) from exc
     missing = session_setup.check_provider_keys(cfg)
@@ -316,7 +317,7 @@ def create_machine(
     *,
     output: pathlib.Path | None,
     max_attempts: int,
-    confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
+    confirm_unconfined: Callable[[kinds.IsolationLevel, config_model.Config], bool],
     config_paths: tuple[pathlib.Path, ...] = (),
     budget_overrides: session_setup.BudgetOverrides | None = None,
 ) -> int:

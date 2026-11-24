@@ -14,7 +14,7 @@ import httpx2
 import pytest
 
 from agent6 import paths
-from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry, secret_store
+from agent6.config import provider_config, secret_store
 from agent6.providers import oauth, oauth_protocol, transport
 from agent6.ui.cli import connect_status
 from agent6.ui.cli import entry as cli_entry
@@ -120,9 +120,9 @@ def test_status_lists_with_bound_bearer_without_refresh_or_exchange(
     status_config.write_text(config)
     raw = tomllib.loads(config)["providers"]["work"]
     entry = (
-        ChatGPTProviderEntry.model_validate(raw)
+        provider_config.ChatGPTProviderEntry.model_validate(raw)
         if kind == "chatgpt"
-        else OpenAIProviderEntry.model_validate(raw)
+        else provider_config.OpenAIProviderEntry.model_validate(raw)
     )
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("access-secret", "refresh-secret", 3600), entry, now=1000
@@ -257,7 +257,7 @@ def test_status_token_life_uses_the_largest_two_units(
     monkeypatch: pytest.MonkeyPatch, remaining: int, expected: str
 ) -> None:
     """A token's life uses days and hours, hours and minutes, minutes, or expired."""
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("access-secret", "refresh-secret", remaining), entry, now=1000
     )

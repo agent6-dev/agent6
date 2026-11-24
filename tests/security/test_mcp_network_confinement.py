@@ -21,7 +21,7 @@ import subprocess
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
 
@@ -35,7 +35,7 @@ def _probe(script: str, cwd: pathlib.Path, *, network: kinds.NetworkMode = "none
     stdout pipe.
     """
     argv = ("/usr/bin/python3", "-c", script)
-    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network=network)
+    policy = tools_policy.jail_policy(cwd, config_model.Config(), "full", argv, network=network)
     proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,

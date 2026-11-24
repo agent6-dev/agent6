@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy
 
@@ -23,7 +23,9 @@ _PROBE = (
 
 
 def _probe(root: pathlib.Path, network: kinds.NetworkMode) -> str:
-    built = policy.jail_policy(root, Config(), "full", ("sh", "-c", _PROBE), network=network)
+    built = policy.jail_policy(
+        root, config_model.Config(), "full", ("sh", "-c", _PROBE), network=network
+    )
     res = jail.run_in_jail(built)
     return res.stdout + res.stderr
 

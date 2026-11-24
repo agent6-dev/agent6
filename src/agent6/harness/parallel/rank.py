@@ -16,7 +16,8 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import child_records, errors, kinds, llm_json
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.harness.parallel import panel as parallel_panel
 from agent6.harness.parallel import repo as child_repo
 from agent6.harness.review import verdict as review_verdict
@@ -82,7 +83,7 @@ def mechanical_ranking(candidates: Sequence[child_records.CandidateBrief]) -> tu
     return tuple(c.session_id for c in ranked)
 
 
-def configured_judges(cfg: Config, *, log: Callable[[str], None]) -> tuple[Judge, ...]:
+def configured_judges(cfg: config_model.Config, *, log: Callable[[str], None]) -> tuple[Judge, ...]:
     """Resolve `[harness.parallel].judges` to the reviewers that will sit.
 
     Args:
@@ -99,7 +100,7 @@ def configured_judges(cfg: Config, *, log: Callable[[str], None]) -> tuple[Judge
             continue
         try:
             settings = cfg.child_settings(selector)
-        except ConfigError as exc:
+        except validation.ConfigError as exc:
             log(f"judge {selector} names no model ({exc}); it ranks nothing")
             continue
         if settings is not None:

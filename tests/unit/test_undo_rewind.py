@@ -650,7 +650,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     Recording the parent's checkout handed the child's model a writable checkout it was never given.
     """
     from agent6.app import stamps
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -673,7 +673,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
         base_sha=c1,
         base_branch="main",
         run_branch="agent6/parent-AAAA11",
-        cfg=Config(),
+        cfg=config_model.Config(),
         mode="run",
     )
     _checkpoint(parent, 1, head_sha=c1, ops=1)
@@ -689,7 +689,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
         base_sha=c1,
         base_branch="main",
         run_branch="agent6/fork-BBBB22",
-        cfg=Config(),
+        cfg=config_model.Config(),
         mode="run",
         parent_session_id="parent-AAAA11",
         forked_from_turn=2,

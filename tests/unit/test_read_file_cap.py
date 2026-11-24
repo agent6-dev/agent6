@@ -15,12 +15,12 @@ import pathlib
 import pytest
 
 from agent6 import path_safety
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import dispatch, fs_tools
 
 
 def _read(root: pathlib.Path, **args: object) -> dict[str, object]:
-    d = dispatch.ToolDispatcher(root=root, config=Config(), isolation="none")
+    d = dispatch.ToolDispatcher(root=root, config=config_model.Config(), isolation="none")
     try:
         return d.dispatch("read_file", {"path": "f.txt", **args}).to_wire()
     finally:

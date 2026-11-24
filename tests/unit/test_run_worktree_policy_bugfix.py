@@ -23,15 +23,15 @@ from agent6 import paths
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import (
-    Config,
-    GitConfig,
-    ModelsConfig,
-    OpenAIProviderEntry,
-    RoleModel,
-    SandboxConfig,
+    git_config,
+    harness_config,
     layer,
     layer_data,
+    model_roles,
+    provider_config,
+    sandbox_config,
 )
+from agent6.config import model as config_model
 from agent6.models import validate
 from agent6.sessions import layout
 from agent6.sessions import manifest as sessions_manifest
@@ -56,19 +56,21 @@ def _init_repo(repo: pathlib.Path) -> None:
     _git(repo, "commit", "-q", "-m", "initial")
 
 
-def _runnable_cfg(git_cfg: GitConfig) -> Config:
-    return Config(
+def _runnable_cfg(git_cfg: git_config.GitConfig) -> config_model.Config:
+    return config_model.Config(
         providers={
-            "openrouter": OpenAIProviderEntry(
+            "openrouter": provider_config.OpenAIProviderEntry(
                 backend="openai",
                 base_url="https://openrouter.ai/api/v1",
             )
         },
-        models=ModelsConfig(default=RoleModel(provider="openrouter", model="kimi")),
+        models=model_roles.ModelsConfig(
+            default=harness_config.RoleModel(provider="openrouter", model="kimi")
+        ),
         git=git_cfg,
         # Answerable, so the worktree policy under test is what decides: the
         # `ask` default has nobody to answer it here and is refused first.
-        sandbox=SandboxConfig(run_commands="allow"),
+        sandbox=sandbox_config.SandboxConfig(run_commands="allow"),
     )
 
 
@@ -80,7 +82,9 @@ class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not
 _seen_at_stop: list[bool] = []
 
 
-def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_policy: bool) -> None:
+def _patch_common(
+    monkeypatch: pytest.MonkeyPatch, cfg: config_model.Config, *, stop_after_policy: bool
+) -> None:
     def _load_effective(*a: object, **k: object) -> layer_data.EffectiveConfig:
         return layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
@@ -153,7 +157,7 @@ def test_untracked_files_are_not_dirt_and_are_recorded(
     _init_repo(repo)
     (repo / "notes.txt").write_text("mine\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
+    _patch_common(monkeypatch, _runnable_cfg(git_config.GitConfig()), stop_after_policy=True)
 
     with pytest.raises(_Stop):
         run._cmd_run((), "do a thing")
@@ -175,7 +179,7 @@ def test_modified_tracked_files_refuse_when_nobody_can_answer(
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     monkeypatch.chdir(repo)
     # stdin is not a terminal under pytest and no away-mode is set: nobody to ask.
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
+    _patch_common(monkeypatch, _runnable_cfg(git_config.GitConfig()), stop_after_policy=True)
 
     rc = run._cmd_run((), "do a thing")
 
@@ -199,7 +203,7 @@ def test_answer_stash_stashes_tracked_changes_only(
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     (repo / "notes.txt").write_text("mine\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
+    _patch_common(monkeypatch, _runnable_cfg(git_config.GitConfig()), stop_after_policy=True)
     asked = _answering_frontend(monkeypatch, answer)
 
     with pytest.raises(_Stop):
@@ -226,7 +230,7 @@ def test_answer_include_starts_with_the_changes_in_place(
     _init_repo(repo)
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
+    _patch_common(monkeypatch, _runnable_cfg(git_config.GitConfig()), stop_after_policy=True)
     _answering_frontend(monkeypatch, "include")
 
     with pytest.raises(_Stop):
@@ -248,7 +252,7 @@ def test_answer_cancel_parks_the_run_with_its_task(
     _init_repo(repo)
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
+    _patch_common(monkeypatch, _runnable_cfg(git_config.GitConfig()), stop_after_policy=True)
     _answering_frontend(monkeypatch, answer)
 
     rc = run._cmd_run((), "do a thing")
@@ -272,7 +276,9 @@ def test_auto_stash_stashes_without_asking(
     _init_repo(repo)
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig(dirty_tree="stash")), stop_after_policy=True)
+    _patch_common(
+        monkeypatch, _runnable_cfg(git_config.GitConfig(dirty_tree="stash")), stop_after_policy=True
+    )
     asked = _answering_frontend(monkeypatch, "cancel")
 
     with pytest.raises(_Stop):
@@ -293,7 +299,7 @@ def test_dirty_tree_include_includes_without_asking(
     _init_repo(repo)
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    cfg = _runnable_cfg(GitConfig(dirty_tree="include"))
+    cfg = _runnable_cfg(git_config.GitConfig(dirty_tree="include"))
     _patch_common(monkeypatch, cfg, stop_after_policy=True)
     asked = _answering_frontend(monkeypatch, "cancel")
 
@@ -326,7 +332,7 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     assert git_ops.chain_commit(
         repo, "agent6 turn 1", ref=git_read.chain_ref_for(prior.name), fallback_parent=head
     )
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig()), stop_after_policy=True)
+    _patch_common(monkeypatch, _runnable_cfg(git_config.GitConfig()), stop_after_policy=True)
 
     assert run._cmd_run((), "do a thing") == 2
     err = capsys.readouterr().err

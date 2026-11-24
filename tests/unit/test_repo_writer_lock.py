@@ -26,7 +26,7 @@ from agent6.app import execution, stamps
 from agent6.app import run as app_run
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.models import validate
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, manifest
@@ -155,7 +155,7 @@ def _no_missing_keys(*_a: object, **_k: object) -> None:
     return None
 
 
-def _load_cfg() -> Config:
+def _load_cfg() -> config_model.Config:
     from agent6.config import layer
 
     return layer.load_effective(pathlib.Path.cwd(), ()).config
@@ -261,7 +261,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
     stamps.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
     called: dict[str, Any] = {}
 
-    def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:
+    def fake_run_task(cfg: config_model.Config, task: str, **kw: Any) -> int:
         called["task"] = task
         called["session_id"] = kw.get("session_id")
         called["mode"] = kw.get("mode")
@@ -487,7 +487,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     stamps.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
     called: dict[str, Any] = {}
 
-    def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:
+    def fake_run_task(cfg: config_model.Config, task: str, **kw: Any) -> int:
         called["initial_steer"] = kw.get("initial_steer")
         return 0
 

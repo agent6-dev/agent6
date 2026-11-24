@@ -12,11 +12,11 @@ import pytest
 from agent6.app import preflight as app_preflight
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 
 
-def _ask_cfg() -> Config:
-    return Config.model_validate({"sandbox": {"run_commands": "ask"}})
+def _ask_cfg() -> config_model.Config:
+    return config_model.Config.model_validate({"sandbox": {"run_commands": "ask"}})
 
 
 def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
@@ -67,7 +67,7 @@ def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:
 def test_answerable_runs_are_not_refused(
     tui: bool, away: str, commands: str, can_ask: bool
 ) -> None:
-    cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": commands}})
     assert (
         app_preflight.headless_approval_refusal(cfg, tui_enabled=tui, away=away, can_ask=can_ask)
         is None
@@ -88,12 +88,12 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
 
     seen: list[bool] = []
 
-    def _capture(captured: Config) -> None:
+    def _capture(captured: config_model.Config) -> None:
         seen.append(captured.git.run_repo_hooks)
 
     monkeypatch.setattr(session_setup, "apply_git_ops_policy", _capture)
     monkeypatch.chdir(tmp_path)
-    cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
+    cfg = config_model.Config.model_validate({"git": {"run_repo_hooks": True}})
     # It refuses immediately after (no git identity here); the policy is set
     # before anything git touches the repo, which is the point.
     from agent6.app import reporter
@@ -151,7 +151,7 @@ def test_a_misspelled_away_mode_refuses_when_commands_are_settled(commands: str)
     Away mode also decides fetch, MCP and question prompts, so settling run_command does not make an
     invalid launcher value harmless.
     """
-    cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": commands}})
     refusal = app_preflight.headless_approval_refusal(
         cfg, tui_enabled=False, away="denied", can_ask=False
     )
@@ -192,7 +192,7 @@ def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> N
     parks until a front-end attaches. The start says so and names the away mode that auto-denies;
     a run that can be asked, or one with an away mode, gets no note.
     """
-    allowed = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    allowed = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     note = app_preflight.headless_parking_note(allowed, tui_enabled=False, away="", can_ask=False)
     assert note is not None
     assert "parks the run" in note and "AGENT6_DETACHED_AWAY=deny" in note
@@ -255,7 +255,7 @@ def test_the_route_preflight_precedes_isolation(
     said: list[str] = []
     with pytest.raises(_Stop):
         lifecycle.run_task(
-            Config(),
+            config_model.Config(),
             "t",
             started_at=time.time(),
             frontend=front,

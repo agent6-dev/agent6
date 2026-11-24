@@ -6,7 +6,7 @@ import pytest
 
 from agent6 import errors, kinds, pack, path_safety, paths
 from agent6.app import confine
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.sessions import lock
 from agent6.tools import dispatch
@@ -23,7 +23,7 @@ def test_the_directory_is_an_ordinary_one_to_the_file_tools(
     tree = tmp_path / ".agent6/worktrees/run-1"
     tree.mkdir(parents=True)
     (tree / "module.py").write_text("def kept_symbol():\n    pass\n")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation=isolation)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config(), isolation=isolation)
     try:
         read = d.dispatch("read_file", {"path": ".agent6/worktrees/run-1/module.py"}).to_wire()
         assert "kept_symbol" in str(read)
@@ -73,7 +73,7 @@ def test_present_pack_refuses_before_exposure_warning(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     manifest = pack.pack(tmp_path)
-    refusal = confine.config_refusal(Config(), isolation, tmp_path)
+    refusal = confine.config_refusal(config_model.Config(), isolation, tmp_path)
     assert refusal is not None
     assert manifest.origin.host in refusal and manifest.origin.home in refusal
     assert "agent6 unpack" in refusal and "delete" in refusal
@@ -90,7 +90,7 @@ def test_nested_packs_refuse_at_run_boundary(
         child.mkdir(parents=True)
         (child / ".git").mkdir()
         pack.pack(child)
-    refusal = confine.config_refusal(Config(), isolation, tmp_path)
+    refusal = confine.config_refusal(config_model.Config(), isolation, tmp_path)
     assert refusal is not None
     for name in ("child", "other/deeper"):
         assert str(tmp_path / name / ".agent6") in refusal
@@ -106,7 +106,7 @@ def test_pack_scan_prunes_git_and_does_not_follow_symlinks(tmp_path: pathlib.Pat
     outside.mkdir()
     pack.pack(outside)
     (root / "link").symlink_to(outside, target_is_directory=True)
-    assert confine.config_refusal(Config(), "full", root) is None
+    assert confine.config_refusal(config_model.Config(), "full", root) is None
 
 
 def test_pack_refuses_while_a_user_of_the_checkout_holds_the_lease(tmp_path: pathlib.Path) -> None:

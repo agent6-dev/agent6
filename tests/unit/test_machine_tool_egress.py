@@ -13,7 +13,7 @@ import pytest
 from agent6 import kinds, paths
 from agent6.app.machine import bundle as machine_bundle
 from agent6.app.machine import host_preflight, run, state_configs
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.machine import contracts, live_world, schema, semantics
 from agent6.machine import engine as machine_engine
 from agent6.machine import journal as machine_journal
@@ -171,13 +171,13 @@ def _world(
     tmp_path: pathlib.Path,
     isolation: kinds.IsolationLevel,
     *,
-    cfg: Config | None = None,
+    cfg: config_model.Config | None = None,
     protect_paths: tuple[pathlib.Path, ...] = (),
     data_dir: pathlib.Path | None = None,
 ) -> live_world.LiveWorld:
     """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
     factory = run.machine_tool_policy_factory(
-        {"": state_configs.StateConfig(cfg or Config(), isolation)},
+        {"": state_configs.StateConfig(cfg or config_model.Config(), isolation)},
         tmp_path,
         protect_paths=protect_paths,
         data_dir=data_dir,
@@ -200,7 +200,7 @@ def test_machine_tool_jail_carries_operator_grants_and_protect_git(
     """
     seen = _patch_jail(monkeypatch)
     (tmp_path / ".git").mkdir()
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "extra_read_paths": ["/srv/ro"],
@@ -253,7 +253,9 @@ def test_liveworld_tool_joins_the_host_network_when_its_config_says_host(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = _world(tmp_path, "full", cfg=Config.model_validate({"sandbox": {"network": "host"}}))
+    world = _world(
+        tmp_path, "full", cfg=config_model.Config.model_validate({"sandbox": {"network": "host"}})
+    )
     world.run_tool(("true",), 5.0)
     assert seen[-1].network == "host"
 
@@ -326,7 +328,7 @@ def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
     bundle = tmp_path / "machines"
     (bundle / "scripts").mkdir(parents=True)
     factory = run.machine_tool_policy_factory(
-        {"": state_configs.StateConfig(Config(), "full")},
+        {"": state_configs.StateConfig(config_model.Config(), "full")},
         tmp_path,
         protect_paths=(),
         data_dir=None,

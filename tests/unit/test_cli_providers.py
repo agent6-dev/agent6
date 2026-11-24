@@ -12,14 +12,8 @@ from unittest import mock
 import pytest
 
 from agent6.app import role_providers
-from agent6.config import (
-    ChatGPTProviderEntry,
-    Config,
-    ModelsConfig,
-    OpenAIProviderEntry,
-    RoleModel,
-    secret_store,
-)
+from agent6.config import harness_config, model_roles, provider_config, secret_store
+from agent6.config import model as config_model
 from agent6.providers import chatgpt, oauth, oauth_protocol, openai, provider_types
 
 
@@ -29,7 +23,7 @@ def test_chatgpt_binding_refuses_before_provider_construction(
 ) -> None:
     """Inference and usage cannot acquire a provider from an unbound sign-in."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     if state == "old_format":
         secret_store.save_secret(
             "work",
@@ -48,9 +42,11 @@ def test_chatgpt_binding_refuses_before_provider_construction(
         secret_store.save_oauth_grant(
             "work", dataclasses.replace(grant, binding="other", account_id="acct")
         )
-    cfg = Config(
+    cfg = config_model.Config(
         providers={"work": entry},
-        models=ModelsConfig(default=RoleModel(provider="work", model="m")),
+        models=model_roles.ModelsConfig(
+            default=harness_config.RoleModel(provider="work", model="m")
+        ),
     )
     message = (
         "No ChatGPT sign-in stored for provider 'work'"
@@ -69,7 +65,7 @@ def test_chatgpt_construction_reads_account_through_shared_holder(
 ) -> None:
     """The adapter gets its account header from the bound holder, not stored metadata."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
     )
@@ -79,9 +75,11 @@ def test_chatgpt_construction_reads_account_through_shared_holder(
         return "from-holder"
 
     monkeypatch.setattr(oauth.OAuthCredential, "account_id", account)
-    cfg = Config(
+    cfg = config_model.Config(
         providers={"work": entry},
-        models=ModelsConfig(default=RoleModel(provider="work", model="m")),
+        models=model_roles.ModelsConfig(
+            default=harness_config.RoleModel(provider="work", model="m")
+        ),
     )
     provider = role_providers.build_role_provider(
         cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
@@ -93,16 +91,18 @@ def test_chatgpt_construction_reads_account_through_shared_holder(
 
 def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     # Dropping `extra_body` or `extra_headers` from the pass-through would make the config a no-op.
-    cfg = Config(
+    cfg = config_model.Config(
         providers={
-            "openrouter": OpenAIProviderEntry(
+            "openrouter": provider_config.OpenAIProviderEntry(
                 backend="openai",
                 base_url="https://openrouter.ai/api/v1",
                 extra_headers={"X-Title": "agent6"},
                 extra_body={"provider": {"sort": "throughput"}},
             )
         },
-        models=ModelsConfig(default=RoleModel(provider="openrouter", model="kimi")),
+        models=model_roles.ModelsConfig(
+            default=harness_config.RoleModel(provider="openrouter", model="kimi")
+        ),
     )
     prov = role_providers.build_role_provider(
         cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
@@ -114,15 +114,19 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
 
 def test_role_builders_stamp_actors_and_review_resolution_stays_pure() -> None:
     """Calls sharing a model route have distinct actors in their transcripts."""
-    from agent6.config import ReviewConfig, ReviewerConfig
+    from agent6.config import harness_config
 
-    cfg = Config(
-        providers={"o": OpenAIProviderEntry(backend="openai", base_url="https://x/v1")},
-        models=ModelsConfig(
-            default=RoleModel(provider="o", model="m"),
-            reviewer=RoleModel(provider="o", model="m"),
+    cfg = config_model.Config(
+        providers={
+            "o": provider_config.OpenAIProviderEntry(backend="openai", base_url="https://x/v1")
+        },
+        models=model_roles.ModelsConfig(
+            default=harness_config.RoleModel(provider="o", model="m"),
+            reviewer=harness_config.RoleModel(provider="o", model="m"),
         ),
-        review=ReviewConfig(when="verify_fail", reviewers=(ReviewerConfig(focus="security"),)),
+        review=harness_config.ReviewConfig(
+            when="verify_fail", reviewers=(harness_config.ReviewerConfig(focus="security"),)
+        ),
     )
 
     sink = mock.MagicMock()

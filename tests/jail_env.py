@@ -19,7 +19,7 @@ import sys
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect
 from agent6.tools import policy
 
@@ -44,4 +44,4 @@ def require_userns_jail() -> None:
 
 def clone_jail(clone: pathlib.Path) -> kinds.JailPolicy:
     """Return the policy a command in a clone gets under the default config on this host."""
-    return policy.workspace_jail(clone, Config(), ran_under="")
+    return policy.workspace_jail(clone, config_model.Config(), ran_under="")

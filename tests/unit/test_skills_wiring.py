@@ -7,7 +7,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import kinds
-from agent6.config import Config, load_config
+from agent6.config import model as config_model
 from agent6.context import skills
 from agent6.harness import run_chain
 from agent6.harness.prompt import blocks as prompt_blocks
@@ -25,10 +25,10 @@ model = "anthropic/x"
 """
 
 
-def _config(tmp_path: pathlib.Path, extra: str = "") -> Config:
+def _config(tmp_path: pathlib.Path, extra: str = "") -> config_model.Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML + extra, encoding="utf-8")
-    return load_config(p)
+    return config_model.load_config(p)
 
 
 def _repo(tmp_path: pathlib.Path) -> kinds.RepoSummary:

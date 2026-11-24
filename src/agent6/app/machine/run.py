@@ -26,7 +26,7 @@ from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import ConfigError
+from agent6.config import validation
 from agent6.harness.parallel import repo as child_repo
 from agent6.machine import contracts, live_world, schema, semantics
 from agent6.machine import engine as machine_engine
@@ -443,7 +443,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     except detect.IsolationUnavailableError as exc:
         reporter.refuse(str(exc))
         return 2
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         reporter.error(str(exc))
         return 2
     cfg = configs.machine.config
@@ -535,7 +535,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         try:
             for name in agent_states:
                 configs.states[name].config.require_runnable("worker")
-        except (ConfigError, pydantic.ValidationError) as exc:
+        except (validation.ConfigError, pydantic.ValidationError) as exc:
             reporter.error(str(exc))
             return 2
         # The allowlist is the operator's own: no overlay is merged into it.

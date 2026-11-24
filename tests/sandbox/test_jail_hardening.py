@@ -27,14 +27,14 @@ def test_a_jailed_command_cannot_create_a_device_node(
     device type, and by Landlock, which grants MakeChar/MakeBlock nowhere; this pin cannot
     tell the two apart.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sandbox import jail
     from agent6.tools import policy
 
     res = jail.run_in_jail(
         policy.jail_policy(
             tmp_path,
-            Config(),
+            config_model.Config(),
             level,
             ("sh", "-c", "mknod disk b 8 0; mknod tty c 5 0; ls disk tty 2>&1"),
             network="none",
@@ -53,14 +53,14 @@ def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: pathlib.Path) -> Non
     for an unrelated reason.
     """
     level = "full"
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sandbox import jail
     from agent6.tools import policy
 
     res = jail.run_in_jail(
         policy.jail_policy(
             tmp_path,
-            Config(),
+            config_model.Config(),
             level,
             ("sh", "-c", f"mkfifo {level}.pipe && test -p {level}.pipe && echo fifo-ok"),
             network="none",
@@ -644,7 +644,7 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: pathlib.Path) -> None:
     it); a mount without a grant does nothing. What a command writes there is invisible to
     the host and gone when the jail exits.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sandbox import jail
     from agent6.tools import policy
 
@@ -652,7 +652,7 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: pathlib.Path) -> None:
     res = jail.run_in_jail(
         policy.jail_policy(
             tmp_path,
-            Config(),
+            config_model.Config(),
             "full",
             (
                 "sh",
@@ -780,12 +780,12 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: pathli
     import json
     import subprocess
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sandbox import jail
     from agent6.tools import policy
 
     spec = jail.policy_spec(
-        policy.jail_policy(tmp_path, Config(), "full", ("/bin/true",), network="none")
+        policy.jail_policy(tmp_path, config_model.Config(), "full", ("/bin/true",), network="none")
     )
     spec["mode"] = "serve"
     req = {"kind": "background", "argv": ["/bin/true"], "a_field_from_a_newer_agent6": 1}
@@ -807,7 +807,7 @@ def test_partial_reads_the_device_nodes_but_not_the_hosts_dev_shm(tmp_path: path
     The host's `/dev/shm` holds every process of this user's shared memory, readable to a
     jailed command through the directory rule.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sandbox import jail
     from agent6.tools import policy
 
@@ -820,7 +820,7 @@ def test_partial_reads_the_device_nodes_but_not_the_hosts_dev_shm(tmp_path: path
         res = jail.run_in_jail(
             policy.jail_policy(
                 tmp_path,
-                Config(),
+                config_model.Config(),
                 "partial",
                 (
                     "sh",

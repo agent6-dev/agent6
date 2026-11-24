@@ -7,7 +7,8 @@ import pathlib
 import pytest
 
 from agent6.app.machine import host_preflight
-from agent6.config import Config, ConfigError, layer, sandbox_config, surface_config
+from agent6.config import layer, sandbox_config, surface_config, validation
+from agent6.config import model as config_model
 from agent6.machine import authoring
 from agent6.machine import schema as machine_schema
 from agent6.tools import schema
@@ -26,7 +27,7 @@ def test_pass_env_text_names_explicit_config_layers(tmp_path: pathlib.Path) -> N
     state = machine_schema.ToolState.model_validate(
         {"kind": "tool", "command": ["true"], "timeout_s": 1, "pass_env": ["TOKEN"], "on": {}}
     )
-    refusal = host_preflight.machine_pass_env_refusal(Config(), {"fetch": state})
+    refusal = host_preflight.machine_pass_env_refusal(config_model.Config(), {"fetch": state})
     assert refusal is not None
     description = surface_config.MachineConfig.model_fields["pass_env"].description or ""
     for text in (description, refusal, host_preflight.machine_pass_env_refusal.__doc__ or ""):
@@ -57,7 +58,7 @@ def test_preset_refusal_names_only_commands_that_accept_the_flag(
     tmp_path: pathlib.Path, source: str
 ) -> None:
     """A refused machine or explicit preset points to config, not a nonexistent machine flag."""
-    with pytest.raises(ConfigError) as exc:
+    with pytest.raises(validation.ConfigError) as exc:
         if source == "machine":
             layer.load_effective_with_overlay(tmp_path, {"agent6": {"preset": "demo"}})
         else:

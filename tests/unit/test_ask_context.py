@@ -235,7 +235,7 @@ def test_load_repo_summary_outside_git(tmp_path: pathlib.Path) -> None:
 
 def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
     from agent6 import kinds
-    from agent6.config import load_config
+    from agent6.config import model as config_model
     from agent6.harness.prompt import blocks as prompt_blocks
 
     cfg_path = tmp_path / "agent6.toml"
@@ -264,7 +264,7 @@ def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
         is_git=False,
     )
     prompt = prompt_blocks.build_system_prompt(
-        config=load_config(cfg_path), repo=repo, mode="ask", skills=None
+        config=config_model.load_config(cfg_path), repo=repo, mode="ask", skills=None
     )
     assert "not a git repository" in prompt
     assert "branch=" not in prompt  # no fake repo header

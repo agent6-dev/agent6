@@ -29,7 +29,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import ipc
 from agent6.tools import dispatch
@@ -40,7 +40,7 @@ def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatch
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "allow"},
             "harness": {"command_checkin_s": checkin},
@@ -144,7 +144,7 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: pathlib.Path) -> None:
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "allow"},
             "harness": {
@@ -241,7 +241,7 @@ def test_a_mode_that_runs_commands_owns_background_commands(
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     d = dispatch.ToolDispatcher(
         root=root,
         config=cfg,
@@ -400,7 +400,7 @@ def test_a_plan_command_is_handed_back_at_the_check_in(tmp_path: pathlib.Path) -
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"run_commands": "allow"}, "harness": {"command_checkin_s": 0.3}}
     )
     d = dispatch.ToolDispatcher(

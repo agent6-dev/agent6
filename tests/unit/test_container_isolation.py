@@ -16,7 +16,7 @@ from agent6 import kinds, paths
 from agent6.app import confine, stamps
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.sandbox import container, detect
 from agent6.sessions import layout, manifest
@@ -53,8 +53,8 @@ reason = "done"
 """
 
 
-def _cfg(**sandbox: object) -> Config:
-    return Config.model_validate({"sandbox": {"isolation": "container", **sandbox}})
+def _cfg(**sandbox: object) -> config_model.Config:
+    return config_model.Config.model_validate({"sandbox": {"isolation": "container", **sandbox}})
 
 
 def test_the_container_table_validates_its_argv_and_workspace() -> None:
@@ -62,10 +62,10 @@ def test_the_container_table_validates_its_argv_and_workspace() -> None:
 
     A relative or traversing workspace path, an empty argv word and an unknown key refuse.
     """
-    cfg = Config.model_validate({})
+    cfg = config_model.Config.model_validate({})
     assert cfg.container.exec == () and cfg.container.runtime == ()
     assert cfg.container.workspace == "" and cfg.container.start == () and cfg.container.stop == ()
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "container": {
                 "exec": ["sudo", "-n", "docker", "exec", "-i", "agent6-dev"],
@@ -78,17 +78,17 @@ def test_the_container_table_validates_its_argv_and_workspace() -> None:
     )
     assert cfg.container.exec[0] == "sudo" and cfg.container.workspace == "/workspaces/agent6"
     with pytest.raises(pydantic.ValidationError, match="non-empty"):
-        Config.model_validate({"container": {"exec": ["docker", ""]}})
+        config_model.Config.model_validate({"container": {"exec": ["docker", ""]}})
     for bad in ("relative/path", "/a/../b", "/tab\there"):
         with pytest.raises(pydantic.ValidationError, match="absolute container path"):
-            Config.model_validate({"container": {"workspace": bad}})
+            config_model.Config.model_validate({"container": {"workspace": bad}})
     with pytest.raises(pydantic.ValidationError):
-        Config.model_validate({"container": {"image": "x"}})
+        config_model.Config.model_validate({"container": {"image": "x"}})
 
 
 def test_filling_the_table_alone_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """A `[container]` table under a local isolation level selects no container and probes none."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "none"}, "container": {"exec": ["docker", "exec", "-i", "x"]}}
     )
 
@@ -160,7 +160,7 @@ def test_the_start_warning_names_the_container_not_the_host(
 def test_selection_skips_the_unconfined_confirm(tmp_path: pathlib.Path) -> None:
     """The container is the boundary the operator chose; no `none` confirmation fires."""
 
-    def confirm(_level: kinds.IsolationLevel, _cfg: Config) -> bool:
+    def confirm(_level: kinds.IsolationLevel, _cfg: config_model.Config) -> bool:
         raise AssertionError("the unconfined confirm is for sandbox.isolation = none")
 
     reporter = app_reporter.Reporter(out=lambda _msg: None, err=lambda _msg: None)
@@ -179,7 +179,7 @@ def test_the_control_rows_name_the_container_as_the_owner() -> None:
     assert rows["sandbox.protect_git"].owner == "host file tools"
     assert rows["sandbox.extra_write_paths"].owner == "host file tools"
     assert rows["sandbox.memory_limit_mib"].owner == "agent6"
-    assert len(rows) == len(type(Config.model_validate({}).sandbox).model_fields)
+    assert len(rows) == len(type(config_model.Config.model_validate({}).sandbox).model_fields)
 
 
 def _discovery(
@@ -234,7 +234,7 @@ def test_exposures_name_host_paths_and_sockets_outside_the_workspace() -> None:
 def test_the_mounted_root_is_the_repository_of_a_linked_worktree(tmp_path: pathlib.Path) -> None:
     """Discovery looks up the workspace the container mounts, not the worktree under it."""
     repo = tmp_path / "repo"
-    cfg = Config.model_validate({"sandbox": {"isolation": "container"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "container"}})
     assert session_runtime.mounted_root(cfg, repo / "wt", repo / ".git") == repo
     assert session_runtime.mounted_root(cfg, repo, None) == repo
     child = repo / ".agent6/worktrees/repo-1/run-p1/child-1"
@@ -266,7 +266,7 @@ def test_the_prompt_tells_the_model_both_roots() -> None:
     assert "`/work`" in prompt and "`/home/op/repo`" in prompt
     for mode in ("run", "plan", "ask", "read_only"):
         local = prompt_blocks.build_system_prompt(
-            config=Config.model_validate({}), repo=repo, mode=mode, skills=None
+            config=config_model.Config.model_validate({}), repo=repo, mode=mode, skills=None
         )
         assert "__CONTAINER_RULE__" not in local and "inside a container" not in local
 
@@ -286,7 +286,7 @@ def test_exec_refuses_under_container_isolation(
             session_id="r1", policy=manifest.PolicyStamp(isolation="container", network="host")
         ),
     )
-    assert net_cmds._launch_policy(saved, Config.model_validate({}), None) is None
+    assert net_cmds._launch_policy(saved, config_model.Config.model_validate({}), None) is None
     assert "runtime's own exec" in capsys.readouterr().err
 
 

@@ -26,7 +26,7 @@ import sys
 from typing import TextIO
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest, process
@@ -257,7 +257,7 @@ def _recorded_workspace(
 
 
 def _launch_policy(
-    layout: sessions_layout.SessionLayout, cfg: Config, pid: int | None
+    layout: sessions_layout.SessionLayout, cfg: config_model.Config, pid: int | None
 ) -> tuple[kinds.IsolationLevel, kinds.NetworkMode | None] | None:
     """Return the isolation and network an exec joins the run under, or None after a refusal.
 
@@ -302,7 +302,7 @@ def _launch_policy(
 
 def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
     layout: sessions_layout.SessionLayout,
-    cfg: Config,
+    cfg: config_model.Config,
     cwd: pathlib.Path,
     argv: tuple[str, ...],
     *,

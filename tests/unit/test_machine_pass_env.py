@@ -13,7 +13,7 @@ import pathlib
 import pytest
 
 from agent6.app.machine import host_preflight, run, state_configs
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.machine import schema, semantics
 from agent6.ui.cli import machine_check
 
@@ -68,7 +68,7 @@ def test_the_operator_allowlist_is_never_a_machine_overlay_or_a_provider_key(
             _write(tmp_path, MACHINE + '\n[config.machine]\npass_env = ["X_TOKEN"]\n')
         )
     with pytest.raises(ValueError, match="never passes a provider key to a machine's tool"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "MY_KEY"}},
                 "machine": {"pass_env": ["MY_KEY"]},
@@ -78,10 +78,10 @@ def test_the_operator_allowlist_is_never_a_machine_overlay_or_a_provider_key(
 
 def test_a_variable_the_operator_has_not_allowed_refuses_the_run(tmp_path: pathlib.Path) -> None:
     spec = semantics.load_machine(_write(tmp_path, MACHINE))
-    refusal = host_preflight.machine_pass_env_refusal(Config(), spec.states)
+    refusal = host_preflight.machine_pass_env_refusal(config_model.Config(), spec.states)
     assert refusal is not None and "[states.fetch] asks for X_TOKEN, X_REGION" in refusal
     assert "[machine].pass_env does not allow" in refusal
-    allowed = Config.model_validate({"machine": {"pass_env": ["X_TOKEN", "X_REGION"]}})
+    allowed = config_model.Config.model_validate({"machine": {"pass_env": ["X_TOKEN", "X_REGION"]}})
     assert host_preflight.machine_pass_env_refusal(allowed, spec.states) is None
 
 
@@ -106,7 +106,7 @@ def test_the_jail_gets_only_the_declared_variables_that_are_set(
     monkeypatch.delenv("X_REGION", raising=False)
     monkeypatch.setenv("OTHER_SECRET", "no")
     factory = run.machine_tool_policy_factory(
-        {"fetch": state_configs.StateConfig(Config(), "full")},
+        {"fetch": state_configs.StateConfig(config_model.Config(), "full")},
         tmp_path,
         protect_paths=(),
         data_dir=None,

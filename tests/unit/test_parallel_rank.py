@@ -17,7 +17,8 @@ import pytest
 from agent6 import budget, child_records, directive, kinds, paths
 from agent6.app import reporter as app_reporter
 from agent6.app.parallel import children as app_children
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.harness import loop_conversation, loop_state, run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import merge as parallel_merge
@@ -237,7 +238,7 @@ def test_a_judges_opening_lists_each_attempt_with_its_verify_result_cost_and_dif
 
 def test_a_judge_is_a_reviewer_child_with_the_tools_a_reviewer_is_handed() -> None:
     """One contract per judge: the rank prompt, the reply cap, the reviewer's share of the tools."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {
@@ -283,14 +284,14 @@ def test_a_judge_is_a_reviewer_child_with_the_tools_a_reviewer_is_handed() -> No
     assert "run_command" in whole[0].contract.allowed_tools
     assert "apply_edit" not in whole[0].contract.allowed_tools
     # A role with no route, and no judge at all, rank nothing.
-    bare = Config.model_validate({"harness": {"parallel": {"judges": []}}})
+    bare = config_model.Config.model_validate({"harness": {"parallel": {"judges": []}}})
     assert parallel_rank.configured_judges(bare, log=lambda _m: None) == ()
-    assert parallel_rank.configured_judges(Config(), log=lambda _m: None) == ()
+    assert parallel_rank.configured_judges(config_model.Config(), log=lambda _m: None) == ()
 
 
 def test_scheduling_checks_the_whole_roster_against_the_current_limit() -> None:
     """A config copy with a lower limit must not schedule a previously valid judge roster."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai"}},
             "models": {"default": {"model": "p/base"}},
@@ -301,7 +302,7 @@ def test_scheduling_checks_the_whole_roster_against_the_current_limit() -> None:
     narrowed = cfg.model_copy(
         update={"harness": cfg.harness.model_copy(update={"parallel": parallel})}
     )
-    with pytest.raises(ConfigError, match=r"4 children.*max_children = 3"):
+    with pytest.raises(validation.ConfigError, match=r"4 children.*max_children = 3"):
         parallel_rank.configured_judges(narrowed, log=lambda _m: None)
 
 

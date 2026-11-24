@@ -25,7 +25,7 @@ from agent6.app import preflight, resume, stop
 from agent6.app import run as app_run
 from agent6.app.parallel import launch as child_launch
 from agent6.app.session import setup as session_setup
-from agent6.config import ConfigError
+from agent6.config import validation
 from agent6.harness import operator_bridge
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
@@ -102,7 +102,7 @@ def main() -> int:
     try:
         launch = trusted_launch()
         launch.checked_clone(launch.worktree)
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         common.error(f"{exc}")
         return 2
     # The away mode is the operator's resolved policy; the run's prompts read the marker.
@@ -131,7 +131,7 @@ def main() -> int:
             budget_overrides=budget,
             sandbox_overrides=sandbox,
         )
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         common.error(f"{exc}")
         return 2
     cfg = child_launch.apply_limits(effective.config, launch.limits)

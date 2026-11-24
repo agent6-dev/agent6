@@ -15,7 +15,7 @@ import argparse
 import pytest
 
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect
 
 
@@ -62,7 +62,7 @@ def test_from_args_defaults_false_when_flags_absent() -> None:
 
 
 def test_apply_flag_path_forces_none_and_auto_approve() -> None:
-    cfg = Config()
+    cfg = config_model.Config()
     assert cfg.sandbox.isolation == "auto"
     out = session_setup.SandboxOverrides(disable_sandbox=True, auto_approve=True).apply(cfg)
     assert out.sandbox.isolation == "none"
@@ -70,7 +70,7 @@ def test_apply_flag_path_forces_none_and_auto_approve() -> None:
 
 
 def test_apply_noop_when_no_flags() -> None:
-    cfg = Config()
+    cfg = config_model.Config()
     assert session_setup.SandboxOverrides().apply(cfg) is cfg
 
 

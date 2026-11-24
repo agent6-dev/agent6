@@ -19,7 +19,8 @@ from collections.abc import Iterator
 import pytest
 
 from agent6 import kinds, paths
-from agent6.config import Config, SandboxConfig
+from agent6.config import model as config_model
+from agent6.config import sandbox_config
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
 
@@ -61,10 +62,16 @@ def _operator_home_probe() -> str:
 
 @pytest.mark.parametrize(
     ("isolation", "cfg"),
-    [("full", Config(sandbox=SandboxConfig(home="cache"))), ("partial", Config())],
+    [
+        ("full", config_model.Config(sandbox=sandbox_config.SandboxConfig(home="cache"))),
+        ("partial", config_model.Config()),
+    ],
 )
 def test_the_persistent_home_is_writable_and_the_operators_home_is_not(
-    tmp_path: pathlib.Path, cache_home: pathlib.Path, isolation: kinds.IsolationLevel, cfg: Config
+    tmp_path: pathlib.Path,
+    cache_home: pathlib.Path,
+    isolation: kinds.IsolationLevel,
+    cfg: config_model.Config,
 ) -> None:
     """`touch ~/probe` lands on the host cache dir; the operator's own home stays out of reach.
 
@@ -98,7 +105,7 @@ def test_the_tmpfs_home_goes_with_the_run(tmp_path: pathlib.Path, cache_home: pa
     res = jail.run_in_jail(
         tools_policy.jail_policy(
             tmp_path,
-            Config(),
+            config_model.Config(),
             "full",
             ("/bin/sh", "-c", 'test "$HOME" = /tmp/agent6-home && cd ~ && touch probe && echo ok'),
             network="none",

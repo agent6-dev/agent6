@@ -8,7 +8,7 @@ import pathlib
 import signal
 import threading
 
-from agent6.config import ConfigError, layer, secret_store
+from agent6.config import layer, secret_store, validation
 from agent6.ui.cli import common
 from agent6.ui.telemetry import export
 
@@ -27,7 +27,7 @@ def cmd_export(config_paths: tuple[pathlib.Path, ...], session_id: str, *, follo
     """
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         common.error(str(exc))
         return 2
     telemetry = cfg.telemetry

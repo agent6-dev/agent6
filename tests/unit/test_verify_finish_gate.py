@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 
 from agent6.app import finalize
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import (
     finish_gates,
     loop,
@@ -47,7 +47,7 @@ def _wf(
     )
     return loop.Harness(
         chain=run_chain.RunChain(root),
-        config=Config.model_validate(data),
+        config=config_model.Config.model_validate(data),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -82,7 +82,7 @@ def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
 
 def test_the_harness_gate_defaults_to_never_with_two_returns_when_on() -> None:
     """The harness runs no gate of its own by default; `finish` and `turn` are opt-in."""
-    verify = Config().harness.verify
+    verify = config_model.Config().harness.verify
     assert (verify.when, verify.at_start, verify.retries) == ("never", False, 2)
 
 
@@ -443,7 +443,7 @@ def _harness_wf(
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate(data),
+        config=config_model.Config.model_validate(data),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _m: None,
@@ -590,7 +590,7 @@ def test_denied_verify_is_withheld_from_harness_and_model(
     from agent6.harness import toolset
     from agent6.tools import dispatch, tool_errors
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "ask"},
             "harness": {
@@ -681,7 +681,7 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
     )
 
     def block(when: str, mode: Literal["run", "plan"] = "run") -> str:
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"], "when": when, "retries": 1},
@@ -732,7 +732,7 @@ def _scoped_wf(
     dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
         chain=run_chain.RunChain(root),
-        config=Config.model_validate(data),
+        config=config_model.Config.model_validate(data),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _m: None,
@@ -961,7 +961,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     )
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"], "when": "finish", "retries": 2},
@@ -1005,7 +1005,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"], "when": "turn", "retries": 2},

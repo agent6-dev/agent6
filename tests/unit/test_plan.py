@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 
 from agent6 import directive, kinds
-from agent6.config import Config, load_config
+from agent6.config import model as config_model
 from agent6.harness import loop as loopmod
 from agent6.harness import loop_state, provider_call, run_chain, toolset
 from agent6.harness.prompt import blocks as prompt_blocks
@@ -51,10 +51,10 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _config(tmp_path: pathlib.Path) -> Config:
+def _config(tmp_path: pathlib.Path) -> config_model.Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML, encoding="utf-8")
-    return load_config(p)
+    return config_model.load_config(p)
 
 
 # --- schema -------------------------------------------------------------
@@ -147,7 +147,9 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: pathlib.Path) -> 
 def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: pathlib.Path) -> None:
     custom = tmp_path / "prompt.txt"
     custom.write_text("<role>CUSTOM WORKER. apply_edit + finish_session.</role>", encoding="utf-8")
-    cfg = Config.model_validate({"harness": {"prompt": {"system_prompt_file": str(custom)}}})
+    cfg = config_model.Config.model_validate(
+        {"harness": {"prompt": {"system_prompt_file": str(custom)}}}
+    )
     repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
@@ -182,9 +184,9 @@ def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
         agents_md="",
         recent_log="",
     )
-    off = Config.model_validate({"harness": {"prompt": {"decompose": "off"}}})
-    on = Config.model_validate({"harness": {"prompt": {"decompose": "on"}}})
-    auto = Config()  # unresolved "auto" reaching the engine renders like off
+    off = config_model.Config.model_validate({"harness": {"prompt": {"decompose": "off"}}})
+    on = config_model.Config.model_validate({"harness": {"prompt": {"decompose": "on"}}})
+    auto = config_model.Config()  # unresolved "auto" reaching the engine renders like off
     run_off = prompt_blocks.build_system_prompt(config=off, repo=repo, mode="run", skills=None)
     run_on = prompt_blocks.build_system_prompt(config=on, repo=repo, mode="run", skills=None)
     run_auto = prompt_blocks.build_system_prompt(config=auto, repo=repo, mode="run", skills=None)
@@ -200,7 +202,7 @@ def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
 
 
 def test_decompose_defaults_auto(tmp_path: pathlib.Path) -> None:
-    assert Config().harness.prompt.decompose == "auto"
+    assert config_model.Config().harness.prompt.decompose == "auto"
 
 
 def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
@@ -225,7 +227,7 @@ def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
 
 def test_system_prompt_file_validator_rejects_missing(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ValueError, match="not a readable file"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {"harness": {"prompt": {"system_prompt_file": str(tmp_path / "nope.txt")}}}
         )
 
@@ -241,17 +243,21 @@ def testwarn_if_prompt_override_incomplete(
     bad.write_text("just go do stuff", encoding="utf-8")
     # complete override -> silent
     preflight.warn_if_prompt_override_incomplete(
-        Config.model_validate({"harness": {"prompt": {"system_prompt_file": str(good)}}})
+        config_model.Config.model_validate(
+            {"harness": {"prompt": {"system_prompt_file": str(good)}}}
+        )
     )
     assert capsys.readouterr().err == ""
     # missing both contracts -> warns about each
     preflight.warn_if_prompt_override_incomplete(
-        Config.model_validate({"harness": {"prompt": {"system_prompt_file": str(bad)}}})
+        config_model.Config.model_validate(
+            {"harness": {"prompt": {"system_prompt_file": str(bad)}}}
+        )
     )
     err = capsys.readouterr().err
     assert "finish_session" in err and "apply_edit/apply_patch" in err
     # no override -> silent
-    preflight.warn_if_prompt_override_incomplete(Config())
+    preflight.warn_if_prompt_override_incomplete(config_model.Config())
     assert capsys.readouterr().err == ""
 
 
@@ -272,7 +278,9 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: pathlib
     assert "git show HEAD:path" in text
 
 
-def _run_prompt(tmp_path: pathlib.Path, cfg: Config, isolation: kinds.IsolationLevel) -> str:
+def _run_prompt(
+    tmp_path: pathlib.Path, cfg: config_model.Config, isolation: kinds.IsolationLevel
+) -> str:
     repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
@@ -291,7 +299,7 @@ def test_the_run_prompt_states_no_route_off_the_box_under_the_session_network(
     tmp_path: pathlib.Path,
 ) -> None:
     """A run whose commands join the session network is told a download or an install fails."""
-    text = _run_prompt(tmp_path, Config(), "full")
+    text = _run_prompt(tmp_path, config_model.Config(), "full")
     assert "- Commands run with no route off this machine" in text
     assert "__NETWORK_RULE__" not in text
 
@@ -300,7 +308,7 @@ def test_the_run_prompt_has_no_network_rule_when_the_run_has_no_commands(
     tmp_path: pathlib.Path,
 ) -> None:
     """A run with `run_commands = "deny"` has no command to describe."""
-    cfg = Config.model_validate({"sandbox": {"run_commands": "deny"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "deny"}})
     text = _run_prompt(tmp_path, cfg, "full")
     assert "no route off this machine" not in text
     assert "__NETWORK_RULE__" not in text
@@ -314,7 +322,7 @@ def test_the_run_prompt_has_no_network_rule_under_the_host_network(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, network: str
 ) -> None:
     """A run whose commands share the host's network gets no offline claim."""
-    cfg = Config.model_validate({"sandbox": {"network": network}})
+    cfg = config_model.Config.model_validate({"sandbox": {"network": network}})
     text = _run_prompt(tmp_path, cfg, isolation)
     assert "no route off this machine" not in text
     assert "__NETWORK_RULE__" not in text
@@ -328,7 +336,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
         _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'),
         encoding="utf-8",
     )
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
@@ -383,7 +391,7 @@ def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them
         ),
         encoding="utf-8",
     )
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
@@ -442,7 +450,7 @@ def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: pathli
     Plan's rule block opens on a bullet with no blank line, and ask's prose carries the command note
     as a sentence, not a bullet.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     repo = kinds.RepoSummary(
         root=tmp_path,
@@ -454,7 +462,7 @@ def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: pathli
         recent_log="",
     )
     for commands in ("ask", "deny"):
-        cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
+        cfg = config_model.Config.model_validate({"sandbox": {"run_commands": commands}})
         plan = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)
         rules = plan.split("<tool-use-rules>\n", 1)[1].split("</tool-use-rules>", 1)[0]
         assert rules.startswith("- ") and "\n\n" not in rules, rules
@@ -492,7 +500,7 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(
     # edit/patch/verify/run_command/DAG (the deliverable is a finish_session result).
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'), "utf-8")
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("machine", "read_only"):
         names = {t.name for t in toolset.tool_definitions(d, mode=mode)}
@@ -566,7 +574,7 @@ def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: pathlib.
     # NO control tools (no finish_session/finish_planning/DAG) -- it silent-finishes.
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'), "utf-8")
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     names = {t.name for t in toolset.tool_definitions(d, mode="ask")}
     assert schema.ReadFileInput.TOOL_NAME in names  # can read
@@ -816,7 +824,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
     The operator's rulings ride the system prompt in every mode, after the memory block; nothing
     renders when none are recorded.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness.prompt import blocks as prompt_blocks
 
     repo = kinds.RepoSummary(
@@ -831,7 +839,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
     )
     for mode in ("run", "plan", "ask"):
         text = prompt_blocks.build_system_prompt(
-            config=Config(),
+            config=config_model.Config(),
             repo=repo,
             mode=mode,
             skills=None,
@@ -841,5 +849,5 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
         assert "decisions.md" not in text  # a file the model cannot open is not named
         assert "recorded rulings" in text and "each ask_user answer" not in text
     assert "<decisions>" not in prompt_blocks.build_system_prompt(
-        config=Config(), repo=repo, mode="run", skills=None
+        config=config_model.Config(), repo=repo, mode="run", skills=None
     )

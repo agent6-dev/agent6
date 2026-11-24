@@ -10,13 +10,14 @@ import pydantic
 import pytest
 
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, provider_config, secret_store
+from agent6.config import model as config_model
+from agent6.config import provider_config, secret_store
 from agent6.models import cache
 from agent6.providers import claude_code as providers_claude_code
 
 
-def _cfg(model: str, provider_block: dict[str, object]) -> Config:
-    return Config.model_validate(
+def _cfg(model: str, provider_block: dict[str, object]) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": provider_block,
             "models": {"worker": {"model": next(iter(provider_block)) + "/" + model}},
@@ -63,7 +64,7 @@ def test_a_reviewer_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     monkeypatch.setattr(secret_store, "resolve_api_key", _no_key)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "main": {"backend": "anthropic", "auth_style": "none"},
@@ -84,11 +85,10 @@ def test_a_keyless_provider_can_price_its_own_route_on_first_use(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A keyless endpoint with a rate refuses the zero USD cap even on a cold cache."""
-    from agent6 import config
     from agent6.app import preflight
     from tests import price_env
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"local": {"backend": "openai", "base_url": "http://localhost:1"}},
             "models": {"worker": {"model": "local/m"}},
@@ -101,7 +101,7 @@ def test_a_keyless_provider_can_price_its_own_route_on_first_use(
     def no_key(*_args: object, **_kwargs: object) -> None:
         return None
 
-    def listing(name: str, entry: config.ProviderEntry, key: str | None) -> list[str]:
+    def listing(name: str, entry: provider_config.ProviderEntry, key: str | None) -> list[str]:
         assert key is None
         price_env.write({"m": [1.0, 2.0]}, name=name, entry=entry)
         return ["m"]
@@ -116,7 +116,7 @@ def test_a_keyless_provider_can_price_its_own_route_on_first_use(
 def test_a_reviewer_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     with pytest.raises(pydantic.ValidationError, match="ghost"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
                 "models": {"worker": {"model": "main/m"}},
@@ -132,7 +132,7 @@ def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPa
     refuses before any state runs.
     """
     monkeypatch.setattr(secret_store, "load_secrets", dict)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
             "models": {"worker": {"model": "main/m"}},
@@ -150,7 +150,7 @@ def test_budget_preflight_prices_a_reviewer_pinned_model() -> None:
     """
     from agent6.app import preflight
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
             "models": {"worker": {"model": "main/claude-opus-5"}},
@@ -172,7 +172,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     connect chatgpt`), not mid-setup after state exists; with tokens stored it passes without any
     key lookup.
     """
-    from agent6.config import ChatGPTProviderEntry
+    from agent6.config import provider_config
     from agent6.providers import oauth, oauth_protocol
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
@@ -184,7 +184,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
         "chatgpt",
         oauth.stored_grant_for(
             oauth_protocol.TokenGrant("AT", "RT", 3600),
-            ChatGPTProviderEntry(backend="chatgpt"),
+            provider_config.ChatGPTProviderEntry(backend="chatgpt"),
             now=0,
         ),
     )
@@ -203,7 +203,7 @@ def test_budget_notices_name_every_configured_role(capsys: pytest.CaptureFixture
     """A plan-mode notice identifies worker and planner routes instead of implying the driver."""
     from agent6.app import preflight
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"chatgpt": {"backend": "chatgpt"}, "local": {"backend": "openai"}},
             "models": {
@@ -236,7 +236,7 @@ def test_plan_metered_routes_skip_the_fallback_note(
     assert "draws on a subscription plan" in out
     assert "Observed credit declines count toward max_usd" in out
 
-    refused = Config.model_validate(
+    refused = config_model.Config.model_validate(
         {
             "providers": {"chatgpt": {"backend": "chatgpt"}},
             "models": {"worker": {"model": "chatgpt/gpt-5.6-sol"}},
@@ -260,7 +260,7 @@ def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
     from agent6.app import preflight
 
     def _with_cap(cap: float) -> str:
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"chatgpt": {"backend": "chatgpt"}},
                 "models": {"worker": {"model": "chatgpt/gpt-5.6-sol"}},
@@ -298,7 +298,7 @@ def test_claude_code_routes_are_plan_metered(
     assert "fallback tokens" not in out
     assert "'claude-haiku-4-5' (worker) draws on a subscription plan" in out
 
-    refused = Config.model_validate(
+    refused = config_model.Config.model_validate(
         {
             "providers": {"claude": {"backend": "claude_code"}},
             "models": {"worker": {"model": "claude/claude-haiku-4-5"}},
@@ -385,7 +385,7 @@ def test_budget_preflight_prices_a_route_from_its_own_card(
         (cards / f"{name}.json").write_text(
             json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
         )
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "gateway": {
@@ -410,7 +410,7 @@ def test_an_unrelated_listing_cannot_refuse_a_local_call(
     from agent6.app import preflight
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "local": {"backend": "openai", "base_url": "http://localhost:1"},
@@ -446,7 +446,7 @@ def test_an_unpriced_model_warns_once_even_with_zero_usd(
 
     if fetched:
         price_env.write_list({"other/model": [1.0, 2.0]}, url=provider_config.DEFAULT_PRICE_LIST)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"paid": {"backend": "openai"}},
             "models": {"worker": {"model": "paid/m"}, "planner": {"model": "paid/m"}},

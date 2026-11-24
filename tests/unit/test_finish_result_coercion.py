@@ -8,7 +8,7 @@ import pathlib
 from typing import Any
 from unittest import mock
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import (
     finish_gates,
     loop,
@@ -23,7 +23,7 @@ def _wf(**kw: Any) -> loop.Harness:
     kw.setdefault("state_dir", pathlib.Path("/tmp/state"))
     return loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate({}),
+        config=config_model.Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False

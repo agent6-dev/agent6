@@ -17,7 +17,7 @@ import tempfile
 import pytest
 
 from agent6 import errors
-from agent6.config import ConfigError
+from agent6.config import validation
 from agent6.ui.cli import entry, run
 
 
@@ -107,7 +107,7 @@ def test_a_config_error_is_an_operator_error(
     """ConfigError subclasses OperatorError, so every reader gets the refusal surface for free."""
 
     def _bad(_argv: list[str] | None = None) -> int:
-        raise ConfigError("Config file is not valid TOML (/x/config.toml): line 1")
+        raise validation.ConfigError("Config file is not valid TOML (/x/config.toml): line 1")
 
     monkeypatch.setattr(entry, "main", _bad)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)

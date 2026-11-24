@@ -28,7 +28,7 @@ from typing import Any
 import httpx2
 
 from agent6 import __version__, paths, portable
-from agent6.config import TelemetryConfig
+from agent6.config import surface_config
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.telemetry import otlp, prometheus
@@ -267,7 +267,7 @@ class _Session:
     def __init__(
         self,
         session_dir: pathlib.Path,
-        config: TelemetryConfig,
+        config: surface_config.TelemetryConfig,
         destination: _Destination | None,
         state_dir: pathlib.Path,
         resource: telemetry_records.Attributes,
@@ -460,7 +460,7 @@ def prometheus_text(cwd: pathlib.Path) -> str:
     Returns:
         The same exposition the textfile exporter writes, without writes or network requests.
     """
-    config = TelemetryConfig()
+    config = surface_config.TelemetryConfig()
     state_dir = paths.state_dir(cwd)
     sessions = [_Session(d, config, None, state_dir, ()) for d in _session_dirs(cwd, "")]
     for root in sessions:
@@ -472,7 +472,7 @@ def prometheus_text(cwd: pathlib.Path) -> str:
 
 def export(
     cwd: pathlib.Path,
-    config: TelemetryConfig,
+    config: surface_config.TelemetryConfig,
     *,
     session_id: str = "",
     follow: bool = False,
@@ -549,7 +549,7 @@ class _MetricsSink:
 
     def __init__(
         self,
-        config: TelemetryConfig,
+        config: surface_config.TelemetryConfig,
         destination: _Destination | None,
         resource: telemetry_records.Attributes,
     ) -> None:

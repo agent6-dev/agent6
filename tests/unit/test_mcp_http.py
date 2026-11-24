@@ -11,7 +11,7 @@ from typing import Any, override
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import mcp_client
 from agent6.tools import mcp_http as tools_mcp_http
 
@@ -229,11 +229,11 @@ def test_http_trust_env_is_rejected_on_a_spawned_server() -> None:
     It only affects the http client dialling a `url` server; a spawned (command) server has no
     client, so the setting is refused rather than silently dead.
     """
-    Config.model_validate(
+    config_model.Config.model_validate(
         {"mcp": {"servers": {"r": {"url": "https://h/mcp", "http_trust_env": True}}}}
     )
     with pytest.raises(Exception, match="http_trust_env is for"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {"mcp": {"servers": {"s": {"command": ["srv"], "http_trust_env": True}}}}
         )
 
@@ -342,7 +342,7 @@ def test_a_redirect_is_an_error_not_a_silent_accept() -> None:
 def test_a_server_names_one_transport(entry: dict[str, Any], message: str) -> None:
     """Both or neither is a config error, not a guess."""
     with pytest.raises(ValueError, match=message):
-        Config.model_validate({"mcp": {"enabled": True, "servers": {"s": entry}}})
+        config_model.Config.model_validate({"mcp": {"enabled": True, "servers": {"s": entry}}})
 
 
 @pytest.mark.parametrize(
@@ -358,12 +358,14 @@ def test_a_server_names_one_transport(entry: dict[str, Any], message: str) -> No
 def test_a_server_url_is_parsed_at_load(url: str, message: str) -> None:
     """A `url` passes the provider URL check; a prefix test let each of these reach the dial."""
     with pytest.raises(ValueError, match=message):
-        Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"url": url}}}})
+        config_model.Config.model_validate(
+            {"mcp": {"enabled": True, "servers": {"s": {"url": url}}}}
+        )
 
 
 def test_a_server_url_scheme_matches_in_any_case() -> None:
     """`HTTPS://` is the https scheme; a case-sensitive prefix test refused it."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"s": {"url": "HTTPS://h/mcp?v=1"}}}}
     )
     assert cfg.mcp.servers["s"].url == "HTTPS://h/mcp?v=1"

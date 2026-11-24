@@ -22,7 +22,7 @@ from agent6.app.parallel import launch as child_launch
 from agent6.app.review import directive as review_directive
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -53,7 +53,7 @@ class RunStart:
         layout: The session's directory layout.
     """
 
-    cfg: Config
+    cfg: config_model.Config
     task: str
     operator_task: str
     mode: kinds.LoopMode
@@ -80,7 +80,7 @@ class RunStart:
 def resolve_review(
     repo: pathlib.Path,
     task: str,
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     worktree: bool,
     reporter: app_reporter.Reporter,
@@ -120,7 +120,7 @@ def resolve_review(
 
 def start_base(
     repo: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     mode: kinds.LoopMode,
     review_world: review_directive.ReviewWorld | None,
     *,
@@ -228,7 +228,7 @@ def session_slot(
 
 
 def setup_and_gate(
-    cfg: Config,
+    cfg: config_model.Config,
     repo: pathlib.Path,
     review_world: review_directive.ReviewWorld | None,
     *,
@@ -236,7 +236,7 @@ def setup_and_gate(
     worktree: bool,
     opening: directive.Segment | tuple[directive.Segment, ...] | None,
     reporter: app_reporter.Reporter,
-) -> Config:
+) -> config_model.Config:
     """Read the setup command a new worktree or a child's clone needs, and check its gate.
 
     Args:
@@ -274,7 +274,7 @@ def setup_and_gate(
 
 
 def check_run(
-    cfg: Config,
+    cfg: config_model.Config,
     task: str,
     *,
     frontend: app_frontend.SessionFrontend,

@@ -23,7 +23,7 @@ from textual.widget import Widget
 
 from agent6 import errors
 from agent6.app import confine
-from agent6.config import ConfigError, io, layer, layer_data, notices, write
+from agent6.config import io, layer, layer_data, notices, validation, write
 from agent6.ui.tui import config_forms, config_model, menubar, modals, screen_chrome
 from agent6.viewmodel import config_view
 
@@ -314,7 +314,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """
         try:
             self._rebuild_view()
-        except ConfigError as exc:
+        except validation.ConfigError as exc:
             self.notify(
                 f"config is invalid on disk; showing the last-loaded values."
                 f" Run `agent6 config fix` (or edit the file). {exc}",

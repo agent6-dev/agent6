@@ -27,7 +27,8 @@ from agent6 import errors, kinds, paths, portable
 from agent6.app import fork_worktrees, resume_record, stamps, worktree_setup, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, layer
+from agent6.config import layer, validation
+from agent6.config import model as config_model
 from agent6.graph import replay, storage
 from agent6.harness import loop_conversation, loop_snapshot
 from agent6.sandbox import detect
@@ -230,7 +231,7 @@ class _ForkPlan:
     preset: str
     preset_from_flag: bool
     driver_from_flag: bool
-    cfg: Config
+    cfg: config_model.Config
     config_sources: dict[str, str]
     gate: sessions_manifest.GateStamp
     budget: sessions_manifest.BudgetStamp
@@ -245,7 +246,7 @@ def _plan_fork(
     new_session_id: str = "",
     cwd: pathlib.Path,
     sandbox_overrides: session_setup.SandboxOverrides | None = None,
-    refuse_continuation: Callable[[Config, str], str | None] | None = None,
+    refuse_continuation: Callable[[config_model.Config, str], str | None] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> _ForkPlan:
     """Resolve a fork of a source session at a checkpoint.
@@ -319,7 +320,7 @@ def _plan_fork(
             src_mode,
             sandbox_overrides,
         )
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         reporter.error(str(exc))
         raise _ForkRefusedError(2) from exc
     if refuse_continuation is not None:
@@ -387,7 +388,7 @@ def create_fork(
     new_session_id: str = "",
     cwd: pathlib.Path,
     sandbox_overrides: session_setup.SandboxOverrides | None = None,
-    refuse_continuation: Callable[[Config, str], str | None] | None = None,
+    refuse_continuation: Callable[[config_model.Config, str], str | None] | None = None,
     worktree: bool = True,
     checkout: fork_worktrees.Checkout | None = None,
     checkout_untracked: frozenset[str] | None = None,

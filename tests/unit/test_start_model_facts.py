@@ -10,7 +10,8 @@ import pytest
 
 from agent6 import paths
 from agent6.app import stamps
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import console_render, sessions_show
 from agent6.viewmodel import policy, wire
@@ -168,7 +169,7 @@ def test_resume_records_inheritance_and_each_review_verdict(
     recorded_run: pathlib.Path, mode: str, role: str
 ) -> None:
     """A reviewer with its own route does not inherit the reviewer's effort."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"chatgpt": {"backend": "chatgpt"}},
             "models": {
@@ -228,7 +229,7 @@ def test_resume_records_inheritance_and_each_review_verdict(
 def test_start_uses_the_provider_effort_rule(
     recorded_run: pathlib.Path, backend: str, model: str, expected: str
 ) -> None:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "p": {

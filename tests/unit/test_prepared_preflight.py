@@ -14,7 +14,8 @@ from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_snapshot
 from agent6.sandbox import tool_paths
 from agent6.sessions import layout, manifest
@@ -42,7 +43,7 @@ def test_initial_inference_uses_the_prepared_target_through_run_task(
     tool.chmod(0o755)
     monkeypatch.setenv("HOME", str(target_home))
     monkeypatch.chdir(root)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
             "harness": {"command_checkin_s": 0},
@@ -51,7 +52,7 @@ def test_initial_inference_uses_the_prepared_target_through_run_task(
     assert not cfg.harness.verify.command
     providers = session_runtime.SessionProviders(
         budget=session_setup.budget_tracker(cfg),
-        rm_role=RoleModel(provider="test", model="test"),
+        rm_role=harness_config.RoleModel(provider="test", model="test"),
         provider=mock.Mock(),
         summarizer_provider=None,
         reviewers=[],

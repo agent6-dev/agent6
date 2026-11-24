@@ -9,7 +9,8 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6.config import Config, OAuthConfig, OpenAIProviderEntry, load_config
+from agent6.config import model as config_model
+from agent6.config import oauth_config, provider_config
 
 _WORK = """
 [providers.work]
@@ -28,17 +29,17 @@ redirect_uri = "http://127.0.0.1:8765/auth/callback"
 """
 
 
-def _load(text: str, tmp_path: pathlib.Path) -> Config:
+def _load(text: str, tmp_path: pathlib.Path) -> config_model.Config:
     cfg = tmp_path / "agent6.toml"
     cfg.write_text(text, encoding="utf-8")
-    return load_config(cfg)
+    return config_model.load_config(cfg)
 
 
 def test_a_configured_issuer_loads_with_both_flows(tmp_path: pathlib.Path) -> None:
     entry = _load(_WORK, tmp_path).providers["work"]
-    assert isinstance(entry, OpenAIProviderEntry)
+    assert isinstance(entry, provider_config.OpenAIProviderEntry)
     oauth = entry.oauth
-    assert isinstance(oauth, OAuthConfig)
+    assert isinstance(oauth, oauth_config.OAuthConfig)
     assert oauth.flows() == ("authorization_code", "device")
     assert oauth.scopes == ("model.invoke",)
     assert oauth.refresh_skew_s == 60.0 and oauth.exchange is None
@@ -58,7 +59,7 @@ expires_format = "unix_seconds"
 """
     )
     entry = _load(text, tmp_path).providers["work"]
-    assert isinstance(entry, OpenAIProviderEntry) and entry.oauth is not None
+    assert isinstance(entry, provider_config.OpenAIProviderEntry) and entry.oauth is not None
     oauth = entry.oauth
     assert oauth.exchange is not None
     assert (oauth.exchange.method, oauth.exchange.expires_format) == ("GET", "unix_seconds")

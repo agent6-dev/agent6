@@ -21,7 +21,7 @@ from unittest import mock
 import pytest
 
 from agent6 import child_records, directive, kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import (
     advice,
     finish_gates,
@@ -74,7 +74,7 @@ class _StubDispatcher:
     """
 
     allowed_tools: None = None
-    config = Config()
+    config = config_model.Config()
 
     def parallel_available(self) -> bool:
         """A stub offers the model no `parallel` tool."""
@@ -187,7 +187,7 @@ def _wf(
                 stagnation_notice_after_s=300.0,
                 verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=Config().harness.parallel,
+                parallel=config_model.Config().harness.parallel,
             ),
         ),
         "provider": mock.MagicMock(),
@@ -7273,7 +7273,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
 
     Preflight on an empty repo finds nothing; the run then creates a recognizable project.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     # What the run "just created" before its first commit.
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
@@ -7324,7 +7324,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     wf = _wf(
         root=tmp_path,
         # A real config, gateless; `finish` so the settled end runs the gate it adopts.
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"when": "finish"},
@@ -7362,7 +7362,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
 
     Adopting a gate the sandbox cannot execute would turn the honest settle into an abort.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
 
@@ -7399,7 +7399,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
     provider = ProviderStub()
     wf = _wf(
         root=tmp_path,
-        config=Config(),
+        config=config_model.Config(),
         mode="run",
         provider=provider,
         dispatcher=DispatcherStub(),
@@ -8776,7 +8776,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
     Exit 127, or the adopted `-m` module missing: the model is told, the manifest re-pins gateless,
     and that argv is never re-adopted; a configured gate stays red.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness import nudges
 
     argv = ("python3", "-m", "pytest", "-q")
@@ -8790,7 +8790,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
     )
     wf = _wf(
         root=tmp_path,
-        config=Config(),  # gateless: the argv below is the adopted one, not a configured gate
+        config=config_model.Config(),  # The run adopts the argv below.
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
         events=mock.MagicMock(emit=emit),
@@ -8825,7 +8825,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
     # A configured gate with the same failure stays a red verify; nothing is un-adopted.
     wf2 = _wf(
         root=tmp_path,
-        config=Config().with_verify_command(argv),
+        config=config_model.Config().with_verify_command(argv),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -8978,7 +8978,7 @@ def _metric_wf(
         chain=run_chain.RunChain(
             repo, ref="refs/agent6/metric-run/head", fallback_parent=base, per_turn=commit_per_turn
         ),
-        config=Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=_silent,
@@ -9119,7 +9119,7 @@ def test_the_settled_stop_still_fires_without_per_turn_commits(
                 fallback_parent=base,
                 per_turn=commit_per_turn,
             ),
-            config=Config.model_validate(
+            config=config_model.Config.model_validate(
                 {
                     "harness": {
                         "verify": {"command": ["true"] if gated else []},
@@ -9156,7 +9156,7 @@ def _ruling_wf(tmp_path: pathlib.Path) -> loop.Harness:
 
     return loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -9251,7 +9251,7 @@ def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(
 
     dispatcher = tools_dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config(),
+        config=config_model.Config(),
         prompts=operator_prompts.OperatorPrompts(questioner=questioner),
         mode="run",
     )
@@ -9346,7 +9346,7 @@ def test_the_root_passes_with_an_open_child(
     )
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -9387,7 +9387,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
     )
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -9671,7 +9671,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": ["configured-gate"], "when": "turn", "infer": True},
@@ -9783,7 +9783,7 @@ def test_finish_delivers_an_answer_that_lands_during_its_turn(
     saved.ensure()
     prompts, log = _gate(saved.session_dir)
     sink = event_log.EventSink(log)
-    cfg = Config.model_validate({"git": {"commit_per_turn": False}})
+    cfg = config_model.Config.model_validate({"git": {"commit_per_turn": False}})
     dispatcher = dispatch.ToolDispatcher(
         root=repo,
         config=cfg,

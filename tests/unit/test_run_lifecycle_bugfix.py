@@ -20,7 +20,7 @@ from agent6 import budget, kinds, paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.models import cache
 from agent6.providers import provider_types
 from agent6.ui.cli import entry as cli_entry
@@ -302,9 +302,9 @@ def test_an_unset_key_variable_refuses_the_start_on_every_backend(
 
     monkeypatch.setattr(cache, "list_models", fake_list)
 
-    def cfg(**auth: str) -> Config:
+    def cfg(**auth: str) -> config_model.Config:
         entry = {"backend": backend, "base_url": "http://127.0.0.1:9/v1", **auth}
-        return Config.model_validate(
+        return config_model.Config.model_validate(
             {"providers": {"p": entry}, "models": {"default": {"model": "p/m"}}}
         )
 
@@ -414,14 +414,14 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
         "[harness]\nverify.infer = false\n",
         encoding="utf-8",
     )
-    from agent6.config import ChatGPTProviderEntry
+    from agent6.config import provider_config
     from agent6.providers import oauth, oauth_protocol
 
     secret_store.save_oauth_grant(
         "chatgpt",
         oauth.stored_grant_for(
             oauth_protocol.TokenGrant("test-access", "test-refresh", 3600),
-            ChatGPTProviderEntry(backend="chatgpt"),
+            provider_config.ChatGPTProviderEntry(backend="chatgpt"),
             now=time.time(),
         ),
     )

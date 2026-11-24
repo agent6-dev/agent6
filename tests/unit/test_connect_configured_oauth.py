@@ -17,7 +17,8 @@ import pytest
 
 from agent6 import paths
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, OpenAIProviderEntry, load_config, secret_store
+from agent6.config import model as config_model
+from agent6.config import provider_config, secret_store
 from agent6.models import cache
 from agent6.providers import oauth, provider_types, transport
 from agent6.ui.cli import entry as cli_entry
@@ -68,7 +69,7 @@ def _write_config(text: str = _CONFIG) -> pathlib.Path:
 
 
 def _entry(gc: pathlib.Path) -> Any:
-    return load_config(gc).providers["work"]
+    return config_model.load_config(gc).providers["work"]
 
 
 def test_the_device_flow_signs_in_headless_and_binds_the_grant(
@@ -289,14 +290,16 @@ def test_the_run_preflight_wants_a_bound_grant(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The preflight names the reconnect for a missing or rebound grant, and lists through it."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
-            **load_config(_write_config()).model_dump(mode="json", exclude_defaults=True),
+            **config_model.load_config(_write_config()).model_dump(
+                mode="json", exclude_defaults=True
+            ),
             "models": {"worker": {"model": "work/m1"}},
         }
     )
     entry = cfg.providers["work"]
-    assert isinstance(entry, OpenAIProviderEntry)
+    assert isinstance(entry, provider_config.OpenAIProviderEntry)
     assert session_setup.check_provider_keys(cfg) == (
         "No sign-in stored for provider 'work'; run `agent6 connect work` to sign in again."
     )
@@ -340,7 +343,7 @@ def test_model_set_names_the_missing_or_rebound_sign_in(
     monkeypatch.setattr(cache, "list_models", listed)
     assert cli_entry.main(["model", "worker", "work/m1"]) == 0
     err = capsys.readouterr().err
-    cause = session_setup.check_provider_keys(load_config(gc))
+    cause = session_setup.check_provider_keys(config_model.load_config(gc))
     assert cause is not None and cause in err
     assert "agent6 connect work" in err
 

@@ -33,7 +33,7 @@ from agent6.app.parallel import launch as child_launch
 from agent6.app.parallel import relay as child_watch
 from agent6.app.parallel import results as parallel_results
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory
 from agent6.harness.parallel import repo as child_repo
 from agent6.providers import provider_types
@@ -262,7 +262,7 @@ def runtime() -> app_children.ChildRuntime:
 
 
 def _specs(
-    tmp_path: pathlib.Path, cfg: Config, group: str, spec: str
+    tmp_path: pathlib.Path, cfg: config_model.Config, group: str, spec: str
 ) -> list[child_records.ChildSpec]:
     """Plan a group's children as the dispatcher does: one per selector, numbered from 1."""
     settings = app_children.child_settings(
@@ -283,7 +283,7 @@ def _run_children(
     task: str,
     children: list[child_records.ChildSpec],
     *,
-    cfg: Config,
+    cfg: config_model.Config,
     origin: pathlib.Path,
     runtime: app_children.ChildRuntime,
     group: str,
@@ -319,8 +319,10 @@ def _write_models_cache(cache_home: pathlib.Path, provider: str, models: list[st
     p.write_text(json.dumps({"models": models}), encoding="utf-8")
 
 
-def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "allow") -> Config:
-    return Config.model_validate(
+def _provider_cfg(
+    model: str = "moonshotai/kimi-k2.6", run_commands: str = "allow"
+) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"default": {"model": "o/" + model}},
@@ -364,7 +366,7 @@ def test_a_parallel_spec_no_cache_can_check_warns_and_proceeds(
 
 def test_a_parallel_spec_over_the_child_cap_is_refused() -> None:
     """A count over `[harness.parallel].max_children` refuses before any session exists."""
-    cfg = Config.model_validate({"harness": {"parallel": {"max_children": 2}}})
+    cfg = config_model.Config.model_validate({"harness": {"parallel": {"max_children": 2}}})
 
     refusal = parallel_cmd.spec_refusal(cfg, "3")
 
@@ -556,7 +558,7 @@ def test_bridge_spawner_keeps_the_task_out_of_the_argv(
         assert launch.worktree == cwd and launch.session_id == "fan-l1"
         return cwd, 1, ""
 
-    cfg = Config()
+    cfg = config_model.Config()
     spec = child_records.ChildSpec(
         number=1,
         session_id="fan-l1",
@@ -590,7 +592,7 @@ def test_a_child_is_seeded_with_the_repos_memory(
 
     The children ran blind to the facts and rulings every other run on that repo gets.
     """
-    cfg = Config()
+    cfg = config_model.Config()
     origin_state = paths.state_dir(origin)
     memory.add(origin_state, "house-style", "Docstrings end in a period.")
     memory.record_decision(
@@ -639,7 +641,7 @@ def test_bridge_spawner_launch_carries_auto_approve_when_set(
         captured.append(_launch_of(env))
         return cwd, 1, ""
 
-    cfg = Config()
+    cfg = config_model.Config()
     spec = child_records.ChildSpec(
         number=1,
         session_id="fan-l1",
@@ -671,7 +673,7 @@ def test_bridge_spawner_launch_omits_auto_approve_by_default(
         captured.append(_launch_of(env))
         return cwd, 1, ""
 
-    cfg = Config()
+    cfg = config_model.Config()
     spec = child_records.ChildSpec(
         number=1,
         session_id="fan-l1",
@@ -711,7 +713,7 @@ def test_run_child_to_completion_forwards_auto_approve_and_pins_to_the_default_s
         )
 
     monkeypatch.setattr(app_children, "bridge_spawner", fake_bridge)
-    cfg = Config()
+    cfg = config_model.Config()
     spec = child_records.ChildSpec(
         number=1,
         session_id="co-p1-l1",
@@ -758,7 +760,7 @@ def test_child_setup_output_survives_import_and_a_failed_one_reaches_the_operato
 ) -> None:
     """A child's setup output outlives its clone; a failed setup's is printed after import."""
     command = f"echo ran >> .setup-count; echo setup-out; echo setup-err >&2; exit {exit_code}"
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://127.0.0.1:1"}},
             "models": {"default": {"model": "p/m"}},
@@ -897,7 +899,7 @@ def test_a_children_memory_files_are_carried_into_the_origin_at_import(
     seeded copy) is held back in the child's imported session dir, and the note says where.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     memory.add(origin_state, "repo-fact", "The build needs BUILD_ID set.")
     children = _specs(tmp_path, cfg, "fan", "1")
     child_state = paths.state_dir(children[0].worktree)
@@ -937,7 +939,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
 ) -> None:
     """The parent holds the ranking and judge cost once; children hold only placement."""
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     children = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "child-state")
     long_rationale = "x" * 3000
@@ -1002,7 +1004,7 @@ def test_imported_children_remove_their_emptied_worktree_levels(
     The group dir and the per-repo dir go once empty, the base stays.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     per_repo = worktrees.worktree_base(cfg, origin)
     children = [
         dataclasses.replace(spec, worktree=per_repo / "fan" / f"child-{spec.number}")
@@ -1032,7 +1034,7 @@ def test_the_ranked_table_spells_a_children_cost_and_outcome_as_the_listing_does
     finished over a red gate read `failed` in the table and `finished · gate red` there.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     children = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(
         origin,
@@ -1078,7 +1080,7 @@ def test_a_child_with_no_commit_does_not_claim_a_branch_was_imported(
 ) -> None:
     """A setup-failed child imports its record but claims no branch that git lacks."""
     state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     (spec,) = _specs(tmp_path, cfg, "no-commit", "1")
     spawner = _FakeSpawner(
         origin,
@@ -1108,7 +1110,7 @@ def test_stamp_failures_are_reported_for_every_child_and_parent(
 ) -> None:
     """A disk-full or read-only mount at a ranking's stamps is noted per manifest, never raised."""
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     children = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "child-state")
     results = _run_children(
@@ -1165,7 +1167,7 @@ def test_await_waits_for_worker_pid_to_clear(
     destroy its only copy.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     children = _specs(tmp_path, cfg, "fan", "1")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "child-state", pid_children={1})
 
@@ -1204,7 +1206,7 @@ def test_cleanup_preserves_unimported_child(
     cleaned up.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     children = _specs(tmp_path, cfg, "fan", "2")
     # Pre-existing branch in the origin makes child 1's import refuse.
     git_ops.create_branch(origin, "agent6/fan-l1")
@@ -1251,7 +1253,7 @@ def test_run_child_to_completion_imports_and_stamps(
     answer it, and nothing moves at the import.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "child-state", group_id="p1")
     spec = child_records.ChildSpec(
         number=1,
@@ -1324,7 +1326,7 @@ def test_run_child_to_completion_records_what_the_import_retained(
         spec,
         "do it",
         explicit_leaves=frozenset(),
-        cfg=Config(),
+        cfg=config_model.Config(),
         origin=origin,
         record_state=origin_state,
         group="p1",
@@ -1351,7 +1353,7 @@ def test_run_child_to_completion_failed_spawn_imports_nothing(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime
 ) -> None:
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "child-state", fail={1})
     spec = child_records.ChildSpec(
         number=1,
@@ -1387,7 +1389,7 @@ def test_a_failed_child_never_merges_into_the_parent(
     branch into the parent's checkout and tell the model "merged into parent chain at <sha>".
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     spawner = _FakeSpawner(
         origin, origin_state, tmp_path / "child-state", status_by_child={1: "failed"}
     )
@@ -1428,7 +1430,7 @@ def test_a_crashed_child_never_merges_into_the_parent(
     Imported, named in the error, never merged.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     spawner = _FakeSpawner(
         origin, origin_state, tmp_path / "child-state", status_by_child={1: "stale"}
     )
@@ -1466,7 +1468,7 @@ def test_build_child_spawner_over_cap_refused(
     The cap is a hard cap per group, as `run --parallel` enforces it before any session exists;
     the loop turns the raise into 'group dispatch failed' parent feedback.
     """
-    cfg = Config.model_validate({"harness": {"parallel": {"max_children": 2}}})
+    cfg = config_model.Config.model_validate({"harness": {"parallel": {"max_children": 2}}})
     called: list[str] = []
 
     def fake_rltc(
@@ -1511,7 +1513,7 @@ def test_run_child_to_completion_imports_under_the_group_lock(
         child_worktree: pathlib.Path,
         branch: str,
         child_session_dir: pathlib.Path,
-        config: Config,
+        config: config_model.Config,
         *,
         model_control: bool = False,
         continuing: bool = False,
@@ -1538,7 +1540,7 @@ def test_run_child_to_completion_imports_under_the_group_lock(
         spec,
         "do it",
         explicit_leaves=frozenset(),
-        cfg=Config(),
+        cfg=config_model.Config(),
         origin=origin,
         record_state=origin_state,
         group="p1",
@@ -1563,7 +1565,7 @@ def test_run_child_to_completion_cleans_up_imported_clone(
     cleaned; a failed import keeps its clone.
     """
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "child-state")
     per_repo = worktrees.worktree_base(cfg, origin)
     spec = child_records.ChildSpec(
@@ -1717,7 +1719,7 @@ def test_build_child_spawner_keeps_child_order_when_children_finish_out_of_order
 
     monkeypatch.setattr(app_children, "run_child_to_completion", fake_rltc)
     dispatch = app_children.build_child_spawner(
-        Config(),
+        config_model.Config(),
         origin,
         paths.state_dir(origin),
         explicit_leaves=frozenset(),
@@ -1738,7 +1740,7 @@ def test_build_child_spawner_forwards_auto_approve(
     runtime: app_children.ChildRuntime,
 ) -> None:
     origin_state = paths.state_dir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     seen: list[object] = []
 
     def fake_rltc(
@@ -1777,7 +1779,7 @@ def test_build_parent_spawner_forwards_auto_approve(
     """
     origin_state = tmp_path / "ostate"
     origin_state.mkdir()
-    cfg = Config()
+    cfg = config_model.Config()
     captured: list[object] = []
 
     def fake_build_child_spawner(*_a: object, **kw: object) -> object:
@@ -1882,7 +1884,7 @@ def test_run_child_to_completion_interrupted_stops_child_and_skips_import(
         spec,
         "do it",
         explicit_leaves=frozenset(),
-        cfg=Config(),
+        cfg=config_model.Config(),
         origin=origin,
         record_state=tmp_path / "ostate",
         group="p1",
@@ -1907,7 +1909,7 @@ def test_child_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
     """
     import tomllib
 
-    base = Config()
+    base = config_model.Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
     spec = child_records.ChildSpec(
         number=1,
@@ -1929,7 +1931,7 @@ def test_child_config_carries_the_child_route(tmp_path: pathlib.Path) -> None:
     """A child's route names its provider, so a child on another provider loads it."""
     import tomllib
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "o": {"backend": "openai", "base_url": "https://x/v1"},
@@ -1979,7 +1981,7 @@ def test_an_unattended_group_does_not_park_its_children_on_a_question(
             settings=None,
         )
         result = app_children.bridge_spawner(
-            spec, "do it", cfg=Config(), origin=origin,
+            spec, "do it", cfg=config_model.Config(), origin=origin,
             record_state=paths.state_dir(origin),
             max_usd=None, child_away=away,
             explicit_leaves=frozenset(),
@@ -2021,7 +2023,7 @@ def test_child_is_self_describing_from_birth(
         settings=None,
     )
     app_children.bridge_spawner(
-        spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin,
+        spec, "do it", explicit_leaves=frozenset(), cfg=config_model.Config(), origin=origin,
         record_state=paths.state_dir(origin),
         max_usd=None,
         group_id="fan", parent="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
@@ -2042,7 +2044,7 @@ def test_child_is_self_describing_from_birth(
         base_sha="s",
         base_branch="main",
         run_branch="agent6/fan-l2",
-        cfg=Config(),
+        cfg=config_model.Config(),
     )
     m = sessions_manifest.read_manifest(layout.session_dir)
     assert m.parallel == sessions_manifest.ParallelLineage(group="fan", number=2, parent="co")
@@ -2058,7 +2060,7 @@ def test_child_is_self_describing_from_birth(
         base_sha="s",
         base_branch="main",
         run_branch=None,
-        cfg=Config(),
+        cfg=config_model.Config(),
     )
     assert sessions_manifest.read_manifest(layout2.session_dir).parallel is None
 
@@ -2073,11 +2075,11 @@ def test_child_sampling_notes_survive_import_and_reach_both_reports(
     """The production spawn passes a models-only snapshot and durable loss notes to its child."""
     from agent6.app import finalize
     from agent6.app.session import setup as session_setup
-    from agent6.config import RoleModel
+    from agent6.config import harness_config
     from agent6.harness import loop_snapshot
     from agent6.sessions import layout as sessions_layout
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {"default": {"model": "p/base", "effort": "high", "temperature": 0.7}},
@@ -2086,7 +2088,7 @@ def test_child_sampling_notes_survive_import_and_reach_both_reports(
     cfg = cfg.model_copy(
         update={
             "models": cfg.models.model_copy(
-                update={"worker": RoleModel(effort=None, temperature=None)}
+                update={"worker": harness_config.RoleModel(effort=None, temperature=None)}
             )
         }
     )
@@ -2182,7 +2184,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     against the wrong origin nor kept forever with advice that cannot apply here.
     """
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
+    cfg = config_model.Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
     scoped = workdir / paths.repo_id(origin)
 
     unmerged = scoped / "fan-a" / "child-1"
@@ -2224,7 +2226,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
 ) -> None:
     """Prune names a failed spawn's missing child record and manual cleanup, not a live child."""
     monkeypatch.chdir(origin)
-    cfg = Config()
+    cfg = config_model.Config()
     children = [
         child_records.ChildSpec(
             number=1,
@@ -2301,7 +2303,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_child_lives(
     a prune message about commits it never held.
     """
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
+    cfg = config_model.Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
     child = workdir / paths.repo_id(origin) / "fan-starting" / "child-1"
     child.parent.mkdir(parents=True)
     child_repo.clone_worktree(origin, child)
@@ -2340,7 +2342,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     import subprocess
 
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
+    cfg = config_model.Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
     scoped = workdir / paths.repo_id(origin)
     child = scoped / "fan-x" / "child-1"
     child.parent.mkdir(parents=True)
@@ -2372,7 +2374,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_group_alone(
     files) holds no child clone, and the sweep read that as "nothing to prove" and deleted it.
     """
     workdir = tmp_path / "cache"
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
+    cfg = config_model.Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
     scoped = workdir / paths.repo_id(origin)
     theirs = scoped / "my-clone"
     theirs.parent.mkdir(parents=True)
@@ -2442,7 +2444,7 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
         spec,
         "do it",
         explicit_leaves=frozenset(),
-        cfg=Config(),
+        cfg=config_model.Config(),
         origin=origin,
         record_state=tmp_path / "ostate",
         group="p1",
@@ -2463,7 +2465,7 @@ def test_a_relative_worktree_base_resolves_to_an_absolute_path(
 ) -> None:
     """A relative `git.worktree.base_dir` reached a fork's manifest as a relative worktree path."""
     monkeypatch.chdir(tmp_path)
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": "wt"}}})
+    cfg = config_model.Config.model_validate({"git": {"worktree": {"base_dir": "wt"}}})
 
     assert worktrees.worktree_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)
 
@@ -2481,7 +2483,7 @@ def test_model_parallel_import_keeps_child_commits(
     from agent6.config import layer
     from agent6.viewmodel import wire
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://127.0.0.1:1"}},
             "models": {"default": {"model": "p/m"}},
@@ -2606,7 +2608,7 @@ def test_cleanup_keeps_unreachable_model_head(
     origin: pathlib.Path, tmp_path: pathlib.Path, checkout_base: bool
 ) -> None:
     """An imported record alone is not proof that a child's commits are safe."""
-    cfg = Config()
+    cfg = config_model.Config()
     (spec,) = _specs(tmp_path, cfg, "unsafe", "1")
     _git(origin, "clone", "--quiet", str(origin), str(spec.worktree))
     _git(spec.worktree, "config", "user.name", "test")
@@ -2734,7 +2736,7 @@ def test_a_parent_stop_keeps_the_clone_before_the_result_returns(
     result = app_children.run_child_to_completion(
         spec,
         "work",
-        cfg=Config(),
+        cfg=config_model.Config(),
         explicit_leaves=frozenset(),
         origin=origin,
         record_state=state,
@@ -2760,7 +2762,7 @@ def test_a_child_that_failed_under_a_pending_stop_loses_its_clone(
     result = app_children.run_child_to_completion(
         spec,
         "work",
-        cfg=Config(),
+        cfg=config_model.Config(),
         explicit_leaves=frozenset(),
         origin=origin,
         record_state=state,
@@ -2860,7 +2862,7 @@ def test_parent_reads_commits_beyond_start_while_the_child_runs(
     app_children.run_child_to_completion(
         spec,
         "work",
-        cfg=Config.model_validate({"git": {"control": control}}),
+        cfg=config_model.Config.model_validate({"git": {"control": control}}),
         explicit_leaves=frozenset(),
         origin=origin,
         record_state=state,

@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from agent6 import kinds, path_safety, paths
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import result_format, target_policy
 
@@ -54,7 +54,7 @@ def host_network_reads() -> tuple[pathlib.Path, ...]:
 
 
 def persistent_jail_home(
-    config: Config,
+    config: config_model.Config,
     isolation: kinds.IsolationLevel,
     root: pathlib.Path,
     worktree_git_dir: pathlib.Path | None = None,
@@ -256,7 +256,7 @@ def _resolved_isolation(requested: str) -> str:
 
 
 def resolve_grants(
-    config: Config,
+    config: config_model.Config,
     root: pathlib.Path,
     *,
     server: tuple[str, Sequence[str], Sequence[str]] | None = None,
@@ -364,7 +364,7 @@ def _dropped_by(
 
 
 def workspace_for(
-    config: Config,
+    config: config_model.Config,
     root: pathlib.Path,
     *,
     memory_dir: pathlib.Path | None = None,
@@ -406,7 +406,7 @@ def workspace_for(
 
 
 def _home_for(
-    config: Config, isolation: kinds.IsolationLevel, persistent: pathlib.Path | None
+    config: config_model.Config, isolation: kinds.IsolationLevel, persistent: pathlib.Path | None
 ) -> str:
     """Return the HOME a command gets: persistent, the operator's own, or the jail's tmpfs."""
     if persistent is not None:
@@ -440,7 +440,7 @@ def command_temp(
 
 def jail_policy(
     root: pathlib.Path,
-    config: Config,
+    config: config_model.Config,
     isolation: kinds.IsolationLevel,
     argv: tuple[str, ...],
     *,
@@ -580,7 +580,9 @@ def jail_policy(
 _LEVELS: tuple[kinds.IsolationLevel, ...] = ("none", "partial", "full")
 
 
-def workspace_jail(root: pathlib.Path, config: Config, *, ran_under: str) -> kinds.JailPolicy:
+def workspace_jail(
+    root: pathlib.Path, config: config_model.Config, *, ran_under: str
+) -> kinds.JailPolicy:
     """Return the policy a command gets in a workspace, at the level its config resolves to.
 
     For a caller that runs no command there itself: a parent, about a child's clone. The

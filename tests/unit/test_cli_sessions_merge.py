@@ -1364,10 +1364,10 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
 
     from agent6 import budget as agent6_budget
     from agent6.app import merge_message
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.providers import transport
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "auth_style": "none"}},
             "models": {"default": {"model": "p/m"}},

@@ -12,18 +12,19 @@ import httpx2
 import pydantic
 import pytest
 
-from agent6 import __version__, config, kinds
+from agent6 import __version__, kinds
 from agent6 import budget as agent6_budget
 from agent6.app import conversation_state, role_providers
-from agent6.config import Config, OpenAIProviderEntry, secret_store
+from agent6.config import model as config_model
+from agent6.config import provider_config, secret_store, validation
 from agent6.models import cache
 from agent6.providers import oauth, oauth_protocol, provider_types, request_headers, transport
 
 _HEX32 = "0123456789abcdef"
 
 
-def _entry(headers: dict[str, Any], **extra: Any) -> OpenAIProviderEntry:
-    return OpenAIProviderEntry.model_validate(
+def _entry(headers: dict[str, Any], **extra: Any) -> provider_config.OpenAIProviderEntry:
+    return provider_config.OpenAIProviderEntry.model_validate(
         {
             "backend": "openai",
             "base_url": "https://m.example/v1",
@@ -88,7 +89,7 @@ def test_an_unsendable_header_map_refuses_at_load(headers: dict[str, Any], word:
 def test_a_credential_header_target_requires_an_oauth_setting(backend: str, target: str) -> None:
     """An API key or ChatGPT's fixed sign-in cannot render configured-issuer headers."""
     with pytest.raises(pydantic.ValidationError) as exc:
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {
                     "work": {
@@ -138,7 +139,7 @@ def test_chatgpt_reserved_headers_stay_reserved_for_credential_targets(
 ) -> None:
     """A credential target cannot bypass ChatGPT's reserved-header refusal."""
     with pytest.raises(pydantic.ValidationError, match=f"may not set {name}: the transport owns"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {
                     "work": {
@@ -161,8 +162,8 @@ def test_session_id_template_refuses_at_load_with_the_conversation_fact(
         '[providers.work.extra_headers.x-conversation]\ntemplate = "{session_id}"\n',
         encoding="utf-8",
     )
-    with pytest.raises(config.ConfigError, match=r"\{session_id\}.*\{conversation_id\}"):
-        config.load_config(path)
+    with pytest.raises(validation.ConfigError, match=r"\{session_id\}.*\{conversation_id\}"):
+        config_model.load_config(path)
 
 
 def test_every_fact_renders_for_the_class_that_has_it() -> None:
@@ -418,7 +419,7 @@ def test_an_oauth_targeted_template_reaches_the_token_endpoint_and_a_literal_doe
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "work": {
@@ -442,7 +443,7 @@ def test_an_oauth_targeted_template_reaches_the_token_endpoint_and_a_literal_doe
         }
     )
     entry = cfg.providers["work"]
-    assert isinstance(entry, OpenAIProviderEntry)
+    assert isinstance(entry, provider_config.OpenAIProviderEntry)
     secret_store.save_oauth_grant(
         "work",
         secret_store.StoredGrant(

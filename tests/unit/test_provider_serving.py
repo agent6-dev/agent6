@@ -10,8 +10,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget, config, kinds
+from agent6 import budget, kinds
 from agent6.app import preflight, role_providers
+from agent6.config import model as config_model
 from agent6.models import cache
 from agent6.providers import provider_types
 from agent6.sessions import event_log
@@ -74,7 +75,7 @@ def _reply(
 def _worker(
     tmp_path: pathlib.Path, url: str, backend: str, stream: bool, **settings: object
 ) -> role_providers.InstrumentedProvider:
-    cfg = config.Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "work": {"backend": backend, "base_url": url, "auth_style": "none", **settings}
@@ -191,10 +192,10 @@ def test_a_tier_refusal_names_the_key_and_keeps_the_reason(
 @pytest.mark.parametrize("backend", ["openai", "responses"])
 def test_the_direct_default_is_standard_and_a_tier_in_extra_body_is_refused(backend: str) -> None:
     entry = {"backend": backend, "base_url": "https://api.openai.com/v1"}
-    cfg = config.Config.model_validate({"providers": {"work": entry}})
+    cfg = config_model.Config.model_validate({"providers": {"work": entry}})
     assert cfg.providers["work"].model_dump()["service_tier"] == "standard"
     with pytest.raises(ValueError, match=r"extra_body\.service_tier"):
-        config.Config.model_validate(
+        config_model.Config.model_validate(
             {"providers": {"work": {**entry, "extra_body": {"service_tier": "auto"}}}}
         )
 
@@ -203,10 +204,10 @@ def test_the_direct_default_is_standard_and_a_tier_in_extra_body_is_refused(back
 def test_an_entry_without_the_tier_key_takes_a_tier_in_extra_body(backend: str) -> None:
     """The refusal named `service_tier`, a key these entries refuse."""
     entry = {"backend": backend, "extra_body": {"service_tier": "standard_only"}}
-    cfg = config.Config.model_validate({"providers": {"work": entry}})
+    cfg = config_model.Config.model_validate({"providers": {"work": entry}})
     assert cfg.providers["work"].model_dump()["extra_body"] == {"service_tier": "standard_only"}
     with pytest.raises(ValueError, match="Extra inputs are not permitted"):
-        config.Config.model_validate(
+        config_model.Config.model_validate(
             {"providers": {"work": {"backend": backend, "service_tier": "standard"}}}
         )
 
@@ -307,7 +308,7 @@ def test_only_matching_tier_quotes_price_an_auto_call(
         ]
     }
     with provider_endpoint.serve(listing) as (url, _calls):
-        cfg = config.Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "models": {"default": {"model": "work/alias"}},
                 "providers": {
@@ -369,7 +370,7 @@ def test_the_standard_tier_is_priced_at_the_unqualified_rates(
         )
     settings = {"service_tier": tier} if tier is not None else {}
     with provider_endpoint.serve({"data": rows}) as (url, _calls):
-        cfg = config.Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "models": {"default": {"model": "work/alias"}},
                 "providers": {"work": {"backend": "responses", "base_url": url, **settings}},
@@ -408,7 +409,7 @@ def test_flex_and_fast_need_a_listed_rate_and_a_serving_tier(
         worker = _worker(tmp_path, url, "responses", False, service_tier=tier)
         providers = worker.budget.providers
         assert cache.fetch_models_live("work", providers["work"], None)
-    cfg = config.Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": providers,
             "models": {"default": {"model": "work/alias"}},

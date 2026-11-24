@@ -11,8 +11,8 @@ from typing import Any, override
 import httpx2
 import pytest
 
-from agent6 import config, kinds
-from agent6.config import secret_store
+from agent6 import kinds
+from agent6.config import provider_config, secret_store
 from agent6.providers import oauth, oauth_protocol, provider_types, request_headers, transport
 
 
@@ -98,7 +98,7 @@ def test_a_stale_401_retries_once_with_the_current_bearer(
 ) -> None:
     """A shared holder's rotation during an attempt supplies the retry without another refresh."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    entry = config.OpenAIProviderEntry.model_validate(
+    entry = provider_config.OpenAIProviderEntry.model_validate(
         {
             "backend": "openai",
             "base_url": "https://models.example/v1",

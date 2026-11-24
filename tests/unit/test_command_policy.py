@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import directive, portable
 from agent6.app import frontend as app_frontend
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail_session
 from agent6.sessions import ipc
 from agent6.tools import child_tools, dispatch, operator_prompts, tool_errors
@@ -59,9 +59,9 @@ def test_a_front_end_that_can_ask_is_not_away(
     """
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     ipc.set_away_mode(tmp_path, "deny")
-    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
+    app_frontend.settle_away_mode(tmp_path, config_model.Config(), can_ask=True)
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"
-    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=False)
+    app_frontend.settle_away_mode(tmp_path, config_model.Config(), can_ask=False)
     assert ipc.effective_run_commands("ask", tmp_path) == "deny"
 
 
@@ -71,10 +71,10 @@ def test_an_editor_s_allow_all_outlives_its_next_turn(
     """An ACP "allow all" covers the session's later prompts; a terminal start answers afresh."""
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     ipc.record_answer(tmp_path, "session", ipc.COMMAND_SCOPE)
-    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
+    app_frontend.settle_away_mode(tmp_path, config_model.Config(), can_ask=True)
     assert ipc.effective_run_commands("ask", tmp_path) == "allow"
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
-    app_frontend.settle_away_mode(tmp_path, Config(), can_ask=True)
+    app_frontend.settle_away_mode(tmp_path, config_model.Config(), can_ask=True)
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"
 
 
@@ -89,7 +89,7 @@ def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: pathlib.Path) -> No
     It never spends turns on a door it cannot open.
     """
     # A gate must be configured, or run_verify_command is hidden for its own reason.
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "ask"},
             "harness": {
@@ -105,7 +105,7 @@ def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: pathlib.Path) -> No
 
 def test_the_policy_is_re_read_not_cached(tmp_path: pathlib.Path) -> None:
     """The policy is re-read on every call, so a session allow stops the prompts at once."""
-    cfg = Config.model_validate({"sandbox": {"run_commands": "ask"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "ask"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert d.command_policy() == "ask"
     ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)
@@ -119,7 +119,7 @@ def test_session_denial_keeps_command_output_but_not_command_stops(
     """Reading a command this execution owns needs neither a command grant nor a child."""
     from unittest import mock
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "harness": {"parallel": {"tool": parallel}}}
     )
     session = tmp_path / "session"
@@ -152,7 +152,7 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     """A single "no" refuses one call and withdraws nothing."""
     from agent6 import kinds
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "ask"},
             "harness": {
@@ -206,7 +206,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
         seen.append(request)
         return operator_prompts.ApprovalAnswer(False, "stdin")
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "ask", "network": "host"},
             "harness": {
@@ -230,7 +230,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
 
 def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: pathlib.Path) -> None:
     """A stop during the approval wait is named as a stop, not as a policy refusal."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "ask"},
             "harness": {

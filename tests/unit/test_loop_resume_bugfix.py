@@ -19,7 +19,7 @@ from unittest import mock
 import pytest
 
 from agent6 import directive
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import (
     loop,
     loop_conversation,
@@ -388,7 +388,7 @@ def test_resume_judges_the_saved_best_against_only_the_journal_target(
             }
         )
     )
-    wf = _wf(events=events, config=Config())
+    wf = _wf(events=events, config=config_model.Config())
     state = loop_state.LoopState(original_task="go", tool_calls=0)
     loop_resume.seed_carryover(
         wf, state, loop_conversation.Conversation(), loop_snapshot.load_session_snapshot(path)
@@ -1348,7 +1348,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     chain = "refs/agent6/run1/head"
     wf = _wf(
         root=repo,
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"]},
@@ -1395,7 +1395,7 @@ def test_a_resume_onto_another_tree_keeps_the_verified_tree_as_a_fact(
     ev = _EventCapture()
     wf = _wf(
         root=repo,
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"]},
@@ -1460,7 +1460,7 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     wf = _wf(
         root=repo,
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"]},
@@ -1611,7 +1611,7 @@ def test_resume_restates_execution_local_gate_availability(
         ).model_dump_json(),
         encoding="utf-8",
     )
-    config = Config.model_validate(
+    config = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": policy},
             "harness": {
@@ -1678,7 +1678,7 @@ def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathl
         "run_verify_command not run: the run was asked to stop while awaiting approval."
     )
     wf = _wf(
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"], "when": "finish", "at_start": True},

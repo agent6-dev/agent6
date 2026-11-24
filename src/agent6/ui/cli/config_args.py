@@ -9,7 +9,7 @@ import functools
 import pathlib
 from typing import get_args
 
-from agent6.config import EffortLevel
+from agent6 import kinds
 from agent6.ui.cli import common, completers
 
 
@@ -275,7 +275,7 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     common.bind_completer(model_route, completers._complete_model_verb_values)
     model_p.add_argument(
         "--effort",
-        choices=get_args(EffortLevel),
+        choices=get_args(kinds.EffortLevel),
         default="",
         help=(
             "Reasoning effort to save with this assignment. Default: the existing setting is"

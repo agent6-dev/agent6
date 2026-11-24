@@ -10,12 +10,13 @@ import pytest
 
 from agent6 import child_records, kinds
 from agent6.app import worktrees
-from agent6.config import Config, ConfigError, layer
+from agent6.config import layer, validation
+from agent6.config import model as config_model
 from agent6.ui.cli import completers
 
 
-def _cfg() -> Config:
-    return Config.model_validate(
+def _cfg() -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {
                 "o": {"backend": "openai", "base_url": "https://o.example/v1"},
@@ -56,10 +57,10 @@ def test_a_selector_resolves_to_complete_settings() -> None:
 
 
 def test_a_role_without_a_route_refuses() -> None:
-    assert Config().child_settings("") is None  # the worker's own, whatever it is
-    with pytest.raises(ConfigError, match=r"models\.worker: no model route"):
-        Config().child_settings("worker")
-    with pytest.raises(ConfigError, match="name the provider"):
+    assert config_model.Config().child_settings("") is None  # the worker's own, whatever it is
+    with pytest.raises(validation.ConfigError, match=r"models\.worker: no model route"):
+        config_model.Config().child_settings("worker")
+    with pytest.raises(validation.ConfigError, match="name the provider"):
         _cfg().child_settings("p/")
 
 

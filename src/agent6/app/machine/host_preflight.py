@@ -14,11 +14,13 @@ from collections.abc import Callable, Mapping
 
 from agent6.app import notify_hook
 from agent6.app import reporter as app_reporter
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.machine import schema
 
 
-def machine_pass_env_refusal(cfg: Config, states: Mapping[str, schema.StateSpec]) -> str | None:
+def machine_pass_env_refusal(
+    cfg: config_model.Config, states: Mapping[str, schema.StateSpec]
+) -> str | None:
     """Return the refusal naming every tool state asking for a disallowed variable, else None.
 
     Args:
@@ -69,7 +71,7 @@ def machine_protect_paths(
 
 
 def build_machine_notify_hook(
-    cfg: Config,
+    cfg: config_model.Config,
     machine_id: str,
     root: pathlib.Path,
     *,

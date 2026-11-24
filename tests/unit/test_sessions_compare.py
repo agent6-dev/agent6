@@ -27,7 +27,8 @@ from agent6 import budget as agent6_budget
 from agent6 import child_records, kinds, paths
 from agent6.app import compare as app_compare
 from agent6.app.parallel import children as app_children
-from agent6.config import Config, layer_data
+from agent6.config import layer_data
+from agent6.config import model as config_model
 from agent6.providers import provider_calls, provider_types
 from agent6.sessions import completion
 from agent6.sessions import layout as sessions_layout
@@ -455,7 +456,7 @@ def _stub_reviewers(
     """
 
     def spawner(
-        cfg: Config, origin: pathlib.Path, record_state: pathlib.Path, **kw: Any
+        cfg: config_model.Config, origin: pathlib.Path, record_state: pathlib.Path, **kw: Any
     ) -> app_children.GroupSpawner:
         del origin
 
@@ -519,7 +520,7 @@ def _stub_reviewers(
 
 
 def _rank(
-    cfg: Config, candidates: list[child_records.CandidateBrief], cwd: pathlib.Path
+    cfg: config_model.Config, candidates: list[child_records.CandidateBrief], cwd: pathlib.Path
 ) -> app_compare.RankOutcome:
     """Rank through the CLI's adapter, as `sessions compare` does after loading its config."""
     effective = cast(
@@ -894,8 +895,8 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
 # ---------------------------------------------------------------------------
 
 
-def _reviewer_cfg() -> Config:
-    return Config.model_validate(
+def _reviewer_cfg() -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"reviewer": {"model": "o/reviewer-1"}},
@@ -1005,14 +1006,14 @@ def test_rank_mechanical_path_prints_no_judging_line(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With no reviewer configured the mechanical fallback is instant and shows no status."""
-    outcome = _rank(Config(), _two_candidates(), tmp_path)
+    outcome = _rank(config_model.Config(), _two_candidates(), tmp_path)
 
     assert outcome.ranked_by == "mechanical"
     assert capsys.readouterr().out == ""
 
 
-def _judges_cfg(*judges: str) -> Config:
-    return Config.model_validate(
+def _judges_cfg(*judges: str) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"default": {"model": "o/worker-1"}, "reviewer": {"model": "o/reviewer-1"}},
@@ -1042,7 +1043,7 @@ def _reviewer_judges(
     """Answer each judge by its model, and return the list of `role=model` reviewers as built."""
     reviewers: list[str] = []
 
-    def build(cfg: Config, role: Any, **_k: Any) -> provider_calls.Provider:
+    def build(cfg: config_model.Config, role: Any, **_k: Any) -> provider_calls.Provider:
         resolved = cfg.models.resolve(role)
         assert resolved is not None
         reviewers.append(f"{role}={resolved.model}")

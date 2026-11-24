@@ -439,7 +439,7 @@ def test_outline_names_why_it_has_no_symbols(
     `symbols: []` was the one thing the model acts on, stated wrongly. The granted path lives
     under /tmp, which a run below `full` isolation drops, so the probe is pinned at `full`.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.sandbox import detect
     from agent6.tools import dispatch, tool_errors
 
@@ -458,13 +458,13 @@ def test_outline_names_why_it_has_no_symbols(
         ),
     )
     (tmp_path / "notes.md").write_text("# heading\n", encoding="utf-8")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config())
     with pytest.raises(tool_errors.ToolError, match=r"no parser for \.md"):
         d.dispatch("outline", {"path": "notes.md"})
     granted = tmp_path.parent / (tmp_path.name + "-granted")
     granted.mkdir()
     (granted / "g.py").write_text("def gamma():\n    pass\n", encoding="utf-8")
-    cfg = Config.model_validate({"sandbox": {"extra_read_paths": [str(granted)]}})
+    cfg = config_model.Config.model_validate({"sandbox": {"extra_read_paths": [str(granted)]}})
     d2 = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     with pytest.raises(tool_errors.ToolError, match="outside the indexed workspace"):
         d2.dispatch("outline", {"path": str(granted / "g.py")})

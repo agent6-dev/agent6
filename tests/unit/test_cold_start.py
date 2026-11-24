@@ -11,8 +11,9 @@ from unittest import mock
 
 import pytest
 
-from agent6 import budget, config, kinds, media
+from agent6 import budget, kinds, media
 from agent6.app import role_providers
+from agent6.config import model as config_model
 from agent6.harness import loop_conversation, nudges, operator_bridge
 from agent6.harness.compaction import window
 from agent6.providers import provider_types, request_headers
@@ -72,7 +73,10 @@ def _resume(
     helper = helper or writers.Writer(writers.response("Helper handoff."))
     lines: list[str] = []
     dispatcher = mock.MagicMock(
-        config=config.Config(), last_verification=None, execution_id="new", verify_withheld=False
+        config=config_model.Config(),
+        last_verification=None,
+        execution_id="new",
+        verify_withheld=False,
     )
     offered = {"read_session", "list_tasks"}
     dispatcher.available_tool_names.return_value = offered

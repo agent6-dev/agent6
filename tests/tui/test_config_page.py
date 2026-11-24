@@ -18,7 +18,7 @@ from textual import app as textual_app
 from textual import widgets
 
 from agent6 import paths
-from agent6.config import ClaudeCodeProviderEntry, OpenAIProviderEntry, io, layer
+from agent6.config import io, layer, provider_config
 from agent6.models import cache
 from agent6.models import choices as models_choices
 from agent6.ui.tui import config_forms, config_model, config_page, forms, menubar, modals
@@ -1454,7 +1454,7 @@ def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
             cfg = layer.load_effective(repo).config
             assert "openrouter" in cfg.providers
             entry = cfg.providers["openrouter"]
-            assert isinstance(entry, OpenAIProviderEntry)
+            assert isinstance(entry, provider_config.OpenAIProviderEntry)
             assert entry.base_url == "https://openrouter.ai/api/v1"
 
     asyncio.run(scenario())
@@ -1529,7 +1529,7 @@ def test_add_provider_prefills_known_preset_base_url(repo: pathlib.Path) -> None
             )  # written + validated, modal closed
             cfg = layer.load_effective(repo).config
             entry = cfg.providers["openrouter"]
-            assert isinstance(entry, OpenAIProviderEntry)
+            assert isinstance(entry, provider_config.OpenAIProviderEntry)
             assert entry.base_url == "https://openrouter.ai/api/v1"
 
     asyncio.run(scenario())
@@ -1620,7 +1620,7 @@ def test_add_provider_writes_a_chosen_direct_over_an_existing_deployment(
 
     asyncio.run(scenario())
     entry = layer.load_effective(repo).config.providers["az"]
-    assert isinstance(entry, OpenAIProviderEntry)
+    assert isinstance(entry, provider_config.OpenAIProviderEntry)
     assert entry.deployment == "direct"
 
 
@@ -1672,7 +1672,7 @@ def test_add_provider_keeps_an_existing_deployment_when_left_blank(repo: pathlib
     )
     assert _add_provider_by_form(repo, "az", "openai", None)
     entry = layer.load_effective(repo).config.providers["az"]
-    assert isinstance(entry, OpenAIProviderEntry)
+    assert isinstance(entry, provider_config.OpenAIProviderEntry)
     assert entry.deployment == "azure"
 
 
@@ -1681,7 +1681,9 @@ def test_add_provider_takes_claude_code_with_the_deployment_left_blank(
 ) -> None:
     """A `claude_code` provider adds with the deployment chooser on its blank row."""
     assert _add_provider_by_form(repo, "cc", "claude_code", None)
-    assert isinstance(layer.load_effective(repo).config.providers["cc"], ClaudeCodeProviderEntry)
+    assert isinstance(
+        layer.load_effective(repo).config.providers["cc"], provider_config.ClaudeCodeProviderEntry
+    )
 
 
 def test_add_provider_refuses_a_deployment_for_claude_code(repo: pathlib.Path) -> None:
@@ -1730,7 +1732,7 @@ def test_edit_base_url_prefills_preset_for_known_provider(repo: pathlib.Path) ->
             await pilot.pause()
             cfg = layer.load_effective(repo).config
             entry = cfg.providers["openrouter"]
-            assert isinstance(entry, OpenAIProviderEntry)
+            assert isinstance(entry, provider_config.OpenAIProviderEntry)
             assert entry.base_url == "https://openrouter.ai/api/v1"
 
     asyncio.run(scenario())

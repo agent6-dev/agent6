@@ -20,18 +20,12 @@ from typing import Any
 
 from agent6 import directive as agent6_directive
 from agent6 import kinds
-from agent6.config import (
-    ClaudeCodeProviderEntry,
-    Config,
-    ConfigError,
-    RoleName,
-    layer,
-    secret_store,
-)
+from agent6.config import layer, provider_config, secret_store, validation
+from agent6.config import model as config_model
 from agent6.models import cache as models_cache
 from agent6.models import registry
 
-ROLES: tuple[RoleName, ...] = kinds.MODEL_ROLES
+ROLES: tuple[kinds.RoleName, ...] = kinds.MODEL_ROLES
 
 __all__ = [
     "ModelValidation",
@@ -46,7 +40,7 @@ __all__ = [
 _MAX_SUGGESTIONS = 3
 
 
-def _known_models(cfg: Config, provider: str) -> set[str]:
+def _known_models(cfg: config_model.Config, provider: str) -> set[str]:
     """Return the ids the provider is known to serve: the roles' models plus its cache."""
     named = {
         rm.model
@@ -81,7 +75,7 @@ class ModelValidation:
         return bool(self.unknown) and not self.can_validate
 
 
-def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
+def _fresh_listing(cfg: config_model.Config, provider_name: str) -> list[str] | None:
     """Fetch the provider's live listing now, the evidence a refusal needs.
 
     A secrets problem means an unauthenticated attempt, as a keyless provider lists.
@@ -94,7 +88,7 @@ def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
         The ids, or None when the fetch fails or the provider has no listing.
     """
     entry = cfg.providers.get(provider_name)
-    if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
+    if entry is None or isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         return None  # no listing: the binary resolves model names itself
     try:
         secrets: dict[str, Any] = secret_store.load_secrets()
@@ -139,7 +133,9 @@ def _suggest(unknown: list[str], pool: list[str]) -> dict[str, tuple[str, ...]]:
     return {model: _close_ids(model, pool, bare_to_full) for model in unknown}
 
 
-def validate_spec_models(routes: Sequence[kinds.ModelRoute | None], cfg: Config) -> ModelValidation:
+def validate_spec_models(
+    routes: Sequence[kinds.ModelRoute | None], cfg: config_model.Config
+) -> ModelValidation:
     """Check a `/parallel` spec's child routes, each against its own provider.
 
     A miss against an existing cache re-checks the live listing once; a miss on a provider
@@ -188,7 +184,7 @@ def validate_spec_models(routes: Sequence[kinds.ModelRoute | None], cfg: Config)
     return ModelValidation(unknown=(), suggestions={}, can_validate=True)
 
 
-def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
+def validate_configured_model(cfg: config_model.Config, role: kinds.RoleName) -> ModelValidation:
     """Check the configured model of a role against its provider's listing.
 
     The pool excludes the model itself, which `_known_models` would list trivially. A miss
@@ -241,7 +237,9 @@ def configured_model_refusal(v: ModelValidation, role: str) -> str:
     )
 
 
-def flag_model_refusal(v: ModelValidation, cfg: Config, role: RoleName, spec: str) -> str:
+def flag_model_refusal(
+    v: ModelValidation, cfg: config_model.Config, role: kinds.RoleName, spec: str
+) -> str:
     """Return the refusal for a `--model` value its provider does not list.
 
     Args:
@@ -310,7 +308,7 @@ def directive_model_refusal(
         cfg = layer.load_effective(cwd, config_paths, preset=preset).config
         if model:
             cfg = cfg.with_model_route("worker", cfg.model_route(model))
-    except ConfigError:
+    except validation.ConfigError:
         return None  # a broken config is its own error elsewhere
     try:
         cap = cfg.harness.parallel.max_children
@@ -319,7 +317,7 @@ def directive_model_refusal(
             for seg in segments
             for m in agent6_directive.parse_spec(seg.spec, limit=cap)
         ]
-    except (ConfigError, agent6_directive.DirectiveError) as exc:
+    except (validation.ConfigError, agent6_directive.DirectiveError) as exc:
         return str(exc)
     verdict = validate_spec_models(routes, cfg)
     return refusal_message(verdict, directive=True) if verdict.refused else None

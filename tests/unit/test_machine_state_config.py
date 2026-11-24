@@ -17,7 +17,8 @@ import pytest
 from agent6 import kinds, paths
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, host_preflight, run, state_configs
-from agent6.config import Config, ConfigError, SandboxConfig
+from agent6.config import model as config_model
+from agent6.config import sandbox_config, validation
 from agent6.machine import contracts, schema, semantics
 from agent6.sandbox import detect, jail
 
@@ -177,11 +178,15 @@ def _operator(text: str = OPERATOR) -> None:
     target.write_text(text, encoding="utf-8")
 
 
-def _cfg(**sandbox: Any) -> Config:
-    return Config.model_validate({"sandbox": sandbox})
+def _cfg(**sandbox: Any) -> config_model.Config:
+    return config_model.Config.model_validate({"sandbox": sandbox})
 
 
-def _widening(operator: Config, state: Config, isolation: kinds.IsolationLevel = "full") -> str:
+def _widening(
+    operator: config_model.Config,
+    state: config_model.Config,
+    isolation: kinds.IsolationLevel = "full",
+) -> str:
     return "; ".join(state_configs.config_widening(operator, isolation, state, isolation).values())
 
 
@@ -227,7 +232,9 @@ def test_run_state_requires_commits_at_resolution_and_check(
         text += f"\n[{table}.git]\ncommit_per_turn = false\n"
     path = _write(tmp_path, text)
     spec = semantics.load_machine(path)
-    with pytest.raises(ConfigError, match=r"git\.commit_per_turn = true.*chain.*only.*clone"):
+    with pytest.raises(
+        validation.ConfigError, match=r"git\.commit_per_turn = true.*chain.*only.*clone"
+    ):
         state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
     assert entry.main(["machine", "check", str(path)]) == 1
     output = capsys.readouterr().err
@@ -348,7 +355,7 @@ def test_a_state_table_cannot_select_a_preset(
             ),
         )
     )
-    with pytest.raises(ConfigError, match="preset"):
+    with pytest.raises(validation.ConfigError, match="preset"):
         state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
 
 
@@ -367,7 +374,9 @@ def test_machine_cannot_raise_an_operator_budget_cap(
     """An unlimited allowance in a machine file cannot cancel an operator cap."""
     _operator(OPERATOR + f"\n[budget]\n{key} = 3\n")
     spec = semantics.load_machine(_write(tmp_path, MACHINE + f"\n[{where}.budget]\n{key} = -1\n"))
-    with pytest.raises(ConfigError, match=rf"budget\.{key} = -1.*wider than your config's 3"):
+    with pytest.raises(
+        validation.ConfigError, match=rf"budget\.{key} = -1.*wider than your config's 3"
+    ):
         state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
 
 
@@ -377,7 +386,7 @@ def test_machine_cannot_raise_an_operator_budget_cap(
 def test_every_sandbox_key_has_a_rule() -> None:
     """A new sandbox key fails here until it gets a rule."""
     assert set(state_configs._WITHIN) | set(state_configs._COVERS) == set(
-        SandboxConfig.model_fields
+        sandbox_config.SandboxConfig.model_fields
     )
 
 
@@ -558,11 +567,11 @@ def test_isolation_is_compared_by_the_level_it_resolves_to() -> None:
 
 def test_protect_git_is_compared_by_what_it_resolves_to() -> None:
     """A machine's `git.control = "model"` under the operator's `auto` turned protection off."""
-    state = Config.model_validate({"git": {"control": "model"}})
+    state = config_model.Config.model_validate({"git": {"control": "model"}})
     problems = state_configs.config_widening(_cfg(), "full", state, "full")
     assert "sandbox.protect_git" in problems and "git.control" in problems["sandbox.protect_git"]
     assert state_configs.config_widening(_cfg(protect_git="off"), "full", state, "full") == {}
-    assert state_configs.config_widening(state, "full", Config(), "full") == {}
+    assert state_configs.config_widening(state, "full", config_model.Config(), "full") == {}
 
 
 def test_network_is_compared_by_what_it_resolves_to() -> None:

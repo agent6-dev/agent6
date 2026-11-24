@@ -20,7 +20,8 @@ from textual import message as textual_message
 from textual import screen as textual_screen
 from textual.css import query
 
-from agent6 import config, directive
+from agent6 import directive
+from agent6.config import validation
 from agent6.sessions import ipc
 from agent6.ui import keymap, parallel_preview, path_completion
 from agent6.ui.tui import forms, menubar, modals
@@ -454,7 +455,7 @@ class SteerInput(widgets.TextArea):
             return None
         try:
             root, hide = self._workspace()
-        except config.ConfigError:
+        except validation.ConfigError:
             return None  # the hidden paths are unknown, so nothing is offered
         return path_completion.suggest_refs(root, hide, fragment)
 

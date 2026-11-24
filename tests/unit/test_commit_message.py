@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import run_chain
 from agent6.vcs import commit_message
 
@@ -87,14 +87,14 @@ def test_unclosed_thinking_block_falls_back() -> None:
 
 def test_the_configured_identity_reaches_the_commit(tmp_path: pathlib.Path) -> None:
     """`[git.commit].name` and `.email` reach the chain commit where git has no identity."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"git": {"commit": {"name": "Agent Six", "email": "agent6@example.com"}}}
     )
     identity = run_chain.commit_identity(cfg.git.commit, "Assisted-by: agent6:m1")
     assert identity is not None
     assert (identity.name, identity.email) == ("Agent Six", "agent6@example.com")
     assert identity.trailer == "Assisted-by: agent6:m1"
-    assert run_chain.commit_identity(Config().git.commit, None) is None
+    assert run_chain.commit_identity(config_model.Config().git.commit, None) is None
 
 
 def test_a_shared_second_level_dir_needs_every_path_under_it() -> None:

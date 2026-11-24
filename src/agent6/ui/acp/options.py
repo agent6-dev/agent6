@@ -12,7 +12,7 @@ import typing
 from typing import Any
 
 from agent6 import kinds
-from agent6.config import RoleModel
+from agent6.config import harness_config
 from agent6.models import choices
 from agent6.viewmodel import config_view
 
@@ -53,7 +53,7 @@ def config_options(
     route = model or choices.session_route(cwd, config_paths, mode, session_dir)
     if not route:
         return []
-    schema = config_view.field_schema(RoleModel, ["effort"])
+    schema = config_view.field_schema(harness_config.RoleModel, ["effort"])
     meanings: dict[str, str] = schema.choice_meanings if schema is not None else {}
     return [
         {

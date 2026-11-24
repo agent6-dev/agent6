@@ -9,7 +9,8 @@ import json
 import pathlib
 from typing import Any
 
-from agent6 import config, paths
+from agent6 import paths
+from agent6.config import provider_config
 
 
 def cache_path(provider_name: str) -> pathlib.Path | None:
@@ -28,7 +29,7 @@ def cache_path(provider_name: str) -> pathlib.Path | None:
     return paths.cache_dir() / "models" / f"{provider_name}.json"
 
 
-def binding(entry: config.ProviderEntry) -> str:
+def binding(entry: provider_config.ProviderEntry) -> str:
     """Return the fingerprint of the complete provider entry."""
     return hashlib.sha256(
         json.dumps(entry.model_dump(mode="json"), sort_keys=True).encode()

@@ -13,7 +13,7 @@ import pathlib
 from typing import Any
 from unittest import mock
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import (
     finish_gates,
     guards,
@@ -30,7 +30,7 @@ from agent6.tools import results
 
 def _wf(**kw: Any) -> loop.Harness:
     kw.setdefault("state_dir", pathlib.Path("/tmp/state"))
-    kw.setdefault("config", Config.model_validate({}))
+    kw.setdefault("config", config_model.Config.model_validate({}))
     return loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         provider=mock.MagicMock(),
@@ -259,13 +259,13 @@ def test_a_finish_after_a_recovery_is_honoured_at_once() -> None:
 
 def test_the_flip_advisory_follows_the_config_key() -> None:
     """`harness.memory_advisory = false` sends no advisory at a recovery; the default sends it."""
-    assert Config.model_validate({}).harness.memory_advisory is True
+    assert config_model.Config.model_validate({}).harness.memory_advisory is True
     cases: tuple[tuple[dict[str, bool], list[str]], ...] = (
         ({}, [nudges.MEMORY_FLIP_NUDGE]),
         ({"memory_advisory": False}, []),
     )
     for harness, sent in cases:
-        wf = _wf(config=Config.model_validate({"harness": harness}))
+        wf = _wf(config=config_model.Config.model_validate({"harness": harness}))
         state = _state()
         _verify(wf, state, _turn(1), rc=1)
         flip = _turn(2)

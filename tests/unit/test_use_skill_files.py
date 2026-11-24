@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import dispatch, skill_tools, tool_errors
 
 
@@ -23,7 +23,9 @@ def _skill_context(tmp_path: pathlib.Path) -> tuple[dispatch.ToolContext, pathli
         "---\nname: helper\ndescription: Use when testing helper.\n---\n\nBODY\n",
         encoding="utf-8",
     )
-    config = Config.model_validate({"skills": {"extra_dirs": [str(tmp_path / "skills")]}})
+    config = config_model.Config.model_validate(
+        {"skills": {"extra_dirs": [str(tmp_path / "skills")]}}
+    )
     return dispatch.ToolDispatcher(root=tmp_path, config=config).tool_context(), d
 
 

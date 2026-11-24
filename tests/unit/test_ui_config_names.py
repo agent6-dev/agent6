@@ -15,12 +15,13 @@ import pytest
 import tree_sitter
 import tree_sitter_language_pack
 
-from agent6 import config
+from agent6.config import model as config_model
+from agent6.config import model_roles
 from agent6.viewmodel import config_view
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 _UI = _ROOT / "src/agent6/ui"
-_ROOTS = "|".join(sorted({*config.Config.model_fields, "oauth"}))
+_ROOTS = "|".join(sorted({*config_model.Config.model_fields, "oauth"}))
 _REFERENCE = re.compile(
     rf"(?<![\w.])\[?(?P<root>{_ROOTS})\]?"
     r"(?P<tail>(?:\.(?:[a-z_][a-z_0-9]*|<name>|\*))+)(?![\w])"
@@ -92,12 +93,12 @@ def _unknown_names(module: str, text: str) -> list[str]:
         if name.startswith("oauth."):
             name = "providers.<name>." + name
         names = (
-            [name.replace("*", role, 1) for role in config.ModelsConfig.model_fields]
+            [name.replace("*", role, 1) for role in model_roles.ModelsConfig.model_fields]
             if name.startswith("models.*")
             else [name]
         )
         for leaf in names:
-            if config_view.field_schema(config.Config, leaf.split(".")) is None:
+            if config_view.field_schema(config_model.Config, leaf.split(".")) is None:
                 unknown.append(leaf)
     return unknown
 

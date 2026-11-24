@@ -12,7 +12,8 @@ import pydantic
 import pydantic_core
 
 from agent6 import terminal
-from agent6.config import Config, io, layer_data
+from agent6.config import io, layer_data
+from agent6.config import model as config_model
 from agent6.sessions import journal
 from agent6.viewmodel import config_view
 
@@ -80,7 +81,7 @@ def _exported_value(schema: config_view.FieldSchema, value: object) -> _Value:
 
 
 def observations(
-    cfg: Config, effective: layer_data.EffectiveConfig | None
+    cfg: config_model.Config, effective: layer_data.EffectiveConfig | None
 ) -> tuple[journal.SettingObservation, ...]:
     """Select the non-default settings for the journal, as `agent6 config show` prints them.
 
@@ -91,12 +92,12 @@ def observations(
     Returns:
         One observation per non-default setting; a value `config show` masks stays masked.
     """
-    defaults = layer_data.config_leaves(Config())
+    defaults = layer_data.config_leaves(config_model.Config())
     original = layer_data.config_leaves(effective.config) if effective else {}
     rows: list[journal.SettingObservation] = []
     for key, value in sorted(layer_data.config_leaves(cfg).items()):
         parts = io.split_key(key)
-        schema = config_view.field_schema(Config, parts) or config_view.FieldSchema()
+        schema = config_view.field_schema(config_model.Config, parts) or config_view.FieldSchema()
         if value == defaults.get(key, schema.default):
             continue
         origin = effective.origin(key) if effective else None
@@ -161,7 +162,7 @@ def export_settings(rows: list[object]) -> list[dict[str, _Value]]:
     Returns:
         Fixed config keys, their disclosed scalar values and source categories.
     """
-    fields = _fixed_fields(Config)
+    fields = _fixed_fields(config_model.Config)
     result: list[dict[str, _Value]] = []
     for item in rows:
         try:
@@ -171,7 +172,7 @@ def export_settings(rows: list[object]) -> list[dict[str, _Value]]:
         source = "preset" if row.source.startswith("preset ") else row.source
         if source not in _SOURCES or row.key not in fields:
             continue
-        schema = config_view.field_schema(Config, row.key.split("."))
+        schema = config_view.field_schema(config_model.Config, row.key.split("."))
         if schema is None:
             continue
         value = _exported_value(schema, row.value)

@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.app.machine import run, state_configs
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.machine import contracts, execution, live_world, semantics
 from agent6.machine import engine as machine_engine
 from agent6.machine import journal as machine_journal
@@ -191,7 +191,7 @@ reason = "fail"
 
 
 def _one_state(
-    cfg: Config, isolation: kinds.IsolationLevel
+    cfg: config_model.Config, isolation: kinds.IsolationLevel
 ) -> dict[str, state_configs.StateConfig]:
     """The resolved-config map of a world whose tool calls name no state."""
     return {"": state_configs.StateConfig(cfg, isolation)}
@@ -1038,7 +1038,7 @@ def test_data_dir_env_matches_jail_mount(
             journal=machine_journal.MachineJournal(tmp_path / "i"),
             data_dir=data_dir,
             tool_policy=run.machine_tool_policy_factory(
-                _one_state(Config(), isolation),
+                _one_state(config_model.Config(), isolation),
                 tmp_path,
                 protect_paths=(),
                 data_dir=data_dir,
@@ -1065,7 +1065,7 @@ def test_tool_jails_carry_the_operator_hide_paths(
 
     monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
     hidden = tmp_path / "cred.txt"
-    cfg = Config.model_validate({"sandbox": {"hide_paths": [str(hidden)]}})
+    cfg = config_model.Config.model_validate({"sandbox": {"hide_paths": [str(hidden)]}})
     world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
@@ -1093,7 +1093,7 @@ def test_live_world_run_tool_preserves_timeout_flag(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=run.machine_tool_policy_factory(
-            _one_state(Config(), "full"),
+            _one_state(config_model.Config(), "full"),
             tmp_path,
             protect_paths=(),
             data_dir=None,
@@ -1726,7 +1726,7 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path),
         tool_policy=run.machine_tool_policy_factory(
-            _one_state(Config(), "full"),
+            _one_state(config_model.Config(), "full"),
             tmp_path,
             protect_paths=(),
             data_dir=None,

@@ -12,7 +12,7 @@ import uuid
 from agent6 import evidence, kinds
 from agent6.app import reporter as app_reporter
 from agent6.app import worktree_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.machine import contracts
 from agent6.sandbox import jail
 from agent6.sessions import event_log, journal
@@ -21,7 +21,7 @@ from agent6.tools import target_policy
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class _Runner:
-    config: Config
+    config: config_model.Config
     policy: kinds.JailPolicy
     events_log: pathlib.Path | None
 
@@ -60,7 +60,7 @@ class _Runner:
 
 
 def tool_setup_failure(
-    cfg: Config,
+    cfg: config_model.Config,
     policy: kinds.JailPolicy,
     events_log: pathlib.Path | None,
     reporter: app_reporter.Reporter,

@@ -10,7 +10,8 @@ from agent6 import kinds, paths
 from agent6.app import fork
 from agent6.app import run as run_lifecycle
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import policy as tools_policy
@@ -46,7 +47,7 @@ def test_start_records_only_a_linked_checkouts_git_grant_before_tools(
     policies: list[kinds.JailPolicy] = []
     real_tools = session_runtime.build_session_tools
 
-    def tools(config: Config, **kw: Any) -> session_runtime.SessionTools:
+    def tools(config: config_model.Config, **kw: Any) -> session_runtime.SessionTools:
         recorded = sessions_manifest.read_manifest(session_dir).worktree_git_dir
         assert recorded == ((repo / ".git").resolve() if linked else None)
         built = real_tools(config, **kw)
@@ -85,7 +86,7 @@ def test_resume_and_forks_keep_the_recorded_git_grant(
     granted: list[pathlib.Path | None] = []
     real_tools = session_runtime.build_session_tools
 
-    def tools(config: Config, **kw: Any) -> session_runtime.SessionTools:
+    def tools(config: config_model.Config, **kw: Any) -> session_runtime.SessionTools:
         granted.append(kw["worktree_git_dir"])
         return real_tools(config, **kw)
 
@@ -156,5 +157,9 @@ def test_a_rewritten_pointer_cannot_replace_the_startup_grant(
     (checkout / ".git").write_text("gitdir: /etc\n", encoding="utf-8")
     with pytest.raises(jail.JailUnavailableError, match="a rewritten pointer grants nothing"):
         tools_policy.jail_policy(
-            checkout, Config(), "partial", ("true",), worktree_git_dir=saved.worktree_git_dir
+            checkout,
+            config_model.Config(),
+            "partial",
+            ("true",),
+            worktree_git_dir=saved.worktree_git_dir,
         )

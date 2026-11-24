@@ -25,7 +25,7 @@ from collections.abc import Iterator
 import pytest
 
 import agent6
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness.parallel import repo as child_repo
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -41,12 +41,12 @@ _BRANCH = "agent6/kid1"
 _FETCH = """
 import pathlib, sys
 from agent6 import errors
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import policy
 from agent6.vcs.git import command, ops
 command.GIT_TIMEOUT_S, command.GIT_TERM_GRACE_S = 3.0, 1.0
 origin, child = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-full = Config.model_validate({"sandbox": {"isolation": "full"}})
+full = config_model.Config.model_validate({"sandbox": {"isolation": "full"}})
 sender = policy.workspace_jail(child, full, ran_under="full")
 try:
     ops.fetch_branch(origin, child, sys.argv[3], sender=sender)
@@ -78,10 +78,12 @@ def _has(repo: pathlib.Path, sha: str) -> bool:
     return found.returncode == 0
 
 
-def _config(control: str, isolation: str = "full") -> Config:
+def _config(control: str, isolation: str = "full") -> config_model.Config:
     """Return a config under which the child's commands can write its `.git`."""
     own = {"git": {"control": "model"}} if control == "model" else {}
-    return Config.model_validate({"sandbox": {"isolation": isolation, "protect_git": "off"}, **own})
+    return config_model.Config.model_validate(
+        {"sandbox": {"isolation": isolation, "protect_git": "off"}, **own}
+    )
 
 
 @pytest.fixture
@@ -198,7 +200,9 @@ def test_an_import_refuses_a_weaker_level_than_the_child_ran_under(
     if weaker == "environment":
         monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
     else:
-        config = Config.model_validate({"sandbox": {"isolation": "none", "protect_git": "off"}})
+        config = config_model.Config.model_validate(
+            {"sandbox": {"isolation": "none", "protect_git": "off"}}
+        )
 
     with pytest.raises(child_repo.ChildRepoError, match=r"'full'.*'none'"):
         child_repo.import_run(origin, child, _BRANCH, session, config)
@@ -294,7 +298,7 @@ def test_a_sender_whose_fetch_died_while_it_started_does_not_serve(
     from agent6.vcs.git import upload_pack
 
     _origin, child, _session = _child(tmp_path)
-    unconfined = Config.model_validate({"sandbox": {"isolation": "none"}})
+    unconfined = config_model.Config.model_validate({"sandbox": {"isolation": "none"}})
     sender = policy.workspace_jail(child, unconfined, ran_under="none")
     line = upload_pack.command(sender, child, tmp_path / "sender.json")
     fetch = subprocess.Popen(

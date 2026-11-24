@@ -11,18 +11,8 @@ import pytest
 
 from agent6 import errors
 from agent6 import paths as paths_mod
-from agent6.config import (
-    AnthropicProviderEntry,
-    Config,
-    ConfigError,
-    OpenAIProviderEntry,
-    io,
-    layer,
-    layer_data,
-    load_config,
-    notices,
-    write,
-)
+from agent6.config import io, layer, layer_data, notices, provider_config, validation, write
+from agent6.config import model as config_model
 from agent6.viewmodel import config_view
 
 _GLOBAL = """\
@@ -78,7 +68,7 @@ def test_an_unknown_key_points_at_config_fix(repo: pathlib.Path) -> None:
     """
     gcfg = pathlib.Path(repo).parent / "g" / "agent6" / "config.toml"
     gcfg.write_text('[sandbox]\nnonexistent_key = 1\nisolation = "srtict"\n', encoding="utf-8")
-    with pytest.raises(ConfigError) as exc:
+    with pytest.raises(validation.ConfigError) as exc:
         layer.load_effective(repo)
     text = str(exc.value)
     assert "sandbox.nonexistent_key" in text and "fix: agent6 config fix" in text
@@ -187,7 +177,7 @@ def test_config_load_refuses_a_settled_stop_of_zero_or_below_minus_one(
     paths_mod.repo_config_path(repo).write_text(
         f"[harness]\nsettled_stop_after = {stop_after}\n", encoding="utf-8"
     )
-    with pytest.raises(ConfigError) as exc:
+    with pytest.raises(validation.ConfigError) as exc:
         layer.load_effective(repo)
     text = str(exc.value)
     assert "harness.settled_stop_after" in text
@@ -214,7 +204,7 @@ def test_config_load_refuses_a_settled_stop_of_zero_or_below_minus_one(
 def test_loader_names_the_new_home_of_a_moved_key(repo: pathlib.Path, old: str, new: str) -> None:
     """A key written before its move is refused with the place to write it now."""
     paths_mod.repo_config_path(repo).write_text(old, encoding="utf-8")
-    with pytest.raises(ConfigError) as exc:
+    with pytest.raises(validation.ConfigError) as exc:
         layer.load_effective(repo)
     assert f"use {new}" in str(exc.value)
     assert "extra_forbidden" in str(exc.value)
@@ -225,11 +215,11 @@ def test_loader_refuses_the_old_settled_stop_key(repo: pathlib.Path, layered: bo
     """Both loaders name the removed key and the key that replaces it."""
     path = paths_mod.repo_config_path(repo)
     path.write_text("[harness]\nverify_settled_stop_after = 3\n", encoding="utf-8")
-    with pytest.raises(ConfigError) as exc:
+    with pytest.raises(validation.ConfigError) as exc:
         if layered:
             layer.load_effective(repo)
         else:
-            load_config(path)
+            config_model.load_config(path)
     assert "harness.verify_settled_stop_after" in str(exc.value)
     assert "harness.settled_stop_after" in str(exc.value)
     assert "extra_forbidden" in str(exc.value)
@@ -512,7 +502,7 @@ def test_an_unquoted_non_bare_key_is_refused_before_writing(
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
-    with pytest.raises(ConfigError, match=r"invalid config key.*X Title"):
+    with pytest.raises(validation.ConfigError, match=r"invalid config key.*X Title"):
         write.set_config_value(repo_root, "providers.openai.extra_headers.X Title", "b")
     assert (gdir / "agent6" / "config.toml").read_text(encoding="utf-8") == before
 
@@ -604,7 +594,7 @@ def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: pathlib.Path) -
 
     A machine overlay with no file path is named too.
     """
-    with pytest.raises(ConfigError) as exc:
+    with pytest.raises(validation.ConfigError) as exc:
         layer.load_effective_with_overlay(repo, {"sandbox": {"isolation": "bogus"}})
     text = str(exc.value)
     assert "sandbox.isolation" in text
@@ -670,7 +660,7 @@ def test_materialize_roundtrips(repo: pathlib.Path, tmp_path: pathlib.Path) -> N
     out = tmp_path / "full.toml"
     out.write_text(text, encoding="utf-8")
     # The materialized file must be a complete, valid config on its own.
-    reloaded = load_config(out)
+    reloaded = config_model.load_config(out)
     assert reloaded.harness.verify.command == ("pytest", "-q")
     assert reloaded.sandbox.run_commands == "allow"
     assert reloaded.providers["anthropic"].backend == "anthropic"
@@ -688,7 +678,7 @@ def test_materialize_distinguishes_explicit_defaults_from_unset_leaves(
     explicit_leaves: frozenset[str] | None, writes_protect_git: bool, writes_home: bool
 ) -> None:
     """Selective materialization keeps explicit defaults and post-load non-default values."""
-    cfg = Config().with_budget_overrides(max_usd=3.5)
+    cfg = config_model.Config().with_budget_overrides(max_usd=3.5)
 
     written = tomllib.loads(layer.materialize(cfg, explicit_leaves=explicit_leaves))
 
@@ -701,7 +691,7 @@ def test_materialize_distinguishes_explicit_defaults_from_unset_leaves(
 
 def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
     """Selective materialization preserves named providers and whole extra_body leaves."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "team-provider": {
@@ -715,12 +705,12 @@ def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
     )
 
     written = tomllib.loads(layer.materialize(cfg, explicit_leaves=frozenset()))
-    reloaded = Config.model_validate(written)
+    reloaded = config_model.Config.model_validate(written)
 
     assert reloaded.models.worker is not None
     assert reloaded.models.worker.provider == "team-provider"
     provider = reloaded.providers["team-provider"]
-    assert isinstance(provider, OpenAIProviderEntry)
+    assert isinstance(provider, provider_config.OpenAIProviderEntry)
     assert provider.extra_body == {"nested": {"enabled": True}, "steps": [{"count": 2}]}
 
 
@@ -745,9 +735,9 @@ def test_materialize_roundtrips_nested_objects_in_arrays(
     eff = layer.load_effective(repo)
     out = tmp_path / "full.toml"
     out.write_text(layer.materialize(eff.config), encoding="utf-8")
-    reloaded = load_config(out)
+    reloaded = config_model.load_config(out)
     gw = reloaded.providers["gw"]
-    assert isinstance(gw, OpenAIProviderEntry)
+    assert isinstance(gw, provider_config.OpenAIProviderEntry)
     body = gw.extra_body
     assert body["models"] == [
         {"name": "a", "options": {"weight": 2, "tags": ["x"]}},
@@ -757,7 +747,7 @@ def test_materialize_roundtrips_nested_objects_in_arrays(
 
 
 def test_missing_flag_file_errors(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    with pytest.raises(ConfigError, match="not found"):
+    with pytest.raises(validation.ConfigError, match="not found"):
         layer.load_effective(repo, (tmp_path / "does-not-exist.toml",))
 
 
@@ -800,17 +790,17 @@ def test_profile_key_is_rejected_in_flag_and_machine_layers(
     """
     explicit = tmp_path / "ci.toml"
     explicit.write_text('[agent6]\npreset = "review"\n', encoding="utf-8")
-    with pytest.raises(ConfigError, match="preset"):
+    with pytest.raises(validation.ConfigError, match="preset"):
         layer.load_effective(repo, (explicit,))
-    with pytest.raises(ConfigError, match="preset"):
+    with pytest.raises(validation.ConfigError, match="preset"):
         layer.load_effective_with_overlay(repo, {"preset": "review"})
 
 
 def test_materialize_quotes_non_bare_keys(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """Materialize quotes free-form skill names and nested extra_body keys."""
-    from agent6.config import Config, load_config
+    from agent6.config import model as config_model
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "local": {
@@ -823,9 +813,9 @@ def test_materialize_quotes_non_bare_keys(repo: pathlib.Path, tmp_path: pathlib.
     )
     out = tmp_path / "materialized.toml"
     out.write_text(layer.materialize(cfg), encoding="utf-8")
-    reloaded = load_config(out)
+    reloaded = config_model.load_config(out)
     provider = reloaded.providers["local"]
-    assert isinstance(provider, OpenAIProviderEntry)
+    assert isinstance(provider, provider_config.OpenAIProviderEntry)
     assert provider.extra_body == {"some.options": {"my key": "value"}}
     assert reloaded.skills.state == {"org.some.skill": "enabled", "my skill": "always"}
 
@@ -834,9 +824,9 @@ def test_materialize_escapes_control_chars_in_values(
     repo: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     """A control char in a config string value serializes to valid TOML."""
-    from agent6.config import Config, load_config
+    from agent6.config import model as config_model
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": ["echo", "a\x01b\nc"]},
@@ -845,7 +835,7 @@ def test_materialize_escapes_control_chars_in_values(
     )
     out = tmp_path / "materialized.toml"
     out.write_text(layer.materialize(cfg), encoding="utf-8")
-    reloaded = load_config(out)
+    reloaded = config_model.load_config(out)
     assert list(reloaded.harness.verify.command) == ["echo", "a\x01b\nc"]
 
 
@@ -992,7 +982,7 @@ def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     gcfg.write_text('[sandbox\nprotect_git = "on"\n', encoding="utf-8")  # missing ]
     before = gcfg.read_text(encoding="utf-8")
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(validation.ConfigError):
         write.set_config_value(repo, "sandbox.run_commands", "deny")
 
     assert gcfg.read_text(encoding="utf-8") == before
@@ -1055,7 +1045,7 @@ def test_a_name_keyed_table_is_written_entry_by_entry(repo: pathlib.Path) -> Non
     providers = layer.load_effective(repo).config.providers
     assert set(providers) >= {"anthropic", "ollama"}
     kept = providers["anthropic"]
-    assert isinstance(kept, AnthropicProviderEntry)
+    assert isinstance(kept, provider_config.AnthropicProviderEntry)
     assert kept.api_key_env == "A"
 
 
@@ -1129,7 +1119,7 @@ def test_set_config_leaves_writes_nothing_when_a_later_leaf_is_refused(
     def _fail_second(text: str, key: str, value: object, *, path: pathlib.Path) -> str:
         calls["n"] += 1
         if calls["n"] == 2:
-            raise ConfigError("second leaf refused")
+            raise validation.ConfigError("second leaf refused")
         return real(text, key, value, path=path)
 
     monkeypatch.setattr(io, "upsert_leaf_text", _fail_second)
@@ -1152,8 +1142,8 @@ def test_load_config_wraps_an_unreadable_file(tmp_path: pathlib.Path) -> None:
     p.write_text("[review]\ninterval_turns = 7\n", encoding="utf-8")
     p.chmod(0o000)
     try:
-        with pytest.raises(ConfigError, match="cannot be read"):
-            load_config(p)
+        with pytest.raises(validation.ConfigError, match="cannot be read"):
+            config_model.load_config(p)
     finally:
         p.chmod(0o600)
 
@@ -1162,9 +1152,9 @@ def test_provider_members_are_derived_from_the_union() -> None:
     """The provider member tuple is derived from the union, so a new entry type is validated."""
     from typing import get_args
 
-    from agent6.config import ProviderEntry
+    from agent6.config import provider_config
 
-    declared = get_args(get_args(ProviderEntry)[0])
+    declared = get_args(get_args(provider_config.ProviderEntry)[0])
     assert set(write.PROVIDER_MEMBERS) == set(declared)
     assert len(write.PROVIDER_MEMBERS) == len(declared) >= 2
 

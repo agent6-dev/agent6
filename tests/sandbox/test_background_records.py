@@ -9,8 +9,9 @@ import time
 
 import pytest
 
-from agent6 import config, kinds, paths
+from agent6 import kinds, paths
 from agent6.app.session import runtime as session_runtime
+from agent6.config import model as config_model
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
 from agent6.sessions import shells as session_shells
@@ -140,7 +141,7 @@ def test_dispatcher_adoption_does_not_grant_host_records(
         control.write_text("workspace")
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
         session_dir = layout.SessionLayout(paths.state_dir(work), "s1").session_dir
-        cfg = config.Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {"sandbox": {"run_commands": "allow"}, "harness": {"command_checkin_s": 0.5}}
         )
         tools = dispatch.ToolDispatcher(

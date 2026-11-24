@@ -12,7 +12,7 @@ import pytest
 from agent6 import budget
 from agent6.app import conversation_state, role_providers
 from agent6.app.session import runtime as session_runtime
-from agent6.config import ReviewerConfig
+from agent6.config import harness_config
 from agent6.config import model as config_model
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
@@ -116,7 +116,9 @@ def test_review_requests_belong_to_real_distinct_reviewer_sessions(
             update={
                 "review": cfg.review.model_copy(
                     update={
-                        "reviewers": tuple(ReviewerConfig(focus="security") for _ in range(2)),
+                        "reviewers": tuple(
+                            harness_config.ReviewerConfig(focus="security") for _ in range(2)
+                        ),
                     }
                 )
             }

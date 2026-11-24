@@ -14,7 +14,7 @@ from textual import screen as textual_screen
 from textual import widgets as textual_widgets
 
 from agent6 import errors
-from agent6.config import ConfigError, io, notices, write
+from agent6.config import io, notices, validation, write
 from agent6.ui.tui import forms, modals
 from agent6.viewmodel import config_view
 
@@ -604,7 +604,7 @@ class AddPresetModal(FormModal[str | None]):
         to_repo = self.query_one("#addpreset-target", forms.ChoiceField).index == 1
         try:
             err = write.add_preset(self._repo, name, to_repo=to_repo)
-        except (ConfigError, errors.OperatorError) as exc:
+        except (validation.ConfigError, errors.OperatorError) as exc:
             err = str(exc)
         if err:
             self.notify(err, severity="error", timeout=8.0)

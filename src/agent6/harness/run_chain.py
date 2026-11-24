@@ -11,7 +11,7 @@ import dataclasses
 import pathlib
 
 from agent6 import errors, kinds, review_records
-from agent6.config import GitCommitConfig
+from agent6.config import git_config
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.vcs.git import snapshots as git_snapshots
@@ -19,7 +19,9 @@ from agent6.vcs.git import snapshots as git_snapshots
 _DIRTY_NOTE_CAP = 500  # paths a dirty-worktree note counts before it says "+"
 
 
-def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_read.CommitIdentity | None:
+def commit_identity(
+    commit: git_config.GitCommitConfig, trailer: str | None
+) -> git_read.CommitIdentity | None:
     """Return the author and provenance trailer of the run's commits.
 
     `[git.commit].name` and `.email` are the only identity on a machine whose git

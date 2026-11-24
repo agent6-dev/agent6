@@ -11,18 +11,13 @@ import time
 
 from agent6 import paths
 from agent6.config import (
-    AnthropicProviderEntry,
-    ChatGPTProviderEntry,
-    ConfigError,
-    OpenAIProviderEntry,
-    ProviderEntry,
-    ResponsesProviderEntry,
     io,
     layer,
     layer_data,
-    provider_name_refusal,
+    provider_config,
+    sandbox_config,
     secret_store,
-    validate_base_url,
+    validation,
     write,
 )
 from agent6.models import cache
@@ -59,11 +54,11 @@ def _prompt_api_key(name: str) -> str:
     return api_key
 
 
-def _current_entry(name: str) -> ProviderEntry | None:
+def _current_entry(name: str) -> provider_config.ProviderEntry | None:
     """Return the effective `[providers.<name>]`; None when absent or the config does not load."""
     try:
         return layer.load_effective(pathlib.Path.cwd()).config.providers.get(name)
-    except ConfigError:
+    except validation.ConfigError:
         return None
 
 
@@ -133,12 +128,16 @@ def _current(name: str, target: pathlib.Path, to_repo: bool) -> _Current:
     held = _target_leaves(name, target)
     try:
         eff = layer.load_effective(pathlib.Path.cwd())
-    except ConfigError:
+    except validation.ConfigError:
         return _Current(held, held, {})
     entry = eff.config.providers.get(name)
     effective = _Leaves(
         entry.backend if entry is not None else "",
-        entry.base_url if isinstance(entry, (OpenAIProviderEntry, ResponsesProviderEntry)) else "",
+        entry.base_url
+        if isinstance(
+            entry, (provider_config.OpenAIProviderEntry, provider_config.ResponsesProviderEntry)
+        )
+        else "",
     )
     target_layer = "repo" if to_repo else "global"
     shadowed = {
@@ -189,7 +188,7 @@ def _prompt_base_url(offered: str) -> str:
         url = input(f"Base URL [{offered}]: ").strip() or offered
     except EOFError:
         url = offered
-    validate_base_url(url)
+    sandbox_config.validate_base_url(url)
     return url
 
 
@@ -213,7 +212,7 @@ def _write_provider_block(
         err = write.set_config_leaves(
             pathlib.Path.cwd(), f"providers.{name}", fields, to_repo=to_repo
         )
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         return str(exc)
     return None if err is None else f"that would make the config invalid:\n{err}"
 
@@ -241,13 +240,13 @@ def _resolve_provider_name(provider: str) -> str | None:
         except EOFError:
             common.error("no input.")
             return None
-    if refusal := provider_name_refusal(name):
+    if refusal := provider_config.provider_name_refusal(name):
         common.error(refusal)
         return None
     return name
 
 
-def _verify_key(entry: ProviderEntry | None, api_key: str) -> None:
+def _verify_key(entry: provider_config.ProviderEntry | None, api_key: str) -> None:
     """Probe the provider's /models endpoint to confirm the key authenticates.
 
     A read-only GET, within connect's no-remote-execution rule. Prints the outcome and never
@@ -286,7 +285,10 @@ def _verify_key(entry: ProviderEntry | None, api_key: str) -> None:
 
 
 def _verify_sign_in(
-    name: str, entry: AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry
+    name: str,
+    entry: provider_config.AnthropicProviderEntry
+    | provider_config.OpenAIProviderEntry
+    | provider_config.ResponsesProviderEntry,
 ) -> None:
     """Use the stored grant once: the configured exchange, then a read-only model listing.
 
@@ -311,10 +313,10 @@ def _verify_sign_in(
 
 def _sign_in(
     name: str,
-    entry: AnthropicProviderEntry
-    | ChatGPTProviderEntry
-    | OpenAIProviderEntry
-    | ResponsesProviderEntry,
+    entry: provider_config.AnthropicProviderEntry
+    | provider_config.ChatGPTProviderEntry
+    | provider_config.OpenAIProviderEntry
+    | provider_config.ResponsesProviderEntry,
     flow: str,
     verify: bool,
 ) -> int:
@@ -343,12 +345,16 @@ def _sign_in(
     except (provider_types.ProviderError, secret_store.SecretsError) as exc:
         common.error(f"{exc}")
         return 2
-    plan = oauth_chatgpt.plan_type_of(grant) if isinstance(entry, ChatGPTProviderEntry) else ""
+    plan = (
+        oauth_chatgpt.plan_type_of(grant)
+        if isinstance(entry, provider_config.ChatGPTProviderEntry)
+        else ""
+    )
     print(
         f"Signed in{f' ({plan} plan)' if plan else ''}; the grant is saved to {saved} (0600),"
         f" bound to [providers.{name}]."
     )
-    if isinstance(entry, ChatGPTProviderEntry):
+    if isinstance(entry, provider_config.ChatGPTProviderEntry):
         if not stored.account_id:
             common.warn(
                 "the sign-in carried no ChatGPT account id; runs will refuse until a"
@@ -418,7 +424,7 @@ def _prompt_backend(name: str, preset_format: str, current_format: str) -> str |
     return backend
 
 
-def _revoke(name: str, entry: ProviderEntry | None) -> bool:
+def _revoke(name: str, entry: provider_config.ProviderEntry | None) -> bool:
     """Revoke a stored OAuth grant at its issuer, best effort; a dead token revokes fine.
 
     Args:
@@ -433,13 +439,13 @@ def _revoke(name: str, entry: ProviderEntry | None) -> bool:
         or not isinstance(
             entry,
             (
-                AnthropicProviderEntry,
-                ChatGPTProviderEntry,
-                OpenAIProviderEntry,
-                ResponsesProviderEntry,
+                provider_config.AnthropicProviderEntry,
+                provider_config.ChatGPTProviderEntry,
+                provider_config.OpenAIProviderEntry,
+                provider_config.ResponsesProviderEntry,
             ),
         )
-        or (not isinstance(entry, ChatGPTProviderEntry) and entry.oauth is None)
+        or (not isinstance(entry, provider_config.ChatGPTProviderEntry) and entry.oauth is None)
     ):
         return False
     try:
@@ -466,7 +472,7 @@ def _revoke(name: str, entry: ProviderEntry | None) -> bool:
     return False
 
 
-def _cmd_logout(name: str, entry: ProviderEntry | None, backend: str) -> int:
+def _cmd_logout(name: str, entry: provider_config.ProviderEntry | None, backend: str) -> int:
     """Remove a provider's stored credentials (`connect --logout`).
 
     An OAuth grant is revoked at its issuer first, best effort: local removal proceeds
@@ -532,7 +538,11 @@ def _write_shown_values(
     if backend in ("openai", "responses"):
         # A loaded block always carries a URL; the target's own leaves may not.
         held = current.effective.base_url if current.effective.backend == backend else ""
-        vendor = OpenAIProviderEntry(backend="openai").base_url if backend == "openai" else ""
+        vendor = (
+            provider_config.OpenAIProviderEntry(backend="openai").base_url
+            if backend == "openai"
+            else ""
+        )
         offered = held or preset_url or vendor  # a Responses endpoint has no vendor default
         try:
             url = _prompt_base_url(offered)
@@ -567,8 +577,15 @@ def _credential_step(name: str, backend: str, flow: str, verify: bool) -> int:
     if backend == "claude_code":
         _claude_code_check(name)
         return 0
-    if isinstance(entry, ChatGPTProviderEntry) or (
-        isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry, ResponsesProviderEntry))
+    if isinstance(entry, provider_config.ChatGPTProviderEntry) or (
+        isinstance(
+            entry,
+            (
+                provider_config.AnthropicProviderEntry,
+                provider_config.OpenAIProviderEntry,
+                provider_config.ResponsesProviderEntry,
+            ),
+        )
         and entry.oauth is not None
     ):
         return _sign_in(name, entry, flow, verify)
@@ -651,7 +668,7 @@ def _cmd_connect(
     target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
     try:
         current = _current(name, target, to_repo)
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         if not logout:
             common.error(str(exc))
             return 2

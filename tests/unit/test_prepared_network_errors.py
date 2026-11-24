@@ -8,7 +8,7 @@ import shlex
 import pytest
 
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail
 
 
@@ -27,8 +27,8 @@ def refused_holder(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> p
     return calls
 
 
-def _config() -> Config:
-    return Config.model_validate(
+def _config() -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "full", "network": "session", "run_commands": "allow"},
             "harness": {

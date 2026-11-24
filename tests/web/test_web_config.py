@@ -9,33 +9,34 @@ import pathlib
 import pydantic
 import pytest
 
-from agent6.config import Config, WebConfig
+from agent6.config import model as config_model
+from agent6.config import surface_config
 from agent6.ui.web import server as web_server
 
 
 def test_web_defaults_are_loopback() -> None:
-    w = WebConfig()
+    w = surface_config.WebConfig()
     assert w.host == "127.0.0.1"
     assert w.port == 7658
     assert w.allow_non_loopback is False
 
 
 def test_config_carries_web_section() -> None:
-    assert Config().web.host == "127.0.0.1"
+    assert config_model.Config().web.host == "127.0.0.1"
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "::1", "[::1]", "LOCALHOST"])
 def test_loopback_hosts_need_no_optin(host: str) -> None:
-    assert WebConfig(host=host).host == host
+    assert surface_config.WebConfig(host=host).host == host
 
 
 def test_non_loopback_rejected_without_optin() -> None:
     with pytest.raises(pydantic.ValidationError, match="allow_non_loopback"):
-        WebConfig(host="0.0.0.0")
+        surface_config.WebConfig(host="0.0.0.0")
 
 
 def test_non_loopback_allowed_with_optin() -> None:
-    w = WebConfig(host="0.0.0.0", allow_non_loopback=True)
+    w = surface_config.WebConfig(host="0.0.0.0", allow_non_loopback=True)
     assert w.host == "0.0.0.0"
 
 

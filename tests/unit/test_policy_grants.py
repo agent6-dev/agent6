@@ -9,12 +9,12 @@ import pathlib
 import pytest
 
 from agent6 import kinds, path_safety
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import policy
 
 
-def _host_cfg() -> Config:
-    return Config.model_validate({"sandbox": {"network": "host"}})
+def _host_cfg() -> config_model.Config:
+    return config_model.Config.model_validate({"sandbox": {"network": "host"}})
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial"])
@@ -49,7 +49,9 @@ def test_a_session_or_absent_network_grants_no_host_network_file(tmp_path: pathl
     """The resolver and trust-store grants follow the host network only."""
     reads = set(policy.host_network_reads())
     for network in ("session", "none"):
-        built = policy.jail_policy(tmp_path, Config(), "full", ("true",), network=network)
+        built = policy.jail_policy(
+            tmp_path, config_model.Config(), "full", ("true",), network=network
+        )
         assert built.network == network
         assert not reads & set(built.extra_ro_paths)
 
@@ -76,7 +78,7 @@ def test_a_symlinked_grant_reaches_the_launcher_under_both_names(tmp_path: pathl
         "extra_read_paths": [str(link)],
         "extra_write_paths": [str(plain)],
     }
-    cfg = Config.model_validate({"sandbox": grants})
+    cfg = config_model.Config.model_validate({"sandbox": grants})
     built = policy.jail_policy(tmp_path / "repo", cfg, "full", ("true",))
     assert link in built.extra_ro_paths and plain in built.extra_rw_paths
     assert built.grant_sources == ((link, real),)
@@ -95,7 +97,7 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
     (tools / "through").symlink_to(repo / "current", target_is_directory=True)
     (tools / "direct").symlink_to(real, target_is_directory=True)
     # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "isolation": "full",
@@ -124,7 +126,7 @@ def test_dropped_tmp_grant_names_command_reach_and_file_tool_refusal(
     assert not held.is_relative_to(repo.resolve())
     note = held / "notes.txt"
     note.write_text("hi", encoding="utf-8")
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "partial", "extra_read_paths": [str(held)]}}
     )
     grants = policy.resolve_grants(cfg, repo)
@@ -159,12 +161,14 @@ def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> No
     spelled.mkdir()
     try:
         paths = [str(link / "data"), str(spelled)]
-        partial = Config.model_validate(
+        partial = config_model.Config.model_validate(
             {"sandbox": {"isolation": "partial", "extra_read_paths": paths}}
         )
         (real / "data").mkdir()
         grants = policy.resolve_grants(partial, repo)
-        full = Config.model_validate({"sandbox": {"isolation": "full", "extra_read_paths": paths}})
+        full = config_model.Config.model_validate(
+            {"sandbox": {"isolation": "full", "extra_read_paths": paths}}
+        )
         kept = policy.resolve_grants(full, repo)
     finally:
         link.unlink()
@@ -191,7 +195,7 @@ def test_a_grant_that_is_the_workspace_under_another_name_is_dropped(
     repo, alias = tmp_path / "repo", tmp_path / "alias"
     repo.mkdir()
     alias.symlink_to(repo, target_is_directory=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "full", "extra_write_paths": [str(alias)]}}
     )
 
@@ -211,7 +215,7 @@ def test_a_dropped_link_that_leads_out_of_its_region_names_the_targets_own_path(
     repo.mkdir()
     outside.mkdir()
     (repo / "out").symlink_to(outside, target_is_directory=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "full", "extra_read_paths": [str(repo / "out")]}}
     )
     (dropped,) = policy.resolve_grants(cfg, repo).dropped
@@ -237,7 +241,7 @@ def test_a_dropped_write_grant_is_no_region_for_the_others(
     (tmp_path / "data" / "subdir").mkdir(parents=True)
     (repo / "hop").symlink_to(tmp_path / "data")
     (tmp_path / "alias").symlink_to(repo / "hop")
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "isolation": isolation,
@@ -262,7 +266,7 @@ def test_a_grant_inside_a_region_another_state_writes_is_dropped(tmp_path: pathl
     for made in (repo, shared, private):
         made.mkdir()
     (shared / "inbox").symlink_to(private, target_is_directory=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "isolation": "full",
@@ -289,7 +293,7 @@ def test_a_shared_region_this_run_writes_is_its_own(tmp_path: pathlib.Path) -> N
     repo, shared = tmp_path / "repo", tmp_path / "shared"
     for made in (repo, shared, shared / "inbox"):
         made.mkdir()
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "isolation": "full",

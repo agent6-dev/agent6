@@ -13,7 +13,8 @@ from typing import Any
 import pydantic
 import pytest
 
-from agent6.config import Config, layer_data
+from agent6.config import layer_data
+from agent6.config import model as config_model
 from agent6.viewmodel import config_view
 
 # Sections keyed by an operator-chosen name; a leaf under them exists only once an entry does.
@@ -59,7 +60,7 @@ def _leaf_paths(model: pydantic.BaseModel, prefix: str = "") -> set[str]:
     return leaves
 
 
-def _rendered_keys(config: Config) -> set[str]:
+def _rendered_keys(config: config_model.Config) -> set[str]:
     """Return the leaf paths the view-model walks to, keyed exactly.
 
     A substring scan would let a dropped `sandbox.network` row hide behind
@@ -72,14 +73,14 @@ def _rendered_keys(config: Config) -> set[str]:
 
 
 def test_every_leaf_of_a_populated_config_is_rendered() -> None:
-    config = Config.model_validate(_POPULATED)
+    config = config_model.Config.model_validate(_POPULATED)
     missing = sorted(_leaf_paths(config) - _rendered_keys(config))
     assert not missing, f"`config show` does not render these leaves: {missing}"
 
 
 def test_the_new_mcp_network_knob_is_among_them() -> None:
     """The renderer reaches a nested leaf two levels under a name-keyed section."""
-    config = Config.model_validate(_POPULATED)
+    config = config_model.Config.model_validate(_POPULATED)
     assert "mcp.servers.notes.sandbox.network" in _rendered_keys(config)
 
 
@@ -95,7 +96,7 @@ def test_the_new_mcp_network_knob_is_among_them() -> None:
 )
 def test_security_sensitive_defaults_are_the_safe_value(path: str, safe: object) -> None:
     """Security-sensitive defaults are the safe value; a change to any of them changes this list."""
-    node: Any = Config()
+    node: Any = config_model.Config()
     for part in path.split("."):
         node = getattr(node, part)
     assert node == safe
@@ -103,7 +104,7 @@ def test_security_sensitive_defaults_are_the_safe_value(path: str, safe: object)
 
 def test_every_rendered_leaf_carries_its_meaning() -> None:
     """The JSON view describes every leaf it renders, unset section holders included."""
-    for config in (Config(), Config.model_validate(_POPULATED)):
+    for config in (config_model.Config(), config_model.Config.model_validate(_POPULATED)):
         eff = layer_data.EffectiveConfig(config=config, sources={}, layers=())
         view = json.loads(config_view.render_show(eff, as_json=True))
         undescribed = sorted(k for k, leaf in view.items() if not leaf["description"])

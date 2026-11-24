@@ -279,12 +279,12 @@ def test_dedup_leaves_history_unchanged_at_the_bound() -> None:
 
 def test_thinking_is_not_stripped_without_a_tool_result_rewrite(tmp_path: pathlib.Path) -> None:
     """Whole-context pressure alone must not cause rolling thinking rewrites."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness import loop, loop_state
 
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -818,7 +818,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
     """Tier 1 keeps all thinking for -1, the newest N for positive N, and refuses other counts."""
     from unittest import mock
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness import loop, loop_state
 
     compaction = {} if keep_messages is None else {"keep_thinking_turns": keep_messages}
@@ -827,9 +827,9 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
             pydantic.ValidationError,
             match=r"keep_thinking_turns\n.*must be 1 or more, or exactly -1",
         ):
-            Config.model_validate({"compaction": compaction})
+            config_model.Config.model_validate({"compaction": compaction})
         return
-    cfg = Config.model_validate({"compaction": compaction})
+    cfg = config_model.Config.model_validate({"compaction": compaction})
     if keep_messages is None:
         assert cfg.compaction.keep_thinking_turns == -1
         assert compaction_window.CompactionSettings().keep_thinking_turns == -1
@@ -967,7 +967,7 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: pathlib.Path) ->
     """A refused check-off id does not drop the ids and new tasks after it."""
     from unittest import mock
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.graph import curator as graph_curator
     from agent6.graph import models
     from agent6.harness import loop
@@ -987,7 +987,7 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: pathlib.Path) ->
     done = curator.add_subtask(models.AddSubtaskIntent(parent_id=root.id, draft=draft("finished")))
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False

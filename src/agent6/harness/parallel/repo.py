@@ -11,7 +11,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import child_records, errors, kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail
 from agent6.sessions import lineage, process
 from agent6.sessions import manifest as sessions_manifest
@@ -41,7 +41,7 @@ def clone_worktree(origin: pathlib.Path, dest: pathlib.Path) -> None:
 
 
 def sender_jail(
-    child_worktree: pathlib.Path, child_session_dir: pathlib.Path, config: Config
+    child_worktree: pathlib.Path, child_session_dir: pathlib.Path, config: config_model.Config
 ) -> kinds.JailPolicy:
     """Return the jail the clone's side of a fetch runs under, no weaker than its child's.
 
@@ -71,7 +71,7 @@ def import_run(
     child_worktree: pathlib.Path,
     branch: str,
     child_session_dir: pathlib.Path,
-    config: Config,
+    config: config_model.Config,
     *,
     model_control: bool = False,
     continuing: bool = False,

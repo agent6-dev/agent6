@@ -200,12 +200,12 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
     """
     import tempfile
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness import toolset
     from agent6.harness.prompt import preview as prompt_preview
     from agent6.tools import dispatch
 
-    withheld = Config.model_validate(
+    withheld = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "deny"},
             "harness": {
@@ -219,7 +219,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
     assert "<no-verify-command>" in exchange.system
 
     with tempfile.TemporaryDirectory() as td:
-        plain = dispatch.ToolDispatcher(root=pathlib.Path(td), config=Config())
+        plain = dispatch.ToolDispatcher(root=pathlib.Path(td), config=config_model.Config())
         names = [t.name for t in toolset.tool_definitions(plain, mode="run")]
     assert "run_metric_command" not in names, "offered with no operator setting"
 
@@ -230,17 +230,17 @@ def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: pathlib.Path
     One plan prompt must not carry both "run_verify_command runs the operator's gate" and
     "`run_verify_command` is not available", forty lines apart.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness.prompt import preview as prompt_preview
 
     gateless = prompt_preview.model_exchange_for(
-        Config(), tmp_path, "plan", state_dir=tmp_path
+        config_model.Config(), tmp_path, "plan", state_dir=tmp_path
     ).system
     assert "<no-verify-command>" in gateless
     assert "run_verify_command runs the operator's gate" not in gateless
 
     gated = prompt_preview.model_exchange_for(
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["pytest", "-q"]},

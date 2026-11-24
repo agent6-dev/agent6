@@ -12,14 +12,7 @@ from urllib import parse
 
 import httpx2
 
-from agent6.config import (
-    ChatGPTProviderEntry,
-    ClaudeCodeProviderEntry,
-    ConfigError,
-    ProviderEntry,
-    layer,
-    secret_store,
-)
+from agent6.config import layer, provider_config, secret_store, validation
 from agent6.models import cache
 from agent6.providers import chatgpt, claude_code, oauth, provider_types, token_command, transport
 from agent6.ui.cli import common
@@ -35,14 +28,16 @@ def _token_life(remaining: float) -> str:
     return f"expires in {format.duration_words(remaining)}"
 
 
-def _credential_status(name: str, entry: ProviderEntry, secrets: dict[str, Any]) -> tuple[str, str]:
+def _credential_status(
+    name: str, entry: provider_config.ProviderEntry, secrets: dict[str, Any]
+) -> tuple[str, str]:
     """Return the credential source and local state without using the credential."""
-    if isinstance(entry, ClaudeCodeProviderEntry) or entry.auth_style == "none":
+    if isinstance(entry, provider_config.ClaudeCodeProviderEntry) or entry.auth_style == "none":
         return "none", "ok"
-    if isinstance(entry, ChatGPTProviderEntry) or entry.oauth is not None:
+    if isinstance(entry, provider_config.ChatGPTProviderEntry) or entry.oauth is not None:
         source = (
             "ChatGPT sign-in"
-            if isinstance(entry, ChatGPTProviderEntry)
+            if isinstance(entry, provider_config.ChatGPTProviderEntry)
             else parse.urlsplit(oauth.profile_for(entry).issuer).netloc
         )
         try:
@@ -66,17 +61,23 @@ def _credential_status(name: str, entry: ProviderEntry, secrets: dict[str, Any])
     return source, "ok" if key else "key unset"
 
 
-def _live_status(name: str, entry: ProviderEntry, secrets: dict[str, Any], state: str) -> str:
+def _live_status(
+    name: str, entry: provider_config.ProviderEntry, secrets: dict[str, Any], state: str
+) -> str:
     """Return a free check's result without refreshing, exchanging or spending."""
     if state.split(" ", 1)[0] != "ok":
         return f"skipped: {state}"
     try:
-        if isinstance(entry, ClaudeCodeProviderEntry):
+        if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
             refusal = claude_code.login_status(entry.binary, timeout_s=_LIVE_TIMEOUT_S)
             live = f"refused: {' '.join(refusal.split())[:200]}" if refusal else "verified"
         elif entry.deployment != "direct":
             live = "skipped: no /models listing for this deployment"
-        elif isinstance(entry, ChatGPTProviderEntry) or entry.oauth or entry.auth_style == "none":
+        elif (
+            isinstance(entry, provider_config.ChatGPTProviderEntry)
+            or entry.oauth
+            or entry.auth_style == "none"
+        ):
             cache._fetch(name, entry, None, _LIVE_TIMEOUT_S, refresh=False)
             live = "verified"
         else:
@@ -107,7 +108,7 @@ def _live_status(name: str, entry: ProviderEntry, secrets: dict[str, Any], state
     return live
 
 
-def _plan_status(name: str, entry: ProviderEntry, live: str) -> str:
+def _plan_status(name: str, entry: provider_config.ProviderEntry, live: str) -> str:
     """Return the subscription account's plan reading from a free `/usage` read.
 
     Args:
@@ -120,7 +121,7 @@ def _plan_status(name: str, entry: ProviderEntry, live: str) -> str:
         backend did not answer; "" for a backend with no free reading or a sign-in the
         live check did not verify (the live column says why).
     """
-    if not isinstance(entry, ChatGPTProviderEntry) or live != "verified":
+    if not isinstance(entry, provider_config.ChatGPTProviderEntry) or live != "verified":
         return ""
     try:
         resp = transport.http_request(
@@ -153,7 +154,7 @@ def show(provider: str, config_paths: tuple[pathlib.Path, ...]) -> int:
     try:
         entries = layer.load_effective(pathlib.Path.cwd(), config_paths).config.providers
         secrets = secret_store.load_secrets()
-    except (ConfigError, secret_store.SecretsError) as exc:
+    except (validation.ConfigError, secret_store.SecretsError) as exc:
         common.error(str(exc))
     else:
         rows = [("name", "backend", "authentication", "state", "live", "plan")]

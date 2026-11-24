@@ -14,7 +14,8 @@ from collections.abc import Callable
 from agent6 import child_records, errors, kinds, paths
 from agent6.app.parallel import launch as child_launch
 from agent6.app.parallel import trees as child_trees
-from agent6.config import Config, child_snapshot
+from agent6.config import child_snapshot
+from agent6.config import model as config_model
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, lineage, process
 from agent6.sessions import layout as sessions_layout
@@ -23,7 +24,7 @@ from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
 
-def child_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
+def child_worktree_root(cfg: config_model.Config, origin: pathlib.Path, group: str) -> pathlib.Path:
     """Return the base dir for a group of children's worktrees.
 
     Child group ids, `machine-<id>` and fork ids are all groups, so one prune sweep
@@ -41,7 +42,7 @@ def child_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> pathli
     return worktree_base(cfg, origin) / group
 
 
-def worktree_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
+def worktree_base(cfg: config_model.Config, origin: pathlib.Path) -> pathlib.Path:
     """Return the per-repo dir every child's worktree of the origin sits in.
 
     Args:
@@ -56,14 +57,14 @@ def worktree_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
     return _base(cfg, origin) / paths.repo_id(origin)
 
 
-def _base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
+def _base(cfg: config_model.Config, origin: pathlib.Path) -> pathlib.Path:
     """Return the directory that holds every repository's worktrees for this run."""
     if cfg.sandbox.isolation == "container":
         return paths.checkout_root(origin) / cfg.container.worktree_base_dir
     return paths.worktree_base(cfg.git.worktree.base_dir)
 
 
-def place(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
+def place(cfg: config_model.Config, origin: pathlib.Path, group: str) -> pathlib.Path:
     """Return where a new group's worktrees go, kept out of the origin's git when inside it.
 
     A base inside the repository is written to its `.git/info/exclude`, never to a
@@ -103,7 +104,7 @@ def place(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
     return child_worktree_root(cfg, origin, group)
 
 
-def holds(cfg: Config, tree: pathlib.Path) -> bool:
+def holds(cfg: config_model.Config, tree: pathlib.Path) -> bool:
     """Return whether a directory lies under a base agent6 puts worktrees in.
 
     Args:
@@ -119,7 +120,7 @@ def holds(cfg: Config, tree: pathlib.Path) -> bool:
     return tree.resolve().is_relative_to(paths.worktree_base(cfg.git.worktree.base_dir).resolve())
 
 
-def mounted_workspace(cfg: Config, tree: pathlib.Path) -> pathlib.Path:
+def mounted_workspace(cfg: config_model.Config, tree: pathlib.Path) -> pathlib.Path:
     """Return the workspace a container mounts for a tree: the checkout above every base.
 
     A child's clone sits under `[container].worktree_base_dir` of its origin, and a child of
@@ -144,7 +145,7 @@ def mounted_workspace(cfg: Config, tree: pathlib.Path) -> pathlib.Path:
 
 def adopt_orphan_child(
     origin: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     layout: sessions_layout.SessionLayout,
     manifest: sessions_manifest.SessionManifest,
 ) -> str | None:
@@ -265,7 +266,7 @@ def child_keep_reason(record_state: pathlib.Path, clone: pathlib.Path) -> str:
 
 def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condition
     origin: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> tuple[int, int]:
@@ -373,7 +374,7 @@ class ChildConfig:
 
 
 def write_child_config(
-    cfg: Config,
+    cfg: config_model.Config,
     spec: child_records.ChildSpec,
     *,
     explicit_leaves: frozenset[str],
@@ -427,7 +428,7 @@ def cleanup(
     worktree_root: pathlib.Path,
     base: pathlib.Path,
     launch_dir: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> None:
     """Tear down the clone, its own state dir, jail home and launch files of each imported child.

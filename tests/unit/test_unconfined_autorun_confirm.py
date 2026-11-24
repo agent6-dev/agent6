@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.ui.cli import preflight_prompts
 
 
-def _cfg(run_commands: str) -> Config:
-    return Config.model_validate({"sandbox": {"run_commands": run_commands}})
+def _cfg(run_commands: str) -> config_model.Config:
+    return config_model.Config.model_validate({"sandbox": {"run_commands": run_commands}})
 
 
 def test_no_gate_when_sandboxed() -> None:

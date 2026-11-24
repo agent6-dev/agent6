@@ -19,7 +19,8 @@ import sys
 import pydantic
 
 from agent6 import budget, child_records, kinds, paths
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.sessions import ipc, manifest
 
 ENV = "AGENT6_LAUNCH"
@@ -30,7 +31,7 @@ _FILE_MODE = 0o600
 _DIR_MODE = 0o700
 
 
-class LaunchError(ConfigError):
+class LaunchError(validation.ConfigError):
     """A launch file or its directory is missing, malformed, foreign-owned or exposed."""
 
 
@@ -171,7 +172,7 @@ def can_dispatch_work(mode: str) -> bool:
 
 
 def dispatch_authority(
-    cfg: Config, *, mode: str, session_id: str, root: pathlib.Path
+    cfg: config_model.Config, *, mode: str, session_id: str, root: pathlib.Path
 ) -> child_records.DispatchAuthority:
     """Resolve authority from the private launch, never from a tool or steer argument.
 
@@ -204,7 +205,9 @@ def dispatch_authority(
     )
 
 
-def apply_limits(cfg: Config, limits: child_records.ChildLimits | None) -> Config:
+def apply_limits(
+    cfg: config_model.Config, limits: child_records.ChildLimits | None
+) -> config_model.Config:
     """Return the config with `harness.max_turns` clamped to the child's cap.
 
     Args:

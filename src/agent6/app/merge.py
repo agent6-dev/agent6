@@ -21,7 +21,7 @@ from typing import Literal
 from agent6 import budget as agent6_budget
 from agent6 import errors, pack, paths
 from agent6.app import merge_message, stamps
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.graph import models as graph_models
 from agent6.graph import storage
 from agent6.sessions import event_log, lock, process
@@ -65,7 +65,7 @@ class MergeOutcome:
 
 
 def commit_identity(
-    cfg: Config, session_dir: pathlib.Path, manifest: sessions_manifest.SessionManifest
+    cfg: config_model.Config, session_dir: pathlib.Path, manifest: sessions_manifest.SessionManifest
 ) -> git_read.CommitIdentity:
     """Return the identity a session's merge commits carry.
 
@@ -153,7 +153,7 @@ def dispatch_merge(
     base_sha: str,
     manifest: sessions_manifest.SessionManifest,
     message: str | None,
-    cfg: Config,
+    cfg: config_model.Config,
     identity: git_read.CommitIdentity,
     *,
     transcript_dir: pathlib.Path | None = None,
@@ -433,7 +433,7 @@ def execute_merge(
     base_sha: str,
     method: str,
     message: str | None,
-    cfg: Config,
+    cfg: config_model.Config,
     identity: git_read.CommitIdentity,
     budget: agent6_budget.BudgetTracker | None = None,
     events: event_log.EventSink | None = None,

@@ -17,14 +17,15 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any
 
 from agent6 import kinds
-from agent6.config import Config, ConfigError, SandboxConfig, io, layer, layer_data
+from agent6.config import io, layer, layer_data, sandbox_config, validation
+from agent6.config import model as config_model
 from agent6.machine import schema
 from agent6.sandbox import detect
 from agent6.tools import policy as tools_policy
 from agent6.tools import target_policy
 
 
-class ConfigWidenedError(ConfigError):
+class ConfigWidenedError(validation.ConfigError):
     """A machine config exceeds an operator bound.
 
     A key set wider than the operator's config, or a grant the machine cannot bind safely: one
@@ -50,7 +51,7 @@ class StateConfig:
         effective: The layers that supplied the config before invocation flags.
     """
 
-    config: Config
+    config: config_model.Config
     isolation: kinds.IsolationLevel
     effective: layer_data.EffectiveConfig | None = None
 
@@ -76,11 +77,11 @@ class MachineConfigs:
 class _Side:
     """One side of a bound: a config and the isolation level it resolves to."""
 
-    config: Config
+    config: config_model.Config
     isolation: kinds.IsolationLevel
 
     @property
-    def sandbox(self) -> SandboxConfig:
+    def sandbox(self) -> sandbox_config.SandboxConfig:
         """The side's `[sandbox]` table."""
         return self.config.sandbox
 
@@ -148,7 +149,7 @@ _WITHIN: dict[str, Callable[[_Side, _Side], bool]] = {
 # Per list sandbox key: whether a sandbox covers one entry. An overlay's grant is within the
 # bound when the operator's sandbox covers each of its entries. `hide_paths` runs the other
 # way, since hiding more is narrower: the overlay's sandbox covers each of the operator's.
-_COVERS: dict[str, Callable[[SandboxConfig, str], bool]] = {
+_COVERS: dict[str, Callable[[sandbox_config.SandboxConfig, str], bool]] = {
     "fetch_approved_hosts": lambda sandbox, host: (
         "*" in sandbox.fetch_approved_hosts or host in sandbox.fetch_approved_hosts
     ),
@@ -186,9 +187,9 @@ def _grant(verb: str, leaf: str, values: Iterable[str]) -> str:
 
 
 def config_widening(
-    operator: Config,
+    operator: config_model.Config,
     operator_isolation: kinds.IsolationLevel,
-    state: Config,
+    state: config_model.Config,
     state_isolation: kinds.IsolationLevel,
 ) -> dict[str, str]:
     """Return the problem with each sandbox or budget key a config sets wider than the operator's.
@@ -209,7 +210,7 @@ def config_widening(
     """
     op, st = _Side(operator, operator_isolation), _Side(state, state_isolation)
     problems: dict[str, str] = {}
-    for leaf in SandboxConfig.model_fields:
+    for leaf in sandbox_config.SandboxConfig.model_fields:
         ours, theirs = getattr(op.sandbox, leaf), getattr(st.sandbox, leaf)
         if theirs == ours:
             continue
@@ -293,7 +294,7 @@ def resolve_configs(
         IsolationUnavailableError: An explicit isolation level is unavailable on this host.
     """
 
-    def with_flags(cfg: Config) -> Config:
+    def with_flags(cfg: config_model.Config) -> config_model.Config:
         return cfg.with_sandbox_overrides(
             disable_sandbox=disable_sandbox, auto_approve=auto_approve, no_commands=no_commands
         )
@@ -309,8 +310,8 @@ def resolve_configs(
             eff = layer.load_effective_with_overlay(
                 cwd, spec.config, explicit_paths=config_paths, state_overlay=state_overlay
             )
-        except ConfigError as exc:
-            raise ConfigError(f"{where}: {exc}") from exc
+        except validation.ConfigError as exc:
+            raise validation.ConfigError(f"{where}: {exc}") from exc
         cfg = with_flags(eff.config)
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         resolved = StateConfig(cfg, isolation, eff)
@@ -348,7 +349,7 @@ def resolve_configs(
             and state.mode == "run"
             and not resolved.config.git.commit_per_turn
         ):
-            raise ConfigError(
+            raise validation.ConfigError(
                 f"state {name!r}: mode = 'run' requires git.commit_per_turn = true;"
                 " the committed chain is the only path out of a clone."
             )
@@ -427,12 +428,12 @@ def unsafe_grants(configs: MachineConfigs, cwd: pathlib.Path) -> list[str]:
 
 
 def agent_config(
-    config: Config,
+    config: config_model.Config,
     *,
     effort: str | None = None,
     remaining_usd: float | None = None,
     max_plan_points: float | None = None,
-) -> Config:
+) -> config_model.Config:
     """Return a copy with a machine agent's effort and spend caps applied.
 
     Args:
@@ -457,4 +458,4 @@ def agent_config(
     )
     if max_plan_points is not None:
         data.setdefault("budget", {})["max_plan_points"] = max_plan_points
-    return Config.model_validate(data)
+    return config_model.Config.model_validate(data)

@@ -13,7 +13,7 @@ import pathlib
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log, ipc
 from agent6.tools import dispatch, mcp_client, operator_prompts, tool_errors
 from tests.unit.test_mcp_client import _fake_server_argv
@@ -52,8 +52,8 @@ def _cli_prompts(session_dir: pathlib.Path) -> operator_prompts.OperatorPrompts:
     )
 
 
-def _cfg(**server: object) -> Config:
-    return Config.model_validate(
+def _cfg(**server: object) -> config_model.Config:
+    return config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"fake": {"command": ["true"], **server}}}}
     )
 
@@ -196,7 +196,7 @@ def test_approving_everything_while_away_covers_the_servers_too(tmp_path: pathli
     """A grant is per scope, so an away-mode "approve all" covers a server's first call too."""
     from agent6.app import frontend
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "mcp": {
                 "enabled": True,
@@ -310,7 +310,7 @@ def test_denying_one_server_leaves_a_sibling_alone(tmp_path: pathlib.Path) -> No
             for name in ("fake", "other")
         ]
     )
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "mcp": {
                 "enabled": True,

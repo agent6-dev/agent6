@@ -14,7 +14,7 @@ import pathlib
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory as agent6_memory
 from agent6.harness import tool_effects
 from agent6.harness.prompt import blocks as prompt_blocks
@@ -36,7 +36,7 @@ def _repo(root: pathlib.Path) -> kinds.RepoSummary:
 
 def _build(mode: kinds.LoopMode, index: str, tmp_path: pathlib.Path) -> str:
     return prompt_blocks.build_system_prompt(
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"]},
@@ -107,7 +107,7 @@ def _dispatcher(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state = tmp_path / "statehome" / "repo-id"
     agent6_memory.add(state, "seeded", "a seeded fact")
-    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "none"}})
     return dispatch.ToolDispatcher(root=repo, config=cfg, state_dir=state), state
 
 
@@ -214,7 +214,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
 def test_memory_grant_absent_without_state_dir(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "none"}})
     d = dispatch.ToolDispatcher(root=repo, config=cfg)
     with pytest.raises(tool_errors.ToolError):
         d.dispatch("read_file", {"path": str(tmp_path / "state" / "memory" / "fact.md")})
@@ -234,7 +234,7 @@ def test_the_memory_dir_exists_the_moment_the_grant_does(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state = tmp_path / "statehome" / "repo-id"
     state.mkdir(parents=True)
-    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "none"}})
     assert not agent6_memory.memory_dir(state).exists()
     dispatch.ToolDispatcher(root=repo, config=cfg, state_dir=state)
     assert agent6_memory.memory_dir(state).is_dir()

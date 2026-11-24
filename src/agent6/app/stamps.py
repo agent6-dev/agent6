@@ -16,7 +16,8 @@ from typing import Any
 from agent6 import __version__, evidence, kinds, portable, task_text
 from agent6.app import reporter as app_reporter
 from agent6.app.parallel import launch as child_launch
-from agent6.config import Config, ReviewerConfig, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.models import registry
 from agent6.sessions import event_log, manifest
 from agent6.sessions import layout as sessions_layout
@@ -25,7 +26,7 @@ from agent6.tools import target_policy
 _LEVELS: dict[str, kinds.IsolationLevel] = {"full": "full", "partial": "partial", "none": "none"}
 
 
-def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
+def _policy_stamp(cfg: config_model.Config, isolation: str) -> manifest.PolicyStamp:
     """Return the policy stamp: the resolved level and the network its commands join.
 
     Args:
@@ -47,7 +48,9 @@ def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
     )
 
 
-def _model_brief(cfg: Config, rm: RoleModel | None, source: str) -> manifest.ModelBrief | None:
+def _model_brief(
+    cfg: config_model.Config, rm: harness_config.RoleModel | None, source: str
+) -> manifest.ModelBrief | None:
     """Return the effective effort and origin, or None without a route."""
     if rm is None:
         return None
@@ -67,7 +70,7 @@ def _model_brief(cfg: Config, rm: RoleModel | None, source: str) -> manifest.Mod
 
 
 def _models_brief(
-    cfg: Config, mode: str, driver_from_flag: bool, sources: Mapping[str, str]
+    cfg: config_model.Config, mode: str, driver_from_flag: bool, sources: Mapping[str, str]
 ) -> manifest.ModelsBrief:
     """Return the execution's roles and reviewers with each effort's config origin."""
 
@@ -80,7 +83,7 @@ def _models_brief(
     reviewer = cfg.models.resolve("reviewer")
     reviewers: dict[str, manifest.ModelBrief] = {}
     if cfg.review.when != "never":
-        roster = cfg.review.reviewers or (ReviewerConfig(focus="security"),)
+        roster = cfg.review.reviewers or (harness_config.ReviewerConfig(focus="security"),)
         for index, entry in enumerate(roster, 1):
             source = (
                 sources.get("review.reviewers", "configured")
@@ -125,7 +128,7 @@ def write_session_manifest(
     base_sha: str,
     base_branch: str,
     run_branch: str | None,
-    cfg: Config,
+    cfg: config_model.Config,
     config_sources: Mapping[str, str] | None = None,
     mode: str = "run",
     effective_preset: str = "none",
@@ -312,7 +315,7 @@ def unpark(session_dir: pathlib.Path, *, run_branch: str | None) -> None:
 
 def stamp_execution(
     session_dir: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     mode: str,
     isolation: str,
     *,

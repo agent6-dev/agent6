@@ -73,10 +73,10 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     seen: list[str] = []
 
     def _capture_load_effective(*_a: object, preset: str = "", **_k: object) -> object:
-        from agent6.config import ConfigError
+        from agent6.config import validation
 
         seen.append(preset)
-        raise ConfigError("stop before run_task")  # short-circuit the branch
+        raise validation.ConfigError("stop before run_task")  # short-circuit the branch
 
     monkeypatch.setattr(layer, "load_effective", _capture_load_effective)
     rc = cli_resume._cmd_resume((), "parked-AAAA11", force=False)
@@ -267,11 +267,12 @@ model = "anthropic/worker-model"
 def _stub_load_effective(
     monkeypatch: pytest.MonkeyPatch, toml_body: str, tmp: pathlib.Path
 ) -> None:
-    from agent6.config import layer, load_config
+    from agent6.config import layer
+    from agent6.config import model as config_model
 
     cfg_path = tmp / "cfg.toml"
     cfg_path.write_text(toml_body, encoding="utf-8")
-    cfg = load_config(cfg_path)
+    cfg = config_model.load_config(cfg_path)
 
     # The real type: preflight reads `explicit_leaves` off it to tell a DEFAULT
     # this host cannot honour (degrade) from a value the operator wrote down
@@ -728,7 +729,8 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     """
     from unittest import mock
 
-    from agent6.config import layer, load_config
+    from agent6.config import layer
+    from agent6.config import model as config_model
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -738,7 +740,7 @@ def test_a_parked_resume_hands_run_task_the_explicit_leaves(
     _park_manifest(session_dir, preset="none", from_flag=False)
     cfg_path = tmp_path / "cfg.toml"
     cfg_path.write_text(_PLANNER_AND_WORKER + "[harness]\nmax_turns = 7\n", encoding="utf-8")
-    cfg = load_config(cfg_path)
+    cfg = config_model.load_config(cfg_path)
 
     def _load(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
         return layer_data.EffectiveConfig(
@@ -1243,7 +1245,7 @@ def test_a_declined_unconfined_confirm_is_the_operators_refusal(
     refusal exits 2.
     """
     from agent6.app import reporter as app_reporter
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     def _none(*_a: object, **_k: object) -> None:
         return None
@@ -1257,7 +1259,7 @@ def test_a_declined_unconfined_confirm_is_the_operators_refusal(
     err: list[str] = []
     with pytest.raises(preflight.SessionRefusedError) as refusal:
         session_runtime.select_isolation(
-            Config.model_validate({"sandbox": {"isolation": "none"}}),
+            config_model.Config.model_validate({"sandbox": {"isolation": "none"}}),
             cwd=tmp_path,
             confirm_unconfined=lambda _level, _cfg: False,
             reporter=app_reporter.Reporter(out=lambda _m: None, err=err.append),
@@ -1343,7 +1345,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
     A later plain resume routes to X again; a refused route stamps nothing.
     """
     from agent6.app import stamps
-    from agent6.config import load_config
+    from agent6.config import model as config_model
     from agent6.sessions import manifest as sessions_manifest
 
     repo = tmp_path / "repo"
@@ -1356,9 +1358,11 @@ def test_resume_model_flag_is_recorded_and_replayed(
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-MODEL1"
     routes: list[tuple[str, str]] = []
 
-    from agent6.config import Config, RoleName
+    from agent6 import kinds
 
-    def _route(cfg: Config, role: RoleName, *, reporter: object, model_flag: str = "") -> bool:
+    def _route(
+        cfg: config_model.Config, role: kinds.RoleName, *, reporter: object, model_flag: str = ""
+    ) -> bool:
         planner = cfg.models.resolve(role)
         assert planner is not None
         routes.append((model_flag, planner.model))
@@ -1377,7 +1381,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
     stamped = sessions_manifest.read_manifest(session_dir).models
     assert stamped.driver_from_flag and stamped.driver is not None
     assert (stamped.driver.provider, stamped.driver.model) == ("anthropic", "claude-y")
-    cfg = load_config(tmp_path / "cfg.toml")
+    cfg = config_model.load_config(tmp_path / "cfg.toml")
     route = cfg.model_route("anthropic/claude-y")
     stamps.stamp_execution(session_dir, cfg.with_model_route("planner", route), "plan", "none")
     assert sessions_manifest.read_manifest(session_dir).models.driver_from_flag
@@ -1401,7 +1405,7 @@ def test_resume_keeps_the_recorded_route_or_reports_its_replacement(
 ) -> None:
     """A config-selected model survives resume unless the operator picks another model."""
     from agent6.app import stamps
-    from agent6.config import Config, load_config
+    from agent6.config import model as config_model
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1415,14 +1419,14 @@ def test_resume_keeps_the_recorded_route_or_reports_its_replacement(
     else:
         _plan_session_dir(repo, session_id)
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
-    cfg = load_config(tmp_path / "cfg.toml")
+    cfg = config_model.load_config(tmp_path / "cfg.toml")
     mode = "run" if parked else "plan"
     role = "worker" if parked else "planner"
     recorded = cfg.with_model_route(role, cfg.model_route("anthropic/claude-recorded"))
     stamps.stamp_execution(session_dir, recorded, mode, "none")
     seen: list[str] = []
 
-    def capture(cfg: Config, *_args: object, **_kwargs: object) -> int:
+    def capture(cfg: config_model.Config, *_args: object, **_kwargs: object) -> int:
         driver = cfg.models.resolve(role)
         assert driver is not None
         seen.append(driver.model)
@@ -1437,7 +1441,9 @@ def test_resume_keeps_the_recorded_route_or_reports_its_replacement(
     monkeypatch.setattr(session_runtime, "select_isolation", _unconfined)
     monkeypatch.setattr(git_read, "verify_git_identity", _nothing)
 
-    def execute(cfg: Config, *args: object, **kwargs: object) -> execution.ExecutionEnd:
+    def execute(
+        cfg: config_model.Config, *args: object, **kwargs: object
+    ) -> execution.ExecutionEnd:
         capture(cfg)
         return execution.ExecutionEnd(0)
 

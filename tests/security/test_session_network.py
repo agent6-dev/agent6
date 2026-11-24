@@ -20,7 +20,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import dispatch, results
 from agent6.tools import policy as tools_policy
@@ -79,7 +79,7 @@ def _net_of(
 ) -> str:
     """The network namespace a child with this policy lands in."""
     argv = ("/usr/bin/python3", "-c", "import os;print(os.readlink('/proc/self/ns/net'))")
-    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network=network)
+    policy = tools_policy.jail_policy(cwd, config_model.Config(), "full", argv, network=network)
     proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,
@@ -123,7 +123,9 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: path
         )
         argv = ("/usr/bin/python3", "-u", "-c", script)
         listener = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -146,7 +148,9 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: path
         )
         argv = ("/usr/bin/python3", "-c", probe)
         client = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -178,7 +182,9 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: pathlib.Pa
         )
         argv = ("/usr/bin/python3", "-u", "-c", script)
         listener = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -190,7 +196,7 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: pathlib.Pa
         probe = _connect_probe(_PORT + 1, "REACHED")
         argv = ("/usr/bin/python3", "-c", probe)
         outsider = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none"),
+            tools_policy.jail_policy(tmp_path, config_model.Config(), "full", argv, network="none"),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -227,7 +233,9 @@ def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(
         )
         argv = ("/usr/bin/python3", "-c", probe)
         proc = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -261,7 +269,7 @@ def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
     That failure would be invisible: the child would look confined and be isolated.
     """
     policy = tools_policy.jail_policy(
-        tmp_path, Config(), "full", ("/usr/bin/true",), network="session"
+        tmp_path, config_model.Config(), "full", ("/usr/bin/true",), network="session"
     )
     with pytest.raises(jail.JailUnavailableError, match="session"):
         jail.run_in_jail(policy)
@@ -271,12 +279,16 @@ def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: path
     """A run whose commands and servers all take the host network creates no holder."""
     from agent6.app.session import setup as session_setup
 
-    host_only = Config.model_validate({"sandbox": {"network": "host"}})
+    host_only = config_model.Config.model_validate({"sandbox": {"network": "host"}})
     assert not session_setup.wants_session_network(host_only, "full")
-    assert not session_setup.wants_session_network(Config(), "partial"), "partial has none to give"
-    assert session_setup.wants_session_network(Config(), "full"), "the default puts commands on one"
+    assert not session_setup.wants_session_network(config_model.Config(), "partial"), (
+        "partial has none to give"
+    )
+    assert session_setup.wants_session_network(config_model.Config(), "full"), (
+        "the default puts commands on one"
+    )
 
-    with_server = Config.model_validate(
+    with_server = config_model.Config.model_validate(
         {
             "sandbox": {"network": "host"},
             "mcp": {
@@ -295,7 +307,7 @@ def test_the_dev_server_case_end_to_end(tmp_path: pathlib.Path) -> None:
 
     What the feature is for, through the dispatcher a run uses.
     """
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     sess = pathlib.Path(tempfile.mkdtemp(prefix="privnet-", dir=tmp_path))
     d = dispatch.ToolDispatcher(
         root=tmp_path,
@@ -384,7 +396,7 @@ def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
     """
     from agent6.app.session import setup as session_setup
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"network": "host"},
             "mcp": {
@@ -452,7 +464,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     script = tmp_path / "browser_server.py"
     script.write_text(_BROWSER_SERVER, encoding="utf-8")
     port = _PORT + 3
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "allow"},
             "mcp": {
@@ -534,7 +546,9 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(
     try:
         argv = ("/usr/bin/python3", "-u", "-c", "import time;print('UP',flush=True);time.sleep(60)")
         victim = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -557,7 +571,9 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(
         )
         argv = ("/usr/bin/python3", "-c", probe)
         attacker = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -581,7 +597,7 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: pathlib.Path) -> None:
     A property of per-run networks people lean on; neither collides with the other or with
     the host.
     """
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     port = _PORT + 4
     serve = (
         "import http.server,socketserver;"
@@ -638,7 +654,9 @@ def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: pathlib.Pa
         )
         argv = ("/usr/bin/python3", "-c", probe)
         proc = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -677,7 +695,9 @@ def test_joining_a_network_costs_no_other_layer(tmp_path: pathlib.Path) -> None:
         )
         argv = ("/usr/bin/python3", "-c", probe)
         proc = jail.spawn_in_jail(
-            tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="session"),
+            tools_policy.jail_policy(
+                tmp_path, config_model.Config(), "full", argv, network="session"
+            ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -734,7 +754,7 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: pathlib.Path) -> N
         listener = jail.spawn_in_jail(
             tools_policy.jail_policy(
                 tmp_path,
-                Config(),
+                config_model.Config(),
                 "full",
                 ("/usr/bin/python3", "-u", "-c", script),
                 network="session",
@@ -750,7 +770,11 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: pathlib.Path) -> N
         probe = _connect_probe(port, "REACHED")
         intruder = jail.spawn_in_jail(
             tools_policy.jail_policy(
-                tmp_path, Config(), "full", ("/usr/bin/python3", "-c", probe), network="session"
+                tmp_path,
+                config_model.Config(),
+                "full",
+                ("/usr/bin/python3", "-c", probe),
+                network="session",
             ),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

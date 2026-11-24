@@ -21,7 +21,7 @@ from agent6 import budget as agent6_budget
 from agent6 import child_records, credit_usage, paths, token_usage
 from agent6.app.parallel import children
 from agent6.app.parallel import relay as child_watch
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import (
     loop,
     loop_conversation,
@@ -166,7 +166,7 @@ def _build_wf(
     disp.command_policy.return_value = "allow"
     return loop.Harness(
         chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=_head(repo)),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {"harness": {"parallel": {"judges": []}, "verify": {"at_start": True}}}
         ),
         provider=provider,

@@ -26,7 +26,8 @@ from agent6 import errors, kinds, pack, pack_manifest, paths
 from agent6.app import confine, execution_harness, merge, role_providers
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import run as machine_run
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.providers import provider_types
 from agent6.sandbox import jail
 from agent6.sessions import event_log
@@ -952,7 +953,7 @@ def test_an_exec_whose_command_forges_a_pack_ends_with_it_renamed(
         return 7
 
     monkeypatch.setattr(exec_cmds, "run_attached", forging)
-    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "none"}})
 
     assert exec_cmds.exec_new(cfg, tmp_path, ("sh", "build.sh")) == 7
 

@@ -15,7 +15,7 @@ import stat
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent6 import media, path_safety, terminal
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import (
     docs_bundle,
     edit_diag,
@@ -263,7 +263,7 @@ def _refuse_env_write(candidate: str, resolved: path_safety.SafePath) -> None:
 
 def refuse_protected_writes(
     path: str,
-    config: Config,
+    config: config_model.Config,
     extra_protect_paths: tuple[pathlib.Path, ...],
     resolved: path_safety.SafePath | None = None,
 ) -> None:
@@ -456,7 +456,7 @@ def _first_repeated(paths: list[pathlib.Path]) -> pathlib.Path | None:
 
 def _stage_patch_section(
     ws: path_safety.Workspace,
-    config: Config,
+    config: config_model.Config,
     extra_protect_paths: tuple[pathlib.Path, ...],
     *,
     path_arg: str,

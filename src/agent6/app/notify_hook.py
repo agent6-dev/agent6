@@ -14,7 +14,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import child_env
-from agent6.config import NotifyConfig
+from agent6.config import surface_config
 from agent6.viewmodel import format
 
 
@@ -67,7 +67,7 @@ def run_notify_hook(
 
 
 def fire(
-    notify: NotifyConfig,
+    notify: surface_config.NotifyConfig,
     event: str,
     *,
     message: str,
@@ -100,7 +100,7 @@ def fire(
 
 
 def attention(
-    notify: NotifyConfig,
+    notify: surface_config.NotifyConfig,
     *,
     session_id: str,
     session_dir: pathlib.Path,
@@ -136,7 +136,7 @@ def attention(
 
 
 def session_end(
-    notify: NotifyConfig,
+    notify: surface_config.NotifyConfig,
     *,
     session_id: str,
     session_dir: pathlib.Path,

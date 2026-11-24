@@ -26,7 +26,8 @@ import pydantic
 
 from agent6 import __version__, paths
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.graph import storage
 from agent6.sandbox import detect, jail
 from agent6.sessions import child_dispatch, id, manifest
@@ -137,7 +138,7 @@ def _string_violation(value: Any, schema: dict[str, Any], where: str) -> str | N
     return None
 
 
-def _no_one_to_ask(config: Config) -> Config:
+def _no_one_to_ask(config: config_model.Config) -> config_model.Config:
     """Return the config with commands off when it would prompt for them.
 
     Nobody answers at the MCP boundary, so `"ask"` cannot be answered: the same
@@ -172,7 +173,7 @@ class MCPServer:
         self,
         *,
         root: pathlib.Path,
-        config: Config,
+        config: config_model.Config,
         stdin: IO[bytes],
         stdout: IO[bytes],
     ) -> None:

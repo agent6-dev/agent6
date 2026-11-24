@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from agent6 import terminal
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log, ipc, journal
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 
@@ -55,7 +55,7 @@ def _dispatcher(
     prompts: operator_prompts.OperatorPrompts,
 ) -> dispatch.ToolDispatcher:
     """A run's wiring: the gate and the dispatcher journal to the one sink."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "ask"},
             "harness": {

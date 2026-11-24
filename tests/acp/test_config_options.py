@@ -18,7 +18,7 @@ from agent6.app import execution, run
 from agent6.app import frontend as app_frontend
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop_snapshot
 from agent6.models import cache
 from agent6.sessions import manifest as sessions_manifest
@@ -244,7 +244,7 @@ def test_two_sessions_do_not_share_a_pick(
     }
 
 
-def _worker(cfg: Config) -> tuple[str, str | None]:
+def _worker(cfg: config_model.Config) -> tuple[str, str | None]:
     """Return the route and effort the config builds the worker's provider with."""
     role = cfg.models.resolve("worker")
     assert role is not None
@@ -259,7 +259,7 @@ def test_a_new_run_starts_under_the_picked_model_and_effort(
     repo = _repo(tmp_path / "repo")
     started: list[tuple[tuple[str, str | None], object]] = []
 
-    def _run_task(cfg: Config, _task: str, **kw: Any) -> int:
+    def _run_task(cfg: config_model.Config, _task: str, **kw: Any) -> int:
         started.append((_worker(cfg), kw.get("model")))
         return 0
 
@@ -288,7 +288,7 @@ def test_a_resumed_run_is_built_with_the_picked_model_and_effort(
     session_dir = _recorded_run(repo, "run-AAAA11")
     built: list[tuple[str, str | None]] = []
 
-    def _execution(cfg: Config, *_a: object, **_k: object) -> execution.ExecutionEnd:
+    def _execution(cfg: config_model.Config, *_a: object, **_k: object) -> execution.ExecutionEnd:
         built.append(_worker(cfg))
         return execution.ExecutionEnd(0)
 

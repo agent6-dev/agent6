@@ -17,7 +17,7 @@ from typing import Literal
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import toolset
 from agent6.sessions import ipc
 from agent6.tools import dispatch, mcp_client, operator_prompts, schema, tool_errors
@@ -59,14 +59,16 @@ def _assert_withheld_are_refused(
 def test_a_command_tool_withheld_by_policy_is_refused(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config.model_validate({"sandbox": {"run_commands": "deny"}}),
+        config=config_model.Config.model_validate({"sandbox": {"run_commands": "deny"}}),
         isolation="none",
     )
     _assert_withheld_are_refused(d, {"run_command", "read_background", "stop_background"})
 
 
 def test_a_reviewer_without_run_command_has_no_background_work(tmp_path: pathlib.Path) -> None:
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="reviewer")
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=config_model.Config(), isolation="none", mode="reviewer"
+    )
     d.allowed_tools = ("read_background", "stop_background")
     _assert_withheld_are_refused(d, {"read_background", "stop_background"}, mode="reviewer")
 
@@ -76,7 +78,7 @@ def test_fetch_withheld_because_commands_have_the_network_is_refused(
 ) -> None:
     d = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config.model_validate({"sandbox": {"network": "host"}}),
+        config=config_model.Config.model_validate({"sandbox": {"network": "host"}}),
         isolation="none",
     )
     _assert_withheld_are_refused(d, {"fetch"})
@@ -87,7 +89,7 @@ def test_tools_withheld_by_a_bench_switch_are_refused(
 ) -> None:
     """A measurement the model can contaminate measures nothing."""
     monkeypatch.setenv("AGENT6_SYMBOL_TOOLS", "none")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config(), isolation="none")
     _assert_withheld_are_refused(d, {"outline", "find_definition", "find_references"})
 
 
@@ -97,20 +99,26 @@ def test_tools_withheld_by_the_mode_are_refused(tmp_path: pathlib.Path) -> None:
     It keeps `run_command` and its background commands: read-only, approval-gated
     investigation is the mode's whole job.
     """
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="ask")
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=config_model.Config(), isolation="none", mode="ask"
+    )
     _assert_withheld_are_refused(d, {"apply_edit", "apply_patch"}, mode="ask")
 
 
 def test_a_reviewer_edits_nothing_and_dispatches_nothing(tmp_path: pathlib.Path) -> None:
     """A reviewer's surface at the dispatcher: no edit tool, whatever its parent hands down."""
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="reviewer")
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=config_model.Config(), isolation="none", mode="reviewer"
+    )
     d.allowed_tools = ("apply_edit", "apply_patch", "read_file", "run_command")
     _assert_withheld_are_refused(d, {"apply_edit", "apply_patch"}, mode="reviewer")
 
 
 def test_a_machine_state_reaches_neither_the_repo_nor_the_network(tmp_path: pathlib.Path) -> None:
     """The strictest surface: its deliverable is the finish_session payload."""
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="machine")
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=config_model.Config(), isolation="none", mode="machine"
+    )
     _assert_withheld_are_refused(
         d,
         {"apply_edit", "run_command", "run_verify_command", "fetch", "read_session"},
@@ -131,7 +139,7 @@ def test_an_mcp_server_denied_for_the_session_is_refused(tmp_path: pathlib.Path)
     try:
         d = dispatch.ToolDispatcher(
             root=tmp_path,
-            config=Config.model_validate(
+            config=config_model.Config.model_validate(
                 {"mcp": {"enabled": True, "servers": {"fake": {"command": ["true"]}}}}
             ),
             isolation="none",

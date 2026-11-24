@@ -11,18 +11,8 @@ from typing import Any
 from agent6 import budget as agent6_budget
 from agent6 import kinds, media
 from agent6.app import conversation_state
-from agent6.config import (
-    AnthropicProviderEntry,
-    ChatGPTProviderEntry,
-    ClaudeCodeProviderEntry,
-    Config,
-    EffortLevel,
-    ResponsesProviderEntry,
-    ReviewerConfig,
-    RoleModel,
-    RoleName,
-    secret_store,
-)
+from agent6.config import harness_config, provider_config, secret_store
+from agent6.config import model as config_model
 from agent6.harness import provider_call
 from agent6.harness.compaction import window
 from agent6.harness.review import gate as review_gate
@@ -44,7 +34,10 @@ from agent6.sessions import budget_events, event_log, journal
 
 
 def resolve_compaction_thresholds(
-    cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
+    cfg: config_model.Config,
+    rm: harness_config.RoleModel | None,
+    *,
+    log: Callable[[str], None] | None = None,
 ) -> tuple[int, int, int]:
     """Resolve the compaction thresholds the loop runs under.
 
@@ -100,7 +93,7 @@ def resolve_compaction_thresholds(
     return drop, summarize, keep
 
 
-def helper_context_window(cfg: Config) -> int | None:
+def helper_context_window(cfg: config_model.Config) -> int | None:
     """Return the helper's known window without querying the provider.
 
     Args:
@@ -113,7 +106,9 @@ def helper_context_window(cfg: Config) -> int | None:
     return models_registry.context_window(role.provider, role.model) if role else None
 
 
-def idle_compaction(cfg: Config, rm: RoleModel | None) -> window.IdleCompaction | None:
+def idle_compaction(
+    cfg: config_model.Config, rm: harness_config.RoleModel | None
+) -> window.IdleCompaction | None:
     """Read the driving provider's local idle limits.
 
     Args:
@@ -126,12 +121,14 @@ def idle_compaction(cfg: Config, rm: RoleModel | None) -> window.IdleCompaction 
     if rm is None:
         return None
     entry = cfg.providers.get(rm.provider)
-    if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
+    if entry is None or isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         return None
     return window.IdleCompaction(rm.provider, entry.idle_compact_s, entry.idle_compact_min_chars)
 
 
-def endpoint_compaction(cfg: Config, rm: RoleModel | None) -> provider_types.EndpointCompaction:
+def endpoint_compaction(
+    cfg: config_model.Config, rm: harness_config.RoleModel | None
+) -> provider_types.EndpointCompaction:
     """Return the history operations of the driving route.
 
     Args:
@@ -143,20 +140,23 @@ def endpoint_compaction(cfg: Config, rm: RoleModel | None) -> provider_types.End
     """
     if rm is None or (entry := cfg.providers.get(rm.provider)) is None:
         return provider_types.EndpointCompaction()
-    if isinstance(entry, AnthropicProviderEntry):
+    if isinstance(entry, provider_config.AnthropicProviderEntry):
         return anthropic.endpoint_compaction(rm.model, server_compaction=entry.server_compaction)
-    if isinstance(entry, ClaudeCodeProviderEntry):
+    if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         return claude_code.ENDPOINT_COMPACTION
-    if isinstance(entry, ChatGPTProviderEntry):
+    if isinstance(entry, provider_config.ChatGPTProviderEntry):
         return chatgpt.ENDPOINT_COMPACTION
-    if isinstance(entry, ResponsesProviderEntry):
+    if isinstance(entry, provider_config.ResponsesProviderEntry):
         return responses.ENDPOINT_COMPACTION
     return openai.ENDPOINT_COMPACTION
 
 
 def resolve_decompose(
-    cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
-) -> Config:
+    cfg: config_model.Config,
+    rm: harness_config.RoleModel | None,
+    *,
+    log: Callable[[str], None] | None = None,
+) -> config_model.Config:
     """Pin `harness.prompt.decompose = "auto"` to on or off for this run.
 
     Auto turns on only when the model has a measured decompose win in the capability
@@ -178,7 +178,9 @@ def resolve_decompose(
     return cfg.with_decompose("on" if on else "off")
 
 
-def input_capabilities(cfg: Config, rm: RoleModel | None) -> media.InputCapabilities:
+def input_capabilities(
+    cfg: config_model.Config, rm: harness_config.RoleModel | None
+) -> media.InputCapabilities:
     """Resolve the calling role's media facts without mutating its dispatcher.
 
     Args:
@@ -195,8 +197,8 @@ def input_capabilities(cfg: Config, rm: RoleModel | None) -> media.InputCapabili
 
 
 def build_role_provider(
-    cfg: Config,
-    role: RoleName,
+    cfg: config_model.Config,
+    role: kinds.RoleName,
     *,
     transcript_sink: provider_types.TranscriptSink | None,
     budget: agent6_budget.BudgetTracker,
@@ -249,7 +251,7 @@ def _provider_from_entry(
     provider_name: str,
     entry: Any,
     model: str,
-    effort: EffortLevel | None,
+    effort: kinds.EffortLevel | None,
     *,
     transcript_sink: provider_types.TranscriptRecorder | None,
     budget: agent6_budget.BudgetTracker,
@@ -272,7 +274,7 @@ def _provider_from_entry(
     Raises:
         ProviderError: The entry lacks a credential, or the effort has no equivalent.
     """
-    if isinstance(entry, ClaudeCodeProviderEntry):
+    if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         if effort == "off":
             raise provider_types.ProviderError(
                 f"effort = off has no Claude Code equivalent ([providers.{provider_name}]"
@@ -299,7 +301,7 @@ def _provider_from_entry(
     extra_headers = request_headers.HeaderSet.from_config(entry.extra_headers)
     extra_body = dict(entry.extra_body)
     extra_query = dict(entry.extra_query)
-    if isinstance(entry, ChatGPTProviderEntry):
+    if isinstance(entry, provider_config.ChatGPTProviderEntry):
         chatgpt_credential = oauth.OAuthCredential(
             provider_name, entry, auth_observer=auth_observer
         )
@@ -334,7 +336,7 @@ def _provider_from_entry(
         # A configured issuer is the one credential source: the stored, bound grant.
         credential = oauth.OAuthCredential(provider_name, entry, auth_observer=auth_observer)
         key = ""
-    if isinstance(entry, AnthropicProviderEntry):
+    if isinstance(entry, provider_config.AnthropicProviderEntry):
         # Anthropic needs a key, a token_command credential or `auth_style = "none"`.
         if not key and credential is None and entry.auth_style != "none":
             raise provider_types.ProviderError(
@@ -359,7 +361,7 @@ def _provider_from_entry(
             credential=credential,
             auth_observer=auth_observer,
         )
-    if isinstance(entry, ResponsesProviderEntry):
+    if isinstance(entry, provider_config.ResponsesProviderEntry):
         return responses.ResponsesProvider(
             api_key=key or "",
             model=model,
@@ -404,7 +406,7 @@ def close_provider(provider: provider_calls.Provider) -> None:
         close()
 
 
-def role_temperature(cfg: Config, role: RoleName) -> float | None:
+def role_temperature(cfg: config_model.Config, role: kinds.RoleName) -> float | None:
     """Return the configured sampling temperature for a role, or None."""
     rm = cfg.models.resolve(role)
     return rm.temperature if rm is not None else None
@@ -747,10 +749,10 @@ class InstrumentedProvider:
 
 
 def side_actor_provider(
-    cfg: Config,
+    cfg: config_model.Config,
     actor: str,
     *,
-    role: RoleName = "helper",
+    role: kinds.RoleName = "helper",
     transcript_sink: provider_types.TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None,
@@ -786,7 +788,7 @@ def side_actor_provider(
     )
 
 
-def resolve_reviewers(cfg: Config) -> list[review_gate.Reviewer]:
+def resolve_reviewers(cfg: config_model.Config) -> list[review_gate.Reviewer]:
     """Resolve the ordered roster without constructing providers.
 
     Omitted fields inherit the reviewer role, including reviewers with a pinned route.
@@ -803,7 +805,7 @@ def resolve_reviewers(cfg: Config) -> list[review_gate.Reviewer]:
     cfg.require_runnable("reviewer")
     reviewer = cfg.models.resolve("reviewer")
     reviewers: list[review_gate.Reviewer] = []
-    for entry in cfg.review.reviewers or (ReviewerConfig(focus="security"),):
+    for entry in cfg.review.reviewers or (harness_config.ReviewerConfig(focus="security"),):
         rm = entry.resolve(reviewer)
         if rm is None:
             raise provider_types.ProviderError(

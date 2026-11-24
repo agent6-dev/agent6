@@ -25,7 +25,8 @@ from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, layer_data
+from agent6.config import layer_data, validation
+from agent6.config import model as config_model
 from agent6.harness import loop_snapshot
 from agent6.sessions import ipc, journal, lock
 from agent6.sessions import manifest as sessions_manifest
@@ -47,7 +48,7 @@ class ResumeStart:
     """
 
     effective: layer_data.EffectiveConfig
-    cfg: Config
+    cfg: config_model.Config
     isolation: kinds.IsolationLevel
     identity: git_read.CommitIdentity
     channels: session_prepare.Channels
@@ -91,13 +92,13 @@ def load_config(
             model=target.route,
             effort=effort,
         )
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         reporter.error(str(exc))
         raise preflight.SessionRefusedError(2) from exc
 
 
 def note_changed_driver(
-    cfg: Config, target: resume_record.ResumeTarget, *, reporter: app_reporter.Reporter
+    cfg: config_model.Config, target: resume_record.ResumeTarget, *, reporter: app_reporter.Reporter
 ) -> None:
     """Say which model drives this execution when it is not the recorded one."""
     recorded = target.manifest.models.driver

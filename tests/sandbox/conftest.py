@@ -16,7 +16,8 @@ import pytest
 from agent6 import kinds, paths
 from agent6.app import stamps
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.harness import loop, run_chain
 from agent6.sandbox import container, jail, jail_session
 from agent6.sessions import event_log, layout, manifest
@@ -122,7 +123,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
         'printf "%s\\n" "$1"; pwd -P; id -u; id -g; printf "%s\\n" "$HOME" "$TMPDIR"',
         "observe",
     )
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
             "git": {"worktree": {"setup_command": (*observe, "setup")}},
@@ -153,7 +154,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
         prompts=operator_prompts.OperatorPrompts(session_dir=saved.session_dir),
         loop_log=lambda _line: None,
         mcp_manager=None,
-        rm_role=RoleModel(provider="test", model="test"),
+        rm_role=harness_config.RoleModel(provider="test", model="test"),
         command_access=command_tools.JailAccess(
             policy=kinds.JailPolicy(cwd=target.command_root, argv=(), isolation="none"),
             session=session,

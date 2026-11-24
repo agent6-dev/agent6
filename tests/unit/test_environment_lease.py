@@ -17,7 +17,7 @@ from agent6 import kinds, paths
 from agent6.app import environment_lease
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import container, jail
 from agent6.sessions import journal, layout, process
 
@@ -205,7 +205,7 @@ def test_a_prepared_run_journals_its_start_and_its_lease(
         monkeypatch.setattr(container, name, mock.Mock(return_value=()))
     monkeypatch.setattr(container, "prepare", mock.Mock())
     session_runtime.prepare_container_execution(
-        Config(),
+        config_model.Config(),
         workspace,
         options,
         state_dir=state_dir,
@@ -247,7 +247,7 @@ def test_commands_run_in_the_sessions_own_checkout_under_the_mount(
     child.mkdir(parents=True)
     mounted = container.discover(workspace, fake.options()).target
     access = session_runtime.prepare_container_execution(
-        Config(),
+        config_model.Config(),
         workspace,
         fake.options(),
         state_dir=state_dir,
@@ -275,7 +275,7 @@ def test_a_command_that_cannot_reach_the_container_says_whether_it_runs(
         monkeypatch.setattr(container, name, mock.Mock(return_value=()))
     monkeypatch.setattr(container, "prepare", mock.Mock())
     access = session_runtime.prepare_container_execution(
-        Config(),
+        config_model.Config(),
         workspace,
         fake.options(),
         state_dir=state_dir,

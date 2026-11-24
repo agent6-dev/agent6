@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy
 
@@ -36,7 +36,7 @@ def _run(tmp_path: pathlib.Path, level: kinds.IsolationLevel, script: str) -> st
     result = jail.run_in_jail(
         policy.jail_policy(
             tmp_path,
-            Config(),
+            config_model.Config(),
             level,
             ("python3", "-c", script),
             network="none",

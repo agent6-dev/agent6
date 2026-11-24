@@ -12,7 +12,8 @@ import pydantic
 import pytest
 
 from agent6 import kinds, paths
-from agent6.config import Config, layer, layer_data
+from agent6.config import layer, layer_data
+from agent6.config import model as config_model
 from agent6.models import choices as models_choices
 from agent6.models import registry
 from agent6.sandbox import detect
@@ -100,7 +101,7 @@ def test_provider_idle_compaction_defaults_and_origins(tmp_path: pathlib.Path) -
 @pytest.mark.parametrize("seconds", [0, -0.1, -2])
 def test_only_minus_one_removes_the_idle_limit(seconds: float) -> None:
     with pytest.raises(pydantic.ValidationError, match="idle_compact_s"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {"providers": {"p": {"backend": "openai", "idle_compact_s": seconds}}}
         )
 
@@ -185,14 +186,14 @@ def test_mapping_setting_prints_its_contents(
 
 def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
     """`--descriptions` adds each leaf's meaning; the default stays values-only."""
-    eff = layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    eff = layer_data.EffectiveConfig(config=config_model.Config(), sources={}, layers=())
     assert "cap on the metered spend" not in config_view.render_show(eff)
     assert "cap on the metered spend" in config_view.render_show(eff, descriptions=True)
 
 
 def test_key_detail_always_carries_the_meaning() -> None:
     """`config show <key>` carries the meaning with no flag."""
-    eff = layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    eff = layer_data.EffectiveConfig(config=config_model.Config(), sources={}, layers=())
     detail = config_view.render_key_detail(eff, ["budget.max_usd"])
     assert "meaning: cap on the metered spend" in detail
 
@@ -204,7 +205,7 @@ def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
 
     A section prefix expands to its leaves; a leaf named twice prints once.
     """
-    eff = layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    eff = layer_data.EffectiveConfig(config=config_model.Config(), sources={}, layers=())
     detail = config_view.render_key_detail(eff, ["sandbox.network", "budget", "sandbox.network"])
     heads = [line.strip() for line in detail.splitlines() if not line.startswith("    ")]
     assert heads[0] == "sandbox.network"
@@ -331,7 +332,7 @@ def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary
         raise jail.JailBinaryError("agent6-jail binary not found")
 
     monkeypatch.setattr(detect, "probed_environment", no_binary)
-    cfg = Config()
+    cfg = config_model.Config()
     assert (cfg.sandbox.isolation, cfg.sandbox.network) == ("auto", "auto")
     resolved = confine.resolved_config_values(cfg)
     assert "sandbox.isolation" not in resolved and "sandbox.network" not in resolved
@@ -403,7 +404,7 @@ def test_empty_mapping_keeps_its_field_row(tmp_path: pathlib.Path) -> None:
 
 def test_long_mapping_entry_keeps_table_width() -> None:
     """The unfiltered table truncates long mapping keys instead of widening the key column."""
-    cfg = Config.model_validate({"skills": {"state": {"x" * 200: "disabled"}}})
+    cfg = config_model.Config.model_validate({"skills": {"state": {"x" * 200: "disabled"}}})
     eff = layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
     row = next(line for line in config_view.render_show(eff).splitlines() if "skills.state" in line)
     assert "…" in row

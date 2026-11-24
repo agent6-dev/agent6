@@ -17,9 +17,7 @@ from agent6 import directive, errors, kinds, portable
 from agent6.app import frontend, preflight, run
 from agent6.app.parallel import children as app_children
 from agent6.app.session import setup as session_setup
-from agent6.config import (
-    Config,
-)
+from agent6.config import model as config_model
 from agent6.sessions import event_log
 from agent6.tools import operator_prompts, skill_tools
 from agent6.ui import btw, spawn, steer
@@ -36,7 +34,7 @@ from agent6.ui.cli import (
 from agent6.ui.cli import parallel as cli_parallel
 
 
-def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
+def _skills_task_prefix(cfg: config_model.Config, names: tuple[str, ...]) -> tuple[str, str]:
     """Return the task-prompt prefix for the `--skill` names, and an error text or ""."""
     resolved = skill_tools.configured_skills(cfg)
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
@@ -215,7 +213,12 @@ class ComposedTask:
 
 
 def _compose_task(
-    task: str, cfg: Config, *, skills: tuple[str, ...], seed_from: str, context: str = ""
+    task: str,
+    cfg: config_model.Config,
+    *,
+    skills: tuple[str, ...],
+    seed_from: str,
+    context: str = "",
 ) -> ComposedTask:
     """Assemble the prompt the session starts from.
 

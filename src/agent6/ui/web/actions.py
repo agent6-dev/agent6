@@ -19,7 +19,7 @@ from agent6 import errors
 from agent6 import paths as agent6_paths
 from agent6.app import fork, merge_plan, stop, undo
 from agent6.app import reporter as app_reporter
-from agent6.config import ConfigError, io, notices, write
+from agent6.config import io, notices, validation, write
 from agent6.machine import journal as machine_journal
 from agent6.machine import schema, semantics
 from agent6.sessions import ipc, layout
@@ -689,7 +689,7 @@ def add_preset(cwd: pathlib.Path, name: str, *, repo: bool = False) -> tuple[boo
     """
     try:
         err = write.add_preset(cwd, name, to_repo=repo)
-    except (ConfigError, errors.OperatorError) as exc:
+    except (validation.ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if err:
         return False, err
@@ -710,7 +710,7 @@ def remove_preset(cwd: pathlib.Path, name: str) -> tuple[bool, str]:
     had_table = write.preset_layer(cwd, name) is not None
     try:
         result = write.remove_preset(cwd, name)
-    except (ConfigError, errors.OperatorError) as exc:
+    except (validation.ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if result.error:
         return False, result.error
@@ -751,7 +751,7 @@ def add_entry(
     preset = model.selected_preset(cwd, config_paths)
     try:
         err = write.add_entry(cwd, entry_table, name, fields, to_repo=repo, preset=preset)
-    except (ConfigError, errors.OperatorError) as exc:
+    except (validation.ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if err:
         return False, err
@@ -805,7 +805,7 @@ def remove_entry(
         ):
             return False, "The preset or config layer changed. Nothing was removed."
         result = write.remove_entry(cwd, entry_table, name, to_repo=repo, preset=preset)
-    except (ConfigError, errors.OperatorError) as exc:
+    except (validation.ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if result.error:
         return False, result.error
@@ -878,7 +878,7 @@ def remove_reviewer(
         err = write.remove_reviewer(
             cwd, index, to_repo=repo, preset=preset, expected=expected, config_paths=config_paths
         )
-    except (ConfigError, errors.OperatorError) as exc:
+    except (validation.ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if err:
         return False, err

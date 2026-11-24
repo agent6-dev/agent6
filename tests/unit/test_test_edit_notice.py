@@ -14,7 +14,7 @@ import subprocess
 from typing import Any
 from unittest import mock
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_conversation, loop_state, nudges, run_chain, tool_effects
 from agent6.sessions import journal
 from agent6.tools import results
@@ -62,7 +62,7 @@ Emitted = list[tuple[str, dict[str, Any]]]
 def _wf(root: pathlib.Path) -> tuple[loop.Harness, Emitted]:
     wf = loop.Harness(
         chain=run_chain.RunChain(root),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"]},

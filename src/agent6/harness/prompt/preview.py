@@ -9,7 +9,7 @@ import pathlib
 from typing import Never
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory, skills
 from agent6.harness import toolset
 from agent6.harness.prompt import blocks as prompt_blocks
@@ -21,7 +21,7 @@ from agent6.tools import dispatch, tool_errors
 
 
 def system_prompt_for(
-    config: Config,
+    config: config_model.Config,
     root: pathlib.Path,
     mode: kinds.LoopMode = "run",
     *,
@@ -89,7 +89,7 @@ class _PreviewChildren:
 
 
 def model_exchange_for(
-    config: Config,
+    config: config_model.Config,
     root: pathlib.Path,
     mode: kinds.LoopMode = "run",
     *,
@@ -133,7 +133,7 @@ def model_exchange_for(
     )
 
 
-def _shown_isolation(config: Config) -> kinds.IsolationLevel:
+def _shown_isolation(config: config_model.Config) -> kinds.IsolationLevel:
     """Return the isolation level a run here would resolve, "none" when the host cannot honor it."""
     try:
         return detect.resolve_isolation(config.sandbox.isolation, detect.probed_environment())
@@ -142,7 +142,7 @@ def _shown_isolation(config: Config) -> kinds.IsolationLevel:
 
 
 def _installed_skills(
-    root: pathlib.Path, config: Config, mode: kinds.LoopMode
+    root: pathlib.Path, config: config_model.Config, mode: kinds.LoopMode
 ) -> skills.ResolvedSkills | None:
     """Return the skills the loop would show: run mode only, None when nothing is installed."""
     if mode != "run":

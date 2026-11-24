@@ -13,7 +13,7 @@ import pathlib
 from typing import Any
 from unittest import mock
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory
 from agent6.harness import (
     guards,
@@ -32,7 +32,7 @@ def _wf(state_dir: pathlib.Path | None, **kw: Any) -> loop.Harness:
     events.path = pathlib.Path("/x/sessions/runs/run-a/logs.jsonl")
     return loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate({}),
+        config=config_model.Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False
@@ -319,7 +319,7 @@ def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(
     events.path = pathlib.Path("/x/sessions/runs/run-a/logs.jsonl")
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate({}),
+        config=config_model.Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False

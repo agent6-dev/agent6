@@ -386,7 +386,7 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: pathlib.P
     """
     import os
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import policy
 
     secret = tmp_path / "vault"
@@ -397,7 +397,7 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: pathlib.P
     shells = background.BackgroundShells(tmp_path / "shells")
 
     def _policy(argv: tuple[str, ...], rw: tuple[pathlib.Path, ...]) -> object:
-        return policy.jail_policy(work, Config(), "none", argv, extra_rw_paths=rw)
+        return policy.jail_policy(work, config_model.Config(), "none", argv, extra_rw_paths=rw)
 
     view = shells.start(("sh", "-c", "echo mine; sleep 30"), _policy)  # pyrefly: ignore[bad-argument-type]
     log = tmp_path / "shells" / "logs" / view.id / "out.log"

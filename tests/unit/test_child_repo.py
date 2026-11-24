@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness.parallel import repo as child_repo
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -76,7 +76,9 @@ def test_import_run_fetches_the_branch_and_leaves_the_record_in_place(
     child_session_dir.mkdir(parents=True)
     (child_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    result = child_repo.import_run(origin, child_worktree, branch, child_session_dir, Config())
+    result = child_repo.import_run(
+        origin, child_worktree, branch, child_session_dir, config_model.Config()
+    )
 
     assert result.session_dir == child_session_dir
     assert result.ref == branch
@@ -100,7 +102,7 @@ def test_import_run_accepts_a_child_that_never_committed(tmp_path: pathlib.Path)
     (child_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
     result = child_repo.import_run(
-        origin, child_worktree, "agent6/child-1", child_session_dir, Config()
+        origin, child_worktree, "agent6/child-1", child_session_dir, config_model.Config()
     )
 
     assert (result.session_dir / "manifest.json").is_file()
@@ -130,7 +132,7 @@ def test_import_run_under_model_control_writes_the_hidden_chain_ref(
     (child_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
     result = child_repo.import_run(
-        origin, child_worktree, "", child_session_dir, Config(), model_control=True
+        origin, child_worktree, "", child_session_dir, config_model.Config(), model_control=True
     )
 
     chain = git_read.chain_ref_for("01MC")
@@ -156,4 +158,6 @@ def test_import_run_refuses_existing_branch(tmp_path: pathlib.Path) -> None:
     (child_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
     with pytest.raises(child_repo.ChildRepoError):
-        child_repo.import_run(origin, child_worktree, branch, child_session_dir, Config())
+        child_repo.import_run(
+            origin, child_worktree, branch, child_session_dir, config_model.Config()
+        )

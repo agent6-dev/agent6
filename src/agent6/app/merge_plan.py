@@ -15,7 +15,8 @@ import pathlib
 from agent6 import errors, kinds, terminal
 from agent6.app import merge, resume_record, worktrees
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, ConfigError, layer
+from agent6.config import layer, validation
+from agent6.config import model as config_model
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -54,7 +55,7 @@ class MergePlan:
     base_sha: str
     method: str
     identity: git_read.CommitIdentity
-    cfg: Config
+    cfg: config_model.Config
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -205,7 +206,7 @@ def plan_merge(  # noqa: PLR0911
         return 2
     try:
         cfg = layer.load_effective(cwd, config_paths).config
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         reporter.error(f"{exc}")
         return 2
     # An orphaned child (its parent died before importing it) is adopted: fetched, then merged.

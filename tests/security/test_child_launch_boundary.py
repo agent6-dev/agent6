@@ -21,7 +21,7 @@ import pytest
 from agent6 import child_records, paths
 from agent6.app import worktrees
 from agent6.app.parallel import launch as child_launch
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import manifest
 from tests import launch_env
 
@@ -54,8 +54,8 @@ def _plant(where: pathlib.Path, marker: pathlib.Path) -> None:
     (where / "sitecustomize.py").write_text(code, encoding="utf-8")
 
 
-def _config(base_url: str) -> Config:
-    return Config.model_validate(
+def _config(base_url: str) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": base_url}},
             "models": {"default": {"model": "p/base"}},
@@ -67,7 +67,7 @@ def _config(base_url: str) -> Config:
 
 
 def _launch_files(
-    origin: pathlib.Path, cfg: Config, *, into: pathlib.Path
+    origin: pathlib.Path, cfg: config_model.Config, *, into: pathlib.Path
 ) -> tuple[child_launch.ChildLaunch, pathlib.Path]:
     spec = child_records.ChildSpec(
         number=1, session_id="hostile-l1", worktree=origin / "clone", settings=None

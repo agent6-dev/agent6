@@ -10,7 +10,7 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_resume, loop_snapshot, loop_state, run_chain
 from agent6.sandbox import jail_session
 from agent6.sessions import event_log
@@ -25,7 +25,7 @@ def _dispatcher(
     journal: pathlib.Path,
     policy: str = "allow",
 ) -> dispatch.ToolDispatcher:
-    config = Config.model_validate(
+    config = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": ["true"]},
@@ -216,7 +216,7 @@ def test_a_verifying_command_cannot_certify_its_own_edit(
     dispatcher = _dispatcher(build_dispatcher, repo, tmp_path / "logs.jsonl")
     harness = loop.Harness(
         chain=run_chain.RunChain(repo),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"]},
@@ -330,7 +330,7 @@ def test_unsuccessful_retry_replaces_an_earlier_final_pass(
     dispatcher = _dispatcher(build_dispatcher, repo, journal, "ask")
     harness = loop.Harness(
         chain=run_chain.RunChain(repo),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"]},

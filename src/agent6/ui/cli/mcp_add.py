@@ -22,17 +22,9 @@ import pydantic
 from agent6 import kinds, paths, terminal
 from agent6.app import confine
 from agent6.app.session import setup as session_setup
-from agent6.config import (
-    Config,
-    MCPServerEntry,
-    io,
-    is_cleartext_url,
-    is_loopback_url,
-    layer_data,
-    mcp_server_name_refusal,
-    write,
-)
+from agent6.config import io, layer_data, sandbox_config, write
 from agent6.config import layer as config_layer
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail
 from agent6.tools import mcp_client
 from agent6.ui.cli import common
@@ -58,7 +50,13 @@ def _probe(spec: mcp_client.MCPServerSpec) -> tuple[tuple[mcp_client.MCPToolDesc
 
 
 def _refuse_bad_flags(
-    *, name: str, command: list[str], url: str, token_env: str, pass_env: list[str], cfg: Config
+    *,
+    name: str,
+    command: list[str],
+    url: str,
+    token_env: str,
+    pass_env: list[str],
+    cfg: config_model.Config,
 ) -> str:
     """Return why this invocation cannot be acted on, or "".
 
@@ -87,7 +85,7 @@ def _refuse_bad_flags(
         return "--token-env is for --url servers; a spawned one uses --pass-env"
     if pass_env and url:
         return "--pass-env is for spawned servers; a --url one uses --token-env"
-    name_refusal = mcp_server_name_refusal(name)
+    name_refusal = sandbox_config.mcp_server_name_refusal(name)
     if name_refusal:
         # Before the write: the name becomes a TOML table header.
         return name_refusal
@@ -116,7 +114,11 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     Returns:
         False only when the operator does not answer yes at the prompt.
     """
-    if not (token_env and is_cleartext_url(url) and not is_loopback_url(url)):
+    if not (
+        token_env
+        and sandbox_config.is_cleartext_url(url)
+        and not sandbox_config.is_loopback_url(url)
+    ):
         return True
     common.warn(
         f"{url} is plaintext http to a non-loopback host: the token"
@@ -206,7 +208,7 @@ def cmd_mcp_add(
         return 1
 
     try:
-        entry = MCPServerEntry.model_validate(
+        entry = sandbox_config.MCPServerEntry.model_validate(
             {
                 "command": command,
                 "url": url,
@@ -264,7 +266,10 @@ def cmd_mcp_add(
 
 
 def _prove(
-    cfg: Config, name: str, entry: MCPServerEntry, isolation: kinds.IsolationLevel
+    cfg: config_model.Config,
+    name: str,
+    entry: sandbox_config.MCPServerEntry,
+    isolation: kinds.IsolationLevel,
 ) -> int | None:
     """Start the server as a run would and print its tools.
 

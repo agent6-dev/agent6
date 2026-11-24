@@ -26,7 +26,8 @@ from agent6.app.parallel import relay as child_watch
 from agent6.app.parallel import results as parallel_results
 from agent6.app.parallel import resume as child_resume
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.context import memory
 from agent6.harness.parallel import repo as child_repo
 from agent6.models import validate
@@ -153,7 +154,7 @@ class ChildRuntime:
 
 
 def child_settings(
-    cfg: Config, selectors: Sequence[str | None]
+    cfg: config_model.Config, selectors: Sequence[str | None]
 ) -> list[kinds.ModelSettings | None]:
     """Resolve each child's selector to its complete settings, in child order.
 
@@ -176,7 +177,7 @@ def bridge_spawner(
     *,
     operator_task: str | None = None,
     pins: Sequence[str] = (),
-    cfg: Config,
+    cfg: config_model.Config,
     explicit_leaves: frozenset[str],
     origin: pathlib.Path,
     record_state: pathlib.Path,
@@ -343,7 +344,7 @@ def run_child_to_completion(
     task: str,
     *,
     pins: Sequence[str] = (),
-    cfg: Config,
+    cfg: config_model.Config,
     explicit_leaves: frozenset[str],
     origin: pathlib.Path,
     record_state: pathlib.Path,
@@ -566,7 +567,7 @@ def finish_import(
     res: child_records.ChildResult,
     imported: child_records.Imported,
     *,
-    cfg: Config,
+    cfg: config_model.Config,
     origin: pathlib.Path,
     group: str,
     reporter: app_reporter.Reporter,
@@ -756,7 +757,7 @@ def recover_children(
     group: str,
     children: Sequence[str],
     *,
-    cfg: Config,
+    cfg: config_model.Config,
     origin: pathlib.Path,
     record_state: pathlib.Path,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
@@ -825,7 +826,7 @@ def recover_children(
 
 
 def build_child_recoverer(
-    cfg: Config,
+    cfg: config_model.Config,
     origin: pathlib.Path,
     record_state: pathlib.Path,
     *,
@@ -1106,7 +1107,7 @@ def _specs_with_siblings(
 
 
 def build_child_spawner(
-    cfg: Config,
+    cfg: config_model.Config,
     origin: pathlib.Path,
     record_state: pathlib.Path,
     *,
@@ -1165,7 +1166,7 @@ def build_child_spawner(
         # The routes are validated before any clone; no model cache warns and proceeds.
         try:
             settings = [child.settings or cfg.child_settings(child.model) for child in children]
-        except ConfigError as exc:
+        except validation.ConfigError as exc:
             raise ParallelError(str(exc)) from exc
         verdict = validate.validate_spec_models(
             [s.route if s is not None else None for s in settings], cfg
@@ -1314,7 +1315,7 @@ def build_child_spawner(
 
 
 def build_parent_spawner(
-    cfg: Config,
+    cfg: config_model.Config,
     origin: pathlib.Path,
     record_state: pathlib.Path,
     *,

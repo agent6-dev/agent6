@@ -18,7 +18,7 @@ import httpx2
 import pytest
 
 from agent6 import kinds, portable
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import dispatch, fetch, operator_prompts, tool_errors
 from agent6.ui.cli import steer_tty
 
@@ -135,7 +135,9 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: pathlib.Path) 
         return operator_prompts.ApprovalAnswer(False, "stdin")
 
     d = dispatch.ToolDispatcher(
-        root=tmp_path, config=Config(), prompts=operator_prompts.OperatorPrompts(approver=_deny)
+        root=tmp_path,
+        config=config_model.Config(),
+        prompts=operator_prompts.OperatorPrompts(approver=_deny),
     )
     with pytest.raises(tool_errors.ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://example.com/x?k=v"})
@@ -153,7 +155,7 @@ def test_an_allowed_host_is_never_prompted_for(
         return fetch.Fetched(url=checked.url, status=200, content_type="text/plain", body="hello")
 
     monkeypatch.setattr(fetch, "fetch_url", _fetched)
-    cfg = Config.model_validate({"sandbox": {"fetch_approved_hosts": ["example.com"]}})
+    cfg = config_model.Config.model_validate({"sandbox": {"fetch_approved_hosts": ["example.com"]}})
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=cfg, prompts=operator_prompts.OperatorPrompts(approver=_loud)
     )
@@ -162,9 +164,9 @@ def test_an_allowed_host_is_never_prompted_for(
 
 def test_the_tool_is_hidden_when_commands_already_have_the_network(tmp_path: pathlib.Path) -> None:
     """With `sandbox.network = "host"` the worker can run curl, so `fetch` is not offered."""
-    blocked = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    blocked = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config())
     allowed = dispatch.ToolDispatcher(
-        root=tmp_path, config=Config.model_validate({"sandbox": {"network": "host"}})
+        root=tmp_path, config=config_model.Config.model_validate({"sandbox": {"network": "host"}})
     )
     assert "fetch" in blocked.available_tool_names()
     assert "fetch" not in allowed.available_tool_names()
@@ -240,7 +242,7 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
 
 def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: pathlib.Path) -> None:
     """Every hiding rule has a matching refusal in dispatch, so exposure and enforcement agree."""
-    cfg = Config.model_validate({"sandbox": {"network": "host"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"network": "host"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     assert "fetch" not in d.available_tool_names()
     with pytest.raises(tool_errors.ToolError, match="not available"):
@@ -254,7 +256,7 @@ def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
     """The rule reads the resolved isolation: only `full` has network namespaces."""
     d = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config.model_validate({"sandbox": {"network": "auto"}}),
+        config=config_model.Config.model_validate({"sandbox": {"network": "auto"}}),
         isolation=isolation,
     )
     assert "fetch" not in d.available_tool_names()
@@ -311,7 +313,9 @@ def test_a_denied_fetch_never_touches_the_resolver(
         return operator_prompts.ApprovalAnswer(False, "stdin")
 
     d = dispatch.ToolDispatcher(
-        root=tmp_path, config=Config(), prompts=operator_prompts.OperatorPrompts(approver=_deny)
+        root=tmp_path,
+        config=config_model.Config(),
+        prompts=operator_prompts.OperatorPrompts(approver=_deny),
     )
     with pytest.raises(tool_errors.ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://payload.exfil.attacker.example/x"})

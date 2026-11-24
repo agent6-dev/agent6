@@ -21,7 +21,7 @@ from agent6.app.parallel import resume as child_resume
 from agent6.app.review import actions as review_actions
 from agent6.app.review import directive as review_directive
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
@@ -82,7 +82,7 @@ def start_header(
 
 
 def build_harness(
-    cfg: Config,
+    cfg: config_model.Config,
     layout: sessions_layout.SessionLayout,
     inputs: execution.ExecutionInputs,
     *,

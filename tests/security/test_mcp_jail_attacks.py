@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
 
@@ -24,7 +24,14 @@ pytestmark = pytest.mark.needs_namespaces
 
 def _attack(script: str, cwd: pathlib.Path, **policy_kw: object) -> str:
     argv = ("/usr/bin/python3", "-c", script)
-    policy = tools_policy.jail_policy(cwd, Config(), "full", argv, network="none", **policy_kw)  # pyrefly: ignore[bad-argument-type]
+    policy = tools_policy.jail_policy(
+        cwd,
+        config_model.Config(),
+        "full",
+        argv,
+        network="none",
+        **policy_kw,  # pyrefly: ignore[bad-argument-type]
+    )
     proc = jail.spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     ).popen
@@ -167,7 +174,7 @@ def test_killing_agent6_takes_the_server_with_it(tmp_path: pathlib.Path) -> None
     """
     script = "import time\nprint('UP', flush=True)\ntime.sleep(300)\n"
     argv = ("/usr/bin/python3", "-c", script)
-    policy = tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none")
+    policy = tools_policy.jail_policy(tmp_path, config_model.Config(), "full", argv, network="none")
     proc = jail.spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
     ).popen
@@ -225,7 +232,9 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: pathli
     )
     argv = ("/usr/bin/python3", "-c", flood)
     proc = mcp_client._spawn_server(
-        argv, tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none"), ()
+        argv,
+        tools_policy.jail_policy(tmp_path, config_model.Config(), "full", argv, network="none"),
+        (),
     ).popen
     keep: list[bytes] = []
     assert proc.stderr is not None
@@ -250,7 +259,7 @@ def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: pathlib.Path) -> 
     from agent6.sandbox import jail as jail_mod
 
     argv = ("/usr/bin/python3", "-c", "pass")
-    policy = tools_policy.jail_policy(tmp_path, Config(), "full", argv, network="none")
+    policy = tools_policy.jail_policy(tmp_path, config_model.Config(), "full", argv, network="none")
     proc = jail.spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,

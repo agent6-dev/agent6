@@ -26,7 +26,7 @@ import pytest
 from agent6 import portable
 from agent6.app import frontend
 from agent6.app.parallel import relay as child_watch
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log, journal, process
 from agent6.sessions import ipc as sessions_ipc
 from agent6.tools import dispatch, fetch, operator_prompts, schema, tool_errors
@@ -233,7 +233,7 @@ def test_a_headless_fetch_wait_names_the_requester_and_target(
     """The waiting line shows the fetch payload from the root or relayed approval."""
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
-    cfg = Config()
+    cfg = config_model.Config()
     frontend.settle_away_mode(tmp_path, cfg, can_ask=False)
 
     def decline_fetch(event: journal.Event) -> None:

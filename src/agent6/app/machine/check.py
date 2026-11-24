@@ -8,7 +8,7 @@ import pathlib
 import shutil
 
 from agent6.app.machine import bundle, state_configs
-from agent6.config import ConfigError
+from agent6.config import validation
 from agent6.machine import schema, semantics
 from agent6.sandbox import detect, tool_paths
 
@@ -62,7 +62,7 @@ def check_bundle(
         )
     except state_configs.ConfigWidenedError as exc:
         raise CheckError(exc.problems, "config") from exc
-    except (ConfigError, detect.IsolationUnavailableError) as exc:
+    except (validation.ConfigError, detect.IsolationUnavailableError) as exc:
         raise CheckError([str(exc)], "config") from exc
     return CheckedBundle(spec, configs, tuple(tool_reachability_warnings(spec, path)))
 

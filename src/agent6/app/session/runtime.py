@@ -31,7 +31,8 @@ from agent6.app import (
 from agent6.app import reporter as app_reporter
 from agent6.app.review import actions as review_actions
 from agent6.app.session import setup as session_setup
-from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
+from agent6.config import harness_config, provider_config
+from agent6.config import model as config_model
 from agent6.graph import curator as graph_curator
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.harness.review import gate as review_gate
@@ -45,7 +46,7 @@ from agent6.viewmodel.session import status as session_status
 
 
 def resolve_isolation_or_refuse(
-    cfg: Config, env: detect.Environment, *, reporter: app_reporter.Reporter
+    cfg: config_model.Config, env: detect.Environment, *, reporter: app_reporter.Reporter
 ) -> kinds.IsolationLevel:
     """Return the isolation level the config resolves to on this host.
 
@@ -69,7 +70,7 @@ def resolve_isolation_or_refuse(
         raise preflight.SessionRefusedError(2) from exc
 
 
-def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
+def tool_result_cap_bytes(cfg: config_model.Config, role: kinds.RoleName) -> int:
     """Return the byte bound on one tool result entering the conversation of the role's provider.
 
     Args:
@@ -81,16 +82,16 @@ def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
     """
     rm = cfg.models.resolve(role)
     entry = cfg.providers.get(rm.provider) if rm is not None else None
-    if isinstance(entry, ClaudeCodeProviderEntry):
+    if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         return compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES
     return compaction_elision.TOOL_RESULT_CAP_BYTES
 
 
 def select_isolation(
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     cwd: pathlib.Path,
-    confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
+    confirm_unconfined: Callable[[kinds.IsolationLevel, config_model.Config], bool],
     reporter: app_reporter.Reporter,
     worktree_git_dir: pathlib.Path | None = None,
 ) -> kinds.IsolationLevel:
@@ -206,7 +207,7 @@ class SessionProviders:
     """
 
     budget: agent6_budget.BudgetTracker
-    rm_role: RoleModel
+    rm_role: harness_config.RoleModel
     provider: provider_calls.Provider
     summarizer_provider: provider_calls.Provider | None
     reviewers: list[review_gate.Reviewer]
@@ -222,9 +223,9 @@ class SessionProviders:
 
 
 def build_session_providers(
-    cfg: Config,
+    cfg: config_model.Config,
     *,
-    role: RoleName,
+    role: kinds.RoleName,
     actor: str = "",
     events: event_log.EventSink,
     transcript_sink: provider_types.TranscriptSink,
@@ -314,7 +315,7 @@ class SessionTools:
     compact_drop_at_chars: int
     compact_summarize_at_chars: int
     keep_recent_chars: int
-    cfg: Config
+    cfg: config_model.Config
 
 
 def record_git_exposure(
@@ -336,7 +337,7 @@ def record_git_exposure(
 
 
 def prepare_local_execution(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     isolation: kinds.IsolationLevel,
     *,
@@ -400,7 +401,7 @@ def prepare_local_execution(
     )
 
 
-def container_options(cfg: Config) -> container.ContainerOptions:
+def container_options(cfg: config_model.Config) -> container.ContainerOptions:
     """Return the `[container]` table as the sandbox's typed selection.
 
     Args:
@@ -419,7 +420,7 @@ def container_options(cfg: Config) -> container.ContainerOptions:
 
 
 def _container_checkout_refusal(
-    cfg: Config, cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None
+    cfg: config_model.Config, cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None
 ) -> str | None:
     """Return why a running container cannot hold a linked worktree, before the session starts.
 
@@ -445,7 +446,7 @@ def _container_checkout_refusal(
 
 
 def mounted_root(
-    cfg: Config, cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None
+    cfg: config_model.Config, cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None
 ) -> pathlib.Path:
     """Return the workspace a dev container mounts for a checkout.
 
@@ -477,7 +478,7 @@ class ContainerReport:
     exposures: tuple[str, ...]
 
 
-def describe_container(cfg: Config, root: pathlib.Path) -> ContainerReport:
+def describe_container(cfg: config_model.Config, root: pathlib.Path) -> ContainerReport:
     """Inspect the container the config selects, starting and stopping nothing.
 
     Args:
@@ -500,7 +501,7 @@ def describe_container(cfg: Config, root: pathlib.Path) -> ContainerReport:
 
 
 def prepare_container_execution(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     options: container.ContainerOptions,
     *,
@@ -618,7 +619,7 @@ def prepare_container_execution(
 
 
 def build_session_tools(
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     cwd: pathlib.Path,
     state_dir: pathlib.Path,
@@ -629,7 +630,7 @@ def build_session_tools(
     prompts: operator_prompts.OperatorPrompts,
     loop_log: Callable[[str], None],
     mcp_manager: mcp_client.MCPManager | None,
-    rm_role: RoleModel,
+    rm_role: harness_config.RoleModel,
     command_access: command_tools.JailAccess | None = None,
     execution_id: str | None = None,
     session_net: jail.SessionNetwork | None = None,

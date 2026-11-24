@@ -9,9 +9,9 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.config import ConfigError
 from agent6.config import layer as config_layer
 from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.models import choices
 from agent6.ui.cli import config_cmds as cc
 
@@ -102,11 +102,11 @@ def test_parallel_models_completer_completes_after_last_comma(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # TAB on `run --parallel` completes routes, only the entry after the last comma.
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import completers
 
     class _Eff:
-        config = Config()
+        config = config_model.Config()
 
     def _eff(*_a: object, **_k: object) -> _Eff:
         return _Eff()
@@ -326,7 +326,7 @@ def test_config_refuses_and_fix_drops_the_metric_table(
         table + '[harness.verify]\ncommand = ["check"]\n',
         encoding="utf-8",
     )
-    with pytest.raises(ConfigError, match="--metric"):
+    with pytest.raises(validation.ConfigError, match="--metric"):
         config_layer.load_effective(tmp_path)
 
     assert entry.main(["config", "fix"]) == 0
@@ -768,7 +768,7 @@ def test_a_load_error_names_the_provider_key_the_file_holds(tmp_path: pathlib.Pa
     path.write_text(
         '[providers.p]\nbackend = "openai"\nidle_compact_s = "soon"\n', encoding="utf-8"
     )
-    with pytest.raises(ConfigError) as refused:
+    with pytest.raises(validation.ConfigError) as refused:
         config_model.load_config(path)
     assert "- providers.p.idle_compact_s: " in str(refused.value)
 

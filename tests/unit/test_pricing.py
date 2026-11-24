@@ -9,7 +9,8 @@ import pathlib
 
 import pytest
 
-from agent6 import config, kinds
+from agent6 import kinds
+from agent6.config import model as config_model
 from agent6.config import provider_config
 from agent6.models import cache as models_cache
 from agent6.models import listing_store
@@ -29,7 +30,8 @@ def test_price_needs_the_listing_entry_binding(
     path.write_text(json.dumps({"pricing": rates}), encoding="utf-8")
     assert models_pricing.lookup_price(route, price_env.PROVIDERS) is None
     price_env.write(
-        rates, entry=config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:2")
+        rates,
+        entry=provider_config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:2"),
     )
     assert models_pricing.lookup_price(route, price_env.PROVIDERS) is None
     price_env.write(rates)
@@ -88,7 +90,7 @@ def test_reference_quote_names_the_matched_listing(
     name: str, model: str, listed: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    providers = config.Config.model_validate(
+    providers = config_model.Config.model_validate(
         {
             "providers": {
                 "anthropic": {"backend": "anthropic"},
@@ -155,7 +157,7 @@ def test_unpriced_listing_ids_still_decide_the_match(
     providers = {
         **price_env.PROVIDERS,
         "gateway": price_env.ENTRY.model_copy(update={"price_list_fallback": price_env.PRICE_LIST}),
-        "direct": config.AnthropicProviderEntry(
+        "direct": provider_config.AnthropicProviderEntry(
             backend="anthropic", price_list_fallback=price_env.PRICE_LIST
         ),
     }
@@ -175,7 +177,7 @@ def test_vendor_prefixed_id_precedes_a_normalized_claude_alias(
     model = "claude-haiku-4-5-20251001"
     providers = {
         **price_env.PROVIDERS,
-        "direct": config.AnthropicProviderEntry(
+        "direct": provider_config.AnthropicProviderEntry(
             backend="anthropic", price_list_fallback=price_env.PRICE_LIST
         ),
     }
@@ -201,7 +203,7 @@ def test_an_explicit_price_list_prices_claude_behind_any_anthropic_entry(
 ) -> None:
     """Claude on Vertex or behind a proxy stayed unpriced with a fallback price list set."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    providers = config.Config.model_validate(
+    providers = config_model.Config.model_validate(
         {
             "providers": {
                 "named": {
@@ -291,13 +293,19 @@ def test_only_a_vendors_own_api_defaults_to_the_public_price_list() -> None:
     A local model that shares a hosted model's name would otherwise be charged list prices.
     """
     default = provider_config.DEFAULT_PRICE_LIST
-    assert config.AnthropicProviderEntry(backend="anthropic").price_list_fallback == default
-    assert config.OpenAIProviderEntry(backend="openai").price_list_fallback == default
-    local = config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:11434/v1")
+    assert (
+        provider_config.AnthropicProviderEntry(backend="anthropic").price_list_fallback == default
+    )
+    assert provider_config.OpenAIProviderEntry(backend="openai").price_list_fallback == default
+    local = provider_config.OpenAIProviderEntry(
+        backend="openai", base_url="http://localhost:11434/v1"
+    )
     assert local.price_list_fallback == ""
-    gateway = config.OpenAIProviderEntry(backend="openai", base_url="https://gateway.example/v1")
+    gateway = provider_config.OpenAIProviderEntry(
+        backend="openai", base_url="https://gateway.example/v1"
+    )
     assert gateway.price_list_fallback == ""
-    off = config.AnthropicProviderEntry(backend="anthropic", price_list_fallback="")
+    off = provider_config.AnthropicProviderEntry(backend="anthropic", price_list_fallback="")
     assert off.price_list_fallback == ""
 
 
@@ -306,7 +314,7 @@ def test_only_a_vendors_own_api_defaults_to_the_public_price_list() -> None:
 )
 def test_a_price_list_address_must_name_a_models_listing(address: str) -> None:
     with pytest.raises(ValueError, match=r"price_list_fallback|base_url|http"):
-        config.OpenAIProviderEntry(
+        provider_config.OpenAIProviderEntry(
             backend="openai", base_url="https://gateway.example/v1", price_list_fallback=address
         )
 

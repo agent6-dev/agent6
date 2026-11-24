@@ -15,7 +15,7 @@ import sys
 import pytest
 
 from agent6.app import confine
-from agent6.config import Config
+from agent6.config import model as config_model
 
 _SHIM = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
 
@@ -24,7 +24,7 @@ _SHIM = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
 def test_a_relative_sandbox_path_is_refused(path: str) -> None:
     """It would resolve against whatever directory agent6 started in."""
     with pytest.raises(ValueError, match="must be absolute"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "mcp": {
                     "enabled": True,
@@ -40,7 +40,7 @@ def test_a_connected_server_cannot_carry_a_sandbox_block() -> None:
     It is the operator's own process; agent6 never starts it, so there is nothing to confine.
     """
     with pytest.raises(ValueError, match="spawns"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "mcp": {
                     "enabled": True,
@@ -130,7 +130,7 @@ def test_a_hostname_that_merely_starts_with_127_is_not_loopback(host: str) -> No
     is parsed, so these names count as non-loopback and the endpoint is listed for the run-entry
     warning.
     """
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "mcp": {
                 "enabled": True,
@@ -143,7 +143,7 @@ def test_a_hostname_that_merely_starts_with_127_is_not_loopback(host: str) -> No
 
 def test_a_real_loopback_url_still_takes_a_token() -> None:
     for url in ("http://127.0.0.1:8080/mcp", "http://localhost/mcp", "http://[::1]/mcp"):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {"mcp": {"enabled": True, "servers": {"s": {"url": url, "token_env": "TOK"}}}}
         )
         assert cfg.cleartext_credential_endpoints() == (), url
@@ -155,7 +155,7 @@ def test_a_plaintext_nonloopback_credential_warns_instead_of_refusing() -> None:
     It loads (the old validator refused it) and is listed for the run-entry warning. https and
     credential-less http endpoints are not listed.
     """
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "corp": {
@@ -191,7 +191,7 @@ def test_a_server_a_run_never_starts_is_no_cleartext_endpoint(switch: str) -> No
     """
     table, server = (False, True) if switch == "mcp.enabled" else (True, False)
     entry = {"url": "http://mcp.corp.internal/mcp", "token_env": "T", "enabled": server}
-    cfg = Config.model_validate({"mcp": {"enabled": table, "servers": {"s": entry}}})
+    cfg = config_model.Config.model_validate({"mcp": {"enabled": table, "servers": {"s": entry}}})
     assert cfg.cleartext_credential_endpoints() == ()
 
 
@@ -257,7 +257,7 @@ def _policy_for(body: dict[str, object] | None, tmp_path: pathlib.Path):
     spec: dict[str, object] = {"command": ["npx", "server"]}
     if body is not None:
         spec["sandbox"] = body
-    cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": spec}}})
+    cfg = config_model.Config.model_validate({"mcp": {"enabled": True, "servers": {"s": spec}}})
     return session_setup.mcp_server_policy(cfg, tmp_path, "full", cfg.mcp.servers["s"])
 
 
@@ -284,7 +284,7 @@ def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: pathlib.Path) -> 
     """
     from agent6.app.session import setup as session_setup
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "mcp": {
                 "enabled": True,
@@ -331,7 +331,7 @@ def test_unconfined_cannot_be_half_applied() -> None:
         {"unconfined": True, "network": "host"},
     ):
         with pytest.raises(ValueError, match="unconfined"):
-            Config.model_validate(
+            config_model.Config.model_validate(
                 {"mcp": {"enabled": True, "servers": {"s": {"command": ["x"], "sandbox": body}}}}
             )
 
@@ -345,7 +345,7 @@ def test_a_server_cannot_be_granted_the_private_dirs(
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     with pytest.raises(ValueError, match="agent6-private"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "mcp": {
                     "enabled": True,
@@ -396,7 +396,7 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     into.symlink_to(repo / "data", target_is_directory=True)
     spec = {"command": ["npx", "server"], "sandbox": {"extra_read_paths": [str(tool), str(into)]}}
     # Pinned to `full`: pytest's tmp_path sits in /tmp, where a link counts under auto.
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "full"}, "mcp": {"enabled": True, "servers": {"fs": spec}}}
     )
 
@@ -424,7 +424,7 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
 
 def test_a_url_server_adds_no_partial_grant_region(tmp_path: pathlib.Path) -> None:
     """A `url` server got jail regions under `partial`, labelled with paths it never reads."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"remote": {"url": "http://127.0.0.1:9/mcp"}}}}
     )
     regions = confine._grant_regions(cfg, tmp_path, "partial")

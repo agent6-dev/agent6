@@ -20,7 +20,8 @@ from agent6.app.parallel import launch as child_launch
 from agent6.app.parallel import relay as child_watch
 from agent6.app.parallel import resume as child_resume
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, event_log, ipc, journal, lock, process
 from agent6.sessions import manifest as sessions_manifest
@@ -108,7 +109,7 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
         return [("run_command", {"argv": ["sleep", "60"]})]
 
     with launch_env.scripted_provider(reply_for=reply) as (url, _calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": url, "idle_compact_s": 0.001}},
                 "compaction": {"cold_start": "truncate", "keep_recent_turns": 0},
@@ -338,7 +339,7 @@ def test_parent_does_not_rebind_a_continuation_to_a_replaced_clone(
     result = app_children.bridge_spawner(
         retained_child,
         "work",
-        cfg=Config(),
+        cfg=config_model.Config(),
         explicit_leaves=frozenset(),
         origin=repo,
         record_state=state,
@@ -366,7 +367,7 @@ def test_a_continuation_that_never_starts_removes_only_a_fresh_clone(
     result = app_children.run_child_to_completion(
         retained_child,
         "work",
-        cfg=Config(),
+        cfg=config_model.Config(),
         explicit_leaves=frozenset(),
         origin=repo,
         record_state=paths.state_dir(repo),
@@ -399,7 +400,7 @@ def test_a_continuation_skips_complete_history_with_bounded_reads(
         app_children.bridge_spawner(
             retained_child,
             "work",
-            cfg=Config(),
+            cfg=config_model.Config(),
             explicit_leaves=frozenset(),
             origin=repo,
             record_state=state,
@@ -477,7 +478,7 @@ def test_continuation_readiness_distinguishes_executions(
     result = app_children.bridge_spawner(
         spec,
         "work",
-        cfg=Config.model_validate({"git": {"control": control}}),
+        cfg=config_model.Config.model_validate({"git": {"control": control}}),
         explicit_leaves=frozenset(),
         origin=repo,
         record_state=state,
@@ -537,7 +538,7 @@ def test_only_the_current_workers_preflight_can_receive_an_answer(
     result = app_children.run_child_to_completion(
         retained_child,
         "work",
-        cfg=Config(),
+        cfg=config_model.Config(),
         explicit_leaves=frozenset(),
         origin=repo,
         record_state=state,

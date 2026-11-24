@@ -179,9 +179,9 @@ class _Eff:
 
 
 def _provider_cfg() -> object:
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    return Config.model_validate(
+    return config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"worker": {"model": "o/moonshotai/kimi-k2.6"}},
@@ -229,7 +229,7 @@ def test_parallel_validation_uses_the_picked_model_provider(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A hub model pick changes the worker provider before a `/parallel` segment is checked."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.models import validate as models_validate
 
     cache = tmp_path / "cache" / "agent6" / "models"
@@ -237,7 +237,7 @@ def test_parallel_validation_uses_the_picked_model_provider(
     (cache / "o.json").write_text(json.dumps({"models": ["o-model"]}), encoding="utf-8")
     (cache / "q.json").write_text(json.dumps({"models": ["q-child"]}), encoding="utf-8")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "o": {"backend": "openai", "base_url": "https://o/v1"},

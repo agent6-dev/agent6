@@ -20,7 +20,7 @@ import pytest
 
 from agent6 import directive, kinds
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail_session
 from agent6.tools import arguments, command_tools, dispatch, operator_prompts, schema, tool_errors
 from agent6.tools import results as tools_results
@@ -50,23 +50,23 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: pathlib.Path) -> Config:
-    from agent6.config import load_config
+def _config(tmp_path: pathlib.Path) -> config_model.Config:
+    from agent6.config import model as config_model
 
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML, encoding="utf-8")
-    return load_config(p)
+    return config_model.load_config(p)
 
 
-def _config_with_run_commands(tmp_path: pathlib.Path, mode: str) -> Config:
-    from agent6.config import load_config
+def _config_with_run_commands(tmp_path: pathlib.Path, mode: str) -> config_model.Config:
+    from agent6.config import model as config_model
 
     p = tmp_path / f"agent6-{mode}.toml"
     p.write_text(
         _VALID_TOML.replace('run_commands = "deny"', f'run_commands = "{mode}"'),
         encoding="utf-8",
     )
-    return load_config(p)
+    return config_model.load_config(p)
 
 
 def test_each_builtin_routes_to_its_named_family_function() -> None:
@@ -286,9 +286,9 @@ def test_run_metric_refused_outside_run_mode(
     body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     fired: list[object] = []
 
     def fake_run_in_jail(policy: object, **_kw: object) -> None:
@@ -450,11 +450,11 @@ def test_apply_edit_allows_git_lookalike_components(tmp_path: pathlib.Path) -> N
 def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: pathlib.Path) -> None:
     # Opting out of protect_git lifts the guard (consistent with the jail,
     # which also stops RO-binding .git when protect_git is false).
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
     p = tmp_path / "agent6-nogit.toml"
     p.write_text(_VALID_TOML.replace('protect_git = "on"', 'protect_git = "off"'), encoding="utf-8")
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch(
         "apply_edit",
@@ -1288,7 +1288,7 @@ def test_single_file_read_grant(tmp_path: pathlib.Path) -> None:
     root.mkdir()
     granted = tmp_path / "note.py"
     granted.write_text("x = 1\n", encoding="utf-8")
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": "full", "extra_read_paths": [str(granted)]}}
     )
     d = dispatch.ToolDispatcher(root=root, config=cfg)
@@ -1385,7 +1385,7 @@ def test_empty_input_command_tools_reject_arguments(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
     """A no-argument tool's empty schema is a contract, not a suggestion."""
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
     body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"\nnetwork = "host"')
     path = tmp_path / "agent6.toml"
@@ -1397,7 +1397,7 @@ def test_empty_input_command_tools_reject_arguments(
         )
 
     monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(path))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.load_config(path))
     d.metric = directive.parse_metric_spec("minimize '(true)' -- true")
     with pytest.raises(tool_errors.ToolError, match="invalid arguments: unexpected: Extra inputs"):
         d.dispatch(name, {"unexpected": True})
@@ -1421,9 +1421,9 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: pathlib.Path
     body = _VALID_TOML
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
-    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.load_config(p))
     d.metric = directive.parse_metric_spec(
         "minimize 'CYCLES:\\s*(\\d+)' -- /usr/bin/python3 -c 'print(\"CYCLES: 42\")'"
     )
@@ -1441,9 +1441,9 @@ def test_run_metric_command_invokes_jail(
     body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
 
     captured: dict[str, object] = {}
 
@@ -1482,9 +1482,9 @@ def test_run_metric_command_honors_verify_timeout(
     body = body.replace("[harness]\n", "[harness]\nverify.timeout_s = 7.0\n")
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     assert cfg.harness.verify.timeout_s == 7.0  # the override reached the config
 
     captured: dict[str, object] = {}
@@ -1511,9 +1511,9 @@ def test_run_metric_command_score_null_on_no_match(
     body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
 
     def fake_run(
         _self: jail_session.JailSession, argv: tuple[str, ...], **_kw: object
@@ -1770,7 +1770,7 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     root.mkdir()
     session_dir = tmp_path / "session"
     logs = session_dir / "logs.jsonl"
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"run_commands": "allow"}, "harness": {"command_checkin_s": 10.0}}
     )
     d = build_dispatcher(
@@ -1878,7 +1878,7 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(
     from agent6.sessions import ipc
 
     session_dir = tmp_path / "session"
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     d = build_dispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     ipc.request_stop(session_dir, now=True)
     session = mock.Mock(spec=jail_session.JailSession)
@@ -1980,7 +1980,7 @@ def test_extra_read_paths_reach_the_command_policy(tmp_path: pathlib.Path) -> No
     # sandbox.extra_read_paths must reach the JailPolicy as extra_ro_paths, so a
     # project whose toolchain/interpreter lives outside the repo (e.g. a conda
     # env at /opt) is usable under `partial`/`full`.
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
     body = _VALID_TOML.replace(
         'run_commands = "deny"',
@@ -1988,7 +1988,7 @@ def test_extra_read_paths_reach_the_command_policy(tmp_path: pathlib.Path) -> No
     )
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     access = session_runtime.prepare_local_execution(cfg, tmp_path, "full")
     try:
         assert "/opt/miniconda3" in {str(path) for path in access.policy.extra_ro_paths}
@@ -2001,7 +2001,7 @@ def test_extra_read_paths_reach_the_command_policy(tmp_path: pathlib.Path) -> No
 def test_extra_write_paths_reach_the_command_policy(tmp_path: pathlib.Path) -> None:
     # sandbox.extra_write_paths must reach the JailPolicy as extra_rw_paths (a
     # writable bind mount at the real location, so write implies read).
-    from agent6.config import load_config
+    from agent6.config import model as config_model
 
     body = _VALID_TOML.replace(
         'run_commands = "deny"',
@@ -2009,7 +2009,7 @@ def test_extra_write_paths_reach_the_command_policy(tmp_path: pathlib.Path) -> N
     )
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
-    cfg = load_config(p)
+    cfg = config_model.load_config(p)
     access = session_runtime.prepare_local_execution(cfg, tmp_path, "full")
     try:
         assert "/var/cache/shared" in {str(path) for path in access.policy.extra_rw_paths}
@@ -3115,7 +3115,9 @@ def test_command_temp_files_belong_to_session(
     """
     root = tmp_path / "repo"
     root.mkdir()
-    access = session_runtime.prepare_local_execution(Config(), root, isolation, name="t" * 60)
+    access = session_runtime.prepare_local_execution(
+        config_model.Config(), root, isolation, name="t" * 60
+    )
     temp = pathlib.Path(dict(access.policy.env)["TMPDIR"])
     assert temp.name.startswith("agent6-" + "t" * 12 + "-")
     assert temp in access.policy.extra_rw_paths
@@ -3144,7 +3146,9 @@ def test_command_temp_socket_with_long_paths(
     monkeypatch.setattr(tempfile, "tempdir", None)
     name = "session-" + "s" * 180 if long_session else "session"
     sessions = [
-        session_runtime.prepare_local_execution(Config(), tmp_path, isolation, name=name + suffix)
+        session_runtime.prepare_local_execution(
+            config_model.Config(), tmp_path, isolation, name=name + suffix
+        )
         for suffix in ("-a", "-b")
     ]
     temps: list[pathlib.Path] = []
@@ -3172,7 +3176,9 @@ def test_full_isolation_leaves_tmpdir_to_the_jail(tmp_path: pathlib.Path) -> Non
     """Under `full` the jail's private tmpfs is the run's /tmp: no host directory, no TMPDIR."""
     root = tmp_path / "repo"
     root.mkdir()
-    access = session_runtime.prepare_local_execution(Config(), root, "full", name="test")
+    access = session_runtime.prepare_local_execution(
+        config_model.Config(), root, "full", name="test"
+    )
     try:
         assert "TMPDIR" not in dict(access.policy.env)
     finally:

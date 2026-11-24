@@ -20,7 +20,7 @@ import pathlib
 import types
 from typing import Any
 
-from agent6 import config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_conversation, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.providers import provider_types
@@ -37,7 +37,7 @@ class _StubDispatcher:
     The loop rebuilds its tool list every turn; the defaults filter no tools and withhold nothing.
     """
 
-    config = config.Config()
+    config = config_model.Config()
     allowed_tools: None = None
 
     def parallel_available(self) -> bool:

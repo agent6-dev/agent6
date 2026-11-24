@@ -15,7 +15,8 @@ import pytest
 from agent6 import child_records, paths
 from agent6.app import worktrees
 from agent6.app.parallel import launch as child_launch
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.ui import spawn
 
 
@@ -65,7 +66,7 @@ def test_read_follows_the_environment_and_is_none_outside_a_child(
     monkeypatch.setenv(child_launch.ENV, str(path))
     assert child_launch.read() is not None
     monkeypatch.setenv(child_launch.ENV, str(tmp_path / "launch" / "missing.json"))
-    with pytest.raises(ConfigError, match="child launch"):
+    with pytest.raises(validation.ConfigError, match="child launch"):
         child_launch.read()
 
 
@@ -104,7 +105,7 @@ def test_read_refuses_an_exposed_or_malformed_file(tmp_path: pathlib.Path, break
         path.unlink()
         path.mkdir()
         why = "not a regular file"
-    with pytest.raises(ConfigError, match=why):
+    with pytest.raises(validation.ConfigError, match=why):
         child_launch.read_file(path)
 
 
@@ -120,7 +121,7 @@ def test_read_refuses_a_file_owned_by_another_user(
         return os.stat_result((*st[:4], st.st_uid + 1, *st[5:]))
 
     monkeypatch.setattr(os, "fstat", foreign)
-    with pytest.raises(ConfigError, match="owned by uid"):
+    with pytest.raises(validation.ConfigError, match="owned by uid"):
         child_launch.read_file(path)
 
 
@@ -132,11 +133,11 @@ def test_private_dir_accepts_only_this_users_unshared_dir(tmp_path: pathlib.Path
     shared = tmp_path / "shared"
     shared.mkdir()
     shared.chmod(0o775)
-    with pytest.raises(ConfigError, match="lets others write it"):
+    with pytest.raises(validation.ConfigError, match="lets others write it"):
         child_launch.private_dir(shared)
     link = tmp_path / "link"
     link.symlink_to(made)
-    with pytest.raises(ConfigError, match="symlink"):
+    with pytest.raises(validation.ConfigError, match="symlink"):
         child_launch.private_dir(link)
 
 
@@ -153,7 +154,7 @@ def test_write_child_config_uses_the_private_dir(tmp_path: pathlib.Path) -> None
     )
     private = tmp_path / "state" / "launch" / "fan"
     written = worktrees.write_child_config(
-        Config(), spec, explicit_leaves=frozenset(), into=private
+        config_model.Config(), spec, explicit_leaves=frozenset(), into=private
     )
     assert written.path == private / "child-2-config.toml"
     assert stat.S_IMODE(written.path.stat().st_mode) == 0o600

@@ -28,7 +28,7 @@ except ImportError as e:  # pragma: no cover
 # Reached only once the textual guard above passed.
 from agent6 import errors, pack
 from agent6.app import merge_plan
-from agent6.config import ConfigError, layer
+from agent6.config import layer, validation
 from agent6.models import choices
 from agent6.sessions import layout, manifest
 from agent6.ui import keymap, notify, spawn
@@ -662,7 +662,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Push the config editor, or name `agent6 config fix` when the config is invalid."""
         try:
             layer.load_effective(self.repo_cwd, self.config_paths)
-        except ConfigError as exc:
+        except validation.ConfigError as exc:
             self.app.notify(
                 "Config is invalid, so it can't be opened. Run `agent6 config fix` in a"
                 f" terminal to drop invalid entries, then reopen.\n{exc}",

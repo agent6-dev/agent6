@@ -14,7 +14,8 @@ import sys
 
 from agent6.app import reporter
 from agent6.app.review import recap as review_recap
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.sessions import id
 from agent6.ui.cli import common
 
@@ -47,7 +48,7 @@ def _cmd_sessions_review(
     if not session_id:
         print(f"[agent6] reviewing the newest session: {layout.session_id}", file=sys.stderr)
 
-    def load() -> Config:
+    def load() -> config_model.Config:
         cfg = layer.load_effective(cwd, config_paths).config
         if model:
             cfg = cfg.with_model_route("reviewer", cfg.model_route(model))

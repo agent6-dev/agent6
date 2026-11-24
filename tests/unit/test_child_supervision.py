@@ -25,7 +25,7 @@ from agent6.app.parallel import children as app_children
 from agent6.app.parallel import launch as child_launch
 from agent6.app.parallel import relay as child_watch
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import ipc, journal, process
 from agent6.tools import operator_prompts
 from agent6.ui import spawn
@@ -85,7 +85,7 @@ def test_the_turn_cap_clamps_and_unlimited_cannot_lift_it(
 
 
 def test_apply_limits_clamps_the_config_and_leaves_the_rest(tmp_path: pathlib.Path) -> None:
-    cfg = Config.model_validate({"harness": {"max_turns": -1}})
+    cfg = config_model.Config.model_validate({"harness": {"max_turns": -1}})
     clamped = child_launch.apply_limits(cfg, child_records.ChildLimits(max_turns=200))
     assert clamped.harness.max_turns == 200
     assert child_launch.apply_limits(cfg, None) is cfg
@@ -277,7 +277,7 @@ def test_a_child_past_its_deadline_is_stopped_and_reported_failed(
         spec,
         "t",
         explicit_leaves=frozenset(),
-        cfg=Config(),
+        cfg=config_model.Config(),
         origin=tmp_path,
         record_state=tmp_path / "origin-state",
         group="fan",
@@ -326,7 +326,7 @@ def test_a_child_is_stopped_once_the_runs_budget_is_spent(
         spec,
         "t",
         explicit_leaves=frozenset(),
-        cfg=Config(),
+        cfg=config_model.Config(),
         origin=tmp_path,
         record_state=tmp_path / "origin-state",
         group="fan",
@@ -352,7 +352,9 @@ def test_a_child_can_be_stopped_before_its_start_report(
 
     repo = tmp_path / "repo"
     background._init_repo(repo)
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    cfg = config_model.Config.model_validate(
+        {"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}
+    )
     monkeypatch.setattr(
         child_launch,
         "bootstrap_argv",
@@ -434,7 +436,9 @@ time.sleep(60)
         session_dir=parent, approver=interact.build_approver(parent), journal=emit
     )
     group = app_children.build_child_spawner(
-        Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}),
+        config_model.Config.model_validate(
+            {"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}
+        ),
         repo,
         state,
         explicit_leaves=frozenset(),
@@ -530,7 +534,7 @@ def test_a_real_child_ends_by_its_deadline(
     )
     replies: list[tuple[str, dict[str, Any]]] = [("run_command", {"argv": ["sleep", "30"]})]
     with launch_env.scripted_provider(replies) as (base_url, _calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/base"}},

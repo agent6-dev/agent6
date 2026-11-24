@@ -19,7 +19,7 @@ import pathlib
 from typing import Literal
 
 from agent6 import kinds
-from agent6.config import Config, load_config
+from agent6.config import model as config_model
 from agent6.harness.prompt import blocks as prompt_blocks
 
 _INTERACTIVE: tuple[Literal["plan", "ask"], ...] = ("plan", "ask")
@@ -51,7 +51,7 @@ def _prompt(tmp_path: pathlib.Path, mode: Literal["plan", "ask"]) -> str:
         is_git=False,
     )
     return prompt_blocks.build_system_prompt(
-        config=load_config(cfg_path), repo=repo, mode=mode, skills=None
+        config=config_model.load_config(cfg_path), repo=repo, mode=mode, skills=None
     )
 
 
@@ -98,13 +98,13 @@ def test_plan_clamps_run_commands_like_ask(tmp_path: pathlib.Path) -> None:
     from agent6.app.session import setup as session_setup
     from agent6.sessions import ipc
 
-    allowed = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    allowed = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     # Both interactive modes clamp allow->ask; run keeps the operator's allow.
     assert session_setup.session_config(allowed, "plan").sandbox.run_commands == "ask"
     assert session_setup.session_config(allowed, "ask").sandbox.run_commands == "ask"
     assert session_setup.session_config(allowed, "run").sandbox.run_commands == "allow"
     # Only tightens: a withheld "deny" is never loosened by the clamp.
-    denied = Config.model_validate({"sandbox": {"run_commands": "deny"}})
+    denied = config_model.Config.model_validate({"sandbox": {"run_commands": "deny"}})
     assert session_setup.session_config(denied, "plan").sandbox.run_commands == "deny"
     # The clamped "ask" still upgrades to "allow" for the session on allow-all.
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"

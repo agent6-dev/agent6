@@ -13,7 +13,7 @@ from typing import Literal
 
 from agent6 import errors, paths
 from agent6.app import fork_worktrees, merge, worktrees
-from agent6.config import ConfigError, layer
+from agent6.config import layer, validation
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
@@ -321,7 +321,7 @@ def _sweep_workdirs(
     """
     try:
         cfg = layer.load_effective(cwd, config_paths).config
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         print(f"[agent6] worktree sweep skipped (config unreadable: {exc})", file=sys.stderr)
         return "", False
     clones_swept, clones_kept = worktrees.sweep_group_clones(

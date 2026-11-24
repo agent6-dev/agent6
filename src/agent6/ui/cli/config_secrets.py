@@ -8,7 +8,7 @@ import pathlib
 
 import pydantic
 
-from agent6.config import ConfigError, TelemetryConfig, io, layer, secret_store
+from agent6.config import io, layer, secret_store, surface_config, validation
 from agent6.ui.cli import common
 
 
@@ -24,12 +24,12 @@ def write_value(key: str, value: str | None) -> int:
     """
     try:
         parts: list[str] = io.split_key(key)
-    except ConfigError:
+    except validation.ConfigError:
         parts = []
     valid = len(parts) == 3 and parts[:2] == ["telemetry", "headers"]
     if valid:
         try:
-            TelemetryConfig(headers=(parts[2],))
+            surface_config.TelemetryConfig(headers=(parts[2],))
         except pydantic.ValidationError:
             valid = False
     if not valid:
@@ -58,7 +58,7 @@ def keys(config_paths: tuple[pathlib.Path, ...]) -> list[str]:
     """
     try:
         names = set(layer.load_effective(pathlib.Path.cwd(), config_paths).config.telemetry.headers)
-    except ConfigError:
+    except validation.ConfigError:
         names: set[str] = set()
     telemetry = secret_store.load_secrets().get("telemetry")
     headers = telemetry.get("headers") if isinstance(telemetry, dict) else None
@@ -67,7 +67,7 @@ def keys(config_paths: tuple[pathlib.Path, ...]) -> list[str]:
     accepted: list[str] = []
     for name in names:
         try:
-            TelemetryConfig(headers=(name,))
+            surface_config.TelemetryConfig(headers=(name,))
         except pydantic.ValidationError:
             continue
         accepted.append(io.render_key(("telemetry", "headers", name)))

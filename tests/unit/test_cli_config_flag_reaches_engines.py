@@ -17,7 +17,7 @@ from agent6 import paths
 from agent6.app import merge_plan
 from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
-from agent6.config import ConfigError, layer
+from agent6.config import layer, validation
 from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
@@ -31,7 +31,7 @@ def test_merge_planner_passes_the_explicit_config_path(
 
     def fake_load(cwd: pathlib.Path, explicit: tuple[pathlib.Path, ...]) -> Any:
         seen.append(explicit)
-        raise ConfigError("stop here")
+        raise validation.ConfigError("stop here")
 
     monkeypatch.setattr(layer, "load_effective", fake_load)
 
@@ -91,7 +91,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 
     def fake_load(cwd: pathlib.Path, explicit: tuple[pathlib.Path, ...] = (), **_kw: Any) -> Any:
         seen.append(explicit)
-        raise ConfigError("stop here")
+        raise validation.ConfigError("stop here")
 
     monkeypatch.setattr(session_setup, "load_session_config", fake_load)
 

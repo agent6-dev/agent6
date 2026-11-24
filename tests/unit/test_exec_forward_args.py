@@ -106,7 +106,7 @@ def test_exec_refuses_a_workspace_under_a_hidden_path(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`exec` into a live run built a jail for a workspace a `sandbox.hide_paths` entry covers."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import exec_cmds, net_cmds
 
     def _full(req: str, env: Any) -> str:
@@ -122,7 +122,9 @@ def test_exec_refuses_a_workspace_under_a_hidden_path(
     process.write_worker_pid(layout.session_dir, os.getpid())
     workspace = tmp_path / "repo"
     workspace.mkdir()
-    cfg = Config.model_validate({"sandbox": {"network": "host", "hide_paths": [str(tmp_path)]}})
+    cfg = config_model.Config.model_validate(
+        {"sandbox": {"network": "host", "hide_paths": [str(tmp_path)]}}
+    )
     assert net_cmds.exec_in_session(layout, cfg, workspace, ("true",)) == 2
     assert f"the workspace {str(workspace)!r} is under {str(tmp_path)!r}" in capsys.readouterr().err
 
@@ -135,7 +137,7 @@ def test_exec_refuses_a_session_network_nobody_holds(
     The isolation seam is pinned to `full` so the policy derives "session" on every host this suite
     runs on.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import net_cmds
 
     def _full(req: str, env: Any) -> str:
@@ -146,7 +148,7 @@ def test_exec_refuses_a_session_network_nobody_holds(
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="run")
     # live, but holding no network
     process.write_worker_pid(layout.session_dir, os.getpid())
-    cfg = Config.model_validate({"sandbox": {"network": "session"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"network": "session"}})
     rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     err = capsys.readouterr().err
     assert rc == 2
@@ -180,7 +182,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
     """
     import types
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import net_cmds
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r1")
@@ -200,7 +202,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
     captured: dict[str, Any] = {}
 
     def fake_jail_policy(
-        cwd: pathlib.Path, cfg: Config, isolation: str, argv: Any, **kw: Any
+        cwd: pathlib.Path, cfg: config_model.Config, isolation: str, argv: Any, **kw: Any
     ) -> Any:
         captured["isolation"] = isolation
         captured["network"] = kw.get("network")
@@ -220,7 +222,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
     monkeypatch.setattr(detect, "probed_environment", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _resolve)
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "full"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "full"}})
     with pytest.raises(RuntimeError, match="stop before"):
         net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     assert captured["isolation"] == "none"  # the stamp, not the config
@@ -311,7 +313,7 @@ def test_exec_refuses_a_run_that_is_over(
     import os
 
     from agent6 import kinds
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import net_cmds as cli_net_cmds
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -338,7 +340,7 @@ def test_exec_refuses_a_run_that_is_over(
 
     monkeypatch.setattr("agent6.ui.cli.exec_cmds.run_attached", fake_run)
 
-    rc = cli_net_cmds.exec_in_session(layout, Config(), repo, ("pwd",))
+    rc = cli_net_cmds.exec_in_session(layout, config_model.Config(), repo, ("pwd",))
 
     assert rc == 2 and ran == []
     err = capsys.readouterr().err
@@ -356,7 +358,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     import types
 
     from agent6 import kinds
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import exec_cmds, net_cmds
 
     layout = sessions_layout.SessionLayout(
@@ -398,7 +400,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "full", "network": "host"},
             "mcp": {
@@ -422,7 +424,7 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
     import types
 
     from agent6 import kinds
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import exec_cmds, net_cmds
 
     checkout, worktree, git_dir = (tmp_path / n for n in ("checkout", "worktree", "gitdir"))
@@ -470,7 +472,7 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "full", "network": "host"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"isolation": "full", "network": "host"}})
     assert net_cmds.exec_in_session(layout, cfg, checkout, ("pwd",)) == 0
     assert seen["cwd"] == worktree
     assert git_dir in seen["ro"]
@@ -485,7 +487,7 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     """
     import subprocess
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import net_cmds
 
     def _full(req: str, env: Any) -> str:
@@ -506,7 +508,7 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
             return real_policy(*args, **kwargs)
 
         monkeypatch.setattr(policy, "jail_policy", _holder_dies)
-        cfg = Config.model_validate({"sandbox": {"network": "session"}})
+        cfg = config_model.Config.model_validate({"sandbox": {"network": "session"}})
         rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
         assert rc == 2
         assert "the session's network is gone" in capsys.readouterr().err
@@ -727,7 +729,7 @@ def test_exec_refuses_a_run_stamped_with_an_isolation_level_it_does_not_know(
     """A run recorded under an older name (`strict`) read as unstamped and fell back to today."""
     import json
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import net_cmds
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="old-1", subdir="runs")
@@ -745,7 +747,7 @@ def test_exec_refuses_a_run_stamped_with_an_isolation_level_it_does_not_know(
         ),
         encoding="utf-8",
     )
-    assert net_cmds.exec_in_session(layout, Config(), tmp_path, ("true",)) == 2
+    assert net_cmds.exec_in_session(layout, config_model.Config(), tmp_path, ("true",)) == 2
     err = capsys.readouterr().err
     assert "recorded isolation 'strict'" in err and "older" in err
     assert "recorded no launch policy" not in err

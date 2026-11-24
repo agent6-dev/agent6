@@ -26,7 +26,8 @@ from agent6 import evidence, paths
 from agent6.app import reporter as app_reporter
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.context import memory
 from agent6.harness.prompt import repo_context
 from agent6.prompts import review
@@ -480,11 +481,13 @@ def _not_reviewable(layout: sessions_layout.SessionLayout) -> str | None:
     return None
 
 
-def _runnable_config(load: Callable[[], Config], reporter: app_reporter.Reporter) -> Config | None:
+def _runnable_config(
+    load: Callable[[], config_model.Config], reporter: app_reporter.Reporter
+) -> config_model.Config | None:
     """Return the config with a runnable reviewer, or None after reporting why there is none."""
     try:
         cfg = load()
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         reporter.error(str(exc))
         return None
     cfg.require_runnable("reviewer")
@@ -499,7 +502,7 @@ def recap(
     cwd: pathlib.Path,
     layout: sessions_layout.SessionLayout,
     *,
-    config: Callable[[], Config],
+    config: Callable[[], config_model.Config],
     reporter: app_reporter.Reporter,
 ) -> int:
     """Review a session's record, print the review and save it under the state dir's reviews/.

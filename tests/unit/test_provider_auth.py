@@ -16,9 +16,10 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import budget, config, paths, portable
+from agent6 import budget, paths, portable
 from agent6.app import role_providers
-from agent6.config import secret_store
+from agent6.config import model as config_model
+from agent6.config import provider_config, secret_store
 from agent6.providers import (
     anthropic,
     chatgpt,
@@ -69,11 +70,11 @@ def _route(
         if exchange:
             oauth_settings["exchange"] = {"endpoint": "https://exchange.example/token"}
         entry["oauth"] = oauth_settings
-    cfg = config.Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"providers": {"work": entry}, "models": {"default": {"model": "work/m"}}}
     )
     bound_entry = cfg.providers["work"]
-    assert not isinstance(bound_entry, config.ClaudeCodeProviderEntry)
+    assert not isinstance(bound_entry, provider_config.ClaudeCodeProviderEntry)
     secret_store.save_oauth_grant(
         "work",
         secret_store.StoredGrant(

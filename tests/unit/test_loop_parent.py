@@ -24,7 +24,7 @@ from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, kinds
 from agent6.app import finalize
 from agent6.app.parallel import children
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.graph import curator, models
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.parallel import merge as parallel_merge
@@ -323,7 +323,7 @@ def _build_wf(
         disp.dispatch.return_value = tools_results.RawResult({"content": "hi\n"})
     return loop.Harness(
         chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=_head(repo)),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "parallel": {"judges": []},
@@ -1026,7 +1026,7 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
 def test_parent_spawner_gate_in_a_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = Config()
+    cfg = config_model.Config()
     monkeypatch.delenv("AGENT6_CHILD", raising=False)
     # A write run outside a child gets a real dispatcher.
     assert callable(

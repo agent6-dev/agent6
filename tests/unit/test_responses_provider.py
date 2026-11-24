@@ -13,7 +13,8 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6.config import Config, ResponsesProviderEntry
+from agent6.config import model as config_model
+from agent6.config import provider_config
 from agent6.models import registry
 from agent6.providers import provider_types, responses, responses_codec, wire
 
@@ -74,15 +75,15 @@ def _evt(data: dict[str, Any]) -> list[str]:
 
 
 def test_the_entry_needs_a_base_url_and_the_direct_deployment() -> None:
-    entry = Config.model_validate(
+    entry = config_model.Config.model_validate(
         {"providers": {"work": {"backend": "responses", "base_url": _BASE}}}
     ).providers["work"]
-    assert isinstance(entry, ResponsesProviderEntry)
+    assert isinstance(entry, provider_config.ResponsesProviderEntry)
     assert (entry.auth_style, entry.deployment) == ("bearer", "direct")
     with pytest.raises(Exception, match="base_url is required"):
-        Config.model_validate({"providers": {"work": {"backend": "responses"}}})
+        config_model.Config.model_validate({"providers": {"work": {"backend": "responses"}}})
     with pytest.raises(Exception, match="direct"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "providers": {
                     "work": {"backend": "responses", "base_url": _BASE, "deployment": "azure"}
@@ -96,7 +97,7 @@ def test_the_url_appends_responses_and_the_effort_passes_through() -> None:
         backend="responses", deployment="direct", base_url=_BASE, model="r-1", streaming=True
     )
     assert (url, in_body) == (f"{_BASE}/responses", True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"work": {"backend": "responses", "base_url": _BASE}},
             "models": {"worker": {"model": "work/r-1", "effort": "high"}},

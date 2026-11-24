@@ -11,7 +11,8 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.graph import storage
 from agent6.harness.verify import child as child_verify
 from agent6.sessions import child_dispatch, layout
@@ -45,7 +46,7 @@ def _run(
         return [("finish_session", {"summary": "wrote answer"})]
 
     with launch_env.scripted_provider(reply_for=reply) as (base_url, _calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/m"}},

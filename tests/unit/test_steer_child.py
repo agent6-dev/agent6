@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, directive, kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop_conversation, loop_state, operator_bridge, run_chain, toolset
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import work as child_work
@@ -35,8 +35,8 @@ def _git(repo: pathlib.Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def _config(*, tool: bool) -> Config:
-    return Config.model_validate(
+def _config(*, tool: bool) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {"default": {"model": "p/base"}},
@@ -69,7 +69,11 @@ class _Work:
 
 
 def _tools(
-    tmp_path: pathlib.Path, cfg: Config, *, mode: kinds.SessionMode = "run", work: Any = None
+    tmp_path: pathlib.Path,
+    cfg: config_model.Config,
+    *,
+    mode: kinds.SessionMode = "run",
+    work: Any = None,
 ) -> dispatch.ToolDispatcher:
     repo = tmp_path / "repo"
     repo.mkdir(exist_ok=True)

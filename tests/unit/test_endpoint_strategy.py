@@ -9,8 +9,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import config
 from agent6.app import role_providers
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.harness import loop_conversation, loop_resume, loop_snapshot, loop_state
 from agent6.harness.compaction import driver, window
 from agent6.providers import anthropic_parse, provider_types
@@ -40,8 +41,10 @@ def test_route_facts_select_the_strategy(
         entry["server_compaction"] = enabled
     if backend == "responses":
         entry["base_url"] = "https://example.invalid"
-    cfg = config.Config.model_validate({"providers": {"route": entry}})
-    facts = role_providers.endpoint_compaction(cfg, config.RoleModel(provider="route", model=model))
+    cfg = config_model.Config.model_validate({"providers": {"route": entry}})
+    facts = role_providers.endpoint_compaction(
+        cfg, harness_config.RoleModel(provider="route", model=model)
+    )
     assert facts == provider_types.EndpointCompaction(writer, writer, session)
     harness = test_harness._wf(compaction=window.CompactionSettings(endpoint=facts))
     assert isinstance(harness.compactor, driver.Endpoint if writer else driver.Tiered)

@@ -19,7 +19,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import kinds, paths
 from agent6.app.parallel import children
-from agent6.config import TelemetryConfig
+from agent6.config import surface_config
 from agent6.sessions import budget_events, event_log, journal, process
 from agent6.ui.cli import entry
 from agent6.ui.telemetry import export
@@ -69,7 +69,7 @@ def _write_session(repo: pathlib.Path, session_id: str, rows: list[dict[str, Any
     return len(text.encode("utf-8"))
 
 
-def _config(**changes: Any) -> TelemetryConfig:
+def _config(**changes: Any) -> surface_config.TelemetryConfig:
     base: dict[str, Any] = {
         "traces": "otlp",
         "metrics": "otlp",
@@ -77,7 +77,7 @@ def _config(**changes: Any) -> TelemetryConfig:
         "endpoint": "http://127.0.0.1:4318",
         "headers": ("Authorization",),
     }
-    return TelemetryConfig(**{**base, **changes})
+    return surface_config.TelemetryConfig(**{**base, **changes})
 
 
 def _cursors(repo: pathlib.Path) -> dict[str, int]:
@@ -374,7 +374,7 @@ def test_the_prometheus_textfile_is_readable_and_nothing_is_dialled(
     def never(url: str, headers: dict[str, str], content: bytes) -> httpx2.Response:
         raise AssertionError(f"dialled {url}")
 
-    config = TelemetryConfig(metrics="prometheus", prometheus_file=str(out))
+    config = surface_config.TelemetryConfig(metrics="prometheus", prometheus_file=str(out))
     report = export.export(repo, config, post=never)
     assert report.prometheus_file == str(out) and report.metric_posts == 0
     text = out.read_text(encoding="utf-8")

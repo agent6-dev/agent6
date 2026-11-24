@@ -24,7 +24,7 @@ from agent6.app import execution, execution_finish, finalize, reporter
 from agent6.app import frontend as app_frontend
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop as harness_loop
 from agent6.harness import loop_snapshot
 from agent6.sessions import event_log, journal, process
@@ -101,7 +101,7 @@ def test_provider_setup_failure_journals_session_end(
     said: list[str] = []
     with pytest.raises(RuntimeError, match="provider setup failed"):
         execution.run_execution(
-            Config(),
+            config_model.Config(),
             layout,
             inputs,
             frontend=frontend,
@@ -137,7 +137,9 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
         close=lambda: closed.append("session"),
     )
 
-    def _fail_gate(_cfg: Config, _budget: object, _available: object) -> Config:
+    def _fail_gate(
+        _cfg: config_model.Config, _budget: object, _available: object
+    ) -> config_model.Config:
         raise RuntimeError("gate setup failed")
 
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
@@ -164,7 +166,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
 
     with pytest.raises(RuntimeError, match="gate setup failed"):
         execution.run_execution(
-            Config(),
+            config_model.Config(),
             layout,
             inputs,
             frontend=frontend,
@@ -237,7 +239,7 @@ def test_mcp_setup_failure_journals_session_end(
 
     with pytest.raises(RuntimeError, match="MCP startup failed"):
         execution.run_execution(
-            Config(),
+            config_model.Config(),
             layout,
             inputs,
             frontend=frontend,
@@ -286,7 +288,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         compact_drop_at_chars=1,
         compact_summarize_at_chars=1,
         keep_recent_chars=1,
-        cfg=Config(),
+        cfg=config_model.Config(),
     )
     mcp = types.SimpleNamespace(close=lambda: closed.append("mcp") or ())
 
@@ -371,7 +373,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
 
     with pytest.raises(RuntimeError, match="provider close failed"):
         execution.run_execution(
-            Config(),
+            config_model.Config(),
             layout,
             inputs,
             frontend=frontend,
@@ -457,7 +459,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         compact_drop_at_chars=1,
         compact_summarize_at_chars=1,
         keep_recent_chars=1,
-        cfg=Config(),
+        cfg=config_model.Config(),
     )
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(session_runtime, "prepare_local_execution", _returning(mock.MagicMock()))
@@ -487,7 +489,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     )
     said: list[str] = []
     end = execution.run_execution(
-        Config(),
+        config_model.Config(),
         layout,
         inputs,
         frontend=frontend,
@@ -508,7 +510,7 @@ def _wired_frontend(
     order: list[str],
     *,
     harness: type,
-    cfg: Config,
+    cfg: config_model.Config,
     tui_session: Callable[[pathlib.Path, bool], contextlib.AbstractContextManager[None]]
     | None = None,
 ) -> Any:
@@ -600,7 +602,7 @@ def _teardown_order(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-ORDER1")
     layout.ensure()
     order: list[str] = []
-    cfg = Config.model_validate({"git": {"auto_merge": True}})
+    cfg = config_model.Config.model_validate({"git": {"auto_merge": True}})
     frontend = _wired_frontend(monkeypatch, order, harness=_finishing_workflow(1), cfg=cfg)
     execution.run_execution(
         cfg,
@@ -754,7 +756,7 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
                 verification=verification,
             )
 
-    cfg = Config.model_validate({"git": {"auto_merge": auto_merge}})
+    cfg = config_model.Config.model_validate({"git": {"auto_merge": auto_merge}})
     real_merge = finalize.finalize_auto_merge
     frontend = _wired_frontend(monkeypatch, [], harness=_Workflow, cfg=cfg)
     monkeypatch.setattr(finalize, "finalize_auto_merge", real_merge)
@@ -878,7 +880,7 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
                 verification="passed",
             )
 
-    cfg = Config()
+    cfg = config_model.Config()
     frontend = _wired_frontend(monkeypatch, [], harness=_Workflow, cfg=cfg)
     said: list[str] = []
     end = execution.run_execution(
@@ -967,12 +969,16 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
             )
 
     frontend = _wired_frontend(
-        monkeypatch, order, harness=_Workflow, cfg=Config(), tui_session=lambda _d, _e: _Boom()
+        monkeypatch,
+        order,
+        harness=_Workflow,
+        cfg=config_model.Config(),
+        tui_session=lambda _d, _e: _Boom(),
     )
     said: list[str] = []
     with pytest.raises(RuntimeError, match="dashboard teardown failed"):
         execution.run_execution(
-            Config(),
+            config_model.Config(),
             layout,
             execution.ExecutionInputs(
                 explicit_leaves=frozenset(),
@@ -1048,7 +1054,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
                 verification="passed",
             )
 
-    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
+    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=config_model.Config())
     stubbed_build = session_runtime.build_session_tools
 
     def _boom() -> None:
@@ -1063,7 +1069,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     monkeypatch.setattr(session_runtime, "build_session_tools", _tools)
     said: list[str] = []
     end = execution.run_execution(
-        Config(),
+        config_model.Config(),
         layout,
         execution.ExecutionInputs(
             explicit_leaves=frozenset(),
@@ -1149,10 +1155,10 @@ def test_an_interrupted_end_records_the_tree_the_run_left(
         ) -> loop_snapshot.SessionResult:
             raise KeyboardInterrupt
 
-    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
+    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=config_model.Config())
     said: list[str] = []
     end = execution.run_execution(
-        Config(),
+        config_model.Config(),
         layout,
         execution.ExecutionInputs(
             explicit_leaves=frozenset(),
@@ -1221,10 +1227,10 @@ def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
         ) -> loop_snapshot.SessionResult:
             raise KeyboardInterrupt
 
-    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
+    frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=config_model.Config())
     said: list[str] = []
     end = execution.run_execution(
-        Config(),
+        config_model.Config(),
         layout,
         execution.ExecutionInputs(
             explicit_leaves=frozenset(),
@@ -1314,7 +1320,7 @@ def test_an_escape_before_the_harness_exists_records_the_tree_too(
     )
     with pytest.raises(RuntimeError, match="provider setup failed"):
         execution.run_execution(
-            Config(),
+            config_model.Config(),
             layout,
             inputs,
             frontend=frontend,
@@ -1369,7 +1375,7 @@ def test_a_plan_under_auto_merge_prints_no_skipped_note(
                 verification="not_applicable",
             )
 
-    cfg = Config.model_validate({"git": {"auto_merge": True}})
+    cfg = config_model.Config.model_validate({"git": {"auto_merge": True}})
     frontend = _wired_frontend(monkeypatch, [], harness=_Workflow, cfg=cfg)
     said: list[str] = []
     execution.run_execution(

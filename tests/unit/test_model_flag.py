@@ -11,8 +11,10 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, RoleName
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.models import choices, validate
 
 _GLOBAL = """\
@@ -82,7 +84,7 @@ def test_route_choices_are_the_cached_listings_plus_the_configured_routes(
 
 
 def test_route_for_applies_the_default_fallback() -> None:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"default": {"model": "o/m"}},
@@ -90,7 +92,7 @@ def test_route_for_applies_the_default_fallback() -> None:
     )
     assert choices.route_for(cfg, "plan") == "o/m"
     assert choices.route_for(cfg, "run") == "o/m"
-    assert choices.route_for(Config.model_validate({}), "run") == ""
+    assert choices.route_for(config_model.Config.model_validate({}), "run") == ""
 
 
 def test_a_hubs_picker_follows_the_preset_and_lists_every_route(
@@ -186,7 +188,7 @@ def test_a_refused_flag_route_names_the_flag_not_the_config(
     def _keys_ok(_cfg: object, extra: object = ()) -> None:
         return None
 
-    def _refused(cfg: Config, role: RoleName) -> validate.ModelValidation:
+    def _refused(cfg: config_model.Config, role: kinds.RoleName) -> validate.ModelValidation:
         route = cfg.models.resolve(role)
         assert route is not None
         model = route.model
@@ -238,7 +240,7 @@ def test_a_refused_flag_names_the_modes_provider_when_role_ids_collide(
     def _keys_ok(_cfg: object) -> None:
         return None
 
-    def _refused(_cfg: Config, _role: str) -> validate.ModelValidation:
+    def _refused(_cfg: config_model.Config, _role: str) -> validate.ModelValidation:
         return validate.ModelValidation(unknown=("claude-x",), suggestions={}, can_validate=True)
 
     monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
@@ -257,7 +259,9 @@ def test_a_refused_flag_names_the_modes_provider_when_role_ids_collide(
 
 
 def test_an_unknown_flag_provider_names_the_configured_providers(repo: pathlib.Path) -> None:
-    with pytest.raises(ConfigError, match=r"unknown provider 'openrouterr'.*anthropic, openrouter"):
+    with pytest.raises(
+        validation.ConfigError, match=r"unknown provider 'openrouterr'.*anthropic, openrouter"
+    ):
         session_setup.load_session_config(repo, (), mode="run", model="openrouterr/claude-x")
 
 

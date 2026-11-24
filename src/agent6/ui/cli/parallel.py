@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from agent6 import directive
 from agent6.app.parallel import children as app_children
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.models import validate
 from agent6.ui import spawn as ui_spawn
 from agent6.ui.cli import common
@@ -29,7 +30,7 @@ def child_runtime() -> app_children.ChildRuntime:
     return app_children.ChildRuntime(spawn=ui_spawn.spawn_child)
 
 
-def spec_refusal(cfg: Config, spec: str) -> str | None:
+def spec_refusal(cfg: config_model.Config, spec: str) -> str | None:
     """Return why a `--parallel` spec cannot run, before any session exists.
 
     A model the cache cannot check warns and proceeds.
@@ -46,7 +47,7 @@ def spec_refusal(cfg: Config, spec: str) -> str | None:
         settings = app_children.child_settings(
             cfg, directive.parse_spec(spec, limit=cfg.harness.parallel.max_children)
         )
-    except (ConfigError, directive.DirectiveError) as exc:
+    except (validation.ConfigError, directive.DirectiveError) as exc:
         return str(exc)
     verdict = validate.validate_spec_models(
         [chosen.route if chosen is not None else None for chosen in settings], cfg

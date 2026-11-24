@@ -9,7 +9,7 @@ import pytest
 
 from agent6 import evidence, paths
 from agent6.app import merge
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import journal, manifest
 from agent6.sessions import layout as sessions_layout
 from agent6.vcs.git import read as git_read
@@ -35,7 +35,7 @@ def test_merge_records_bounds_for_reversal(
         base_sha=manifest.read_manifest(layout.session_dir).base_sha,
         target="main",
         method=method,
-        cfg=Config(),
+        cfg=config_model.Config(),
         identity=git_read.CommitIdentity(),
         message="merge",
     )
@@ -69,7 +69,7 @@ def test_failed_stamp_does_not_claim_the_merge_failed(tmp_path: pathlib.Path) ->
             base_sha=manifest.read_manifest(layout.session_dir).base_sha,
             target="main",
             method="merge",
-            cfg=Config(),
+            cfg=config_model.Config(),
             identity=git_read.CommitIdentity(),
             message="merge",
         )

@@ -12,7 +12,8 @@ import pytest
 from agent6 import paths, review_records
 from agent6.app.review import actions as review_actions
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.harness import toolset
 from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
@@ -30,13 +31,15 @@ def test_list_findings_is_a_run_tool_only(tmp_path: pathlib.Path) -> None:
     assert all("list_findings" not in extras[mode] for mode in ("plan", "ask", "machine"))
     wired = functools.partial(results.FindingsResult, findings=())
     for mode in ("plan", "ask", "machine"):
-        d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), mode=mode, findings=wired)
+        d = dispatch.ToolDispatcher(
+            root=tmp_path, config=config_model.Config(), mode=mode, findings=wired
+        )
         with pytest.raises(tool_errors.ToolError, match="not available in"):
             d.dispatch("list_findings", {})
 
 
 def test_a_dispatcher_without_a_reader_refuses_the_tool(tmp_path: pathlib.Path) -> None:
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), mode="run")
+    d = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config(), mode="run")
     with pytest.raises(tool_errors.ToolError, match="none was wired"):
         d.dispatch("list_findings", {})
 
@@ -55,7 +58,7 @@ def test_the_worker_lists_open_findings_and_resolved_ones_with_all(tmp_path: pat
     review_actions.act(saved.session_dir, "f1", resolve, source="cli")
     d = dispatch.ToolDispatcher(
         root=tmp_path,
-        config=Config(),
+        config=config_model.Config(),
         mode="run",
         findings=functools.partial(review_actions.findings_result, saved.session_dir),
     )
@@ -113,7 +116,7 @@ def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathl
     """A run's findings and command descriptions name its session, without changing bare tools."""
     saved = review_helpers.reviewed_session(tmp_path)
     tools = session_runtime.build_session_tools(
-        Config(),
+        config_model.Config(),
         cwd=tmp_path,
         state_dir=paths.state_dir(tmp_path),
         layout=saved,
@@ -123,7 +126,7 @@ def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathl
         prompts=operator_prompts.OperatorPrompts(session_dir=saved.session_dir),
         loop_log=lambda _line: None,
         mcp_manager=None,
-        rm_role=RoleModel(provider="openrouter", model="m"),
+        rm_role=harness_config.RoleModel(provider="openrouter", model="m"),
     )
     listed = tools.dispatcher.dispatch("list_findings", {})
     assert isinstance(listed, results.FindingsResult)
@@ -137,7 +140,7 @@ def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathl
     assert "`agent6 sessions reopen review-run <id>`" in description
     assert "<session_id>" not in description
 
-    bare = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    bare = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config())
     bare_definitions = {tool.name: tool for tool in toolset.tool_definitions(bare)}
     assert (
         "`agent6 steer <session_id> --finding <id>`"

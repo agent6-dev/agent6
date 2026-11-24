@@ -15,7 +15,7 @@ import time
 from agent6 import kinds
 from agent6.app import fork, preflight, resume
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import id
 from agent6.ui.cli import common, run
 from agent6.viewmodel import listing
@@ -82,7 +82,7 @@ def _cmd_fork(
             return 2
     frontend = run.session_frontend(config_paths)
 
-    def refuse_continuation(cfg: Config, mode: str) -> str | None:
+    def refuse_continuation(cfg: config_model.Config, mode: str) -> str | None:
         # The resume below would refuse the same way, after the fork existed.
         """Return why the continuation would refuse, before the fork exists."""
         return preflight.headless_approval_refusal(

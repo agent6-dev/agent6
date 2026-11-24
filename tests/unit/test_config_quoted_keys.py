@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.config import ConfigError, io, layer, layer_data, notices, write
+from agent6.config import io, layer, layer_data, notices, validation, write
 from agent6.ui.cli import completers, entry
 from agent6.viewmodel import config_view
 
@@ -141,6 +141,6 @@ def test_quoted_entry_add_lookup_remove(tmp_path: pathlib.Path) -> None:
 )
 def test_invalid_config_key_is_named_and_refused(tmp_path: pathlib.Path, bad: str) -> None:
     """A key must be one TOML dotted key, not an assignment or a second document line."""
-    with pytest.raises(ConfigError) as error:
+    with pytest.raises(validation.ConfigError) as error:
         io.upsert_leaf_text("", bad, "enabled", path=tmp_path / "config.toml")
     assert "config key" in str(error.value) and repr(bad) in str(error.value)

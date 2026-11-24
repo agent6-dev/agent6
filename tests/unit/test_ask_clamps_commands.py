@@ -12,11 +12,11 @@ from unittest import mock
 import pytest
 
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 
 
-def _cfg(run_commands: str) -> Config:
-    return Config.model_validate({"sandbox": {"run_commands": run_commands}})
+def _cfg(run_commands: str) -> config_model.Config:
+    return config_model.Config.model_validate({"sandbox": {"run_commands": run_commands}})
 
 
 def test_auto_approval_becomes_a_prompt_in_ask() -> None:
@@ -35,7 +35,7 @@ def test_the_clamp_only_ever_tightens(setting: str) -> None:
 
 
 def test_the_clamp_leaves_the_rest_of_the_config_alone() -> None:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "allow", "protect_git": "on"},
             "agent6": {"preset": "no_review"},
@@ -56,7 +56,7 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
 
     seen: list[str] = []
 
-    def capture(cfg: Config, **_kw: object) -> str:
+    def capture(cfg: config_model.Config, **_kw: object) -> str:
         seen.append(cfg.sandbox.run_commands)
         raise preflight.SessionRefusedError(2)
 
@@ -77,7 +77,7 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
 def test_no_commands_pins_the_knob_shut() -> None:
     """--no-commands is the symmetric flag to --auto-approve: one knob, two per-invocation pins."""
     for start in ("allow", "ask", "deny"):
-        cfg = Config.model_validate({"sandbox": {"run_commands": start}})
+        cfg = config_model.Config.model_validate({"sandbox": {"run_commands": start}})
         assert cfg.with_sandbox_overrides(no_commands=True).sandbox.run_commands == "deny"
 
 
@@ -86,9 +86,9 @@ def test_tightening_needs_no_permission_but_widening_does() -> None:
 
     --auto-approve never resurrects a withheld "deny"; --no-commands always may tighten.
     """
-    withheld = Config.model_validate({"sandbox": {"run_commands": "deny"}})
+    withheld = config_model.Config.model_validate({"sandbox": {"run_commands": "deny"}})
     assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "deny"
-    asked = Config.model_validate({"sandbox": {"run_commands": "ask"}})
+    asked = config_model.Config.model_validate({"sandbox": {"run_commands": "ask"}})
     assert asked.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "allow"
 
 
@@ -106,7 +106,7 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
 
     seen: list[str] = []
 
-    def capture(cfg: Config, **_kw: object) -> str:
+    def capture(cfg: config_model.Config, **_kw: object) -> str:
         seen.append(cfg.sandbox.run_commands)
         raise preflight.SessionRefusedError(2)
 

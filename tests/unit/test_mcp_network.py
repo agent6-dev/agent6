@@ -19,11 +19,11 @@ import pytest
 
 from agent6 import kinds
 from agent6.app import confine
-from agent6.config import Config
+from agent6.config import model as config_model
 
 
-def _server(body: dict[str, object]) -> Config:
-    return Config.model_validate(
+def _server(body: dict[str, object]) -> config_model.Config:
+    return config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"s": {"command": ["x"], "sandbox": body}}}}
     )
 
@@ -46,14 +46,14 @@ def test_the_words_mean_the_same_on_both_sides() -> None:
     A server takes every word `[sandbox].network` takes, plus `none`, which a single process
     can be and a group of commands cannot.
     """
-    from agent6.config import SandboxConfig
+    from agent6.config import sandbox_config
 
     for value in ("auto", "none", "session", "host"):
         cfg = _server({"network": value})
         sandbox = cfg.mcp.servers["s"].sandbox
         assert sandbox is not None and sandbox.network == value
     with pytest.raises(ValueError, match="network"):
-        SandboxConfig(network="none")  # pyrefly: ignore[bad-argument-type]
+        sandbox_config.SandboxConfig(network="none")  # pyrefly: ignore[bad-argument-type]
 
 
 @pytest.mark.parametrize("isolation", ["partial", "none"])
@@ -83,10 +83,12 @@ def test_a_server_a_run_never_starts_refuses_no_run(
     """
     from agent6.app.session import setup as session_setup
 
-    def config(on: bool) -> Config:
+    def config(on: bool) -> config_model.Config:
         table, server = (on, True) if switch == "mcp.enabled" else (True, on)
         entry = {"command": ["x"], "enabled": server, "sandbox": {"network": network}}
-        return Config.model_validate({"mcp": {"enabled": table, "servers": {"s": entry}}})
+        return config_model.Config.model_validate(
+            {"mcp": {"enabled": table, "servers": {"s": entry}}}
+        )
 
     off = config(False)
     assert session_setup.start_mcp_manager_if_enabled(off, tmp_path, "partial") is None
@@ -125,7 +127,9 @@ def test_a_table_less_server_degrades_with_the_same_warning(
     """
     from agent6.app.session import setup as session_setup
 
-    cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"command": ["x"]}}}})
+    cfg = config_model.Config.model_validate(
+        {"mcp": {"enabled": True, "servers": {"s": {"command": ["x"]}}}}
+    )
     assert cfg.mcp.servers["s"].sandbox is None
     assert cfg.mcp.servers["s"].effective_network == "auto"
     assert confine.check_mcp_network_support(cfg, "partial") is None  # auto never refuses
@@ -163,7 +167,7 @@ def test_a_server_agent6_does_not_jail_gets_no_network_warning(
     """
     from agent6.app.session import setup as session_setup
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"jailed": {"command": ["x"]}, "s": server}}}
     )
     mgr = session_setup.start_mcp_manager_if_enabled(cfg, tmp_path, isolation)
@@ -186,11 +190,11 @@ def test_the_per_server_knob_answers_exactly_like_tool_network(
     anyway and the blanket unsandboxed warning covers it. A table of the two side by side is what
     caught it, so here is the table.
     """
-    from agent6.config import SandboxConfig
+    from agent6.config import sandbox_config
 
     per_server = confine.check_mcp_network_support(_server({"network": value}), isolation)
     global_knob = confine.check_network_support(
-        Config(sandbox=SandboxConfig(network=value)),
+        config_model.Config(sandbox=sandbox_config.SandboxConfig(network=value)),
         isolation,
     )
     assert (per_server is None) == (global_knob is None), (

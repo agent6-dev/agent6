@@ -9,8 +9,9 @@ import time
 
 import pytest
 
-from agent6 import config, kinds, paths
+from agent6 import kinds, paths
 from agent6.app.session import runtime as session_runtime
+from agent6.config import model as config_model
 from agent6.sessions import event_log, layout
 from agent6.tools import background, dispatch
 
@@ -123,7 +124,7 @@ def _assert_dispatcher_close_retries(
         work.mkdir()
         monkeypatch.setenv("XDG_STATE_HOME", str(root / "state"))
         saved = layout.SessionLayout(paths.state_dir(work), "s1")
-        cfg = config.Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "sandbox": {
                     "run_commands": "allow",

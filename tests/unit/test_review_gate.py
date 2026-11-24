@@ -647,9 +647,9 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     finish: red returns to the model with the output (bounded by verify_retries), green lets the end
     stand.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": ["true"], "when": "finish", "retries": 1},
@@ -704,10 +704,10 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
 
     The model had called no finish, and the return came out of its own `harness.verify.retries`.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness import finish_gates
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": ["true"], "when": "finish", "retries": 2},
@@ -763,10 +763,10 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     to work with the output, in the conversation since there are no tool results), then the
     before-finish panel judges it.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.harness import loop_state
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": ["true"], "when": "finish", "retries": 1},
@@ -986,7 +986,7 @@ def test_a_folded_lock_finding_returns_when_reported_again(
 ) -> None:
     """A mistaken repeat hides neither a raw block nor the next report of that finding."""
     from agent6.app.session import runtime
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.providers import provider_types
     from agent6.viewmodel import review
     from tests import launch_env
@@ -1020,7 +1020,7 @@ def test_a_folded_lock_finding_returns_when_reported_again(
     target = review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions")
     state = _state()
     with launch_env.scripted_provider(['[{"id":"f1","repeat_of":"f0"}]', "[]"]) as (url, calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": url, "auth_style": "none"}},
                 "models": {"default": {"model": "p/worker"}, "reviewer": {"model": "p/group"}},
@@ -1097,7 +1097,7 @@ def test_review_without_grouping_keeps_the_request_bytes(
     import hashlib
 
     from agent6.app.session import runtime
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.providers import provider_types, transport
     from tests import launch_env
 
@@ -1112,7 +1112,7 @@ def test_review_without_grouping_keeps_the_request_bytes(
     events: list[Any] = []
     gate = _target_reviewer(tmp_path, monkeypatch, events)
     with launch_env.scripted_provider([_REVIEWER_REPLY]) as (url, calls):
-        cfg = Config.model_validate(
+        cfg = config_model.Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": url, "auth_style": "none"}},
                 "models": {"default": {"model": "p/review"}},

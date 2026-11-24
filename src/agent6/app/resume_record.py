@@ -21,7 +21,6 @@ from agent6.app.parallel import launch as child_launch
 from agent6.app.parallel import resume as child_resume
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
-from agent6.config import RoleName
 from agent6.harness import loop_snapshot
 from agent6.sessions import child_dispatch, id, ipc
 from agent6.sessions import layout as sessions_layout
@@ -157,7 +156,7 @@ class ResumeTarget:
     budget: session_setup.BudgetOverrides
 
     @property
-    def role(self) -> RoleName:
+    def role(self) -> kinds.RoleName:
         """The role that drives the session's mode."""
         return kinds.session_kind(self.mode).role
 

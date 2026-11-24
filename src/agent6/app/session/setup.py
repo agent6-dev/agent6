@@ -21,22 +21,16 @@ from agent6 import child_env, kinds
 from agent6.app import reporter as app_reporter
 from agent6.app.parallel import launch as child_launch
 from agent6.config import (
-    AnthropicProviderEntry,
-    ChatGPTProviderEntry,
-    ClaudeCodeProviderEntry,
-    Config,
-    ConfigError,
-    MCPServerEntry,
-    OpenAIProviderEntry,
-    PricedProviderEntry,
-    ProviderEntry,
-    ResponsesProviderEntry,
     child_snapshot,
     io,
     layer,
     layer_data,
+    provider_config,
+    sandbox_config,
     secret_store,
+    validation,
 )
+from agent6.config import model as config_model
 from agent6.models import cache, pricing
 from agent6.providers import claude_code, oauth, provider_types
 from agent6.sandbox import detect, jail
@@ -45,7 +39,9 @@ from agent6.tools import mcp_client, mcp_http, policy
 from agent6.vcs.git import policy as git_policy
 
 
-def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> agent6_budget.BudgetTracker:
+def budget_tracker(
+    cfg: config_model.Config, *, max_usd: float | None = None
+) -> agent6_budget.BudgetTracker:
     """Return a run's meter from `[budget]`; a `--max-usd` flag overrides the cap."""
     return agent6_budget.BudgetTracker(
         max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
@@ -101,7 +97,7 @@ class BudgetOverrides:
             max_plan_points=self.max_plan_points,
         )
 
-    def apply(self, cfg: Config) -> Config:
+    def apply(self, cfg: config_model.Config) -> config_model.Config:
         """Return the config with these overrides applied.
 
         Args:
@@ -120,7 +116,7 @@ class BudgetOverrides:
                 max_plan_points=self.max_plan_points,
             )
         except pydantic.ValidationError as exc:
-            raise ConfigError(self._flag_error(exc)) from exc
+            raise validation.ConfigError(self._flag_error(exc)) from exc
 
     def argv(self) -> list[str]:
         """Return these overrides as the flags that set them, for a detached resume to carry."""
@@ -164,7 +160,7 @@ def route_text(model: str | kinds.ModelRoute | None) -> str:
 
 
 def flag_route(
-    cfg: Config, mode: str, model: str | kinds.ModelRoute | None
+    cfg: config_model.Config, mode: str, model: str | kinds.ModelRoute | None
 ) -> kinds.ModelRoute | None:
     """Return the pair the mode's role runs on when a `--model` set it, else None."""
     if not model:
@@ -208,7 +204,7 @@ class SandboxOverrides:
         )
         return [flag for flag, on in flags if on]
 
-    def apply(self, cfg: Config) -> Config:
+    def apply(self, cfg: config_model.Config) -> config_model.Config:
         """Return the config with these overrides applied."""
         return cfg.with_sandbox_overrides(
             disable_sandbox=self.disable_sandbox,
@@ -217,7 +213,7 @@ class SandboxOverrides:
         )
 
 
-def apply_git_ops_policy(cfg: Config) -> None:
+def apply_git_ops_policy(cfg: config_model.Config) -> None:
     """Set how agent6's own git ops treat repo-controlled host code.
 
     One call per entry point, so git_ops itself stays config-free. Repo hooks and content
@@ -230,7 +226,9 @@ def apply_git_ops_policy(cfg: Config) -> None:
     git_policy.set_policy(git_policy.GitPolicy(cfg.git.run_repo_hooks, cfg.git.run_repo_drivers))
 
 
-def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
+def session_config(
+    cfg: config_model.Config, mode: str, overrides: SandboxOverrides | None = None
+) -> config_model.Config:
     """Return the effective config for a session of the mode.
 
     The interactive-mode clamp catches a standing `run_commands = "allow"` nobody is watching;
@@ -323,7 +321,9 @@ def load_session_config(
     return dataclasses.replace(effective, config=cfg, applied_sources=sources)
 
 
-def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str | None:
+def check_provider_keys(
+    cfg: config_model.Config, extra_providers: Iterable[str] = ()
+) -> str | None:
     """Return why a provider the run can reach cannot run, else None.
 
     Every provider the run can statically reach is checked: the configured roles, the review
@@ -358,7 +358,7 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     price_lists = {
         entry.price_list_fallback
         for name in needed
-        if isinstance(entry := cfg.providers[name], PricedProviderEntry)
+        if isinstance(entry := cfg.providers[name], provider_config.PricedProviderEntry)
     }
     for url in sorted(price_lists - {""}):
         # A public list: fetched without a key and cached under its host.
@@ -369,7 +369,10 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
 def sign_in_refusal(
     name: str,
     entry: (
-        ChatGPTProviderEntry | AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry
+        provider_config.ChatGPTProviderEntry
+        | provider_config.AnthropicProviderEntry
+        | provider_config.OpenAIProviderEntry
+        | provider_config.ResponsesProviderEntry
     ),
     secrets: dict[str, Any] | None = None,
 ) -> str | None:
@@ -391,7 +394,9 @@ def sign_in_refusal(
     return None
 
 
-def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) -> str | None:
+def _provider_refusal(
+    name: str, entry: provider_config.ProviderEntry, secrets: dict[str, Any]
+) -> str | None:
     """Return why one routed provider cannot run, or None.
 
     A runnable HTTP provider refreshes its model listing for completion, context and pricing.
@@ -404,17 +409,17 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) 
     Returns:
         The refusal, or None when the provider can run.
     """
-    if isinstance(entry, ClaudeCodeProviderEntry):
+    if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         err = claude_code.login_status(entry.binary)
         return f"[providers.{name}]: {err}" if err is not None else None
-    if isinstance(entry, ChatGPTProviderEntry) or entry.oauth is not None:
+    if isinstance(entry, provider_config.ChatGPTProviderEntry) or entry.oauth is not None:
         if (err := sign_in_refusal(name, entry, secrets)) is not None:
             return err
         cache.list_models(name, entry, None)  # through the stored sign-in
         return None
     key = secret_store.resolve_api_key(name, entry.api_key_env, secrets=secrets)
     if not key and not entry.token_command and entry.auth_style != "none":
-        if isinstance(entry, AnthropicProviderEntry):
+        if isinstance(entry, provider_config.AnthropicProviderEntry):
             return (
                 f"no API key for [providers.{name}] (Anthropic). Run"
                 f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
@@ -430,7 +435,7 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) 
     return None
 
 
-def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
+def wants_session_network(cfg: config_model.Config, isolation: kinds.IsolationLevel) -> bool:
     """Return whether the run needs its own network: any child would join one.
 
     Asked once before anything spawns, since the network exists before its first member. Only
@@ -452,7 +457,7 @@ def wants_session_network(cfg: Config, isolation: kinds.IsolationLevel) -> bool:
 
 
 def mcp_server_grants(
-    cfg: Config, root: pathlib.Path, srv: MCPServerEntry, name: str = ""
+    cfg: config_model.Config, root: pathlib.Path, srv: sandbox_config.MCPServerEntry, name: str = ""
 ) -> policy.Grants:
     """Return the run's path grants plus one server's own, resolved by the one rule.
 
@@ -472,10 +477,10 @@ def mcp_server_grants(
 
 
 def mcp_server_policy(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     isolation: kinds.IsolationLevel,
-    srv: MCPServerEntry,
+    srv: sandbox_config.MCPServerEntry,
     *,
     readonly: bool = False,
 ) -> kinds.JailPolicy | None:
@@ -513,11 +518,11 @@ def mcp_server_policy(
 
 
 def mcp_server_spec(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     isolation: kinds.IsolationLevel,
     name: str,
-    srv: MCPServerEntry,
+    srv: sandbox_config.MCPServerEntry,
     *,
     readonly: bool = False,
 ) -> mcp_client.MCPServerSpec:
@@ -554,7 +559,7 @@ def mcp_server_spec(
     )
 
 
-def no_jail_cause(cfg: Config, env: detect.Environment) -> str:
+def no_jail_cause(cfg: config_model.Config, env: detect.Environment) -> str:
     """Return why this host resolved to isolation `none`."""
     if detect.sandbox_disabled_by_env():
         return "AGENT6_DISABLE_SANDBOX=1 is set"
@@ -564,7 +569,7 @@ def no_jail_cause(cfg: Config, env: detect.Environment) -> str:
 
 
 def start_mcp_manager_if_enabled(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     isolation: kinds.IsolationLevel,
     *,
@@ -601,7 +606,7 @@ def start_mcp_manager_if_enabled(
 
 
 def _warn_servers_that_keep_the_network(
-    cfg: Config, isolation: kinds.IsolationLevel, *, reporter: app_reporter.Reporter
+    cfg: config_model.Config, isolation: kinds.IsolationLevel, *, reporter: app_reporter.Reporter
 ) -> None:
     """Warn per jailed server whose `network = "auto"` degrades to the host's network.
 

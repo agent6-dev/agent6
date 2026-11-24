@@ -11,10 +11,10 @@ from typing import Any, get_args
 
 from bench.review import recordings, scoring
 
-from agent6 import budget, config, kinds, terminal
+from agent6 import budget, kinds, terminal
 from agent6.app import preflight, role_providers
 from agent6.app.session import setup
-from agent6.config import layer
+from agent6.config import layer, provider_config, validation
 from agent6.providers import anthropic, chatgpt, openai, provider_types, responses
 
 HTTPProvider = (
@@ -120,18 +120,18 @@ def main(argv: list[str] | None = None) -> int:
         cfg = layer.load_effective(pathlib.Path.cwd(), tuple(args.config)).config
         route = cfg.model_route(args.model)
         entry = cfg.providers[route.provider]
-        if isinstance(entry, config.ClaudeCodeProviderEntry):
-            raise config.ConfigError("select an HTTP provider, not a local Claude Code process")
+        if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
+            raise validation.ConfigError("select an HTTP provider, not a local Claude Code process")
         for key in ("output_config", "reasoning", "reasoning_effort", "thinking"):
             if key in entry.extra_body:
-                raise config.ConfigError(
+                raise validation.ConfigError(
                     f"remove providers.{route.provider}.extra_body.{key} for replay;"
                     " set reasoning effort with --effort only"
                 )
         settings = kinds.ModelSettings(route, None if args.effort == "default" else args.effort)
         cfg = cfg.with_model_settings("reviewer", settings)
         if refusal := preflight.budget_preflight(cfg, [(route.provider, route.model)]):
-            raise config.ConfigError(refusal)
+            raise validation.ConfigError(refusal)
         meter = setup.budget_tracker(cfg)
         try:
             provider = role_providers.build_role_provider(
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         OSError,
         ValueError,
-        config.ConfigError,
+        validation.ConfigError,
         provider_types.ProviderError,
         budget.BudgetExceededError,
     ) as exc:

@@ -22,7 +22,7 @@ from agent6 import paths
 from agent6.app import preflight as app_preflight
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -54,11 +54,11 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
     return repo
 
 
-def _no_keys(_cfg: Config) -> None:
+def _no_keys(_cfg: config_model.Config) -> None:
     return None
 
 
-def _load_cfg() -> Config:
+def _load_cfg() -> config_model.Config:
     from agent6.config import layer
 
     return layer.load_effective(pathlib.Path.cwd(), ()).config

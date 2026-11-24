@@ -25,7 +25,7 @@ from unittest import mock
 import pytest
 
 from agent6 import directive, kinds
-from agent6.config import Config, load_config
+from agent6.config import model as config_model
 from agent6.graph import curator, models
 from agent6.harness import nudges, tool_effects
 from agent6.harness.compaction import elision as compaction_elision
@@ -67,10 +67,10 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: pathlib.Path, *, extra: str = "") -> Config:
+def _config(tmp_path: pathlib.Path, *, extra: str = "") -> config_model.Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML + extra, encoding="utf-8")
-    return load_config(p)
+    return config_model.load_config(p)
 
 
 def _wire(result: object) -> dict[str, Any]:
@@ -351,7 +351,9 @@ def test_command_results_and_log_tails_are_scrubbed(
     config_path.write_text(toml, encoding="utf-8")
     logs = tmp_path / "logs.jsonl"
     d = build_dispatcher(
-        root=tmp_path, config=load_config(config_path), events=event_log.EventSink(logs)
+        root=tmp_path,
+        config=config_model.load_config(config_path),
+        events=event_log.EventSink(logs),
     )
     d.metric = directive.parse_metric_spec("maximize 'score: ([0-9.]+)' -- true")
     with mock.patch.object(
@@ -375,7 +377,7 @@ def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(
     toml = _VALID_TOML
     config_path = tmp_path / "agent6.toml"
     config_path.write_text(toml, encoding="utf-8")
-    d = build_dispatcher(root=tmp_path, config=load_config(config_path))
+    d = build_dispatcher(root=tmp_path, config=config_model.load_config(config_path))
     d.metric = directive.parse_metric_spec("maximize '\\x1b\\[31mSCORE: ([0-9.]+)' -- true")
     with mock.patch.object(
         jail_session.JailSession,
@@ -504,7 +506,7 @@ def test_wire_run_verify_timeout_names_the_cap(
     )
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
-    d = build_dispatcher(root=tmp_path, config=load_config(p))
+    d = build_dispatcher(root=tmp_path, config=config_model.load_config(p))
     with mock.patch.object(
         jail_session.JailSession,
         "run",
@@ -610,7 +612,7 @@ def test_metric_score_survives_the_display_clip(
     toml = _VALID_TOML
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
-    d = build_dispatcher(root=tmp_path, config=load_config(p))
+    d = build_dispatcher(root=tmp_path, config=config_model.load_config(p))
     d.metric = directive.parse_metric_spec("minimize '(\\d+)' -- /usr/bin/true")
     stdout = "CYCLES: 42\n" + "y" * 25_000
     with mock.patch.object(

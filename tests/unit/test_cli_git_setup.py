@@ -13,7 +13,8 @@ import pytest
 
 from agent6 import errors, paths
 from agent6.app import preflight
-from agent6.config import Config, ConfigError
+from agent6.config import model as config_model
+from agent6.config import validation
 from agent6.ui.cli import entry, init_wizard
 from agent6.ui.cli import init_cmds as ic
 from agent6.vcs.git import ops as git_ops
@@ -34,7 +35,10 @@ def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
 
     The helper both lifecycles call first.
     """
-    ask = cast(Config, types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="ask")))
+    ask = cast(
+        config_model.Config,
+        types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="ask")),
+    )
     assert (
         preflight.headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=False)
         is not None
@@ -51,7 +55,8 @@ def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
         preflight.headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=True) is None
     )
     allowed = cast(
-        Config, types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="allow"))
+        config_model.Config,
+        types.SimpleNamespace(sandbox=types.SimpleNamespace(run_commands="allow")),
     )
     assert (
         preflight.headless_approval_refusal(allowed, tui_enabled=False, away="", can_ask=False)
@@ -277,7 +282,7 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
         target.write_text("", encoding="utf-8")
         (root / "AGENTS.md").write_text("new", encoding="utf-8")
         (root / ".gitignore").write_text("new", encoding="utf-8")
-        raise ConfigError("broken")
+        raise validation.ConfigError("broken")
 
     handed_back: list[pathlib.Path] = []
     monkeypatch.setattr(paths, "repo_config_path", _target)

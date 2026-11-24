@@ -12,10 +12,11 @@ import pytest
 
 from agent6 import errors, path_safety, paths
 from agent6.app import worktrees
-from agent6.config import Config, ContainerConfig
+from agent6.config import container_config
+from agent6.config import model as config_model
 from agent6.tools import index
 
-_CONTAINER = Config.model_validate({"sandbox": {"isolation": "container"}})
+_CONTAINER = config_model.Config.model_validate({"sandbox": {"isolation": "container"}})
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ def test_local_levels_keep_the_cache_base_and_write_nothing_to_the_repository(
     repo: pathlib.Path,
 ) -> None:
     """Only a base inside the repository is excluded; the default sits in the cache."""
-    placed = worktrees.place(Config(), repo, "run-1")
+    placed = worktrees.place(config_model.Config(), repo, "run-1")
     assert placed == paths.cache_dir() / "worktrees" / paths.repo_id(repo) / "run-1"
     assert "worktrees" not in (repo / ".git/info/exclude").read_text(encoding="utf-8")
 
@@ -68,7 +69,9 @@ def test_the_mounted_workspace_is_the_checkout_above_every_base(tmp_path: pathli
 
 
 def test_a_local_run_holds_only_trees_under_its_configured_base(tmp_path: pathlib.Path) -> None:
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "wt")}}})
+    cfg = config_model.Config.model_validate(
+        {"git": {"worktree": {"base_dir": str(tmp_path / "wt")}}}
+    )
     assert worktrees.holds(cfg, tmp_path / "wt/repo-1/run-p1/child-1")
     assert not worktrees.holds(cfg, tmp_path / "repo/.agent6/worktrees/repo-1/run-p1/child-1")
 
@@ -77,8 +80,8 @@ def test_a_local_run_holds_only_trees_under_its_configured_base(tmp_path: pathli
 def test_the_container_base_must_stay_under_the_project_root(value: str) -> None:
     """The container reaches only the workspace it mounts."""
     with pytest.raises(pydantic.ValidationError, match=r"container\.worktree_base_dir"):
-        ContainerConfig(worktree_base_dir=value)
-    assert ContainerConfig().worktree_base_dir == ".agent6/worktrees"
+        container_config.ContainerConfig(worktree_base_dir=value)
+    assert container_config.ContainerConfig().worktree_base_dir == ".agent6/worktrees"
 
 
 def test_the_symbol_index_skips_the_directory_as_it_skips_git(tmp_path: pathlib.Path) -> None:

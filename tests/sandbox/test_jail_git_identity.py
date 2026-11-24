@@ -9,7 +9,7 @@ import shutil
 
 import pytest
 
-from agent6 import config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
 
@@ -20,7 +20,7 @@ def test_a_jailed_git_var_reads_the_configured_identity(tmp_path: pathlib.Path) 
     """Regression: under `git.control = "model"` the jailed git saw no identity in its HOME."""
     if shutil.which("git") is None:
         pytest.skip("git is not on the jail PATH")
-    cfg = config.Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "git": {"control": "model", "commit": {"name": "Eric Lesiuta", "email": "e@x.io"}},
             "sandbox": {"protect_git": "off"},

@@ -29,12 +29,12 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> path
 
 
 def _cfg(worker: str, budget: dict[str, Any] | None = None, reviewer: str | None = None) -> Any:
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     models: dict[str, Any] = {"worker": {"model": "p/" + worker}}
     if reviewer is not None:
         models["reviewer"] = {"model": "p/" + reviewer}
-    return Config.model_validate(
+    return config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1"}},
             "models": models,
@@ -115,8 +115,9 @@ def test_a_bad_budget_flag_refuses_naming_the_flag(flag: str, value: float) -> N
     message named `budget.max_usd`, a key the operator never typed.
     """
     from agent6.app.session import setup as session_setup
-    from agent6.config import Config, ConfigError
+    from agent6.config import model as config_model
+    from agent6.config import validation
 
     kwargs = {"max_usd": value} if flag == "--max-usd" else {"max_tokens_fallback": int(value)}
-    with pytest.raises(ConfigError, match=flag):
-        session_setup.BudgetOverrides(**kwargs).apply(Config())  # pyrefly: ignore[bad-argument-type]
+    with pytest.raises(validation.ConfigError, match=flag):
+        session_setup.BudgetOverrides(**kwargs).apply(config_model.Config())  # pyrefly: ignore[bad-argument-type]

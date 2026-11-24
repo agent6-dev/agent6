@@ -12,12 +12,8 @@ import shutil
 from agent6 import kinds
 from agent6.app import confine
 from agent6.app.session import setup as session_setup
-from agent6.config import (
-    Config,
-    ConfigError,
-    MCPServerEntry,
-    layer,
-)
+from agent6.config import layer, sandbox_config, validation
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import mcp_client, verify_infer
 from agent6.ui.cli import check_render, check_sandbox, common
@@ -43,11 +39,11 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
 
     checks: list[kinds.DoctorCheck] = []
     # Every section needs the config: the sandbox probes run under the isolation it selects.
-    cfg: Config | None = None
+    cfg: config_model.Config | None = None
     load_error: str | None = None
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
-    except (ConfigError, OSError) as exc:
+    except (validation.ConfigError, OSError) as exc:
         load_error = str(exc)
 
     if load_error is not None:
@@ -83,10 +79,10 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
 
 
 def _probe_refusal(
-    cfg: Config,
+    cfg: config_model.Config,
     env: detect.Environment,
     name: str,
-    srv: MCPServerEntry,
+    srv: sandbox_config.MCPServerEntry,
     isolation: kinds.IsolationLevel,
 ) -> str | None:
     """Return why the diagnostic leaves the server unstarted, or None when a read-only probe holds.
@@ -131,7 +127,7 @@ def _probe_refusal(
     return None
 
 
-def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
+def _doctor_check_mcp(cfg: config_model.Config) -> list[kinds.DoctorCheck]:
     """Start each enabled MCP server as a run would, list its tools, then close it.
 
     A server a run would refuse is a FAIL row; one the diagnostic must not start is a
@@ -155,10 +151,10 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
         return [kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
     root = pathlib.Path.cwd()
     out: list[kinds.DoctorCheck] = []
-    probed: dict[str, MCPServerEntry] = {}
+    probed: dict[str, sandbox_config.MCPServerEntry] = {}
     # The same refusals a run applies first: a probe never starts a server under a config
     # the run would refuse, such as `home = "tmp"` below `full`.
-    servers: dict[str, MCPServerEntry] = cfg.mcp.enabled_servers
+    servers: dict[str, sandbox_config.MCPServerEntry] = cfg.mcp.enabled_servers
     if (refusal := confine.startup_refusal(cfg, isolation, root, mcp_network=False)) is not None:
         detail = f"a run would refuse: {refusal}"
         print(f"  {detail}")
@@ -222,7 +218,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
     return out
 
 
-def _doctor_check_verify(cfg: Config) -> list[kinds.DoctorCheck]:
+def _doctor_check_verify(cfg: config_model.Config) -> list[kinds.DoctorCheck]:
     """Check the verify command's shape without running it: argv non-empty, head executable found.
 
     Args:
@@ -264,7 +260,7 @@ def _doctor_check_verify(cfg: Config) -> list[kinds.DoctorCheck]:
     return [kinds.DoctorCheck(name="verify.head", status="PASS" if ok else "FAIL", detail=detail)]
 
 
-def _doctor_check_config(cfg: Config) -> list[kinds.DoctorCheck]:
+def _doctor_check_config(cfg: config_model.Config) -> list[kinds.DoctorCheck]:
     """Check the static config and the host's git: provider keys, the git policy, git's version.
 
     Args:

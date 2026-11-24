@@ -24,7 +24,7 @@ import subprocess
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail
 from agent6.tools import policy as tools_policy
 
@@ -90,7 +90,11 @@ def test_a_launcher_without_cap_setpcap_still_strips_the_child(tmp_path: pathlib
         policy = json.dumps(
             jail.policy_spec(
                 tools_policy.jail_policy(
-                    cwd, Config(), "partial", ("python3", "-c", _CAPGET), network="none"
+                    cwd,
+                    config_model.Config(),
+                    "partial",
+                    ("python3", "-c", _CAPGET),
+                    network="none",
                 )
             )
         )

@@ -16,7 +16,7 @@ from collections.abc import Callable
 import pytest
 
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import dispatch
 
 _CFG = {
@@ -38,7 +38,7 @@ def test_an_unconfined_command_does_not_see_the_provider_key(
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-SECRET")
     monkeypatch.setenv("A_HARMLESS_VAR", "keep-me")
-    cfg = Config.model_validate(_CFG)
+    cfg = config_model.Config.model_validate(_CFG)
     session_setup.apply_git_ops_policy(cfg)  # what a real run does at startup
     dispatcher = build_dispatcher(root=tmp_path, config=cfg, isolation="none")
 

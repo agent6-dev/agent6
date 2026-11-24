@@ -28,13 +28,14 @@ from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, layer_data
+from agent6.config import layer_data
+from agent6.config import model as config_model
 from agent6.sessions import process
 
 
 def no_gate(
-    cfg: Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]
-) -> Config:
+    cfg: config_model.Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]
+) -> config_model.Config:
     """Return the config as it is: a bounded conversation never verifies."""
     # No inference, no gate rows in its journal.
     del budget, available
@@ -42,14 +43,14 @@ def no_gate(
 
 
 def infer_gate(
-    cfg: Config,
+    cfg: config_model.Config,
     budget: agent6_budget.BudgetTracker,
     available: Callable[[str], bool],
     *,
     start: run_preflight.RunStart,
     opened: run_open.Opened,
     reporter: app_reporter.Reporter,
-) -> Config:
+) -> config_model.Config:
     """Run a fresh execution's gate step: infer an unset gate, then pin what it runs with.
 
     Args:
@@ -169,7 +170,7 @@ def run_inputs(
 
 
 def run_task(
-    cfg: Config,
+    cfg: config_model.Config,
     task: str,
     *,
     frontend: app_frontend.SessionFrontend,

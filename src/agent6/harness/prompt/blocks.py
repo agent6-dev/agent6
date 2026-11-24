@@ -13,7 +13,8 @@ import json
 import pathlib
 
 from agent6 import directive, kinds
-from agent6.config import Config, plan_metered
+from agent6.config import model as config_model
+from agent6.config import provider_config
 from agent6.context import memory, skills
 from agent6.prompts import loop
 from agent6.tools import target_policy
@@ -187,7 +188,7 @@ def repo_priors_block(repo: kinds.RepoSummary) -> str:
     )
 
 
-def _plan_budget_line(config: Config) -> str:
+def _plan_budget_line(config: config_model.Config) -> str:
     """Return the plan-percent sentence when any role rides a subscription provider.
 
     Args:
@@ -197,7 +198,7 @@ def _plan_budget_line(config: Config) -> str:
         The sentence, or "" when no meter binds.
     """
     roles = config.models.configured().values()
-    if not any(plan_metered(config.providers.get(rm.provider)) for rm in roles):
+    if not any(provider_config.plan_metered(config.providers.get(rm.provider)) for rm in roles):
         return ""
     cap = (
         "uncapped per run"
@@ -207,7 +208,7 @@ def _plan_budget_line(config: Config) -> str:
     return loop.PLAN_BUDGET_LINE.format(percent_cap=cap)
 
 
-def _commit_rule(config: Config, *, commands_allowed: bool) -> str:
+def _commit_rule(config: config_model.Config, *, commands_allowed: bool) -> str:
     """Return the commit fact the run prompt states.
 
     Under `[git].control = "model"` nothing commits automatically; with `commit_per_turn` off
@@ -230,7 +231,7 @@ def _commit_rule(config: Config, *, commands_allowed: bool) -> str:
 
 def build_system_prompt(
     *,
-    config: Config,
+    config: config_model.Config,
     repo: kinds.RepoSummary,
     mode: kinds.LoopMode = "run",
     memory_index: str = "",

@@ -37,7 +37,8 @@ from agent6.app.parallel import children as app_children
 from agent6.app.parallel import relay as child_watch
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, RoleName, layer_data
+from agent6.config import layer_data
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_snapshot, run_chain
 from agent6.providers import provider_types
 from agent6.sandbox import jail
@@ -100,13 +101,16 @@ class ExecutionInputs:
 
     session_id: str
     mode: kinds.LoopMode
-    role: RoleName
+    role: kinds.RoleName
     explicit_leaves: frozenset[str]
     isolation: kinds.IsolationLevel
     tui_enabled: bool
     interactive: bool
     task: str | None
-    gate: Callable[[Config, agent6_budget.BudgetTracker, Callable[[str], bool]], Config]
+    gate: Callable[
+        [config_model.Config, agent6_budget.BudgetTracker, Callable[[str], bool]],
+        config_model.Config,
+    ]
     chain_branch: str | None
     base_sha: str
     untracked_at_start: frozenset[str]
@@ -148,7 +152,7 @@ class ExecutionEnd:
 
 
 def report_end(
-    cfg: Config,
+    cfg: config_model.Config,
     layout: sessions_layout.SessionLayout,
     inputs: ExecutionInputs,
     *,
@@ -245,7 +249,7 @@ def report_end(
 
 
 def run_execution(  # noqa: C901, PLR0912, PLR0915  # setup, run and teardown in reading order
-    cfg: Config,
+    cfg: config_model.Config,
     layout: sessions_layout.SessionLayout,
     inputs: ExecutionInputs,
     *,

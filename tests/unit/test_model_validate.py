@@ -10,7 +10,7 @@ import pathlib
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.models import validate
 
 
@@ -25,7 +25,7 @@ def no_live_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     # A miss against an existing cache re-checks the LIVE listing before any
     # refusal; tests opt in explicitly via _fresh below. An unpatched fetch
     # here would be real network -- fail loudly instead.
-    def _fail(cfg: Config, provider: str) -> list[str] | None:
+    def _fail(cfg: config_model.Config, provider: str) -> list[str] | None:
         pytest.fail("unexpected live fetch")
 
     monkeypatch.setattr(validate, "_fresh_listing", _fail)
@@ -37,7 +37,7 @@ def _fresh(monkeypatch: pytest.MonkeyPatch, result: list[str] | None) -> None:
     *result* is the fresh listing, None a failed fetch (offline / provider down).
     """
 
-    def _stub(cfg: Config, provider: str) -> list[str] | None:
+    def _stub(cfg: config_model.Config, provider: str) -> list[str] | None:
         return result
 
     monkeypatch.setattr(validate, "_fresh_listing", _stub)
@@ -53,8 +53,8 @@ def _r(model: str, provider: str = "o") -> kinds.ModelRoute:
     return kinds.ModelRoute(provider, model)
 
 
-def _cfg(model: str = "kimi-k2") -> Config:
-    return Config.model_validate(
+def _cfg(model: str = "kimi-k2") -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"default": {"model": "o/" + model}},
@@ -168,8 +168,8 @@ def test_known_models_is_the_roles_models_plus_the_providers_cache(
 # --- per-provider scoping: a route is checked against its own provider.
 
 
-def _two_provider_cfg() -> Config:
-    return Config.model_validate(
+def _two_provider_cfg() -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "providers": {
                 "w": {"backend": "openai", "base_url": "https://w.example/v1"},
@@ -271,7 +271,7 @@ def test_known_models_excludes_sibling_provider_catalog(cache_home: pathlib.Path
 
 
 def test_a_route_needs_no_worker_role(cache_home: pathlib.Path) -> None:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"providers": {"w": {"backend": "openai", "base_url": "https://w.example/v1"}}}
     )
     _write_cache(cache_home, "w", ["w/model-a"])

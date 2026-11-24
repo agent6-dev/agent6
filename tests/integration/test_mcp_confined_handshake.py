@@ -18,7 +18,7 @@ import textwrap
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.tools import mcp_client, policy
 
 pytestmark = pytest.mark.needs_namespaces
@@ -92,7 +92,7 @@ def _policy(
     """
     return policy.jail_policy(
         cwd,
-        Config(),
+        config_model.Config(),
         "full",
         argv,
         extra_ro_paths=read,

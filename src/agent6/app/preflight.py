@@ -17,11 +17,12 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import config, errors, kinds, terminal
+from agent6 import errors, kinds, terminal
 from agent6.app import reporter as app_reporter
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, plan_metered
+from agent6.config import model as config_model
+from agent6.config import provider_config
 from agent6.models import pricing, validate
 from agent6.providers import provider_types
 from agent6.sandbox import tool_paths
@@ -62,7 +63,7 @@ def _by_model(pairs: Iterable[tuple[str, str]]) -> list[str]:
 
 
 def budget_preflight(
-    cfg: Config,
+    cfg: config_model.Config,
     routes: Iterable[tuple[str, str]] | None = None,
     *,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
@@ -94,10 +95,14 @@ def budget_preflight(
 
     # Plan-metered routes live in the percent ledger, never in the fallback spend.
     plan_models = _by_model(
-        (role, m) for role, prov, m in reachable if plan_metered(cfg.providers.get(prov))
+        (role, m)
+        for role, prov, m in reachable
+        if provider_config.plan_metered(cfg.providers.get(prov))
     )
     metered = {
-        (role, prov, m) for role, prov, m in reachable if not plan_metered(cfg.providers.get(prov))
+        (role, prov, m)
+        for role, prov, m in reachable
+        if not provider_config.plan_metered(cfg.providers.get(prov))
     }
     if cfg.budget.max_plan_points == 0.0 and plan_models:
         return (
@@ -116,7 +121,7 @@ def budget_preflight(
             continue
         unpriced_roles.append((role, route.spec))
         entry = cfg.providers.get(prov)
-        if isinstance(entry, config.PricedProviderEntry) and entry.price_list_fallback:
+        if isinstance(entry, provider_config.PricedProviderEntry) and entry.price_list_fallback:
             read = pricing.price_list_read(entry.price_list_fallback)
             reason = "no matching price" if read else "the list could not be read"
             sources.add(
@@ -164,7 +169,10 @@ def budget_preflight(
 
 
 def note_unpriced_search(
-    cfg: Config, mode: str, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
+    cfg: config_model.Config,
+    mode: str,
+    *,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Say once that the hosted web search's fee is unpriced, when the mode offers the search.
 
@@ -181,7 +189,7 @@ def note_unpriced_search(
         return
     route = kinds.ModelRoute(worker.provider, worker.model)
     quote = pricing.lookup_price(route, cfg.providers)
-    if plan_metered(cfg.providers[worker.provider]) or (
+    if provider_config.plan_metered(cfg.providers[worker.provider]) or (
         quote is not None and quote.web_search_usd is not None
     ):
         return
@@ -192,7 +200,7 @@ def note_unpriced_search(
 
 
 def warn_if_prompt_override_incomplete(
-    cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
+    cfg: config_model.Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
 ) -> None:
     """Warn when a custom `harness.prompt.system_prompt_file` omits a core tool contract.
 
@@ -244,7 +252,7 @@ class GitPreflight:
 
 def git_preflight(
     cwd: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     mode: str,
     *,
     confirm_run_on_run_branch: Callable[[str], bool],
@@ -498,7 +506,7 @@ def require_git_repo(
 
 
 def headless_approval_refusal(
-    cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool, clamped: bool = False
+    cfg: config_model.Config, *, tui_enabled: bool, away: str, can_ask: bool, clamped: bool = False
 ) -> str | None:
     """Refuse a run whose first command approval would wait forever.
 
@@ -548,7 +556,7 @@ def headless_approval_refusal(
 
 
 def headless_parking_note(
-    cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool
+    cfg: config_model.Config, *, tui_enabled: bool, away: str, can_ask: bool
 ) -> str | None:
     """Note that a fetch or MCP approval would park a run nobody can answer.
 
@@ -576,7 +584,11 @@ def headless_parking_note(
 
 
 def route_preflight(
-    cfg: Config, role: kinds.RoleName, *, reporter: app_reporter.Reporter, model_flag: str = ""
+    cfg: config_model.Config,
+    role: kinds.RoleName,
+    *,
+    reporter: app_reporter.Reporter,
+    model_flag: str = "",
 ) -> bool:
     """Check the run's model route before any state exists.
 
@@ -628,8 +640,8 @@ def gate_text(argv: tuple[str, ...]) -> str:
 
 
 def drop_gate_if_unrunnable(
-    cfg: Config, *, session_dir: pathlib.Path, reporter: app_reporter.Reporter
-) -> Config:
+    cfg: config_model.Config, *, session_dir: pathlib.Path, reporter: app_reporter.Reporter
+) -> config_model.Config:
     """Empty the verify command when this execution cannot run one.
 
     Every command tool is withheld when the effective policy is `deny`, and the gate is
@@ -657,7 +669,7 @@ def drop_gate_if_unrunnable(
 
 
 def infer_verify_if_unset(
-    cfg: Config,
+    cfg: config_model.Config,
     cwd: pathlib.Path,
     *,
     available: Callable[[str], bool] = tool_paths.jail_resolves,
@@ -666,7 +678,7 @@ def infer_verify_if_unset(
     transcript_sink: provider_types.TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> Config:
+) -> config_model.Config:
     """Infer a verify command for a run or plan whose config sets none.
 
     The inferred command lives in memory only; runs never mutate config. Inference

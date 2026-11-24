@@ -12,7 +12,8 @@ import pytest
 from agent6 import evidence, kinds, paths
 from agent6.app import stamps
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.harness import loop, run_chain
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import event_log, journal, layout, manifest
@@ -54,7 +55,7 @@ def _tools(
     verify_command: tuple[str, ...] = ("/bin/true",),
     verify_retries: int = 2,
 ) -> session_runtime.SessionTools:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"isolation": isolation, "network": "auto", "run_commands": "allow"},
             "harness": {
@@ -81,7 +82,7 @@ def _tools(
         prompts=operator_prompts.OperatorPrompts(),
         loop_log=lambda _line: None,
         mcp_manager=None,
-        rm_role=RoleModel(provider="test", model="test"),
+        rm_role=harness_config.RoleModel(provider="test", model="test"),
     )
 
 
@@ -188,7 +189,7 @@ def resumed(
         capture_output=True,
     )
     monkeypatch.chdir(workspace)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "models": {"default": {"model": "anthropic/claude-test"}},
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
@@ -351,7 +352,7 @@ def test_machine_setup_records_its_one_shot_target(
     from agent6.app.machine import workspace
     from agent6.tools import policy as tools_policy
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": {"isolation": isolation, "network": "host", "run_commands": "allow"}}
     ).with_setup_command(_ENVIRONMENT_COMMAND)
     result = workspace.tool_setup_failure(

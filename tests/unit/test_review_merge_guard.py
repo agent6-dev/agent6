@@ -13,7 +13,7 @@ import pytest
 from agent6 import paths, review_records
 from agent6.app import finalize, merge, reporter
 from agent6.app.review import actions as review_actions
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log, journal, layout, lock, manifest
 from agent6.ui import spawn
 from agent6.ui.cli import entry
@@ -91,7 +91,7 @@ def run(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> layout.Sessi
 
 
 def _merge(
-    cwd: pathlib.Path, saved: layout.SessionLayout, *, cfg: Config | None = None
+    cwd: pathlib.Path, saved: layout.SessionLayout, *, cfg: config_model.Config | None = None
 ) -> merge.MergeOutcome:
     record = manifest.read_manifest(saved.session_dir)
     return merge.execute_merge(
@@ -103,7 +103,7 @@ def _merge(
         base_sha=record.base_sha,
         method="ff_only",
         message=None,
-        cfg=cfg if cfg is not None else Config(),
+        cfg=cfg if cfg is not None else config_model.Config(),
         identity=git_read.CommitIdentity(),
     )
 
@@ -148,7 +148,7 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
         finalize.finalize_auto_merge(
             tmp_path,
             layout=run,
-            cfg=Config.model_validate({"review": {"block_on": "any"}}),
+            cfg=config_model.Config.model_validate({"review": {"block_on": "any"}}),
             reporter=reporter.STDIO_REPORTER,
         )
         ok = _git(tmp_path, "rev-parse", "main") != base
@@ -239,7 +239,9 @@ def test_merge_rechecks_dispositions_after_taking_the_writer_lock(
         return acquire(session_dir)
 
     monkeypatch.setattr(lock, "acquire_single_writer", reopen_then_acquire)
-    result = _merge(tmp_path, run, cfg=Config.model_validate({"review": {"block_on": "all"}}))
+    result = _merge(
+        tmp_path, run, cfg=config_model.Config.model_validate({"review": {"block_on": "all"}})
+    )
     assert result.status == "error" and "f1" in result.error
 
 
@@ -268,7 +270,7 @@ def test_auto_merge_keeps_its_worker_lock_until_the_merge_finishes(
         finalize.finalize_auto_merge(
             tmp_path,
             layout=run,
-            cfg=Config(),
+            cfg=config_model.Config(),
             reporter=reporter.STDIO_REPORTER,
             worker_lock_fd=fd,
         )

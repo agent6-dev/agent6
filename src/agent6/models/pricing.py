@@ -11,7 +11,8 @@ import re
 from collections.abc import Mapping
 from urllib import parse
 
-from agent6 import config, kinds
+from agent6 import kinds
+from agent6.config import provider_config
 from agent6.models import listing_store
 
 _CLAUDE_DATE_SUFFIX_RE = re.compile(r"-20\d{6}$")
@@ -84,7 +85,9 @@ class Quote:
     web_search_usd: float | None = None
 
 
-def _reference_id(model: str, entry: config.PricedProviderEntry, models: set[str]) -> str | None:
+def _reference_id(
+    model: str, entry: provider_config.PricedProviderEntry, models: set[str]
+) -> str | None:
     """Return the reference listing's id for a model it does not list by the route's id.
 
     A direct endpoint names its vendor; a gateway takes the one listed id that ends in the
@@ -110,7 +113,7 @@ def _reference_id(model: str, entry: config.PricedProviderEntry, models: set[str
 
 def lookup_price(
     route: kinds.ModelRoute,
-    providers: Mapping[str, config.ProviderEntry],
+    providers: Mapping[str, provider_config.ProviderEntry],
     *,
     served_tier: str | None = None,
 ) -> Quote | None:
@@ -129,7 +132,7 @@ def lookup_price(
         vendor-prefixed id, or None when unpriced.
     """
     entry = providers.get(route.provider)
-    if not isinstance(entry, config.PricedProviderEntry):
+    if not isinstance(entry, provider_config.PricedProviderEntry):
         return None
     quote = _listed_price(route, entry, route.provider, entry, served_tier)
     if quote is None and entry.price_list_fallback:
@@ -139,7 +142,7 @@ def lookup_price(
 
 
 @functools.lru_cache(maxsize=16)
-def price_list_source(url: str) -> tuple[str, config.OpenAIProviderEntry]:
+def price_list_source(url: str) -> tuple[str, provider_config.OpenAIProviderEntry]:
     """Return the cache name and the keyless listing entry of a fallback price list.
 
     The name is the address's host: it holds a dot, so no provider name equals it.
@@ -151,7 +154,9 @@ def price_list_source(url: str) -> tuple[str, config.OpenAIProviderEntry]:
         The name the listing is cached under, and the entry whose `/models` is the address.
     """
     host = parse.urlsplit(url).hostname or ""
-    return host, config.OpenAIProviderEntry(backend="openai", base_url=url.removesuffix("/models"))
+    return host, provider_config.OpenAIProviderEntry(
+        backend="openai", base_url=url.removesuffix("/models")
+    )
 
 
 def price_list_read(url: str) -> bool:
@@ -169,9 +174,9 @@ def price_list_read(url: str) -> bool:
 
 def _listed_price(
     route: kinds.ModelRoute,
-    entry: config.PricedProviderEntry,
+    entry: provider_config.PricedProviderEntry,
     source: str,
-    listing: config.ProviderEntry,
+    listing: provider_config.ProviderEntry,
     served_tier: str | None,
 ) -> Quote | None:
     """Read the price one cached listing gives the route's model.
@@ -191,7 +196,7 @@ def _listed_price(
         return None
     tier = served_tier
     if tier is None and isinstance(
-        entry, (config.OpenAIProviderEntry, config.ResponsesProviderEntry)
+        entry, (provider_config.OpenAIProviderEntry, provider_config.ResponsesProviderEntry)
     ):
         tier = entry.wire_tier
     models = set(listing_store.model_ids(data) or ())

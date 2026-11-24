@@ -10,8 +10,9 @@ import subprocess
 
 import pytest
 
-from agent6 import config, paths
+from agent6 import paths
 from agent6.app.parallel import launch as child_launch
+from agent6.config import model as config_model
 from agent6.tools import dispatch, tool_errors
 from tests import child_env, launch_env
 
@@ -34,7 +35,10 @@ def test_child_reads_full_origin_ids_outside_its_clone_state(tmp_path: pathlib.P
         entry = {"type": "model.result", "text": body}
         (directory / "logs.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
     reader = dispatch.ToolDispatcher(
-        root=clone, state_dir=paths.state_dir(clone), session_dir=child, config=config.Config()
+        root=clone,
+        state_dir=paths.state_dir(clone),
+        session_dir=child,
+        config=config_model.Config(),
     )
     page = reader.dispatch("read_session", {"id": child.name, "query": "child note"}).to_wire()
     assert "child note" in page["conversation"]

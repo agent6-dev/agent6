@@ -10,7 +10,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import layout, manifest
 
 
@@ -73,7 +73,7 @@ def test_a_resumed_ask_is_still_clamped() -> None:
     """A resumed ask is still clamped: the clamp lives with the mode, not one lifecycle."""
     from agent6.app.session import setup as session_setup
 
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     assert session_setup.session_config(cfg, "ask").sandbox.run_commands == "ask"
     assert session_setup.session_config(cfg, "run").sandbox.run_commands == "allow"
 
@@ -84,7 +84,7 @@ def test_a_run_can_be_seeded_from_an_ask(
     """A run can be seeded from an ask; the ask is untouched, since seeding starts a new session."""
     import json
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import run as cli_run
 
     monkeypatch.chdir(tmp_path)
@@ -98,7 +98,9 @@ def test_a_run_can_be_seeded_from_an_ask(
         json.dumps({"type": "session.stop", "reason": "answered", "turns": 1}) + "\n",
         encoding="utf-8",
     )
-    composed = cli_run._compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")
+    composed = cli_run._compose_task(
+        "do it", config_model.Config(), skills=(), seed_from="quiet-fox-AAAAAA"
+    )
     assert composed.source_session_id == "quiet-fox-AAAAAA"
     assert "how do I convert h264" in composed.text  # the ask's context came across
     assert composed.text.endswith("do it")  # the operator's new task is what it ends on
@@ -109,9 +111,9 @@ def test_seeding_from_an_unknown_session_fails_loudly(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6 import errors
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui.cli import run as cli_run
 
     monkeypatch.chdir(tmp_path)
     with pytest.raises(errors.OperatorError, match="could not seed"):
-        cli_run._compose_task("do it", Config(), skills=(), seed_from="nope")
+        cli_run._compose_task("do it", config_model.Config(), skills=(), seed_from="nope")

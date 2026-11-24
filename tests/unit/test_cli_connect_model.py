@@ -17,7 +17,7 @@ import httpx2
 import pytest
 
 from agent6 import paths
-from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry, secret_store
+from agent6.config import provider_config, secret_store
 from agent6.models import cache
 from agent6.providers import oauth, oauth_chatgpt, oauth_protocol, provider_types, transport
 from agent6.ui.cli import common, connect_oauth
@@ -186,7 +186,7 @@ def test_enter_at_the_base_url_prompt_keeps_the_url_it_shows(
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
     probed: list[str] = []
 
-    def probe(entry: OpenAIProviderEntry, api_key: str) -> cache.KeyProbeResult:
+    def probe(entry: provider_config.OpenAIProviderEntry, api_key: str) -> cache.KeyProbeResult:
         probed.append(entry.base_url)
         return cache.KeyProbeResult(ok=True, status="ok", detail="provider accepted the key")
 
@@ -975,7 +975,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
     monkeypatch.setattr(time, "time", lambda: 1000.0)
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 42 * 60),
-        ChatGPTProviderEntry(backend="chatgpt"),
+        provider_config.ChatGPTProviderEntry(backend="chatgpt"),
         now=1000.0,
     )
     secret_store.save_oauth_grant("chatgpt", grant)
@@ -1094,7 +1094,7 @@ def test_connect_status_names_bound_grant_causes(
     monkeypatch.setattr(time, "time", lambda: 5000.0)
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 3600),
-        ChatGPTProviderEntry(backend="chatgpt"),
+        provider_config.ChatGPTProviderEntry(backend="chatgpt"),
         now=1000.0,
     )
     secret_store.save_oauth_grant(
@@ -1180,7 +1180,7 @@ def test_logout_unbound_chatgpt_is_local_only(
     else:
         grant = oauth.stored_grant_for(
             oauth_protocol.TokenGrant("AT", "RT", 3600),
-            ChatGPTProviderEntry(backend="chatgpt"),
+            provider_config.ChatGPTProviderEntry(backend="chatgpt"),
             now=time.time(),
         )
         secret_store.save_oauth_grant("work", dataclasses.replace(grant, binding="other"))
@@ -1244,7 +1244,9 @@ def test_chatgpt_connect_replaces_old_format_entry_atomically_with_bound_grant(
     assert len(published) == 1 and "obsolete_field" not in published[0]
     grant = secret_store.load_oauth_grant("chatgpt")
     assert grant is not None
-    assert grant.binding == oauth.binding_fingerprint(ChatGPTProviderEntry(backend="chatgpt"))
+    assert grant.binding == oauth.binding_fingerprint(
+        provider_config.ChatGPTProviderEntry(backend="chatgpt")
+    )
     assert secret_store.resolve_api_key("sibling", None) == "keep"
     output = capsys.readouterr().out
     assert "(0600), bound to [providers.chatgpt]" in output
@@ -1411,7 +1413,7 @@ def test_connect_logout_revokes_and_removes_tokens(
         "chatgpt",
         oauth.stored_grant_for(
             oauth_protocol.TokenGrant("AT", "RT", 3600),
-            ChatGPTProviderEntry(backend="chatgpt"),
+            provider_config.ChatGPTProviderEntry(backend="chatgpt"),
             now=time.time(),
         ),
     )

@@ -20,7 +20,7 @@ from agent6 import errors, task_text, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import fork, fork_worktrees, resume_record
 from agent6.app import reporter as app_reporter
-from agent6.config import ConfigError, layer
+from agent6.config import layer, validation
 from agent6.graph import storage
 from agent6.harness import loop_snapshot
 from agent6.sessions import event_log, journal, lock, process
@@ -333,7 +333,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         return None
     try:
         cfg = layer.load_effective(cwd, config_paths).config
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         reporter.error(str(exc))
         return None
     lock_fd, refusal = _checkout_writer_lock(checkout, undone)

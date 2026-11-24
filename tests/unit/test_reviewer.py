@@ -343,9 +343,9 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
 
 
 def _cfg_with_reviewers(reviewers: tuple[dict[str, str], ...]) -> Any:
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    return Config.model_validate(
+    return config_model.Config.model_validate(
         {
             "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "FAKE_KEY"}},
             "models": {

@@ -25,7 +25,7 @@ import tomllib
 import httpx2
 
 from agent6 import errors, paths, portable
-from agent6.config import ConfigError, io, layer, write
+from agent6.config import io, layer, validation, write
 from agent6.context import skills as agent6_skills
 from agent6.context.skills import Skill, resolve_states  # re-export
 from agent6.tools import http_body
@@ -514,7 +514,7 @@ def _state_map(config_paths: tuple[pathlib.Path, ...]) -> dict[str, str]:
     """
     try:
         return dict(layer.load_effective(pathlib.Path.cwd(), config_paths).config.skills.state)
-    except ConfigError:
+    except validation.ConfigError:
         return {}
 
 
@@ -646,7 +646,7 @@ def _cmd_skills_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     repo_root = pathlib.Path.cwd()
     try:
         cfg = layer.load_effective(repo_root, config_paths).config
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         print(f"(config unreadable, showing installed dir only: {exc})", file=sys.stderr)
         cfg = None
     dirs = (

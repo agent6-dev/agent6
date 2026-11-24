@@ -17,7 +17,8 @@ import pathlib
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.sandbox import detect
 from agent6.tools import mcp_client
 from agent6.ui.cli import check_cmds, mcp_add
@@ -72,7 +73,7 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
 def _check_mcp(
     servers: dict[str, object], *, sandbox: dict[str, object] | None = None
 ) -> list[kinds.DoctorCheck]:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"sandbox": sandbox or {}, "mcp": {"enabled": True, "servers": servers}}
     )
     return check_cmds._doctor_check_mcp(cfg)

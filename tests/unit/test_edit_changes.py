@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log, objects
 from agent6.tools import dispatch, results, tool_errors
 from agent6.viewmodel import transcript, transcript_items
@@ -23,7 +23,7 @@ def _dispatcher(tmp_path: pathlib.Path) -> tuple[dispatch.ToolDispatcher, pathli
     session_dir.mkdir()
     sink = event_log.EventSink(session_dir / "logs.jsonl")
     return dispatch.ToolDispatcher(
-        root=root, config=Config(), session_dir=session_dir, events=sink
+        root=root, config=config_model.Config(), session_dir=session_dir, events=sink
     ), session_dir
 
 
@@ -120,7 +120,7 @@ def test_a_write_under_a_grant_outside_the_workspace_records_its_absolute_path(
     for directory in (root, session_dir, granted):
         directory.mkdir()
     (root / "note.txt").write_text("the workspace's own\n", encoding="utf-8")
-    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    config = config_model.Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
     sink = event_log.EventSink(session_dir / "logs.jsonl")
     d = dispatch.ToolDispatcher(root=root, config=config, session_dir=session_dir, events=sink)
 
@@ -141,7 +141,7 @@ def test_a_patch_under_a_grant_journals_absolute_paths(tmp_path: pathlib.Path) -
     for directory in (root, session_dir, granted):
         directory.mkdir()
     (granted / "old.txt").write_text("bye\n", encoding="utf-8")
-    config = Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
+    config = config_model.Config.model_validate({"sandbox": {"extra_write_paths": [str(granted)]}})
     sink = event_log.EventSink(session_dir / "logs.jsonl")
     d = dispatch.ToolDispatcher(root=root, config=config, session_dir=session_dir, events=sink)
 

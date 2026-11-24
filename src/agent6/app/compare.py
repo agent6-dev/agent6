@@ -22,7 +22,7 @@ from typing import Literal
 from agent6 import budget as agent6_budget
 from agent6 import child_records, kinds
 from agent6.app import reporter as app_reporter
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness.parallel import panel as parallel_panel
 from agent6.harness.parallel import rank as parallel_rank
 from agent6.sessions import manifest as sessions_manifest
@@ -74,7 +74,7 @@ def outcome_of(ranking: child_records.Ranking) -> RankOutcome:
 
 
 def rank(
-    cfg: Config,
+    cfg: config_model.Config,
     candidates: list[child_records.CandidateBrief],
     *,
     spawner: child_records.GroupChildSpawner | None,

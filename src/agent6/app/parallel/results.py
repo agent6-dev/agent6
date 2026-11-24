@@ -13,7 +13,7 @@ from agent6.app import compare as app_compare
 from agent6.app import finalize, stamps
 from agent6.app import reporter as app_reporter
 from agent6.app.parallel import wait as child_wait
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import manifest as sessions_manifest
@@ -141,7 +141,7 @@ def import_child(
     res: child_records.ChildResult,
     origin: pathlib.Path,
     lock: threading.Lock | None,
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     continuing: bool = False,
 ) -> child_records.Imported:

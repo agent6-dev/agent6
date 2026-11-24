@@ -13,7 +13,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.config import ConfigError, layer
+from agent6.config import layer, validation
 
 
 def _write_repo_config(repo: pathlib.Path, toml: str) -> None:
@@ -103,7 +103,7 @@ def test_user_preset_replaces_the_builtin(repo: pathlib.Path) -> None:
 
 def test_unknown_preset_errors(repo: pathlib.Path) -> None:
     _write_repo_config(repo, '[agent6]\npreset = "nope"\n')
-    with pytest.raises(ConfigError, match="unknown preset"):
+    with pytest.raises(validation.ConfigError, match="unknown preset"):
         layer.load_effective(repo)
 
 
@@ -113,7 +113,7 @@ def test_a_preset_cannot_select_a_preset(repo: pathlib.Path) -> None:
         repo,
         '[agent6]\npreset = "outer"\n[presets.outer.agent6]\npreset = "review"\n',
     )
-    with pytest.raises(ConfigError, match=r"\[presets\.outer\] sets agent6\.preset"):
+    with pytest.raises(validation.ConfigError, match=r"\[presets\.outer\] sets agent6\.preset"):
         layer.load_effective(repo)
 
 
@@ -124,7 +124,7 @@ def test_preset_table_instead_of_string_is_clear_error(repo: pathlib.Path) -> No
     never str()-coerced into `unknown preset "{'porifle': 'review'}"`.
     """
     _write_repo_config(repo, '[agent6.preset]\nporifle = "review"\n')
-    with pytest.raises(ConfigError, match="must be a preset name string"):
+    with pytest.raises(validation.ConfigError, match="must be a preset name string"):
         layer.load_effective(repo)
 
 
@@ -202,14 +202,14 @@ def test_none_is_reserved_even_when_unselected(repo: pathlib.Path, selected: boo
     """A user definition cannot turn the no-preset selector into an override."""
     selector = '[agent6]\npreset = "none"\n' if selected else ""
     _write_repo_config(repo, selector + "[presets.none]\n")
-    with pytest.raises(ConfigError, match=r"none.*reserved"):
+    with pytest.raises(validation.ConfigError, match=r"none.*reserved"):
         layer.load_effective(repo)
 
 
 def test_empty_preset_names_none_as_the_replacement(repo: pathlib.Path) -> None:
     """An empty selector is refused instead of falling through to a lower layer."""
     _write_repo_config(repo, '[agent6]\npreset = ""\n')
-    with pytest.raises(ConfigError, match=r"empty.*none"):
+    with pytest.raises(validation.ConfigError, match=r"empty.*none"):
         layer.load_effective(repo)
 
 

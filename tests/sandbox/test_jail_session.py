@@ -327,10 +327,12 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(
     tmp_path: pathlib.Path,
 ) -> None:
     """A run's commands share one jail process: the second sees what the first left in /tmp."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import dispatch
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "allow"}})
+    cfg = config_model.Config.model_validate(
+        {"sandbox": {"isolation": "full", "run_commands": "allow"}}
+    )
     scoped = dispatch.ToolDispatcher(
         root=tmp_path,
         config=cfg,
@@ -358,10 +360,12 @@ def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(
     What a run's own jail process is for: per-command launchers put each in its own empty
     netns, so the address would be unreachable however long the server ran.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.tools import dispatch
 
-    cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "allow"}})
+    cfg = config_model.Config.model_validate(
+        {"sandbox": {"isolation": "full", "run_commands": "allow"}}
+    )
     d = dispatch.ToolDispatcher(
         root=tmp_path,
         config=cfg,

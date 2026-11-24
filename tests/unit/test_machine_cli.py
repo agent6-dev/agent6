@@ -1432,7 +1432,7 @@ def test_machine_preflight_judges_the_states_routes(
 
     monkeypatch.chdir(tmp_path)
     _stub_agent_result(monkeypatch)
-    from agent6.config import ChatGPTProviderEntry
+    from agent6.config import provider_config
     from agent6.providers import oauth, oauth_protocol
 
     def listed(*_args: object, **_kwargs: object) -> list[str]:
@@ -1443,18 +1443,18 @@ def test_machine_preflight_judges_the_states_routes(
             "plan",
             oauth.stored_grant_for(
                 oauth_protocol.TokenGrant("AT", "RT", 3600),
-                ChatGPTProviderEntry(backend="chatgpt"),
+                provider_config.ChatGPTProviderEntry(backend="chatgpt"),
                 now=0,
             ),
         )
     monkeypatch.setattr(cache, "list_models", listed)
-    from agent6 import config as agent6_config
+    from agent6.config import provider_config
     from tests import price_env
 
     price_env.write(
         {"priced-model": [1, 2]},
         name="paid",
-        entry=agent6_config.OpenAIProviderEntry(backend="openai", base_url="http://127.0.0.1:9"),
+        entry=provider_config.OpenAIProviderEntry(backend="openai", base_url="http://127.0.0.1:9"),
     )
     config = tmp_path / "config.toml"
     config.write_text(
@@ -1884,12 +1884,12 @@ def test_apply_operator_env_grants_upgrades_ask_never_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from agent6.app.machine import agent
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
-    ask = Config.model_validate({"sandbox": {"run_commands": "ask"}})
+    ask = config_model.Config.model_validate({"sandbox": {"run_commands": "ask"}})
     assert agent._apply_operator_env_grants(ask).sandbox.run_commands == "allow"
-    denied = Config.model_validate({"sandbox": {"run_commands": "deny"}})
+    denied = config_model.Config.model_validate({"sandbox": {"run_commands": "deny"}})
     assert (
         agent._apply_operator_env_grants(denied).sandbox.run_commands == "deny"
     )  # never resurrected

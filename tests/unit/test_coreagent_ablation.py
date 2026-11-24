@@ -6,7 +6,7 @@ import pathlib
 import pytest
 from bench.coreagent import run
 
-from agent6 import config
+from agent6.config import model as config_model
 
 
 @pytest.mark.parametrize("condition", sorted({*run.CONDITIONS, "verify_finish"}))
@@ -18,7 +18,7 @@ def test_every_condition_loads_with_a_default_route(tmp_path: pathlib.Path, cond
         + run.CONDITIONS[condition].format(ROOT=run.ROOT),
         encoding="utf-8",
     )
-    cfg = config.load_config(path)
+    cfg = config_model.load_config(path)
     assert cfg.models.default is not None
     assert cfg.models.default.provider == "chatgpt"
     assert cfg.models.default.model == "test-model"
@@ -48,7 +48,7 @@ def test_dry_run_builds_config_without_agent_or_grader(
     )
     assert row["dry_run"] is True
     cfg = pathlib.Path(row["config"])
-    assert config.load_config(cfg).harness.verify.when == "finish"
+    assert config_model.load_config(cfg).harness.verify.when == "finish"
     assert (cfg.parent / ".git").is_dir()
     assert not (cfg.parent / "agent.log").exists()
     assert "score" not in row

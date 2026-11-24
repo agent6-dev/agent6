@@ -8,16 +8,17 @@ import pathlib
 from collections.abc import Callable
 from typing import Any
 
-from agent6 import child_records, config
+from agent6 import child_records
 from agent6.app import reporter
 from agent6.app.parallel import children
+from agent6.config import model as config_model
 from agent6.sessions import event_log
 from agent6.ui import spawn
 from agent6.viewmodel import transcript
 
 
 def parent_spawner(
-    cfg: config.Config,
+    cfg: config_model.Config,
     explicit_leaves: frozenset[str],
     cwd: pathlib.Path,
     state_dir: pathlib.Path,

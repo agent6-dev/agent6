@@ -28,7 +28,8 @@ from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.graph import storage
 from agent6.harness import (
     loop,
@@ -393,7 +394,7 @@ def test_transferred_session_resolves_in_the_new_checkout(
     """A moved checkout lists and forks imported state without rewriting its history."""
     import shutil
 
-    from agent6.config import ConfigError
+    from agent6.config import validation
     from agent6.ui.cli import entry
 
     origin = tmp_path / "origin"
@@ -422,7 +423,7 @@ def test_transferred_session_resolves_in_the_new_checkout(
 
     def stop_before_provider(repo: pathlib.Path, *_args: object, **_kwargs: object) -> None:
         seen.append(repo)
-        raise ConfigError("relocation probe stops before provider setup")
+        raise validation.ConfigError("relocation probe stops before provider setup")
 
     monkeypatch.setattr(session_setup, "load_session_config", stop_before_provider)
     assert entry.cli_main(["--allow-root", "resume", "travel-AAAAAA"]) == 2
@@ -1464,7 +1465,7 @@ def test_a_forks_findings_description_names_the_child_session(
     child = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(child.manifest_path.read_text(encoding="utf-8"))
     tools = session_runtime.build_session_tools(
-        Config(),
+        config_model.Config(),
         cwd=pathlib.Path(manifest["worktree"]),
         state_dir=state,
         layout=child,
@@ -1474,7 +1475,7 @@ def test_a_forks_findings_description_names_the_child_session(
         prompts=operator_prompts.OperatorPrompts(session_dir=child.session_dir),
         loop_log=_silent,
         mcp_manager=None,
-        rm_role=RoleModel(provider="openrouter", model="m"),
+        rm_role=harness_config.RoleModel(provider="openrouter", model="m"),
     )
     definitions = {tool.name: tool for tool in toolset.tool_definitions(tools.dispatcher)}
     description = definitions["list_findings"].description

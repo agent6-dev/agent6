@@ -14,7 +14,7 @@ import pathlib
 
 import pydantic
 
-from agent6.config import WebConfig, is_loopback_host, layer
+from agent6.config import layer, surface_config
 from agent6.sessions import id
 from agent6.ui.cli import common
 from agent6.ui.web import auth, model
@@ -61,11 +61,13 @@ def _cmd_web(
     eff_port = port if port is not None else web.port
     try:
         # The leaf's own bounds; allow_non_loopback=True leaves the host refusal to the check below.
-        WebConfig(host=eff_host, port=eff_port, allow_non_loopback=True)
+        surface_config.WebConfig(host=eff_host, port=eff_port, allow_non_loopback=True)
     except pydantic.ValidationError:
         common.error(f"--port {eff_port} is out of range (1-65535).")
         return 2
-    if not is_loopback_host(eff_host) and not (allow_non_loopback or web.allow_non_loopback):
+    if not surface_config.is_loopback_host(eff_host) and not (
+        allow_non_loopback or web.allow_non_loopback
+    ):
         common.refuse(
             f"binding non-loopback host {eff_host!r} requires opt-in."
             " Pass --allow-non-loopback (or set [web].allow_non_loopback = true), and prefer"

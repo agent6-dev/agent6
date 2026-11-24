@@ -17,7 +17,7 @@ from typing import Protocol
 
 from agent6 import budget, kinds, portable
 from agent6.app.parallel import children
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_snapshot
 from agent6.sessions import event_log, ipc, layout
 from agent6.tools import mcp_client, operator_prompts
@@ -59,7 +59,7 @@ class SteerHooks(Protocol):
     reset_stage: Callable[[], None]
 
 
-def approval_scopes(cfg: Config) -> tuple[str, ...]:
+def approval_scopes(cfg: config_model.Config) -> tuple[str, ...]:
     """Return every scope this run can be asked about: the commands, plus one per MCP server.
 
     A grant is per scope, so an approve-all with only the command scope granted would block
@@ -75,7 +75,7 @@ def approval_scopes(cfg: Config) -> tuple[str, ...]:
     return (ipc.COMMAND_SCOPE, *servers)
 
 
-def settle_away_mode(session_dir: pathlib.Path, cfg: Config, *, can_ask: bool) -> None:
+def settle_away_mode(session_dir: pathlib.Path, cfg: config_model.Config, *, can_ask: bool) -> None:
     """Settle the away mode at an execution's start.
 
     A front-end that can ask (a terminal, an ACP client) drops a stale detach answer, since
@@ -173,7 +173,7 @@ class SessionFrontend:
     make_steer_state: Callable[
         [event_log.EventSink, pathlib.Path, Callable[[], SessionFacts]], SteerHooks
     ]
-    confirm_unconfined_autorun: Callable[[kinds.IsolationLevel, Config], bool]
+    confirm_unconfined_autorun: Callable[[kinds.IsolationLevel, config_model.Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
     prompt_detach_away_mode: Callable[[pathlib.Path, tuple[str, ...]], None]
     build_repl_hook: Callable[
@@ -187,7 +187,7 @@ class SessionFrontend:
     save_ask_transcript: Callable[[layout.SessionLayout, str, str], None]
     build_parent_spawner: Callable[
         [
-            Config,
+            config_model.Config,
             frozenset[str],
             pathlib.Path,
             pathlib.Path,

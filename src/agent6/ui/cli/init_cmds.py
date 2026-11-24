@@ -8,7 +8,8 @@ import pathlib
 import sys
 
 from agent6 import errors, paths
-from agent6.config import Config, ConfigError, layer
+from agent6.config import layer, validation
+from agent6.config import model as config_model
 from agent6.ui.cli import common, init_wizard
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -143,8 +144,8 @@ def _print_next_steps(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...])
         config_paths: The `--config` files in command-line order, if any.
     """
     try:
-        cfg: Config | None = layer.load_effective(cwd, config_paths).config
-    except ConfigError:
+        cfg: config_model.Config | None = layer.load_effective(cwd, config_paths).config
+    except validation.ConfigError:
         cfg = None
     print()
     print("Next:")
@@ -198,7 +199,7 @@ def _cmd_init(
                 interactive=interactive,
                 config_paths=config_paths,
             )
-        except ConfigError as exc:
+        except validation.ConfigError as exc:
             # init is also the command that repairs a setup, so the refusal carries the way out.
             raise errors.OperatorError(
                 f"{exc}\nFix or delete the invalid config, following the error above,"

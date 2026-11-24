@@ -16,7 +16,7 @@ import pathlib
 import pytest
 
 from agent6 import path_safety
-from agent6.config import Config, load_config
+from agent6.config import model as config_model
 from agent6.tools import dispatch, tool_errors
 
 _VALID_TOML = """
@@ -44,10 +44,10 @@ max_tokens_fallback = 2000000
 """
 
 
-def _config(tmp_path: pathlib.Path) -> Config:
+def _config(tmp_path: pathlib.Path) -> config_model.Config:
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML, encoding="utf-8")
-    return load_config(p)
+    return config_model.load_config(p)
 
 
 def _dispatcher(tmp_path: pathlib.Path) -> dispatch.ToolDispatcher:
@@ -197,7 +197,7 @@ def test_a_parent_swapped_after_the_check_creates_nothing_outside(
 
     def swap_after_the_check(
         path: str,
-        config: Config,
+        config: config_model.Config,
         extra_protect_paths: tuple[pathlib.Path, ...],
         resolved: path_safety.SafePath | None = None,
     ) -> None:

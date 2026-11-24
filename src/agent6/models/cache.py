@@ -23,14 +23,7 @@ from urllib import parse
 import httpx2
 
 from agent6 import kinds, media
-from agent6.config import (
-    AnthropicProviderEntry,
-    ChatGPTProviderEntry,
-    ClaudeCodeProviderEntry,
-    OpenAIProviderEntry,
-    ProviderEntry,
-    ResponsesProviderEntry,
-)
+from agent6.config import provider_config
 from agent6.models import listing_store
 from agent6.models import pricing as models_pricing
 from agent6.providers import oauth, provider_types, request_headers, transport, wire
@@ -57,7 +50,9 @@ class Listing:
     search_pricing: dict[str, float] = dataclasses.field(default_factory=dict)
 
 
-def _write_cache(path: pathlib.Path | None, listing: Listing, entry: ProviderEntry) -> None:
+def _write_cache(
+    path: pathlib.Path | None, listing: Listing, entry: provider_config.ProviderEntry
+) -> None:
     """Write listing facts together, bound to the complete configured provider entry."""
     if path is None:
         return
@@ -103,7 +98,7 @@ def _parse_modalities(payload: object) -> dict[str, list[str]]:
 
 
 def cached_input_capabilities(
-    provider_name: str, entry: ProviderEntry, model: str
+    provider_name: str, entry: provider_config.ProviderEntry, model: str
 ) -> media.InputCapabilities:
     """Read fresh, bound input facts for this exact model without touching the network.
 
@@ -271,7 +266,9 @@ def _parse_context(payload: object) -> dict[str, int]:
 
 
 def _models_endpoint(
-    entry: AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry,
+    entry: provider_config.AnthropicProviderEntry
+    | provider_config.OpenAIProviderEntry
+    | provider_config.ResponsesProviderEntry,
     api_key: str | None,
 ) -> tuple[str, dict[str, str]]:
     """Return the (url, headers) of the entry's `/models` listing, auth included.
@@ -292,7 +289,7 @@ def _models_endpoint(
         request_headers.plain_facts("models")
     )
     # Vertex and Azure have no uniform /models endpoint; the caller swallows that failure.
-    if isinstance(entry, AnthropicProviderEntry) and entry.deployment == "direct":
+    if isinstance(entry, provider_config.AnthropicProviderEntry) and entry.deployment == "direct":
         headers["anthropic-version"] = _ANTHROPIC_VERSION
     authed = wire.auth_header(entry.auth_style, api_key or "")
     if authed is not None:
@@ -306,7 +303,7 @@ _CHATGPT_CLIENT_VERSION = "1.0.0"
 
 
 def _chatgpt_models_endpoint(
-    provider_name: str, entry: ChatGPTProviderEntry
+    provider_name: str, entry: provider_config.ChatGPTProviderEntry
 ) -> tuple[str, dict[str, str]]:
     """Return the (url, headers) of the subscription backend's listing.
 
@@ -328,7 +325,9 @@ def _chatgpt_models_endpoint(
     return url, chatgpt_headers(provider_name, entry, "models")
 
 
-def chatgpt_headers(provider_name: str, entry: ChatGPTProviderEntry, target: str) -> dict[str, str]:
+def chatgpt_headers(
+    provider_name: str, entry: provider_config.ChatGPTProviderEntry, target: str
+) -> dict[str, str]:
     """Return a free request's headers for the subscription backend, the stored token as is.
 
     Args:
@@ -387,7 +386,7 @@ def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
 
 def _fetch(
     provider_name: str,
-    entry: ProviderEntry,
+    entry: provider_config.ProviderEntry,
     api_key: str | None,
     timeout_s: float,
     *,
@@ -408,9 +407,9 @@ def _fetch(
     Raises:
         ProviderError: A credential is unavailable to a listing request.
     """
-    if isinstance(entry, ClaudeCodeProviderEntry):
+    if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         return Listing([], {}, {}, {})  # No endpoint: the binary resolves names itself.
-    if isinstance(entry, ChatGPTProviderEntry):
+    if isinstance(entry, provider_config.ChatGPTProviderEntry):
         url, headers = _chatgpt_models_endpoint(provider_name, entry)
         resp = transport.http_request("GET", url, headers=headers, timeout=timeout_s)
         resp.raise_for_status()
@@ -454,7 +453,7 @@ class KeyProbeResult:
 
 
 def probe_provider_key(
-    entry: ProviderEntry, api_key: str, *, timeout_s: float = 10.0
+    entry: provider_config.ProviderEntry, api_key: str, *, timeout_s: float = 10.0
 ) -> KeyProbeResult:
     """Check whether a key authenticates against the entry's `/models`, by a read-only GET.
 
@@ -471,14 +470,16 @@ def probe_provider_key(
         The probe's outcome; `unsupported` when the deployment or auth style cannot check a key.
     """
     if (
-        isinstance(entry, (ChatGPTProviderEntry, ClaudeCodeProviderEntry))
+        isinstance(
+            entry, (provider_config.ChatGPTProviderEntry, provider_config.ClaudeCodeProviderEntry)
+        )
         or entry.oauth is not None
         or entry.deployment != "direct"
         or entry.auth_style == "none"
     ):
-        if isinstance(entry, ChatGPTProviderEntry):
+        if isinstance(entry, provider_config.ChatGPTProviderEntry):
             detail = "ChatGPT signs in via OAuth, not a key"
-        elif isinstance(entry, ClaudeCodeProviderEntry):
+        elif isinstance(entry, provider_config.ClaudeCodeProviderEntry):
             detail = "Claude Code signs in with its own login, not a key"
         elif entry.oauth is not None:
             detail = "a configured issuer signs in via `agent6 connect`, not a key"
@@ -514,7 +515,7 @@ def probe_provider_key(
 
 def list_models(
     provider_name: str,
-    entry: ProviderEntry,
+    entry: provider_config.ProviderEntry,
     api_key: str | None,
     *,
     ttl_s: int = _CACHE_TTL_S,
@@ -556,7 +557,7 @@ def list_models(
 
 def fetch_models_live(
     provider_name: str,
-    entry: ProviderEntry,
+    entry: provider_config.ProviderEntry,
     api_key: str | None,
     *,
     timeout_s: float = _FETCH_TIMEOUT_S,

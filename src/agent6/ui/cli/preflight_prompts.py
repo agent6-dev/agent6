@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.ui.cli import steer_tty
 
 
@@ -39,7 +39,7 @@ def confirm_run_on_run_branch(base_branch: str) -> bool:
     return ans.strip().lower() in {"y", "yes"}
 
 
-def confirm_unconfined_autorun(isolation: kinds.IsolationLevel, cfg: Config) -> bool:
+def confirm_unconfined_autorun(isolation: kinds.IsolationLevel, cfg: config_model.Config) -> bool:
     """Confirm once, at startup, a run with the sandbox off and run_command auto-approved.
 
     One consent when interactive, a loud warning when not: the explicit opt-outs are

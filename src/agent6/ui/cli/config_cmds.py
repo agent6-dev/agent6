@@ -13,7 +13,7 @@ import tomllib
 from agent6 import errors, paths, portable
 from agent6.app import confine
 from agent6.app.machine import state_configs
-from agent6.config import ConfigError, io, layer, layer_data, layer_presets, notices, write
+from agent6.config import io, layer, layer_data, layer_presets, notices, validation, write
 from agent6.machine import schema as machine_schema
 from agent6.machine import semantics
 from agent6.sandbox import detect
@@ -323,7 +323,7 @@ def _added_widening(
         before: dict[str, str] = _overlay_problems(
             prior if isinstance(prior, dict) else {}, config_paths
         )
-    except (tomllib.TOMLDecodeError, ConfigError):
+    except (tomllib.TOMLDecodeError, validation.ConfigError):
         before = {}
     added = [
         f"the machine's [config] sets {problem}"
@@ -363,7 +363,7 @@ def _write_machine(
         err = _added_widening(prior_text, overlay, config_paths)
     except tomllib.TOMLDecodeError as exc:
         err = f"{target}: invalid TOML: {exc}"
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         err = _leaf_problems(str(exc))
     except machine_schema.MachineError as exc:
         err = "; ".join(exc.problems)
@@ -483,7 +483,7 @@ def _not_a_leaf(
     """Return why the key cannot be unset; an MCP server table names the verb that removes it."""
     try:
         eff = _effective_with_overlay(config_paths, machine)
-    except ConfigError:
+    except validation.ConfigError:
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
     parts = io.split_key(key)
     name = parts[-1]
@@ -521,7 +521,7 @@ def _cmd_config_unset(
         known_leaf = layer.effective_leaf(eff, key) is not None or (
             schema is not None and schema.py_type == "table" and not write.names_a_section(key)
         )
-    except ConfigError:
+    except validation.ConfigError:
         known_leaf = True
     if not known_leaf:
         common.error(f"{_not_a_leaf(key, config_paths, machine)}")
@@ -596,7 +596,7 @@ def _config_list_edit(
                     else layer.load_global_only()
                 )
                 inherited = layer.effective_leaf(base, key)
-            except ConfigError:
+            except validation.ConfigError:
                 inherited = None
             current = inherited[0] if inherited is not None and inherited[0] is not None else []
         if not isinstance(current, (list, tuple)):
@@ -628,7 +628,7 @@ def _entry_is_stale(entry: layer.InvalidEntry) -> bool:
     """Return whether the entry's key no longer holds the value the unlocked diagnosis read."""
     try:
         data = io.read_toml_file(entry.path)
-    except ConfigError:
+    except validation.ConfigError:
         return True  # unreadable now: left to the loud paths
     # nan != nan, so a still-present nan would read as replaced on every pass and never be removed.
     return not _equal_tolerating_nan(io.read_toml_leaf(data, entry.file_key), entry.value)
@@ -680,7 +680,7 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
                         common.error(result.error)
                         return 2
                     ok = result.removed
-                except ConfigError:
+                except validation.ConfigError:
                     # A leaf inside an inline table or dotted key: the surgery cannot carve it out.
                     ok = False
             if not ok:

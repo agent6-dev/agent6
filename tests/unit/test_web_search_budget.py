@@ -14,7 +14,8 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.app import preflight
-from agent6.config import Config, provider_config
+from agent6.config import model as config_model
+from agent6.config import provider_config
 from agent6.models import cache, listing_store, pricing
 from agent6.providers import anthropic, provider_types, responses
 from tests.unit import test_web_search_messages as messages_reply
@@ -25,10 +26,10 @@ _ROUTE = kinds.ModelRoute("anthropic", "claude-x")
 _PRICE_LIST = "openrouter.ai"
 
 
-def _cfg(worker: dict[str, Any] | None = None, **extra: Any) -> Config:
+def _cfg(worker: dict[str, Any] | None = None, **extra: Any) -> config_model.Config:
     """Return a config whose direct Anthropic worker is priced from the fallback price list."""
     entry = {"backend": "anthropic", "web_search": True} if worker is None else worker
-    return Config.model_validate(
+    return config_model.Config.model_validate(
         {
             "providers": {"anthropic": entry},
             "models": {"default": {"model": "anthropic/claude-x"}},
@@ -37,7 +38,9 @@ def _cfg(worker: dict[str, Any] | None = None, **extra: Any) -> Config:
     )
 
 
-def _list_prices(monkeypatch: pytest.MonkeyPatch, cfg: Config, web_search: object) -> None:
+def _list_prices(
+    monkeypatch: pytest.MonkeyPatch, cfg: config_model.Config, web_search: object
+) -> None:
     """Fetch the fallback price list, with one model and its `pricing.web_search` as given."""
     row: dict[str, Any] = {"prompt": "0.000003", "completion": "0.000015"}
     if web_search is not None:
@@ -60,7 +63,7 @@ def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathl
     return tmp_path
 
 
-def _tracker(cfg: Config) -> agent6_budget.BudgetTracker:
+def _tracker(cfg: config_model.Config) -> agent6_budget.BudgetTracker:
     return agent6_budget.BudgetTracker(
         providers=cfg.providers, max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1
     )

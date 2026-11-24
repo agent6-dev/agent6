@@ -24,7 +24,7 @@ from typing import Any
 import pydantic
 
 from agent6 import directive, errors, evidence, kinds, path_safety, paths
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
 from agent6.sandbox import tool_paths
@@ -98,7 +98,7 @@ class ToolContext:
     """Run state and dispatcher gates for one built-in tool call."""
 
     workspace: path_safety.Workspace
-    config: Config
+    config: config_model.Config
     extra_protect_paths: tuple[pathlib.Path, ...]
     built_index: index.SymbolIndex | None
     symbol_index: Callable[[], index.SymbolIndex]
@@ -183,7 +183,7 @@ class ToolDispatcher:
         self,
         *,
         root: pathlib.Path,
-        config: Config,
+        config: config_model.Config,
         isolation: kinds.IsolationLevel = "full",
         prompts: operator_prompts.OperatorPrompts | None = None,
         events: event_log.EventSink | None = None,
@@ -333,7 +333,7 @@ class ToolDispatcher:
         return None
 
     @property
-    def config(self) -> Config:
+    def config(self) -> config_model.Config:
         """The run's config, as the tool list reads it."""
         return self._config
 

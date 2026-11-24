@@ -28,7 +28,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import portable
 from agent6.app import role_providers
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.providers import (
     claude_code,
@@ -1014,11 +1014,11 @@ def test_plan_usage_from_rate_limit_maps_the_windows() -> None:
 
 
 def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Path) -> None:
-    def cfg(effort: str | None) -> Config:
+    def cfg(effort: str | None) -> config_model.Config:
         role: dict[str, Any] = {"model": "claude/claude-haiku-4-5"}
         if effort:
             role["effort"] = effort
-        return Config.model_validate(
+        return config_model.Config.model_validate(
             {
                 "providers": {"claude": {"backend": "claude_code", "binary": "/opt/claude"}},
                 "models": {"default": role},
@@ -1434,7 +1434,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     from agent6.providers import claude_code_wire
     from agent6.tools import results
 
-    cc = Config.model_validate(
+    cc = config_model.Config.model_validate(
         {
             "providers": {"claude": {"backend": "claude_code"}},
             "models": {"default": {"model": "claude/claude-haiku-4-5"}},
@@ -1447,7 +1447,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
         < compaction_elision.TOOL_RESULT_CAP_BYTES
     )
     assert (
-        session_runtime.tool_result_cap_bytes(Config(), "worker")
+        session_runtime.tool_result_cap_bytes(config_model.Config(), "worker")
         == compaction_elision.TOOL_RESULT_CAP_BYTES
     )
     assert (
@@ -1483,9 +1483,9 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
 def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     """The result cap follows the role that drives the session, the planner's on a plan."""
     from agent6.app.session import runtime as session_runtime
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {
                 "claude": {"backend": "claude_code"},

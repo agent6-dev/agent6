@@ -12,7 +12,8 @@ from agent6 import child_records, kinds, paths
 from agent6.app import stamps, worktrees
 from agent6.app.parallel import launch as child_launch
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, RoleModel
+from agent6.config import harness_config, validation
+from agent6.config import model as config_model
 from tests import launch_env
 
 
@@ -26,8 +27,8 @@ def child(tmp_path: pathlib.Path) -> child_records.ChildSpec:
     )
 
 
-def resolved_config() -> Config:
-    cfg = Config.model_validate(
+def resolved_config() -> config_model.Config:
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {
@@ -41,7 +42,7 @@ def resolved_config() -> Config:
     return cfg.model_copy(
         update={
             "models": cfg.models.model_copy(
-                update={"worker": RoleModel(effort=None, temperature=None)}
+                update={"worker": harness_config.RoleModel(effort=None, temperature=None)}
             )
         }
     )
@@ -51,7 +52,7 @@ def test_four_explicit_routes_without_default_are_not_runnable(
     child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """All executable roles configured still require the public default-route baseline."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {
@@ -65,10 +66,10 @@ def test_four_explicit_routes_without_default_are_not_runnable(
     assert "default" not in tomllib.loads(written.path.read_text())["models"]
     for name in (child_launch.ENV, "AGENT6_CHILD"):
         monkeypatch.delenv(name, raising=False)
-    with pytest.raises(ConfigError, match=r"No models\.default\.model configured"):
+    with pytest.raises(validation.ConfigError, match=r"No models\.default\.model configured"):
         session_setup.load_session_config(child.worktree, (written.path,), mode="run")
     launch_env.mark_child(monkeypatch, written.path.parent, config=written.path)
-    with pytest.raises(ConfigError, match="child snapshot"):
+    with pytest.raises(validation.ConfigError, match="child snapshot"):
         session_setup.load_session_config(child.worktree, (written.path,), mode="run")
 
 
@@ -90,7 +91,7 @@ def test_a_selected_reviewer_keeps_the_parents_distinct_quorum_routes(
     child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A pinned reviewer must not replace the route of a reviewer that inherits its model."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
             "models": {"default": {"model": "p/a"}},
@@ -174,7 +175,9 @@ def test_snapshot_notes_only_unrepresentable_temperatures(
     cfg = resolved_config()
     cfg = cfg.model_copy(
         update={
-            "models": cfg.models.model_copy(update={"worker": RoleModel(temperature=temperature)})
+            "models": cfg.models.model_copy(
+                update={"worker": harness_config.RoleModel(temperature=temperature)}
+            )
         }
     )
     # A route selector keeps the worker's sampling: the selected temperature rides along.
@@ -229,7 +232,7 @@ def test_lineage_refuses_malformed_config_notes(
         f' "notes": {raw}}}',
     )
     monkeypatch.setenv(child_launch.ENV, str(path))
-    with pytest.raises(ConfigError, match="child launch"):
+    with pytest.raises(validation.ConfigError, match="child launch"):
         stamps.parallel_lineage()
 
 
@@ -269,5 +272,5 @@ def test_marked_snapshot_refuses_mismatch_or_malformed_models(
                 f'[models.{r}]\nmodel = "p/base"\n' for r in kinds.MODEL_ROLES if r != "default"
             )
         )
-    with pytest.raises(ConfigError, match=refusal):
+    with pytest.raises(validation.ConfigError, match=refusal):
         session_setup.load_session_config(child.worktree, (path,), mode="run")

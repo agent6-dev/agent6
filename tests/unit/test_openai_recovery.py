@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_conversation, loop_state, run_chain
 from agent6.providers import openai, openai_parse, openai_recovery, provider_types
 from agent6.sessions import event_log
@@ -108,10 +108,10 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: pathlib.Path
     conversation = loop_conversation.Conversation()
     conversation.notice("Write a.py")
     assistant = conversation.assistant(response.raw["content"])
-    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config())
     harness = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=openai.OpenAIProvider(api_key="k", model="weak-model"),
         dispatcher=dispatcher,
         logger=lambda _: None,
@@ -214,10 +214,10 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     (tmp_path / "a.py").write_text("answer = 42\n", encoding="utf-8")
     journal = tmp_path / "logs.jsonl"
     events = event_log.EventSink(journal)
-    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=Config(), events=events)
+    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config(), events=events)
     harness = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=provider,
         dispatcher=dispatcher,
         events=events,
@@ -277,10 +277,10 @@ def test_malformed_recovered_call_returns_only_its_error(
     conversation = loop_conversation.Conversation()
     conversation.notice("Read a.py")
     assistant = conversation.assistant(response.raw["content"])
-    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=config_model.Config())
     harness = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config(),
+        config=config_model.Config(),
         provider=provider,
         dispatcher=dispatcher,
         logger=lambda _: None,

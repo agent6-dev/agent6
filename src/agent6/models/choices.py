@@ -14,13 +14,14 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import kinds
-from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, secret_store
+from agent6.config import io, layer, layer_data, layer_presets, secret_store, validation
+from agent6.config import model as config_model
 from agent6.models import cache, validate
 from agent6.sessions import manifest as sessions_manifest
 
 
 def provider_model_choices(
-    cfg: Config, provider: str, *, on_error: Callable[[str], None] | None = None
+    cfg: config_model.Config, provider: str, *, on_error: Callable[[str], None] | None = None
 ) -> list[str]:
     """Return the model ids a provider serves: the roles' models plus its listing.
 
@@ -56,7 +57,7 @@ def provider_model_choices(
     return sorted(out)
 
 
-def route_choices(cfg: Config) -> list[str]:
+def route_choices(cfg: config_model.Config) -> list[str]:
     """Return every `provider/model` a run can be pointed at.
 
     Cache-only, so a picker never waits on the network; `agent6 model <role> <provider>`
@@ -78,7 +79,7 @@ def route_choices(cfg: Config) -> list[str]:
     return sorted(out)
 
 
-def route_for(cfg: Config, mode: str) -> str:
+def route_for(cfg: config_model.Config, mode: str) -> str:
     """Return the `provider/model` a session of a mode runs under, or "" when unset.
 
     Args:
@@ -104,7 +105,7 @@ def available_routes(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...]) 
     """
     try:
         cfg = layer.load_effective(cwd, config_paths).config
-    except ConfigError:
+    except validation.ConfigError:
         return []
     return route_choices(cfg)
 
@@ -121,7 +122,7 @@ def default_preset(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...]) ->
     """
     try:
         return layer_presets.preset_catalog(cwd, config_paths).selected
-    except ConfigError:
+    except validation.ConfigError:
         return ""
 
 
@@ -141,7 +142,7 @@ def default_route(
     """
     try:
         cfg = layer.load_effective(cwd, config_paths, preset=preset).config
-    except ConfigError:
+    except validation.ConfigError:
         return ""
     return route_for(cfg, mode)
 

@@ -6,7 +6,8 @@ import pydantic
 import pytest
 
 from agent6 import paths
-from agent6.config import Config, ConfigError, io, write
+from agent6.config import io, validation, write
+from agent6.config import model as config_model
 from agent6.ui.cli import entry
 
 
@@ -16,7 +17,7 @@ from agent6.ui.cli import entry
 def test_schema_refuses_names_that_cannot_be_one_bare_key(name: str) -> None:
     """Provider names cannot create extra dotted components or require TOML quoting."""
     with pytest.raises(pydantic.ValidationError) as caught:
-        Config.model_validate({"providers": {name: {"backend": "openai"}}})
+        config_model.Config.model_validate({"providers": {name: {"backend": "openai"}}})
     expected = (
         (
             f"provider name {name!r} is not a valid TOML bare key"
@@ -40,7 +41,7 @@ def test_bare_provider_names_roundtrip_through_the_editor(
     assert (
         write.set_config_value(tmp_path, f"providers.{name}.base_url", "https://p.test/v1") is None
     )
-    config = Config.model_validate(io.read_toml_file(paths.global_config_path()))
+    config = config_model.Config.model_validate(io.read_toml_file(paths.global_config_path()))
     assert config.providers[name].backend == "openai"
 
 
@@ -79,7 +80,7 @@ def test_provider_writers_use_the_schema_name_refusal(tmp_path: pathlib.Path, ed
                 error = write.set_config_value(
                     tmp_path, f"presets.custom.providers.{io.toml_key(name)}.backend", "openai"
                 )
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         error = str(exc)
     assert error == expected
     assert not paths.global_config_path().exists()

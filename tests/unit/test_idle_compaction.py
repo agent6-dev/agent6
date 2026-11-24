@@ -10,8 +10,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import config
 from agent6.app import role_providers
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.harness import loop_conversation, loop_steer, operator_bridge
 from agent6.harness.compaction import driver, window
 from agent6.providers import provider_types
@@ -25,10 +26,10 @@ from tests.unit import test_harness
 
 def test_missing_or_cli_provider_supplies_no_idle_limits() -> None:
     """An unresolved fixture or a CLI-owned session cannot arm a provider deadline."""
-    cfg = config.Config.model_validate({"providers": {"cli": {"backend": "claude_code"}}})
+    cfg = config_model.Config.model_validate({"providers": {"cli": {"backend": "claude_code"}}})
     assert role_providers.idle_compaction(cfg, None) is None
     for route in ("missing/model", "cli/model"):
-        assert role_providers.idle_compaction(cfg, config.RoleModel(model=route)) is None
+        assert role_providers.idle_compaction(cfg, harness_config.RoleModel(model=route)) is None
 
 
 def test_worker_clock_uses_the_start_of_the_successful_attempt() -> None:

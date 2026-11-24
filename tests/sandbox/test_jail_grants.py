@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import jail, jail_session
 from agent6.tools import dispatch
 from agent6.tools import policy as tools_policy
@@ -128,7 +128,7 @@ def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_w
     repo.mkdir()
     grant = scratch / "grant"
     grant.symlink_to(first)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "isolation": isolation,
@@ -171,7 +171,7 @@ def test_a_symlinked_grant_is_readable_at_its_spelled_name(
     (real / "VERSION").write_text("1.2\n", encoding="utf-8")
     link.symlink_to(real, target_is_directory=True)
     repo.mkdir()
-    cfg = Config.model_validate({"sandbox": {"extra_read_paths": [str(link)]}})
+    cfg = config_model.Config.model_validate({"sandbox": {"extra_read_paths": [str(link)]}})
     built = tools_policy.jail_policy(
         repo, cfg, isolation, ("cat", f"{link}/VERSION"), network="none", timeout_s=10.0
     )
@@ -247,7 +247,7 @@ def test_a_hidden_path_is_masked_under_a_grants_spelled_name_too(scratch: pathli
     (real / "VERSION").write_text("1.2\n", encoding="utf-8")
     link.symlink_to(real, target_is_directory=True)
     repo.mkdir()
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {
                 "extra_read_paths": [str(link)],

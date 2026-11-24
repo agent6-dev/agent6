@@ -26,7 +26,7 @@ from typing import Any
 
 from agent6 import child_env, kinds, pack, paths
 from agent6.app import confine
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.sessions import lock
 from agent6.tools import policy as tools_policy
@@ -112,7 +112,7 @@ def _exit_on_signal(signum: int, _frame: types.FrameType | None) -> None:
 @contextlib.contextmanager
 def exec_policy(
     cwd: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     isolation: kinds.IsolationLevel,
     argv: tuple[str, ...],
     network: kinds.NetworkMode | None = None,
@@ -231,7 +231,7 @@ CONTAINER_EXEC_REFUSAL = (
 )
 
 
-def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
+def exec_new(cfg: config_model.Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
     """Run a command, or the operator's shell, in a fresh sandbox built from the config.
 
     No session: the policy a run's commands get (mounts, hidden paths, network, isolation

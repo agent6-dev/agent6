@@ -35,7 +35,8 @@ from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
 from agent6.app.parallel import children as app_children
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, layer
+from agent6.config import layer
+from agent6.config import model as config_model
 from agent6.harness.parallel import repo as child_repo
 from agent6.providers import provider_types
 from agent6.sessions import ipc, lock
@@ -1553,9 +1554,9 @@ def test_dispatch_setup_keeps_timeout_and_wraps_jail_unavailability(
     """Setup retains its jail timeout and reports jail refusal through prepare, not an abort."""
     from agent6.sandbox import jail, jail_session
 
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
-        ("true",)
-    )
+    cfg = config_model.Config.model_validate(
+        {"sandbox": {"run_commands": "allow"}}
+    ).with_setup_command(("true",))
     seen: list[tuple[tuple[str, ...], float]] = []
 
     def run(
@@ -1619,7 +1620,7 @@ def test_a_failed_setup_command_says_when_it_ran_with_no_route_out(
 
     The line prints only where the run's commands have no route off the machine.
     """
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"network": network},
             "git": {"worktree": {"setup_command": ["uv", "sync"]}},
@@ -1648,7 +1649,7 @@ def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
     tmp_path: pathlib.Path,
 ) -> None:
     """The refusal's example was `uv sync`, which fails under the default network."""
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": [".venv/bin/python", "-m", "pytest"]},

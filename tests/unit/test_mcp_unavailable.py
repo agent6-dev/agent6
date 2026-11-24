@@ -16,13 +16,13 @@ import pathlib
 import pytest
 
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sessions import event_log
 from agent6.viewmodel import transcript
 
 
-def _cfg(command: list[str]) -> Config:
-    return Config.model_validate(
+def _cfg(command: list[str]) -> config_model.Config:
+    return config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"notes": {"command": command}}}}
     )
 

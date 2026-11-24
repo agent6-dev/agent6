@@ -14,7 +14,7 @@ from collections.abc import Iterator
 import pytest
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail
 from agent6.tools import policy
 
@@ -56,7 +56,7 @@ def _connect(
     if python is None:
         pytest.skip("no /usr/bin/python3 for the jailed client")
     argv = (python, "-c", _CONNECT, name)
-    built = policy.jail_policy(root, Config(), level, argv, network=network)
+    built = policy.jail_policy(root, config_model.Config(), level, argv, network=network)
     return jail.run_in_jail(built)
 
 

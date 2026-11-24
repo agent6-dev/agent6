@@ -11,9 +11,9 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import budget, config
+from agent6 import budget
 from agent6.app import conversation_state, role_providers
-from agent6.config import secret_store
+from agent6.config import provider_config, secret_store
 from agent6.harness import loop_snapshot, loop_state
 from agent6.harness.compaction import driver
 from agent6.providers import (
@@ -108,7 +108,7 @@ def test_worker_summary_keeps_the_wire_prefix_and_bills_the_same_tracker(
         )
     else:
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-        entry = config.ChatGPTProviderEntry(backend="chatgpt")
+        entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
         secret_store.save_oauth_grant(
             "test",
             secret_store.StoredGrant(

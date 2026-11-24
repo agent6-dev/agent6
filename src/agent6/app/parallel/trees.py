@@ -7,7 +7,7 @@ import pathlib
 import re
 
 from agent6 import errors
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness.parallel import repo as child_repo
 from agent6.sandbox import detect, jail
 from agent6.sessions import child_dispatch
@@ -68,7 +68,9 @@ def awaits_steer(record: pathlib.Path, group: str) -> bool:
     )
 
 
-def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cfg: Config) -> str:
+def preserve(
+    origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cfg: config_model.Config
+) -> str:
     """Pin both end trees and return what still needs the clone, or an empty reason.
 
     Args:

@@ -17,7 +17,7 @@ from agent6.app import (
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.parallel import launch as child_launch
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_snapshot, run_chain
 from agent6.sandbox import detect, jail
 from agent6.sessions import event_log, ipc, journal, process
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 def detach_to_background(
     *,
     frontend: app_frontend.SessionFrontend,
-    cfg: Config,
+    cfg: config_model.Config,
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
     flags: Sequence[str],
@@ -170,7 +170,7 @@ def tree_left(wf: loop.Harness, mode: str) -> str:
 
 
 def finish_chain(
-    cfg: Config,
+    cfg: config_model.Config,
     layout: sessions_layout.SessionLayout,
     inputs: execution.ExecutionInputs,
     *,

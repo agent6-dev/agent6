@@ -14,7 +14,8 @@ import pytest
 
 from agent6 import kinds, paths
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import event_log, layout
 from agent6.tools import command_tools, operator_prompts, policy, results, target_policy
@@ -59,7 +60,7 @@ def test_injected_transport_serves_setup_commands_and_verification(
     setup = (tool.name, "setup")
     gate = (tool.name, "verify")
     model = (tool.name, "model")
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
             "harness": {"verify": {"command": gate}, "command_checkin_s": 0},
@@ -113,7 +114,7 @@ def test_injected_transport_serves_setup_commands_and_verification(
             prompts=operator_prompts.OperatorPrompts(session_dir=session_layout.session_dir),
             loop_log=lambda _line: None,
             mcp_manager=None,
-            rm_role=RoleModel(provider="test", model="test"),
+            rm_role=harness_config.RoleModel(provider="test", model="test"),
             command_access=access,
         ).dispatcher
         cleanup.callback(dispatcher.close)

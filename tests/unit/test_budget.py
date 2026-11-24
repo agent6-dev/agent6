@@ -214,13 +214,13 @@ def test_the_caps_have_one_home() -> None:
     import inspect
     import pathlib
 
-    from agent6.config import BudgetConfig
+    from agent6.config import harness_config
 
     params = inspect.signature(budget.BudgetTracker).parameters
     for name in ("max_usd", "max_tokens_fallback", "max_plan_points"):
         assert params[name].default is inspect.Parameter.empty, name
 
-    cfg = BudgetConfig()
+    cfg = harness_config.BudgetConfig()
     docs = pathlib.Path(__file__).resolve().parents[2] / "docs" / "config.md"
     row_usd, row_tokens = "", ""
     for line in docs.read_text(encoding="utf-8").splitlines():

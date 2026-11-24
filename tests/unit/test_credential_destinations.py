@@ -14,7 +14,8 @@ import httpx2
 import pytest
 
 from agent6 import kinds
-from agent6.config import load_config, validate_base_url
+from agent6.config import model as config_model
+from agent6.config import sandbox_config
 from agent6.providers import oauth_protocol, provider_types, stream_lifecycle, transport
 
 
@@ -29,7 +30,7 @@ from agent6.providers import oauth_protocol, provider_types, stream_lifecycle, t
 def test_a_base_url_carries_no_userinfo_or_fragment(url: str, word: str) -> None:
     """A credential-bearing URL with embedded credentials or a fragment refuses at config load."""
     with pytest.raises(ValueError, match=word):
-        validate_base_url(url)
+        sandbox_config.validate_base_url(url)
 
 
 def test_a_provider_block_with_userinfo_refuses_at_load(tmp_path: pathlib.Path) -> None:
@@ -39,7 +40,7 @@ def test_a_provider_block_with_userinfo_refuses_at_load(tmp_path: pathlib.Path) 
         encoding="utf-8",
     )
     with pytest.raises(Exception, match="userinfo"):
-        load_config(cfg)
+        config_model.load_config(cfg)
 
 
 @pytest.fixture

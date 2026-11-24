@@ -18,7 +18,7 @@ import pytest
 from agent6.app import execution, execution_finish, frontend, reporter
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop as harness_loop
 from agent6.harness import loop_snapshot
 from agent6.sessions import event_log, ipc, process
@@ -55,7 +55,7 @@ def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(
     layout.ensure()
     execution_finish.detach_to_background(
         frontend=_frontend(calls),
-        cfg=Config(),  # run_commands = ask, nothing granted
+        cfg=config_model.Config(),  # run_commands = ask, nothing granted
         layout=layout,
         cwd=tmp_path,
         flags=["--max-usd", "0.25"],
@@ -73,7 +73,7 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pa
     said: list[str] = []
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     execution_finish.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
@@ -162,7 +162,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     calls: list[tuple[str, Any]] = []
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
+    cfg = config_model.Config.model_validate({"sandbox": {"run_commands": "allow"}})
     process.write_worker_pid(layout.session_dir, os.getpid())
 
     execution_finish.detach_to_background(
@@ -242,7 +242,7 @@ def _stub_execution_internals(
         compact_drop_at_chars=1,
         compact_summarize_at_chars=1,
         keep_recent_chars=1,
-        cfg=Config(),
+        cfg=config_model.Config(),
     )
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
@@ -277,7 +277,7 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
 
     with pytest.raises(RuntimeError, match="provider stream broke"):
         execution.run_execution(
-            Config(),
+            config_model.Config(),
             layout,
             execution.ExecutionInputs(
                 explicit_leaves=frozenset(),
@@ -349,7 +349,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
     cwd.mkdir()
 
     end = execution.run_execution(
-        Config(),
+        config_model.Config(),
         layout,
         execution.ExecutionInputs(
             explicit_leaves=frozenset(),
@@ -421,7 +421,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
     cwd.mkdir()
 
     end = execution.run_execution(
-        Config(),
+        config_model.Config(),
         layout,
         execution.ExecutionInputs(
             explicit_leaves=frozenset(),
@@ -499,7 +499,7 @@ def test_an_answer_streamed_to_the_terminal_is_not_printed_on_it_again(
     cwd = tmp_path / "repo"
     cwd.mkdir()
     end = execution.run_execution(
-        Config(),
+        config_model.Config(),
         layout,
         execution.ExecutionInputs(
             explicit_leaves=frozenset(),

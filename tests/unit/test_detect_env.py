@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail
 from agent6.tools import policy
 
@@ -113,7 +113,7 @@ def test_probe_refuses_over_a_binary_it_cannot_run(
     from agent6.app import preflight
     from agent6.app import reporter as app_reporter
     from agent6.app.session import runtime as session_runtime
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     fake = tmp_path / "agent6-jail"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -127,7 +127,7 @@ def test_probe_refuses_over_a_binary_it_cannot_run(
         reporter = app_reporter.Reporter(out=said.append, err=said.append)
         with pytest.raises(preflight.SessionRefusedError):
             session_runtime.select_isolation(
-                Config(),
+                config_model.Config(),
                 cwd=tmp_path,
                 confirm_unconfined=lambda _level, _cfg: True,
                 reporter=reporter,
@@ -243,7 +243,7 @@ def test_grants_follow_the_launchers_verdict_on_namespaces(
     grant = host_tmp_path / "grant"
     grant.mkdir()
     assert not grant.is_relative_to(root.resolve())
-    cfg = Config.model_validate({"sandbox": {"extra_write_paths": [str(grant)]}})
+    cfg = config_model.Config.model_validate({"sandbox": {"extra_write_paths": [str(grant)]}})
     grants = policy.resolve_grants(cfg, root)
     assert grants.write == ()
     (dropped,) = grants.dropped

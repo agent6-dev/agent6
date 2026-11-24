@@ -19,7 +19,7 @@ from typing import Protocol
 
 from agent6 import budget, kinds
 from agent6.app import frontend
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_snapshot
 from agent6.sessions import event_log, ipc, layout, process
 from agent6.tools import operator_prompts
@@ -187,7 +187,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
         return ask_questions
 
-    def _confirm_unconfined(isolation: kinds.IsolationLevel, cfg: Config) -> bool:
+    def _confirm_unconfined(isolation: kinds.IsolationLevel, cfg: config_model.Config) -> bool:
         """Ask only when the run is unconfined, so the approval never becomes reflexive.
 
         Args:

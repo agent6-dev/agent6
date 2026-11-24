@@ -165,21 +165,25 @@ def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
     Asking regardless told the editor a confined run was unsandboxed, a false statement about the
     run, on the one approval that must never become reflexive.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     front, asked = _frontend(reply="allow once")  # the option this gate offers
-    assert front.confirm_unconfined_autorun("full", Config()) is True
+    assert front.confirm_unconfined_autorun("full", config_model.Config()) is True
     assert asked == [], "a confined run is not dangerous and must not prompt"
 
-    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "allow"}})
+    dangerous = config_model.Config.model_validate(
+        {"sandbox": {"isolation": "none", "run_commands": "allow"}}
+    )
     assert front.confirm_unconfined_autorun("none", dangerous) is True
     assert len(asked) == 1 and "UNSANDBOXED" in asked[0][0]
 
 
 def test_an_unsandboxed_autorun_still_needs_a_human() -> None:
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "allow"}})
+    dangerous = config_model.Config.model_validate(
+        {"sandbox": {"isolation": "none", "run_commands": "allow"}}
+    )
     mute, _ = _frontend(can_ask=False)
     assert mute.confirm_unconfined_autorun("none", dangerous) is False
     denied, _ = _frontend(reply="deny")
@@ -229,11 +233,11 @@ def test_a_child_cannot_dispatch_work_through_acp(
 ) -> None:
     """The parent spawner does not grant work dispatch in a child."""
     monkeypatch.setenv("AGENT6_CHILD", "1")
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     front, _asked = _frontend()
     spawner = front.build_parent_spawner(
-        Config(),
+        config_model.Config(),
         frozenset(),
         pathlib.Path("/x"),
         pathlib.Path("/y"),

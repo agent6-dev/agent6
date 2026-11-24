@@ -10,7 +10,8 @@ from agent6 import paths
 from agent6.app import environment_lease, stamps
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.sandbox import container
 from agent6.sessions import event_log, layout, manifest
 from agent6.tools import operator_prompts
@@ -24,7 +25,7 @@ def test_a_prepared_container_run_settles_its_lease_through_the_dispatcher(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     root = target.discovery.target.host_root
     subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "container", "run_commands": "allow"},
             "container": {"exec": list(target.discovery.exec)},
@@ -67,7 +68,7 @@ def test_a_prepared_container_run_settles_its_lease_through_the_dispatcher(
         prompts=operator_prompts.OperatorPrompts(session_dir=saved.session_dir),
         loop_log=lambda _line: None,
         mcp_manager=None,
-        rm_role=RoleModel(provider="test", model="test"),
+        rm_role=harness_config.RoleModel(provider="test", model="test"),
         command_access=access,
     )
     try:
@@ -95,7 +96,7 @@ def test_a_hidden_path_refusal_releases_the_lease(
     """Preparation that refuses after acquiring leaves no borrower behind."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     root = target.discovery.target.host_root
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "container", "hide_paths": [str(tmp_path / "secret")]},
             "container": {"exec": list(target.discovery.exec)},

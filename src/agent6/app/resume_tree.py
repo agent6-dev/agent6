@@ -23,7 +23,7 @@ from collections.abc import Callable, Collection, Sequence
 from agent6 import errors, kinds, terminal
 from agent6.app import preflight, resume_chain
 from agent6.app import reporter as app_reporter
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop_snapshot
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
@@ -466,7 +466,7 @@ def classify(
     cwd: pathlib.Path,
     layout: sessions_layout.SessionLayout,
     manifest: sessions_manifest.SessionManifest,
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     mode: kinds.LoopMode,
     snapshot: loop_snapshot.SessionSnapshot,

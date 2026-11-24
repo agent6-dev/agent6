@@ -10,7 +10,7 @@ import pytest
 
 from agent6 import child_records, paths
 from agent6.app import worktrees
-from agent6.config import Config
+from agent6.config import model as config_model
 from tests.unit import test_children_background as background
 from tests.unit import test_children_cli as cli
 
@@ -26,7 +26,9 @@ def test_cleanup_requires_both_dirty_trees(
 ) -> None:
     repo = tmp_path / "repo"
     background._init_repo(repo)
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    cfg = config_model.Config.model_validate(
+        {"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}
+    )
     group = worktrees.place(cfg, repo, "parent-p1")
     clone = group / "child-1"
     sid = "parent-p1-l1"
@@ -89,7 +91,9 @@ def test_a_sweep_under_a_weaker_level_than_the_child_ran_under_keeps_the_clone(
     """
     repo = tmp_path / "repo"
     background._init_repo(repo)
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    cfg = config_model.Config.model_validate(
+        {"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}
+    )
     clone = worktrees.place(cfg, repo, "parent-p1") / "child-1"
     sid = "parent-p1-l1"
     cli._git(repo, "clone", str(repo), str(clone))
@@ -128,7 +132,9 @@ def test_cleanup_keeps_a_clone_for_nested_work_only(
     cli._git(repo, "update-index", "--add", "--cacheinfo", f"160000,{link},vendor")
     cli._git(repo, "commit", "-q", "-m", "track a nested repository")
     base = cli._git(repo, "rev-parse", "HEAD")
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    cfg = config_model.Config.model_validate(
+        {"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}
+    )
     group = worktrees.place(cfg, repo, "parent-p1")
     clone = group / "child-1"
     sid = "parent-p1-l1"
@@ -171,7 +177,9 @@ def test_cleanup_removes_a_reviewer_clone_that_holds_a_command_artifact(
     """A reviewer's end records no tree, so one unignored file kept its clone."""
     repo = tmp_path / "repo"
     background._init_repo(repo)
-    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    cfg = config_model.Config.model_validate(
+        {"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}
+    )
     group = worktrees.place(cfg, repo, "parent-rfinal1")
     clone = group / "child-1"
     sid = "parent-rfinal1-l1"

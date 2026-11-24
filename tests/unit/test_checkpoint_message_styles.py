@@ -12,7 +12,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, loop_state, run_chain
 from agent6.sessions import event_log
 from agent6.tools import dispatch
@@ -23,7 +23,7 @@ from agent6.vcs.git import read as git_read
 def _wf(
     tmp_path: pathlib.Path, style: str, provider: Any = None, logger: Any = print
 ) -> loop.Harness:
-    cfg = Config.model_validate({"git": {"commit": {"checkpoint_message": style}}})
+    cfg = config_model.Config.model_validate({"git": {"commit": {"checkpoint_message": style}}})
     git_ops.init_repo(tmp_path)
     return loop.Harness(
         chain=run_chain.RunChain(

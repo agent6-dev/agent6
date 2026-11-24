@@ -16,7 +16,8 @@ from agent6 import errors, kinds, pack, pack_manifest, paths
 from agent6.app import reporter as app_reporter
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, MCPServerEntry
+from agent6.config import model as config_model
+from agent6.config import sandbox_config
 from agent6.models import registry
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import policy as tools_policy
@@ -60,7 +61,7 @@ def persistent_home_warning(isolation: kinds.IsolationLevel, persistent: pathlib
 
 
 def _confinement_warning(
-    isolation: kinds.IsolationLevel, env: detect.Environment, cfg: Config
+    isolation: kinds.IsolationLevel, env: detect.Environment, cfg: config_model.Config
 ) -> str | None:
     """Return the one warning about what the resolved level does not confine, if any."""
     if cfg.sandbox.isolation == "container":
@@ -101,7 +102,7 @@ def _confinement_warning(
 def warn_sandbox_gaps(
     isolation: kinds.IsolationLevel,
     env: detect.Environment,
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     root: pathlib.Path,
     worktree_git_dir: pathlib.Path | None = None,
@@ -186,7 +187,7 @@ def warn_sandbox_gaps(
 def warn_unscoped_sockets(
     isolation: kinds.IsolationLevel,
     env: detect.Environment,
-    cfg: Config,
+    cfg: config_model.Config,
     *,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
@@ -243,7 +244,9 @@ def exposure_warning(hidden: pathlib.Path, region: pathlib.Path, source: str) ->
     )
 
 
-def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporter) -> None:
+def _warn_grants(
+    cfg: config_model.Config, root: pathlib.Path, reporter: app_reporter.Reporter
+) -> None:
     """Name each grant the run leaves out, and each that is the home directory or above it.
 
     Args:
@@ -264,7 +267,7 @@ def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporte
 
 
 def warn_cleartext_credential_endpoints(
-    cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
+    cfg: config_model.Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
 ) -> None:
     """Warn once per endpoint sending its credential over plaintext http to a non-loopback host.
 
@@ -283,7 +286,7 @@ def warn_cleartext_credential_endpoints(
         )
 
 
-def home_grant_warnings(cfg: Config) -> tuple[str, ...]:
+def home_grant_warnings(cfg: config_model.Config) -> tuple[str, ...]:
     """Return one warning per path grant that is the operator's home directory or above it.
 
     Such a grant reaches the credentials other tools keep under the home directory.
@@ -354,7 +357,9 @@ def check_workspace_outside_private_dirs(root: pathlib.Path) -> str | None:
     return None
 
 
-def check_workspace_outside_hidden_paths(cfg: Config, root: pathlib.Path) -> str | None:
+def check_workspace_outside_hidden_paths(
+    cfg: config_model.Config, root: pathlib.Path
+) -> str | None:
     """Return the refusal when the workspace is a `[sandbox].hide_paths` entry or under one.
 
     Such a workspace hides the run's files from its own tools; the launcher's rootfs setup
@@ -380,7 +385,9 @@ def check_workspace_outside_hidden_paths(cfg: Config, root: pathlib.Path) -> str
     return None
 
 
-def check_protect_git_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
+def check_protect_git_support(
+    cfg: config_model.Config, isolation: kinds.IsolationLevel
+) -> str | None:
     """Return the refusal when `protect_git = "on"` cannot be honored here, else None.
 
     `on` requires `full` `sandbox.isolation` to bind-remount `.git` read-only; `auto` degrades
@@ -404,7 +411,7 @@ def check_protect_git_support(cfg: Config, isolation: kinds.IsolationLevel) -> s
 
 
 def check_jail_home(
-    cfg: Config,
+    cfg: config_model.Config,
     isolation: kinds.IsolationLevel,
     workspace: pathlib.Path,
     worktree_git_dir: pathlib.Path | None = None,
@@ -452,7 +459,7 @@ def check_jail_home(
 
 
 def _grant_regions(
-    cfg: Config,
+    cfg: config_model.Config,
     root: pathlib.Path,
     isolation: kinds.IsolationLevel,
     worktree_git_dir: pathlib.Path | None = None,
@@ -523,7 +530,7 @@ def _grant_regions(
 
 
 def unmaskable_exposures(
-    cfg: Config,
+    cfg: config_model.Config,
     isolation: kinds.IsolationLevel,
     root: pathlib.Path,
     worktree_git_dir: pathlib.Path | None = None,
@@ -558,7 +565,7 @@ def unmaskable_exposures(
 
 
 def check_hide_paths_support(
-    cfg: Config,
+    cfg: config_model.Config,
     isolation: kinds.IsolationLevel,
     root: pathlib.Path,
     worktree_git_dir: pathlib.Path | None = None,
@@ -600,7 +607,7 @@ def check_hide_paths_support(
 
 
 def mcp_network_refusal(
-    name: str, srv: MCPServerEntry, isolation: kinds.IsolationLevel
+    name: str, srv: sandbox_config.MCPServerEntry, isolation: kinds.IsolationLevel
 ) -> str | None:
     """Return the refusal when the server named a network this host cannot give it, else None.
 
@@ -626,7 +633,9 @@ def mcp_network_refusal(
     )
 
 
-def check_mcp_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
+def check_mcp_network_support(
+    cfg: config_model.Config, isolation: kinds.IsolationLevel
+) -> str | None:
     """Return the first network refusal among the servers a run starts, else None.
 
     Args:
@@ -672,7 +681,7 @@ def check_workspace_packs(
 
 
 def startup_refusal(
-    cfg: Config,
+    cfg: config_model.Config,
     isolation: kinds.IsolationLevel,
     workspace: pathlib.Path,
     *,
@@ -704,7 +713,7 @@ def startup_refusal(
 
 
 def config_refusal(
-    cfg: Config,
+    cfg: config_model.Config,
     isolation: kinds.IsolationLevel,
     workspace: pathlib.Path,
     *,
@@ -751,7 +760,7 @@ def config_refusal(
 
 
 def check_write_grants_outside_git_dir(
-    cfg: Config, workspace: pathlib.Path, worktree_git_dir: pathlib.Path | None
+    cfg: config_model.Config, workspace: pathlib.Path, worktree_git_dir: pathlib.Path | None
 ) -> str | None:
     """Return the refusal for a write grant at or inside the recorded git dir, else None.
 
@@ -779,7 +788,7 @@ def check_write_grants_outside_git_dir(
     return None
 
 
-def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str | None:
+def check_network_support(cfg: config_model.Config, isolation: kinds.IsolationLevel) -> str | None:
     """Return the refusal when the network config needs what the isolation cannot give, else None.
 
     `session` requires `full` `sandbox.isolation` and refuses below it, while `auto` degrades
@@ -807,7 +816,7 @@ def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str |
     )
 
 
-def resolved_config_values(cfg: Config) -> dict[str, object]:
+def resolved_config_values(cfg: config_model.Config) -> dict[str, object]:
     """Return every config leaf whose effective value differs from its raw one.
 
     Args:

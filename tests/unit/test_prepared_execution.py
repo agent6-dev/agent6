@@ -14,7 +14,8 @@ from agent6 import kinds
 from agent6.app import execution, stamps, worktree_setup
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config, RoleModel
+from agent6.config import harness_config
+from agent6.config import model as config_model
 from agent6.harness import loop_conversation, loop_state, run_chain
 from agent6.harness.verify import gate as verify_gate
 from agent6.providers import provider_types
@@ -35,8 +36,8 @@ def _noop(*_args: object, **_kwargs: object) -> None:
     """Accept any call and do nothing."""
 
 
-def _config(**sandbox: object) -> Config:
-    return Config.model_validate(
+def _config(**sandbox: object) -> config_model.Config:
+    return config_model.Config.model_validate(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow", **sandbox},
             "harness": {"verify": {"command": ["sh", "-c", "echo gate"]}, "command_checkin_s": 0},
@@ -46,7 +47,7 @@ def _config(**sandbox: object) -> Config:
 
 def _tools(
     root: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     isolation: kinds.IsolationLevel = "none",
     *,
     approver: operator_prompts.Approver | None = None,
@@ -72,7 +73,7 @@ def _tools(
         ),
         loop_log=lambda _line: None,
         mcp_manager=None,
-        rm_role=RoleModel(provider="test", model="test"),
+        rm_role=harness_config.RoleModel(provider="test", model="test"),
     )
 
 
@@ -238,7 +239,7 @@ def test_run_execution_prepares_before_inference_and_reuses_the_session(
     real_open = jail_session.JailSession.open
     real_prepare = session_runtime.prepare_local_execution
     real_worktree_prepare = worktree_setup.prepare
-    providers = mock.Mock(rm_role=RoleModel(provider="test", model="test"))
+    providers = mock.Mock(rm_role=harness_config.RoleModel(provider="test", model="test"))
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     monkeypatch.setattr(
@@ -258,7 +259,9 @@ def test_run_execution_prepares_before_inference_and_reuses_the_session(
         accesses.append(access)
         return access
 
-    def infer(current: Config, _budget: object, available: Callable[[str], bool]) -> Config:
+    def infer(
+        current: config_model.Config, _budget: object, available: Callable[[str], bool]
+    ) -> config_model.Config:
         assert order == ["prepare"] and len(opened) == len(accesses) == 1
         assert available == opened[0].executable_available
         assert opened[0]._proc.poll() is None
@@ -282,7 +285,7 @@ def test_run_execution_prepares_before_inference_and_reuses_the_session(
         return current.with_verify_command(inferred.argv)
 
     def observe_worktree(
-        current: Config,
+        current: config_model.Config,
         cwd: pathlib.Path,
         *,
         runner: worktree_setup.SetupRunner,

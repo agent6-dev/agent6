@@ -13,7 +13,7 @@ from unittest import mock
 import pytest
 
 from agent6.app import reporter
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import (
     loop,
     loop_conversation,
@@ -286,7 +286,7 @@ def _red_gated_run(tmp_path: pathlib.Path) -> tuple[loop.Harness, loop_state.Loo
     dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config.model_validate(
+        config=config_model.Config.model_validate(
             {
                 "harness": {
                     "verify": {"command": ["true"], "when": "finish", "retries": 2},

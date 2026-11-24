@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect, jail
 from agent6.tools import mcp_client
 from agent6.ui.cli import check_cmds
@@ -65,7 +65,7 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_start))
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_unexpected_network))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"remote": {"url": "https://mcp.example"}}}}
     )
 
@@ -93,7 +93,7 @@ def test_mcp_check_applies_the_runs_config_refusals_before_a_probe(
     monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _partial)
     monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_unexpected_start))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {setting: value},
             "mcp": {"enabled": True, "servers": {"files": {"command": ["server"]}}},
@@ -120,7 +120,7 @@ def test_mcp_check_reports_a_session_network_refusal(
     monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_refuse_network))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "mcp": {
                 "enabled": True,
@@ -154,7 +154,7 @@ def test_a_server_script_inside_the_workspace_is_checked(
     (repo / "server.py").write_text(_SERVER, encoding="utf-8")
     monkeypatch.chdir(repo)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"inrepo": {"command": [_JAIL_PYTHON, "server.py"]}}}}
     )
 

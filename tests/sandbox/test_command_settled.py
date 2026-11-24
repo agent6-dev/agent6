@@ -11,7 +11,7 @@ import pytest
 from agent6 import paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import guards, loop, loop_conversation, loop_state, run_chain, tool_effects
 from agent6.providers import provider_types
 from agent6.tools import dispatch, results
@@ -24,7 +24,7 @@ def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatch
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
     session_dir.mkdir(exist_ok=True)
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "sandbox": {"run_commands": "allow"},
             "harness": {"command_checkin_s": checkin},
@@ -59,7 +59,7 @@ def test_settled_accounting_follows_the_actual_command_result(
     d = _dispatcher(tmp_path, checkin=0.1 if action == "handback" else 30.0)
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path / "repo"),
-        config=Config(),
+        config=config_model.Config(),
         provider=mock.MagicMock(),
         dispatcher=d,
         logger=lambda _line: None,

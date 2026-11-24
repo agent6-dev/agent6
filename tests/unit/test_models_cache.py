@@ -14,12 +14,7 @@ import httpx2
 import pytest
 
 from agent6 import kinds
-from agent6.config import (
-    AnthropicProviderEntry,
-    ChatGPTProviderEntry,
-    OpenAIProviderEntry,
-    secret_store,
-)
+from agent6.config import provider_config, secret_store
 from agent6.models import cache as models_cache
 from agent6.models import listing_store, pricing
 from agent6.models import registry as models_registry
@@ -47,7 +42,9 @@ def test_chatgpt_listing_refuses_old_format_entry_before_sending_a_bearer(
             match=r"No ChatGPT sign-in stored for provider 'work'.*agent6 connect work",
         ) as refused,
     ):
-        models_cache._fetch("work", ChatGPTProviderEntry(backend="chatgpt"), None, 1)
+        models_cache._fetch(
+            "work", provider_config.ChatGPTProviderEntry(backend="chatgpt"), None, 1
+        )
     assert refused.value.cause == "missing"
     request.assert_not_called()
 
@@ -57,7 +54,7 @@ def test_chatgpt_listing_uses_holder_without_refresh_and_falls_back_to_cache(
 ) -> None:
     """An expired bound bearer goes through the holder without rotating during a listing."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     secret_store.save_oauth_grant(
         "work", oauth.stored_grant_for(oauth_protocol.TokenGrant("expired", "RT", 1), entry, now=1)
     )
@@ -102,7 +99,9 @@ def test_fetches_and_caches_openai(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(transport, "http_request", _ok_response(["gpt-x", "gpt-y"]))
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://api.openai.com/v1")
+    entry = provider_config.OpenAIProviderEntry(
+        backend="openai", base_url="https://api.openai.com/v1"
+    )
     out = models_cache.list_models("openai", entry, "sk-test")
     assert out == ["gpt-x", "gpt-y"]
     cached = json.loads((cache_home / "models" / "openai.json").read_text())
@@ -112,20 +111,22 @@ def test_fetches_and_caches_openai(
 @pytest.mark.parametrize(
     "entry",
     [
-        OpenAIProviderEntry(backend="openai", base_url="https://models.example/v1"),
-        ChatGPTProviderEntry(backend="chatgpt", base_url="https://models.example/v1"),
+        provider_config.OpenAIProviderEntry(backend="openai", base_url="https://models.example/v1"),
+        provider_config.ChatGPTProviderEntry(
+            backend="chatgpt", base_url="https://models.example/v1"
+        ),
     ],
 )
 @pytest.mark.parametrize("cap", [16, 1024])
 def test_model_listings_use_the_capped_request(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-    entry: OpenAIProviderEntry | ChatGPTProviderEntry,
+    entry: provider_config.OpenAIProviderEntry | provider_config.ChatGPTProviderEntry,
     cap: int,
 ) -> None:
     """Both listing formats use the default cap and propagate its retryable refusal."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    if isinstance(entry, ChatGPTProviderEntry):
+    if isinstance(entry, provider_config.ChatGPTProviderEntry):
         secret_store.save_oauth_grant(
             "p",
             oauth.stored_grant_for(
@@ -133,7 +134,7 @@ def test_model_listings_use_the_capped_request(
             ),
         )
     url = "https://models.example/v1/models"
-    if isinstance(entry, ChatGPTProviderEntry):
+    if isinstance(entry, provider_config.ChatGPTProviderEntry):
         url += "?client_version=1.0.0"
     response = httpx2.Response(
         200,
@@ -167,7 +168,7 @@ def test_model_listings_use_the_capped_request(
 def test_a_listing_does_not_substitute_a_static_key_for_a_command_token(
     cache_home: pathlib.Path,
 ) -> None:
-    entry = OpenAIProviderEntry(backend="openai", token_command=("test-token",))
+    entry = provider_config.OpenAIProviderEntry(backend="openai", token_command=("test-token",))
     response = httpx2.Response(
         200, json={"data": [{"id": "x"}]}, request=httpx2.Request("GET", entry.base_url)
     )
@@ -181,7 +182,7 @@ def test_fresh_cache_skips_network(
 ) -> None:
     path = cache_home / "models" / "anthropic.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    entry = AnthropicProviderEntry(backend="anthropic")
+    entry = provider_config.AnthropicProviderEntry(backend="anthropic")
     path.write_text(
         json.dumps({"models": ["claude-cached"], "binding": listing_store.binding(entry)})
     )
@@ -197,8 +198,8 @@ def test_fresh_cache_skips_network(
 def test_refresh_prices_when_the_listing_does_not_match_the_entry(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch, bound: bool
 ) -> None:
-    old = OpenAIProviderEntry(backend="openai", base_url="http://localhost:1")
-    new = OpenAIProviderEntry(backend="openai", base_url="http://localhost:2")
+    old = provider_config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:1")
+    new = provider_config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:2")
     path = cache_home / "models" / "local.json"
     path.parent.mkdir(parents=True)
     path.write_text(
@@ -236,7 +237,9 @@ def test_stale_cache_used_on_network_error(
         raise httpx2.ConnectError("no route")
 
     monkeypatch.setattr(transport, "http_request", _fail)
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://openrouter.ai/api/v1")
+    entry = provider_config.OpenAIProviderEntry(
+        backend="openai", base_url="https://openrouter.ai/api/v1"
+    )
     assert models_cache.list_models("openrouter", entry, None) == ["stale-1"]
 
 
@@ -247,7 +250,7 @@ def test_no_cache_network_error_returns_empty(
         raise httpx2.ConnectTimeout("slow")
 
     monkeypatch.setattr(transport, "http_request", _fail)
-    entry = OpenAIProviderEntry(backend="openai")
+    entry = provider_config.OpenAIProviderEntry(backend="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
 
@@ -260,7 +263,7 @@ def test_never_raises_on_bad_payload(
         )
 
     monkeypatch.setattr(transport, "http_request", _garbage)
-    entry = OpenAIProviderEntry(backend="openai")
+    entry = provider_config.OpenAIProviderEntry(backend="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
 
@@ -279,7 +282,9 @@ def test_unsafe_provider_name_still_fetches(
 ) -> None:
     # An unsafe name skips the cache but still fetches live (never raises).
     monkeypatch.setattr(transport, "http_request", _ok_response(["m1"]))
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://api.openai.com/v1")
+    entry = provider_config.OpenAIProviderEntry(
+        backend="openai", base_url="https://api.openai.com/v1"
+    )
     assert models_cache.list_models("../evil", entry, "sk") == ["m1"]
     assert not (cache_home / "models").exists()  # nothing written outside
 
@@ -310,7 +315,7 @@ def test_caches_context_length_and_reads_it_back(
             ]
         ),
     )
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://x/v1")
+    entry = provider_config.OpenAIProviderEntry(backend="openai", base_url="https://x/v1")
     models_cache.list_models("vendorx", entry, "k")
     cached = json.loads((cache_home / "models" / "vendorx.json").read_text())
     assert cached["context"] == {"vendor/big": 200000, "vendor/small": 8192}
@@ -329,7 +334,7 @@ def test_fetch_models_live_bypasses_ttl_and_signals_failure(
     path = cache_home / "models" / "o.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"models": ["stale-1"]}), encoding="utf-8")
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://x/v1")
+    entry = provider_config.OpenAIProviderEntry(backend="openai", base_url="https://x/v1")
     monkeypatch.setattr(transport, "http_request", _ok_response(["fresh-1"]))
     assert models_cache.fetch_models_live("o", entry, None) == ["fresh-1"]
     assert json.loads(path.read_text())["models"] == ["fresh-1"]
@@ -395,7 +400,7 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
         )
 
     monkeypatch.setattr(transport, "http_request", _get)
-    direct = AnthropicProviderEntry(backend="anthropic")
+    direct = provider_config.AnthropicProviderEntry(backend="anthropic")
     providers = {"direct": direct}
     route = kinds.ModelRoute("direct", "claude-opus-5")
     assert models_pricing.lookup_price(route, providers) is None
@@ -412,10 +417,10 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     It comes from the backend's own /models with the stored bearer, the account header and a ceiling
     client_version; hidden entries stay out of completion; context windows land in the cache.
     """
-    from agent6.config import ChatGPTProviderEntry, secret_store
+    from agent6.config import provider_config, secret_store
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     secret_store.save_oauth_grant(
         "chatgpt",
         secret_store.StoredGrant(
@@ -446,7 +451,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
         return httpx2.Response(200, json=body, request=httpx2.Request("GET", url))
 
     monkeypatch.setattr(transport, "http_request", _get)
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     ids = models_cache.list_models("chatgpt", entry, None, ttl_s=0)
     assert ids == ["gpt-5.6-sol"]
     assert str(seen["url"]).endswith("/models?client_version=1.0.0")
@@ -460,7 +465,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
 def test_chatgpt_listing_without_sign_in_fails_soft(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    from agent6.config import ChatGPTProviderEntry
+    from agent6.config import provider_config
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
 
@@ -468,7 +473,7 @@ def test_chatgpt_listing_without_sign_in_fails_soft(
         pytest.fail("no sign-in: nothing to fetch with")
 
     monkeypatch.setattr(transport, "http_request", _never)
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     assert models_cache.list_models("chatgpt", entry, None, ttl_s=0) == []
 
 
@@ -476,7 +481,9 @@ def test_input_modalities_are_explicit_bound_and_fresh(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Only the exact endpoint, entry and model can consume a fresh listing's modalities."""
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://models.example/v1")
+    entry = provider_config.OpenAIProviderEntry(
+        backend="openai", base_url="https://models.example/v1"
+    )
     payload = {
         "data": [
             {"id": "vision", "architecture": {"input_modalities": ["text", "image", "file"]}},
@@ -515,7 +522,9 @@ def test_legacy_listing_has_unknown_modalities(cache_home: pathlib.Path) -> None
     path = cache_home / "models/p.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"models": ["m"], "modalities": {"m": ["text"]}}))
-    entry = OpenAIProviderEntry(backend="openai", base_url="https://models.example/v1")
+    entry = provider_config.OpenAIProviderEntry(
+        backend="openai", base_url="https://models.example/v1"
+    )
     fact = models_cache.cached_input_capabilities("p", entry, "m")
     assert (fact.image, fact.document) == ("unknown", "unknown")
 
@@ -525,9 +534,9 @@ def test_review_reviewers_resolve_their_own_modality_facts(
 ) -> None:
     """Reviewers receive their exact route's capability, not the worker's state."""
     from agent6.app import role_providers
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "https://models.example/v1"}},
             "models": {"default": {"model": "p/text"}},
@@ -560,7 +569,7 @@ def test_review_reviewers_resolve_their_own_modality_facts(
 def test_model_listing_transport_failure_does_not_print_wire_text() -> None:
     """A protocol exception may include a malformed status line carrying the bearer."""
     key = "stand-in-listing-bearer"
-    entry = OpenAIProviderEntry(backend="openai", base_url="http://localhost:1/v1")
+    entry = provider_config.OpenAIProviderEntry(backend="openai", base_url="http://localhost:1/v1")
     notices: list[str] = []
     with mock.patch.object(
         transport,

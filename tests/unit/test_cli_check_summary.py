@@ -18,7 +18,8 @@ from agent6 import budget as agent6_budget
 from agent6 import paths
 from agent6.app import preflight
 from agent6.app.session import setup as session_setup
-from agent6.config import ChatGPTProviderEntry, Config, load_config, secret_store
+from agent6.config import model as config_model
+from agent6.config import provider_config, secret_store
 from agent6.providers import oauth, oauth_protocol, provider_types, transport
 from agent6.sandbox import detect, jail, landlock
 from agent6.sessions import event_log
@@ -44,7 +45,7 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
     config.write_text(
         f'[providers.{name}]\nbackend = "chatgpt"\n[models.worker]\nmodel = "{name}/m1"\n'
     )
-    entry = ChatGPTProviderEntry(backend="chatgpt")
+    entry = provider_config.ChatGPTProviderEntry(backend="chatgpt")
     claim = json.dumps({"https://api.openai.com/auth": {"chatgpt_account_id": "claim"}})
     access = "e30." + base64.urlsafe_b64encode(claim.encode()).decode().rstrip("=") + ".sig"
     if state == "old_format":
@@ -79,7 +80,7 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
         "rebound": "other provider settings",
         "contradiction": "does not match its own token",
     }[state] in cause
-    assert session_setup.check_provider_keys(load_config(config)) == cause
+    assert session_setup.check_provider_keys(config_model.load_config(config)) == cause
     with mock.patch.object(transport, "http_request") as request:
         assert cli_entry.main(["check", "config"]) == 1
         checked = capsys.readouterr()
@@ -92,7 +93,7 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
             assert access not in output.out + output.err
             assert "refresh-secret" not in output.out + output.err
         request.assert_not_called()
-    worker = load_config(config).models.worker
+    worker = config_model.load_config(config).models.worker
     assert worker is not None and worker.model == "m2"
 
 
@@ -108,7 +109,7 @@ def test_healthy_local_sign_in_check_does_not_claim_remote_acceptance(
     )
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("AT", "RT", 3600),
-        ChatGPTProviderEntry(backend="chatgpt"),
+        provider_config.ChatGPTProviderEntry(backend="chatgpt"),
         now=time.time(),
     )
     secret_store.save_oauth_grant("chatgpt", dataclasses.replace(grant, account_id="account"))
@@ -123,7 +124,7 @@ def test_healthy_local_sign_in_check_does_not_claim_remote_acceptance(
 
 def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> None:
     # A fresh setup is unusable until `agent6 connect`; that instruction is not a PASS.
-    checks = cli_check_cmds._doctor_check_config(Config())
+    checks = cli_check_cmds._doctor_check_config(config_model.Config())
     by_name = {c.name: c for c in checks}
     assert by_name["config.provider_keys"].status == "INFO"
     assert "agent6 connect" in by_name["config.provider_keys"].detail
@@ -160,7 +161,7 @@ def test_check_verify_uses_the_jail_path_not_the_ambient_path(
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o755)
     monkeypatch.setenv("PATH", str(host_bin))
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "harness": {
                 "verify": {"command": ["host-only"]},
@@ -240,7 +241,7 @@ def test_run_header_prints_the_inferred_gate_as_check_verify_does(
     assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
 
     cfg = preflight.infer_verify_if_unset(
-        Config(),
+        config_model.Config(),
         tmp_path,
         mode="run",
         events=event_log.EventSink(tmp_path / "logs.jsonl"),
@@ -284,7 +285,7 @@ def test_check_verify_and_the_run_header_say_why_a_manifest_was_passed_over(
 
     log = tmp_path / "logs.jsonl"
     cfg = preflight.infer_verify_if_unset(
-        Config(),
+        config_model.Config(),
         tmp_path,
         mode="run",
         events=event_log.EventSink(log),
@@ -319,7 +320,7 @@ def test_check_verify_and_the_run_header_name_the_manifests_the_gate_leaves_out(
     )
 
     cfg = preflight.infer_verify_if_unset(
-        Config(),
+        config_model.Config(),
         tmp_path,
         mode="run",
         events=event_log.EventSink(tmp_path / "logs.jsonl"),
@@ -340,7 +341,7 @@ def test_sandbox_reports_spawned_mcp_as_unconfined_without_a_jail(
     """An isolation-none policy does not enforce the path grants printed for a jailed server."""
     from agent6.ui.cli import check_sandbox
 
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"notes": {"command": ["notes-mcp"]}}}}
     )
 
@@ -442,7 +443,7 @@ def test_check_reports_git_against_the_floor(
 ) -> None:
     """`agent6 check` passes git 2.47 and up, and fails an older or unreadable git, naming 2.47."""
     monkeypatch.setattr(git_policy, "installed_version", lambda: version)
-    by_name = {c.name: c for c in cli_check_cmds._doctor_check_config(Config())}
+    by_name = {c.name: c for c in cli_check_cmds._doctor_check_config(config_model.Config())}
 
     row = by_name["config.git_version"]
     assert row.status == status

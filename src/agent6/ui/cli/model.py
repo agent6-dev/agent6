@@ -13,15 +13,7 @@ from typing import cast
 
 from agent6 import kinds, paths
 from agent6.app.session import setup as session_setup
-from agent6.config import (
-    ClaudeCodeProviderEntry,
-    ConfigError,
-    RoleName,
-    io,
-    layer,
-    secret_store,
-    write,
-)
+from agent6.config import io, layer, provider_config, secret_store, validation, write
 from agent6.models import choices
 from agent6.providers import claude_code
 from agent6.ui.cli import common
@@ -31,7 +23,7 @@ def _connected_providers(config_paths: tuple[pathlib.Path, ...]) -> list[str]:
     """Return the provider names the effective config declares; empty on any error."""
     try:
         eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
-    except ConfigError:
+    except validation.ConfigError:
         return []
     return sorted(eff.config.providers)
 
@@ -40,7 +32,7 @@ def _models_for(config_paths: tuple[pathlib.Path, ...], provider: str) -> list[s
     """Return the known model ids for a provider; empty when the config does not load."""
     try:
         eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
-    except ConfigError:
+    except validation.ConfigError:
         return []
     _warn_unusable_provider(config_paths, provider)
     return choices.provider_model_choices(eff.config, provider, on_error=common.warn)
@@ -66,7 +58,7 @@ def _prompt_for_provider(config_paths: tuple[pathlib.Path, ...]) -> str:
         if choice is None:
             return ""
         return choice or default
-    raise ConfigError("no configured providers; run `agent6 connect` first.")
+    raise validation.ConfigError("no configured providers; run `agent6 connect` first.")
 
 
 def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> str | None:
@@ -110,7 +102,7 @@ def _show_assignments(config_paths: tuple[pathlib.Path, ...]) -> int:
     """
     eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     print("Role assignments (unset fields inherit models.default):\n")
-    show_roles: tuple[RoleName, ...] = kinds.MODEL_ROLES
+    show_roles: tuple[kinds.RoleName, ...] = kinds.MODEL_ROLES
     for r in show_roles:
         rm = eff.config.models.resolve(r)
         source = eff.config.models.source_role(r)
@@ -161,13 +153,13 @@ def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: st
     """Warn why a displayed or assigned provider cannot run without hiding its models."""
     try:
         eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
-    except ConfigError:
+    except validation.ConfigError:
         return
     entry = eff.config.providers.get(provider)
     if entry is None:
         common.warn(f"provider {provider!r} is not configured; run `agent6 connect` first.")
         return
-    if isinstance(entry, ClaudeCodeProviderEntry):
+    if isinstance(entry, provider_config.ClaudeCodeProviderEntry):
         if (err := claude_code.login_status(entry.binary)) is not None:
             common.warn(f"provider {provider!r}: {err}")
         return
@@ -208,12 +200,14 @@ def _read_route(
     route = route.strip()
     if not route:
         if raw_route:
-            raise ConfigError(f"{raw_route!r}: no model id.")
+            raise validation.ConfigError(f"{raw_route!r}: no model id.")
         provider = _prompt_for_provider(config_paths) if interactive else ""
         if not provider:
-            raise ConfigError("no provider given: name it as provider/model.")
+            raise validation.ConfigError("no provider given: name it as provider/model.")
         if provider not in _connected_providers(config_paths):
-            raise ConfigError(f"unknown provider {provider!r}; run `agent6 connect` first.")
+            raise validation.ConfigError(
+                f"unknown provider {provider!r}; run `agent6 connect` first."
+            )
         return provider, ""
     cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
     if "/" not in route and route in cfg.providers:
@@ -243,7 +237,7 @@ def offer_default_model(
         configured = layer.load_effective(
             pathlib.Path.cwd(), config_paths
         ).config.models.configured()
-    except ConfigError:
+    except validation.ConfigError:
         print(hint)
         return
     if (route := configured.get("default")) is not None:
@@ -291,7 +285,7 @@ def _cmd_model(
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     try:
         provider, model = _read_route(config_paths, route, interactive=interactive)
-    except ConfigError as exc:
+    except validation.ConfigError as exc:
         common.error(str(exc))
         return 2
     if not model and not interactive:
@@ -310,7 +304,9 @@ def _cmd_model(
     fields: dict[str, io.ConfigLeafValue] = {"model": f"{provider}/{model}"}
     if effort:
         fields["effort"] = effort
-    roles: tuple[RoleName, ...] = kinds.MODEL_ROLES if role == "all" else (cast("RoleName", role),)
+    roles: tuple[kinds.RoleName, ...] = (
+        kinds.MODEL_ROLES if role == "all" else (cast(kinds.RoleName, role),)
+    )
     # The shared edit path validates before it writes, so a bad route never reaches config.toml.
     for r in roles:
         err = write.set_config_leaves(pathlib.Path.cwd(), f"models.{r}", fields, to_repo=to_repo)

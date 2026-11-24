@@ -13,7 +13,7 @@ from typing import Any
 from unittest import mock
 
 from agent6.app.machine import agent
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import finish_gates, loop, loop_conversation, loop_state, run_chain
 from agent6.machine import contracts
 from agent6.machine import schema as machine_schema
@@ -54,7 +54,7 @@ def test_a_schemaless_request_leaves_the_task_alone() -> None:
 def _wf(validator: Any) -> loop.Harness:
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
-        config=Config.model_validate({}),
+        config=config_model.Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False

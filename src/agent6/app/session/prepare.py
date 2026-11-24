@@ -20,7 +20,7 @@ from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.parallel import launch as child_launch
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness.prompt import repo_context
 from agent6.providers import provider_types
 from agent6.sessions import event_log, lock, process
@@ -210,7 +210,7 @@ def record_dirs(
 
 
 def hold_workspace_and_select_isolation(
-    cfg: Config,
+    cfg: config_model.Config,
     cwd: pathlib.Path,
     *,
     frontend: app_frontend.SessionFrontend,
@@ -270,7 +270,7 @@ def take_single_writer(
 
 
 def headless_check(
-    cfg: Config,
+    cfg: config_model.Config,
     frontend: app_frontend.SessionFrontend,
     *,
     tui: bool,
@@ -377,7 +377,9 @@ def operator_channels(
     )
 
 
-def workspace_notices(cwd: pathlib.Path, cfg: Config, *, reporter: app_reporter.Reporter) -> None:
+def workspace_notices(
+    cwd: pathlib.Path, cfg: config_model.Config, *, reporter: app_reporter.Reporter
+) -> None:
     """Warn about an install inside the workspace and print the AGENTS.md notices.
 
     Args:
@@ -419,13 +421,13 @@ def undo_forker(
 
 
 def settle_gate(
-    cfg: Config,
+    cfg: config_model.Config,
     layout: sessions_layout.SessionLayout,
     *,
     source: sessions_manifest.GateSource,
     events: event_log.EventSink,
     reporter: app_reporter.Reporter,
-) -> tuple[Config, bool]:
+) -> tuple[config_model.Config, bool]:
     """Drop a gate commands cannot run, then pin the gate this execution runs with.
 
     Args:

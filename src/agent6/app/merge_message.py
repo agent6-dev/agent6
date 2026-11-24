@@ -11,7 +11,8 @@ from agent6 import budget as agent6_budget
 from agent6 import errors
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError, secret_store
+from agent6.config import model as config_model
+from agent6.config import secret_store, validation
 from agent6.harness.prompt import repo_context
 from agent6.providers import provider_calls, provider_types
 from agent6.sessions import event_log
@@ -25,7 +26,7 @@ from agent6.viewmodel.session import state as session_state
 
 def squash_message(
     cwd: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     manifest: sessions_manifest.SessionManifest,
     *,
     base_sha: str,
@@ -84,7 +85,7 @@ def squash_message(
 
 def model_squash_message(
     cwd: pathlib.Path,
-    cfg: Config,
+    cfg: config_model.Config,
     rows: tuple[commit_message.CommitRow, ...],
     *,
     base_sha: str,
@@ -180,7 +181,7 @@ def model_squash_message(
         )
     except (
         agent6_budget.BudgetExceededError,
-        ConfigError,
+        validation.ConfigError,
         errors.GitError,
         OSError,
         provider_types.ProviderError,

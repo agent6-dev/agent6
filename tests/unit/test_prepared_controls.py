@@ -16,13 +16,13 @@ import pytest
 from agent6 import kinds, paths
 from agent6.app import confine, preflight, reporter
 from agent6.app.session import runtime as session_runtime
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.sandbox import detect
 from agent6.tools import dispatch, results, tool_errors
 
 
-def _config(**sandbox: object) -> Config:
-    return Config.model_validate(
+def _config(**sandbox: object) -> config_model.Config:
+    return config_model.Config.model_validate(
         {"sandbox": {"network": "host", "run_commands": "allow", **sandbox}}
     )
 

@@ -16,7 +16,8 @@ import pytest
 
 from agent6 import paths
 from agent6.app import role_providers
-from agent6.config import Config, ReviewConfig, io, layer_data
+from agent6.config import harness_config, io, layer_data
+from agent6.config import model as config_model
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.providers import provider_types
@@ -28,14 +29,14 @@ from tests.unit import test_run_lifecycle_bugfix
 
 def test_max_turns_defaults_to_twenty_in_config_surfaces() -> None:
     """An unset reviewer budget is visible as 20 model calls."""
-    assert layer_data.config_leaves(Config())["review.max_turns"] == 20
+    assert layer_data.config_leaves(config_model.Config())["review.max_turns"] == 20
 
 
 @pytest.mark.parametrize("value", [0, -1])
 def test_max_turns_requires_a_positive_call_budget(value: int) -> None:
     """A reviewer needs at least one model call for its verdict."""
     with pytest.raises(pydantic.ValidationError) as caught:
-        ReviewConfig.model_validate({"max_turns": value})
+        harness_config.ReviewConfig.model_validate({"max_turns": value})
     assert any(
         err["loc"] == ("max_turns",) and err["type"] == "greater_than_equal"
         for err in caught.value.errors()
@@ -62,7 +63,7 @@ def test_configured_call_budget_reaches_the_reviewer(
     reviewer_call = mock.Mock(wraps=reviewer.call)
     monkeypatch.setattr(reviewer, "call", reviewer_call)
 
-    def resolve_reviewers(_cfg: Config) -> list[review_gate.Reviewer]:
+    def resolve_reviewers(_cfg: config_model.Config) -> list[review_gate.Reviewer]:
         return [review_env.reviewer("security", "p/m", reviewer)]
 
     monkeypatch.setattr(role_providers, "resolve_reviewers", resolve_reviewers)
@@ -100,7 +101,7 @@ def test_reviewer_refuses_split_or_unqualified_routes(route: dict[str, str]) -> 
     with pytest.raises(
         pydantic.ValidationError, match=r"model.*provider/model|provider and model are one setting"
     ):
-        ReviewConfig.model_validate({"reviewers": [{"focus": "security", **route}]})
+        harness_config.ReviewConfig.model_validate({"reviewers": [{"focus": "security", **route}]})
 
 
 @pytest.mark.parametrize(
@@ -116,7 +117,7 @@ def test_reviewer_refuses_split_or_unqualified_routes(route: dict[str, str]) -> 
 )
 def test_old_review_keys_are_unknown(key: str, value: object) -> None:
     with pytest.raises(pydantic.ValidationError) as caught:
-        Config.model_validate({"review": {key: value}})
+        config_model.Config.model_validate({"review": {key: value}})
     assert any(
         err["loc"] == ("review", key) and err["type"] == "extra_forbidden"
         for err in caught.value.errors()
@@ -127,7 +128,7 @@ def test_old_review_keys_are_unknown(key: str, value: object) -> None:
 def test_model_quorum_checks_resolved_routes(role: str) -> None:
     """An inherited route and a pinned copy count once even with different effort."""
     with pytest.raises(pydantic.ValidationError, match=r"min_blocking_models=2.*distinct"):
-        Config.model_validate(
+        config_model.Config.model_validate(
             {
                 "models": {role: {"model": "o/m"}},
                 "review": {
@@ -143,7 +144,7 @@ def test_model_quorum_checks_resolved_routes(role: str) -> None:
 
 
 def test_model_quorum_accepts_distinct_resolved_routes() -> None:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "models": {"default": {"model": "o/d"}, "reviewer": {"model": "o/m"}},
             "review": {
@@ -160,13 +161,13 @@ def test_model_quorum_accepts_distinct_resolved_routes() -> None:
 
 def test_model_quorum_rejects_default_single_reviewer() -> None:
     with pytest.raises(pydantic.ValidationError, match="distinct"):
-        Config.model_validate({"review": {"block_on": "model_quorum"}})
+        config_model.Config.model_validate({"review": {"block_on": "model_quorum"}})
 
 
 @pytest.mark.parametrize("entry", ["security", {"focus": " "}, {"focus": "tests", "unknown": True}])
 def test_reviewers_refuse_strings_blank_focus_and_unknown_fields(entry: object) -> None:
     with pytest.raises(pydantic.ValidationError):
-        ReviewConfig.model_validate({"reviewers": [entry]})
+        harness_config.ReviewConfig.model_validate({"reviewers": [entry]})
 
 
 @pytest.mark.parametrize("pinned", [False, True])
@@ -187,7 +188,7 @@ def test_reviewer_sampling_reaches_provider_call(
 ) -> None:
     """A reviewer sends its entry's settings, off and zero included; a pinned one inherits too."""
     route = {"model": "o/moonshotai/kimi-k2"}
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {
@@ -254,7 +255,9 @@ def test_reviewer_sampling_reaches_provider_call(
 
 def test_reviewers_are_one_serializable_config_leaf() -> None:
     """Config surfaces can render the roster as TOML and JSON without losing explicit off."""
-    cfg = Config.model_validate({"review": {"reviewers": [{"focus": "security", "effort": "off"}]}})
+    cfg = config_model.Config.model_validate(
+        {"review": {"reviewers": [{"focus": "security", "effort": "off"}]}}
+    )
     roster = layer_data.config_leaves(cfg)["review.reviewers"]
     assert json.loads(json.dumps(roster)) == [{"focus": "security", "effort": "off"}]
     assert tomllib.loads("reviewers = " + io.format_toml_value(roster)) == {
@@ -268,7 +271,7 @@ def test_reviewers_are_one_serializable_config_leaf() -> None:
 
 
 def test_trigger_on_with_no_reviewers_builds_the_one_reviewer_roster() -> None:
-    cfg = Config.model_validate(
+    cfg = config_model.Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {

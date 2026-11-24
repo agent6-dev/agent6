@@ -171,9 +171,9 @@ def test_usage_documents_both_state_transfer_commands() -> None:
 
 
 def test_readme_quoted_security_defaults_match_config() -> None:
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    cfg = Config()
+    cfg = config_model.Config()
     readme = (REPO / "README.md").read_text()
     for quoted, actual in (
         ('network = "auto"', cfg.sandbox.network),
@@ -215,14 +215,14 @@ def test_the_docs_demo_configs_validate(source: str, toml_text: str) -> None:
     A renamed key or value fails here instead of on the pages build: the tri-state
     `protect_git` refused the demos' `true` when the web tour's server started.
     """
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
-    Config.model_validate(tomllib.loads(toml_text))
+    config_model.Config.model_validate(tomllib.loads(toml_text))
 
 
 def test_bench_container_config_template_validates() -> None:
     """in_container.sh's config heredoc validates through Config, so a stray key is caught."""
-    from agent6.config import Config
+    from agent6.config import model as config_model
 
     script = (REPO / "bench" / "swebench" / "in_container.sh").read_text()
     m = re.search(r"cat > /root/agent6\.toml <<EOF\n(.*?)\nEOF\n", script, re.S)
@@ -277,7 +277,7 @@ def test_bench_container_config_template_validates() -> None:
         rendered = _render(env)
         data = tomllib.loads(rendered)
         data.pop("agent6", None)
-        cfg = Config.model_validate(data)
+        cfg = config_model.Config.model_validate(data)
         # The template declares `none`: a config that validates and then refuses at preflight
         # starts no benchmark run.
         assert cfg.sandbox.isolation == "none"

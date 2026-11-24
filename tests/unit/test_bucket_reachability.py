@@ -102,7 +102,7 @@ def test_the_mcp_tools_see_every_bucket(tmp_path: pathlib.Path) -> None:
     """`list_sessions` lists every bucket, so a plan or an ask is visible over MCP."""
     import io
 
-    from agent6.config import Config
+    from agent6.config import model as config_model
     from agent6.ui import mcp_server
 
     state = paths.state_dir(tmp_path)
@@ -110,7 +110,7 @@ def test_the_mcp_tools_see_every_bucket(tmp_path: pathlib.Path) -> None:
     _seed(state, "asks", "quiet-fox-BBBBBB", mode="ask")
 
     server = mcp_server.MCPServer(
-        root=tmp_path, config=Config(), stdin=io.BytesIO(), stdout=io.BytesIO()
+        root=tmp_path, config=config_model.Config(), stdin=io.BytesIO(), stdout=io.BytesIO()
     )
     listed = {s["session_id"] for s in server._h_list_sessions({})["sessions"]}
     assert listed == {"brave-oak-AAAAAA", "quiet-fox-BBBBBB"}

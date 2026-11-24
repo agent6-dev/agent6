@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 
 from agent6 import budget, child_records, kinds, media, review_records
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.review import gate as review_gate
@@ -105,7 +105,9 @@ def run_panel(
         target = kwargs.pop("target", None) or review_records.ReviewTarget(
             "base", "base-tree", "head", "head-tree", "snapshot", (), "revisions"
         )
-        cfg = Config.model_validate({"sandbox": {"isolation": "none", "protect_git": "off"}})
+        cfg = config_model.Config.model_validate(
+            {"sandbox": {"isolation": "none", "protect_git": "off"}}
+        )
 
         @child_env.blocking
         def spawn(

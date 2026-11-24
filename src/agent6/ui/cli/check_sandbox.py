@@ -15,7 +15,7 @@ from agent6 import paths as agent6_paths
 from agent6.app import confine, fork_worktrees
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import model as config_model
 from agent6.context import memory
 from agent6.sandbox import detect, jail, landlock
 from agent6.tools import policy as tools_policy
@@ -29,7 +29,7 @@ _FILE_TOOLS = (
 
 
 def _fork_git_grant(
-    cfg: Config, ws: path_safety.Workspace, selected: kinds.IsolationLevel
+    cfg: config_model.Config, ws: path_safety.Workspace, selected: kinds.IsolationLevel
 ) -> pathlib.Path | None:
     """Return the repository git dir a fork's worktree grants a jailed command, or None.
 
@@ -60,7 +60,9 @@ def _fork_git_grant(
     return None
 
 
-def _mcp_lines(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) -> None:
+def _mcp_lines(
+    cfg: config_model.Config, root: pathlib.Path, selected: kinds.IsolationLevel
+) -> None:
     """Print each MCP server's confinement and network."""
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         cause = "[mcp].enabled = false" if not cfg.mcp.enabled else "no servers configured"
@@ -102,7 +104,9 @@ def _mcp_lines(cfg: Config, root: pathlib.Path, selected: kinds.IsolationLevel) 
         )
 
 
-def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel) -> None:
+def _header(
+    cfg: config_model.Config, env: detect.Environment, selected: kinds.IsolationLevel
+) -> None:
     """Print the resolved isolation and why, then the command, network and memory settings.
 
     Args:
@@ -160,7 +164,7 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
 
 
 def _probe(
-    cfg: Config, isolation: kinds.IsolationLevel, env: detect.Environment
+    cfg: config_model.Config, isolation: kinds.IsolationLevel, env: detect.Environment
 ) -> list[kinds.SandboxReport]:
     """Run the jail's live probes under the selected isolation.
 
@@ -312,7 +316,7 @@ _PROBE_NAMES = (
 
 
 def _probe_checks(
-    cfg: Config,
+    cfg: config_model.Config,
     env: detect.Environment,
     selected: kinds.IsolationLevel,
     reports: list[kinds.SandboxReport],
@@ -364,7 +368,7 @@ def _git_exposure(controls: tuple[kinds.EffectiveControl, ...]) -> None:
         check_render.line("  ", evidence.GIT_WRITABLE, warning=True)
 
 
-def _container_section(cfg: Config) -> list[kinds.DoctorCheck]:
+def _container_section(cfg: config_model.Config) -> list[kinds.DoctorCheck]:
     """Print the container a run would select, inspected and never started or stopped.
 
     Args:
@@ -427,7 +431,7 @@ def _container_section(cfg: Config) -> list[kinds.DoctorCheck]:
     return out
 
 
-def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
+def check_sandbox_section(cfg: config_model.Config) -> list[kinds.DoctorCheck]:
     """Print what the file tools, jailed commands and MCP servers can reach, then probe the jail.
 
     A refusal a run would give is a FAIL row, and a grant of the home directory is a WARN row.

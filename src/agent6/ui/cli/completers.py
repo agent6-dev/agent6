@@ -14,7 +14,8 @@ from typing import Any
 from agent6 import kinds, paths
 from agent6.app import resume_record
 from agent6.app.review import actions as review_actions
-from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, write
+from agent6.config import io, layer, layer_data, layer_presets, validation, write
+from agent6.config import model as config_model
 from agent6.models import choices as models_choices
 from agent6.sessions import id, layout, process
 from agent6.ui.cli import common, config_secrets
@@ -136,7 +137,7 @@ def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
     """Return every `provider/model` route the config can run, for `--model`."""
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), _explicit_config(kw)).config
-    except ConfigError:
+    except validation.ConfigError:
         return []
     return [r for r in models_choices.route_choices(cfg) if r.startswith(prefix)]
 
@@ -167,11 +168,11 @@ def _config_enum_choices(
 
     try:
         view = config_view.build_config_view(layer.load_effective(pathlib.Path.cwd(), config_paths))
-    except ConfigError:
+    except validation.ConfigError:
         # A config that does not load still completes: the schema carries the choices.
         view = config_view.build_config_view(
             layer_data.EffectiveConfig(
-                config=Config(),
+                config=config_model.Config(),
                 sources={},
                 layers=(),
                 presets=tuple(
@@ -220,7 +221,7 @@ def _user_preset_names(config_paths: tuple[pathlib.Path, ...] = ()) -> list[str]
             for p in layer_presets.preset_catalog(pathlib.Path.cwd(), config_paths).presets
             if p.origin != "built-in"
         ]
-    except ConfigError:
+    except validation.ConfigError:
         return []
 
 
@@ -257,11 +258,12 @@ def _complete_config_keys(
         keys |= {
             key
             for key in parents
-            if (schema := config_view.field_schema(Config, io.split_key(key))) is not None
+            if (schema := config_view.field_schema(config_model.Config, io.split_key(key)))
+            is not None
             and schema.py_type == "table"
             and not write.names_a_section(key)
         }
-    except ConfigError:
+    except validation.ConfigError:
         keys = set()
     if settable:
         keys |= set(_config_enum_choices(explicit))
@@ -333,7 +335,7 @@ def _complete_config_values(
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_RECIPES)
     if not choices:
-        with contextlib.suppress(ConfigError):
+        with contextlib.suppress(validation.ConfigError):
             choices = models_choices.config_value_choices(
                 layer.load_effective(pathlib.Path.cwd(), config_paths), schema_key
             )
