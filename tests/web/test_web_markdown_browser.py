@@ -8,10 +8,10 @@ import pytest
 
 from agent6.ui.web import git_model
 from tests.unit import test_git_history
-from tests.web import test_files_preview_browser, test_web_browser
+from tests.web import signin, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Browser, Page
 
 pytestmark = pytest.mark.browser
 browser = test_files_preview_browser.browser
@@ -291,6 +291,42 @@ def test_returning_to_closed_markdown_opens_a_fresh_preview(
     sync_api.expect(frame.locator(heading)).to_be_in_viewport()
     sync_api.expect(iframe).not_to_have_attribute("src", closed)
     assert not errors
+
+
+def test_a_cached_document_reopens_the_preview_at_its_heading(
+    markdown_repo: tuple[int, str],
+    browser: Browser,
+) -> None:
+    """A real history restore needs a new frame even though its document survives."""
+    from playwright import sync_api
+
+    port, _ = markdown_repo
+    base = f"http://127.0.0.1:{port}/"
+    guide = base + "#/files/HEAD/docs/guide%20%23%25.md"
+    engine = browser.browser_type
+    with engine.launch(
+        channel="chromium" if engine.name == "chromium" else None,
+        ignore_default_args=["--disable-back-forward-cache"],
+    ) as instance:
+        page = instance.new_page()
+        page.add_init_script("addEventListener('pageshow', e => window.fromCache = e.persisted)")
+        page.goto(guide)
+        page.get_by_role("textbox", name="secret").fill(signin.SECRET)
+        page.get_by_role("button", name="Sign in").click()
+        frame = page.frame_locator(".files-preview iframe")
+        frame.get_by_role("link", name="details", exact=True).click()
+        sync_api.expect(frame.locator("#details")).to_be_in_viewport()
+        iframe = page.locator(".files-preview iframe")
+        old = iframe.get_attribute("src")
+        assert old
+        page.goto(base + "icon.svg")
+        page.evaluate("history.back()")
+        sync_api.expect(page).to_have_url(guide + "?anchor=details")
+        sync_api.expect(frame.locator("#details")).to_be_in_viewport()
+        sync_api.expect(iframe).not_to_have_attribute("src", old)
+        page.wait_for_function("typeof window.fromCache === 'boolean'")
+        if not page.evaluate("window.fromCache"):
+            pytest.skip(f"{engine.name} reloaded Files (pageshow.persisted=false)")
 
 
 def test_a_heading_link_leaves_the_page_undimmed(
