@@ -24,6 +24,7 @@ from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import policy as git_policy
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import format, newest_session_dir, session_dirs, summarize_session_dir
+from agent6.viewmodel.session import patches
 
 
 def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: bool = True) -> int:
@@ -54,7 +55,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
     )
     if isinstance(res, int):
         return res
-    _layout, manifest = res
+    layout, manifest = res
 
     ref = merge_plan.commits_ref(cwd, manifest)
     if not ref.head_ref:
@@ -62,7 +63,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         return 0
     if manifest.run_branch and ref.head_ref == manifest.run_branch:
         # A branch may stand in for a pruned one: say where the work went.
-        pruned = _pruned_branch_note(cwd, manifest, manifest.run_branch)
+        pruned = _pruned_branch_note(cwd, layout.session_dir, manifest, manifest.run_branch)
         if pruned is not None:
             print(pruned)
             return 0
@@ -216,19 +217,24 @@ def _committed_nothing(cwd: pathlib.Path, session_id: str) -> bool:
 
 
 def _pruned_branch_note(
-    cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest, run_branch: str
+    cwd: pathlib.Path,
+    session_dir: pathlib.Path,
+    manifest: sessions_manifest.SessionManifest,
+    run_branch: str,
 ) -> str | None:
     """Return where the work went when a run's branch is absent, or None when it is there.
 
     Args:
         cwd: The repo.
+        session_dir: The run's directory.
         manifest: The run's manifest.
         run_branch: The manifest's run branch.
 
     Returns:
         The note, separating the ways to get here: a merged-then-pruned branch (the stamp
         covering every commit), a branch deleted past its stamp or with no merge recorded
-        (the chain ref keeps the commits), and a run that committed nothing.
+        (the chain ref keeps the commits), a child's commits its parent has not imported,
+        and a run that committed nothing.
     """
     if git_read.branch_exists(cwd, run_branch):
         return None
@@ -238,6 +244,8 @@ def _pruned_branch_note(
         if stamp.commit:
             note += f"\n  see: git show {stamp.commit}"
         return note
+    if held := patches.clone_held(cwd, session_dir, manifest):
+        return f"[agent6] {run_branch} is not in this repository: {held}."
     if _committed_nothing(cwd, manifest.session_id):
         return f"[agent6] this run committed nothing, so {run_branch} was never cut."
     chain = git_read.chain_ref_for(manifest.session_id)
@@ -265,7 +273,7 @@ def _cmd_commits(*, session_id: str) -> int:
     res = _resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
         return res
-    _layout, manifest = res
+    layout, manifest = res
     ref = merge_plan.commits_ref(cwd, manifest)
     if not ref.head_ref:
         common.error(f"this session has no branch to list commits from ({ref.reason}).")
@@ -277,7 +285,7 @@ def _cmd_commits(*, session_id: str) -> int:
     head_ref = ref.head_ref
     # A branch may stand in for a pruned one: say where the work went.
     pruned = (
-        _pruned_branch_note(cwd, manifest, manifest.run_branch)
+        _pruned_branch_note(cwd, layout.session_dir, manifest, manifest.run_branch)
         if manifest.run_branch and head_ref == manifest.run_branch
         else None
     )

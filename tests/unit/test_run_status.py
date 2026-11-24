@@ -17,7 +17,7 @@ import pytest
 from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import journal, process
-from agent6.ui.cli import common, entry, sessions_show
+from agent6.ui.cli import common, entry, sessions_cmds, sessions_show
 from agent6.vcs.git import read as git_read
 from tests import child_env
 
@@ -1209,6 +1209,38 @@ def test_status_says_where_the_changes_are(
     out = show()
     assert "changes:    refs/agent6/winsome-dawn-YWH5ZS/head (" in out
     assert "is gone; the commits are kept); merge with: agent6 sessions merge" in out
+
+
+def test_a_childs_commits_in_its_clone_are_not_read_as_no_commit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A child that committed read `the run made no commit` until its parent imported it.
+
+    Its commits are in its clone, so the repository holds neither its branch nor its chain;
+    `show`, `diff` and `commits` took that absence for a run that committed nothing.
+    """
+    sid = "winsome-dawn-YWH5ZS"
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=pathlib.Path.cwd(), check=True)
+    lineage = {"group": "bold-reef-AAA111-p1", "number": 1, "parent": "bold-reef-AAA111"}
+    _stamp_manifest(
+        d, session_id=sid, run_branch=f"agent6/{sid}", base_sha="1" * 40, parallel=lineage
+    )
+    held = "2 commits in this child's clone, not yet imported by bold-reef-AAA111"
+
+    def said() -> list[str]:
+        assert sessions_show._cmd_status(sid) == 0
+        assert sessions_cmds._cmd_diff(session_id=sid, stat=False, paths=()) == 0
+        assert sessions_cmds._cmd_commits(session_id=sid) == 0
+        return capsys.readouterr().out.splitlines()
+
+    # No measurement yet: the absence still reads as no commit.
+    assert "changes:    none (the run made no commit)" in said()
+    (d / "commits_beyond_start").write_text("2\n")
+    lines = said()
+    assert f"changes:    {held}" in lines
+    assert lines.count(f"[agent6] agent6/{sid} is not in this repository: {held}.") == 2
+    assert not [line for line in lines if "no commit" in line or "committed nothing" in line]
 
 
 @pytest.mark.parametrize("advance", [False, True], ids=["covered", "advanced"])

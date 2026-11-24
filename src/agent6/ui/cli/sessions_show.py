@@ -37,6 +37,7 @@ from agent6.viewmodel import (
     transcript,
     wire,
 )
+from agent6.viewmodel.session import patches
 from agent6.viewmodel.session import view as state_view
 
 
@@ -402,7 +403,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     model = format.format_model_route(manifest.models.driver) or "?"
     model_from_flag = manifest.models.driver_from_flag
-    changes = _changes(target.name, manifest, undone=scan.finished and scan.stop_reason == "undone")
+    changes = _changes(target, manifest, undone=scan.finished and scan.stop_reason == "undone")
     repo = pathlib.Path.cwd()
     tips = git_read.run_ref_tips(repo)
     summary = summarize_session_dir(target, branch_tips=tips, repo=repo)
@@ -571,22 +572,23 @@ class _Changes:
 
 
 def _changes(
-    session_id: str, manifest: sessions_manifest.SessionManifest, *, undone: bool
+    session_dir: pathlib.Path, manifest: sessions_manifest.SessionManifest, *, undone: bool
 ) -> _Changes:
     """Return where the run's work lives, checked against git as the end-of-run footer does.
 
     Merged into the checkout, on the run branch awaiting `sessions merge`, on the hidden chain
-    ref alone (the branch deleted, the commits kept), nowhere (no commit was made), or
-    taken back by `/undo`.
+    ref alone (the branch deleted, the commits kept), in a child's clone until its parent
+    imports it, nowhere (no commit was made), or taken back by `/undo`.
 
     Args:
-        session_id: The session.
+        session_dir: The session's directory, named for its id.
         manifest: Its manifest.
         undone: `/undo` took the work back, so no merge is offered.
 
     Returns:
         The text row and the checkout destination, each empty when absent.
     """
+    session_id = session_dir.name
     run_branch = manifest.run_branch or ""
     cwd = pathlib.Path.cwd()
     if manifest.git_control == "model":
@@ -607,7 +609,8 @@ def _changes(
     )
     if tip is None or tip == manifest.base_sha:
         # A fork cut before its source's first commit sits on the base with no commit of its own.
-        return _Changes("none (the run made no commit)", "")
+        held = patches.clone_held(cwd, session_dir, manifest)
+        return _Changes(held or "none (the run made no commit)", "")
     where = (
         format.format_branch(run_branch, manifest.base_branch, "")
         if branch_kept
