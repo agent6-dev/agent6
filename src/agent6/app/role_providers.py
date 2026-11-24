@@ -208,7 +208,7 @@ def build_role_provider(
     cfg: Config,
     role: RoleName,
     *,
-    transcript_sink: TranscriptSink,
+    transcript_sink: TranscriptSink | None,
     budget: agent6_budget.BudgetTracker,
     actor: str = "",
     events: event_log.EventSink | None = None,
@@ -220,7 +220,7 @@ def build_role_provider(
     Args:
         cfg: The run's config.
         role: The role whose route to build.
-        transcript_sink: The recorder the provider's round-trips go to.
+        transcript_sink: The run's recorder, or None for calls that write no transcript.
         budget: The tracker the provider bills.
         actor: The actor to record. An empty value takes the role name.
         events: The run's journal sink; None emits no authentication events.
@@ -247,7 +247,9 @@ def build_role_provider(
         entry,
         model,
         rm.effort,
-        transcript_sink=transcript_sink.for_actor(actor or role),
+        transcript_sink=transcript_sink.for_actor(actor or role)
+        if transcript_sink is not None
+        else None,
         budget=budget,
         events=events,
     )
@@ -259,7 +261,7 @@ def _provider_from_entry(
     model: str,
     effort: EffortLevel | None,
     *,
-    transcript_sink: TranscriptRecorder,
+    transcript_sink: TranscriptRecorder | None,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None = None,
 ) -> Provider:

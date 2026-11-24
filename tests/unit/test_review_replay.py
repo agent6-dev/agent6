@@ -107,6 +107,8 @@ def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
         return httpx2.Response(200, json=reply)
 
     monkeypatch.setattr(transport, "http_post", post)
+    sink = mock.Mock(wraps=replay.provider_types.TranscriptSink)
+    monkeypatch.setattr(replay.provider_types, "TranscriptSink", sink)
     assert (
         replay.main(
             [
@@ -123,6 +125,7 @@ def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
         )
         == 0
     )
+    sink.assert_not_called()
     out, table = capsys.readouterr()
     rows = [json.loads(line) for line in out.splitlines()]
     assert len(rows) == len(requests) == 12

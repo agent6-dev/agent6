@@ -7,7 +7,6 @@ import hashlib
 import json
 import pathlib
 import sys
-import tempfile
 from typing import Any, get_args
 
 from bench.review import recordings, scoring
@@ -134,23 +133,20 @@ def main(argv: list[str] | None = None) -> int:
         if refusal := preflight.budget_preflight(cfg, [(route.provider, route.model)]):
             raise config.ConfigError(refusal)
         meter = setup.budget_tracker(cfg)
-        with tempfile.TemporaryDirectory(prefix="review-replay-") as tmp:
-            root = pathlib.Path(tmp)
-            sink = provider_types.TranscriptSink(root / "transcripts", objects_dir=root / "objects")
+        try:
             provider = role_providers.build_role_provider(
-                cfg, "reviewer", transcript_sink=sink, budget=meter
+                cfg, "reviewer", transcript_sink=None, budget=meter
             )
-            try:
-                assert isinstance(provider, HTTPProvider)
-                results = replay(
-                    openings,
-                    provider,
-                    settings=settings,
-                    repeats=args.repeats,
-                    tool_choice="none" if args.no_tools else "auto",
-                )
-            finally:
-                meter.settle()
+            assert isinstance(provider, HTTPProvider)
+            results = replay(
+                openings,
+                provider,
+                settings=settings,
+                repeats=args.repeats,
+                tool_choice="none" if args.no_tools else "auto",
+            )
+        finally:
+            meter.settle()
         scoring.print_table(results)
     except (
         OSError,

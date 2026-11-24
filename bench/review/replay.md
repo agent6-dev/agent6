@@ -67,6 +67,7 @@ Stdout has one JSON line per logical call: child session, source transcript, rep
 A complete run has `2 × reviews × repeats` lines.
 On a provider or budget error, a `call failed` line identifies the interrupted pair and the command exits nonzero.
 The input state stays unchanged.
+Replay calls write no provider transcripts or object store.
 
 The first table on stderr counts outcomes, block findings by category and blocks naming a reader for each review and arm.
 `pass` and `block` come from the panel's reply parser **before** diff grounding or voting.
