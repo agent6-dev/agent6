@@ -868,7 +868,7 @@ def _import_machine_clone(
     """
     advanced = git_read.chain_tip(clone, chain_ref)
     if advanced is None or advanced == git_read.chain_tip(origin, chain_ref):
-        _drop_clone(clone)
+        drop_clone(clone)
         return result
     try:
         cfg = Config.model_validate(state.overlay)
@@ -885,11 +885,21 @@ def _import_machine_clone(
         return result.model_copy(
             update={"reason": f"import of machine work failed: {exc}", "payload": None}
         )
-    _drop_clone(clone)
+    drop_clone(clone)
     return result
 
 
-def _drop_clone(clone: pathlib.Path) -> None:
-    """Remove a state's clone and the persistent jail home keyed on it."""
+def drop_clone(clone: pathlib.Path) -> None:
+    """Remove a state's clone, its jail home and its git exposure record.
+
+    Args:
+        clone: The checkout to discard.
+    """
     shutil.rmtree(clone, ignore_errors=True)
     shutil.rmtree(paths.jail_cache_home(clone), ignore_errors=True)
+    if not clone.exists(follow_symlinks=False):
+        record = paths.git_exposure_record(clone)
+        record.unlink(missing_ok=True)
+        # Other state under this checkout id does not belong to the clone cleanup.
+        with contextlib.suppress(OSError):
+            record.parent.rmdir()

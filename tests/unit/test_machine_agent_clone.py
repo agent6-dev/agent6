@@ -118,8 +118,12 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
     runner = _runner(origin, tmp_path)
 
+    record = paths.git_exposure_record(tmp_path / "clones/state-0000")
+    record.parent.mkdir(parents=True)
+    record.write_text("writable\n", encoding="utf-8")
     r1 = runner(_req(0), None)
     assert r1.reason == "finish_session"
+    assert not record.exists()
     r2 = runner(_req(1), None)
     assert r2.reason == "finish_session"
 
@@ -364,9 +368,12 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
     )
     monkeypatch.setenv("X_TOKEN", "s3cret")
     seen: list[tuple[tuple[str, ...], bool]] = []
+    records: list[pathlib.Path] = []
 
     def execute(policy: kinds.JailPolicy) -> kinds.CommandResult:
-        assert paths.git_exposure_record(policy.cwd).is_file()
+        record = paths.git_exposure_record(policy.cwd)
+        assert record.is_file()
+        records.append(record)
         assert not paths.git_exposure_record(origin).exists()
         seen.append((policy.argv, "X_TOKEN" in dict(policy.env)))
         return kinds.CommandResult(
@@ -380,6 +387,7 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
     policy = factory("check", ("cat", "x"), 5.0, ("X_TOKEN",))
     assert runner("check", policy, None).returncode == 0
     assert seen == [(("sh", "-c", "true"), False), (("cat", "x"), True)]
+    assert not any(record.exists() for record in records)
 
 
 @pytest.mark.parametrize("state", ["", "unknown"])

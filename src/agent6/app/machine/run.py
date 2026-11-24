@@ -197,7 +197,7 @@ def machine_tool_runner(
                 return failed
             return jail.run_in_jail(_in_clone(policy, dest, cwd))
         finally:
-            shutil.rmtree(dest, ignore_errors=True)
+            agent.drop_clone(dest)
 
     return run
 

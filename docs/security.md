@@ -732,6 +732,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - a clone shares its repository's object files by hard link, so a command that can write the clone's `.git` can rewrite a stored object.
       The repository then shows the written content under the stored id, and only `git fsck` reports it
     - agent6 records the write access for the checkout before commands get it, in its own state (`$XDG_STATE_HOME/agent6/<checkout-id>/git-writable`); a later config that protects `.git` leaves the record.
+      Dropping a machine state's clone removes its record.
       The sentence every surface prints is: "A model's commands could write this checkout's .git: treat .git there like any file the model wrote."
         - `agent6 check sandbox` reads the stored record of the checkout it runs in, and the controls a run there would get now
         - a run's start line, `sessions show`, the receipt and the web and TUI session views read the controls their own session ran under: a session that ran with `.git` protected prints nothing, in a checkout with a record too
