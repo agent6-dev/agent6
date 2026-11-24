@@ -15,9 +15,13 @@ from tests.unit import test_children_cli as cli
 
 
 @pytest.mark.parametrize("sweep", [False, True], ids=["cleanup", "prune"])
-@pytest.mark.parametrize("measured", [True, False], ids=["recorded", "unmeasured"])
+@pytest.mark.parametrize(
+    ("measured", "nested"),
+    [(True, ""), (False, ""), (True, "indexed"), (True, "worktree")],
+    ids=["recorded", "unmeasured", "indexed-gitlink", "worktree-gitlink"],
+)
 def test_cleanup_requires_both_dirty_trees(
-    tmp_path: pathlib.Path, sweep: bool, measured: bool
+    tmp_path: pathlib.Path, sweep: bool, measured: bool, nested: str
 ) -> None:
     repo = tmp_path / "repo"
     background._init_repo(repo)
@@ -34,8 +38,14 @@ def test_cleanup_requires_both_dirty_trees(
         json.dumps({"session_id": sid, "mode": "run", "git_control": "model"})
     )
     (clone / "draft").write_text("working")
+    if nested:
+        background._init_repo(clone / "nested")
+        (clone / "nested" / "README.md").write_text("uncommitted nested work")
+        cli._git(clone, "add", "nested")
     cli._git(clone, "add", "draft")
     work = cli._git(clone, "write-tree")
+    if nested == "worktree":
+        cli._git(clone, "rm", "--cached", "-f", "nested")
     (clone / "draft").write_text("staged")
     cli._git(clone, "add", "draft")
     index = cli._git(clone, "write-tree")
@@ -56,7 +66,9 @@ def test_cleanup_requires_both_dirty_trees(
             launch_dir=tmp_path / "launch",
             cfg=cfg,
         )
-    if measured:
+    if nested:
+        assert (clone / "nested" / "README.md").read_text() == "uncommitted nested work"
+    elif measured:
         assert not clone.exists()
         cli._git(repo, "gc", "--prune=now")
         assert cli._git(repo, "show", f"{work}:draft") == "working"

@@ -97,10 +97,11 @@ def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cf
             | git_read.hidden_in_repo(clone, cfg.sandbox.hide_paths)
             | {".agent6"}
         )
-        if git_read.worktree_tree(clone, seed, excluded) != (
-            scan.end_tree or git_read.tree_sha(clone, seed)
-        ):
+        work = git_read.worktree_tree(clone, seed, excluded)
+        if work != (scan.end_tree or git_read.tree_sha(clone, seed)):
             return "uncommitted files outside the recorded end tree"
+        if any(git_read.tree_has_gitlinks(clone, tree) for tree in {head, index, work}):
+            return "a gitlink records a nested commit, not the nested checkout's files"
     except (errors.GitError, OSError) as exc:
         return f"could not preserve the child's files: {exc}"
     return ""

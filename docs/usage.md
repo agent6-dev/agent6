@@ -482,6 +482,8 @@ With `git.control = "model"`, the model must commit its changes before calling `
 Each child is an ordinary run with the same tools as the parent and may edit its clone.
 After import the clone goes, unless the child stopped or the clone holds work the parent cannot preserve.
 Before cleanup or prune, the parent pins the child's recorded working and staged trees under `refs/agent6/<child>/trees/` and checks both pins.
+Both operations keep a clone if its `HEAD`, index or working tree records a gitlink, even when the submodule is not populated.
+A gitlink names a commit, not the files in the nested checkout.
 Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
 `read_background` with a child's id returns its id, attempt, state, task preview, `running`, `mergeable` and commit count beside its transcript tail.
