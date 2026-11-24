@@ -133,9 +133,12 @@ class BudgetUpdate(Event):
         default=(),
         description="Balances observed in the subtree. A retried append can repeat a reading.",
     )
-    credit_origins: dict[str, int] = pydantic.Field(
+    credit_origins: credit_usage.Origins = pydantic.Field(
         default_factory=dict,
-        description="The execution number that began each restored account's series (start is 1).",
+        description=(
+            "Originating execution per recovered account (start is 1). For mixed origins, "
+            "keys index `credit_readings` from zero. A missing origin means this execution."
+        ),
     )
     usd_total: float = pydantic.Field(
         description="USD cap reading: own calls, settled children and observed credit declines.",
@@ -203,6 +206,11 @@ class BudgetUpdate(Event):
         default=None,
         description="The latest subscription account reading; null before a plan call runs.",
     )
+
+    @property
+    def credits(self) -> credit_usage.Batch:
+        """The balance observations with their journal-local origins."""
+        return credit_usage.Batch(self.credit_readings, self.credit_origins)
 
 
 class CheckpointCommitted(Event):

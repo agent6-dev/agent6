@@ -386,8 +386,7 @@ class BudgetSnapshot:
         usd_own_calls: The cost of this execution's priced calls, excluding children and balances.
         usd_partial: Unpriced calls make the USD reading a lower bound.
         usd_observed_credits: The sum of balance declines, once per account.
-        credit_readings: The balance observations to include when writing a budget row.
-        credit_origins: The parent executions whose account series this tracker restored.
+        credits: The unpublished balance observations and their parent executions.
         credit_reading_count: How many distinct balances the subtree has observed.
         usd_running_children: The running children's USD outside the credit series. The cap
             holds it until settlement.
@@ -414,9 +413,8 @@ class BudgetSnapshot:
     usd_own_calls: float
     usd_partial: bool
     usd_observed_credits: float
-    credit_readings: tuple[credit_usage.Reading, ...]
+    credits: credit_usage.Batch
     credit_reading_count: int
-    credit_origins: dict[str, int]
     usd_running_children: float
     tokens_running_children: int
     usd_settled_children: float
@@ -491,7 +489,8 @@ class BudgetTracker:
     _settled: bool = False
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
     _credits: credit_usage.Ledger = dataclasses.field(default_factory=credit_usage.Ledger)
-    _credit_origins: dict[str, int] = dataclasses.field(default_factory=dict)
+    # A recovered settlement belongs to the parent execution that launched the child.
+    _recovered_children: dict[str, int] = dataclasses.field(default_factory=dict)
     # The spend the settled children's usage charged, and each running child's last reading.
     _children_usd: float = 0.0
     _children_partial: bool = False
@@ -670,7 +669,7 @@ class BudgetTracker:
             if child in self._charged_children:
                 return
             self._running[child] = usage
-            self._credits.observe(usage.credit_readings)
+            self._credits.observe(usage.credit_readings, origin=self._recovered_children.get(child))
             provider = ""
             for provider, plan in usage.plan_readings:
                 self._note_plan_usage(provider, plan)
@@ -678,18 +677,18 @@ class BudgetTracker:
             self._check_ceilings(provider)
 
     def restore_child_credits(
-        self, account: str, origin: int, readings: Iterable[credit_usage.Reading]
+        self, child: str, origin: int, accounts: Mapping[str, set[credit_usage.Reading]]
     ) -> None:
-        """Restore one account series before settling the child that observed it.
+        """Bind the recovered settlement to its parent execution's balance series.
 
         Args:
-            account: The account key from the child's readings.
-            origin: The parent execution that began this series.
-            readings: The balances journaled in that series, including earlier recoveries.
+            child: The settlement key, including the sequence for a continuation.
+            origin: The execution that launched this child or continuation.
+            accounts: Its journaled balances, including earlier recoveries.
         """
         with self._lock:
-            self._credit_origins[account] = origin
-            self._credits.observe(readings, banked=True)
+            self._recovered_children[child] = origin
+            self._credits.restore(origin, accounts)
 
     def mark_settled(self, children: Iterable[str]) -> None:
         """Take children an earlier execution of the session charged as settled.
@@ -725,7 +724,7 @@ class BudgetTracker:
             self._children_io += usage.model_tokens
             self._unmetered_tokens += max(usage.tokens, 0)
             self._charged_children.add(child)
-            self._credits.observe(usage.credit_readings)
+            self._credits.observe(usage.credit_readings, origin=self._recovered_children.get(child))
             provider = ""
             for provider, plan in usage.plan_readings:
                 self._note_plan_usage(provider, plan)
@@ -928,10 +927,10 @@ class BudgetTracker:
                 used = max(used, self._plan_observed_points() / self.max_plan_points)
         return max(0.0, 1.0 - used)
 
-    def credit_readings_published(self, readings: tuple[credit_usage.Reading, ...]) -> None:
+    def credit_readings_published(self, batch: credit_usage.Batch) -> None:
         """Confirm the readings a budget row wrote, leaving concurrent observations pending."""
         with self._lock:
-            self._credits.published(readings)
+            self._credits.published(batch)
 
     def snapshot(self, *, for_journal: bool = False) -> BudgetSnapshot:
         """Return a point-in-time copy of every counter.
@@ -950,11 +949,10 @@ class BudgetTracker:
             own_usd, partial = self._own_cost_locked()
             return BudgetSnapshot(
                 credit_reading_count=len(self._credits),
-                credit_origins=dict(self._credit_origins) if for_journal else {},
+                credits=self._credits.unpublished if for_journal else credit_usage.Batch((), {}),
                 usd_own_calls=own_usd,
                 usd_partial=partial or self._children_partial,
                 usd_observed_credits=self._credits.spent_usd,
-                credit_readings=self._credits.unpublished if for_journal else (),
                 input_total=self._input_total,
                 output_total=self._output_total,
                 cache_read_total=self._cache_read_total,

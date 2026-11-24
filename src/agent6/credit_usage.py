@@ -5,9 +5,9 @@
 from __future__ import annotations
 
 import dataclasses
+import decimal
 import itertools
-import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 
 @dataclasses.dataclass(frozen=True, slots=True, order=True)
@@ -25,46 +25,87 @@ class Reading:
     balance_usd: float
 
 
+def _declines(readings: set[Reading]) -> decimal.Decimal:
+    balances = (decimal.Decimal(str(r.balance_usd)) for r in sorted(readings))
+    return sum((a - b for a, b in itertools.pairwise(balances) if a > b), decimal.Decimal(0))
+
+
+@dataclasses.dataclass(slots=True)
+class _Series:
+    """One execution's observations of one account."""
+
+    seen: set[Reading]
+    banked: decimal.Decimal
+    spent: decimal.Decimal = decimal.Decimal(0)
+
+
+# An account with readings from several executions in one row needs an origin per reading.
+type Origins = dict[str, int | dict[int, int]]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Batch:
+    """New balance observations and their origins in the session journal."""
+
+    readings: tuple[Reading, ...]
+    origins: Origins
+
+    def scoped(self) -> Iterable[tuple[int | None, Reading]]:
+        """Yield each reading with its recovered execution, or None for a live observation."""
+        for index, reading in enumerate(self.readings):
+            origin = self.origins.get(reading.account)
+            yield origin.get(index) if isinstance(origin, dict) else origin, reading
+
+
 @dataclasses.dataclass(slots=True)
 class Ledger:
-    """The ordered union of the balances this execution and its children observed."""
+    """Charge only new declines within each execution's account series."""
 
-    spent_usd: float = 0.0
-    _banked_usd: float = 0.0
-    _seen: set[Reading] = dataclasses.field(default_factory=set)
-    _unpublished: set[Reading] = dataclasses.field(default_factory=set)
+    _series: dict[tuple[int | None, str], _Series] = dataclasses.field(default_factory=dict)
+    _unpublished: set[tuple[int | None, Reading]] = dataclasses.field(default_factory=set)
 
     def __len__(self) -> int:
-        return len(self._seen)
-
-    def observe(self, readings: Iterable[Reading], *, banked: bool = False) -> None:
-        """Fold readings in observation order, including declines after top-ups.
-
-        Args:
-            readings: The balances to add to the account series.
-            banked: Restore a series from the parent journal before replaying a child.
-                Its declines do not draw on this execution's cap.
-        """
-        new = set(readings).difference(self._seen)
-        if not new:
-            return
-        self._seen.update(new)
-        declines = math.fsum(
-            max(earlier.balance_usd - later.balance_usd, 0.0)
-            for _, series in itertools.groupby(sorted(self._seen), key=lambda r: r.account)
-            for earlier, later in itertools.pairwise(series)
-        )
-        if banked:
-            self._banked_usd = declines - self.spent_usd
-        else:
-            self._unpublished.update(new)
-            self.spent_usd = declines - self._banked_usd
+        return sum(len(series.seen) for series in self._series.values())
 
     @property
-    def unpublished(self) -> tuple[Reading, ...]:
-        """The observations not yet confirmed by a journal append."""
-        return tuple(sorted(self._unpublished))
+    def spent_usd(self) -> float:
+        """The additional movement from recovery plus the live execution's declines."""
+        return float(sum(series.spent for series in self._series.values()))
 
-    def published(self, readings: Iterable[Reading]) -> None:
+    def restore(self, origin: int, accounts: Mapping[str, set[Reading]]) -> None:
+        """Seed each recovered series once, without publishing or charging its history."""
+        for account, readings in accounts.items():
+            key = origin, account
+            if key not in self._series:
+                self._series[key] = _Series(set(readings), _declines(readings))
+
+    def observe(self, readings: Iterable[Reading], *, origin: int | None = None) -> None:
+        """Charge new evidence to its execution, even when settlement delivers it late."""
+        for account, group in itertools.groupby(sorted(readings), key=lambda r: r.account):
+            series = self._series.setdefault((origin, account), _Series(set(), decimal.Decimal(0)))
+            new = set(group) - series.seen
+            if new:
+                series.seen.update(new)
+                series.spent = _declines(series.seen) - series.banked
+                self._unpublished.update((origin, r) for r in new)
+
+    @property
+    def unpublished(self) -> Batch:
+        """The observations not yet confirmed by a journal append."""
+        rows = sorted(self._unpublished, key=lambda pair: (pair[1], pair[0] or 0))
+        origins: Origins = {}
+        for account, group in itertools.groupby(
+            enumerate(rows), key=lambda item: item[1][1].account
+        ):
+            scoped = {i: origin for i, (origin, _) in group}
+            values = set(scoped.values())
+            if len(values) == 1:
+                if (origin := values.pop()) is not None:
+                    origins[account] = origin
+            else:
+                origins[account] = {i: n for i, n in scoped.items() if n is not None}
+        return Batch(tuple(r for _, r in rows), origins)
+
+    def published(self, batch: Batch) -> None:
         """Mark only the observations included in a written row as published."""
-        self._unpublished.difference_update(readings)
+        self._unpublished.difference_update(batch.scoped())

@@ -58,8 +58,7 @@ class _CreditHistory:
 
     executions: dict[str, int]
     interrupted: int
-    origins: dict[tuple[int, str], int]
-    readings: dict[tuple[int, str], set[credit_usage.Reading]]
+    readings: dict[int, dict[str, set[credit_usage.Reading]]]
 
     @classmethod
     def read(cls, logs: pathlib.Path) -> _CreditHistory:
@@ -73,8 +72,7 @@ class _CreditHistory:
         """
         execution = 0
         executions: dict[str, int] = {}
-        origins: dict[tuple[int, str], int] = {}
-        readings: dict[tuple[int, str], set[credit_usage.Reading]] = {}
+        readings: dict[int, dict[str, set[credit_usage.Reading]]] = {}
         for raw in tail.tail_events(logs, follow=False):
             if raw.get("type") in ("session.start", "session.resume"):
                 execution += 1
@@ -84,28 +82,30 @@ class _CreditHistory:
             elif raw.get("type") == "budget.update":
                 row = events.parse_event(raw)
                 if isinstance(row, journal.BudgetUpdate):
-                    for account, origin in row.credit_origins.items():
-                        origins[execution, account] = origin
-                    for reading in row.credit_readings:
-                        origin = row.credit_origins.get(reading.account, execution)
-                        readings.setdefault((origin, reading.account), set()).add(reading)
-        return cls(executions, max(0, execution - 1), origins, readings)
+                    for origin, reading in row.credits.scoped():
+                        accounts = readings.setdefault(
+                            origin if origin is not None else execution, {}
+                        )
+                        accounts.setdefault(reading.account, set()).add(reading)
+        return cls(executions, max(0, execution - 1), readings)
 
     def restore(
         self,
         meter: agent6_budget.BudgetTracker,
         owner: str,
-        continuation: child_dispatch.ContinuationRecord | None,
+        child: child_dispatch.ChildRecord,
         usage: agent6_budget.UsageSettlement,
     ) -> None:
         """Bank the balances from the execution that started or continued this child."""
+        continuation = child.continuation
+        if continuation and not set(usage.credit_readings).difference(
+            continuation.usage_before.credit_readings
+        ):
+            return
         execution = self.executions.get(
             continuation.owner if continuation else owner, self.interrupted
         )
-        prior = set(continuation.usage_before.credit_readings) if continuation else set()
-        for account in {r.account for r in usage.credit_readings if r not in prior}:
-            origin = self.origins.get((execution, account), execution)
-            meter.restore_child_credits(account, origin, self.readings.get((origin, account), ()))
+        meter.restore_child_credits(child.account_id, execution, self.readings.get(execution, {}))
 
 
 def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery path
@@ -196,9 +196,7 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                     and result.usage.credit_readings
                 ):
                     history = history or _CreditHistory.read(logs)
-                    history.restore(
-                        dispatcher.budget, record.owner, child.continuation, result.usage
-                    )
+                    history.restore(dispatcher.budget, record.owner, child, result.usage)
         if (
             record.state in ("prepared", "running")
             and dispatcher.child_recoverer is not None

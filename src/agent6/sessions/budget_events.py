@@ -59,8 +59,8 @@ def budget_update(budget: agent6_budget.BudgetTracker) -> journal.BudgetUpdate:
         usd_partial=snap.usd_partial,
         usd_own_calls=snap.usd_own_calls,
         usd_observed_credits=snap.usd_observed_credits,
-        credit_readings=snap.credit_readings,
-        credit_origins=snap.credit_origins,
+        credit_readings=snap.credits.readings,
+        credit_origins=snap.credits.origins,
         usd_cap=snap.max_usd,
         usd_running_children=snap.usd_running_children,
         usd_settled_children=snap.usd_settled_children,
@@ -80,4 +80,4 @@ def emit_budget_update(
     with budget.journal_lock:
         row = budget_update(budget)
         emit(row)
-        budget.credit_readings_published(row.credit_readings)
+        budget.credit_readings_published(row.credits)
