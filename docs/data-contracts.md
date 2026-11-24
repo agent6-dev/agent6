@@ -151,7 +151,7 @@ The loop-owned conversation: typed messages over the provider wire.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, standing_goal, tool_effects}, harness/compaction/{calls, retention, rules, strategy, window, writers}, harness/verify/gate
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (54 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (55 test files exercise it)
 
 ## SessionManifest
 
@@ -230,7 +230,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaRes
 
 - **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fs_tools, nav_tools, skill_tools}
 - **Read by:** app/review/actions, harness/{child_work, guards, memory_touch, metric_sampler, tool_effects}, harness/verify/gate, tools/{child_tools, result_format, sessions}
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (42 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (43 test files exercise it)
 
 ## Event union
 
@@ -323,4 +323,4 @@ Public fields: [Formats](formats.md#session-snapshots).
 
 - **Written by:** viewmodel/machine/state, viewmodel/session/view
 - **Read by:** ui/acp/updates, ui/cli/{sessions_show, steer_menu}, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (15 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (16 test files exercise it)
