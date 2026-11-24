@@ -112,7 +112,7 @@ def _opening(path: pathlib.Path, body: dict[str, Any], focus: str) -> Opening:
     limit = (
         re.match(r"\[harness\] reply 1 of ([1-9]\d*)[.,]", text)
         if len(messages) > 1
-        else re.search(r"\bYou have at most ([1-9]\d*) replies\b", system)
+        else re.search(r"\bYou have (?:at most )?([1-9]\d*) replies\b", system)
     )
     if limit is None:
         raise RecordingError("missing recorded reply limit for the first turn")

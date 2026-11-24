@@ -70,7 +70,7 @@ def score(response: provider_types.ProviderResponse) -> Reply:
         )
     if provider_types.output_cap_truncated(response):
         return Reply("truncated")
-    obj = llm_json.extract_json(response.text, prefer=("verdict", "findings"))
+    obj = llm_json.extract_json(response.text, prefer=("findings",))
     if obj is None:
         return Reply("invalid reply", error="no verdict JSON")
     parsed = verdict.verdict_from_obj(obj, 0, "", "")

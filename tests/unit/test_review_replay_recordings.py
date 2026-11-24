@@ -84,12 +84,14 @@ def test_other_http_wires_keep_the_recorded_message_boundaries(
     assert request.max_tokens == 4321
 
 
+@pytest.mark.parametrize("limit", ["You have at most 4 replies", "You have 4 replies"])
 def test_a_limit_in_the_system_prompt_needs_no_synthetic_reply_notice(
     tmp_path: pathlib.Path,
+    limit: str,
 ) -> None:
     body = env.responses_body()
     body["input"].pop()
-    body["instructions"] = "Investigate first. You have at most 4 replies, including tool calls."
+    body["instructions"] = f"{limit}, including tool calls."
     env.record_review(tmp_path, "run-rp1-l1", body)
     (request,) = recordings.read_reviews(tmp_path)
     assert request.messages == [{"role": "user", "content": env.OPENING}]

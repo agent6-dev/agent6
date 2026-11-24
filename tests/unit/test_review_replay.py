@@ -27,9 +27,7 @@ def finding(category: str, title: str, detail: str, severity: str = "block") -> 
 
 
 def answer(*findings: dict[str, Any], summary: str = "") -> str:
-    return json.dumps(
-        {"verdict": "block" if findings else "pass", "summary": summary, "findings": findings}
-    )
+    return json.dumps({"summary": summary, "findings": findings})
 
 
 @pytest.fixture
