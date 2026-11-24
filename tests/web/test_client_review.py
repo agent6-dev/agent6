@@ -18,7 +18,16 @@ def _run(scenario: str) -> None:
     if node is None:
         pytest.skip("node is needed to exercise findings")
     scripts = client_assets.script(
-        "controls", "router", "docks", "layout", "source", "review", "git_diff", "git", "files"
+        "controls",
+        "router",
+        "docks",
+        "hub",
+        "layout",
+        "source",
+        "review",
+        "git_diff",
+        "git",
+        "files",
     )
     dom = (
         _DOM.replace(
@@ -197,7 +206,8 @@ assert.equal(reason.maxLength, 2000);
 paintFindings(cards, state);
 assert.equal(cards.findings.querySelector('form'), form, 'SSE wiped an in-progress form');
 e.finding.status = 'resolved'; state.review.version = 2;
-cards._finding_status = 'all'; paintFindings(cards, state);
+paintFindings(cards, state);
+const status = cards.findings.querySelector('select'); status.value = 'all'; status.onchange();
 button('Reopen').onclick();
 const reopen = cards.findings.querySelector('form');
 reopen.querySelector('textarea').value = 'Still reproducible';

@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from agent6.ui import keymap
 from tests.web import geometry, test_files_preview_browser, test_review_evidence, test_web_browser
+from tests.web.test_findings import _request
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -28,4 +30,63 @@ def test_reviewed_source_shares_the_heading_gutter(
         page.get_by_role("heading", name="base · old.txt"), page.get_by_text("Reviewed tree:")
     )
     assert heading["x"] == pytest.approx(source["x"], abs=0.5)
+    assert not errors
+
+
+def test_resolution_shows_the_disposition_labels_and_names_the_reason(
+    open_page: OpenPage, evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """Read a disposition by its label and see the Reason label after typing."""
+    from playwright import sync_api
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    card = page.locator('.card-findings [data-finding="rename"]')
+    card.get_by_role("button", name="Resolve", exact=True).click()
+    options = card.get_by_role("combobox", name="Disposition").get_by_role("option")
+    assert [(o.inner_text(), o.get_attribute("value")) for o in options.all()] == list(
+        keymap.REVIEW_DISPOSITIONS
+    )
+    card.get_by_label("Disposition").select_option(label="Won't fix")
+    reason = card.get_by_role("textbox", name=keymap.REVIEW_TEXT["reason"], exact=True)
+    reason.fill("The old format remains supported.")
+    sync_api.expect(card.get_by_text(keymap.REVIEW_TEXT["reason"], exact=True)).to_be_visible()
+    card.get_by_role("button", name="Submit resolution").click()
+    page.get_by_label("Finding status").select_option("resolved")
+    sync_api.expect(card).to_contain_text("Won't fix: The old format remains supported.")
+    assert not errors
+
+
+def test_another_resolution_preserves_the_reason_and_uses_the_new_version(
+    open_page: OpenPage, evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """A review frame for a different finding must leave the open form ready to submit."""
+    from playwright import sync_api
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    findings = page.locator(".card-findings")
+    card = findings.locator('[data-finding="rename"]')
+    card.get_by_role("button", name="Resolve", exact=True).click()
+    reason = card.get_by_role("textbox", name="Reason")
+    reason.fill("Keep this format.")
+    code, review = _request(port)
+    assert code == 200
+    code, result = _request(
+        port,
+        "/delete/resolve",
+        dict(
+            expected_version=review["version"],
+            request_id="elsewhere",
+            resolution=dict(disposition="fixed", reason="Checked the deletion."),
+        ),
+    )
+    assert code == 200, result
+    sync_api.expect(findings).to_contain_text("3 block")
+    sync_api.expect(reason).to_be_focused()
+    sync_api.expect(reason).to_have_value("Keep this format.")
+    card.get_by_role("button", name="Submit resolution").click()
+    sync_api.expect(findings).to_contain_text("2 block")
     assert not errors

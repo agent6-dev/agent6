@@ -94,6 +94,8 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - on a phone, **Stop now** stays visible and **More** holds the other run actions. Press Escape, click outside More or choose an action to close it.
     - **Tool calls** rows open to selectable arguments and recorded output
     - **Budget** shows labelled meters for capped usage and plain text for uncapped usage
+    - In **Findings**, choose **Resolve**, pick a disposition and give a reason.
+      An update to another finding keeps your reason and your place in the form.
     - **Children** folds to one line in Details, such as `children: 1 merged, 1 ranked, 1 running`.
       Each child counts once by its recorded outcome, or by its status if it has no outcome.
       On a phone, choose **Children** from **Widgets**.

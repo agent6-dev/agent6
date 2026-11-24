@@ -96,14 +96,18 @@ function reviewEntries(review, session_id, panel_id = '') {
     const observation = panel_id ? finding.observations.find(o => o.panel_id === panel_id) : finding.observations.at(-1);
     if (!observation) continue;
     const panel = review.panels.find(p => p.panel_id === observation.panel_id);
-    if (panel?.target) entries.push({finding, observation, panel, session_id, version: review.version, matches: true});
+    if (panel?.target) entries.push({finding, observation, panel, session_id, matches: true});
   }
   return entries;
 }
 function findingRequestId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
 }
-function findingActions(card, entry, cards, state) {
+const dispositionLabels = {
+  fixed: 'Fixed', false_positive: 'False positive', intentional: 'Intentional',
+  wont_fix: "Won't fix", duplicate: 'Duplicate', pre_existing: 'Pre-existing line',
+};
+function findingActions(card, entry, cards) {
   const base = cards._base + '/findings/' + encodeURIComponent(entry.finding.finding_id);
   // A button busy with its request reads disabled (aria-disabled) but keeps the keyboard focus.
   const send = async (button, verb, body) => {
@@ -119,12 +123,13 @@ function findingActions(card, entry, cards, state) {
   };
   const row = el('span', 'row wrap'); card.appendChild(row);
   if (entry.finding.status === 'open') {
-    const dead = notLive(state), fix = el('button', 'mini', dead ? 'Resume to fix' : 'Fix');
+    const fix = el('button', 'mini'); card.fix = fix;
     const request_id = findingRequestId();
     fix.disabled = entry.finding.fix_state === 'delivery_unknown';
     fix.onclick = async () => {
+      const dead = cards._reviewDead, version = cards._review.version;
       if (fix.hasAttribute('aria-disabled') || (dead && !await confirmDialog('Resume this session to reproduce and fix ' + entry.finding.finding_id + '?', 'The finding stays open.', 'Resume to fix'))) return;
-      return send(fix, 'fix', {request_id, expected_version: entry.version, resume: dead});
+      return send(fix, 'fix', {request_id, expected_version: version, resume: dead});
     };
     row.appendChild(fix);
   }
@@ -132,22 +137,22 @@ function findingActions(card, entry, cards, state) {
   const button = el('button', 'mini', verb === 'resolve' ? 'Resolve' : 'Reopen'); row.appendChild(button);
   const form = el('form', 'finding-form'); card.appendChild(form);
   const disposition = el('select', 'field'); disposition.setAttribute('aria-label', 'Disposition');
-  for (const value of ['fixed', 'false_positive', 'intentional', 'wont_fix', 'duplicate', 'pre_existing']) {
-    const option = el('option', null, value); option.value = value; disposition.appendChild(option);
+  for (const [value, label] of Object.entries(dispositionLabels)) {
+    const option = el('option', null, label); option.value = value; disposition.appendChild(option);
   }
   const duplicate = el('input', 'field'); duplicate.setAttribute('aria-label', 'Duplicate finding ID');
   duplicate.placeholder = 'Another finding ID in this session'; duplicate.hidden = true;
   disposition.onchange = () => { duplicate.hidden = disposition.value !== 'duplicate'; duplicate.required = !duplicate.hidden; };
   if (verb === 'resolve') { form.appendChild(disposition); form.appendChild(duplicate); }
-  const reason = el('textarea', 'field'); reason.setAttribute('aria-label', 'Reason'); reason.maxLength = 2000; reason.required = true;
-  reason.placeholder = 'Reason (required, at most 2,000 characters)'; form.appendChild(reason);
+  const reason = el('textarea', 'field'); reason.maxLength = 2000; reason.required = true;
+  form.append(fieldLabel(reason, 'Reason (required, at most 2,000 characters)'), reason);
   const submit = el('button', 'mini', verb === 'resolve' ? 'Submit resolution' : 'Submit reopen'); submit.type = 'submit'; form.appendChild(submit);
   const request_id = findingRequestId();
   for (const control of card.querySelectorAll('button')) describedBy(card.querySelector('.finding-title'), control);
   form.onsubmit = event => {
     event.preventDefault();
     if (!reason.value.trim()) { reason.focus(); return; }
-    const body = {request_id, expected_version: entry.version};
+    const body = {request_id, expected_version: cards._review.version};
     if (verb === 'resolve') body.resolution = {disposition: disposition.value, reason: reason.value,
       ...(disposition.value === 'duplicate' ? {duplicate_of: duplicate.value.trim()} : {})};
     else body.reason = reason.value;
@@ -158,106 +163,113 @@ function findingActions(card, entry, cards, state) {
   show(false);
   button.onclick = () => { show(form.hidden); if (!form.hidden) reason.focus(); };
 }
-function paintFindings(cards, state) {
-  if (!cards.findings) return;
-  const review = state.review || {version: 0, panels: [], findings: []};
-  const key = JSON.stringify([review, notLive(state)]);
-  if (cards._findings_key === key) return;
-  cards._findings_key = key;
-  // A draft has no Receipt, so its card waits for a review's first event (the version counts them).
-  if (cards._readOnly) cards.findings.parentElement.style.display = review.version ? '' : 'none';
-  const host = cards.findings, held = document.activeElement; host.innerHTML = '';
-  // The counts lead the card with the Receipt button at their end.
-  const counts = review.open_counts || {};
-  const head = el('div', 'row finding-head');
-  head.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
+function reviewPanel(panel) {
+  const result = panel.result, block = el('div', 'review-panel');
+  const line = el('div', 'muted', 'Panel ' + panel.panel_id.slice(0, 12) + ': ' + panel.completion
+    + (panel.reason ? ' (' + panel.reason + ')' : '')
+    + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : ''));
+  line.title = panel.panel_id;
+  block.appendChild(line);
+  block.appendChild(reviewRules(panel));
+  // One line per reviewer: its session holds the reviewer's own conversation.
+  for (const reviewer of panel.reviewers || []) if (reviewer.session_id) {
+    const who = el('div', 'sub', `Reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}): `);
+    const link = el('a', null, reviewer.session_id);
+    link.href = '#/session/' + encodeURIComponent(reviewer.session_id);
+    who.appendChild(link);
+    block.appendChild(who);
+  }
+  return block;
+}
+function sessionFinding(entry, cards) {
+  const card = findingCard(entry);
+  if (entry.finding.fix_state !== 'none') card.appendChild(el('span', 'muted', 'Fix: ' + entry.finding.fix_state.replaceAll('_', ' ')));
+  for (const action of entry.finding.actions) card.appendChild(el('span', 'finding-history', action.type.split('.').at(-1)
+    + (action.resolution ? ' · ' + dispositionLabels[action.resolution.disposition] : '') + ': '
+    + (action.resolution ? action.resolution.reason : action.reason || action.error || action.action || '')));
+  if (!cards._readOnly) findingActions(card, entry, cards);
+  return card;
+}
+function makeFindings(cards) {
+  const host = cards.findings, head = el('div', 'row finding-head');
+  const counts = head.appendChild(el('div', 'finding-counts'));
   host.appendChild(head);
   if (!cards._readOnly) {
-    // The button survives a streamed repaint while its dialog owns the receipt.
-    if (!cards._receipt) {
-      const inspect = el('button', 'mini', 'Receipt');
-      inspect.setAttribute('aria-haspopup', 'dialog');
-      inspect.onclick = async () => {
-        const dialog = openDialog('Receipt', 'wide');
-        if (!dialog) return;
-        const receipt = el('div', 'receipt'); dialog.appendChild(receipt);
-        receipt.appendChild(el('div', 'muted', 'loading the receipt…'));
-        try {
-          const data = await getJSON(cards._base + '/receipt');
-          if (dialog.open) drawReceipt(receipt, data);
-        } catch (e) { if (dialog.open) receipt.replaceChildren(el('div', 'err', e.message)); }
-      };
-      cards._receipt = {inspect};
-    }
-    head.appendChild(cards._receipt.inspect);
+    const inspect = head.appendChild(el('button', 'mini', 'Receipt'));
+    inspect.setAttribute('aria-haspopup', 'dialog');
+    inspect.onclick = async () => {
+      const dialog = openDialog('Receipt', 'wide');
+      if (!dialog) return;
+      const receipt = dialog.appendChild(el('div', 'receipt'));
+      receipt.appendChild(el('div', 'muted', 'loading the receipt…'));
+      try {
+        const data = await getJSON(cards._base + '/receipt');
+        if (dialog.open) drawReceipt(receipt, data);
+      } catch (e) { if (dialog.open) receipt.replaceChildren(el('div', 'err', e.message)); }
+    };
   }
-  const guard = reviewMergeReason(review);
-  const facts = el('div', 'kv');
-  facts.appendChild(el('div', 'k', 'review')); facts.appendChild(el('div', 'v', review.summary || 'unknown'));
-  facts.appendChild(el('div', 'k', 'merge'));
-  facts.appendChild(el('div', guard ? 'v err' : 'v', guard || 'no open block findings'));
-  host.appendChild(facts);
-  if (review.legacy_notice) host.appendChild(el('div', 'muted', review.legacy_notice));
-  if (!cards._readOnly && (review.findings || []).some(f => f.status === 'open')) {
-    // One steer for every open finding without a queued Fix; the per-finding Fix stays below.
-    const dead = notLive(state), all = el('button', 'mini', dead ? 'Resume to fix all open' : 'Fix all open');
+  const facts = el('div', 'kv'), summary = el('div', 'v'), merge = el('div', 'v');
+  facts.append(el('div', 'k', 'review'), summary, el('div', 'k', 'merge'), merge);
+  const legacy = el('div', 'muted'), panels = el('div');
+  host.append(facts, legacy);
+  const all = el('button', 'mini');
+  if (!cards._readOnly) {
+    host.appendChild(all);
     all.onclick = async () => {
+      const dead = cards._reviewDead;
       if (all.hasAttribute('aria-disabled') || (dead && !await confirmDialog('Resume this session to reproduce and fix every open finding?', 'The findings stay open.', 'Resume to fix'))) return;
-      all.setAttribute('aria-disabled', 'true'); // reads disabled, and keeps the keyboard focus
+      all.setAttribute('aria-disabled', 'true');
       try {
         const result = await postJSON(cards._base + '/findings/fix', {all_open: true, request_id: findingRequestId(), resume: dead});
         toast(result.results.map(r => r.finding_id + ': ' + r.message).join('; '));
         const snap = await getJSON(cards._base);
-        if (cards.findings.isConnected) paintRun(cards, snap);
+        if (host.isConnected) paintRun(cards, snap);
       } catch (e) { toast(e.message, true); }
       finally { all.removeAttribute('aria-disabled'); }
     };
-    host.appendChild(all);
-  }
-  // One block per panel: its outcome (the twelve-character id the conversation prints) over its rules.
-  for (const panel of review.panels || []) {
-    const result = panel.result, block = el('div', 'review-panel');
-    const line = el('div', 'muted', 'Panel ' + panel.panel_id.slice(0, 12) + ': ' + panel.completion
-      + (panel.reason ? ' (' + panel.reason + ')' : '')
-      + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : ''));
-    line.title = panel.panel_id;
-    block.appendChild(line);
-    block.appendChild(reviewRules(panel));
-    // One line per reviewer: its session holds the reviewer's own conversation.
-    for (const reviewer of panel.reviewers || []) if (reviewer.session_id) {
-      const who = el('div', 'sub', `Reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}): `);
-      const link = el('a', null, reviewer.session_id);
-      link.href = '#/session/' + encodeURIComponent(reviewer.session_id);
-      who.appendChild(link);
-      block.appendChild(who);
-    }
-    host.appendChild(block);
   }
   const status = el('select', 'field'); status.setAttribute('aria-label', 'Finding status');
   const severity = el('select', 'field'); severity.setAttribute('aria-label', 'Finding severity');
-  for (const [select, values, value] of [[status, ['open', 'resolved', 'all'], cards._finding_status || 'open'], [severity, ['all', 'block', 'warn', 'nit'], cards._finding_severity || 'all']]) {
+  for (const [select, values] of [[status, ['open', 'resolved', 'all']], [severity, ['all', 'block', 'warn', 'nit']]]) {
     for (const item of values) { const option = el('option', null, item); option.value = item; select.appendChild(option); }
-    select.value = value;
+    select.value = values[0];
   }
-  host.appendChild(pickerRow([['status', status], ['severity', severity]]));
-  const list = el('div'); host.appendChild(list);
-  const paint = () => {
-    cards._finding_status = status.value; cards._finding_severity = severity.value; list.innerHTML = '';
-    // No session id: a card on its own session's page links to no Session findings.
-    for (const entry of reviewEntries(review, '')) {
-      if (status.value !== 'all' && entry.finding.status !== status.value) continue;
-      if (severity.value !== 'all' && entry.observation.finding.severity !== severity.value) continue;
-      const card = findingCard(entry); list.appendChild(card);
-      if (entry.finding.fix_state !== 'none') card.appendChild(el('span', 'muted', 'Fix: ' + entry.finding.fix_state.replaceAll('_', ' ')));
-      for (const action of entry.finding.actions) card.appendChild(el('span', 'finding-history', action.type.split('.').at(-1)
-        + (action.resolution ? ' · ' + action.resolution.disposition : '') + ': '
-        + (action.resolution ? action.resolution.reason : action.reason || action.error || action.action || '')));
-      if (!cards._readOnly) findingActions(card, entry, cards, state);
-    }
-    if (!list.children.length) list.appendChild(el('div', 'muted', 'no findings in this filter'));
+  const list = el('div'), empty = el('div', 'muted', 'no findings in this filter');
+  host.append(panels, pickerRow([['status', status], ['severity', severity]]), list, empty);
+  const paintList = () => {
+    const entries = reviewEntries(cards._review, '').filter(e =>
+      (status.value === 'all' || e.finding.status === status.value) &&
+      (severity.value === 'all' || e.observation.finding.severity === severity.value));
+    patchRows(list, entries.map(e => ({key: e.finding.finding_id, data: [e.finding, e.panel.target], paint: () => sessionFinding(e, cards)})));
+    for (const card of list.children) if (card.fix) card.fix.textContent = cards._reviewDead ? 'Resume to fix' : 'Fix';
+    list.hidden = !entries.length; empty.hidden = !!entries.length;
   };
-  status.onchange = severity.onchange = paint; paint();
-  refocus(held, host, host.querySelector(FOCUSABLE));
+  status.onchange = severity.onchange = paintList;
+  return () => {
+    const review = cards._review, held = document.activeElement;
+    counts.textContent = ['block', 'warn', 'nit'].map(s => (review.open_counts?.[s] || 0) + ' ' + s).join(' · ');
+    summary.textContent = review.summary || 'unknown';
+    const guard = reviewMergeReason(review);
+    merge.textContent = guard || 'no open block findings'; merge.classList.toggle('err', !!guard);
+    legacy.textContent = review.legacy_notice || ''; legacy.hidden = !review.legacy_notice;
+    all.textContent = cards._reviewDead ? 'Resume to fix all open' : 'Fix all open';
+    all.hidden = !(review.findings || []).some(f => f.status === 'open');
+    patchRows(panels, (review.panels || []).map(panel => ({key: panel.panel_id, data: panel, paint: () => reviewPanel(panel)})));
+    panels.hidden = !panels.children.length;
+    paintList();
+    refocus(held, host, host.querySelector(FOCUSABLE));
+  };
+}
+function paintFindings(cards, state) {
+  if (!cards.findings) return;
+  const review = state.review || {version: 0, panels: [], findings: []};
+  const dead = notLive(state), key = JSON.stringify([review, dead]);
+  if (cards._findings_key === key) return;
+  cards._findings_key = key; cards._review = review; cards._reviewDead = dead;
+  // A draft has no Receipt, so its card waits for the first review event.
+  if (cards._readOnly) cards.findings.parentElement.style.display = review.version ? '' : 'none';
+  cards._paintFindings ||= makeFindings(cards);
+  cards._paintFindings();
 }
 async function renderReviewedFile(gen, path, query) {
   setCrumb('Files · reviewed version');

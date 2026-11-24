@@ -601,15 +601,15 @@ def test_a_streamed_review_keeps_the_focus_on_receipt(
     page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
     card = page.locator(".card-findings")
     receipt = card.get_by_role("button", name="Receipt", exact=True)
-    painted = card.locator(".finding").first.element_handle()
     receipt.focus()
     snap = page.evaluate("getJSON('/api/session/review-run')")
     snap["review"]["version"] += 1
+    snap["review"]["legacy_notice"] = "Updated review notice"
     while not streams:
         page.wait_for_timeout(50)
     frame = "data: " + json.dumps(snap) + "\n\n"
     streams[0].fulfill(headers={"Content-Type": "text/event-stream"}, body=frame)
-    page.wait_for_function("f => !f.isConnected", arg=painted)  # the card repainted
+    expect(card.get_by_text("Updated review notice")).to_be_visible()
     expect(receipt).to_be_focused()
     assert not errors
 
