@@ -33,7 +33,7 @@ def test_the_handshake_answers_with_what_agent6_can_do() -> None:
     (reply,) = _exchange(_init())
     assert reply["id"] == 1
     result = reply["result"]
-    assert result["protocolVersion"] == acp_server.PROTOCOL_VERSION
+    assert result["protocolVersion"] == 1
     assert result["agentInfo"]["name"] == "agent6"
 
 

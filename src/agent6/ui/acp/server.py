@@ -23,8 +23,8 @@ from agent6.ui import operator_images
 from agent6.ui.acp import model, review, rpc, updates, wire
 from agent6.ui.acp import session as acp_session
 
-# The client sends the newest version it supports and disconnects if this one will not do.
-PROTOCOL_VERSION = 1
+# The protocol versions served, lowest first; `initialize` selects one for the connection.
+VERSIONS: tuple[int, ...] = (1,)
 # 4 MiB, the MCP server's cap, and a prompt's images; past it the payload is dropped, not buffered.
 MAX_LINE_BYTES = (1 << 22) + operator_images.ENCODED_TOTAL_MAX
 # How long EOF waits for an execution to reach a boundary: a verify's length, not a wedged run's.
@@ -67,18 +67,23 @@ class ACPServer:
         stdout: The replies and notifications.
         client_capabilities: What the client declared at `initialize`.
         sessions: How a prompt becomes a run; None in a transport-only test.
+        protocol_version: The version `initialize` selected; 1 until then, as a v1 editor
+            that skips the handshake is still served.
     """
 
     stdin: BinaryIO
     stdout: BinaryIO
     client_capabilities: frontend.FrontendCapabilities | None = None
     sessions: acp_session.Sessions | None = None
+    protocol_version: int = 1
     _handlers: dict[str, Any] = dataclasses.field(default_factory=dict)
     # One writer at a time: a reply and a worker's update interleaved is a line no editor parses.
     _write_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _pending: dict[object, _Pending] = dataclasses.field(default_factory=dict)
     _pending_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _next_id: int = 0
+    _asks: int = 0  # under `_pending_lock`; numbers the calls v1 makes up for a bare prompt
+    _used: bool = False  # a request other than `initialize` arrived
     _gone: bool = False  # the client's end of the pipe is closed
 
     def __post_init__(self) -> None:
@@ -126,7 +131,10 @@ class ACPServer:
         if parsed is None:
             return
         req_id, method, params = parsed
+        self._used = self._used or (req_id is not None and method != "initialize")
         handler = self._handlers.get(method)
+        if method == "session/load" and self.protocol_version >= 2:
+            handler = None  # v2 has no load: `session/resume` replays
         if handler is None:
             if req_id is not None:  # an unknown notification is ignorable
                 self.reply(
@@ -195,6 +203,9 @@ class ACPServer:
                 else None,
                 error=rpc.RpcError(rpc.INVALID_REQUEST, "jsonrpc must be '2.0'"),
             )
+            return None
+        if req_id is None and "id" in message and self.protocol_version >= 2:
+            self.reply(None, error=rpc.RpcError(rpc.INVALID_REQUEST, "id must not be null"))
             return None
         if req_id is not None and (isinstance(req_id, bool) or not isinstance(req_id, str | int)):
             self.reply(
@@ -296,6 +307,10 @@ class ACPServer:
             if time.monotonic() >= deadline or (until is not None and until()):
                 with self._pending_lock:
                     self._pending.pop(req_id, None)
+                if self.protocol_version >= 2:
+                    # The wait is over: a v2 editor dismisses the prompt it still shows.
+                    cancel = {"jsonrpc": "2.0", "method": "$/cancel_request"}
+                    self.notify_raw({**cancel, "params": {"requestId": req_id}})
                 return {}
         if until is not None and until():
             return {}
@@ -303,9 +318,48 @@ class ACPServer:
         result = answer.get("result")
         return result if isinstance(result, dict) else {}
 
+    def request_permission(
+        self,
+        acp_session_id: str,
+        request: model.PermissionRequest,
+        *,
+        timeout_s: float,
+        until: Callable[[], bool],
+    ) -> int | None:
+        """Put one approval or question to the editor as the connection's version asks it.
+
+        v1 names a tool call in every request, so a prompt that gates none announces a
+        call of its own and closes it with the answer.
+
+        Args:
+            acp_session_id: The conversation the request addresses.
+            request: The prompt, the call it gates and its answers.
+            timeout_s: How long to wait before answering with nothing.
+            until: Polled while the answer is pending; True ends the wait.
+
+        Returns:
+            The place of the chosen option, or None for no usable answer.
+        """
+        call_id = request.tool_call_id
+        if not call_id and self.protocol_version == 1:
+            with self._pending_lock:
+                self._asks += 1
+                call_id = f"ask-{acp_session_id}-{self._asks}"
+        answer = self.request(
+            "session/request_permission",
+            wire.permission_request(self.protocol_version, acp_session_id, request, call_id),
+            timeout_s=timeout_s,
+            until=until,
+        )
+        chosen = wire.selected_option(answer, len(request.options))
+        if call_id != request.tool_call_id:
+            closed = "failed" if chosen is None else "completed"
+            self.update(acp_session_id, model.ToolCallUpdate(call_id, closed))
+        return chosen
+
     def _session_new(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        """Return the reply to `session/new`: the new session's id and config options."""
-        return wire.v1_result(self._sessions().new(params))
+        """Return the reply to `session/new`: the new session's id, options and commands."""
+        return wire.result(self.protocol_version, self._sessions().new(params))
 
     def _session_list(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/list`: the recorded runs, newest first."""
@@ -314,21 +368,50 @@ class ACPServer:
     def _session_load(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to v1's `session/load`: a resume that replays from the start."""
         replaying = {**params, "replayFrom": {"type": "start"}}
-        return wire.v1_result(self._sessions().resume(replaying, notify=self.update))
+        return wire.result(1, self._sessions().resume(replaying, notify=self.update))
 
     def _session_resume(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        """Return the reply to `session/resume`: the config options of the run's conversation."""
-        # v1's resume has no replay cursor: `session/load` is its replay.
-        plain = {key: value for key, value in params.items() if key != "replayFrom"}
-        return wire.v1_result(self._sessions().resume(plain, notify=self.update))
+        """Return the reply to `session/resume`: the run's conversation, replayed when asked."""
+        if self.protocol_version == 1:
+            # v1's resume has no replay cursor: `session/load` is its replay.
+            params = {key: value for key, value in params.items() if key != "replayFrom"}
+        opened = self._sessions().resume(params, notify=self.update)
+        return wire.result(self.protocol_version, opened)
 
     def _session_set_config_option(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/set_config_option`: the complete config options."""
-        return wire.v1_result(self._sessions().set_config_option(params))
+        if self.protocol_version == 1:
+            params = {**params, "type": "id"}  # v1 has selects alone, and no tag for them
+        chosen = self._sessions().set_config_option(params)
+        return wire.result(self.protocol_version, chosen)
 
-    def _session_close(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        """Return the reply to `session/close`: empty; a prompt in flight answers `cancelled`."""
-        return self._sessions().close(params)
+    def _session_close(self, params: dict[str, Any], req_id: object) -> object:
+        """Serve `session/close`: end a conversation, cancelling a prompt in flight.
+
+        Args:
+            params: The `sessionId`.
+            req_id: The id the reply answers.
+
+        Returns:
+            Under v1 the empty reply at once, the cancelled prompt answering after it. Under
+            v2 `DEFERRED`: the reply follows the cancelled work's last update, and closing a
+            conversation that is not open succeeds.
+
+        Raises:
+            RpcError: Under v1, no such session.
+        """
+        sessions = self._sessions()
+        closed: dict[str, Any] = {}
+        if self.protocol_version == 1:
+            sessions.close(params, settled=lambda: None)
+            return closed
+        try:
+            sessions.close(params, settled=lambda: self.reply(req_id, result=closed))
+        except rpc.RpcError as exc:
+            if exc.code != rpc.RESOURCE_NOT_FOUND:
+                raise
+            return closed
+        return DEFERRED
 
     def _session_prompt(self, params: dict[str, Any], req_id: object) -> object:
         """Serve `session/prompt`; the worker replies with the stop reason or the turn's error.
@@ -350,7 +433,8 @@ class ACPServer:
         sessions = self._sessions()
         session = sessions.get(params)
         images = acp_session.prompt_images(params)
-        text = acp_session.prompt_text(params, allow_empty=bool(images))
+        strict = self.protocol_version >= 2
+        text = acp_session.prompt_text(params, allow_empty=bool(images), strict=strict)
         if images:
             # Checked before the worker starts, so a refused image answers this request.
             if text.startswith("/"):
@@ -381,13 +465,15 @@ class ACPServer:
             params: The `sessionId` of the session to cancel.
 
         Returns:
-            An empty result, never sent; an unknown session is told to the editor.
+            An empty result, never sent; a v1 editor is told of an unknown session, and v2
+            has a cancel for one ignored.
         """
         sessions = self._sessions()
         try:
             sessions.cancel(sessions.get(params))
         except rpc.RpcError as exc:
-            self.update(str(params.get("sessionId")), updates.notice(f"cancel: {exc.message}"))
+            if self.protocol_version == 1:
+                self.update(str(params.get("sessionId")), updates.notice(f"cancel: {exc.message}"))
         return {}
 
     def _sessions(self) -> acp_session.Sessions:
@@ -404,41 +490,44 @@ class ACPServer:
         return self.sessions
 
     def _initialize(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
-        """Serve `initialize`: the capability exchange.
+        """Serve `initialize`: select the connection's version and exchange capabilities.
 
         Args:
-            params: The client's `protocolVersion` and `clientCapabilities`.
+            params: The client's `protocolVersion` and its capabilities.
 
         Returns:
-            The protocol version and the agent's capabilities.
+            The highest version served that is at most the one requested, and the agent's
+            capabilities in that version's shape.
 
         Raises:
-            RpcError: The protocol version is not an integer from 0 to 65535.
+            RpcError: The protocol version is not an integer from 0 to 65535, no version
+                served is that low, or a v2 connection repeats `initialize` after another
+                request.
         """
-        protocol_version = params.get("protocolVersion")
+        requested = params.get("protocolVersion")
         if (
-            not isinstance(protocol_version, int)
-            or isinstance(protocol_version, bool)
-            or not 0 <= protocol_version <= 65_535
+            not isinstance(requested, int)
+            or isinstance(requested, bool)
+            or not 0 <= requested <= 65_535
         ):
             raise rpc.RpcError(
                 rpc.INVALID_PARAMS, "protocolVersion must be an integer from 0 to 65535"
             )
-        raw = params.get("clientCapabilities")
+        if self._used and self.protocol_version >= 2:
+            raise rpc.RpcError(
+                rpc.INVALID_REQUEST, "initialize cannot be repeated after another request"
+            )
+        served = [version for version in VERSIONS if version <= requested]
+        if not served:
+            raise rpc.RpcError(
+                rpc.UNSUPPORTED_PROTOCOL_VERSION,
+                "Unsupported protocol version",
+                {"requested": requested, "supported": list(VERSIONS)},
+            )
+        self.protocol_version = served[-1]
+        raw = params.get("clientCapabilities" if self.protocol_version == 1 else "capabilities")
         self.client_capabilities = capabilities_from(raw if isinstance(raw, dict) else {})
-        return {
-            "protocolVersion": PROTOCOL_VERSION,
-            "agentCapabilities": {
-                "loadSession": True,
-                # A resource block's uri is client-controlled; passing it through is path injection.
-                # An image block's inline data is taken; its uri is never opened.
-                "promptCapabilities": {"embeddedContext": False, "image": True},
-                # An editor lists recorded runs, reopens one after a restart and closes a thread.
-                "sessionCapabilities": {"list": {}, "resume": {}, "close": {}},
-            },
-            "agentInfo": {"name": "agent6", "version": __version__},
-            "authMethods": [],
-        }
+        return wire.initialize_result(self.protocol_version, __version__)
 
     def reply(
         self,
@@ -450,14 +539,14 @@ class ACPServer:
         """Send a reply carrying the result, or the error as the connection's version reads it."""
         body: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
         if error is not None:
-            body["error"] = wire.v1_error(error)
+            body["error"] = wire.error(self.protocol_version, error)
         else:
             body["result"] = result if result is not None else {}
         self.notify_raw(body)
 
     def update(self, acp_session_id: str, update: model.Update) -> None:
         """Send one session update as the connection's version reads it, when it has a form."""
-        body = wire.v1(update)
+        body = wire.render(self.protocol_version, update)
         if body is not None:
             self.notify_raw(wire.notification(acp_session_id, body))
 

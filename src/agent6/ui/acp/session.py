@@ -55,6 +55,7 @@ class Session:
         images: The images of the prompt in flight, as the editor sent them.
         closed: The editor closed the conversation while a prompt was in flight; the
             cancelled prompt still answers, then the entry goes.
+        settled: Called once a closed conversation's execution has ended.
         model: The route the editor picked for this session's next prompts; "" runs the
             recorded or configured one.
         effort: The effort the editor picked; None takes the config's.
@@ -70,6 +71,7 @@ class Session:
     require_resume: bool = False
     images: tuple[operator_images.EncodedImage, ...] = ()
     closed: bool = False
+    settled: Callable[[], None] = lambda: None
     model: str = ""
     effort: kinds.EffortLevel | None = None
     config_options: list[dict[str, Any]] = dataclasses.field(default_factory=list[dict[str, Any]])
@@ -101,6 +103,7 @@ class Sessions:
     state_dir_for: Callable[[pathlib.Path], pathlib.Path]
     build_options: Callable[[Session], builtins.list[dict[str, Any]]] = lambda _session: []
     _by_id: dict[str, Session] = dataclasses.field(default_factory=dict)
+    _ending: threading.Lock = dataclasses.field(default_factory=threading.Lock)
 
     def new(self, params: dict[str, Any]) -> dict[str, Any]:
         """Serve `session/new`.
@@ -109,7 +112,7 @@ class Sessions:
             params: The request's `cwd`, `mcpServers` and `additionalDirectories`.
 
         Returns:
-            The reply with the new session's id and its config options.
+            The reply with the new session's id, its config options and its commands.
 
         Raises:
             RpcError: The cwd is relative or not a git repository, or the params carry
@@ -123,7 +126,14 @@ class Sessions:
         # `session/resume` and `session/list` know.
         session = Session(acp_id=id.friendly_token(), cwd=cwd)
         self._by_id[session.acp_id] = session
-        return {"sessionId": session.acp_id, "configOptions": self._options(session)}
+        return {"sessionId": session.acp_id, **self._setup(session)}
+
+    def _setup(self, session: Session) -> dict[str, Any]:
+        """Return what a setup reply tells the editor: the config options and the commands."""
+        return {
+            "configOptions": self._options(session),
+            "availableCommands": updates.available_commands(ACP_MODE),
+        }
 
     def _options(self, session: Session) -> builtins.list[dict[str, Any]]:
         """Return the session's complete config options, recorded as what the editor holds."""
@@ -137,16 +147,21 @@ class Sessions:
         included; it changes no running turn and writes no config file.
 
         Args:
-            params: The `sessionId`, the option's `configId` and its new `value`.
+            params: The `sessionId`, the option's `configId`, its new `value` and the value's
+                `type`, which is `id` for a select.
 
         Returns:
             The reply with the complete config options.
 
         Raises:
-            RpcError: No such session, a prompt is running on it, or the id or the value is
-                not one the session offers.
+            RpcError: No such session, a prompt is running on it, the id or the value is
+                not one the session offers, or the value is not typed as an `id`.
         """
         session = self.get(params)
+        if params.get("type") != "id":
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS, 'type must be "id": every option of this session is a select'
+            )
         if session.is_running():
             raise rpc.RpcError(
                 rpc.INVALID_PARAMS,
@@ -240,7 +255,9 @@ class Sessions:
             notify: Sends each replayed update to the conversation it names.
 
         Returns:
-            The reply with the session's config options.
+            The reply with the session's config options and commands, after the replay's
+            end mark and a snapshot of the session's state: idle, since a run with a live
+            worker or a prompt in flight is refused.
 
         Raises:
             RpcError: The cwd is not a repository, the id names no recorded run of it, the
@@ -259,7 +276,9 @@ class Sessions:
                 objects_dir=saved.objects_dir,
                 notify=lambda update: notify(session.acp_id, update),
             )
-        return {"configOptions": self._options(session)}
+            notify(session.acp_id, model.ReplayComplete())
+        notify(session.acp_id, model.StateUpdate("idle"))
+        return self._setup(session)
 
     def _open(self, params: dict[str, Any]) -> Session:
         """Return the conversation `session/resume` opens on a recorded run.
@@ -315,25 +334,28 @@ class Sessions:
         self._by_id[session_id] = session
         return session
 
-    def close(self, params: dict[str, Any]) -> dict[str, Any]:
+    def close(self, params: dict[str, Any], *, settled: Callable[[], None]) -> None:
         """Serve `session/close`: end a conversation, cancelling a prompt in flight.
 
         Args:
             params: The `sessionId`.
-
-        Returns:
-            An empty reply.
+            settled: Called once the conversation is gone: at once when it is idle, else
+                after the cancelled execution has ended and said so.
 
         Raises:
             RpcError: No such session.
         """
         session = self.get(params)
-        if session.is_running():
-            self.cancel(session)  # the prompt answers `cancelled`, then the entry goes
-            session.closed = True
-            return {}
+        with self._ending:
+            running = session.is_running()
+            if running:
+                session.closed = True  # the cancelled prompt still answers, then the entry goes
+                session.settled = settled
+        if running:
+            self.cancel(session)
+            return
         del self._by_id[session.acp_id]
-        return {}
+        settled()
 
     def get(self, params: dict[str, Any]) -> Session:
         """Return the session the params name.
@@ -395,12 +417,16 @@ class Sessions:
             except Exception as exc:  # a run that dies must still end the execution
                 end = rpc.RpcError(rpc.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
             answer = "cancelled" if session.cancelled else end
-            session.execution_live = False
-            session.require_resume = False
-            session.images = ()
-            finish(answer)
-            if session.closed:
+            # One step against `close`: it marks a live execution or finds it over.
+            with self._ending:
+                session.execution_live = False
+                session.require_resume = False
+                session.images = ()
+                finish(answer)
+                closed = session.closed
+            if closed:
                 self._by_id.pop(session.acp_id, None)
+                session.settled()
 
         session.execution_live = True
         session.thread = threading.Thread(target=_work, name=f"acp-{session.acp_id}", daemon=True)
@@ -570,22 +596,24 @@ def prompt_images(params: dict[str, Any]) -> tuple[operator_images.EncodedImage,
     return tuple(images)
 
 
-def prompt_text(params: dict[str, Any], *, allow_empty: bool = False) -> str:
+def prompt_text(params: dict[str, Any], *, allow_empty: bool = False, strict: bool = False) -> str:
     """Join the prompt's text and resource_link blocks into the task.
 
     A `resource_link` renders as its uri, which the model reads through the
-    ordinary tools; an image block is read by `prompt_images`, and other non-text
-    blocks are dropped, as `initialize` said.
+    ordinary tools; an image block is read by `prompt_images`.
 
     Args:
         params: The `session/prompt` params.
         allow_empty: The prompt carries images, so it needs no text.
+        strict: Refuse a block of a type `initialize` did not offer, as v2 rules; v1
+            drops one.
 
     Returns:
         The task text.
 
     Raises:
-        RpcError: The blocks are malformed or carry no text.
+        RpcError: The blocks are malformed, carry no text, or under `strict` hold a type
+            agent6 does not take.
     """
     blocks = params.get("prompt")
     if not isinstance(blocks, list):
@@ -612,6 +640,12 @@ def prompt_text(params: dict[str, Any], *, allow_empty: bool = False) -> str:
                 )
             if uri:
                 parts.append(f"Attached: {uri}")
+        elif strict and b.get("type") != "image":
+            raise rpc.RpcError(
+                rpc.INVALID_PARAMS,
+                f"prompt content block {index} is {b.get('type')!r};"
+                " agent6 takes text, resource_link and image blocks",
+            )
     text = "\n\n".join(parts).strip()
     if not text and not allow_empty:
         raise rpc.RpcError(rpc.INVALID_PARAMS, "the prompt carried no text")

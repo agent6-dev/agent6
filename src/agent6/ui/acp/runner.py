@@ -180,30 +180,6 @@ def stop_reason(code: int, *, stop_reason: str = "") -> acp_session.StopReason:
     raise rpc.RpcError(rpc.INTERNAL_ERROR, f"the run stopped{why} (exit {code})")
 
 
-def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
-    """Return the option the editor chose, or None for no usable answer.
-
-    The answer must be an offered index, or an unknown string could become an
-    "allow" by prefix.
-
-    Args:
-        answer: The client's result for `session/request_permission`; empty when none came.
-        options: The options offered; each went out with its index as the option id.
-
-    Returns:
-        The option whose index the client selected; None for no `selected` outcome or an
-        option id not offered.
-    """
-    outcome = answer.get("outcome")
-    if not isinstance(outcome, dict) or outcome.get("outcome") != "selected":
-        return None
-    chosen = outcome.get("optionId")
-    if not isinstance(chosen, str):
-        return None
-    offered = {str(index): option for index, option in enumerate(options)}
-    return offered.get(chosen)
-
-
 class Announced:
     """Register one execution's id and the tool calls the editor has been told about.
 
@@ -283,8 +259,6 @@ class RunBridge:
     config_paths: tuple[pathlib.Path, ...] = ()
     _runs: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _running: acp_session.Session | None = None  # under `_runs`; named to a queued prompt
-    _asks: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    _asked: int = 0
 
     def __post_init__(self) -> None:
         self.config_paths = tuple(path.resolve() for path in self.config_paths)
@@ -323,11 +297,9 @@ class RunBridge:
     ) -> str | None:
         """Put one approval or question to the editor as a permission request.
 
-        ACP v1 has no free-form question, so a question's options are its buttons,
-        and one with no options is answered "said nothing" at once. The request's
-        `toolCall` carries the whole prompt as the title; a prompt gating a call
-        names that call once announced, and one gating none announces and closes
-        an entity of its own.
+        ACP has no free-form question here, so a question's options are its buttons, and
+        one with no options is answered "said nothing" at once. The request carries the
+        whole prompt as its title; a prompt gating a call names that call once announced.
 
         Args:
             session: The session.
@@ -343,53 +315,28 @@ class RunBridge:
         """
         if not options:
             return None
+        gated = ""
         if call_id is not None:
             announced.wait_for(str(call_id), abandoned=lambda: session.cancelled)
             if session.cancelled or str(call_id) not in announced:
                 return None
             gated = updates.wire_call_id(session.session_id, announced.execution_id, str(call_id))
-            tool_call: dict[str, Any] = {
-                "toolCallId": gated,
-                "title": updates.printable(prompt),
-                "status": "pending",
-            }
-        else:
-            with self._asks:
-                self._asked += 1
-                gated = f"ask-{session.acp_id}-{self._asked}"
-            tool_call = {
-                "toolCallId": gated,
-                "title": updates.printable(prompt),
-                "kind": "other",
-                "status": "pending",
-            }
 
         def _done() -> bool:
             return session.cancelled or (until is not None and until())
 
-        answer = self.server.request(
-            "session/request_permission",
-            {
-                "sessionId": session.acp_id,
-                "toolCall": tool_call,
-                "options": [
-                    {
-                        # An index, not the text: the text can be model-written.
-                        "optionId": str(index),
-                        "name": updates.printable(text),
-                        "kind": option_kind(text, standing),
-                    }
-                    for index, text in enumerate(options)
-                ],
-            },
-            timeout_s=acp_frontend.PERMISSION_TIMEOUT_S,
-            until=_done,
+        request = model.PermissionRequest(
+            updates.printable(prompt),
+            gated,
+            tuple(
+                model.PermissionOption(updates.printable(text), option_kind(text, standing))
+                for text in options
+            ),
         )
-        chosen = _selected(answer, options)
-        if call_id is None:
-            closed = model.ToolCallUpdate(gated, "completed" if chosen else "failed")
-            self.server.update(session.acp_id, closed)
-        return chosen
+        chosen = self.server.request_permission(
+            session.acp_id, request, timeout_s=acp_frontend.PERMISSION_TIMEOUT_S, until=_done
+        )
+        return None if chosen is None else options[chosen]
 
     def _frontend(
         self, session: acp_session.Session, announced: Announced

@@ -457,6 +457,6 @@ def test_list_without_cwd_only_includes_open_repositories(tmp_path: pathlib.Path
     sessions = _sessions(None)
     opened = sessions.new({"cwd": str(cwd)})
     assert [r["sessionId"] for r in sessions.list({})["sessions"]] == [saved.name]
-    sessions.close(opened)
+    sessions.close(opened, settled=lambda: None)
     assert sessions.list({}) == {"sessions": []}
     assert "has a session open in" in (acp_session.Sessions.list.__doc__ or "")

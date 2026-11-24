@@ -11,9 +11,13 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Literal
 
+from agent6.ui.acp import rpc
+
 # Whose message an update belongs to: v2's `user_message`, `agent_message` and `agent_thought`.
 Role = Literal["user", "agent", "thought"]
 ToolCallStatus = Literal["pending", "in_progress", "paused", "completed", "failed", "cancelled"]
+# The session's foreground work: under way, blocked on the operator, or none.
+State = Literal["running", "requires_action", "idle"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -182,6 +186,26 @@ class UsageUpdate:
     cost_usd: float | None
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class StateUpdate:
+    """A snapshot of the session's foreground work, which v1 reads from the prompt's reply.
+
+    Attributes:
+        state: What the foreground work is doing.
+        stop_reason: Why the work ended, on the `idle` that ends it; "" on a snapshot.
+        error: The failure that ended the work, with the `error` stop reason.
+    """
+
+    state: State
+    stop_reason: str = ""
+    error: rpc.RpcError | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReplayComplete:
+    """The end of the history a `session/resume` replayed, which v1 reads from its reply."""
+
+
 Update = (
     Message
     | MessageChunk
@@ -191,4 +215,34 @@ Update = (
     | ConfigOptionUpdate
     | SessionInfoUpdate
     | UsageUpdate
+    | StateUpdate
+    | ReplayComplete
 )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PermissionOption:
+    """One answer a permission request offers; its place in the request is its id.
+
+    Attributes:
+        name: The answer's label.
+        kind: `allow_once`, `allow_always`, `reject_once` or `reject_always`.
+    """
+
+    name: str
+    kind: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PermissionRequest:
+    """One approval or question put to the editor.
+
+    Attributes:
+        title: The prompt's text.
+        tool_call_id: The tool call the answer gates; "" for a prompt that gates none.
+        options: The answers, in order.
+    """
+
+    title: str
+    tool_call_id: str
+    options: tuple[PermissionOption, ...]
