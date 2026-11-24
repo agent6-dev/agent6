@@ -210,10 +210,12 @@ def test_a_partial_panel_keeps_the_reviewers_that_returned(
     assert [(c["session_id"], c["status"]) for c in returned["children"]] == [(sid, "no_changes")]
     (record,) = child_dispatch.read_records(parent)
     done, missing = record.children if failure == "launch" else record.children[::-1]
-    assert record.state == "complete" and done.settled and not missing.settled
+    assert record.state == "complete" and done.settled
+    assert missing.settled == (failure == "launch")
     assert done.merge is not None and done.merge.status == "no_changes" and missing.merge is None
     assert done.usage is not None and done.usage.usd == 0.1
-    assert meter.snapshot().settled_children == {sid} and meter.estimate_usd()[0] == 0.1
+    settled = {sid, missing.session_id} if failure == "launch" else {sid}
+    assert meter.snapshot().settled_children == settled and meter.estimate_usd()[0] == 0.1
     assert result.blocked and result.n_abstain == 1
     block_vote, abstention = (
         result.per_reviewer if failure == "launch" else result.per_reviewer[::-1]

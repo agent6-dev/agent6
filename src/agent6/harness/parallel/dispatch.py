@@ -15,7 +15,7 @@ import concurrent.futures
 import dataclasses
 import pathlib
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
@@ -363,7 +363,6 @@ class ParallelDispatcher:
         """
         identity = record.identity
         self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
-        listed = record.node_id is not None
         record = self.fail_nodes(record, f"dispatch failed: {exc}")
         for child in record.children:
             if child.session_id not in submitted:
@@ -375,22 +374,9 @@ class ParallelDispatcher:
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
         message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was merged."
         by_id = {res.spec.session_id: res for res in reviewers}
-        if listed:
-            # A child the spawner never took used nothing: a resume has no usage to settle.
-            nothing = agent6_budget.UsageSettlement(
-                usd=0, usd_partial=False, tokens=0, model_tokens=token_usage.ZERO
-            )
-            for child in record.children:
-                if child.session_id in submitted:
-                    continue
-                if self.budget is not None:
-                    self.budget.settle_child(child.session_id, nothing)
-                unused = child_dispatch.UsageRecord(usd=0.0, model_tokens=token_usage.ZERO)
-                record = record.with_child(
-                    child.model_copy(update={"usage": unused, "settled": True})
-                )
-        else:
-            record = self.settled(record, by_id)
+        unstarted = {child.session_id for child in record.children} - submitted
+        record = self.charged(record, by_id, unstarted=unstarted)
+        self.emit_budget(record.turn)
         merges: list[child_records.ChildMerge] = []
         for child in record.children:
             if res := by_id.get(child.session_id):
@@ -693,37 +679,51 @@ class ParallelDispatcher:
         """
         if record.state != "complete":
             record = record.advanced("settling")
-        children: list[child_dispatch.ChildRecord] = []
-        for child in record.children:
-            if child.settled:
-                children.append(child)
-                continue
-            res = by_id.get(child.session_id)
-            usage = res.usage if res is not None else None
-            if self.budget is not None:
-                self.budget.settle_child(child.session_id, usage)
-            children.append(
-                child.model_copy(
-                    update={
-                        "usage": (
-                            child_dispatch.UsageRecord(
-                                usd=usage.usd,
-                                usd_observed_credits=usage.usd_observed_credits,
-                                credit_readings=usage.credit_readings,
-                                usd_partial=usage.usd_partial,
-                                tokens=usage.tokens,
-                                model_tokens=usage.model_tokens,
-                            )
-                            if usage is not None
-                            else None
-                        ),
-                        "settled": usage is not None,
-                    }
-                )
-            )
-        record = record.model_copy(update={"children": tuple(children)})
+        record = self.charged(record, by_id)
         self.emit_budget(record.turn if turn is None else turn)
         self.write(record)
+        return record
+
+    def charged(
+        self,
+        record: child_dispatch.DispatchRecord,
+        by_id: dict[str, child_records.ChildResult],
+        *,
+        unstarted: Collection[str] = (),
+    ) -> child_dispatch.DispatchRecord:
+        """Charge known usage without advancing the dispatch or changing its outcome.
+
+        Args:
+            record: The dispatch to account for.
+            by_id: The results that came back.
+            unstarted: Children known not to have started.
+
+        Returns:
+            The record with each known charge marked settled.
+        """
+        for child in record.children:
+            if child.settled:
+                continue
+            res = by_id.get(child.session_id)
+            if child.session_id in unstarted or (res is not None and not res.started):
+                usage = agent6_budget.UsageSettlement(
+                    usd=0, usd_partial=False, tokens=0, model_tokens=token_usage.ZERO
+                )
+            elif res is not None and res.usage is not None:
+                usage = res.usage
+            else:
+                continue
+            if self.budget is not None:
+                self.budget.settle_child(child.session_id, usage)
+            stored = child_dispatch.UsageRecord(
+                usd=usage.usd,
+                usd_observed_credits=usage.usd_observed_credits,
+                credit_readings=usage.credit_readings,
+                usd_partial=usage.usd_partial,
+                tokens=usage.tokens,
+                model_tokens=usage.model_tokens,
+            )
+            record = record.with_child(child.model_copy(update={"usage": stored, "settled": True}))
         return record
 
     def merged(

@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, credit_usage, token_usage
+from agent6 import child_records, credit_usage
 from agent6.harness.parallel import continuation as child_continue
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import merge as parallel_merge
@@ -26,16 +26,19 @@ if TYPE_CHECKING:
 
 
 def reopened(
-    record: child_dispatch.DispatchRecord, results: Sequence[child_records.ChildResult]
+    record: child_dispatch.DispatchRecord,
+    results: Sequence[child_records.ChildResult],
+    unstarted: set[str],
 ) -> parallel_dispatch.OpenDispatch:
     """Return an interrupted task as an open dispatch whose children have all ended.
 
     Args:
         record: The task's record.
         results: The results of its children that have a session dir.
+        unstarted: Missing children known not to have started.
 
     Returns:
-        The dispatch, each child's result resolved; a child without one never started.
+        The dispatch with each child's result resolved.
     """
     by_id = {res.spec.session_id: res for res in results}
     children: list[child_records.StartedChild] = []
@@ -48,8 +51,8 @@ def reopened(
                 session_dir=pathlib.Path(),
                 branch=git_read.run_branch_for(child.session_id),
                 ok=False,
-                error="never started",
-                started=False,
+                error="never started" if child.session_id in unstarted else "no child result",
+                started=child.session_id not in unstarted,
             )
         )
         children.append(child_records.StartedChild(child.session_id, ended))
@@ -177,6 +180,23 @@ class _CreditHistory:
             )
 
 
+def _unstarted(
+    record: child_dispatch.DispatchRecord, results: Sequence[child_records.ChildResult]
+) -> set[str]:
+    """Return missing children with no evidence of launch or an explicit non-start outcome."""
+    returned = {res.spec.session_id for res in results}
+    missing: set[str] = set()
+    for child in record.children:
+        if child.session_id in returned or child.continuation is not None:
+            continue
+        if child.merge is None:
+            if record.state != "complete" and not child.reported:
+                missing.add(child.session_id)
+        elif child.merge.status == "failed" and child.merge.detail == "never started":
+            missing.add(child.session_id)
+    return missing
+
+
 def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery path
     dispatcher: parallel_dispatch.ParallelDispatcher,
     state: loop_state.LoopState,
@@ -265,38 +285,14 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                 ):
                     history = history or _CreditHistory.read(logs)
                     history.restore(dispatcher.budget, record, child, result.usage)
-        if (
-            record.state in ("prepared", "running")
-            and dispatcher.child_recoverer is not None
-            and not results
-        ):
-            if dispatcher.budget is not None:
-                # Nothing ran, so nothing was used; the journal names each child accounted.
-                nothing = agent6_budget.UsageSettlement(
-                    usd=0, usd_partial=False, tokens=0, model_tokens=token_usage.ZERO
-                )
-                for child in children:
-                    dispatcher.budget.settle_child(child, nothing)
+        unstarted = _unstarted(record, results) if dispatcher.child_recoverer is not None else set()
+        if record.state in ("prepared", "running") and children and unstarted == set(children):
             message = (
                 f"[parallel] group {record.identity}: dispatch interrupted before launch;"
                 " nothing ran."
             )
             record = dispatcher.fail_nodes(record, "dispatch interrupted before launch")
-            record = record.model_copy(
-                update={
-                    "children": tuple(
-                        child.model_copy(
-                            update={
-                                "settled": True,
-                                "usage": child_dispatch.UsageRecord(
-                                    usd=0.0, model_tokens=token_usage.ZERO
-                                ),
-                            }
-                        )
-                        for child in record.children
-                    ),
-                }
-            )
+            record = dispatcher.charged(record, {}, unstarted=unstarted)
             dispatcher.emit_budget(record.turn)
             dispatcher.record_return(record, message)
             dispatcher.deliver(
@@ -304,6 +300,8 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                 child_records.DispatchResult(record.identity, True, (), message, base=record.base),
             )
             continue
+        if record.state == "complete" or record.source == "panel":
+            record = dispatcher.charged(record, {}, unstarted=unstarted)
         if record.state == "complete":
             dispatcher.settled(record, {r.spec.session_id: r for r in results})
             completed = child_records.DispatchResult(
@@ -314,7 +312,7 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                 dispatcher.reported(conversation, record, results), results
             )
         else:
-            dispatcher.open[record.identity] = reopened(record, results)
+            dispatcher.open[record.identity] = reopened(record, results, unstarted)
             continue
         # A task's judges are written delivered: their result is the task's own notice.
         if not record.delivered:

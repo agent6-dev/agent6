@@ -18,7 +18,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, credit_usage, paths
+from agent6 import child_records, credit_usage, paths, token_usage
 from agent6.app.parallel import children
 from agent6.app.parallel import relay as child_watch
 from agent6.config import Config
@@ -785,10 +785,12 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
             budget=_tracker(),
         ).run("start")
 
+    recovered: list[str] = []
+
     def recoverer(group: str, ids: Sequence[str]) -> list[child_records.ChildResult]:
+        recovered.append(group)
         return [
             _child_result(ids[0], tmp_path / "w1", branch="agent6/run-abc-p1-l1", tip=tip, usd=1.5),
-            _child_result(ids[1], tmp_path / "w2", ok=False, error="never started"),
         ]
 
     provider2 = _provider()
@@ -800,11 +802,16 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
     assert record.state == "complete"
     l1, l2 = record.children
     assert l1.merge is not None and l1.merge.status == "merged" and l1.settled
-    assert l2.merge is not None and l2.merge.status == "failed" and not l2.settled
+    assert l2.merge is not None and l2.merge.status == "failed" and l2.settled
+    assert l2.usage == child_dispatch.UsageRecord(usd=0.0, model_tokens=token_usage.ZERO)
     assert budget2.estimate_usd()[0] == pytest.approx(1.5)
-    assert budget2.available().usd == pytest.approx(8.5)  # the unknown child holds nothing
+    assert budget2.available().usd == pytest.approx(8.5)
     texts = _first_call_texts(provider2)
     assert any("merged into parent chain at" in t and "never started" in t for t in texts)
+    next_meter = _tracker()
+    _build_wf(repo, session_dir, _provider(), child_recoverer=recoverer, budget=next_meter).resume()
+    assert recovered == [record.identity]
+    assert next_meter.estimate_usd()[0] == 0
 
 
 def test_a_merge_committed_before_the_record_is_not_merged_twice(
@@ -903,7 +910,8 @@ def test_recovering_unknown_usage_does_not_return_a_completed_group_again(
     done, missing = record.children
     assert done.merge is missing.merge is None
     assert done.settled and done.usage is not None and done.usage.usd == 0.5
-    assert not missing.settled and missing.usage is None
+    assert missing.settled
+    assert missing.usage == child_dispatch.UsageRecord(usd=0.0, model_tokens=token_usage.ZERO)
     assert meter.estimate_usd()[0] == 0.5
     (child / "logs.jsonl").unlink()
     charged, refused = wire.manifest_header(parent)["children"]
@@ -914,6 +922,41 @@ def test_recovering_unknown_usage_does_not_return_a_completed_group_again(
     )
     assert not charged["launched"] and charged["error"] == failed.message
     assert refused["status"] == "failed" and refused["error"] == failed.message
+
+
+def test_completed_record_needs_evidence_of_nonstart_to_charge_zero(
+    short_repo: pathlib.Path,
+) -> None:
+    """A missing result on resume is not proof that a submitted child used nothing."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    record = child_dispatch.DispatchRecord(
+        identity="parent-p1",
+        source="operator",
+        owner="first",
+        turn=1,
+        base="",
+        state="complete",
+        delivered=True,
+        children=tuple(
+            child_dispatch.ChildRecord(
+                session_id=f"parent-p1-l{i}",
+                number=i,
+                task="audit",
+                merge=child_dispatch.MergeRecord(status="failed", detail=detail),
+            )
+            for i, detail in enumerate(("never started", "its watch failed"), 1)
+        ),
+    )
+    child_dispatch.write_record(parent, record, now=1)
+    _reconcile(repo, parent, _tracker())
+    (completed,) = _records(parent)
+    unstarted, lost = completed.children
+    assert unstarted.settled and unstarted.usage == child_dispatch.UsageRecord(
+        usd=0.0, model_tokens=token_usage.ZERO
+    )
+    assert not lost.settled and lost.usage is None
 
 
 def test_a_result_completed_but_undelivered_is_delivered_once(
