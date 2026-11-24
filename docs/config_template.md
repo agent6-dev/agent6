@@ -337,7 +337,9 @@ See [Git](security.md#7-git) for where `sandbox.protect_git` enforces `git.contr
 
 ### `[git.worktree]`
 
-Placement and setup of the worktrees agent6 makes: child and machine-state clones, fork and `run --worktree` linked worktrees.
+Children and machine states use clones.
+For workspaces created by `fork` and `run --worktree`, `git.worktree.kind` selects a clone or a linked worktree.
+The default is `clone`.
 
 <!-- config-table: git.worktree -->
 

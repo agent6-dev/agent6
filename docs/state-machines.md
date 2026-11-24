@@ -166,7 +166,7 @@ version = 1                                # schema version
 initial = "poll"                           # name of the entry state
 
 [budget]                  # required; max_transitions always binds
-max_usd         = 25.0    # optional cap on metered spend (Spend bounds, section 9)
+max_usd         = 25.0    # optional cap on metered spend
 max_transitions = 100000  # hard stop on total edges taken (runaway guard)
 
 [vars.operator]           # written at author time; immutable at runtime
@@ -180,10 +180,10 @@ cursor  = { type = "str",       default = "" }
 [vars.agent]              # written by an agent state's validated finish_session
 verdict = { type = "classification", default = {} }  # a [schemas.*] record type
 
-[schemas.<name>]          # named record types; see 4.6
+[schemas.<name>]          # named record types; see Record schemas
 ...
 
-[states.<name>]           # one table per state; see 4.3
+[states.<name>]           # one table per state; see State kinds
 ...
 ```
 

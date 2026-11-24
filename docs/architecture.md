@@ -36,7 +36,9 @@ Only its modules import the runner, `git_command.py`.
     - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` group
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `ChildRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `reviewer`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
+- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` drives `run` and `resume` through `provider_call`.
+  `review.session` reviews a finished session.
+  The panel uses `review.gate`, `review.verdict` and `review.panel`.
   `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
   `harness/toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
@@ -172,7 +174,7 @@ What the turn leans on sits beside it, one module each:
 - `run_checkpoint` (the per-turn commit and the final one)
 - `compaction/strategy.py` (the strategy interface) and `compaction/driver.py` (the local and endpoint strategies)
 - `memory_touch` (what a tool call did to the memory store)
-- the settings each sibling owns (`review_gate`, `compaction_window`, `provider_call`)
+- the settings each sibling owns (`review.gate`, `compaction.window`, `provider_call`)
 
 The loop runs the advisors and the gates in a declared order and applies each answer; a heuristic is one function and one test file.
 After stop checks, a `finish_session` turn polls for queued answers before ending.
@@ -795,12 +797,12 @@ A conversation contract grants neither authority, so the structure ends at the r
 
 `parallel_panel.dispatch_panel` accepts reviewers' contracts and a retained target through an internal record-only policy, independent of `harness.parallel.tool`.
 It shares the work dispatch's executor, reservation, import, settlement and recovery paths; `parallel_merge` owns merge and DAG projections.
-`review_gate.run_panel` prepares ordered requests using provider-free reviewers resolved by `app.role_providers.resolve_reviewers`.
+`review.gate.run_panel` prepares ordered requests using provider-free reviewers resolved by `app.role_providers.resolve_reviewers`.
 The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, harness.parallel.max_children)` reviewers; no reviewer is dropped.
 Every reviewer is one contract: the panel prompt, `review.max_turns` turns and the tools the parent's own model is offered at that moment (`ReviewGate.tools`), cut to the `reviewer` mode's surface (`kinds.SESSION_KINDS`, `tools.schema.mode_tools`): every base tool but the two that edit, and `use_skill`; never the task list, `parallel`, `ask_user` or an MCP tool.
 A reviewer's reply has the output limit every session's has, and its conversation compacts as a run's does; a restart keeps the opening.
 A reviewer runs on the common bounded Harness path, including media recovery and final-turn verdict handling.
-`review_verdict` owns message preparation, finding coercion, verdict parsing and abstention diagnostics, not execution.
+`review.verdict` owns message preparation, finding coercion, verdict parsing and abstention diagnostics, not execution.
 The parent validates each completion's session, panel, reviewer and retained target before parsing and grounding; an ordinary worker answer or successful exit is not evidence.
 Events, replay and receipts keep each reviewer's session ID.
 Configured top-level ask and plan reviews can schedule panels, but cannot dispatch work.
