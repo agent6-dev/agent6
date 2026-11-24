@@ -17,6 +17,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -194,6 +195,64 @@ def test_a_sender_that_never_answers_ends_with_its_fetch(tmp_path: pathlib.Path)
         fetch.communicate()
         pytest.fail("the fetch's caller never returned after the fetch timed out")
     assert "got no answer within 3s" in out, out + err
+
+
+# The fetch: it starts the sender as git does, then dies once the shell has become the module.
+_DYING_FETCH = """
+import os, pathlib, subprocess, sys, time
+sender = subprocess.Popen(
+    ["sh", "-c", sys.argv[1]], stdin=0, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+)
+cmdline = pathlib.Path(f"/proc/{sender.pid}/cmdline")
+while b"upload_pack" not in cmdline.read_bytes():
+    time.sleep(0.001)
+print(sender.pid, flush=True)
+os._exit(0)
+"""
+
+
+def _running(pid: int) -> bool:
+    """Return whether a process still runs; one that exited and waits to be reaped does not."""
+    try:
+        stat = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return stat.rsplit(")", 1)[1].split()[0] != "Z"
+
+
+def test_a_sender_whose_fetch_died_while_it_started_does_not_serve(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A sender tied itself to whoever its parent was by the time it looked.
+
+    A fetch killed while the module started left the sender a child of the process that
+    adopted it. The sender took that one for its fetch and served, with nothing to end it:
+    a `git upload-pack` that waits holds the pipes the fetch's caller reads.
+    """
+    from agent6.tools import policy
+    from agent6.vcs.git import upload_pack
+
+    _origin, child, _session = _child(tmp_path)
+    sender = policy.workspace_jail(child, Config.model_validate({"sandbox": {"isolation": "none"}}))
+    line = upload_pack.command(sender, child, tmp_path / "sender.json")
+    fetch = subprocess.Popen(
+        [sys.executable, "-c", _DYING_FETCH, f"{line} '{child}'"],
+        stdin=subprocess.PIPE,  # held open: an upload-pack that started waits on it
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert fetch.stdout is not None and fetch.stdin is not None
+    pid = int(fetch.stdout.readline())
+    assert fetch.wait(timeout=10) == 0
+    try:
+        deadline = time.monotonic() + 10
+        while _running(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not _running(pid), "the sender outlived a fetch that died before it started"
+    finally:
+        fetch.stdin.close()
+        if _running(pid):
+            os.kill(pid, signal.SIGKILL)
 
 
 def test_only_a_fetch_out_of_a_repository_runs_its_sender_on_the_host() -> None:

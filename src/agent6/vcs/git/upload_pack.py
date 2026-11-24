@@ -33,7 +33,8 @@ def command(sender: kinds.JailPolicy, repository: pathlib.Path, record: pathlib.
         record: Where the policy is written, in a directory no jail reaches.
 
     Returns:
-        The command line git runs through `sh -c`, with the repository's path appended.
+        The command line git runs through `sh -c`, with the repository's path appended. The
+        shell hands the module its own parent, the fetch, as `$PPID`.
     """
     served = dataclasses.replace(
         sender,
@@ -45,7 +46,7 @@ def command(sender: kinds.JailPolicy, repository: pathlib.Path, record: pathlib.
     record.write_bytes(_RECORD.dump_json(served))
     argv = [sys.executable, "-P", "-E", "-m", "agent6.vcs.git.upload_pack", str(record)]
     # `exec`: the fetch is then this module's parent, whose end `main` follows.
-    return "exec " + shlex.join(argv)
+    return "exec " + shlex.join(argv) + ' "$PPID"'
 
 
 def main(argv: list[str]) -> int:
@@ -54,13 +55,15 @@ def main(argv: list[str]) -> int:
     git appends the repository's path, which the record already names.
 
     Args:
-        argv: This module's argv: the record's path first.
+        argv: This module's argv: the record's path, then the pid of the fetch that started
+            the shell.
 
     Returns:
         upload-pack's exit code; 1 when the jail cannot start.
     """
     # A stopped fetch takes the sending side with it, so nothing holds its caller's pipes.
-    jail.die_with_parent(os.getppid())()
+    # The shell named the fetch: one that died since is no longer this process's parent.
+    jail.die_with_parent(int(argv[2]))()
     policy = _RECORD.validate_json(pathlib.Path(argv[1]).read_bytes())
     # Without the fetch's version upload-pack speaks version 0, which refuses a tree's id.
     if protocol := os.environ.get("GIT_PROTOCOL"):
