@@ -8,10 +8,11 @@ import pathlib
 from collections.abc import Callable
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, harness, viewmodel
+from agent6 import errors, viewmodel
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, secret_store
+from agent6.harness.prompt import repo_context
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
@@ -148,7 +149,7 @@ def model_squash_message(
             # Keep whole lines, including when one line alone exceeds the byte budget.
             diff = diff_bytes[:65536].rpartition(b"\n")[0].decode("utf-8")
             diff += f"\n[diff truncated after {len(diff.splitlines())} lines]"
-        conventions = harness.agents_md_text(cwd, cfg.sandbox.hide_paths)
+        conventions = repo_context.agents_md_text(cwd, cfg.sandbox.hide_paths)
         system = (
             "Write a git commit message describing the entire base-to-tip diff being merged,"
             " not just the latest execution or review feedback. The diff is authoritative;"

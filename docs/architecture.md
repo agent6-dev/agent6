@@ -103,7 +103,7 @@ Each entry is the package's docstring.
     - `Harness` in `loop` drives one execution: provider calls, tool dispatch, guards, gates, snapshots.
     - What spans executions belongs to `app`, which composes executions into lifecycles.
     - Harness imports `tools`, `sandbox` and the shared packages, never `app` or `ui`.
-    - `system_prompt_for` and `model_exchange_for` give `agent6 prompt show` the run's first exchange.
+    - The package re-exports nothing: import the submodules directly.
     - Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel`, `run_chain`.
 - **[`harness/compaction`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/compaction)**: Context compaction: its driver, the elision of old tool results, its rules and its window.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
