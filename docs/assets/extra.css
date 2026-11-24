@@ -133,6 +133,35 @@
   object-fit: cover;
 }
 
+/* Chapter buttons above a video; assets/chapters.js builds the row. */
+.a6-chapters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 1.2rem 0 0.5rem;
+}
+.a6-chapters button {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--a6-panel);
+  border-radius: 0.5rem;
+  background-color: var(--a6-surface);
+  color: var(--md-default-fg-color--light);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.a6-chapters button:hover {
+  color: var(--md-default-fg-color);
+}
+.a6-chapters button:focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 2px;
+}
+.a6-chapters button[aria-current="true"] {
+  border-color: var(--md-primary-fg-color);
+  background-color: var(--a6-panel);
+  color: var(--md-default-fg-color);
+}
+
 .a6-grid .a6-card {
   border: 1px solid var(--a6-panel);
   border-radius: 0.5rem;

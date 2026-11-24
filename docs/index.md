@@ -47,6 +47,15 @@ hide:
 
 </div>
 
+<video controls muted playsinline preload="metadata" class="no-lightbox"
+       poster="screenshots/out/web-workflow.png">
+  <source src="screenshots/out/web-workflow.webm" type="video/webm">
+  <track kind="chapters" srclang="en" src="screenshots/out/web-workflow.vtt">
+  <a href="screenshots/out/web-workflow.webm">Watch the workflow demo</a>.
+</video>
+
+One run starts three children in the browser: steer one, stop one, switch sessions, read a review, merge.
+
 Also available as a [streaming CLI](screenshots/out/hero-cli.webm) and through [ACP editor integration](acp.md).
 
 ## [Installation](installation.md)
