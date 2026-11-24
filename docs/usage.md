@@ -189,6 +189,7 @@ State is snapshotted before each model call and checkpointed per turn.
 - `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with the target version
 - a successful `sessions merge` names the other ended, unmerged runs that changed some of the same paths (`unmerged runs that changed some of the same paths: <id> (src/a.py and 2 more)`)
   The TUI's and the web's Merge confirm states that line before the merge.
+  An attempt the run itself ranked out is left out of it.
 - a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` merges that commit with the run's work, or `resume --force` continues without it
 - a `sessions merge` that conflicts names `agent6 resume <id> --merge <branch>` for a run with its own worktree: the resume merges the branch into the run's work there and leaves conflict markers for the run to resolve before the next `sessions merge`
 - files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` leaves them in place, named to the model before its first call, for the run's next commit to take ([Config](config.md#git))

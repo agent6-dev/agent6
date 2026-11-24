@@ -432,7 +432,7 @@ def same_paths_note(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
     Returns:
         Four runs at most, each with its first shared path, then the count of the rest;
         "" when no other unmerged run shares a path, or this run has no commits or no
-        readable manifest.
+        readable manifest. The run's own ranked-out attempts are never named.
     """
     try:
         manifest = sessions_manifest.read_manifest(session_dir)
@@ -441,7 +441,7 @@ def same_paths_note(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
     ref = commits_ref(cwd, manifest)
     if not ref.head_ref or not manifest.base_sha:
         return ""
-    runs = listing.same_path_runs(cwd, manifest.session_id, manifest.base_sha, ref.head_ref)
+    runs = listing.same_path_runs(cwd, session_dir, manifest.base_sha, ref.head_ref)
     if not runs:
         return ""
     named = [

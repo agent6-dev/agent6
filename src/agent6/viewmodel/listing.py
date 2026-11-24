@@ -15,7 +15,7 @@ from collections.abc import Container, Iterable, Mapping, Sequence
 from typing import NotRequired, TypedDict
 
 from agent6 import errors, kinds, paths
-from agent6.sessions import ipc, layout, process
+from agent6.sessions import child_dispatch, ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import comparison, events, format, merges, review
@@ -242,15 +242,16 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
 
 
 def same_path_runs(
-    cwd: pathlib.Path, session_id: str, base: str, tip: str
+    cwd: pathlib.Path, session_dir: pathlib.Path, base: str, tip: str
 ) -> dict[str, tuple[str, ...]]:
     """Return the other ended, unmerged runs that changed paths a run changed.
 
     A merge reports them: each one's own merge now meets the work this run merged.
+    An attempt the run ranked out is an alternative to that work, and is left out.
 
     Args:
         cwd: The repository.
-        session_id: The run, left out of the answer.
+        session_dir: The run's directory; the run is left out of the answer.
         base: The commit it started from.
         tip: Its tip.
 
@@ -267,10 +268,20 @@ def same_path_runs(
 
     mine = changed(base, tip)
     tips = git_read.run_ref_tips(cwd)
+    try:
+        dispatches = child_dispatch.read_records(session_dir)
+    except child_dispatch.DispatchRecordError:
+        dispatches = ()
+    left_out = {session_dir.name} | {
+        child.session_id
+        for record in dispatches
+        for child in record.children
+        if child.merge is not None and child.merge.status == "ranked"
+    }
     others = [
         s
         for d in session_dirs(paths.state_dir(cwd), layout.SESSION_BUCKETS)
-        if d.name != session_id
+        if d.name not in left_out
         and (s := summarize_session_dir(d, branch_tips=tips, repo=cwd)).unmerged
         and s.status in format.ENDED_WORDS
         and s.base_sha

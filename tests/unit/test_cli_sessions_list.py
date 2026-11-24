@@ -502,6 +502,115 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     assert "same paths" not in capsys.readouterr().out
 
 
+def test_a_merge_note_leaves_out_the_runs_own_ranked_out_attempt(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run's merge note leaves out the attempt its own ranking left unmerged.
+
+    The note named the run's second-ranked attempt as an unmerged run over the same paths.
+    A child whose merge into the run failed holds work the merge will meet, and stays named.
+    """
+    from agent6 import child_records
+    from agent6.sessions import child_dispatch
+    from agent6.vcs.git import ops as git_ops
+    from agent6.vcs.git import read as git_read
+    from tests import review_helpers
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "b.txt").write_text("base\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "init")
+    base = git("rev-parse", "HEAD")
+    git("checkout", "-q", "--detach")
+    parent = "par-run-AAAAAA"
+
+    def session(session_id: str, tip: str, lineage: dict[str, object] | None) -> pathlib.Path:
+        d = common._runs_dir(repo) / session_id
+        d.mkdir(parents=True)
+        manifest = {
+            "version": 0,
+            "session_id": session_id,
+            "mode": "run",
+            "user_task": session_id,
+            "base_sha": base,
+            "run_branch": f"agent6/{session_id}",
+            "parallel": lineage,
+        }
+        (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        rows = [review_helpers.START, {"type": "diff.updated", "sha": tip}, review_helpers.END]
+        (d / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        return d
+
+    def child(
+        group: int, number: int, status: child_records.MergeStatus, detail: str = ""
+    ) -> child_dispatch.ChildRecord:
+        """Commit a child's b.txt on its own chain and branch, as the parent's import leaves it."""
+        session_id = f"{parent}-p{group}-l{number}"
+        (repo / "b.txt").write_text(f"{session_id}\n", encoding="utf-8")
+        tip = git_ops.chain_commit(
+            repo,
+            f"agent6 turn 1: {session_id}",
+            ref=git_read.chain_ref_for(session_id),
+            fallback_parent=base,
+            also_branch=f"agent6/{session_id}",
+        )
+        assert tip is not None
+        git("checkout", "-q", base)
+        session(
+            session_id, tip, {"group": f"{parent}-p{group}", "number": number, "parent": parent}
+        )
+        merge = child_dispatch.MergeRecord(
+            branch=f"agent6/{session_id}",
+            status=status,
+            sha=tip if status == "merged" else "",
+            detail=detail,
+        )
+        return child_dispatch.ChildRecord(
+            session_id=session_id, number=number, task="t", merge=merge
+        )
+
+    def dispatch(
+        group: int, policy: child_records.MergePolicy, *children: child_dispatch.ChildRecord
+    ) -> None:
+        record = child_dispatch.DispatchRecord(
+            identity=f"{parent}-p{group}",
+            source="operator",
+            merge_policy=policy,
+            owner="execution",
+            turn=1,
+            base=base,
+            children=children,
+            state="complete",
+        )
+        child_dispatch.write_record(run, record, now=0.0)
+
+    first = child(1, 1, "merged")
+    ranked_out = child(1, 2, "ranked", "2 of 2")
+    conflicted = child(2, 1, "conflict", "b.txt")
+    # The run's chain holds the first-ranked attempt's commit, as a fast-forward merge leaves it.
+    assert first.merge is not None
+    git("update-ref", git_read.chain_ref_for(parent), first.merge.sha)
+    git("branch", f"agent6/{parent}", first.merge.sha)
+    run = session(parent, first.merge.sha, None)
+    dispatch(1, "rank", first, ranked_out)
+    dispatch(2, "merge", conflicted)
+
+    same = f"unmerged runs that changed some of the same paths: {conflicted.session_id} (b.txt)"
+    assert merge_plan.same_paths_note(repo, run) == same
+
+
 def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
