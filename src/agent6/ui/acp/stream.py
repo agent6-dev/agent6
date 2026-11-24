@@ -222,7 +222,7 @@ def send_item(
     ):
         # The execution's start row reported its own prompt; another front-end's steer is news.
         return
-    if item.kind == "operator" and sending.message_id in session.inserted:
+    if item.kind == "operator" and sending.message_id in session.messages:
         return  # reported when this connection took it as a prompt
     within = updates.execution_call_id(item) if item.kind in ("tool", "verify") else ""
     wire_id = (

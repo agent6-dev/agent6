@@ -56,9 +56,9 @@ class Session:
         turn: The prompt in flight, as the editor hears of it.
         steerable: The execution in flight has chosen its run, so a steer has a session
             directory to land in.
-        inserted: The ids of the prompts this connection added to the conversation; the
-            journal's echo of one is not news to the editor that sent it, and a retry of
-            one adds nothing.
+        messages: The ids of the messages this connection's prompts added to the
+            conversation; the journal's echo of one is not news to the editor that sent
+            it, and a retry of one adds nothing.
         closed: The editor closed the conversation while a prompt was in flight; the
             cancelled prompt still answers, then the entry goes.
         settled: Called once a closed conversation's execution has ended.
@@ -78,7 +78,7 @@ class Session:
     images: tuple[operator_images.EncodedImage, ...] = ()
     turn: prompt.Turn | None = None
     steerable: bool = False
-    inserted: set[str] = dataclasses.field(default_factory=set[str])
+    messages: set[str] = dataclasses.field(default_factory=set[str])
     closed: bool = False
     settled: Callable[[], None] = lambda: None
     model: str = ""

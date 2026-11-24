@@ -110,7 +110,7 @@ class Answer:
 
     def inserted(self) -> None:
         """Record the prompt's message as in the conversation, and answer a v2 prompt."""
-        self.session.inserted.add(self.message_id)
+        self.session.messages.add(self.message_id)
         if self.version >= 2:
             self._once(result={"messageId": self.message_id})
 
@@ -239,7 +239,7 @@ def holds(
         True for a message this connection added, one the run's journal records, or
         one still waiting in the run's steer queue: a retry of its prompt adds nothing.
     """
-    if message_id in session.inserted:
+    if message_id in session.messages:
         return True
     if not session.session_id:
         return False
