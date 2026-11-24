@@ -392,9 +392,7 @@ def sign_in_refusal(
 def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) -> str | None:
     """Return why one routed provider cannot run, or None.
 
-    A keyed endpoint or a signed-in ChatGPT provider passes and refreshes its model listing
-    (TTL-gated, about 1.5 s): that cache feeds completion, context sizing and the prices the
-    budget meters.
+    A runnable HTTP provider refreshes its model listing for completion, context and pricing.
 
     Args:
         name: The provider's name under `[providers]`.
@@ -413,11 +411,9 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) 
         cache.list_models(name, entry, None)  # through the stored sign-in
         return None
     key = secret_store.resolve_api_key(name, entry.api_key_env, secrets=secrets)
-    if key:
-        cache.list_models(name, entry, key)
-        return None
     if (
-        isinstance(entry, AnthropicProviderEntry)
+        not key
+        and isinstance(entry, AnthropicProviderEntry)
         and not entry.token_command
         and entry.auth_style != "none"
     ):
@@ -425,7 +421,7 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) 
             f"no API key for [providers.{name}] (Anthropic). Run"
             f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
         )
-    # Minted by a command, not required, or a local OpenAI-compatible endpoint.
+    cache.list_models(name, entry, key or None)
     return None
 
 

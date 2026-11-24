@@ -77,6 +77,39 @@ def test_a_reviewer_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> 
     assert err is not None and "judgep" in err
 
 
+def test_a_keyless_provider_can_price_its_own_route_on_first_use(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """A keyless endpoint with a rate refuses the zero USD cap even on a cold cache."""
+    from agent6 import config
+    from agent6.app import preflight
+    from tests import price_env
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"local": {"backend": "openai", "base_url": "http://localhost:1"}},
+            "models": {"worker": {"model": "local/m"}},
+            "budget": {"max_usd": 0},
+        }
+    )
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setattr(secret_store, "load_secrets", dict)
+
+    def no_key(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    def listing(name: str, entry: config.ProviderEntry, key: str | None) -> list[str]:
+        assert key is None
+        price_env.write({"m": [1.0, 2.0]}, name=name, entry=entry)
+        return ["m"]
+
+    monkeypatch.setattr(secret_store, "resolve_api_key", no_key)
+    monkeypatch.setattr(cache, "list_models", listing)
+    assert session_setup.check_provider_keys(cfg) is None
+    err = preflight.budget_preflight(cfg)
+    assert err is not None and "'local/m' (worker) is priced" in err
+
+
 def test_a_reviewer_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     with pytest.raises(pydantic.ValidationError, match="ghost"):
