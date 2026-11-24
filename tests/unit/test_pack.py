@@ -34,7 +34,7 @@ def test_session_listing_survives_move(
 ) -> None:
     """Imported activity comes from events, and an absent worktree cannot look present."""
     from agent6.sessions import manifest
-    from agent6.ui.cli import sessions_cmds, sessions_show
+    from agent6.ui.cli import sessions_list, sessions_show
     from agent6.viewmodel import listing
 
     source = tmp_path / "source"
@@ -60,7 +60,7 @@ def test_session_listing_survives_move(
     )
     before = listing.summarize_session_dir(session)
     monkeypatch.chdir(source)
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     original = json.loads(capsys.readouterr().out)[0]
     pack.pack(source)
     dest = tmp_path / "destination"
@@ -84,7 +84,7 @@ def test_session_listing_survives_move(
     refusal = f"worktree {worktree} not found; resume needs it"
     assert refusal in listing.resume_blocker(landed)
     monkeypatch.chdir(dest)
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     imported = json.loads(capsys.readouterr().out)[0]
     assert original["last_activity"] == imported["last_activity"]
     assert original["when"] == imported["when"]

@@ -7,7 +7,6 @@ The lifecycle is `agent6.app.run.run_task`.
 
 from __future__ import annotations
 
-import contextvars
 import dataclasses
 import os
 import pathlib
@@ -37,10 +36,6 @@ from agent6.ui.cli import (
 )
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.viewmodel import session_policy
-
-crash_session: contextvars.ContextVar[pathlib.Path | None] = contextvars.ContextVar(
-    "crash_session", default=None
-)
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
@@ -108,7 +103,7 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         Returns:
             The terminal approver.
         """
-        crash_session.set(session_dir)
+        common.crash_session.set(session_dir)
         return interact.build_approver(session_dir, console_cell, steer_cell)
 
     def attach_console_view(events: event_log.EventSink) -> None:

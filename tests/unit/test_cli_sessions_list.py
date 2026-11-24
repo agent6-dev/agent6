@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import merge_plan
-from agent6.ui.cli import common, main, sessions_cmds, sessions_show
+from agent6.ui.cli import common, main, sessions_cmds, sessions_list, sessions_show
 from agent6.ui.web import model as web_model
 
 
@@ -46,7 +46,7 @@ def test_runs_list_marks_the_group_winner(
     _run(runs, "fan-l2", winner=True)
     _run(runs, "solo")  # a run outside any group: no marker
 
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     out = capsys.readouterr().out
     assert "fan-l2 ★" in out  # the winner id carries the ★
     assert "fan-l1 ★" not in out and "solo ★" not in out  # losers / non-children do not
@@ -63,11 +63,11 @@ def test_runs_list_json_carries_the_row_facts(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == []  # the empty listing is data too
     runs = common._runs_dir(repo)
     _run(runs, "fan-l2", winner=True)
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     rows = json.loads(capsys.readouterr().out)
     assert [r["session_id"] for r in rows] == ["fan-l2"]
     row = rows[0]
@@ -128,12 +128,12 @@ def test_the_list_marks_a_run_that_works_in_its_own_worktree(
         json.dumps({"mode": "run", "worktree": str(worktree)}), encoding="utf-8"
     )
 
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     out = capsys.readouterr().out
     assert out.splitlines()[0].split() == ["updated", "status", "usage", "id", "task"]
     assert "apart (worktree)" in out and "inplace (worktree)" not in out
 
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     rows = {row["session_id"]: row for row in json.loads(capsys.readouterr().out)}
     assert rows["apart"]["worktree"] == str(worktree)
     assert rows["apart"]["id_cell"] == "apart (worktree)"
@@ -178,12 +178,12 @@ def test_runs_list_uses_plan_points_for_a_plan_metered_run(
     }
     log.write_text("\n".join([lines[0], json.dumps(budget), *lines[1:]]) + "\n", encoding="utf-8")
 
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     row = next(line for line in capsys.readouterr().out.splitlines() if "plan-metered" in line)
     assert "2.5pt" in row
     assert "$" not in row
 
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     (data,) = json.loads(capsys.readouterr().out)
     assert (data["plan_observed_points"], data["plan_cap"], data["usage"]) == (2.5, 6.0, "2.5pt")
 
@@ -212,7 +212,7 @@ def test_runs_list_marks_a_partial_cost(
         + "\n",
         encoding="utf-8",
     )
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     assert "~$0.01" in capsys.readouterr().out
 
 
@@ -249,7 +249,7 @@ def test_runs_list_columns_stay_aligned_with_a_machine_draft(
         + "\n",
         encoding="utf-8",
     )
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     lines = capsys.readouterr().out.splitlines()
     id_col = lines[0].index("  id  ") + 2
     assert lines[1].index("drafty-two-BBBBBB") == id_col
@@ -345,7 +345,7 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
             + "\n",
             encoding="utf-8",
         )
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     out = capsys.readouterr().out
     unmerged_row = next(line for line in out.splitlines() if "unmerged-run-AAAAAA" in line)
     merged_row = next(line for line in out.splitlines() if "merged-run-BBBBBB" in line)
@@ -403,7 +403,7 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
         encoding="utf-8",
     )
 
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     row = next(line for line in capsys.readouterr().out.splitlines() if session_id in line)
     assert "passed · unmerged" in row
 
@@ -475,13 +475,13 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     ended_run("run-one-AAAAAA", {"b.txt": "one\n", "c.txt": "c\n"})
     ended_run("run-two-BBBBBB", {"b.txt": "two\n"}, block=2)
     ended_run("run-far-CCCCCC", {"d.txt": "d\n"})
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     rows = {row["session_id"]: row for row in json.loads(capsys.readouterr().out)}
     assert all("overlaps" not in row for row in rows.values())
     assert rows["run-one-AAAAAA"]["merge_note"] == ""
     assert rows["run-two-BBBBBB"]["open_findings"] == {"block": 2, "warn": 0, "nit": 0}
     assert rows["run-two-BBBBBB"]["merge_note"] == "open findings: 2 block"
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     text = capsys.readouterr().out
     assert re.search(r"passed · unmerged\s+\$0\s+run-one-AAAAAA", text), text
     assert re.search(r"unmerged · open findings: 2 block\s+\$0\s+run-two-BBBBBB", text), text
@@ -648,15 +648,15 @@ def test_runs_list_folds_a_groups_children_under_it(
     monkeypatch.chdir(repo)
     _group(common._runs_dir(repo))
 
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     out = capsys.readouterr().out
     assert "fan (2 children)" in out and "fan-l1" not in out
-    assert sessions_cmds._cmd_list(children=True) == 0
+    assert sessions_list.cmd_list(children=True) == 0
     lines = capsys.readouterr().out.splitlines()
     assert "fan " in lines[1] and "(2 children)" not in lines[1]
     first, second = [line for line in lines if "└ " in line]
     assert "└ fan-l1" in first and "└ fan-l2 ★" in second
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["session_id"] == "fan"
     assert [ln["session_id"] for ln in row["children"]] == ["fan-l1", "fan-l2"]
@@ -687,11 +687,11 @@ def test_a_folded_group_shows_its_latest_activity(
     for child in (1, 2):
         os.utime(runs / f"fan-l{child}" / "logs.jsonl", (new, new))
 
-    assert sessions_cmds._cmd_list(as_json=True) == 0
+    assert sessions_list.cmd_list(as_json=True) == 0
     rows = json.loads(capsys.readouterr().out)
     assert [r["session_id"] for r in rows] == ["fan", "solo"]
     assert rows[0]["group_last_activity"] == new
-    assert sessions_cmds._cmd_list() == 0
+    assert sessions_list.cmd_list() == 0
     lines = capsys.readouterr().out.splitlines()
     from agent6.viewmodel import format
 
@@ -757,7 +757,7 @@ def test_continued_run_keeps_its_label(
     with (d / "logs.jsonl").open("a") as f:
         f.write(json.dumps({"type": "session.resume", "steer": "do more"}) + "\n")
         f.write(json.dumps({"type": "session.stop", "verification": "passed"}) + "\n")
-    assert (sessions_show._cmd_status(d.name) if show else sessions_cmds._cmd_list()) == 0
+    assert (sessions_show._cmd_status(d.name) if show else sessions_list.cmd_list()) == 0
     out = capsys.readouterr().out
     assert "continued: do more" in out
     assert "original-task" in out.split("continued:")[0]
@@ -772,9 +772,22 @@ def test_continued_run_keeps_its_label(
     assert (
         sessions_show._cmd_status(d.name, as_json=True)
         if show
-        else sessions_cmds._cmd_list(as_json=True)
+        else sessions_list.cmd_list(as_json=True)
     ) == 0
     data = json.loads(capsys.readouterr().out)
     payload = data if show else data[0]
     assert payload["task"] == "original-task"
     assert payload["task_line"] == "original-task\ncontinued: do more"
+
+
+def test_listing_does_not_start_the_run_engine(tmp_path: pathlib.Path) -> None:
+    """Cold listing time must not include importing the worker or its providers."""
+    import sys
+
+    script = """\
+import sys
+from agent6.ui.cli import cli_main
+assert cli_main(['sessions', 'list', '--children']) == 0
+assert 'agent6.app.execution' not in sys.modules
+"""
+    subprocess.run([sys.executable, "-c", script], cwd=tmp_path, check=True)

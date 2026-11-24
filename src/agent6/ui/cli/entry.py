@@ -146,9 +146,7 @@ def run_guarded(body: Callable[[], int]) -> int:
     Returns:
         The exit code.
     """
-    from agent6.ui.cli import run
-
-    run.crash_session.set(None)
+    common.crash_session.set(None)
     with terminal_guard.guarded_terminal():
         try:
             try:
@@ -178,7 +176,7 @@ def run_guarded(body: Callable[[], int]) -> int:
             common.error(f"unexpected {type(exc).__name__}: {exc}")
             try:
                 fd, path = tempfile.mkstemp(
-                    prefix="agent6-crash-", suffix=".log", dir=run.crash_session.get()
+                    prefix="agent6-crash-", suffix=".log", dir=common.crash_session.get()
                 )
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
                     traceback.print_exc(file=fh)
@@ -669,6 +667,11 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
 
 def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912  # one branch per verb
     """Return the exit code of a `agent6 sessions` verb."""  # noqa: DOC501  # the last raise is unreachable
+    if args.sessions_command == "list":
+        from agent6.ui.cli import sessions_list
+
+        return sessions_list.cmd_list(as_json=args.list_json, children=args.list_children)
+
     from agent6.ui.cli import (
         history_cmds,
         sessions_cmds,
@@ -680,8 +683,6 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         sessions_transcript,
     )
 
-    if args.sessions_command == "list":
-        return sessions_cmds._cmd_list(as_json=args.list_json, children=args.list_children)
     if args.sessions_command == "findings":
         return sessions_findings.cmd_findings(
             args.session_id, all_findings=args.all, as_json=args.json

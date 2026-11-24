@@ -484,7 +484,7 @@ def test_sessions_and_show_name_a_harness_end_over_a_green_gate(
     label: str,
 ) -> None:
     """The sessions listing and show must not present a harness end as a finish call's pass."""
-    from agent6.ui.cli import sessions_cmds
+    from agent6.ui.cli import sessions_list
 
     _make_run(
         tmp_path,
@@ -494,7 +494,7 @@ def test_sessions_and_show_name_a_harness_end_over_a_green_gate(
             {"ts": _ts(1), "type": "session.stop", "reason": reason, "verification": "passed"},
         ],
     )
-    assert sessions_cmds._cmd_list(as_json=False) == 0
+    assert sessions_list.cmd_list(as_json=False) == 0
     assert label in capsys.readouterr().out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert f"status:     {label} ({reason})\n" in capsys.readouterr().out
