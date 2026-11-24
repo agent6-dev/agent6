@@ -16,6 +16,13 @@ import tree_sitter_language_pack
 from tests import conftest
 
 
+def test_isolating_xdg_keeps_the_original_grammar_directory(pytestconfig: pytest.Config) -> None:
+    """The pack looks in the same versioned directory before and after XDG isolation."""
+    assert (
+        tree_sitter_language_pack.cache_dir() == pytestconfig.stash[conftest._SESSION_GRAMMAR_CACHE]
+    )
+
+
 def test_xdist_workers_receive_the_original_grammar_cache(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

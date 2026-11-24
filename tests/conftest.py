@@ -29,7 +29,7 @@ from tests.collector_env import require_collector
 from tests.jail_env import require_userns_jail
 
 # Resolved once, with the operator's own environment: the grammars already downloaded.
-_GRAMMAR_CACHE = tree_sitter_language_pack.cache_dir()
+_GRAMMAR_CACHE = str(pathlib.Path(tree_sitter_language_pack.cache_dir()).absolute())
 
 _XDG_HOMES = ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME")
 _SESSION_HOMES = pytest.StashKey[pathlib.Path]()
@@ -59,12 +59,17 @@ def pytest_configure_node(node: workermanage.WorkerController) -> None:
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
-    """Detach the session from its controlling terminal, as CI and the gate unit have none.
+    """Use the original grammar cache and detach the session from its controlling terminal.
 
     A test that reaches a `/dev/tty` prompt (`sessions remove` without `--yes`) then gets the
     headless path instead of waiting on the developer's keyboard. A pty test forks its own
     session leader, which takes the pty as its terminal unaffected.
     """
+    # PackConfig takes the root above tree-sitter-language-pack/<version>/libs.
+    cache_root = pathlib.Path(session.config.stash[_SESSION_GRAMMAR_CACHE]).parents[2]
+    tree_sitter_language_pack.configure(
+        tree_sitter_language_pack.PackConfig(cache_dir=str(cache_root))
+    )
     detach_controlling_tty()
 
 
@@ -111,7 +116,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     if marker := item.get_closest_marker("needs_grammar"):
         language = marker.kwargs["language"]
         cache = item.config.stash[_SESSION_GRAMMAR_CACHE]
-        tree_sitter_language_pack.configure(tree_sitter_language_pack.PackConfig(cache_dir=cache))
         if language not in tree_sitter_language_pack.downloaded_languages():
             pytest.skip(f"tree-sitter grammar {language!r} is not cached at {cache}")
 
@@ -187,7 +191,6 @@ def _release_workspace_leases() -> Iterator[None]:
 def _isolate_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
-    request: pytest.FixtureRequest,
 ) -> None:
     """Point agent6's per-repo state base and global config at throwaway dirs.
 
@@ -201,10 +204,6 @@ def _isolate_state(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("agent6-config")))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("agent6-cache")))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path_factory.mktemp("agent6-data")))
-    # The tree-sitter language pack keeps its grammars under the same XDG cache; keep them.
-    tree_sitter_language_pack.configure(
-        tree_sitter_language_pack.PackConfig(cache_dir=request.config.stash[_SESSION_GRAMMAR_CACHE])
-    )
 
 
 @pytest.fixture
