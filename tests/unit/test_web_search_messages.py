@@ -257,3 +257,16 @@ def test_a_failed_search_reads_as_its_error_code(
     )
     assert response.web_searches_billed == 0
     assert json.dumps(response.raw["content"]) == json.dumps(content)
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_a_search_result_with_a_malformed_id_pairs_with_no_search(
+    monkeypatch: pytest.MonkeyPatch, streamed: bool
+) -> None:
+    """A list for `tool_use_id` raised a raw TypeError from the streamed reply's parse."""
+    content = copy.deepcopy(_CONTENT[:3])
+    content[2]["tool_use_id"] = ["srvtoolu_01"]
+    response, _ = _call(monkeypatch, streamed=streamed, content=content, web_search=True)
+    assert response.web_searches == (
+        provider_types.WebSearch(id="srvtoolu_01", query="httpx2 release notes", status=""),
+    )

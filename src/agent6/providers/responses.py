@@ -45,7 +45,7 @@ def _require_usage(usage: object) -> None:
     total = usage.get("input_tokens") if isinstance(usage, Mapping) else None
     try:
         metered = int(total or 0) > 0
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         metered = False
     if not metered:
         raise provider_types.ProviderError(

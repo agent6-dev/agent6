@@ -454,7 +454,7 @@ class SseCall:
                     )
                 try:
                     consume(resp, clock)
-                except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
+                except provider_types.WIRE_SHAPE_ERRORS as exc:
                     raise provider_types.ProviderError(
                         f"{self.api_label} stream frame did not match the wire shape:"
                         f" {exc!r} (malformed 2xx event; retryable)"

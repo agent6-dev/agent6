@@ -738,6 +738,7 @@ def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: pathlib.Pa
             ]
         },
         {"choices": [], "usage": {"prompt_tokens": -1, "completion_tokens": 1}},
+        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": float("inf"), "id": "c1"}]}}]},
     ],
 )
 def test_streaming_wire_fields_are_not_coerced(event: dict[str, Any]) -> None:
@@ -783,3 +784,38 @@ def test_streaming_joins_the_data_lines_of_one_event() -> None:
             text_delta_callback=lambda _piece: None,
         )
     assert resp.text == "hello"
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_an_infinite_prompt_count_on_a_budgeted_reply_is_a_provider_error(streamed: bool) -> None:
+    """`int(inf)` raised a raw OverflowError from the metered-usage check."""
+    usage = {"prompt_tokens": float("inf"), "completion_tokens": 1}
+    message = {"role": "assistant", "content": "done"}
+    reply = {"choices": [{"index": 0, "message": message, "finish_reason": "stop"}], "usage": usage}
+    lines = [
+        *_chunk({"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}),
+        *_chunk({"choices": [], "usage": usage}),
+        "data: [DONE]",
+        "",
+    ]
+    provider = openai.OpenAIProvider(
+        api_key="sk-test",
+        model="kimi",
+        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1),
+    )
+    posted = httpx2.Response(
+        status_code=200,
+        request=httpx2.Request("POST", "https://api.openai.com/v1/chat/completions"),
+        content=json.dumps(reply).encode("utf-8"),
+        headers={"content-type": "application/json"},
+    )
+    with (
+        mock.patch("agent6.providers.transport.http_post", return_value=posted),
+        mock.patch("httpx2.stream", return_value=_FakeStreamResponse(status_code=200, lines=lines)),
+        pytest.raises(ProviderError, match="usage"),
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=(lambda _p: None) if streamed else None,
+        )

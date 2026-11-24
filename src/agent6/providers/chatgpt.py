@@ -59,7 +59,7 @@ def _num(value: Any) -> float:
     """Return a header or body value as a finite float; 0.0 when it is not one."""
     try:
         number = float(value or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0.0
     return number if math.isfinite(number) else 0.0
 
@@ -140,7 +140,7 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> agent6_budget.PlanUsa
         name = key.removesuffix("_window")
         try:
             used = float(raw.get("used_percent", ""))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         if not math.isfinite(used) or used < 0:
             continue

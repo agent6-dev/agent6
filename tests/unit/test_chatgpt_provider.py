@@ -606,6 +606,31 @@ def test_malformed_usage_count_is_a_provider_error(
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
 
+def test_a_malformed_streamed_item_is_a_provider_error_that_books_its_usage(
+    signed_in: oauth.OAuthCredential,
+) -> None:
+    """A completed stream's malformed item raised a raw TypeError and booked nothing."""
+    output = [{"type": "message", "content": 5}]
+    lines = _evt(
+        {
+            "type": "response.completed",
+            "response": {"status": "completed", "usage": _USAGE, "output": output},
+        }
+    )
+    budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    no_preflight, _ = _usage_get({}, status=503)
+    with (
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
+        mock.patch("httpx2.stream", side_effect=_serve(lines)),
+        pytest.raises(ProviderError, match="did not match the wire shape"),
+    ):
+        _provider(signed_in, budget=budget).call(
+            system="s", messages=[{"role": "user", "content": "x"}]
+        )
+    snapshot = budget.snapshot()
+    assert (snapshot.input_total, snapshot.cache_read_total, snapshot.output_total) == (35, 7, 9)
+
+
 @pytest.mark.parametrize("value", [-1, 1.5, True, {}, [], ""])
 def test_usage_counts_reject_non_integer_values(value: object) -> None:
     with pytest.raises(ProviderError, match=r"usage\.output_tokens"):
@@ -1294,6 +1319,21 @@ def test_usage_reading_uses_the_capped_request(
             "originator": "agent6",
         },
         timeout=20.0,
+    )
+
+
+def test_plan_metadata_past_the_float_range_is_ignored() -> None:
+    """A JSON integer past the float range raised a raw OverflowError out of the preflight."""
+    huge = 10**400
+    window = {"used_percent": 10, "limit_window_seconds": huge, "reset_at": huge}
+    plan = chatgpt.plan_usage_from_usage_body({"rate_limit": {"primary_window": window}})
+    assert plan is not None
+    assert (plan.window_minutes, plan.resets_at > 0) == (0, True)
+    assert (
+        chatgpt.plan_usage_from_usage_body(
+            {"rate_limit": {"primary_window": {"used_percent": huge}}}
+        )
+        is None
     )
 
 

@@ -173,6 +173,10 @@ class ProviderError(Exception):
         self.usage = usage
 
 
+# What reading a reply of the wrong shape raises; `int(inf)` is the OverflowError.
+WIRE_SHAPE_ERRORS = (AttributeError, KeyError, TypeError, ValueError, IndexError, OverflowError)
+
+
 class MediaInputError(ProviderError):
     """A recognized image or document rejection, without upstream payload text.
 

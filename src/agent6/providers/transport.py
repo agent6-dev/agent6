@@ -595,7 +595,7 @@ class ProviderCall:
                 if self.budget is not None:
                     self.require_metered(data)
                 parsed = self.parse(data)
-            except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
+            except provider_types.WIRE_SHAPE_ERRORS as exc:
                 raise provider_types.ProviderError(
                     f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
                 ) from exc
@@ -607,14 +607,7 @@ class ProviderCall:
                     billed = self.parse({"usage": usage})
                     if self.budget is not None and billed.cost_usd is None:
                         self.require_metered(data)
-                except (
-                    provider_types.ProviderError,
-                    AttributeError,
-                    KeyError,
-                    TypeError,
-                    ValueError,
-                    IndexError,
-                ):
+                except (provider_types.ProviderError, *provider_types.WIRE_SHAPE_ERRORS):
                     pass  # Malformed usage does not replace the upstream error.
                 else:
                     _book_response(

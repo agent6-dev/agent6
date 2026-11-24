@@ -141,9 +141,10 @@ def web_searches(content: list[Any]) -> tuple[provider_types.WebSearch, ...]:
     """
     blocks = [block for block in content if isinstance(block, dict)]
     results = {
-        block.get("tool_use_id"): block.get("content")
+        block["tool_use_id"]: block.get("content")
         for block in blocks
         if block.get("type") == "web_search_tool_result"
+        and isinstance(block.get("tool_use_id"), str)
     }
     found: list[provider_types.WebSearch] = []
     for block in blocks:
@@ -151,7 +152,7 @@ def web_searches(content: list[Any]) -> tuple[provider_types.WebSearch, ...]:
             continue
         call_input = block.get("input")
         query = call_input.get("query") if isinstance(call_input, dict) else None
-        result = results.get(block.get("id"))
+        result = results.get(block["id"]) if isinstance(block.get("id"), str) else None
         status = ""
         urls: tuple[str, ...] = ()
         if isinstance(result, list):

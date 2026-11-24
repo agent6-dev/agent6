@@ -255,11 +255,12 @@ def web_searches(items: list[Any]) -> tuple[provider_types.WebSearch, ...]:
                 ),
             )
         elif item.get("type") == "message" and last:
+            content = item.get("content")
             cited = [
                 note["url"]
-                for part in item.get("content") or []
-                if isinstance(part, dict)
-                for note in part.get("annotations") or []
+                for part in (content if isinstance(content, list) else [])
+                if isinstance(part, dict) and isinstance(part.get("annotations"), list)
+                for note in part["annotations"]
                 if isinstance(note, dict)
                 and note.get("type") == "url_citation"
                 and isinstance(note.get("url"), str)
@@ -633,16 +634,23 @@ def finish_stream(
         The parsed response; text deltas stand in for a missing final message item.
 
     Raises:
-        ProviderError: The stream ended without a terminal response event (truncated).
+        ProviderError: The stream ended without a terminal response event (truncated), or
+            its output items are malformed.
     """
     if not state.done:
         call.record(status=0, response="stream ended without a terminal response event")
         raise provider_types.ProviderError(
             f"{label} stream from {url} ended without response.completed; upstream appears cut off."
         )
-    parsed = parse_output_items(
-        state.items, usage=state.usage, stop_reason=state.stop_reason, label=label, route=route
-    )
+    try:
+        parsed = parse_output_items(
+            state.items, usage=state.usage, stop_reason=state.stop_reason, label=label, route=route
+        )
+    except provider_types.WIRE_SHAPE_ERRORS as exc:
+        raise provider_types.ProviderError(
+            f"{label} stream output did not match the wire shape: {exc!r}"
+            " (malformed 2xx event; retryable)"
+        ) from exc
     parsed = dataclasses.replace(parsed, serving=call.transcript.serving)
     if not parsed.text and state.delta_text:
         # Text deltas without a final message item keep what the operator watched arrive.

@@ -75,7 +75,7 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
         # A count serialised as a float or a string is meterable, as `usage_count` reads it.
         try:
             prompt = int(usage.get("prompt_tokens") or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             prompt = 0
         if prompt > 0:
             return

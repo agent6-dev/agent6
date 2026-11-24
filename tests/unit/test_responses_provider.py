@@ -371,3 +371,53 @@ def test_a_failed_stream_books_the_usage_it_reports() -> None:
         )
     snap = budget.snapshot()
     assert (snap.input_total, snap.cache_read_total, snap.output_total) == (35, 7, 9)
+
+
+_SEARCH_ITEM = {"type": "web_search_call", "id": "ws_1", "status": "completed"}
+
+
+@pytest.mark.parametrize(
+    ("output", "searches"),
+    [
+        ([{"type": "message", "content": 5}], 0),
+        ([_SEARCH_ITEM, {"type": "message", "content": 5}], 1),
+        ([{"type": "reasoning", "summary": 5}], 0),
+    ],
+)
+def test_a_malformed_streamed_item_is_a_provider_error_that_books_its_usage(
+    output: list[dict[str, Any]], searches: int
+) -> None:
+    """A completed stream's malformed item raised a raw TypeError past the tier check."""
+    response = {"status": "completed", "service_tier": "default", "usage": _USAGE, "output": output}
+    lines = _evt({"type": "response.completed", "response": response})
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    with (
+        mock.patch(
+            "agent6.providers.stream_lifecycle.http_stream",
+            return_value=_FakeStreamResponse(lines=lines),
+        ),
+        pytest.raises(ProviderError, match="did not match the wire shape") as exc,
+    ):
+        _provider(budget=budget, provider_name="work", service_tier="flex").call(
+            system="s", messages=[{"role": "user", "content": "go"}], text_delta_callback=print
+        )
+    assert exc.value.fatal and "asked 'flex', served 'default'" in str(exc.value)
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.output_total, snap.web_searches) == (35, 9, searches)
+
+
+def test_an_infinite_usage_count_on_a_budgeted_reply_is_a_provider_error() -> None:
+    """`int(inf)` raised a raw OverflowError from the metered-usage check."""
+    body = '{"status": "completed", "output": [], "usage": {"input_tokens": 1e400}}'
+    reply = httpx2.Response(
+        status_code=200,
+        request=httpx2.Request("POST", f"{_BASE}/responses"),
+        content=body.encode("utf-8"),
+        headers={"content-type": "application/json"},
+    )
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    with (
+        mock.patch("agent6.providers.transport.http_post", return_value=reply),
+        pytest.raises(ProviderError, match=r"usage\.input_tokens"),
+    ):
+        _provider(budget=budget).call(system="s", messages=[{"role": "user", "content": "go"}])
