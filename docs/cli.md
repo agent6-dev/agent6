@@ -185,7 +185,7 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 
 | Code | Meaning |
 |---|---|
-| `0` | finished with a green gate, or nothing to gate on |
+| `0` | finished with a green gate, no gate, or an unverified final tree with `harness.verify.when = "never"` |
 | `1` | ended unfinished: out of turns, stuck, a provider error, a crash |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted, including a `run --parallel` run whose budget ended every child |
