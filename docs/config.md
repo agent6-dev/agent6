@@ -273,8 +273,7 @@ agent6 model default chatgpt/gpt-5.6-sol
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs), and its context windows size compaction.
-- An `unsupported_value` refusal naming `reasoning.effort` and listing accepted levels, over HTTP 400 or a stream error frame, silently retries once at the lowest listed effort.
-  Later calls on that provider instance keep the accepted levels; they are not persisted.
+- A refused `effort` stops the call with the endpoint's reason.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Calls are plan-metered: every response carries the account's rate-limit windows.
   `[budget].max_plan_points` caps the plan movement observed during one run (`--max-plan-points` per run).
@@ -367,7 +366,7 @@ The first segment names a `[providers.*]` entry; everything after the first slas
 |---|---|---|
 | `model` | `""` | Fully qualified provider/model route (`agent6 model` lists them); the first segment names a `[providers.<name>]` entry, the rest is the model id verbatim; required in `models.default` for a model call, inherited from it in other roles. |
 | `temperature` | `0.0` | sampling temperature, `temperature = 0.0` to `2.0`, sent where the wire accepts one (not with Anthropic thinking or on `chatgpt` or `claude_code`, dropped for the run after a 400 naming it); `extra_body.temperature` wins; TOML omission: inherits `models.default.temperature` in a role, `temperature = 0.0` in the default |
-| `effort` | none | Reasoning effort; top tiers where offered by the model, collapsed to Anthropic's highest; unset in a role: inherits `models.default.effort`; unset in the default: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` (the model's default), as printed by `agent6 config show`<ul><li><code>off</code>: Disable reasoning effort</li><li><code>low</code>: Use low reasoning effort</li><li><code>medium</code>: Use medium reasoning effort</li><li><code>high</code>: Use high reasoning effort</li><li><code>xhigh</code>: Use extra-high reasoning effort where supported</li><li><code>max</code>: Use maximum reasoning effort where supported</li></ul> |
+| `effort` | none | Reasoning effort; an unsupported explicit level refuses the call; unset in a role: inherits `models.default.effort`; unset in the default: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` (the model's default), as printed by `agent6 config show`<ul><li><code>off</code>: Disable reasoning effort</li><li><code>low</code>: Use low reasoning effort</li><li><code>medium</code>: Use medium reasoning effort</li><li><code>high</code>: Use high reasoning effort</li><li><code>xhigh</code>: Use extra-high reasoning effort where supported</li><li><code>max</code>: Use maximum reasoning effort where supported</li></ul> |
 
 ## `[sandbox]`
 

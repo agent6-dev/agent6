@@ -40,17 +40,6 @@ DEFAULT_MAX_TOKENS = 8192
 _USAGE_LIMIT_CODES = frozenset({"usage_limit_reached", "usage_not_included", "rate_limit_exceeded"})
 
 
-_EFFORT_UNSUPPORTED = re.compile(r"Supported values are:\s*((?:'[a-z]+'(?:,\s*(?:and\s*)?)?)+)")
-
-
-def _accepted_efforts(status: int | None, text: str) -> tuple[str, ...]:
-    """Return the effort levels a 400 lists for `reasoning.effort`, in the order given."""
-    if status != 400 or '"reasoning.effort"' not in text or "unsupported_value" not in text:
-        return ()
-    m = _EFFORT_UNSUPPORTED.search(text)
-    return tuple(re.findall(r"'([a-z]+)'", m.group(1))) if m else ()
-
-
 def _unreachable_hook(data: dict[str, Any]) -> Any:
     """Refuse the non-streaming hooks; this wire is stream-only.
 
@@ -223,8 +212,6 @@ class ChatGPTProvider:
     reasoning_effort: str | None = None
     # One usage preflight per provider; a list, since the dataclass is frozen.
     _preflighted: list[bool] = dataclasses.field(default_factory=lambda: [False])
-    # The effort levels the served model accepts, learned from its 400; empty until then.
-    _efforts_accepted: list[tuple[str, ...]] = dataclasses.field(default_factory=lambda: [()])
 
     def preflight(self) -> agent6_budget.PlanUsage | None:
         """Read the account's plan state off the backend's `/usage` before any call.
@@ -251,30 +238,6 @@ class ChatGPTProvider:
             return None
         plan = plan_usage_from_usage_body(body) if isinstance(body, dict) else None
         return dataclasses.replace(plan, account_id=self.account_id) if plan is not None else None
-
-    def _adapt_effort_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
-        """Resend at the lowest effort the served model accepts, and keep that floor.
-
-        The plan serves whichever model it serves; one refuses `none`, the next may not. The
-        400 names the accepted levels, lowest first.
-
-        Args:
-            status: The HTTP status.
-            text: The error text.
-            body: The request body, rewritten in place.
-
-        Returns:
-            Whether the body was adapted, so the transport retries once.
-        """
-        accepted = _accepted_efforts(status, text)
-        if not accepted:
-            return False
-        reasoning = body.get("reasoning")
-        if not isinstance(reasoning, dict) or reasoning.get("effort") in accepted:
-            return False
-        self._efforts_accepted[0] = accepted
-        reasoning["effort"] = accepted[0]
-        return True
 
     def _build_headers(self, token: str, facts: request_headers.RequestFacts) -> dict[str, str]:
         """Return one attempt's request headers, built from its token and the request's facts."""
@@ -365,12 +328,10 @@ class ChatGPTProvider:
         if tools:
             body["tools"] = responses_codec.tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
+        providers_wire.check_effort_source(effort, self.extra_body)
         if effort:
             # Omitting the field leaves the model's default on; "off" needs the explicit "none".
             wire = "none" if effort == "off" else effort
-            accepted = self._efforts_accepted[0]
-            if accepted and wire not in accepted:
-                wire = accepted[0]  # the served model refused the level once; its floor stands in
             body["reasoning"] = {"effort": wire, "summary": "auto"}
         if self.extra_body:
             reserved = responses_codec.RESERVED_BODY | {"prompt_cache_key"}
@@ -392,8 +353,8 @@ class ChatGPTProvider:
                 self.model, request_headers.responses_body_facts(body), context
             ),
             build_headers=self._build_headers,
-            adapt_400=self._adapt_effort_400,
-            adapt_attempts=1,
+            adapt_400=lambda *_: False,
+            adapt_attempts=0,
             # Stream-only, so the non-streaming hooks are unreachable; metering happens in-stream.
             require_metered=_unreachable_hook,
             parse=_unreachable_hook,

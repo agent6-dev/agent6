@@ -168,7 +168,7 @@ class ClaudeCodeProvider:
             tools: The tools the model may call; none means a one-process side call.
             max_tokens: Ignored; the binary owns sampling.
             temperature: Ignored; the binary owns sampling.
-            reasoning_effort: Ignored; effort is passed on argv at spawn.
+            reasoning_effort: Must match the level passed at spawn.
             text_delta_callback: Receives visible text as it streams.
             thinking_delta_callback: Receives reasoning text as it streams.
             should_abort: Polled each tick; True abandons the turn.
@@ -183,7 +183,13 @@ class ClaudeCodeProvider:
             ProviderError: The run is over budget, the child failed, or the round
                 could not be metered.
         """
-        del max_tokens, temperature, reasoning_effort
+        del max_tokens, temperature
+        if reasoning_effort is not None and reasoning_effort != self.effort:
+            raise provider_types.ProviderError(
+                f"Claude Code takes effort at startup ({self.effort or 'model default'});"
+                f" cannot set {reasoning_effort!r} per call. Set the role's effort instead.",
+                fatal=True,
+            )
         if self.budget is not None:
             self.budget.check()
         tool_list = list(tools or ())

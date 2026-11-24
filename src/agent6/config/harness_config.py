@@ -68,8 +68,8 @@ class RoleModel(pydantic.BaseModel):
         json_schema_extra={"choice_meanings": _EFFORT_MEANINGS},
         default=None,
         description=(
-            "Reasoning effort; top tiers where offered by the model, collapsed to "
-            "Anthropic's highest; unset in a role: inherits `models.default.effort`; unset "
+            "Reasoning effort; an unsupported explicit level refuses the call; "
+            "unset in a role: inherits `models.default.effort`; unset "
             'in the default: `effort = "low"` on openai-compatible reasoning models, no '
             'thinking on Anthropic, none sent with `backend = "chatgpt"`, `"responses"` or '
             '`"claude_code"` (the model\'s default), as printed by `agent6 config show`'

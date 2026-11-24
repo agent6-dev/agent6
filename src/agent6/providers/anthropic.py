@@ -59,8 +59,6 @@ _THINKING_BUDGET_TOKENS: dict[str, int] = {
     "low": 4096,
     "medium": 8192,
     "high": 16384,
-    "xhigh": 16384,
-    "max": 16384,
 }
 
 # Models that reject `budget_tokens` (a 400) and take `thinking: {type: adaptive}` plus
@@ -261,6 +259,45 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
     return shaped
 
 
+def _merge_tuning(body: dict[str, Any], tuning: dict[str, Any], level: str | None) -> None:
+    """Merge the provider's tuning fields.
+
+    Args:
+        body: The request, updated in place.
+        tuning: The extra body from config.
+        level: The explicit effort, or None for the default.
+
+    Raises:
+        ProviderError: A tuning field would replace the requested effort.
+    """
+    reserved = {
+        "system",
+        "messages",
+        "model",
+        "stream",
+        "anthropic_version",
+        "tools",
+        "tool_choice",
+    }
+    if level is not None:
+        for key in ("thinking", "output_config"):
+            if key not in tuning:
+                continue
+            required = body.get(key, {})
+            extra = tuning[key]
+            if (
+                not isinstance(extra, dict)
+                or any(extra.get(k, v) != v for k, v in required.items() if k != "display")
+                or (key == "output_config" and "effort" in extra and "effort" not in required)
+            ):
+                raise provider_types.ProviderError(
+                    f"effort = {level!r} conflicts with extra_body.{key}; set only one", fatal=True
+                )
+            body[key] = {**required, **extra}
+            reserved.add(key)
+    body.update({k: v for k, v in tuning.items() if k not in reserved})
+
+
 def _check_budget(body: dict[str, Any], thinking_budget: int | None, level: str | None) -> None:
     """Refuse a configured output cap that leaves no room after thinking.
 
@@ -413,7 +450,7 @@ class AnthropicProvider:
             tool_choice: `none` forbids tool calls without removing their definitions.
             max_tokens: The output cap; lifted to leave room to answer after thinking.
             temperature: The sampling temperature; dropped while thinking.
-            reasoning_effort: Ignored; thinking is configured on the provider's `effort`.
+            reasoning_effort: A per-call level over the provider's own.
             text_delta_callback: Receives visible text as it streams.
             thinking_delta_callback: Receives reasoning text as it streams.
             should_abort: Polled during a stream; True abandons the turn.
@@ -428,7 +465,6 @@ class AnthropicProvider:
             ProviderError: The run is over budget, `extra_body.max_tokens` sits under
                 the thinking budget, or the call failed.
         """
-        del reasoning_effort
         if self.budget is not None:
             self.budget.check()
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
@@ -462,9 +498,15 @@ class AnthropicProvider:
                     block["cache_control"] = {"type": "ephemeral"}
                 tool_payload.append(block)
 
-        level = self.effort or "off"
-        adaptive_thinking = level != "off" and _is_adaptive_thinking(self.model)
-        thinking_budget = None if adaptive_thinking else _THINKING_BUDGET_TOKENS.get(level)
+        level = self.effort if reasoning_effort is None else reasoning_effort
+        adaptive_thinking = level not in (None, "off") and _is_adaptive_thinking(self.model)
+        thinking_budget = None if adaptive_thinking else _THINKING_BUDGET_TOKENS.get(level or "")
+        if level not in (None, "off") and not adaptive_thinking and thinking_budget is None:
+            raise provider_types.ProviderError(
+                f"{self.model} uses a thinking budget; effort accepts off, low, medium, high,"
+                f" not {level!r}",
+                fatal=True,
+            )
         if adaptive_thinking or thinking_budget is not None:
             # Adaptive carries no budget, so it reserves the deepest fixed one as headroom.
             reserve = thinking_budget or _THINKING_BUDGET_TOKENS["high"]
@@ -484,28 +526,19 @@ class AnthropicProvider:
             if _summarise_thinking_display(self.model):
                 thinking_cfg["display"] = "summarized"
             body["thinking"] = thinking_cfg
-            # The wire's effort tops out at high.
-            body["output_config"] = {"effort": "high" if level in ("xhigh", "max") else level}
+            body["output_config"] = {"effort": level}
         elif thinking_budget is not None:
             body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-        elif temperature is not None and not self._omit_temperature[0]:
-            body["temperature"] = temperature
+        else:
+            if level == "off":
+                body["thinking"] = {"type": "disabled"}
+            if temperature is not None and not self._omit_temperature[0]:
+                body["temperature"] = temperature
         if tool_payload:
             body["tools"] = tool_payload
         if tool_choice == "none":
             body["tool_choice"] = {"type": tool_choice}
-        if self.extra_body:
-            # The structural keys stay agent6's; tuning keys merge last and win.
-            reserved = {
-                "system",
-                "messages",
-                "model",
-                "stream",
-                "anthropic_version",
-                "tools",
-                "tool_choice",
-            }
-            body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
+        _merge_tuning(body, self.extra_body, level)
         _check_budget(body, thinking_budget, level)
         betas = _history_options(body, compaction, model=self.model, deployment=self.deployment)
         return transport.ProviderCall(

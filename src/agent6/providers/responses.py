@@ -224,6 +224,7 @@ class ResponsesProvider:
         if tools:
             body["tools"] = responses_codec.tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
+        wire.check_effort_source(effort, self.extra_body)
         if effort:
             # Omitting the field leaves the model's default on; "off" needs the explicit "none".
             body["reasoning"] = {"effort": "none" if effort == "off" else effort, "summary": "auto"}

@@ -9,7 +9,7 @@ Validate that the provider's ``effort`` level:
   removed budget_tokens, the mapped ``budget_tokens`` on older models, always
   lifting ``max_tokens`` for room to answer;
 * drops ``temperature`` (Anthropic rejects temperature with thinking);
-* leaves the body unchanged when ``effort`` is off/unset;
+* sends disabled thinking for off and leaves it unset by default;
 * preserves streamed ``thinking`` blocks (with signature) in the
   reconstructed assistant content so they round-trip on the next turn.
 """
@@ -169,7 +169,7 @@ def test_thinking_off_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None:
         max_tokens=8192,
     )
     body = bodies[0]
-    assert "thinking" not in body
+    assert body["thinking"] == {"type": "disabled"}
     assert body["temperature"] == 0.3
     assert body["max_tokens"] == 8192
 
@@ -459,3 +459,22 @@ def test_two_text_blocks_in_a_response_stay_separated() -> None:
         }
     )
     assert resp.text == "First message.\n\nSecond message."
+
+
+@pytest.mark.parametrize("level", ["xhigh", "max"])
+def test_top_effort_is_sent_to_an_adaptive_model_or_refused_for_fixed_budgets(
+    monkeypatch: pytest.MonkeyPatch, level: str
+) -> None:
+    """A top level never collapses to high on the wire."""
+    bodies: list[dict[str, Any]] = []
+    _capture_body(monkeypatch, bodies)
+    messages = [{"role": "user", "content": "x"}]
+    AnthropicProvider(api_key="", model="claude-opus-4-6").call(
+        system="s", messages=messages, reasoning_effort=level
+    )
+    assert bodies[0]["output_config"] == {"effort": level}
+    with pytest.raises(ProviderError, match="off, low, medium, high"):
+        AnthropicProvider(api_key="", model="claude-test", effort=level).call(
+            system="s", messages=messages
+        )
+    assert len(bodies) == 1

@@ -145,6 +145,20 @@ def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
     assert "max_completion_tokens" in captured["body"]  # the direct rename still applies
 
 
+@pytest.mark.parametrize(("level", "expected"), [("off", "none"), ("high", "high")])
+def test_direct_openai_sends_explicit_effort_even_for_an_unknown_id(
+    level: str, expected: str
+) -> None:
+    """Family recognition gates the default, not an explicit level."""
+    with mock.patch(
+        "agent6.providers.transport.http_post", return_value=_fake_response({"choices": []})
+    ) as post:
+        openai.OpenAIProvider(api_key="", model="gpt-6.2-astra", reasoning_effort=level).call(
+            system="s", messages=[{"role": "user", "content": "x"}]
+        )
+    assert json.loads(post.call_args.kwargs["content"])["reasoning_effort"] == expected
+
+
 def test_call_merges_extra_body() -> None:
     # extra_body (e.g. OpenRouter `provider` routing) is merged into the request
     # body, last, so an operator can pin a caching/fast backend.
@@ -414,7 +428,9 @@ def test_reasoning_effort_arg_overrides_default() -> None:
     `"off"` sends `reasoning={"enabled": False}` to disable the reasoning channel; omitting the
     block leaves it on by default on K2.6, so the recovery turn still starves.
     """
-    provider = openai.OpenAIProvider(api_key="sk", model="moonshotai/kimi-k2.6")
+    provider = openai.OpenAIProvider(
+        api_key="sk", model="moonshotai/kimi-k2.6", base_url="https://openrouter.ai/api/v1"
+    )
     captured: dict[str, Any] = {}
 
     def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
@@ -809,3 +825,18 @@ def test_openai_tool_call_ids_are_unique() -> None:
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1},
             }
         )
+
+
+def test_extra_body_cannot_replace_an_explicit_effort() -> None:
+    """Two sources of effort refuse before the POST."""
+    client = openai.OpenAIProvider(
+        api_key="", model="m", reasoning_effort="high", extra_body={"reasoning": {"effort": "low"}}
+    )
+    with (
+        mock.patch(
+            "agent6.providers.transport.http_post", return_value=_fake_response({"choices": []})
+        ) as post,
+        pytest.raises(ProviderError, match=r"extra_body\.reasoning"),
+    ):
+        client.call(system="s", messages=[{"role": "user", "content": "x"}])
+    post.assert_not_called()

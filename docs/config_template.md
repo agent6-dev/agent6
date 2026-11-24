@@ -221,8 +221,7 @@ agent6 model default chatgpt/gpt-5.6-sol
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs), and its context windows size compaction.
-- An `unsupported_value` refusal naming `reasoning.effort` and listing accepted levels, over HTTP 400 or a stream error frame, silently retries once at the lowest listed effort.
-  Later calls on that provider instance keep the accepted levels; they are not persisted.
+- A refused `effort` stops the call with the endpoint's reason.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Calls are plan-metered: every response carries the account's rate-limit windows.
   `[budget].max_plan_points` caps the plan movement observed during one run (`--max-plan-points` per run).

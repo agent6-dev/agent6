@@ -139,19 +139,17 @@ def sent_reasoning_effort(
 
     Args:
         model: The model id.
-        configured: The role's `effort` or a per-call override; None sends `low`.
+        configured: The role's `effort` or a per-call override; None takes the model default.
         direct_openai: Whether the request targets api.openai.com.
 
     Returns:
-        The level, or None when the model takes no reasoning knob. `off` is a
-        level, not a wire value: the call omits the parameter on api.openai.com
-        and sends `{"enabled": false}` elsewhere.
+        The explicit level, the model's default, or None to omit the knob.
     """
-    if not (
-        _is_reasoning_model(model) or (direct_openai and _is_openai_direct_reasoning_model(model))
-    ):
-        return None
-    return configured.strip().lower() if configured is not None else "low"
+    if configured is not None:
+        return configured
+    if _is_reasoning_model(model) or (direct_openai and _is_openai_direct_reasoning_model(model)):
+        return "low"
+    return None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -313,18 +311,14 @@ class OpenAIProvider:
             body["max_tokens"] = effective_max_tokens
         if model_in_body:
             body["model"] = self.model
-        # The reasoning knob differs per host and the wrong one is ignored, never rejected:
-        # OpenRouter takes a nested `reasoning.effort` and needs `{"enabled": false}` for off;
-        # api.openai.com takes a top-level `reasoning_effort` and cannot switch reasoning off.
-        effort = sent_reasoning_effort(
-            self.model,
-            reasoning_effort if reasoning_effort is not None else self.reasoning_effort,
-            direct_openai=is_openai_direct,
-        )
+        configured = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
+        wire.check_effort_source(configured, self.extra_body)
+        effort = sent_reasoning_effort(self.model, configured, direct_openai=is_openai_direct)
         if effort is not None:
-            if is_openai_direct_reasoning:
-                if effort != "off":
-                    body["reasoning_effort"] = effort
+            if is_openai_direct_reasoning or (
+                configured is not None and (is_openai_direct or self.deployment == "azure")
+            ):
+                body["reasoning_effort"] = "none" if effort == "off" else effort
             elif effort == "off":
                 body["reasoning"] = {"enabled": False}
             else:

@@ -13,6 +13,7 @@ set stay honest.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Literal
 from urllib import parse
 
@@ -24,6 +25,24 @@ AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
 # RFC 7230 field-value bytes minus obs-text; real credentials (JWT, hex, base64) are ASCII.
 _HEADER_SAFE_VALUE = re.compile(r"[\t\x20-\x7e]*")
+
+
+def check_effort_source(effort: str | None, extra_body: Mapping[str, object]) -> None:
+    """Refuse two sources for the request's reasoning field.
+
+    Args:
+        effort: The requested level, or None for the default.
+        extra_body: The provider's tuning fields.
+
+    Raises:
+        ProviderError: Both settings would write the reasoning knob.
+    """
+    if effort is not None:
+        for key in ("reasoning", "reasoning_effort"):
+            if key in extra_body:
+                raise provider_types.ProviderError(
+                    f"effort = {effort!r} conflicts with extra_body.{key}; set only one", fatal=True
+                )
 
 
 def auth_header(style: AuthStyle, token: str) -> tuple[str, str] | None:

@@ -30,6 +30,7 @@ from agent6.providers import (
     responses_codec,
     transport,
 )
+from tests import provider_endpoint
 
 # The route the fixture provider replays reasoning on.
 _ROUTE = responses_codec.replay_route(
@@ -1408,51 +1409,13 @@ def test_two_message_items_in_a_response_stay_separated() -> None:
     assert resp.text == "First message.\n\nSecond message."
 
 
-def test_an_effort_the_served_model_refuses_is_resent_at_its_lowest_accepted_level(
-    signed_in: oauth.OAuthCredential,
+@pytest.mark.parametrize(
+    "frame", ["http", "error", "flat_error", "response.failed", "response.completed"]
+)
+def test_an_explicit_effort_refusal_keeps_the_reason_without_retry(
+    signed_in: oauth.OAuthCredential, frame: str
 ) -> None:
-    """A 400 naming `reasoning.effort` unsupported resends at the listed floor, then keeps it.
-
-    The plan serves whichever model it serves; one refuses `none` where the last accepted it.
-    """
-    provider = _provider(signed_in, reasoning_effort="off")
-    refusal = json.dumps(
-        {
-            "error": {
-                "message": "Unsupported value: 'none' is not supported with the 'gpt-x' model."
-                " Supported values are: 'low', 'medium', 'high', 'xhigh', and 'max'.",
-                "type": "invalid_request_error",
-                "param": "reasoning.effort",
-                "code": "unsupported_value",
-            }
-        }
-    )
-    sent: list[str] = []
-
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        del method, url
-        body = json.loads(kwargs["content"])
-        sent.append(body["reasoning"]["effort"])
-        if len(sent) == 1:
-            return _FakeStreamResponse(status_code=400, lines=[], error_body=refusal)
-        return _FakeStreamResponse(status_code=200, lines=_happy_stream())
-
-    with mock.patch("httpx2.stream", side_effect=fake_stream):
-        first = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}], tools=[])
-        second = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}], tools=[])
-
-    assert first.text == "hello" and second.text == "hello"
-    assert sent == ["none", "low", "low"], "refused once, then the floor without another 400"
-
-
-@pytest.mark.parametrize("frame", ["error", "flat_error", "response.failed", "response.completed"])
-def test_a_stream_frame_effort_refusal_adapts_without_surfacing_and_keeps_the_floor(
-    signed_in: oauth.OAuthCredential,
-    capsys: pytest.CaptureFixture[str],
-    frame: str,
-) -> None:
-    """An in-stream effort refusal silently resends at low and later calls keep that floor."""
-    provider = _provider(signed_in, reasoning_effort="off")
+    """Both HTTP and stream refusals stop at the level that was asked for."""
     error = {
         "message": "Unsupported value: 'none'. Supported values are: 'low', 'medium', and 'high'.",
         "code": "unsupported_value",
@@ -1464,22 +1427,15 @@ def test_a_stream_frame_effort_refusal_adapts_without_surfacing_and_keeps_the_fl
         event = {"type": frame, "error": error}
     else:
         event = {"type": frame, "response": {"status": "failed", "error": error}}
-    sent: list[str] = []
-
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        del method, url
-        body = json.loads(kwargs["content"])
-        sent.append(body["reasoning"]["effort"])
-        lines = _evt(event) if len(sent) == 1 else _happy_stream()
-        return _FakeStreamResponse(status_code=200, lines=lines)
-
-    with mock.patch("httpx2.stream", side_effect=fake_stream):
-        first = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}])
-        second = provider.call(system="SYS", messages=[{"role": "user", "content": "t"}])
-
-    assert first.text == "hello" and second.text == "hello"
-    assert sent == ["none", "low", "low"]
-    assert capsys.readouterr().err == ""
+    with provider_endpoint.serve(
+        {"error": error} if frame == "http" else [event], status=400 if frame == "http" else 200
+    ) as (url, calls):
+        provider = dataclasses.replace(_provider(signed_in, reasoning_effort="off"), base_url=url)
+        with pytest.raises(
+            ProviderError, match="Supported values are: 'low', 'medium', and 'high'"
+        ):
+            provider.call(system="SYS", messages=[{"role": "user", "content": "t"}])
+    assert [body["reasoning"]["effort"] for body in calls] == ["none"]
 
 
 @pytest.mark.parametrize("param", [None, "temperature"])
