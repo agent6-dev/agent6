@@ -163,6 +163,47 @@ def test_no_recordings_fail_before_calling_the_provider(
     assert not out and "no finished panel reviewers" in err
 
 
+@pytest.mark.parametrize(
+    "part",
+    ["sessions", "reviewers", "child", "completion", "transcripts", "opening", "objects", "object"],
+)
+def test_a_link_in_copied_state_stops_replay_before_any_call(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    responses_config: pathlib.Path,
+    part: str,
+) -> None:
+    """A later review cannot draw on files outside the selected copy."""
+    state = tmp_path / "copy"
+    env.record_review(state, "first", env.responses_body())
+    child = env.record_review(state, "second", env.responses_body())
+    opening = sorted(child.transcripts_dir.glob("*.json"))[1]
+    digest = json.loads(opening.read_text())["request"]["body"]["instructions"]["$object"]
+    path = {
+        "sessions": state / "sessions",
+        "reviewers": child.session_dir.parent,
+        "child": child.session_dir,
+        "completion": child.session_dir / "completion.json",
+        "transcripts": child.transcripts_dir,
+        "opening": opening,
+        "objects": child.objects_dir,
+        "object": child.objects_dir / f"{digest}.json",
+    }[part]
+    source = path.rename(tmp_path / "fixture-source")
+    path.symlink_to(source, target_is_directory=source.is_dir())
+    monkeypatch.setattr(
+        transport, "http_post", mock.Mock(side_effect=AssertionError("unexpected call"))
+    )
+
+    code = replay.main(
+        [str(state), "--config", str(responses_config), "--model", "p/m", "--effort", "default"]
+    )
+    out, err = capsys.readouterr()
+    assert code == 1 and not out
+    assert "symlink" in err and str(path.relative_to(state)) in err
+
+
 def test_cli_refuses_a_reasoning_override_before_spending(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

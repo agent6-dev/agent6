@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import pathlib
 import re
 from typing import Any
 
+from agent6 import path_safety
 from agent6.prompts import review
 from agent6.providers import provider_types, responses_codec
 from agent6.sessions import completion, layout, objects
@@ -15,6 +17,30 @@ from agent6.sessions import completion, layout, objects
 
 class RecordingError(ValueError):
     """The recording cannot supply a reviewer opening."""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _RecordingFiles:
+    """Open recording files from the selected root, not from a link in the copy."""
+
+    root: pathlib.Path
+
+    def _path(self, path: pathlib.Path) -> path_safety.SafePath:
+        return path_safety.contain(self.root, path.relative_to(self.root))
+
+    def read_bytes(self, path: pathlib.Path) -> bytes:
+        return path_safety.read_bytes_contained(self._path(path))
+
+    def names(self, directory: pathlib.Path) -> list[str]:
+        """List names without looking up the targets of links in the directory."""
+        try:
+            fd = path_safety.open_contained(self._path(directory), os.O_RDONLY | os.O_DIRECTORY)
+        except FileNotFoundError:
+            return []
+        try:
+            return os.listdir(fd)
+        finally:
+            os.close(fd)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -115,11 +141,12 @@ def _sequence(path: pathlib.Path) -> int:
         raise RecordingError(f"{path}: expected a transcript sequence number") from exc
 
 
-def _first(child: layout.SessionLayout) -> Opening:
-    paths = sorted(child.transcripts_dir.glob("*.json"), key=_sequence)
-    for seq, path in enumerate(paths, 1):
+def _first(child: layout.SessionLayout, files: _RecordingFiles) -> Opening:
+    directory = child.transcripts_dir
+    paths = (directory / name for name in files.names(directory) if name.endswith(".json"))
+    for seq, path in enumerate(sorted(paths, key=_sequence), 1):
         try:
-            record = json.loads(path.read_text(encoding="utf-8"))
+            record = json.loads(files.read_bytes(path).decode("utf-8"))
             if record["seq"] != seq:
                 raise RecordingError(f"missing transcript sequence {seq}")
             actor = record["actor"]
@@ -129,7 +156,10 @@ def _first(child: layout.SessionLayout) -> Opening:
                 )
             if isinstance(actor, str) and actor.startswith("reviewer:"):
                 body = objects.materialize(
-                    record["request"]["body"], child.objects_dir, record_path=path
+                    record["request"]["body"],
+                    child.objects_dir,
+                    record_path=path,
+                    read_bytes=files.read_bytes,
                 )
                 return _opening(path, body, actor.removeprefix("reviewer:"))
         except (KeyError, TypeError, ValueError) as exc:
@@ -149,17 +179,23 @@ def read_reviews(state_dir: pathlib.Path) -> list[Opening]:
     Raises:
         RecordingError: No panel children were found or an opening is incomplete.
     """
+    files = _RecordingFiles(state_dir)
     bucket = layout.bucket_dir(state_dir, layout.EVIDENCE_BUCKET)
     reviews: list[Opening] = []
-    for directory in sorted(bucket.glob("*")):
-        if not directory.is_dir():
-            continue
-        record = completion.read_completion(directory)
-        if record is None or record.review_binding is None:
-            continue
-        if record.session_id != directory.name:
-            raise RecordingError(f"{directory}: completion belongs to {record.session_id!r}")
-        reviews.append(_first(layout.layout_of(directory)))
+    try:
+        for name in sorted(files.names(bucket)):
+            directory = bucket / name
+            try:
+                record = completion.read_completion(directory, read_bytes=files.read_bytes)
+            except path_safety.NotDirectoryError:
+                continue
+            if record is None or record.review_binding is None:
+                continue
+            if record.session_id != directory.name:
+                raise RecordingError(f"{directory}: completion belongs to {record.session_id!r}")
+            reviews.append(_first(layout.layout_of(directory), files))
+    except path_safety.ContainmentError as exc:
+        raise RecordingError(str(exc)) from exc
     if not reviews:
         raise RecordingError(f"{bucket}: no finished panel reviewers")
     return reviews

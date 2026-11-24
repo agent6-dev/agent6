@@ -7,6 +7,7 @@ import json
 import pathlib
 import re
 import threading
+from collections.abc import Callable
 from typing import Any
 
 from agent6 import portable
@@ -58,7 +59,11 @@ def reference_fields(record: dict[str, Any], objects_dir: pathlib.Path) -> dict[
 
 
 def materialize(
-    record: Any, objects_dir: pathlib.Path, *, record_path: pathlib.Path | None = None
+    record: Any,
+    objects_dir: pathlib.Path,
+    *,
+    record_path: pathlib.Path | None = None,
+    read_bytes: Callable[[pathlib.Path], bytes] = pathlib.Path.read_bytes,
 ) -> Any:
     """Replace references with their stored values, leaving legacy records unchanged.
 
@@ -66,6 +71,7 @@ def materialize(
         record: The decoded JSON record.
         objects_dir: The session's object directory.
         record_path: The record's path for diagnostics; absent for an in-memory record.
+        read_bytes: The file reader for this store's objects.
 
     Returns:
         The materialized record.
@@ -86,7 +92,7 @@ def materialize(
         if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
             raise ObjectStoreError(f"invalid object hash {digest!r} in record {label}")
         try:
-            return json.loads((objects_dir / f"{digest}.json").read_text(encoding="utf-8"))
+            return json.loads(read_bytes(objects_dir / f"{digest}.json").decode("utf-8"))
         except (OSError, ValueError) as exc:
             raise ObjectStoreError(
                 f"cannot read object {digest} for record {label}: {exc}"

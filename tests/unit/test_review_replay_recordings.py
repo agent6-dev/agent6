@@ -25,6 +25,7 @@ def test_only_finished_panel_children_supply_their_first_reviewer_request(
     )
     unfinished = env.record_review(tmp_path, "run-rp3-l1", {})
     (unfinished.session_dir / completion.COMPLETION_NAME).unlink()
+    (unfinished.session_dir.parent / "sample.txt").write_text("selected reviewers")
     (tmp_path / "sessions/runs/run/transcripts").mkdir(parents=True)
     (tmp_path / "sessions/runs/run/transcripts/worker.json").write_text("not a reviewer")
 

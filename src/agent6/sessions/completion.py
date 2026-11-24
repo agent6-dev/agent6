@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from collections.abc import Callable
 
 import pydantic
 
@@ -63,11 +64,16 @@ def write_completion(session_dir: pathlib.Path, record: CompletionRecord) -> pat
     return path
 
 
-def read_completion(session_dir: pathlib.Path) -> CompletionRecord | None:
+def read_completion(
+    session_dir: pathlib.Path,
+    *,
+    read_bytes: Callable[[pathlib.Path], bytes] = pathlib.Path.read_bytes,
+) -> CompletionRecord | None:
     """Read the session's completion record.
 
     Args:
         session_dir: The session directory.
+        read_bytes: The file reader for this state directory.
 
     Returns:
         The record, or None when the session left none.
@@ -77,7 +83,7 @@ def read_completion(session_dir: pathlib.Path) -> CompletionRecord | None:
     """
     path = session_dir / COMPLETION_NAME
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_bytes(path).decode("utf-8")
     except FileNotFoundError:
         return None
     except OSError as exc:

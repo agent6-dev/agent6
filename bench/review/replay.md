@@ -8,6 +8,7 @@ The replay does not run a panel or change its blocking rule.
 From the checkout to measure, set `STATE` to a repository state directory containing `sessions/reviewers/`.
 Use finished reviews from one route and effort per run.
 To select a subset, copy the chosen reviewer directories, including `objects/`, into the same layout in a fresh state directory.
+Copy the recording files themselves: replay refuses symlinks on recording paths below `STATE` before making any calls.
 
 ```sh
 uv run python -m bench.review.replay "$STATE" \
