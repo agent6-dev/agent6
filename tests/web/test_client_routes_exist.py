@@ -62,7 +62,8 @@ def _unrouted(port: int, path: str, method: str) -> bool:
     miss is the only one that says `not found: <path>`, and it is the one a
     renamed route produces.
     """
-    conn = signin.SignedIn(port, timeout=10)
+    # A POST runs the route: a prune takes 2.5 s on an idle machine, and far longer on a busy one.
+    conn = signin.SignedIn(port, timeout=60)
     try:
         body = b"{}" if method == "POST" else None
         headers = {"Content-Type": "application/json"} if body else {}
