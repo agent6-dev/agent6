@@ -13,7 +13,7 @@ from typing import Literal
 from agent6 import kinds, media
 from agent6.harness import loop_conversation
 from agent6.harness.compaction import elision as compaction_elision
-from agent6.providers import Provider, provider_types
+from agent6.providers import provider_calls, provider_types
 
 # Chars, not tokens: tokens are roughly chars/4 for English-shaped content.
 DROP_BLOCKS_AT_CHARS = 256_000  # ~64k tokens of tool_result content
@@ -179,7 +179,7 @@ class CompactionSettings:
     elision_gists: bool = True
     summary_max_tokens: int = 2048
     summarizer: Literal["worker", "helper"] = "worker"
-    helper: Provider | None = None
+    helper: provider_calls.Provider | None = None
     helper_context_tokens: int | None = None
     endpoint: provider_types.EndpointCompaction = dataclasses.field(
         default_factory=provider_types.EndpointCompaction

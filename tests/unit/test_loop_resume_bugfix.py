@@ -188,13 +188,13 @@ def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) ->
 
 def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathlib.Path) -> None:
     """A prose turn plus its nudge is a completed turn, so a stop there resumes after it."""
-    from agent6.providers import ProviderResponse
+    from agent6.providers import provider_types
 
     repo = tmp_path / "repo"
     _git_repo(repo)
     snap_path = tmp_path / "loop_state.json"
     provider = mock.MagicMock()
-    provider.call.return_value = ProviderResponse(
+    provider.call.return_value = provider_types.ProviderResponse(
         text="answer in prose",
         tool_uses=(),
         stop_reason="end_turn",
@@ -1028,10 +1028,10 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
 
     Seeding emits the same replace-fold event a restore does and keeps the pins in state.
     """
-    from agent6.providers import ProviderResponse
+    from agent6.providers import provider_types
 
     provider = mock.MagicMock()
-    provider.call.return_value = ProviderResponse(
+    provider.call.return_value = provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
@@ -1098,10 +1098,10 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
 def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     """`--pin` seeds pins through the same cap and non-empty check as `/pin`."""
     from agent6.harness import operator_bridge
-    from agent6.providers import ProviderResponse
+    from agent6.providers import provider_types
 
     provider = mock.MagicMock()
-    provider.call.return_value = ProviderResponse(
+    provider.call.return_value = provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "d"}},),
         stop_reason="tool_use",

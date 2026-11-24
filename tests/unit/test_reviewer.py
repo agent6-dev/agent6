@@ -16,7 +16,7 @@ from agent6 import kinds, llm_json
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.harness.review import verdict as review_verdict
-from agent6.providers import Provider, ProviderError
+from agent6.providers import provider_calls, provider_types
 from agent6.sessions import journal
 from agent6.tools import results
 from tests import review_env
@@ -67,11 +67,11 @@ class _FakeProvider:
 
 class _ErrProvider:
     def call(self, **kw: Any) -> Any:
-        raise ProviderError("boom")
+        raise provider_types.ProviderError("boom")
 
 
-def _prov(text: str) -> Provider:
-    return cast(Provider, _FakeProvider(text))
+def _prov(text: str) -> provider_calls.Provider:
+    return cast(provider_calls.Provider, _FakeProvider(text))
 
 
 def _ctx() -> review_panel.ReviewContext:
@@ -129,7 +129,11 @@ def test_structured_review_without_a_findings_array_abstains(text: str) -> None:
 
 def test_structured_review_provider_error_abstains() -> None:
     v = review_env.single_verdict(
-        cast(Provider, _ErrProvider()), _ctx(), reviewer_index=0, focus="s", model_route="m1"
+        cast(provider_calls.Provider, _ErrProvider()),
+        _ctx(),
+        reviewer_index=0,
+        focus="s",
+        model_route="m1",
     )
     assert v.error is not None and "provider" in v.error
 
@@ -145,7 +149,11 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
     starved.call = lambda **_kw: starved_resp  # pyrefly: ignore[method-assign]
     v = review_env.single_verdict(
-        cast(Provider, starved), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k3"
+        cast(provider_calls.Provider, starved),
+        _ctx(),
+        reviewer_index=0,
+        focus="s",
+        model_route="kimi-k3",
     )
     assert v.error is not None and v.verdict == "abstain"
     assert "unparseable" not in v.error
@@ -157,7 +165,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
     cut.call = lambda **_kw: cut_resp  # pyrefly: ignore[method-assign]
     v2 = review_env.single_verdict(
-        cast(Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
+        cast(provider_calls.Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
     assert v2.error is not None
     assert "before the verdict JSON completed" in v2.error
@@ -175,7 +183,11 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     empty.call = lambda **_kw: empty_resp  # pyrefly: ignore[method-assign]
 
     v = review_env.single_verdict(
-        cast(Provider, empty), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k2.6"
+        cast(provider_calls.Provider, empty),
+        _ctx(),
+        reviewer_index=0,
+        focus="s",
+        model_route="kimi-k2.6",
     )
 
     assert v.error is not None and v.verdict == "abstain"
@@ -192,7 +204,11 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     thinker.call = lambda **_kw: thought  # pyrefly: ignore[method-assign]
 
     v2 = review_env.single_verdict(
-        cast(Provider, thinker), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k2.6"
+        cast(provider_calls.Provider, thinker),
+        _ctx(),
+        reviewer_index=0,
+        focus="s",
+        model_route="kimi-k2.6",
     )
 
     assert v2.error is not None
@@ -341,7 +357,7 @@ def _cfg_with_reviewers(reviewers: tuple[dict[str, str], ...]) -> Any:
     )
 
 
-def _stub_reviewer_provider(*_a: Any, **_k: Any) -> Provider:
+def _stub_reviewer_provider(*_a: Any, **_k: Any) -> provider_calls.Provider:
     """Stand in for `_provider_from_entry` and `_build_role_provider` so a reviewer needs no key.
 
     The test asserts on the reviewer label.
@@ -398,7 +414,7 @@ def test_a_bare_focus_reviewer_follows_the_routed_reviewer(monkeypatch: Any) -> 
 def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -> None:
     from agent6.app import role_providers
 
-    def blocking_provider(*_a: Any, **_k: Any) -> Provider:
+    def blocking_provider(*_a: Any, **_k: Any) -> provider_calls.Provider:
         return _prov(_BLOCK_JSON)
 
     monkeypatch.setattr(role_providers, "_provider_from_entry", blocking_provider)
@@ -493,7 +509,7 @@ def test_reviewer_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Monkey
         return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
     v = review_env.single_verdict(
-        cast(Provider, provider),
+        cast(provider_calls.Provider, provider),
         _ctx(),
         reviewer_index=0,
         focus="security",
@@ -516,7 +532,7 @@ def test_reviewer_abstains_after_six_calls_without_a_verdict() -> None:
         ]
     )
     v = review_env.single_verdict(
-        cast(Provider, provider),
+        cast(provider_calls.Provider, provider),
         _ctx(),
         reviewer_index=0,
         focus="s",
@@ -546,7 +562,7 @@ def test_reviewer_skips_dispatch_on_final_turn() -> None:
         return results.RawResult({"ok": True})
 
     v = review_env.single_verdict(
-        cast(Provider, provider),
+        cast(provider_calls.Provider, provider),
         _ctx(),
         reviewer_index=0,
         focus="s",
@@ -567,7 +583,9 @@ def test_run_panel_runs_a_reviewer_through_its_tool_loop() -> None:
             _ReviewerResp(text=_BLOCK_JSON),
         ]
     )
-    reviewer = review_env.reviewer(focus="security", model="m1", provider=cast(Provider, prov))
+    reviewer = review_env.reviewer(
+        focus="security", model="m1", provider=cast(provider_calls.Provider, prov)
+    )
     res = review_env.run_panel(
         [reviewer],
         _ctx(),
@@ -609,7 +627,7 @@ def test_a_verdict_cut_off_after_a_finding_names_the_truncation() -> None:
     cut_resp = _Resp(_BLOCK_JSON[:-2] + ',{"categ', stop_reason="length", output_tokens=1500)
     cut.call = lambda **_kw: cut_resp  # pyrefly: ignore[method-assign]
     v = review_env.single_verdict(
-        cast(Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
+        cast(provider_calls.Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
     assert v.verdict == "abstain"
     assert v.error is not None and "before the verdict JSON completed" in v.error
@@ -631,7 +649,7 @@ def test_reviewer_honors_verdict_alongside_tool_use_on_last_turn() -> None:
         [_ReviewerResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})]
     )
     v = review_env.single_verdict(
-        cast(Provider, provider),
+        cast(provider_calls.Provider, provider),
         _ctx(),
         reviewer_index=0,
         focus="s",
@@ -651,7 +669,9 @@ def test_run_panel_executor_crash_retains_diagnostics() -> None:
 
     reviewers = [
         review_env.reviewer(focus="a", model="m", provider=_prov(_BLOCK_JSON)),
-        review_env.reviewer(focus="b", model="m", provider=cast(Provider, _BoomProvider())),
+        review_env.reviewer(
+            focus="b", model="m", provider=cast(provider_calls.Provider, _BoomProvider())
+        ),
     ]
     result = review_env.run_panel(
         reviewers,
@@ -687,7 +707,9 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
             return _Resp(_BLOCK_JSON)
 
     reviewers = [
-        review_env.reviewer(focus=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
+        review_env.reviewer(
+            focus=f"s{i}", model="m", provider=cast(provider_calls.Provider, _SlowProvider())
+        )
         for i in range(6)
     ]
     res = review_env.run_panel(

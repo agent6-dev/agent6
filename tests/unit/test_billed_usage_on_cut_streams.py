@@ -20,15 +20,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.app import role_providers
-from agent6.providers import (
-    AnthropicProvider,
-    OpenAIProvider,
-    Provider,
-    ProviderError,
-    chatgpt,
-    provider_types,
-    responses,
-)
+from agent6.providers import anthropic, chatgpt, openai, provider_calls, provider_types, responses
 from agent6.sessions import event_log
 from agent6.viewmodel import telemetry
 from tests import price_env
@@ -65,13 +57,13 @@ def test_other_streams_keep_failed_usage_on_the_result(
 ) -> None:
     """Failed streams retain per-call cache usage instead of exposing only a budget total."""
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    provider: Provider
+    provider: provider_calls.Provider
     sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     creation = 0
     # Only the Anthropic wire reports cache writes; the others leave the count unreported.
     written: int | None = None
     if api_format == "anthropic":
-        provider = AnthropicProvider(
+        provider = anthropic.AnthropicProvider(
             api_key="k", model="m", provider_name=api_format, budget=tracker, transcript_sink=sink
         )
         creation = written = 7
@@ -134,7 +126,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
     with (
         mock.patch("httpx2.stream", return_value=FakeStreamResponse(status_code=200, lines=lines)),
         mock.patch("agent6.providers.transport.http_request", return_value=httpx2.Response(503)),
-        pytest.raises(ProviderError),
+        pytest.raises(provider_types.ProviderError),
     ):
         wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
     (path,) = (tmp_path / "transcripts").iterdir()
@@ -229,7 +221,7 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
     budget = agent6_budget.BudgetTracker(
         providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
     )
     with (
@@ -259,7 +251,7 @@ def test_anthropic_cut_stream_keeps_message_start_output_usage() -> None:
         "content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}
     )
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
     )
     with (
@@ -300,7 +292,7 @@ def test_openai_records_a_cut_stream_and_keeps_the_cached_split() -> None:
     budget = agent6_budget.BudgetTracker(
         providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="k", model="gpt-4o", budget=budget, provider_name="testprovider"
     )
     with (
@@ -328,7 +320,7 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     budget = agent6_budget.BudgetTracker(
         providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
     )
     with (
@@ -392,7 +384,7 @@ def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
     budget = agent6_budget.BudgetTracker(
         providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
     )
     with (
@@ -435,7 +427,7 @@ def test_openai_records_a_completed_stream_its_meter_guard_refuses(
     budget = agent6_budget.BudgetTracker(
         providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="k", model="gpt-4o", budget=budget, provider_name="testprovider"
     )
     with (
@@ -487,7 +479,7 @@ def test_anthropic_meters_a_completed_stream_once(
     budget = agent6_budget.BudgetTracker(
         providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
     )
     with mock.patch(
@@ -520,7 +512,7 @@ def test_anthropic_records_a_completed_malformed_stream() -> None:
     )
     lines += _sse("message_stop", {})
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
     )
     with (
@@ -528,7 +520,7 @@ def test_anthropic_records_a_completed_malformed_stream() -> None:
             "agent6.providers.stream_lifecycle.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
-        pytest.raises(ProviderError, match="duplicate"),
+        pytest.raises(provider_types.ProviderError, match="duplicate"),
     ):
         provider.call(
             system="s",
@@ -558,12 +550,12 @@ def test_anthropic_records_a_malformed_json_reply(body: dict[str, Any]) -> None:
         headers={"content-type": "application/json"},
     )
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="k", model="claude-sonnet-4-5", budget=budget, provider_name="testprovider"
     )
     with (
         mock.patch("agent6.providers.transport.http_post", return_value=reply),
-        pytest.raises(ProviderError, match="Anthropic response") as exc,
+        pytest.raises(provider_types.ProviderError, match="Anthropic response") as exc,
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     snap = budget.snapshot()
@@ -590,7 +582,7 @@ def test_openai_meters_a_completed_stream_once(
     budget = agent6_budget.BudgetTracker(
         providers=price_env.PROVIDERS, max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1
     )
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="k", model="gpt-4o", budget=budget, provider_name="testprovider"
     )
     with mock.patch(

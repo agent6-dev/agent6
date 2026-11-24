@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget, providers
+from agent6 import budget
 from agent6.config import harness_config
 from agent6.harness import loop_conversation, loop_state
 from agent6.harness.compaction import driver, strategy, window
-from agent6.providers import provider_types, responses_codec
+from agent6.providers import provider_calls, provider_types, responses_codec
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
 from tests.unit import test_harness
@@ -77,8 +77,8 @@ def history() -> loop_conversation.Conversation:
 
 
 def context(
-    worker: providers.Provider,
-    helper: providers.Provider,
+    worker: provider_calls.Provider,
+    helper: provider_calls.Provider,
     events: list[Any],
     *,
     conversation: loop_conversation.Conversation | None = None,

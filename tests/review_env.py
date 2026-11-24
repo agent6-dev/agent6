@@ -13,7 +13,7 @@ from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import event_log, journal
 from agent6.tools import dispatch as tools_dispatch
 from agent6.tools import results
@@ -60,9 +60,9 @@ class ResponseAdapter:
     def __init__(self, provider: Any) -> None:
         self.provider = provider
 
-    def call(self, **kwargs: Any) -> ProviderResponse:
+    def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
         resp = self.provider.call(**kwargs)
-        if isinstance(resp, ProviderResponse):
+        if isinstance(resp, provider_types.ProviderResponse):
             return resp
         tools = tuple(getattr(resp, "tool_uses", ()))
         raw = dict(getattr(resp, "raw", {}))
@@ -70,7 +70,7 @@ class ResponseAdapter:
             raw["content"] = ([{"type": "text", "text": resp.text}] if resp.text else []) + [
                 {"type": "tool_use", **t} for t in tools
             ]
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text=resp.text,
             tool_uses=tools,
             stop_reason=getattr(resp, "stop_reason", "end_turn"),

@@ -10,7 +10,7 @@ import pytest
 from agent6 import budget, errors, paths
 from agent6.app import finalize, reporter, role_providers
 from agent6.harness import loop_snapshot
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import cli_main
 from agent6.vcs.git import read as git_read
@@ -201,7 +201,7 @@ class _Scripted:
         self.path = path
         self.calls = 0
 
-    def call(self, **_kwargs: Any) -> ProviderResponse:
+    def call(self, **_kwargs: Any) -> provider_types.ProviderResponse:
         self.calls += 1
         tool = (
             {
@@ -212,7 +212,7 @@ class _Scripted:
             else {"name": "finish_session", "input": {"summary": "done"}}
         )
         tools = ({"type": "tool_use", "id": str(self.calls), **tool},)
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tools,
             stop_reason="tool_use",

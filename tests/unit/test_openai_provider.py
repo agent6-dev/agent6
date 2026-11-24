@@ -12,7 +12,7 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6.providers import ProviderError, openai, request_headers, token_command
+from agent6.providers import openai, provider_types, request_headers, token_command
 
 
 def _fake_response(body: dict[str, Any], status: int = 200) -> httpx2.Response:
@@ -272,7 +272,7 @@ def test_call_raises_provider_error_on_http_status() -> None:
             "agent6.providers.transport.http_post",
             return_value=_fake_response({"error": "no"}, status=500),
         ),
-        pytest.raises(ProviderError, match="OpenAI API error 500"),
+        pytest.raises(provider_types.ProviderError, match="OpenAI API error 500"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
@@ -588,7 +588,7 @@ def test_401_without_credential_is_not_retried() -> None:
 
     with (
         mock.patch("agent6.providers.transport.http_post", side_effect=fake_post),
-        pytest.raises(ProviderError),
+        pytest.raises(provider_types.ProviderError),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert calls["n"] == 1
@@ -618,7 +618,7 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
 
     with (
         mock.patch("agent6.providers.transport.http_post", side_effect=fake_post),
-        pytest.raises(ProviderError, match="finish_reason='error'"),
+        pytest.raises(provider_types.ProviderError, match="finish_reason='error'"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
 
@@ -660,7 +660,7 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
             "agent6.providers.stream_lifecycle.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
-        pytest.raises(ProviderError, match="finish_reason='error'"),
+        pytest.raises(provider_types.ProviderError, match="finish_reason='error'"),
     ):
         provider.call(
             system="s",
@@ -695,7 +695,7 @@ def test_openai_usage_counts_are_non_negative_integers(field: str, value: object
     else:
         usage[field] = value
 
-    with pytest.raises(ProviderError, match=rf"usage\..*{field}"):
+    with pytest.raises(provider_types.ProviderError, match=rf"usage\..*{field}"):
         openai_parse.parse_response(
             {
                 "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
@@ -753,7 +753,7 @@ def test_openai_usage_counts_accept_integer_strings_and_integral_floats() -> Non
 def test_openai_response_fields_are_not_coerced(choice: dict[str, Any]) -> None:
     from agent6.providers import openai_parse
 
-    with pytest.raises(ProviderError):
+    with pytest.raises(provider_types.ProviderError):
         openai_parse.parse_response(
             {"choices": [choice], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
         )
@@ -807,7 +807,7 @@ def test_a_nested_usage_count_error_names_its_path() -> None:
 def test_openai_tool_call_ids_are_unique() -> None:
     from agent6.providers import openai_parse
 
-    with pytest.raises(ProviderError, match=r"duplicate.*tool_call.id"):
+    with pytest.raises(provider_types.ProviderError, match=r"duplicate.*tool_call.id"):
         openai_parse.parse_response(
             {
                 "choices": [
@@ -836,7 +836,7 @@ def test_extra_body_cannot_replace_an_explicit_effort() -> None:
         mock.patch(
             "agent6.providers.transport.http_post", return_value=_fake_response({"choices": []})
         ) as post,
-        pytest.raises(ProviderError, match=r"extra_body\.reasoning"),
+        pytest.raises(provider_types.ProviderError, match=r"extra_body\.reasoning"),
     ):
         client.call(system="s", messages=[{"role": "user", "content": "x"}])
     post.assert_not_called()

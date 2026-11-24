@@ -22,7 +22,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from agent6 import kinds
-from agent6.providers import result_text
+from agent6.providers import claude_code_wire
 from agent6.sessions import objects
 from agent6.viewmodel import format
 
@@ -301,7 +301,11 @@ def _anthropic_messages(m: dict[str, Any], names: dict[str, str]) -> list[Messag
             case "tool_result":
                 nm = names.get(str(b.get("tool_use_id", "")), "")
                 tool_results.append(
-                    Message(role="tool", text=result_text(b.get("content")), tool_name=nm)
+                    Message(
+                        role="tool",
+                        text=claude_code_wire.result_text(b.get("content")),
+                        tool_name=nm,
+                    )
                 )
             case _:
                 pass

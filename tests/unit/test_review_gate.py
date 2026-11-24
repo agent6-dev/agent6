@@ -31,7 +31,7 @@ from agent6.harness import (
     run_chain,
 )
 from agent6.harness.review import gate as review_gate
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import event_log, journal
 from agent6.tools import results
 from tests import review_env
@@ -92,8 +92,8 @@ def _wf(
     return loop.Harness(**defaults)
 
 
-def _resp(text: str) -> ProviderResponse:
-    return ProviderResponse(
+def _resp(text: str) -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=(),
         stop_reason="end_turn",
@@ -113,10 +113,10 @@ def _finish_tool_use(tool_id: str, summary: str) -> dict[str, Any]:
     }
 
 
-def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse:
+def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> provider_types.ProviderResponse:
     blocks: list[dict[str, Any]] = [{"type": "text", "text": text}] if text else []
     blocks.append({"type": "tool_use", **tool_use})
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=(tool_use,),
         stop_reason="tool_use",
@@ -987,7 +987,7 @@ def test_a_folded_lock_finding_returns_when_reported_again(
     """A mistaken repeat hides neither a raw block nor the next report of that finding."""
     from agent6.app.session import runtime
     from agent6.config import Config
-    from agent6.providers import TranscriptSink
+    from agent6.providers import provider_types
     from agent6.viewmodel import review
     from tests import launch_env
 
@@ -1031,7 +1031,7 @@ def test_a_folded_lock_finding_returns_when_reported_again(
             cfg,
             role="worker",
             events=sink,
-            transcript_sink=TranscriptSink(
+            transcript_sink=provider_types.TranscriptSink(
                 tmp_path / "transcripts", objects_dir=tmp_path / "objects"
             ),
             stream_text=False,
@@ -1098,7 +1098,7 @@ def test_review_without_grouping_keeps_the_request_bytes(
 
     from agent6.app.session import runtime
     from agent6.config import Config
-    from agent6.providers import TranscriptSink, transport
+    from agent6.providers import provider_types, transport
     from tests import launch_env
 
     wire: list[bytes] = []
@@ -1123,7 +1123,7 @@ def test_review_without_grouping_keeps_the_request_bytes(
             cfg,
             role="reviewer",
             events=event_log.EventSink(tmp_path / "logs.jsonl"),
-            transcript_sink=TranscriptSink(
+            transcript_sink=provider_types.TranscriptSink(
                 tmp_path / "transcripts", objects_dir=tmp_path / "objects"
             ),
             stream_text=False,

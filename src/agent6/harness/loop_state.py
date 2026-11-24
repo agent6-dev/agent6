@@ -27,7 +27,7 @@ from agent6.harness import (
 from agent6.harness import spiral as harness_spiral
 from agent6.harness.compaction import cold_start as compaction_cold_start
 from agent6.harness.verify import verdict as verify_verdict
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.tools import waits
 
 
@@ -207,7 +207,7 @@ class TurnState:
     """
 
     number: int
-    resp: ProviderResponse
+    resp: provider_types.ProviderResponse
     assistant: loop_conversation.AssistantMessage
     finish: finish_gates.FinishCall | None = None
     end_returned: bool = False

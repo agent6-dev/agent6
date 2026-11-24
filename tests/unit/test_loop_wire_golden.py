@@ -23,7 +23,7 @@ from typing import Any
 from agent6 import config
 from agent6.harness import loop, loop_conversation, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.tools import mcp_client, results
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_loop_wire.json"
@@ -89,7 +89,7 @@ def _resp(
     thinking: str = "",
     tool_uses: tuple[tuple[str, str, dict[str, Any]], ...] = (),
     stop_reason: str = "end_turn",
-) -> ProviderResponse:
+) -> provider_types.ProviderResponse:
     """A provider response whose raw content mirrors what real providers build."""
     blocks: list[dict[str, Any]] = []
     if thinking:
@@ -98,7 +98,7 @@ def _resp(
         blocks.append({"type": "text", "text": text})
     for tu_id, name, tool_input in tool_uses:
         blocks.append({"type": "tool_use", "id": tu_id, "name": name, "input": tool_input})
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=tuple({"id": i, "name": n, "input": inp} for i, n, inp in tool_uses),
         stop_reason=stop_reason,
@@ -113,12 +113,14 @@ def _resp(
 class _WorkerScript:
     """Scripted worker provider capturing each call's messages and the pre-call loop_state bytes."""
 
-    def __init__(self, responses: list[ProviderResponse], snap_path: pathlib.Path) -> None:
+    def __init__(
+        self, responses: list[provider_types.ProviderResponse], snap_path: pathlib.Path
+    ) -> None:
         self._responses = responses
         self._snap_path = snap_path
         self.captured: list[dict[str, str]] = []
 
-    def call(self, **kwargs: Any) -> ProviderResponse:
+    def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
         self.captured.append(
             {
                 "messages": json.dumps(copy.deepcopy(kwargs["messages"]), ensure_ascii=False),
@@ -137,7 +139,7 @@ class _SummarizerScript:
     def __init__(self) -> None:
         self.captured: list[dict[str, str]] = []
 
-    def call(self, **kwargs: Any) -> ProviderResponse:
+    def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
         self.captured.append(
             {
                 "system_head": str(kwargs["system"])[:60],

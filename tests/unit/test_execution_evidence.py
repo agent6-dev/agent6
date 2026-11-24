@@ -177,8 +177,8 @@ def resumed(
     import types
     import uuid
 
-    from agent6 import providers
     from agent6.app import execution, reporter, role_providers
+    from agent6.providers import provider_types
 
     origin = pathlib.Path.cwd()
     workspace = origin.parent / "worktree"
@@ -218,7 +218,7 @@ def resumed(
     )
 
     class ScriptedProvider:
-        def call(self, **_kwargs: object) -> providers.ProviderResponse:
+        def call(self, **_kwargs: object) -> provider_types.ProviderResponse:
             return next(responses)
 
     def provider_factory(*_args: object, **_kwargs: object) -> ScriptedProvider:

@@ -26,12 +26,7 @@ from agent6.harness.compaction import retention, strategy, writers
 from agent6.harness.compaction import rules as compaction_rules
 from agent6.harness.compaction import window as compaction_window
 from agent6.prompts import compaction
-from agent6.providers import (
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    provider_types,
-)
+from agent6.providers import provider_types
 from agent6.sessions import journal
 from agent6.tools import waits
 
@@ -427,7 +422,7 @@ def distill_gists(
     context.emit(journal.CompactGistCall(files=len(requests)))
     try:
         resp = context.call_helper(compaction.GIST_DISTILL_SYSTEM_PROMPT, files, uuid.uuid4().hex)
-    except (ProviderError, budget.BudgetExceededError) as exc:
+    except (provider_types.ProviderError, budget.BudgetExceededError) as exc:
         context.log(f"  gist distillation failed: {exc}; eliding without gists")
         context.emit(journal.CompactGistFailed(error=str(exc)[:200]))
         return {}
@@ -508,9 +503,9 @@ def write_summary(
                 if writer == "endpoint"
                 else writers.rejection(resp)
             )
-        except (ProviderAborted, ProviderInterrupted):
+        except (provider_types.ProviderAborted, provider_types.ProviderInterrupted):
             raise
-        except ProviderError as exc:
+        except provider_types.ProviderError as exc:
             if (exc.fatal and not isinstance(exc, provider_types.MediaInputError)) or (
                 exc.status_code in (401, 402, 403, 429)
             ):

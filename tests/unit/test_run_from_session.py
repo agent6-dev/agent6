@@ -14,7 +14,7 @@ import pytest
 from agent6 import paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.ui.cli import cli_main
 
 _CONFIG = """
@@ -40,10 +40,10 @@ class _Finisher:
         self.messages: list[object] = []
         self.answer_ask = False
 
-    def call(self, **kwargs: Any) -> ProviderResponse:
+    def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
         self.messages.append(kwargs["messages"])
         if self.answer_ask:
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text="Use the source context.",
                 tool_uses=(),
                 stop_reason="end_turn",
@@ -58,7 +58,7 @@ class _Finisher:
             "name": "finish_session",
             "input": {"summary": "seed received"},
         }
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=(tool,),
             stop_reason="tool_use",

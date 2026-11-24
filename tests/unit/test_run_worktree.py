@@ -37,7 +37,7 @@ from agent6.app.parallel import children as app_children
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
 from agent6.harness.parallel import repo as child_repo
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch
@@ -88,10 +88,10 @@ class _Scripted:
         self.script = script
         self.calls = 0
 
-    def call(self, **_kw: Any) -> ProviderResponse:
+    def call(self, **_kw: Any) -> provider_types.ProviderResponse:
         tools = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tools,
             stop_reason="tool_use",
@@ -511,7 +511,7 @@ def test_a_budget_stopped_child_continues_with_the_fork_command_its_record_names
         def __init__(self, tracker: agent6_budget.BudgetTracker) -> None:
             self.tracker = tracker
 
-        def call(self, **_kw: Any) -> ProviderResponse:
+        def call(self, **_kw: Any) -> provider_types.ProviderResponse:
             self.tracker.check()
             self.tracker.record(
                 route=kinds.ModelRoute("m", "m"),
@@ -1026,7 +1026,7 @@ def test_the_setup_command_runs_in_the_new_worktree_before_the_first_turn(
     prov = _script(monkeypatch, _edit("new.txt", "made by the run\n"))
     real_call = prov.call
 
-    def _call(**kw: Any) -> ProviderResponse:
+    def _call(**kw: Any) -> provider_types.ProviderResponse:
         worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU01")).worktree
         assert worktree is not None
         seen.append((worktree / ".setup-ran").exists())

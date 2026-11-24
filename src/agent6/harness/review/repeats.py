@@ -6,8 +6,9 @@ import json
 
 import pydantic
 
-from agent6 import budget, providers, review_records
+from agent6 import budget, review_records
 from agent6.prompts import review
+from agent6.providers import provider_calls, provider_types
 
 
 class _Edge(pydantic.BaseModel):
@@ -19,7 +20,7 @@ class _Edge(pydantic.BaseModel):
 
 
 def merge(
-    provider: providers.Provider, observations: tuple[review_records.FindingObservation, ...]
+    provider: provider_calls.Provider, observations: tuple[review_records.FindingObservation, ...]
 ) -> review_records.RepeatMerge:
     """Return a panel's groups, or the reason its original findings stand."""
     by_id = {o.finding_id: o for o in observations}
@@ -30,7 +31,7 @@ def merge(
             messages=[{"role": "user", "content": json.dumps(rows, ensure_ascii=False)}],
             tools=None,
         )
-    except (providers.ProviderError, budget.BudgetExceededError) as exc:
+    except (provider_types.ProviderError, budget.BudgetExceededError) as exc:
         return review_records.RepeatMerge(skipped=str(exc) or "reviewer call failed")
     try:
         if response.tool_uses:

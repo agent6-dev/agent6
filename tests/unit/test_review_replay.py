@@ -10,9 +10,9 @@ import httpx2
 import pytest
 from bench.review import recordings, replay, scoring
 
-from agent6 import kinds, providers
+from agent6 import kinds
 from agent6.prompts import review
-from agent6.providers import transport
+from agent6.providers import provider_calls, provider_types, transport
 from tests import review_replay_env as env
 
 
@@ -321,10 +321,10 @@ def test_a_provider_failure_leaves_a_call_record_not_a_pass(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     env.record_review(tmp_path, "first", env.responses_body())
-    provider = mock.Mock(spec=providers.Provider)
-    provider.call.side_effect = providers.ProviderError("service unavailable")
+    provider = mock.Mock(spec=provider_calls.Provider)
+    provider.call.side_effect = provider_types.ProviderError("service unavailable")
     settings = kinds.ModelSettings(kinds.ModelRoute("p", "chosen"))
-    with pytest.raises(providers.ProviderError, match="service unavailable"):
+    with pytest.raises(provider_types.ProviderError, match="service unavailable"):
         replay.replay(recordings.read_reviews(tmp_path), provider, settings=settings, repeats=2)
     row = json.loads(capsys.readouterr().out)
     assert (row["arm"], row["repeat"], row["verdict"]) == ("recorded", 1, None)
@@ -373,7 +373,9 @@ def test_table_escapes_nonprinting_labels_without_changing_the_reply(
 ) -> None:
     label = "Time\u200bzone"
     reply = scoring.score(
-        providers.ProviderResponse(answer(finding(label, "Offset", "Lost")), (), "stop", 1, 1, 0, 0)
+        provider_types.ProviderResponse(
+            answer(finding(label, "Offset", "Lost")), (), "stop", 1, 1, 0, 0
+        )
     )
     scoring.print_table({"review": [{"recorded": reply, "tree": reply}]})
     assert reply.blocks[0].category == label

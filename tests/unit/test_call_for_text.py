@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from agent6.providers import Provider, ProviderError, call_for_text
+from agent6.providers import provider_calls, provider_types
 
 
 class _Resp:
@@ -16,20 +16,23 @@ class _Resp:
         self.text = text
 
 
-def _prov(text: str) -> Provider:
+def _prov(text: str) -> provider_calls.Provider:
     class P:
         def call(self, **kw: Any) -> Any:
             return _Resp(text)
 
-    return cast(Provider, P())
+    return cast(provider_calls.Provider, P())
 
 
 def test_returns_the_stripped_reply() -> None:
-    assert call_for_text(_prov("  a subject\n"), system="s", user="u", max_tokens=10) == "a subject"
+    assert (
+        provider_calls.call_for_text(_prov("  a subject\n"), system="s", user="u", max_tokens=10)
+        == "a subject"
+    )
 
 
 def test_empty_reply_is_none() -> None:
-    assert call_for_text(_prov("   \n"), system="s", user="u", max_tokens=10) is None
+    assert provider_calls.call_for_text(_prov("   \n"), system="s", user="u", max_tokens=10) is None
 
 
 def test_a_failure_keeps_its_reason() -> None:
@@ -41,9 +44,13 @@ def test_a_failure_keeps_its_reason() -> None:
 
     class Limit:
         def call(self, **kw: Any) -> Any:
-            raise ProviderError("You've reached your Fable limit.")
+            raise provider_types.ProviderError("You've reached your Fable limit.")
 
-    with pytest.raises(ProviderError, match="RuntimeError: provider down"):
-        call_for_text(cast(Provider, Boom()), system="s", user="u", max_tokens=10)
-    with pytest.raises(ProviderError, match=r"^You've reached your Fable limit\.$"):
-        call_for_text(cast(Provider, Limit()), system="s", user="u", max_tokens=10)
+    with pytest.raises(provider_types.ProviderError, match="RuntimeError: provider down"):
+        provider_calls.call_for_text(
+            cast(provider_calls.Provider, Boom()), system="s", user="u", max_tokens=10
+        )
+    with pytest.raises(provider_types.ProviderError, match=r"^You've reached your Fable limit\.$"):
+        provider_calls.call_for_text(
+            cast(provider_calls.Provider, Limit()), system="s", user="u", max_tokens=10
+        )

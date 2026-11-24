@@ -32,7 +32,7 @@ from agent6.harness import (
 )
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import recovery as parallel_recovery
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import budget_events, child_dispatch, event_log, journal
 from agent6.tools import results as tools_results
 from agent6.viewmodel import wire
@@ -72,8 +72,8 @@ def _make_branch(repo: pathlib.Path, branch: str, base: str, fname: str, wt: pat
     return _git(repo, "rev-parse", branch)
 
 
-def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> ProviderResponse:
-    return ProviderResponse(
+def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
         stop_reason="tool_use",

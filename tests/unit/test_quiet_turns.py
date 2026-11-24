@@ -9,7 +9,7 @@ each bounded.
 from __future__ import annotations
 
 from agent6.harness import loop_state, nudges, quiet_turns
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
@@ -18,8 +18,8 @@ def _state() -> loop_state.LoopState:
     return loop_state.LoopState(original_task="t", tool_calls=0)
 
 
-def _empty(output_tokens: int = 0, *, starved: bool = False) -> ProviderResponse:
-    return ProviderResponse(
+def _empty(output_tokens: int = 0, *, starved: bool = False) -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=(),
         stop_reason="length" if starved else "end_turn",

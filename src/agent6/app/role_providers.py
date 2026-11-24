@@ -29,26 +29,16 @@ from agent6.harness.review import gate as review_gate
 from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
 from agent6.providers import (
-    AnthropicProvider,
-    ChatGPTProvider,
-    ClaudeCodeProvider,
-    CommandToken,
-    OpenAIProvider,
-    Provider,
-    ProviderError,
-    ProviderResponse,
-    ResponsesProvider,
-    ToolDefinition,
-    TranscriptRecorder,
-    TranscriptSink,
     anthropic,
     chatgpt,
     claude_code,
     oauth,
     openai,
+    provider_calls,
     provider_types,
     request_headers,
     responses,
+    token_command,
 )
 from agent6.sessions import budget_events, event_log, journal
 
@@ -208,11 +198,11 @@ def build_role_provider(
     cfg: Config,
     role: RoleName,
     *,
-    transcript_sink: TranscriptSink | None,
+    transcript_sink: provider_types.TranscriptSink | None,
     budget: agent6_budget.BudgetTracker,
     actor: str = "",
     events: event_log.EventSink | None = None,
-) -> Provider:
+) -> provider_calls.Provider:
     """Construct the configured provider for a role.
 
     Every provider requires `models.default`, even when the role pins its own route.
@@ -234,11 +224,11 @@ def build_role_provider(
     cfg.require_runnable(role)
     rm = cfg.models.resolve(role)
     if rm is None:  # pragma: no cover - blocked by require_runnable
-        raise ProviderError(f"no model configured for role {role!r}")
+        raise provider_types.ProviderError(f"no model configured for role {role!r}")
     model = rm.model
     entry = cfg.providers.get(rm.provider)
     if entry is None:  # pragma: no cover - blocked by config validation
-        raise ProviderError(
+        raise provider_types.ProviderError(
             f"models.{role}.model = {f'{rm.provider}/{rm.model}'!r} but"
             f" [providers.{rm.provider}] missing"
         )
@@ -261,10 +251,10 @@ def _provider_from_entry(
     model: str,
     effort: EffortLevel | None,
     *,
-    transcript_sink: TranscriptRecorder | None,
+    transcript_sink: provider_types.TranscriptRecorder | None,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None = None,
-) -> Provider:
+) -> provider_calls.Provider:
     """Build the provider for one `[providers.<name>]` entry, model and effort.
 
     Args:
@@ -284,12 +274,12 @@ def _provider_from_entry(
     """
     if isinstance(entry, ClaudeCodeProviderEntry):
         if effort == "off":
-            raise ProviderError(
+            raise provider_types.ProviderError(
                 f"effort = off has no Claude Code equivalent ([providers.{provider_name}]"
                 " passes --effort low..max); set the role's effort to low or unset it",
                 fatal=True,
             )
-        return ClaudeCodeProvider(
+        return claude_code.ClaudeCodeProvider(
             model=model,
             binary=entry.binary,
             effort=effort,
@@ -315,11 +305,11 @@ def _provider_from_entry(
         )
         account = chatgpt_credential.account_id()  # raises the connect hint when not signed in
         if not account:
-            raise ProviderError(
+            raise provider_types.ProviderError(
                 f"The stored ChatGPT sign-in for {provider_name!r} carries no account id;"
                 f" run `agent6 connect {provider_name}` to sign in again."
             )
-        return ChatGPTProvider(
+        return chatgpt.ChatGPTProvider(
             model=model,
             credential=chatgpt_credential,
             auth_observer=auth_observer,
@@ -336,7 +326,7 @@ def _provider_from_entry(
         )
     key = secret_store.resolve_api_key(provider_name, entry.api_key_env)
     credential: provider_types.BearerCredential | None = (
-        CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
+        token_command.CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
         if entry.token_command
         else None
     )
@@ -347,11 +337,11 @@ def _provider_from_entry(
     if isinstance(entry, AnthropicProviderEntry):
         # Anthropic needs a key, a token_command credential or `auth_style = "none"`.
         if not key and credential is None and entry.auth_style != "none":
-            raise ProviderError(
+            raise provider_types.ProviderError(
                 f"No API key for provider {provider_name!r}. Run `agent6 connect`"
                 f" to store one, or set the {entry.api_key_env or 'provider'} env var."
             )
-        return AnthropicProvider(
+        return anthropic.AnthropicProvider(
             api_key=key or "",
             model=model,
             base_url=entry.base_url,
@@ -370,7 +360,7 @@ def _provider_from_entry(
             auth_observer=auth_observer,
         )
     if isinstance(entry, ResponsesProviderEntry):
-        return ResponsesProvider(
+        return responses.ResponsesProvider(
             api_key=key or "",
             model=model,
             base_url=entry.base_url,
@@ -387,7 +377,7 @@ def _provider_from_entry(
             credential=credential,
             auth_observer=auth_observer,
         )
-    return OpenAIProvider(
+    return openai.OpenAIProvider(
         api_key=key or "",
         model=model,
         base_url=entry.base_url,
@@ -407,7 +397,7 @@ def _provider_from_entry(
     )
 
 
-def close_provider(provider: Provider) -> None:
+def close_provider(provider: provider_calls.Provider) -> None:
     """Release what a provider holds; the HTTP providers hold nothing and have no `close`."""
     close = getattr(provider, "close", None)
     if callable(close):
@@ -453,7 +443,7 @@ class InstrumentedProvider:
         conversations: The session's conversation state; a side call holds its own.
     """
 
-    inner: Provider
+    inner: provider_calls.Provider
     actor: str
     model: str
     provider_name: str
@@ -470,7 +460,7 @@ class InstrumentedProvider:
         *,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[ToolDefinition] | None = None,
+        tools: list[provider_types.ToolDefinition] | None = None,
         max_tokens: int = 4096,
         temperature: float | None = None,
         reasoning_effort: str | None = None,
@@ -481,7 +471,7 @@ class InstrumentedProvider:
         compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
         web_search: bool = False,
-    ) -> ProviderResponse:
+    ) -> provider_types.ProviderResponse:
         """Call the inner provider and emit the model and budget events around it.
 
         Args:
@@ -568,7 +558,7 @@ class InstrumentedProvider:
             **({"compaction": compaction} if compaction is not None else {}),
             **({"web_search": True} if web_search else {}),
         }
-        if isinstance(self.inner, ClaudeCodeProvider) and events is not None:
+        if isinstance(self.inner, claude_code.ClaudeCodeProvider) and events is not None:
             options["on_reply"] = on_reply
         try:
             resp = self.inner.call(
@@ -586,7 +576,7 @@ class InstrumentedProvider:
                 **options,
             )
         except Exception as exc:
-            if isinstance(exc, ProviderError) and not exc.provider:
+            if isinstance(exc, provider_types.ProviderError) and not exc.provider:
                 exc.provider = self.provider_name  # the hint names the config key
             self._record_attempt(
                 call_context,
@@ -594,9 +584,15 @@ class InstrumentedProvider:
                 request_ids,
                 {
                     "ok": False,
-                    **(exc.serving.event_fields() if isinstance(exc, ProviderError) else {}),
+                    **(
+                        exc.serving.event_fields()
+                        if isinstance(exc, provider_types.ProviderError)
+                        else {}
+                    ),
                     "error": str(exc)[:200],
-                    **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
+                    **_usage_fields(
+                        exc.usage if isinstance(exc, provider_types.ProviderError) else None
+                    ),
                 },
                 ends_call=provider_call.closes_call(exc, context),
                 process_reply=process_reply,
@@ -623,7 +619,9 @@ class InstrumentedProvider:
         self._emit_budget()
         return resp
 
-    def _record_searches(self, call_context: kinds.CallContext, resp: ProviderResponse) -> None:
+    def _record_searches(
+        self, call_context: kinds.CallContext, resp: provider_types.ProviderResponse
+    ) -> None:
         """Journal each hosted web search the response holds, ahead of its attempt's row."""
         if self.events is None:
             return
@@ -646,7 +644,7 @@ class InstrumentedProvider:
         outcome: dict[str, Any],
         *,
         ends_call: bool,
-        response: ProviderResponse | None = None,
+        response: provider_types.ProviderResponse | None = None,
         process_reply: bool = False,
     ) -> None:
         """Journal one attempt's row and, when it ends the logical call, the call's result.
@@ -686,7 +684,7 @@ class InstrumentedProvider:
     def record_stopped_call(
         self,
         call_context: kinds.CallContext,
-        reason: ProviderError,
+        reason: provider_types.ProviderError,
         serving: kinds.Serving,
         usage: provider_types.ProviderUsage | None,
     ) -> None:
@@ -753,11 +751,11 @@ def side_actor_provider(
     actor: str,
     *,
     role: RoleName = "helper",
-    transcript_sink: TranscriptSink,
+    transcript_sink: provider_types.TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None,
     conversations: conversation_state.Conversations | None = None,
-) -> Provider:
+) -> provider_calls.Provider:
     """Build the instrumented provider for a side call.
 
     Args:
@@ -808,11 +806,11 @@ def resolve_reviewers(cfg: Config) -> list[review_gate.Reviewer]:
     for entry in cfg.review.reviewers or (ReviewerConfig(focus="security"),):
         rm = entry.resolve(reviewer)
         if rm is None:
-            raise ProviderError(
+            raise provider_types.ProviderError(
                 f"reviewer {entry.focus!r} has no model; configure [models.reviewer]"
             )
         if rm.provider not in cfg.providers:
-            raise ProviderError(
+            raise provider_types.ProviderError(
                 f"reviewer {entry.focus!r} names provider {rm.provider!r} but"
                 f" [providers.{rm.provider}] is missing"
             )

@@ -22,7 +22,7 @@ from agent6.app.parallel import launch as child_launch
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.harness.prompt import repo_context
-from agent6.providers import TranscriptSink
+from agent6.providers import provider_types
 from agent6.sessions import event_log, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -332,7 +332,7 @@ class Channels:
     """
 
     events: event_log.EventSink
-    transcript_sink: TranscriptSink
+    transcript_sink: provider_types.TranscriptSink
     prompts: operator_prompts.OperatorPrompts
 
 
@@ -370,7 +370,9 @@ def operator_channels(
     )
     return Channels(
         events=events,
-        transcript_sink=TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir),
+        transcript_sink=provider_types.TranscriptSink(
+            layout.transcripts_dir, objects_dir=layout.objects_dir
+        ),
         prompts=prompts,
     )
 

@@ -28,7 +28,7 @@ from agent6 import child_records, kinds, paths
 from agent6.app import compare as app_compare
 from agent6.app.parallel import children as app_children
 from agent6.config import Config, layer_data
-from agent6.providers import Provider, ProviderError
+from agent6.providers import provider_calls, provider_types
 from agent6.sessions import completion
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import compare_ranking, main
@@ -444,7 +444,9 @@ class _FakeProvider:
         return _Resp(self._texts.pop(0))
 
 
-def _stub_reviewers(monkeypatch: pytest.MonkeyPatch, build: Callable[..., Provider]) -> None:
+def _stub_reviewers(
+    monkeypatch: pytest.MonkeyPatch, build: Callable[..., provider_calls.Provider]
+) -> None:
     """Stand in for the spawner `sessions compare` starts its judges with.
 
     Each judge is a reviewer session of one reply: the scripted provider `build` returns
@@ -490,7 +492,7 @@ def _stub_reviewers(monkeypatch: pytest.MonkeyPatch, build: Callable[..., Provid
                             session_id=sid,
                         ),
                     )
-                except ProviderError as exc:
+                except provider_types.ProviderError as exc:
                     error = f"no result ({exc})"
                 usd, partial = meter.estimate_usd()
                 ended: concurrent.futures.Future[child_records.ChildResult] = (
@@ -534,8 +536,8 @@ def _stub_builder(provider: object) -> Any:
     cast to `Provider` for the caller.
     """
 
-    def _build(*_a: Any, **_k: Any) -> Provider:
-        return cast(Provider, provider)
+    def _build(*_a: Any, **_k: Any) -> provider_calls.Provider:
+        return cast(provider_calls.Provider, provider)
 
     return _build
 
@@ -562,9 +564,9 @@ class _CostingFakeProvider(_FakeProvider):
 def _costing_stub_builder(provider: _CostingFakeProvider) -> Any:
     """`_stub_builder`, but hands the provider the budget it must bill into."""
 
-    def _build(*_a: Any, **kw: Any) -> Provider:
+    def _build(*_a: Any, **kw: Any) -> provider_calls.Provider:
         provider.budget = kw["budget"]
-        return cast(Provider, provider)
+        return cast(provider_calls.Provider, provider)
 
     return _build
 
@@ -831,9 +833,9 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b is cleaner"}'
     provider = _UnpricedFakeProvider([verdict])
 
-    def _build(*_a: Any, **kw: Any) -> Provider:
+    def _build(*_a: Any, **kw: Any) -> provider_calls.Provider:
         provider.budget = kw["budget"]
-        return cast(Provider, provider)
+        return cast(provider_calls.Provider, provider)
 
     _stub_reviewers(monkeypatch, _build)
 
@@ -988,7 +990,9 @@ def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
 ) -> None:
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
-    provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 1.2, raise_exc=ProviderError("down"))
+    provider = _SlowFakeProvider(
+        sleep_s=_HEARTBEAT_TICK_S * 1.2, raise_exc=provider_types.ProviderError("down")
+    )
     _stub_reviewers(monkeypatch, _stub_builder(provider))
 
     outcome = _rank(_reviewer_cfg(), _two_candidates(), tmp_path)
@@ -1038,14 +1042,14 @@ def _reviewer_judges(
     """Answer each judge by its model, and return the list of `role=model` reviewers as built."""
     reviewers: list[str] = []
 
-    def build(cfg: Config, role: Any, **_k: Any) -> Provider:
+    def build(cfg: Config, role: Any, **_k: Any) -> provider_calls.Provider:
         resolved = cfg.models.resolve(role)
         assert resolved is not None
         reviewers.append(f"{role}={resolved.model}")
         reply = replies[resolved.model]
         if isinstance(reply, Exception):
-            return cast(Provider, _SlowFakeProvider(sleep_s=0, raise_exc=reply))
-        return cast(Provider, _FakeProvider([reply]))
+            return cast(provider_calls.Provider, _SlowFakeProvider(sleep_s=0, raise_exc=reply))
+        return cast(provider_calls.Provider, _FakeProvider([reply]))
 
     _stub_reviewers(monkeypatch, build)
     return reviewers
@@ -1100,9 +1104,9 @@ def test_a_judge_that_fails_is_named_and_the_others_still_decide(
     _reviewer_judges(
         monkeypatch,
         {
-            "reviewer-1": ProviderError("down"),
+            "reviewer-1": provider_types.ProviderError("down"),
             "other-9": '{"order": ["run-C", "run-A", "run-B"], "summary": "c first"}',
-            "other-8": ProviderError("gone"),
+            "other-8": provider_types.ProviderError("gone"),
         },
     )
 

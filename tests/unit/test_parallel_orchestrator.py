@@ -36,7 +36,7 @@ from agent6.app.parallel import wait as child_wait
 from agent6.config import Config
 from agent6.context import memory
 from agent6.harness.parallel import repo as child_repo
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import event_log, ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import child_agent, cli_main, interact, main
@@ -778,9 +778,9 @@ def test_child_setup_output_survives_import_and_a_failed_one_reaches_the_operato
     calls: list[str] = []
 
     class FinishedProvider:
-        def call(self, **_kw: Any) -> ProviderResponse:
+        def call(self, **_kw: Any) -> provider_types.ProviderResponse:
             calls.append("called")
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text="",
                 tool_uses=(
                     {
@@ -2508,7 +2508,7 @@ def test_model_parallel_import_keeps_child_commits(
     base = git_read.status(origin).head_sha
 
     class Provider:
-        def call(self, **_kw: Any) -> ProviderResponse:
+        def call(self, **_kw: Any) -> provider_types.ProviderResponse:
             cwd = pathlib.Path.cwd()
             name = _launch_of(dict(os.environ)).session_id
             if name not in tips:
@@ -2528,7 +2528,7 @@ def test_model_parallel_import_keeps_child_commits(
                 "name": "finish_session",
                 "input": {"summary": "committed child work"},
             }
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text="",
                 tool_uses=(tool,),
                 stop_reason="tool_use",

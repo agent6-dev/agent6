@@ -11,17 +11,17 @@ from typing import Any, get_args
 
 from bench.review import recordings, scoring
 
-from agent6 import budget, config, kinds, providers, terminal
+from agent6 import budget, config, kinds, terminal
 from agent6.app import preflight, role_providers
 from agent6.app.session import setup
 from agent6.config import layer
-from agent6.providers import provider_types
+from agent6.providers import anthropic, chatgpt, openai, provider_types, responses
 
 HTTPProvider = (
-    providers.AnthropicProvider
-    | providers.ChatGPTProvider
-    | providers.OpenAIProvider
-    | providers.ResponsesProvider
+    anthropic.AnthropicProvider
+    | chatgpt.ChatGPTProvider
+    | openai.OpenAIProvider
+    | responses.ResponsesProvider
 )
 
 
@@ -79,7 +79,7 @@ def replay(
                         reasoning_effort=settings.effort,
                         **kwargs,
                     )
-                except (providers.ProviderError, budget.BudgetExceededError) as exc:
+                except (provider_types.ProviderError, budget.BudgetExceededError) as exc:
                     failed = scoring.Reply("call failed", error=str(exc))
                     print(json.dumps({**row, **failed.fields()}), flush=True)
                     raise
@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         OSError,
         ValueError,
         config.ConfigError,
-        providers.ProviderError,
+        provider_types.ProviderError,
         budget.BudgetExceededError,
     ) as exc:
         print(f"review replay: {terminal.scrub_terminal_controls(str(exc))}", file=sys.stderr)

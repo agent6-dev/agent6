@@ -15,7 +15,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6.config import Config, ResponsesProviderEntry
 from agent6.models import registry
-from agent6.providers import ProviderError, ToolDefinition, responses, responses_codec, wire
+from agent6.providers import provider_types, responses, responses_codec, wire
 
 _BASE = "https://models.example/v1"
 _USAGE = {
@@ -133,7 +133,11 @@ def test_a_json_call_sends_the_contract_and_parses_the_response_object() -> None
         reasoning_effort="off",
         extra_body={"store": True, "previous_response_id": "resp_0", "metadata": {"k": "v"}},
     )
-    tools = [ToolDefinition(name="read_file", description="d", input_schema={"type": "object"})]
+    tools = [
+        provider_types.ToolDefinition(
+            name="read_file", description="d", input_schema={"type": "object"}
+        )
+    ]
     with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(
             system="be brief",
@@ -198,7 +202,7 @@ def test_a_failed_response_object_raises_its_error() -> None:
 
     with (
         mock.patch("agent6.providers.transport.http_post", side_effect=fake_post),
-        pytest.raises(ProviderError, match="server_error: boom"),
+        pytest.raises(provider_types.ProviderError, match="server_error: boom"),
     ):
         _provider().call(system="s", messages=[{"role": "user", "content": "go"}])
 
@@ -211,7 +215,7 @@ def test_a_budgeted_call_without_usage_is_refused_and_a_priced_one_is_booked() -
 
     with (
         mock.patch("agent6.providers.transport.http_post", side_effect=unmetered),
-        pytest.raises(ProviderError, match=r"usage\.input_tokens"),
+        pytest.raises(provider_types.ProviderError, match=r"usage\.input_tokens"),
     ):
         _provider(budget=budget).call(system="s", messages=[{"role": "user", "content": "go"}])
 
@@ -300,7 +304,7 @@ def test_a_cut_stream_is_truncated_and_books_what_it_cost() -> None:
 
     with (
         mock.patch("agent6.providers.stream_lifecycle.http_stream", side_effect=stream),
-        pytest.raises(ProviderError, match="cut off"),
+        pytest.raises(provider_types.ProviderError, match="cut off"),
     ):
         _provider().call(
             system="s",
@@ -336,7 +340,7 @@ def test_a_failed_stream_distinguishes_tier_refusal_from_rate_limit(
             "agent6.providers.stream_lifecycle.http_stream",
             return_value=_FakeStreamResponse(lines=lines),
         ),
-        pytest.raises(ProviderError, match=message) as exc,
+        pytest.raises(provider_types.ProviderError, match=message) as exc,
     ):
         _provider(provider_name="work", service_tier="flex").call(
             system="s", messages=[], text_delta_callback=print
@@ -364,7 +368,7 @@ def test_a_failed_stream_books_the_usage_it_reports() -> None:
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     with (
         mock.patch("agent6.providers.stream_lifecycle.http_stream", side_effect=stream),
-        pytest.raises(ProviderError, match="server_error"),
+        pytest.raises(provider_types.ProviderError, match="server_error"),
     ):
         _provider(budget=budget).call(
             system="s", messages=[{"role": "user", "content": "go"}], text_delta_callback=print
@@ -396,7 +400,7 @@ def test_a_malformed_streamed_item_is_a_provider_error_that_books_its_usage(
             "agent6.providers.stream_lifecycle.http_stream",
             return_value=_FakeStreamResponse(lines=lines),
         ),
-        pytest.raises(ProviderError, match="did not match the wire shape") as exc,
+        pytest.raises(provider_types.ProviderError, match="did not match the wire shape") as exc,
     ):
         _provider(budget=budget, provider_name="work", service_tier="flex").call(
             system="s", messages=[{"role": "user", "content": "go"}], text_delta_callback=print
@@ -418,6 +422,6 @@ def test_an_infinite_usage_count_on_a_budgeted_reply_is_a_provider_error() -> No
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     with (
         mock.patch("agent6.providers.transport.http_post", return_value=reply),
-        pytest.raises(ProviderError, match=r"usage\.input_tokens"),
+        pytest.raises(provider_types.ProviderError, match=r"usage\.input_tokens"),
     ):
         _provider(budget=budget).call(system="s", messages=[{"role": "user", "content": "go"}])

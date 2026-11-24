@@ -10,10 +10,11 @@ from typing import Any, override
 
 import pytest
 
-from agent6 import paths, providers
+from agent6 import paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.harness.review import gate as review_gate
+from agent6.providers import provider_types
 from agent6.sessions import manifest
 from agent6.ui import directive_actions
 from agent6.ui.cli import cli_main, session_prompt
@@ -47,7 +48,7 @@ class ScriptedReview:
         self.calls: list[dict[str, Any]] = []
         self.on_first = on_first
 
-    def call(self, **kwargs: Any) -> providers.ProviderResponse:
+    def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
         self.calls.append(
             {
                 "messages": copy.deepcopy(kwargs["messages"]),
@@ -71,7 +72,7 @@ class ScriptedReview:
             )
         else:
             tools = ()
-        return providers.ProviderResponse(
+        return provider_types.ProviderResponse(
             text="" if tools else "a.py:1 needs a check. No tests ran.",
             tool_uses=tools,
             stop_reason="tool_use" if tools else "end_turn",
@@ -135,7 +136,7 @@ def assert_no_review_store(repo: pathlib.Path, directory: pathlib.Path) -> None:
 class ReviewerProvider:
     """One reviewer that blocks on the reviewed line."""
 
-    def call(self, **_kwargs: Any) -> providers.ProviderResponse:
+    def call(self, **_kwargs: Any) -> provider_types.ProviderResponse:
         reply = {
             "verdict": "block",
             "summary": "one defect",
@@ -149,7 +150,7 @@ class ReviewerProvider:
                 }
             ],
         }
-        return providers.ProviderResponse(
+        return provider_types.ProviderResponse(
             text=json.dumps(reply),
             tool_uses=(),
             stop_reason="end_turn",
@@ -383,7 +384,7 @@ def test_review_can_run_an_approved_check_in_the_reviewed_tree(
 
     class CheckProvider(ScriptedReview):
         @override
-        def call(self, **kwargs: Any) -> providers.ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             response = super().call(**kwargs)
             if len(self.calls) != 1:
                 return response
@@ -463,7 +464,7 @@ def test_a_hidden_path_stays_hidden_in_the_review_worktree(
 
     class ReadSecret(ScriptedReview):
         @override
-        def call(self, **kwargs: Any) -> providers.ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             response = super().call(**kwargs)
             if len(self.calls) != 1:
                 return response

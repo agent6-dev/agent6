@@ -165,7 +165,7 @@ Each entry is the package's docstring.
     - A shared leaf: any layer may import it, and it imports nothing from agent6.
     - The text is pure, with `{...}` placeholders its callers fill.
     - Main modules: `loop`, `review`, `review_directive`, `compaction`, `machine`.
-- **[`providers`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)**: Model providers behind one `Provider` protocol.
+- **[`providers`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)**: Model providers behind one `provider_calls.Provider` protocol.
     - A shared package: it imports `sandbox` and no layer above it.
     - The providers are interchangeable, and `[models.<role>]` routes each role.
     - Main modules: `anthropic`, `openai`, `responses`, `chatgpt`, `claude_code`, `provider_types`.

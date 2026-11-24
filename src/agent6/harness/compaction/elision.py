@@ -12,7 +12,7 @@ from typing import Any, Final
 
 from agent6.harness.review import panel as review_panel
 from agent6.harness.verify import gate as verify_gate
-from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
+from agent6.providers import claude_code_wire
 
 # Every placeholder variant shares the prefix: idempotency checks and tests key on it.
 ELISION_PREFIX = "<elided by context compaction"
@@ -228,7 +228,9 @@ CLAUDE_CODE_NOTICE_ROOM_BYTES = (
 )
 
 
-CLAUDE_CODE_RESULT_CAP_BYTES = CLAUDE_CODE_PERSIST_BYTES - CLAUDE_CODE_NOTICE_ROOM_BYTES
+CLAUDE_CODE_RESULT_CAP_BYTES = (
+    claude_code_wire.CLAUDE_CODE_PERSIST_BYTES - CLAUDE_CODE_NOTICE_ROOM_BYTES
+)
 
 
 def cap_tool_result(content: str, *, tool_name: str, cap: int = TOOL_RESULT_CAP_BYTES) -> str:

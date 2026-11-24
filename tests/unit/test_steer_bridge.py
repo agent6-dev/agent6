@@ -285,12 +285,12 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
     `/shells`, which reads off disk, reporting maybe-running for the rest of the run.
     """
     from agent6.harness import loop
-    from agent6.providers import ProviderResponse
+    from agent6.providers import provider_types
 
     repo = tmp_path / "repo"
     repo.mkdir()
     provider = mock.MagicMock()
-    provider.call.return_value = ProviderResponse(
+    provider.call.return_value = provider_types.ProviderResponse(
         text="done",
         tool_uses=(),
         stop_reason="end_turn",

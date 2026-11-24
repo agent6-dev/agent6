@@ -19,7 +19,7 @@ from agent6.harness.compaction import window as compaction_window
 from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.harness.prompt import repo_context
 from agent6.prompts import loop as loop_prompts
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from tests.unit import test_loop_wire_golden as golden
 
 
@@ -29,7 +29,7 @@ class _Recorder:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def call(self, **kwargs: Any) -> ProviderResponse:
+    def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
         self.calls.append(kwargs)
         return golden._resp(text="The answer.")
 

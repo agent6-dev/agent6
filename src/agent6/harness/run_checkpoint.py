@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import errors
 from agent6.harness import run_chain
-from agent6.providers import Provider, ProviderError, call_for_text
+from agent6.providers import provider_calls, provider_types
 from agent6.sessions import journal
 from agent6.vcs import commit_message
 from agent6.vcs.git import read as git_read
@@ -55,7 +55,7 @@ class Checkpoints:
     chain: run_chain.RunChain
     style: str
     enabled: bool
-    provider: Provider
+    provider: provider_calls.Provider
     log: Callable[[str], None]
     emit: Callable[..., None]
 
@@ -92,7 +92,7 @@ class Checkpoints:
             msg = self._model_subject(
                 changes, hint=commit_message.first_prose_line(text, fallback=fallback)
             )
-        except ProviderError as exc:
+        except provider_types.ProviderError as exc:
             self.log(f"WARNING: model commit message failed ({exc}); using the agent6 style")
             return default
         if msg:
@@ -201,7 +201,7 @@ class Checkpoints:
             ProviderError: The call failed, with its reason.
         """
         listing = "\n".join(f"{s}\t{p}" for s, p in changes[:200])
-        return call_for_text(
+        return provider_calls.call_for_text(
             self.provider,
             system=(
                 "Write a git commit message for the change set: one"

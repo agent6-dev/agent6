@@ -16,9 +16,9 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6 import providers as provider_api
 from agent6.app import role_providers
 from agent6.app import stop as stop_mod
+from agent6.providers import provider_types
 from agent6.sessions import ipc, process
 from agent6.tools import command_tools, results
 from agent6.ui.cli import main
@@ -110,7 +110,7 @@ def test_worker_stop_words_match_the_request(
     session_id = "words-AAAAAA"
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
 
-    def call(**_kwargs: Any) -> provider_api.ProviderResponse:
+    def call(**_kwargs: Any) -> provider_types.ProviderResponse:
         if urgency == "abort":
             assert ipc.submit_steer(session_dir, "abort", now=True)
         else:
@@ -121,7 +121,7 @@ def test_worker_stop_words_match_the_request(
             "name": "run_command" if command else "read_file",
             "input": {"argv": ["sleep", "40"]} if command else {"path": "seed.txt"},
         }
-        return provider_api.ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=(tool,),
             stop_reason="tool_use",
@@ -133,7 +133,7 @@ def test_worker_stop_words_match_the_request(
         )
 
     class Worker:
-        def call(self, **kwargs: Any) -> provider_api.ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             return call(**kwargs)
 
     monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=Worker()))
@@ -179,10 +179,10 @@ def test_worker_stop_during_a_model_call_names_the_interruption(
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
 
     class Worker:
-        def call(self, **kwargs: Any) -> provider_api.ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             assert ipc.submit_steer(session_dir, "abort", now=True)
             assert kwargs["should_abort"]()
-            raise provider_api.ProviderAborted("operator stop")
+            raise provider_types.ProviderAborted("operator stop")
 
     monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=Worker()))
     assert main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130

@@ -789,9 +789,11 @@ def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:
     """
     import pathlib
 
-    from agent6.providers import TranscriptSink, token_command
+    from agent6.providers import provider_types, token_command
 
-    sink = TranscriptSink(pathlib.Path(tmp_path) / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(
+        pathlib.Path(tmp_path) / "transcripts", objects_dir=tmp_path / "objects"
+    )
     calls = {"n": 0}
 
     def _post(url: str, *, headers: Any, content: Any, timeout: Any) -> Any:

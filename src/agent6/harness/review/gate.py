@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 
-from agent6 import budget, child_records, errors, kinds, providers, review_records, terminal
+from agent6 import budget, child_records, errors, kinds, review_records, terminal
 from agent6.harness import run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import panel as parallel_panel
@@ -21,6 +21,7 @@ from agent6.harness.review import panel as review_panel
 from agent6.harness.review import repeats
 from agent6.harness.review import verdict as review_verdict
 from agent6.prompts import review
+from agent6.providers import provider_calls
 from agent6.sessions import completion, journal, layout
 from agent6.tools import schema as tools_schema
 from agent6.vcs.git import read as git_read
@@ -98,7 +99,7 @@ class ReviewSettings:
     min_remaining_budget_fraction: float = 0.25
     concurrency: int = 1
     max_turns: int = 20
-    repeat_provider: providers.Provider | None = None
+    repeat_provider: provider_calls.Provider | None = None
 
 
 def run_panel(

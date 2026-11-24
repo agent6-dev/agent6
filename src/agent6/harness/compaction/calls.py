@@ -5,17 +5,17 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Callable
 
-from agent6 import kinds, providers
+from agent6 import kinds
 from agent6.harness import loop_conversation, provider_call
 from agent6.harness.compaction import window
-from agent6.providers import provider_types, request_headers
+from agent6.providers import provider_calls, provider_types, request_headers
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Calls:
     """Use the same providers, metering and stop signals as the driving run."""
 
-    worker: providers.Provider
+    worker: provider_calls.Provider
     caller: provider_call.ProviderCaller
     settings: window.CompactionSettings
     conversation: loop_conversation.Conversation

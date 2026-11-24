@@ -19,7 +19,7 @@ from typing import Any, ClassVar
 import httpx2
 import pytest
 
-from agent6.providers import OpenAIProvider, ToolDefinition, openai_messages, openai_recovery
+from agent6.providers import openai, openai_messages, openai_recovery, provider_types
 
 
 class _FakeResponse:
@@ -219,12 +219,12 @@ def test_translate_tool_result_list_content_flattened() -> None:
 def test_tools_to_openai_translation() -> None:
     """ToolDefinition -> OpenAI function-tool entries."""
     tools = [
-        ToolDefinition(
+        provider_types.ToolDefinition(
             name="read_file",
             description="Read a file",
             input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
         ),
-        ToolDefinition(
+        provider_types.ToolDefinition(
             name="grep",
             description="Search",
             input_schema={"type": "object", "properties": {"pattern": {"type": "string"}}},
@@ -287,9 +287,9 @@ def test_call_with_tools_translates_request_and_response(
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x")
     tools = [
-        ToolDefinition(
+        provider_types.ToolDefinition(
             name="read_file",
             description="Read a file",
             input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
@@ -347,7 +347,7 @@ def test_response_with_malformed_tool_arguments_doesnt_crash(
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert resp.tool_uses[0]["input"] == {"_raw_arguments": '{"path": "foo.py'}
 
@@ -385,7 +385,7 @@ def test_huge_malformed_tool_arguments_are_capped(
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     parsed = resp.tool_uses[0]["input"]
     assert "_raw_arguments" in parsed
@@ -413,7 +413,7 @@ def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> 
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x")
     provider.call(
         system="s",
         messages=[{"role": "user", "content": "u"}],
@@ -435,7 +435,7 @@ def test_no_tools_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert "tools" not in captured["body"]
     assert resp.text == "hi"
@@ -474,14 +474,14 @@ def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x")
 
     # First call: simple user prompt.
     provider.call(
         system="s",
         messages=[{"role": "user", "content": "read foo.py"}],
         tools=[
-            ToolDefinition(
+            provider_types.ToolDefinition(
                 name="read_file",
                 description="x",
                 input_schema={"type": "object"},
@@ -511,7 +511,7 @@ def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
             },
         ],
         tools=[
-            ToolDefinition(
+            provider_types.ToolDefinition(
                 name="read_file",
                 description="x",
                 input_schema={"type": "object"},
@@ -537,7 +537,7 @@ def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
 # AND the recovered name matches an offered tool. These tests pin that
 # behaviour and guard against regressions for well-behaved models.
 
-_READ_FILE_TOOL = ToolDefinition(
+_READ_FILE_TOOL = provider_types.ToolDefinition(
     name="read_file",
     description="Read a file",
     input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
@@ -548,7 +548,7 @@ def _call_with_text_content(
     monkeypatch: pytest.MonkeyPatch,
     content: str,
     *,
-    tools: list[ToolDefinition] | None = None,
+    tools: list[provider_types.ToolDefinition] | None = None,
 ) -> Any:
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(
@@ -562,7 +562,7 @@ def _call_with_text_content(
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="qwen2.5-coder")
+    provider = openai.OpenAIProvider(api_key="k", model="qwen2.5-coder")
     return provider.call(
         system="s",
         messages=[{"role": "user", "content": "read foo"}],
@@ -640,7 +640,7 @@ def test_native_tool_calls_take_precedence_over_text(
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider = openai.OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(
         system="s",
         messages=[{"role": "user", "content": "u"}],
@@ -677,7 +677,7 @@ def test_text_coercion_disabled_when_no_tools_offered(
 # returns finish_reason="stop" + this XML in `content` and an empty
 # `tool_calls`, silently killing the run before this recovery existed.
 
-_APPLY_EDIT_TOOL = ToolDefinition(
+_APPLY_EDIT_TOOL = provider_types.ToolDefinition(
     name="apply_edit",
     description="Edit a file",
     input_schema={
@@ -900,7 +900,7 @@ def test_blank_name_native_tool_call_is_dropped(
         )
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="qwen3-coder-30b")
+    provider = openai.OpenAIProvider(api_key="k", model="qwen3-coder-30b")
     resp = provider.call(
         system="s",
         messages=[{"role": "user", "content": "go"}],
@@ -983,7 +983,7 @@ def test_max_completion_tokens_400_adapts_and_latches(monkeypatch: pytest.Monkey
         return responses[len(bodies) - 1]
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="my-azure-gpt5", deployment="azure")
+    provider = openai.OpenAIProvider(api_key="k", model="my-azure-gpt5", deployment="azure")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
     assert resp.text == "ok"
     assert "max_tokens" in bodies[0] and "max_completion_tokens" not in bodies[0]
@@ -1008,7 +1008,7 @@ def test_temperature_400_adapts_and_retries(monkeypatch: pytest.MonkeyPatch) -> 
         return responses[len(bodies) - 1]
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="my-deployment", deployment="azure")
+    provider = openai.OpenAIProvider(api_key="k", model="my-deployment", deployment="azure")
     resp = provider.call(
         system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64, temperature=0.0
     )
@@ -1027,7 +1027,7 @@ def test_null_usage_fields_do_not_crash(monkeypatch: pytest.MonkeyPatch) -> None
         return _FakeResponse(status_code=200, payload=payload)
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="m")
+    provider = openai.OpenAIProvider(api_key="k", model="m")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
     assert resp.input_tokens == 0
     assert resp.output_tokens == 0
@@ -1147,7 +1147,7 @@ def test_streaming_indexless_parallel_tool_calls_get_separate_slots(
         return _Stream()
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = OpenAIProvider(api_key="k", model="m")
+    provider = openai.OpenAIProvider(api_key="k", model="m")
     resp = provider.call(
         system="s",
         messages=[{"role": "user", "content": "x"}],

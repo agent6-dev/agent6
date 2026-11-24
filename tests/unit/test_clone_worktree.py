@@ -16,7 +16,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import fork_worktrees, role_providers
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
 from agent6.vcs.git import read as git_read
@@ -60,10 +60,10 @@ class _Scripted:
         self.script = script
         self.calls = 0
 
-    def call(self, **_kw: Any) -> ProviderResponse:
+    def call(self, **_kw: Any) -> provider_types.ProviderResponse:
         tools = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tools,
             stop_reason="tool_use",

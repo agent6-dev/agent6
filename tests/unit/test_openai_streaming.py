@@ -32,7 +32,7 @@ import httpx2
 import pytest
 
 from agent6 import budget
-from agent6.providers import ProviderError, openai
+from agent6.providers import openai, provider_types
 
 
 class _FakeStreamResponse:
@@ -247,7 +247,7 @@ def test_streaming_http_error_raises_provider_error() -> None:
 
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError, match="429"),
+        pytest.raises(provider_types.ProviderError, match="429"),
     ):
         provider.call(
             system="sys",
@@ -264,7 +264,7 @@ def test_streaming_httpx_transport_error_raises_provider_error() -> None:
 
     with (
         mock.patch("httpx2.stream", side_effect=boom),
-        pytest.raises(ProviderError, match="HTTP error streaming from"),
+        pytest.raises(provider_types.ProviderError, match="HTTP error streaming from"),
     ):
         provider.call(
             system="sys",
@@ -285,7 +285,7 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
 
     provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
-    def _run(err: dict[str, Any]) -> ProviderError:
+    def _run(err: dict[str, Any]) -> provider_types.ProviderError:
         lines = _chunk(
             {"choices": [{"index": 0, "delta": {"content": "partial"}, "finish_reason": None}]}
         ) + _chunk({"error": err})
@@ -295,7 +295,7 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
 
         with (
             mock.patch("httpx2.stream", side_effect=fake_stream),
-            pytest.raises(ProviderError) as ei,
+            pytest.raises(provider_types.ProviderError) as ei,
         ):
             provider.call(
                 system="sys",
@@ -329,7 +329,7 @@ def test_streaming_premature_end_without_done_or_finish_raises() -> None:
 
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError, match="ended prematurely"),
+        pytest.raises(provider_types.ProviderError, match="ended prematurely"),
     ):
         provider.call(
             system="sys",
@@ -382,7 +382,7 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
 
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError) as exc_info,
+        pytest.raises(provider_types.ProviderError) as exc_info,
     ):
         provider.call(
             system="sys",
@@ -417,7 +417,7 @@ def test_streaming_cut_before_the_usage_trailer_is_retryable() -> None:
 
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError) as exc_info,
+        pytest.raises(provider_types.ProviderError) as exc_info,
     ):
         provider.call(
             system="sys",
@@ -514,7 +514,7 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     started = time.monotonic()
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError, match="idle for"),
+        pytest.raises(provider_types.ProviderError, match="idle for"),
     ):
         provider.call(
             system="sys",
@@ -582,7 +582,7 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
     started = time.monotonic()
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError, match="mid-stream"),
+        pytest.raises(provider_types.ProviderError, match="mid-stream"),
     ):
         provider.call(
             system="sys",
@@ -667,7 +667,7 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
     started = time.monotonic()
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError, match="prefill"),
+        pytest.raises(provider_types.ProviderError, match="prefill"),
     ):
         provider.call(
             system="s",
@@ -703,7 +703,7 @@ def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: pathlib.Pa
 
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError),
+        pytest.raises(provider_types.ProviderError),
     ):
         provider.call(
             system="sys",
@@ -753,7 +753,7 @@ def test_streaming_wire_fields_are_not_coerced(event: dict[str, Any]) -> None:
     provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
     with (
         mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError),
+        pytest.raises(provider_types.ProviderError),
     ):
         provider.call(
             system="sys",
@@ -815,7 +815,7 @@ def test_an_infinite_prompt_count_on_a_budgeted_reply_is_a_provider_error(stream
     with (
         mock.patch("agent6.providers.transport.http_post", return_value=posted),
         mock.patch("httpx2.stream", return_value=_FakeStreamResponse(status_code=200, lines=lines)),
-        pytest.raises(ProviderError, match="usage"),
+        pytest.raises(provider_types.ProviderError, match="usage"),
     ):
         provider.call(
             system="sys",

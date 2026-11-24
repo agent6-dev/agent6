@@ -14,7 +14,7 @@ import pytest
 from agent6 import paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import listing
 
@@ -45,10 +45,10 @@ class _Scripted:
         self.script = script
         self.seen: list[list[dict[str, Any]]] = []
 
-    def call(self, **kw: Any) -> ProviderResponse:
+    def call(self, **kw: Any) -> provider_types.ProviderResponse:
         self.seen.append(list(kw.get("messages", ())))
         text, tools = self.script[min(len(self.seen) - 1, len(self.script) - 1)]
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text=text,
             tool_uses=tools,
             stop_reason="tool_use" if tools else "end_turn",

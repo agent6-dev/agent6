@@ -30,7 +30,7 @@ from agent6.config import Config, ConfigError
 from agent6.context import memory
 from agent6.harness.prompt import repo_context
 from agent6.prompts import review
-from agent6.providers import Provider, ProviderError, ProviderResponse, TranscriptSink
+from agent6.providers import provider_calls, provider_types
 from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import sessions
@@ -372,7 +372,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
 
 
 def review_digest(
-    provider: Provider, *, digest: str, agents_md: str = "", max_tokens: int = 4096
+    provider: provider_calls.Provider, *, digest: str, agents_md: str = "", max_tokens: int = 4096
 ) -> str:
     """Ask the reviewer model to review a run from its digest.
 
@@ -393,12 +393,12 @@ def review_digest(
         parts.append(f"AGENTS.md:\n{agents_md.strip()}")
     parts.append(f"RUN RECORD:\n{digest}")
     try:
-        resp: ProviderResponse = provider.call(
+        resp: provider_types.ProviderResponse = provider.call(
             system=review.RUN_REVIEW_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": "\n\n".join(parts)}],
             max_tokens=max_tokens,
         )
-    except ProviderError as exc:
+    except provider_types.ProviderError as exc:
         raise RunReviewError(f"provider call failed: {exc}") from exc
     text = resp.text.strip()
     if not text:
@@ -523,12 +523,14 @@ def recap(
         return 2
     budget = session_setup.budget_tracker(cfg)
     reviews_dir = paths.state_dir(cwd) / "reviews"
-    transcript_sink = TranscriptSink(reviews_dir, objects_dir=reviews_dir / "objects")
+    transcript_sink = provider_types.TranscriptSink(
+        reviews_dir, objects_dir=reviews_dir / "objects"
+    )
     try:
         reviewer = role_providers.build_role_provider(
             cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, actor="reviewer:recap"
         )
-    except ProviderError as exc:
+    except provider_types.ProviderError as exc:
         reporter.error(f"provider init failed: {exc}")
         return 2
     digest = run_digest(layout)

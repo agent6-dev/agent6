@@ -16,7 +16,7 @@ from agent6 import kinds
 from agent6.app import preflight
 from agent6.config import Config, provider_config
 from agent6.models import cache, listing_store, pricing
-from agent6.providers import AnthropicProvider, ProviderError, responses
+from agent6.providers import anthropic, provider_types, responses
 from tests.unit import test_web_search_messages as messages_reply
 from tests.unit import test_web_search_responses as responses_reply
 
@@ -151,8 +151,8 @@ def _ignore(_piece: str) -> None:
     """Take a streamed piece, which opts the call into streaming."""
 
 
-def _messages_provider(tracker: agent6_budget.BudgetTracker) -> AnthropicProvider:
-    return AnthropicProvider(
+def _messages_provider(tracker: agent6_budget.BudgetTracker) -> anthropic.AnthropicProvider:
+    return anthropic.AnthropicProvider(
         api_key="k", model="claude-x", provider_name="anthropic", budget=tracker
     )
 
@@ -184,7 +184,7 @@ def test_each_attempt_bills_its_own_search_once(
     }
 
     _serve(monkeypatch, lines[:cut])
-    with pytest.raises(ProviderError, match="no message_stop"):
+    with pytest.raises(provider_types.ProviderError, match="no message_stop"):
         _messages_provider(tracker).call(**call)
     assert tracker.snapshot().web_searches == 1
 
@@ -221,7 +221,9 @@ def test_a_responses_stream_bills_its_distinct_search_calls(
     if complete:
         provider.call(**call)
     else:
-        with pytest.raises(ProviderError, match=r"ended without response\.completed"):
+        with pytest.raises(
+            provider_types.ProviderError, match=r"ended without response\.completed"
+        ):
             provider.call(**call)
     snap = tracker.snapshot()
     assert (snap.web_searches, snap.per_model[_ROUTE].calls) == (1, 1)

@@ -76,14 +76,7 @@ from agent6.harness.verify import gate as verify_gate
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.prompts import compaction as compaction_prompts
 from agent6.prompts import review as review_prompts
-from agent6.providers import (
-    Provider,
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    ProviderResponse,
-    ToolDefinition,
-)
+from agent6.providers import provider_calls, provider_types
 from agent6.sessions import budget_events, completion, ipc, journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors, waits
 from agent6.vcs.git import ops as git_ops
@@ -162,7 +155,7 @@ class Harness:
 
     chain: run_chain.RunChain
     config: Config
-    provider: Provider
+    provider: provider_calls.Provider
     dispatcher: dispatch.ToolDispatcher
     logger: Callable[[str], None] = dataclasses.field(default=print)
     events: event_log.EventSink | None = None
@@ -213,7 +206,9 @@ class Harness:
     turns_reached: int = dataclasses.field(default=0, init=False)
     # What a contract's ceiling cut, for its completion record.
     _contract_diagnostics: list[str] = dataclasses.field(default_factory=list, init=False)
-    _contract_response: ProviderResponse | None = dataclasses.field(default=None, init=False)
+    _contract_response: provider_types.ProviderResponse | None = dataclasses.field(
+        default=None, init=False
+    )
     _execution_started: bool = dataclasses.field(default=False, init=False)
     # The turn whose tools are running, for the `parallel` tool's dispatch.
     tool_turn: tuple[loop_conversation.Conversation, loop_state.LoopState, int] | None = (
@@ -717,7 +712,7 @@ class Harness:
         conversation: loop_conversation.Conversation,
         state: loop_state.LoopState,
         ctx: advice.TurnContext,
-        tools: list[ToolDefinition],
+        tools: list[provider_types.ToolDefinition],
     ) -> list[dict[str, Any]] | loop_snapshot.SessionResult:
         """Prepare the context for this turn's model call.
 
@@ -956,12 +951,12 @@ class Harness:
         self,
         system: str,
         conversation: loop_conversation.Conversation,
-        tools: list[ToolDefinition],
+        tools: list[provider_types.ToolDefinition],
         state: loop_state.LoopState,
         *,
         turn: int,
         ctx: advice.TurnContext,
-    ) -> loop_snapshot.SessionResult | loop_state.NextTurn | ProviderResponse:
+    ) -> loop_snapshot.SessionResult | loop_state.NextTurn | provider_types.ProviderResponse:
         """Make the turn's model call and classify a terminal error.
 
         Args:
@@ -977,7 +972,7 @@ class Harness:
             steer discarded the turn.
         """
 
-        def _logical_call(messages: list[dict[str, Any]]) -> ProviderResponse:
+        def _logical_call(messages: list[dict[str, Any]]) -> provider_types.ProviderResponse:
             # One identity per logical call: its attempts share it, a media-free retry is a
             # new call, and the turn's tool rows name the call that returned.
             binding = self.contract.review_binding if self.contract is not None else None
@@ -1052,7 +1047,7 @@ class Harness:
                 loop_snapshot.End("budget_exhausted", f"{exc} (at turn {turn})"),
                 turn=turn,
             )
-        except ProviderAborted:
+        except provider_types.ProviderAborted:
             self.bridge.steer_clear()  # consume the stop; don't leave it on disk to re-read
             self.log(f"LOOP: operator stop during turn {turn}; model call was cut short")
             return self.finish(
@@ -1065,7 +1060,7 @@ class Harness:
                 ),
                 turn=turn,
             )
-        except ProviderInterrupted:
+        except provider_types.ProviderInterrupted:
             # The watchdog ended the turn for a steer; the partial turn is discarded.
             self.log(f"LOOP: steer requested mid-turn at turn {turn}")
             outcome = loop_steer.steer_outcome(
@@ -1074,7 +1069,7 @@ class Harness:
             if outcome is not None:
                 return outcome
             return loop_state.NEXT_TURN  # "continue" or an injected instruction -> re-do the turn
-        except ProviderError as exc:
+        except provider_types.ProviderError as exc:
             if self.contract is not None:
                 self._contract_diagnostics.append(f"provider: {exc}")
             hint = provider_call.provider_error_hint(exc.status_code, exc.provider)
@@ -1096,7 +1091,7 @@ class Harness:
     def _contract_turn(
         self,
         state: loop_state.LoopState,
-        resp: ProviderResponse,
+        resp: provider_types.ProviderResponse,
         assistant: loop_conversation.AssistantMessage,
         *,
         turn: int,
@@ -2074,7 +2069,7 @@ class Harness:
         self,
         conversation: loop_conversation.Conversation,
         state: loop_state.LoopState,
-        tools: list[ToolDefinition],
+        tools: list[provider_types.ToolDefinition],
     ) -> strategy.Context:
         """Bind the strategy's services to this turn.
 

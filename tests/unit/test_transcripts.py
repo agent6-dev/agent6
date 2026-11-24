@@ -19,7 +19,7 @@ import httpx2
 import pytest
 
 from agent6 import media, portable
-from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, provider_types
+from agent6.providers import anthropic, provider_types
 from agent6.sessions import objects
 
 
@@ -48,9 +48,9 @@ def _scan_for_secret(transcripts_dir: pathlib.Path, secret: str) -> list[pathlib
 def test_transcript_redacts_api_key_on_success(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-supersecret-do-not-leak"
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -79,9 +79,9 @@ def test_transcript_redacts_api_key_on_success(
 def test_transcript_redacts_api_key_on_http_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-secret-error-path"
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -89,7 +89,7 @@ def test_transcript_redacts_api_key_on_http_error(
         return _FakeResponse(status_code=429, text="rate limited")
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    with pytest.raises(ProviderError):
+    with pytest.raises(provider_types.ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
     assert leaks == []
@@ -98,9 +98,9 @@ def test_transcript_redacts_api_key_on_http_error(
 def test_transcript_redacts_api_key_on_network_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-secret-net-error"
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -108,7 +108,7 @@ def test_transcript_redacts_api_key_on_network_error(
         raise httpx2.ConnectError("no route")
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    with pytest.raises(ProviderError):
+    with pytest.raises(provider_types.ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
     assert leaks == []
@@ -118,9 +118,9 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A 401 body echoing the key carries the marker, in the transcript and the error text."""
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-echoed-back-by-a-gateway"
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -128,7 +128,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
         return _FakeResponse(status_code=401, text=f'{{"error": "bad key {api_key}"}}')
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    with pytest.raises(ProviderError) as exc:
+    with pytest.raises(provider_types.ProviderError) as exc:
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert api_key not in str(exc.value)
     assert "<REDACTED>" in str(exc.value)
@@ -139,7 +139,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
 
 def test_record_scrubs_credential_values_from_the_bodies(tmp_path: pathlib.Path) -> None:
     """A body string equal to a credential in the auth headers is scrubbed at serialization."""
-    sink = TranscriptSink(tmp_path / "t", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "t", objects_dir=tmp_path / "objects")
     path = sink.record(
         request_headers={"authorization": "Bearer sk-tok-123456789"},
         request_body={"echo": "sk-tok-123456789"},
@@ -173,10 +173,10 @@ def test_seq_continues_across_resume_executions(tmp_path: pathlib.Path) -> None:
     conversation with a false 'context summarized' marker.
     """
     d = tmp_path / "transcripts"
-    leg1 = TranscriptSink(d, objects_dir=tmp_path / "objects")
+    leg1 = provider_types.TranscriptSink(d, objects_dir=tmp_path / "objects")
     for _ in range(2):
         leg1.record(request_headers={}, request_body={}, response_status=200, response_body={})
-    leg2 = TranscriptSink(
+    leg2 = provider_types.TranscriptSink(
         d, objects_dir=tmp_path / "objects"
     )  # the resume's fresh sink over the same dir
     p = leg2.record(request_headers={}, request_body={}, response_status=200, response_body={})
@@ -201,7 +201,7 @@ def test_transcript_record_publishes_via_atomic_write(
         real(path, data)
 
     monkeypatch.setattr(portable, "atomic_write", spy)
-    sink = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects")
     path = sink.record(
         url="https://x",
         request_headers={"x-api-key": "sk-secret"},
@@ -245,7 +245,7 @@ def test_transcripts_omit_images_and_error_echoes(tmp_path: pathlib.Path, shape:
         ]
     }
     original = json.dumps(body)
-    path = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
+    path = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
         request_headers={},
         request_body=body,
         response_status=400,
@@ -266,10 +266,10 @@ def test_image_error_echo_is_scrubbed_before_excerpting(
 ) -> None:
     """A long base64 echo cannot escape through the transport's short error excerpts."""
     encoded = base64.b64encode(b"private pixels" * 8 * copies).decode()
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="key",
         model="m",
-        transcript_sink=TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
+        transcript_sink=provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
     )
 
     def post(url: str, **kwargs: Any) -> _FakeResponse:
@@ -288,7 +288,7 @@ def test_image_error_echo_is_scrubbed_before_excerpting(
 
     monkeypatch.setattr("agent6.providers.transport.http_post", post)
     monkeypatch.setattr("agent6.providers.stream_lifecycle.http_stream", stream)
-    with pytest.raises(ProviderError) as error:
+    with pytest.raises(provider_types.ProviderError) as error:
         provider.call(
             system="s",
             text_delta_callback=(lambda _: None) if streaming != "off" else None,
@@ -330,7 +330,7 @@ def test_transcript_omits_native_document_payload(tmp_path: pathlib.Path, shape:
             "resource": {"uri": "file:///page.pdf", "mimeType": "application/pdf", "blob": encoded},
         },
     }[shape]
-    path = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
+    path = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
         request_headers={},
         request_body={
             "content": [
@@ -367,7 +367,7 @@ def test_media_specific_errors_are_typed(
         return _FakeResponse(status_code=400, text=json.dumps(body))
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = AnthropicProvider(api_key="key", model="m")
+    provider = anthropic.AnthropicProvider(api_key="key", model="m")
     mime = "application/pdf" if modality == "document" else "image/png"
     with pytest.raises(provider_types.MediaInputError) as caught:
         provider.call(
@@ -406,8 +406,8 @@ def test_unrelated_errors_are_not_media_rejections(
         return _FakeResponse(status_code=status, text=json.dumps({"error": {"message": message}}))
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = AnthropicProvider(api_key="key", model="m")
-    with pytest.raises(ProviderError) as caught:
+    provider = anthropic.AnthropicProvider(api_key="key", model="m")
+    with pytest.raises(provider_types.ProviderError) as caught:
         provider.call(
             system="s",
             messages=[
@@ -436,7 +436,7 @@ def test_credentials_are_scrubbed_before_payload_echoes(
         "type": "image",
         "source": {"type": "base64", "media_type": "image/png", "data": encoded},
     }
-    sink = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects")
     text = "upstream echoed " + secret
     if target == "sink":
         path = sink.record(
@@ -461,8 +461,8 @@ def test_credentials_are_scrubbed_before_payload_echoes(
 
         monkeypatch.setattr("agent6.providers.transport.http_post", post)
         monkeypatch.setattr("agent6.providers.stream_lifecycle.http_stream", stream)
-        provider = AnthropicProvider(api_key=secret, model="m", transcript_sink=sink)
-        with pytest.raises(ProviderError) as caught:
+        provider = anthropic.AnthropicProvider(api_key=secret, model="m", transcript_sink=sink)
+        with pytest.raises(provider_types.ProviderError) as caught:
             provider.call(
                 system="s",
                 messages=[{"role": "user", "content": [block]}],
@@ -579,7 +579,7 @@ def test_synthetic_media_labels_retain_source_path(
         if responses
         else {"messages": openai_messages.anthropic_to_openai_messages("s", canonical)}
     )
-    saved = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
+    saved = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
         request_headers={},
         request_body=request,
         response_status=200,

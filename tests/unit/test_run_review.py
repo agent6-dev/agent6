@@ -23,7 +23,7 @@ from agent6.app.review import recap as review_recap
 from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.context import memory
-from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
+from agent6.providers import provider_types
 from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
@@ -401,15 +401,15 @@ class _FakeProvider:
         *,
         system: str,
         messages: list[dict[str, object]],
-        tools: list[ToolDefinition] | None = None,
+        tools: list[provider_types.ToolDefinition] | None = None,
         max_tokens: int = 1024,
         temperature: float | None = None,
-    ) -> ProviderResponse:
+    ) -> provider_types.ProviderResponse:
         if self.raise_error:
-            raise ProviderError("boom")
+            raise provider_types.ProviderError("boom")
         self.last_system = system
         self.last_user = str(messages[0]["content"])
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text=self.response_text,
             tool_uses=(),
             stop_reason="end_turn",
@@ -590,7 +590,9 @@ def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
     monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
-        role_providers, "build_role_provider", mock.MagicMock(side_effect=ProviderError("no key"))
+        role_providers,
+        "build_role_provider",
+        mock.MagicMock(side_effect=provider_types.ProviderError("no key")),
     )
     assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 2
     assert "provider init failed: no key" in capsys.readouterr().err

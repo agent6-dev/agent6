@@ -28,7 +28,7 @@ from agent6.config import Config
 from agent6.graph import curator, models
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.parallel import merge as parallel_merge
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
@@ -68,9 +68,9 @@ def _head(repo: pathlib.Path) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
-def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> ProviderResponse:
+def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> provider_types.ProviderResponse:
     block = {"type": "tool_use", "id": tu_id, "name": name, "input": args}
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
         stop_reason="tool_use",
@@ -350,7 +350,7 @@ def _build_wf(
     )
 
 
-def _three_reads() -> list[ProviderResponse]:
+def _three_reads() -> list[provider_types.ProviderResponse]:
     """Three turns: the steer arrives after the first, the children merge after the second."""
     return [_resp_tool("read_file", {"path": "README.md"}, f"t{i}") for i in (1, 2, 3)]
 

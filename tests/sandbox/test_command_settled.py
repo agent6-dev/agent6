@@ -8,11 +8,12 @@ from unittest import mock
 
 import pytest
 
-from agent6 import paths, providers
+from agent6 import paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.harness import guards, loop, loop_conversation, loop_state, run_chain, tool_effects
+from agent6.providers import provider_types
 from agent6.tools import dispatch, results
 from agent6.ui.cli import cli_main
 from tests.unit.turn_context import turn_context
@@ -104,7 +105,7 @@ class _Scripted:
         self.poll = poll
         self.calls = 0
 
-    def call(self, **_kwargs: Any) -> providers.ProviderResponse:
+    def call(self, **_kwargs: Any) -> provider_types.ProviderResponse:
         self.calls += 1
         assert self.calls <= 8, "the CLI requested a turn after the scripted finish"
         if self.calls == 1:
@@ -120,7 +121,7 @@ class _Scripted:
             argv = ["git", "status", "--porcelain"] if self.calls % 2 else ["git", "diff"]
             name, raw = "run_command", {"argv": argv}
         tools = ({"type": "tool_use", "id": str(self.calls), "name": name, "input": raw},)
-        return providers.ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tools,
             stop_reason="tool_use",

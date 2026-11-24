@@ -13,6 +13,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import merge, role_providers
+from agent6.providers import provider_calls
 from agent6.sessions import event_log, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
@@ -1187,7 +1188,7 @@ def test_merge_squash_model_style_names_the_providers_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A provider at its plan limit read as "the model returned nothing"."""
-    from agent6.providers import ProviderError
+    from agent6.providers import provider_types
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -1198,7 +1199,7 @@ def test_merge_squash_model_style_names_the_providers_failure(
 
     class _AtLimit:
         def call(self, **_kw: object) -> object:
-            raise ProviderError("You've reached your Fable limit.")
+            raise provider_types.ProviderError("You've reached your Fable limit.")
 
     def at_limit(*_a: object, **_k: object) -> object:
         return _AtLimit()
@@ -1223,8 +1224,6 @@ def test_model_squash_uses_the_whole_run(
 
     The request names the manifest's continuation as `Continued:`.
     """
-    from agent6.app import merge_message
-
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     config_dir = tmp_path / "g" / "agent6"
@@ -1279,7 +1278,7 @@ def test_model_squash_uses_the_whole_run(
         return object()
 
     monkeypatch.setattr(role_providers, "build_role_provider", provider)
-    monkeypatch.setattr(merge_message, "call_for_text", draft)
+    monkeypatch.setattr(provider_calls, "call_for_text", draft)
     assert main(["sessions", "merge", session_id, "--method", "squash"]) == 0
     assert "+context_window = 200000" in seen["user"]
     assert "+Document the fallback." in seen["user"]

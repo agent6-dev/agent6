@@ -19,7 +19,7 @@ from unittest import mock
 import pytest
 
 from agent6.harness import guards, loop, loop_resume, provider_call, run_chain
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import journal
 from agent6.tools import results
 
@@ -28,10 +28,12 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderResponse:
+def _resp_with_tool(
+    name: str, args: dict[str, Any], tu_id: str = "tu1"
+) -> provider_types.ProviderResponse:
     """Provider response with a single tool_use."""
     block = {"type": "tool_use", "id": tu_id, "name": name, "input": args}
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
         stop_reason="tool_use",
@@ -43,8 +45,8 @@ def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> Prov
     )
 
 
-def _resp_text(text: str = "done") -> ProviderResponse:
-    return ProviderResponse(
+def _resp_text(text: str = "done") -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=(),
         stop_reason="end_turn",
@@ -505,14 +507,14 @@ def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path)
 
 def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
     """A fatal provider error is a harness-initiated end too: git records the run's edits."""
-    from agent6.providers import ProviderError
+    from agent6.providers import provider_types
 
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}),
-        ProviderError("HTTP 401", status_code=401),
+        provider_types.ProviderError("HTTP 401", status_code=401),
     ]
     wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_turns=5)
     result = wf.run("do the thing")

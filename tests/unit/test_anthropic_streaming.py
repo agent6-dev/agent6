@@ -24,7 +24,7 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, token_command
+from agent6.providers import anthropic, provider_types, token_command
 
 
 class FakeStreamResponse:
@@ -207,9 +207,9 @@ def test_streaming_does_not_invent_cache_counts(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
     if truncated:
-        with pytest.raises(ProviderError) as exc:
+        with pytest.raises(provider_types.ProviderError) as exc:
             provider.call(
                 system="sys",
                 messages=[{"role": "user", "content": "hi"}],
@@ -230,8 +230,8 @@ def test_streaming_does_not_invent_cache_counts(
 def test_streaming_calls_back_on_each_text_delta(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -274,8 +274,8 @@ def test_streaming_calls_back_on_each_text_delta(
 def test_streaming_reassembles_tool_use_input_across_deltas(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -305,8 +305,8 @@ def test_streaming_callback_exception_does_not_break_stream(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A callback that raises does not take the run down."""
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -367,8 +367,8 @@ def test_streaming_premature_end_without_message_stop_raises(
     The loop re-issues the request; partial content and its input tokens are never recorded as
     finished.
     """
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -378,7 +378,7 @@ def test_streaming_premature_end_without_message_stop_raises(
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
     pieces: list[str] = []
-    with pytest.raises(ProviderError, match="ended prematurely"):
+    with pytest.raises(provider_types.ProviderError, match="ended prematurely"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -392,8 +392,8 @@ def test_streaming_error_event_raises_and_records_transcript(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A mid-stream `error` event raises a retryable ProviderError and is kept in the transcript."""
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
     lines = _sse(
@@ -411,7 +411,7 @@ def test_streaming_error_event_raises_and_records_transcript(
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
-    with pytest.raises(ProviderError, match="overloaded_error"):
+    with pytest.raises(provider_types.ProviderError, match="overloaded_error"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -427,8 +427,8 @@ def test_streaming_error_event_raises_and_records_transcript(
 def test_streaming_propagates_http_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -441,7 +441,7 @@ def test_streaming_propagates_http_error(
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
-    with pytest.raises(ProviderError):
+    with pytest.raises(provider_types.ProviderError):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -450,13 +450,13 @@ def test_streaming_propagates_http_error(
 
 
 def test_streaming_redirect_status_is_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
         return FakeStreamResponse(status_code=307, lines=[], error_body="moved")
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    with pytest.raises(ProviderError) as exc_info:
+    with pytest.raises(provider_types.ProviderError) as exc_info:
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -468,8 +468,8 @@ def test_streaming_redirect_status_is_preserved(monkeypatch: pytest.MonkeyPatch)
 def test_streaming_429_captures_retry_after(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -483,7 +483,7 @@ def test_streaming_429_captures_retry_after(
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
-    with pytest.raises(ProviderError) as exc_info:
+    with pytest.raises(provider_types.ProviderError) as exc_info:
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -497,8 +497,8 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """With no callback the provider never calls httpx2.stream; bench runs rely on that path."""
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
@@ -547,7 +547,7 @@ def test_streaming_refreshes_token_command_on_401(
         "https://us-east5-aiplatform.googleapis.com/v1/projects/p/locations/us-east5"
         "/publishers/anthropic/models"
     )
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="",
         model="claude-x",
         base_url=base,
@@ -580,7 +580,7 @@ def test_streaming_with_budget_requires_usage_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test", budget=budget)
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test", budget=budget)
     lines = _sse(
         [
             (
@@ -620,7 +620,7 @@ def test_streaming_with_budget_requires_usage_tokens(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    with pytest.raises(ProviderError) as exc_info:
+    with pytest.raises(provider_types.ProviderError) as exc_info:
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -707,8 +707,8 @@ def test_streaming_usage_counts_are_non_negative_integers(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match=rf"usage\.{field}"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match=rf"usage\.{field}"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -732,8 +732,8 @@ def test_streaming_content_fields_are_not_coerced(
         return FakeStreamResponse(status_code=200, lines=_complete_stream(block=block))
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="content"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="content"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -748,8 +748,8 @@ def test_streaming_terminal_event_requires_a_stop_reason(
         return FakeStreamResponse(status_code=200, lines=_complete_stream(stop_reason=None))
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="stop_reason"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="stop_reason"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -764,8 +764,8 @@ def test_streaming_scalar_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="upstream disconnected"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="upstream disconnected"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -792,8 +792,8 @@ def test_streaming_error_keeps_the_anthropic_status(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError) as exc_info:
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError) as exc_info:
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -820,8 +820,8 @@ def test_streaming_error_message_scrubs_the_api_key(monkeypatch: pytest.MonkeyPa
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key=api_key, model="claude-test")
-    with pytest.raises(ProviderError) as exc_info:
+    provider = anthropic.AnthropicProvider(api_key=api_key, model="claude-test")
+    with pytest.raises(provider_types.ProviderError) as exc_info:
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -838,7 +838,7 @@ def test_streaming_preserves_unknown_content_blocks(monkeypatch: pytest.MonkeyPa
         return FakeStreamResponse(status_code=200, lines=_complete_stream(block=block))
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
     response = provider.call(
         system="sys",
         messages=[{"role": "user", "content": "x"}],
@@ -856,8 +856,8 @@ def test_streaming_thinking_requires_its_replay_signature(
         return FakeStreamResponse(status_code=200, lines=_complete_stream(block=block))
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="signature"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="signature"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -903,8 +903,8 @@ def test_streaming_completed_tool_input_must_be_valid_json(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="tool_use input JSON"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="tool_use input JSON"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -934,8 +934,8 @@ def test_streaming_message_stop_refuses_an_open_content_block(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="before content block 0 stopped"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="before content block 0 stopped"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -953,8 +953,8 @@ def test_streaming_malformed_json_event_is_not_silently_dropped(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="event was not JSON"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="event was not JSON"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -977,7 +977,7 @@ def test_streaming_combines_all_data_lines_in_an_sse_event(
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
     response = provider.call(
         system="sys",
         messages=[{"role": "user", "content": "x"}],
@@ -994,8 +994,8 @@ def test_a_stream_cut_mid_event_reads_as_cut(monkeypatch: pytest.MonkeyPatch) ->
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="no message_stop"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="no message_stop"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -1015,8 +1015,8 @@ def test_an_unknown_block_streaming_a_delta_is_an_error(monkeypatch: pytest.Monk
         return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="'future_block' streamed a text_delta"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="'future_block' streamed a text_delta"):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],

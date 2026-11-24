@@ -9,10 +9,10 @@ from unittest import mock
 
 import pytest
 
-from agent6 import providers as provider_api
 from agent6 import review_records
 from agent6.app import role_providers
 from agent6.app.review import actions as review_actions
+from agent6.providers import provider_types
 from agent6.sessions import event_log, ipc, lock, process
 from agent6.ui import spawn
 from agent6.ui.cli import main
@@ -41,7 +41,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     calls: list[dict[str, Any]] = []
     delivered: list[str] = []
 
-    def call(**kwargs: Any) -> provider_api.ProviderResponse:
+    def call(**kwargs: Any) -> provider_types.ProviderResponse:
         calls.append(kwargs)
         assert len(calls) <= 3, "the resumed execution did not finish"
         if len(calls) == 1:
@@ -70,7 +70,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
                 "name": "finish_session",
                 "input": {"summary": "Corrected empty-input handling"},
             }
-        return provider_api.ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=(tool,),
             stop_reason="tool_use",

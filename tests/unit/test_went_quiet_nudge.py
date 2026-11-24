@@ -21,7 +21,7 @@ from unittest import mock
 
 from agent6 import kinds
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import event_log
 from agent6.tools import results
 
@@ -30,8 +30,8 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _empty_resp() -> ProviderResponse:
-    return ProviderResponse(
+def _empty_resp() -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=(),
         stop_reason="end_turn",
@@ -43,8 +43,10 @@ def _empty_resp() -> ProviderResponse:
     )
 
 
-def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderResponse:
-    return ProviderResponse(
+def _resp_with_tool(
+    name: str, args: dict[str, Any], tu_id: str = "tu1"
+) -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
         stop_reason="tool_use",
@@ -56,8 +58,8 @@ def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> Prov
     )
 
 
-def _resp_text(text: str = "done") -> ProviderResponse:
-    return ProviderResponse(
+def _resp_text(text: str = "done") -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=(),
         stop_reason="end_turn",
@@ -69,9 +71,9 @@ def _resp_text(text: str = "done") -> ProviderResponse:
     )
 
 
-def _starved_resp() -> ProviderResponse:
+def _starved_resp() -> provider_types.ProviderResponse:
     """A reasoning-starvation turn: stop_reason=length, all output on thinking, no text or tool."""
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=(),
         stop_reason="length",
@@ -312,7 +314,7 @@ def test_a_billed_empty_turn_says_so(tmp_path: pathlib.Path) -> None:
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
-    billed = ProviderResponse(
+    billed = provider_types.ProviderResponse(
         text="\n\n",
         tool_uses=(),
         stop_reason="stop",
@@ -344,7 +346,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
 
     repo = tmp_path / "repo"
     _init_repo(repo)
-    billed = ProviderResponse(
+    billed = provider_types.ProviderResponse(
         text="\n\n",
         tool_uses=(),
         stop_reason="stop",
@@ -401,7 +403,7 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: pathlib.Pa
 
     provider = mock.MagicMock()
 
-    def _respond(**_kw: Any) -> ProviderResponse:
+    def _respond(**_kw: Any) -> provider_types.ProviderResponse:
         return _empty_resp() if provider.call.call_count == 1 else _resp_text("done")
 
     provider.call.side_effect = _respond

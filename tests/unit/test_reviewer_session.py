@@ -20,7 +20,7 @@ from agent6.app.parallel import wait as child_wait
 from agent6.config import Config
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.compaction import window as compaction_window
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import completion, journal, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, tool_errors
@@ -44,10 +44,10 @@ def _init_repo(repo: pathlib.Path) -> None:
     _git(repo, "commit", "-q", "-m", "init")
 
 
-def _resp(text: str, tool_uses: tuple[dict[str, Any], ...] = ()) -> ProviderResponse:
+def _resp(text: str, tool_uses: tuple[dict[str, Any], ...] = ()) -> provider_types.ProviderResponse:
     blocks: list[dict[str, Any]] = [{"type": "text", "text": text}] if text else []
     blocks += [{"type": "tool_use", **tu} for tu in tool_uses]
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=tool_uses,
         stop_reason="tool_use" if tool_uses else "end_turn",
@@ -291,14 +291,14 @@ def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path, char_
 
 def test_a_retried_call_does_not_use_a_turn(tmp_path: pathlib.Path) -> None:
     """Two turns allowed: a transient error's retry leaves the second turn its answer."""
-    from agent6.providers import ProviderError
+    from agent6.providers import provider_types
 
     repo = tmp_path / "repo"
     _init_repo(repo)
     read = {"id": "t1", "name": "read_file", "input": {"path": "README.md"}}
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("transient", status_code=503),
+        provider_types.ProviderError("transient", status_code=503),
         _resp("", (read,)),
         _resp("the answer"),
     ]

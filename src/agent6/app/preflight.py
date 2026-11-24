@@ -23,7 +23,7 @@ from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, plan_metered
 from agent6.models import pricing, validate
-from agent6.providers import TranscriptSink
+from agent6.providers import provider_types
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, journal, manifest
 from agent6.tools import schema, verify_infer
@@ -663,7 +663,7 @@ def infer_verify_if_unset(
     available: Callable[[str], bool] = tool_paths.jail_resolves,
     mode: str,
     events: event_log.EventSink,
-    transcript_sink: TranscriptSink,
+    transcript_sink: provider_types.TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> Config:

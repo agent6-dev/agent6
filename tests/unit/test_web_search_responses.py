@@ -18,7 +18,6 @@ import pytest
 
 from agent6.config import ChatGPTProviderEntry, secret_store
 from agent6.providers import (
-    ToolDefinition,
     anthropic,
     chatgpt,
     oauth,
@@ -28,7 +27,11 @@ from agent6.providers import (
     responses_codec,
 )
 
-_TOOLS = [ToolDefinition(name="read_file", description="d", input_schema={"type": "object"})]
+_TOOLS = [
+    provider_types.ToolDefinition(
+        name="read_file", description="d", input_schema={"type": "object"}
+    )
+]
 _USAGE = {"input_tokens": 42, "output_tokens": 9, "total_tokens": 51}
 
 # A reply that reasons, searches once, cites a result and calls one of agent6's own tools.

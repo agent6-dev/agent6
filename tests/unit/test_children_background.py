@@ -39,7 +39,7 @@ from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import recovery as parallel_recovery
 from agent6.harness.parallel import work as child_work
 from agent6.harness.tasks import focus as dag_focus
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import child_dispatch, event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch, tool_errors
@@ -138,13 +138,13 @@ class _Children:
         )
 
 
-def _calls(*uses: tuple[str, dict[str, Any]]) -> ProviderResponse:
+def _calls(*uses: tuple[str, dict[str, Any]]) -> provider_types.ProviderResponse:
     """A model turn that makes these tool calls, in order."""
     blocks = [
         {"type": "tool_use", "id": f"call-{name}-{i}", "name": name, "input": args}
         for i, (name, args) in enumerate(uses)
     ]
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=tuple({k: b[k] for k in ("id", "name", "input")} for b in blocks),
         stop_reason="tool_use",
@@ -162,11 +162,13 @@ READ = ("read_file", {"path": "README.md"})
 class _Script:
     """A provider that answers each call with the next scripted turn, after its step."""
 
-    def __init__(self, *turns: tuple[Callable[[], None] | None, ProviderResponse]) -> None:
+    def __init__(
+        self, *turns: tuple[Callable[[], None] | None, provider_types.ProviderResponse]
+    ) -> None:
         self.turns = list(turns)
         self.seen: list[str] = []
 
-    def call(self, *args: Any, **kwargs: Any) -> ProviderResponse:
+    def call(self, *args: Any, **kwargs: Any) -> provider_types.ProviderResponse:
         self.seen.append(json.dumps(kwargs.get("messages") or args[1]))
         step, response = self.turns[len(self.seen) - 1]
         if step is not None:
@@ -864,9 +866,9 @@ def test_a_pending_steer_ends_a_child_wait_without_consuming_it(
     assert ipc.read_steer_answer(session_dir) == "inspect the output"
 
 
-def _say(text: str) -> ProviderResponse:
+def _say(text: str) -> provider_types.ProviderResponse:
     """A model turn of prose, with no tool call."""
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=(),
         stop_reason="end_turn",

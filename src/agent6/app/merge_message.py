@@ -13,7 +13,7 @@ from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, secret_store
 from agent6.harness.prompt import repo_context
-from agent6.providers import ProviderError, TranscriptSink, call_for_text
+from agent6.providers import provider_calls, provider_types
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -125,7 +125,7 @@ def model_squash_message(
             cfg,
             "worker",
             actor="worker:squash",
-            transcript_sink=TranscriptSink(
+            transcript_sink=provider_types.TranscriptSink(
                 transcript_dir, objects_dir=transcript_dir.parent / "objects"
             ),
             budget=tracker,
@@ -166,7 +166,7 @@ def model_squash_message(
                 f"\n\nAGENTS.md (project conventions):\n{conventions}"
             )
         summaries = "\n\n".join(finish_summaries)
-        msg = call_for_text(
+        msg = provider_calls.call_for_text(
             provider,
             system=system,
             user=(
@@ -183,7 +183,7 @@ def model_squash_message(
         ConfigError,
         errors.GitError,
         OSError,
-        ProviderError,
+        provider_types.ProviderError,
         secret_store.SecretsError,
     ) as exc:
         # auto_merge runs the draft in a finished run's teardown, which must not crash on it.

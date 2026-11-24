@@ -16,17 +16,7 @@ from typing import Any, Literal
 
 from agent6 import kinds, media
 from agent6.harness import loop_conversation
-from agent6.providers import (
-    Provider,
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    ProviderResponse,
-    ToolDefinition,
-    output_cap_truncated,
-    provider_types,
-    request_headers,
-)
+from agent6.providers import provider_calls, provider_types, request_headers
 from agent6.sessions import journal
 
 # A timeout (408), a conflict (409), too early (425), a rate limit (429) and every 5xx retry.
@@ -65,7 +55,7 @@ def provider_error_hint(status_code: int | None, provider: str = "") -> str:
     return ""
 
 
-def is_permanent(exc: ProviderError) -> bool:
+def is_permanent(exc: provider_types.ProviderError) -> bool:
     """Return whether a provider error ends its call: fatal, or a status no retry recovers."""
     return exc.fatal or exc.status_code in NON_RETRYABLE_HTTP_STATUSES
 
@@ -83,9 +73,14 @@ def closes_call(exc: BaseException, context: request_headers.RequestContext) -> 
     Returns:
         True when no retry of this call follows.
     """
-    if not isinstance(exc, ProviderError):
+    if not isinstance(exc, provider_types.ProviderError):
         return True
-    if isinstance(exc, ProviderAborted | ProviderInterrupted | provider_types.MediaInputError):
+    if isinstance(
+        exc,
+        provider_types.ProviderAborted
+        | provider_types.ProviderInterrupted
+        | provider_types.MediaInputError,
+    ):
         return True
     return is_permanent(exc) or context.attempt >= context.attempts
 
@@ -126,7 +121,7 @@ def is_empty_tool_call_response(resp: Any) -> bool:
     )
 
 
-def reasoning_starvation(resp: ProviderResponse) -> int:
+def reasoning_starvation(resp: provider_types.ProviderResponse) -> int:
     """Return the reasoning characters of a turn the output cap cut, 0 for any other turn.
 
     Args:
@@ -135,7 +130,7 @@ def reasoning_starvation(resp: ProviderResponse) -> int:
     Returns:
         The count, which tells a starved reasoner from a model that gave up.
     """
-    if not output_cap_truncated(resp) or resp.output_tokens <= 0:
+    if not provider_types.output_cap_truncated(resp) or resp.output_tokens <= 0:
         return 0
     reasoning_chars = 0
     raw_content = (resp.raw or {}).get("content") or []
@@ -300,13 +295,13 @@ class MediaRecovery:
 
 
 def call_with_media_recovery(
-    send: Callable[[list[dict[str, Any]]], ProviderResponse],
+    send: Callable[[list[dict[str, Any]]], provider_types.ProviderResponse],
     conversation: loop_conversation.Conversation,
     recovery: MediaRecovery,
     *,
     emit: Callable[..., None] | None = None,
     changed: Callable[[], None] | None = None,
-) -> ProviderResponse:
+) -> provider_types.ProviderResponse:
     """Apply known refusals and retry one recognized rejection without rerunning tools.
 
     Args:
@@ -400,7 +395,7 @@ class ProviderCaller:
         counter: The attempts made so far, shared by every call of the execution.
     """
 
-    provider: Provider
+    provider: provider_calls.Provider
     retry_count: int
     retry_delay_s: float
     retry_max_delay_s: float
@@ -415,14 +410,14 @@ class ProviderCaller:
         self,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[ToolDefinition],
+        tools: list[provider_types.ToolDefinition],
         max_tokens: int,
         *,
         compaction: provider_types.CompactionRequest | None = None,
         initiator: str = "agent",
         call_context: kinds.CallContext | None = None,
         web_search: bool = False,
-    ) -> ProviderResponse:
+    ) -> provider_types.ProviderResponse:
         """Call the provider under the retry.
 
         Args:
@@ -473,9 +468,13 @@ class ProviderCaller:
                     context=context,
                     **options,
                 )
-            except (ProviderAborted, ProviderInterrupted, provider_types.MediaInputError):
+            except (
+                provider_types.ProviderAborted,
+                provider_types.ProviderInterrupted,
+                provider_types.MediaInputError,
+            ):
                 raise  # an operator stop or steer is handled, never retried
-            except ProviderError as exc:
+            except provider_types.ProviderError as exc:
                 if is_permanent(exc):
                     self.log(
                         f"LOOP: provider error {exc.status_code or 'fatal'} is permanent;"
@@ -516,7 +515,7 @@ class ProviderCaller:
                 serving, usage = resp.serving, resp.usage
             try:
                 self._wait(delay)
-            except (ProviderAborted, ProviderInterrupted) as stopped:
+            except (provider_types.ProviderAborted, provider_types.ProviderInterrupted) as stopped:
                 record = getattr(self.provider, "record_stopped_call", None)
                 if callable(record):
                     record(call_context, stopped, serving, usage)
@@ -535,9 +534,9 @@ class ProviderCaller:
         """
         while True:
             if self.should_abort():
-                raise ProviderAborted("run stopped by operator")
+                raise provider_types.ProviderAborted("run stopped by operator")
             if self.should_interrupt():
-                raise ProviderInterrupted("steer requested during a retry wait")
+                raise provider_types.ProviderInterrupted("steer requested during a retry wait")
             if delay <= 0:
                 return
             tick = min(delay, RETRY_WAIT_TICK_S)

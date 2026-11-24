@@ -19,12 +19,12 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.app import role_providers
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from tests import price_env
 
 
-def _resp() -> ProviderResponse:
-    return ProviderResponse(
+def _resp() -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text="ok",
         tool_uses=(),
         stop_reason="end_turn",
@@ -134,7 +134,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
 
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     inner = mock.MagicMock()
-    inner.call.return_value = ProviderResponse(
+    inner.call.return_value = provider_types.ProviderResponse(
         text="the answer",
         tool_uses=(),
         refused={},
@@ -169,7 +169,7 @@ def test_a_failed_call_still_reports_what_it_spent(
 
     The live meters, `sessions list` and the machine spend ledger all read that event.
     """
-    from agent6.providers import ProviderError
+    from agent6.providers import provider_types
     from agent6.sessions import event_log
 
     # The USD assertion needs a table price; the suite isolates the price cache, so seed one.
@@ -183,7 +183,7 @@ def test_a_failed_call_still_reports_what_it_spent(
         max_plan_points=-1,
     )
 
-    def _cut_stream(**_: object) -> ProviderResponse:
+    def _cut_stream(**_: object) -> provider_types.ProviderResponse:
         budget.record(
             route=kinds.ModelRoute("anthropic", "anthropic/claude-haiku-4.5"),
             input_tokens=50_000,
@@ -191,7 +191,7 @@ def test_a_failed_call_still_reports_what_it_spent(
             cache_read_tokens=7_000,
             cache_write_tokens=1_100,
         )
-        raise ProviderError("stream cut before completion")
+        raise provider_types.ProviderError("stream cut before completion")
 
     inner = mock.MagicMock()
     inner.call.side_effect = _cut_stream
@@ -204,7 +204,7 @@ def test_a_failed_call_still_reports_what_it_spent(
         budget=budget,
     )
 
-    with pytest.raises(ProviderError):
+    with pytest.raises(provider_types.ProviderError):
         wrapper.call(system="s", messages=[])
 
     updates = [
@@ -220,11 +220,11 @@ def test_a_failed_call_still_reports_what_it_spent(
 
 def test_a_provider_error_is_stamped_with_the_provider_name() -> None:
     """The credential hint names the failing provider's config key, not a `<name>` placeholder."""
-    from agent6.providers import ProviderError
+    from agent6.providers import provider_types
 
     inner = mock.MagicMock()
-    inner.call.side_effect = ProviderError("401 nope", status_code=401)
-    with pytest.raises(ProviderError) as info:
+    inner.call.side_effect = provider_types.ProviderError("401 nope", status_code=401)
+    with pytest.raises(provider_types.ProviderError) as info:
         _wrap(inner).call(system="s", messages=[])
     assert info.value.provider == "openai"
 

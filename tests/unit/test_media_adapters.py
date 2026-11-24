@@ -12,11 +12,11 @@ import pytest
 from agent6 import kinds, media
 from agent6.harness import loop_conversation, provider_call
 from agent6.providers import (
-    Provider,
     anthropic,
     chatgpt,
     openai,
     openai_messages,
+    provider_calls,
     request_headers,
     responses,
     responses_codec,
@@ -34,7 +34,7 @@ class _Credential:
         return False
 
 
-def _provider(api: str) -> Provider:
+def _provider(api: str) -> provider_calls.Provider:
     if api == "anthropic":
         return anthropic.AnthropicProvider(api_key="key", model="m", prompt_caching=False)
     if api == "openai":

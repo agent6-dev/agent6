@@ -11,7 +11,7 @@ import sys
 import pytest
 
 from agent6 import child_env
-from agent6.providers import ProviderError, token_command
+from agent6.providers import provider_types, token_command
 
 
 def _counter_argv(tmp_path: pathlib.Path) -> list[str]:
@@ -77,17 +77,17 @@ def test_token_refreshes_after_ttl(tmp_path: pathlib.Path, monkeypatch: pytest.M
 
 def test_nonzero_exit_raises_with_stderr() -> None:
     cred = token_command.CommandToken(["sh", "-c", "echo boom >&2; exit 3"])
-    with pytest.raises(ProviderError, match=r"exited 3.*boom"):
+    with pytest.raises(provider_types.ProviderError, match=r"exited 3.*boom"):
         cred.token()
 
 
 def test_empty_output_raises() -> None:
     cred = token_command.CommandToken(["true"])
-    with pytest.raises(ProviderError, match="no output"):
+    with pytest.raises(provider_types.ProviderError, match="no output"):
         cred.token()
 
 
 def test_missing_command_raises() -> None:
     cred = token_command.CommandToken(["agent6-nonexistent-token-binary-xyz"])
-    with pytest.raises(ProviderError, match="not found"):
+    with pytest.raises(provider_types.ProviderError, match="not found"):
         cred.token()

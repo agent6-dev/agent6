@@ -20,7 +20,7 @@ from agent6.app import role_providers
 from agent6.app.machine import agent
 from agent6.machine import contracts
 from agent6.machine import journal as machine_journal
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.viewmodel.machine import state as machine_state
 from tests.unit import test_compaction_writers as writers
@@ -61,7 +61,7 @@ class _Finishes:
         self.instance = instance
         self.steer_refusals: list[str] = []
 
-    def call(self, **_kw: Any) -> ProviderResponse:
+    def call(self, **_kw: Any) -> provider_types.ProviderResponse:
         if self.instance is not None:
             self.steer_refusals.append(
                 machine_state.machine_verb_refusal(self.instance, self.instance.name, "steer")
@@ -69,7 +69,7 @@ class _Finishes:
         tools = (
             {"type": "tool_use", "id": "t1", "name": "finish_session", "input": {"summary": "ok"}},
         )
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tools,
             stop_reason="tool_use",
@@ -94,7 +94,7 @@ class _SteeredOnce(_Finishes):
         self.seen: list[str] = []
 
     @override
-    def call(self, **kw: Any) -> ProviderResponse:
+    def call(self, **kw: Any) -> provider_types.ProviderResponse:
         self.seen.append(json.dumps(kw["messages"]))
         if len(self.seen) > 1:
             return super().call(**kw)
@@ -102,7 +102,7 @@ class _SteeredOnce(_Finishes):
         tools: tuple[dict[str, Any], ...] = (
             {"type": "tool_use", "id": "t0", "name": "list_dir", "input": {}},
         )
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tools,
             stop_reason="tool_use",
@@ -187,7 +187,7 @@ def test_a_restart_states_the_rendered_prompt_as_the_task(
         turns = 0
 
         @override
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             messages = kw["messages"]
             if isinstance(messages[-1]["content"], str):
                 return writers.response("Ready.")
@@ -327,7 +327,7 @@ def test_an_agent_state_reads_its_dollar_and_token_meters(
         requests: tuple[str, ...] = ()
 
         @override
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             self.requests += (json.dumps(kw["messages"]),)
             return super().call(**kw)
 

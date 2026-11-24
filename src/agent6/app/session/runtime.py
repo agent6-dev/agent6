@@ -35,7 +35,7 @@ from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.harness.review import gate as review_gate
-from agent6.providers import Provider, TranscriptSink
+from agent6.providers import provider_calls, provider_types
 from agent6.sandbox import container, detect, jail, jail_session
 from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
@@ -207,10 +207,10 @@ class SessionProviders:
 
     budget: agent6_budget.BudgetTracker
     rm_role: RoleModel
-    provider: Provider
-    summarizer_provider: Provider | None
+    provider: provider_calls.Provider
+    summarizer_provider: provider_calls.Provider | None
     reviewers: list[review_gate.Reviewer]
-    repeat_provider: Provider | None = None
+    repeat_provider: provider_calls.Provider | None = None
 
     def close(self) -> None:
         """Release every provider's held process (a `claude_code` session)."""
@@ -227,7 +227,7 @@ def build_session_providers(
     role: RoleName,
     actor: str = "",
     events: event_log.EventSink,
-    transcript_sink: TranscriptSink,
+    transcript_sink: provider_types.TranscriptSink,
     stream_text: bool,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     conversations: conversation_state.Conversations | None = None,
@@ -256,7 +256,7 @@ def build_session_providers(
     rm_role = cfg.models.resolve(role)
     assert rm_role is not None  # require_runnable validated this
     preflight.warn_if_prompt_override_incomplete(cfg, reporter=reporter)
-    provider: Provider = role_providers.InstrumentedProvider(
+    provider: provider_calls.Provider = role_providers.InstrumentedProvider(
         inner=inner,
         actor=actor,
         model=rm_role.model,

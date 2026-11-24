@@ -16,7 +16,7 @@ from agent6 import budget, directive, kinds
 from agent6.harness import guards, loop_conversation, loop_state, nudges, operator_bridge
 from agent6.harness.compaction import window as compaction_window
 from agent6.prompts import review
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import journal
 from agent6.tools import results
 from tests.unit import test_harness
@@ -129,7 +129,7 @@ class _PlanMeteredWorker:
         self.marked: list[list[str]] = []
         self.opened: list[str] = []
 
-    def call(self, **kwargs: Any) -> ProviderResponse:
+    def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
         self.systems.append(kwargs["system"])
         self.lines.append(_budget_lines(kwargs["messages"]))
         self.marked.append(_marked_blocks(kwargs["messages"]))
@@ -216,7 +216,7 @@ def test_a_restart_that_replaced_the_budget_line_shows_it_again(tmp_path: pathli
     armed = [False]
 
     class Summarizer:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             return test_harness._resp("PROGRESS: listed two directories.")
 

@@ -23,14 +23,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6.providers import (
-    AnthropicProvider,
-    ProviderError,
-    TranscriptSink,
-    anthropic,
-    anthropic_parse,
-    request_headers,
-)
+from agent6.providers import anthropic, anthropic_parse, provider_types, request_headers
 
 
 class _FakeResponse:
@@ -66,7 +59,7 @@ def test_thinking_enables_budget_and_drops_temperature(
 ) -> None:
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, effort=level
     )
     provider.call(
@@ -94,7 +87,7 @@ def test_adaptive_models_use_adaptive_effort_and_summary(
     # budget_tokens is a 400 on these models; adaptive plus effort goes, with summarized display.
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model=model, prompt_caching=False, effort="high"
     )
     provider.call(
@@ -120,7 +113,7 @@ def test_46_generation_uses_adaptive_without_display(
     # The 4.6 generation defaults display to summarized, so no display override.
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model=model, prompt_caching=False, effort="medium"
     )
     provider.call(
@@ -139,7 +132,7 @@ def test_46_generation_uses_adaptive_without_display(
 def test_legacy_models_keep_budget_tokens(monkeypatch: pytest.MonkeyPatch, model: str) -> None:
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model=model, prompt_caching=False, effort="high"
     )
     provider.call(
@@ -159,7 +152,7 @@ def test_legacy_models_keep_budget_tokens(monkeypatch: pytest.MonkeyPatch, model
 def test_thinking_off_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, effort="off"
     )
     provider.call(
@@ -177,7 +170,9 @@ def test_thinking_off_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_thinking_unset_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-test", prompt_caching=False
+    )
     provider.call(
         system="sys",
         messages=[{"role": "user", "content": "x"}],
@@ -200,8 +195,8 @@ def test_nonstreaming_thinking_requires_its_replay_signature(
         return _FakeResponse(status_code=200, payload=payload)
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
-    with pytest.raises(ProviderError, match="signature"):
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
+    with pytest.raises(provider_types.ProviderError, match="signature"):
         provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
 
 
@@ -210,7 +205,9 @@ def test_request_drops_foreign_block_without_sending_empty_content(
 ) -> None:
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-test", prompt_caching=False
+    )
     provider.call(
         system="sys",
         messages=[
@@ -239,8 +236,10 @@ def test_request_with_no_nonempty_messages_is_not_sent(monkeypatch: pytest.Monke
         raise AssertionError("an empty Messages request reached the transport")
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fail_post)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
-    with pytest.raises(ProviderError, match="no nonempty messages") as exc_info:
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-test", prompt_caching=False
+    )
+    with pytest.raises(provider_types.ProviderError, match="no nonempty messages") as exc_info:
         provider.call(system="sys", messages=[{"role": "assistant", "content": []}])
     assert exc_info.value.fatal  # a shaping refusal never clears on retry
 
@@ -250,7 +249,9 @@ def test_request_drops_unsigned_thinking_but_keeps_anthropic_signature(
 ) -> None:
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
+    provider = anthropic.AnthropicProvider(
+        api_key="sk-test", model="claude-test", prompt_caching=False
+    )
     provider.call(
         system="sys",
         messages=[
@@ -281,7 +282,7 @@ def test_an_extra_body_max_tokens_below_the_thinking_budget_is_refused(
     """An extra_body max_tokens below the thinking budget is refused, naming both numbers."""
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test",
         model="claude-test",
         prompt_caching=False,
@@ -289,7 +290,7 @@ def test_an_extra_body_max_tokens_below_the_thinking_budget_is_refused(
         extra_body={"max_tokens": 1000},
     )
     with pytest.raises(
-        ProviderError, match="max_tokens 1000 is not above the thinking budget"
+        provider_types.ProviderError, match="max_tokens 1000 is not above the thinking budget"
     ) as exc_info:
         provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
     assert bodies == [] and exc_info.value.fatal  # a config refusal never clears on retry
@@ -305,7 +306,7 @@ def test_required_prompt_cache_beta_is_merged_with_extra_betas(
         return _FakeResponse(status_code=200, payload=_ok_payload())
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = AnthropicProvider(
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test",
         model="claude-test",
         prompt_caching=True,
@@ -413,8 +414,8 @@ def _thinking_then_tool_stream() -> list[str]:
 def test_streaming_preserves_thinking_blocks(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    provider = AnthropicProvider(
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    provider = anthropic.AnthropicProvider(
         api_key="sk-test",
         model="claude-test",
         prompt_caching=False,
@@ -469,12 +470,12 @@ def test_top_effort_is_sent_to_an_adaptive_model_or_refused_for_fixed_budgets(
     bodies: list[dict[str, Any]] = []
     _capture_body(monkeypatch, bodies)
     messages = [{"role": "user", "content": "x"}]
-    AnthropicProvider(api_key="", model="claude-opus-4-6").call(
+    anthropic.AnthropicProvider(api_key="", model="claude-opus-4-6").call(
         system="s", messages=messages, reasoning_effort=level
     )
     assert bodies[0]["output_config"] == {"effort": level}
-    with pytest.raises(ProviderError, match="off, low, medium, high"):
-        AnthropicProvider(api_key="", model="claude-test", effort=level).call(
+    with pytest.raises(provider_types.ProviderError, match="off, low, medium, high"):
+        anthropic.AnthropicProvider(api_key="", model="claude-test", effort=level).call(
             system="s", messages=messages
         )
     assert len(bodies) == 1

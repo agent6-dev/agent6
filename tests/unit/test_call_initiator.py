@@ -13,14 +13,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.harness import loop_conversation, loop_snapshot, provider_call
-from agent6.providers import (
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    ProviderResponse,
-    openai,
-    request_headers,
-)
+from agent6.providers import openai, provider_types, request_headers
 from agent6.sessions import journal
 from tests import launch_env
 from tests.unit import test_harness
@@ -30,8 +23,8 @@ def _noop(*_args: object, **_kwargs: object) -> None:
     """Accept any call and do nothing."""
 
 
-def _ok() -> ProviderResponse:
-    return ProviderResponse(
+def _ok() -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text="ok",
         tool_uses=(),
         stop_reason="end_turn",
@@ -102,7 +95,7 @@ def test_the_caller_passes_the_initiator_as_a_partial_context() -> None:
     seen: list[Any] = []
 
     class _Provider:
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             seen.append(kw["context"])
             return _ok()
 
@@ -120,12 +113,12 @@ def test_a_retried_call_keeps_its_logical_call_id() -> None:
     seen: list[str] = []
 
     class _Flaky:
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             # As the instrumented provider does: mint an id only when the caller sent none.
             call_context = kw["context"].call_context or kinds.CallContext()
             seen.append(call_context.model_call_id)
             if len(seen) == 1:
-                raise ProviderError("busy", status_code=503)
+                raise provider_types.ProviderError("busy", status_code=503)
             return _ok()
 
     _caller(_Flaky(), retry_count=1).call("s", [], [], 10)
@@ -138,10 +131,10 @@ def test_a_given_call_context_is_shared_by_every_attempt() -> None:
     seen: list[kinds.CallContext] = []
 
     class _Flaky:
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             seen.append(kw["context"].call_context)
             if len(seen) == 1:
-                raise ProviderError("busy", status_code=503)
+                raise provider_types.ProviderError("busy", status_code=503)
             return _ok()
 
     given = kinds.CallContext(model_call_id="given", execution_id="exec-1")
@@ -158,7 +151,7 @@ def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None
     from agent6.sessions import event_log
 
     class _Streaming:
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             kw["text_delta_callback"]("hi")
             kw["thinking_delta_callback"]("hmm")
             return _ok()
@@ -216,10 +209,10 @@ def test_a_retried_call_is_one_lifecycle_with_an_attempt_row_each(tmp_path: path
     calls: list[int] = []
 
     class _Flaky:
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             calls.append(kw["context"].attempt)
             if len(calls) == 1:
-                raise ProviderError("busy", status_code=503)
+                raise provider_types.ProviderError("busy", status_code=503)
             return _ok()
 
     _caller(_wrapped(_Flaky(), tmp_path), retry_count=1).call("s", [], [], 10)
@@ -257,7 +250,9 @@ def test_an_interrupted_retry_wait_closes_the_call(tmp_path: pathlib.Path, steer
             should_interrupt=lambda: waiting and steer,
         )
         context = kinds.CallContext(execution_id="exec-1")
-        with pytest.raises(ProviderInterrupted if steer else ProviderAborted) as stopped:
+        with pytest.raises(
+            provider_types.ProviderInterrupted if steer else provider_types.ProviderAborted
+        ) as stopped:
             caller.call("s", [], [], 10, call_context=context)
         assert len(requests) == 1
 
@@ -278,10 +273,10 @@ def test_a_permanent_error_closes_the_call_on_its_first_attempt(tmp_path: pathli
     """A status no retry recovers ends the lifecycle at once: one attempt, one failed result."""
 
     class _Refusing:
-        def call(self, **kw: Any) -> ProviderResponse:
-            raise ProviderError("bad request", status_code=400)
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
+            raise provider_types.ProviderError("bad request", status_code=400)
 
-    with pytest.raises(ProviderError):
+    with pytest.raises(provider_types.ProviderError):
         _caller(_wrapped(_Refusing(), tmp_path), retry_count=3).call("s", [], [], 10)
     types = [r["type"] for r in _rows(tmp_path) if r["type"].startswith("model.")]
     assert types == ["model.call", "model.attempt", "model.result"]
@@ -293,7 +288,7 @@ def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
     """The blind retry of an empty tool-call response stays inside the one lifecycle."""
     responses = iter(
         [
-            ProviderResponse(
+            provider_types.ProviderResponse(
                 text="",
                 tool_uses=(),
                 stop_reason="tool_use",
@@ -307,7 +302,7 @@ def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
     )
 
     class _Empty:
-        def call(self, **kw: Any) -> ProviderResponse:
+        def call(self, **kw: Any) -> provider_types.ProviderResponse:
             return next(responses)
 
     _caller(_wrapped(_Empty(), tmp_path), retry_count=1).call("s", [], [], 10)
@@ -329,7 +324,7 @@ def test_a_stopped_empty_tool_retry_keeps_the_last_attempts_usage(tmp_path: path
     caller = dataclasses.replace(
         _caller(_wrapped(inner, tmp_path), retry_count=1), should_abort=lambda: inner.call.called
     )
-    with pytest.raises(ProviderAborted):
+    with pytest.raises(provider_types.ProviderAborted):
         caller.call("s", [], [], 10)
     attempt, result = [r for r in _rows(tmp_path) if r["type"] in ("model.attempt", "model.result")]
     assert attempt["ok"] is True and result["ok"] is False

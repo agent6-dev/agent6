@@ -42,7 +42,7 @@ from agent6.harness import loop, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.parallel import repo as child_repo
 from agent6.machine import contracts, semantics
-from agent6.providers import Provider, TranscriptSink
+from agent6.providers import provider_calls, provider_types
 from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.tools import dispatch, operator_prompts
@@ -358,7 +358,9 @@ def _build_agent_providers(
     *,
     budget: agent6_budget.BudgetTracker,
     attach_console: Callable[[event_log.EventSink], None],
-) -> tuple[role_providers.InstrumentedProvider, Provider, event_log.EventSink | None]:
+) -> tuple[
+    role_providers.InstrumentedProvider, provider_calls.Provider, event_log.EventSink | None
+]:
     """Build the state's worker provider, its summarizer and its event sink.
 
     The worker always streams: machine agents run headless and generate long, and
@@ -373,7 +375,7 @@ def _build_agent_providers(
     Returns:
         The instrumented worker, the summarizer, and the sink or None without a log.
     """
-    transcript_sink = TranscriptSink(
+    transcript_sink = provider_types.TranscriptSink(
         req.transcript_dir, objects_dir=req.transcript_dir.parent / "objects"
     )
     events_sink = event_log.EventSink(req.events_log) if req.events_log is not None else None
@@ -525,8 +527,8 @@ def _drive_state(
     base_config: Config,
     prompts: operator_prompts.OperatorPrompts,
     bridges: _MachineBridges | None,
-    provider: Provider,
-    summarizer_provider: Provider | None,
+    provider: provider_calls.Provider,
+    summarizer_provider: provider_calls.Provider | None,
     budget: agent6_budget.BudgetTracker,
     reporter: app_reporter.Reporter,
     events: event_log.EventSink | None,

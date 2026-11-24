@@ -19,7 +19,7 @@ from agent6.harness import loop as loopmod
 from agent6.harness import loop_state, provider_call, run_chain, toolset
 from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.harness.tasks import focus as dag_focus
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.tools import dispatch, mcp_client, results, schema, tool_errors
 
 _VALID_TOML = """
@@ -660,9 +660,11 @@ def _init_repo(repo: pathlib.Path) -> None:
     subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
 
-def _tool_use(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderResponse:
+def _tool_use(
+    name: str, args: dict[str, Any], tu_id: str = "tu1"
+) -> provider_types.ProviderResponse:
     block = {"type": "tool_use", "id": tu_id, "name": name, "input": args}
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
         stop_reason="tool_use",
@@ -734,7 +736,7 @@ def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(
         def __init__(self) -> None:
             self.seen = ""
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.seen = json.dumps(kwargs["messages"])
             plan = _ANSWERED_PLAN if "postgres" in self.seen else _STALE_PLAN
             return _tool_use("finish_planning", {"summary": "s", "plan_markdown": plan})

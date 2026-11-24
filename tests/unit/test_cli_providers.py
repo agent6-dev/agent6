@@ -20,7 +20,7 @@ from agent6.config import (
     RoleModel,
     secret_store,
 )
-from agent6.providers import OpenAIProvider, chatgpt, oauth, oauth_protocol, provider_types
+from agent6.providers import chatgpt, oauth, oauth_protocol, openai, provider_types
 
 
 @pytest.mark.parametrize("state", ["old_format", "rebound"])
@@ -107,7 +107,7 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     prov = role_providers.build_role_provider(
         cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
     )
-    assert isinstance(prov, OpenAIProvider)
+    assert isinstance(prov, openai.OpenAIProvider)
     assert prov.extra_body == {"provider": {"sort": "throughput"}}
     assert ("x-title", "agent6") in prov.extra_headers.literal
 

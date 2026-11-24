@@ -14,11 +14,15 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6.providers import AnthropicProvider, ToolDefinition, anthropic, provider_types
+from agent6.providers import anthropic, provider_types
 
 _TOOLS = [
-    ToolDefinition(name="read_file", description="Read a file.", input_schema={"type": "object"}),
-    ToolDefinition(name="list_dir", description="List a dir.", input_schema={"type": "object"}),
+    provider_types.ToolDefinition(
+        name="read_file", description="Read a file.", input_schema={"type": "object"}
+    ),
+    provider_types.ToolDefinition(
+        name="list_dir", description="List a dir.", input_schema={"type": "object"}
+    ),
 ]
 
 # A reply that searches once, cites a result and calls one of agent6's own tools.
@@ -183,7 +187,7 @@ def _call(
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    provider = anthropic.AnthropicProvider(api_key="sk-test", model="claude-test")
     response = provider.call(
         system="sys",
         messages=messages or [{"role": "user", "content": "what changed?"}],

@@ -15,6 +15,7 @@ from agent6 import paths
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import run_chain, run_checkpoint
+from agent6.providers import provider_calls
 from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -173,7 +174,7 @@ def test_tasks_merge_under_the_model_style_takes_the_models_message_with_the_tas
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The configured squash style names each range; the task's title and acceptance follow."""
-    from agent6.app import merge_message, role_providers
+    from agent6.app import role_providers
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -199,7 +200,7 @@ def test_tasks_merge_under_the_model_style_takes_the_models_message_with_the_tas
         return object()
 
     monkeypatch.setattr(role_providers, "build_role_provider", provider)
-    monkeypatch.setattr(merge_message, "call_for_text", draft)
+    monkeypatch.setattr(provider_calls, "call_for_text", draft)
 
     assert main(["sessions", "merge", "run-TASK05"]) == 0
 

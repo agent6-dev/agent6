@@ -22,7 +22,7 @@ from agent6.harness import (
     nudges,
     provider_call,
 )
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import journal
 
 if TYPE_CHECKING:
@@ -108,7 +108,7 @@ def question_in_prose(
 
 
 def went_quiet(
-    state: loop_state.LoopState, ctx: advice.TurnContext, resp: ProviderResponse
+    state: loop_state.LoopState, ctx: advice.TurnContext, resp: provider_types.ProviderResponse
 ) -> advice.Nudge | None:
     """Nudge an empty turn, up to the cap per streak.
 
@@ -141,7 +141,7 @@ def went_quiet(
 
 def handle_no_tool_use(
     wf: loop.Harness,
-    resp: ProviderResponse,
+    resp: provider_types.ProviderResponse,
     assistant: loop_conversation.AssistantMessage,
     conversation: loop_conversation.Conversation,
     state: loop_state.LoopState,
@@ -235,7 +235,7 @@ def handle_silent_finish(
 
 def handle_went_quiet(
     wf: loop.Harness,
-    resp: ProviderResponse,
+    resp: provider_types.ProviderResponse,
     conversation: loop_conversation.Conversation,
     state: loop_state.LoopState,
     ctx: advice.TurnContext,

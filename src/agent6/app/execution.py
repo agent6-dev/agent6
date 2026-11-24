@@ -39,7 +39,7 @@ from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, RoleName, layer_data
 from agent6.harness import loop, loop_snapshot, run_chain
-from agent6.providers import TranscriptSink
+from agent6.providers import provider_types
 from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
@@ -252,7 +252,7 @@ def run_execution(  # noqa: C901, PLR0912, PLR0915  # setup, run and teardown in
     frontend: app_frontend.SessionFrontend,
     reporter: app_reporter.Reporter,
     events: event_log.EventSink,
-    transcript_sink: TranscriptSink,
+    transcript_sink: provider_types.TranscriptSink,
     cwd: pathlib.Path,
     state_dir: pathlib.Path,
 ) -> ExecutionEnd:

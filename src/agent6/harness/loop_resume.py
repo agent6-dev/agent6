@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from agent6 import budget, errors, kinds, portable, providers
+from agent6 import budget, errors, kinds, portable
 from agent6.harness import (
     loop_conversation,
     loop_snapshot,
@@ -18,6 +18,7 @@ from agent6.harness import (
 from agent6.harness.compaction import cold_start, strategy
 from agent6.harness.compaction import rules as compaction_rules
 from agent6.prompts import compaction as prompts_compaction
+from agent6.providers import provider_types
 from agent6.sessions import journal
 
 if TYPE_CHECKING:
@@ -164,9 +165,9 @@ def apply_cold_start(
         return "resend"
     try:
         return harness.compactor.cold_start(context)
-    except (providers.ProviderAborted, providers.ProviderInterrupted):
+    except (provider_types.ProviderAborted, provider_types.ProviderInterrupted):
         raise
-    except (providers.ProviderError, budget.BudgetExceededError):
+    except (provider_types.ProviderError, budget.BudgetExceededError):
         report_cold_start(harness, state, "summary_failed", 0)
         raise
 

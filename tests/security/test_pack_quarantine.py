@@ -27,7 +27,7 @@ from agent6.app import confine, execution_harness, merge, role_providers
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import run as machine_run
 from agent6.config import Config, layer
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sandbox import jail
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
@@ -355,12 +355,12 @@ class _Scripted:
         self.script = script
         self.calls = 0
 
-    def call(self, **_kw: Any) -> ProviderResponse:
+    def call(self, **_kw: Any) -> provider_types.ProviderResponse:
         step = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
         if isinstance(step, BaseException):
             raise step
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=step,
             stop_reason="tool_use",
@@ -633,7 +633,7 @@ def test_a_merge_leaves_a_pack_that_was_there_before_it(
 _WORKER = """
 import json, os, signal, sys, time
 from agent6.app import role_providers
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.ui.cli import cli_main
 
 session_id, ending, turns = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
@@ -649,7 +649,7 @@ class Scripted:
             time.sleep(600)
         step = tuple(turns[self.calls])
         self.calls += 1
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="", tool_uses=step, stop_reason="tool_use", input_tokens=10, output_tokens=5,
             cache_read_tokens=0, cache_write_tokens=0, raw={"content": list(step)},
         )

@@ -526,10 +526,10 @@ def test_range_block_with_unchanged_start_still_gates() -> None:
 
 
 def test_output_cap_truncated_case_folds_both_spellings() -> None:
-    from agent6.providers import ProviderResponse, output_cap_truncated
+    from agent6.providers import provider_types
 
-    def r(stop: str) -> ProviderResponse:
-        return ProviderResponse(
+    def r(stop: str) -> provider_types.ProviderResponse:
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=(),
             stop_reason=stop,
@@ -539,11 +539,11 @@ def test_output_cap_truncated_case_folds_both_spellings() -> None:
             cache_write_tokens=0,
         )
 
-    assert output_cap_truncated(r("length"))
-    assert output_cap_truncated(r("max_tokens"))  # anthropic spelling
-    assert output_cap_truncated(r("MAX_TOKENS"))  # upper-casing gateway
-    assert not output_cap_truncated(r("end_turn"))
-    assert not output_cap_truncated(r("tool_use"))
+    assert provider_types.output_cap_truncated(r("length"))
+    assert provider_types.output_cap_truncated(r("max_tokens"))  # anthropic spelling
+    assert provider_types.output_cap_truncated(r("MAX_TOKENS"))  # upper-casing gateway
+    assert not provider_types.output_cap_truncated(r("end_turn"))
+    assert not provider_types.output_cap_truncated(r("tool_use"))
 
 
 def test_panel_is_inconclusive_owner() -> None:

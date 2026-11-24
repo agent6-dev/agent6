@@ -21,7 +21,6 @@ from agent6 import kinds
 from agent6.app import conversation_state
 from agent6.config import ChatGPTProviderEntry, secret_store
 from agent6.providers import (
-    ProviderError,
     chatgpt,
     oauth,
     oauth_protocol,
@@ -442,7 +441,7 @@ def test_response_done_raises_and_bills_a_failed_response(
     with (
         mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
-        pytest.raises(ProviderError, match="failed after generation"),
+        pytest.raises(provider_types.ProviderError, match="failed after generation"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     snapshot = budget.snapshot()
@@ -459,7 +458,7 @@ def test_response_done_raises_and_bills_a_cancelled_response(
     with (
         mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
-        pytest.raises(ProviderError, match="cancelled"),
+        pytest.raises(provider_types.ProviderError, match="cancelled"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     snapshot = budget.snapshot()
@@ -487,7 +486,7 @@ def test_failed_event_raises_with_usage_limit_status(
             "httpx2.stream",
             side_effect=_serve(lines),
         ),
-        pytest.raises(ProviderError) as exc,
+        pytest.raises(provider_types.ProviderError) as exc,
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert exc.value.status_code == 429 and "plus plan" in str(exc.value)
@@ -541,7 +540,7 @@ def test_a_policy_refusal_in_the_stream_ends_the_call_at_once(
     )
     with (
         mock.patch("httpx2.stream", side_effect=stream),
-        pytest.raises(ProviderError, match=f"cyber_policy: {refusal}") as exc,
+        pytest.raises(provider_types.ProviderError, match=f"cyber_policy: {refusal}") as exc,
     ):
         caller.call("s", [{"role": "user", "content": "x"}], [], 1024)
 
@@ -567,7 +566,7 @@ def test_failed_event_usage_is_recorded(signed_in: oauth.OAuthCredential) -> Non
     with (
         mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
-        pytest.raises(ProviderError, match="failed after generation"),
+        pytest.raises(provider_types.ProviderError, match="failed after generation"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
@@ -585,7 +584,7 @@ def test_cut_stream_is_retryable_not_a_completed_turn(
             "httpx2.stream",
             side_effect=_serve(lines),
         ),
-        pytest.raises(ProviderError, match="ended without"),
+        pytest.raises(provider_types.ProviderError, match="ended without"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
@@ -639,7 +638,7 @@ def test_budgeted_call_requires_usage(signed_in: oauth.OAuthCredential) -> None:
             "httpx2.stream",
             side_effect=_serve(lines),
         ),
-        pytest.raises(ProviderError, match="usage"),
+        pytest.raises(provider_types.ProviderError, match="usage"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
@@ -658,7 +657,7 @@ def test_malformed_usage_count_is_a_provider_error(
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
-        pytest.raises(ProviderError, match=r"usage\.output_tokens"),
+        pytest.raises(provider_types.ProviderError, match=r"usage\.output_tokens"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
@@ -679,7 +678,7 @@ def test_a_malformed_streamed_item_is_a_provider_error_that_books_its_usage(
     with (
         mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
-        pytest.raises(ProviderError, match="did not match the wire shape"),
+        pytest.raises(provider_types.ProviderError, match="did not match the wire shape"),
     ):
         _provider(signed_in, budget=budget).call(
             system="s", messages=[{"role": "user", "content": "x"}]
@@ -690,7 +689,7 @@ def test_a_malformed_streamed_item_is_a_provider_error_that_books_its_usage(
 
 @pytest.mark.parametrize("value", [-1, 1.5, True, {}, [], ""])
 def test_usage_counts_reject_non_integer_values(value: object) -> None:
-    with pytest.raises(ProviderError, match=r"usage\.output_tokens"):
+    with pytest.raises(provider_types.ProviderError, match=r"usage\.output_tokens"):
         responses_codec.parse_output_items(
             [],
             usage={"input_tokens": 1, "output_tokens": value},
@@ -843,7 +842,7 @@ def test_http_error_plan_headers_reach_the_budget(
     with (
         mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=stream),
-        pytest.raises(ProviderError) as error,
+        pytest.raises(provider_types.ProviderError) as error,
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
@@ -1434,7 +1433,7 @@ class _FlakyCredential(oauth.OAuthCredential):
     def token(self, *, refresh: bool = True) -> str:
         if self.faults:
             self.faults -= 1
-            raise ProviderError("refresh failed")
+            raise provider_types.ProviderError("refresh failed")
         return super().token(refresh=refresh)
 
 
@@ -1535,7 +1534,7 @@ def test_an_explicit_effort_refusal_keeps_the_reason_without_retry(
     ) as (url, calls):
         provider = dataclasses.replace(_provider(signed_in, reasoning_effort="off"), base_url=url)
         with pytest.raises(
-            ProviderError, match="Supported values are: 'low', 'medium', and 'high'"
+            provider_types.ProviderError, match="Supported values are: 'low', 'medium', and 'high'"
         ):
             provider.call(system="SYS", messages=[{"role": "user", "content": "t"}])
     assert [body["reasoning"]["effort"] for body in calls] == ["none"]
@@ -1579,7 +1578,7 @@ def test_a_stream_refusal_without_the_effort_param_is_not_adapted(
     )
     with (
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
-        pytest.raises(ProviderError, match="unsupported_value"),
+        pytest.raises(provider_types.ProviderError, match="unsupported_value"),
     ):
         _provider(signed_in, reasoning_effort="off").call(
             system="SYS", messages=[{"role": "user", "content": "t"}]

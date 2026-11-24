@@ -44,12 +44,7 @@ from agent6.harness.compaction import window as compaction_window
 from agent6.harness.parallel import merge as parallel_merge
 from agent6.harness.review import gate as review_gate
 from agent6.harness.verify import verdict as verify_verdict
-from agent6.providers import (
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    ProviderResponse,
-)
+from agent6.providers import provider_types
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.tools import mcp_client, operator_prompts
@@ -470,8 +465,8 @@ def test_finish_planning_keeps_a_real_plan_markdown(tmp_path: pathlib.Path) -> N
     assert "real step" in text and "short blurb" not in text
 
 
-def _resp(text: str = "ok") -> ProviderResponse:
-    return ProviderResponse(
+def _resp(text: str = "ok") -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text=text,
         tool_uses=(),
         stop_reason="end_turn",
@@ -487,10 +482,10 @@ def _tool_resp(
     tool_input: dict[str, Any] | None = None,
     *,
     tool_id: str = "tool-1",
-) -> ProviderResponse:
+) -> provider_types.ProviderResponse:
     payload = tool_input or {}
     block = {"type": "tool_use", "id": tool_id, "name": name, "input": payload}
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": tool_id, "name": name, "input": payload},),
         stop_reason="tool_use",
@@ -539,7 +534,7 @@ def _caller(
     )
 
 
-def _call(caller: provider_call.ProviderCaller) -> ProviderResponse:
+def _call(caller: provider_call.ProviderCaller) -> provider_types.ProviderResponse:
     return caller.call(system="s", messages=[], tools=[], max_tokens=16384)
 
 
@@ -560,7 +555,7 @@ def test_caller_first_try_returns() -> None:
 def test_caller_succeeds_on_retry() -> None:
     """ProviderError on the first call, success on the retry: the retry is returned."""
     provider = mock.MagicMock()
-    provider.call.side_effect = [ProviderError("transient 529"), _resp("retried")]
+    provider.call.side_effect = [provider_types.ProviderError("transient 529"), _resp("retried")]
     assert _call(_caller(provider, retry_count=1)).text == "retried"
     assert provider.call.call_count == 2
 
@@ -568,19 +563,22 @@ def test_caller_succeeds_on_retry() -> None:
 def test_caller_reraises_after_retries_exhausted() -> None:
     """Two ProviderErrors with retry_count=1: the last error bubbles."""
     provider = mock.MagicMock()
-    provider.call.side_effect = [ProviderError("flake 1"), ProviderError("flake 2")]
-    with pytest.raises(ProviderError, match="flake 2"):
+    provider.call.side_effect = [
+        provider_types.ProviderError("flake 1"),
+        provider_types.ProviderError("flake 2"),
+    ]
+    with pytest.raises(provider_types.ProviderError, match="flake 2"):
         _call(_caller(provider, retry_count=1))
     assert provider.call.call_count == 2
 
 
 def test_caller_never_retries_an_abort() -> None:
     """ProviderAborted (operator stop) bubbles immediately, never retried."""
-    from agent6.providers import ProviderAborted
+    from agent6.providers import provider_types
 
     provider = mock.MagicMock()
-    provider.call.side_effect = [ProviderAborted("stopped"), _resp("late")]
-    with pytest.raises(ProviderAborted):
+    provider.call.side_effect = [provider_types.ProviderAborted("stopped"), _resp("late")]
+    with pytest.raises(provider_types.ProviderAborted):
         _call(_caller(provider, retry_count=3))
     assert provider.call.call_count == 1
     assert provider.call.call_args.kwargs["should_abort"] is _never
@@ -588,11 +586,11 @@ def test_caller_never_retries_an_abort() -> None:
 
 def test_caller_never_retries_a_steer_interrupt() -> None:
     """ProviderInterrupted (a steer mid-stream) bubbles immediately; a retry would re-hit it."""
-    from agent6.providers import ProviderInterrupted
+    from agent6.providers import provider_types
 
     provider = mock.MagicMock()
-    provider.call.side_effect = [ProviderInterrupted("steer"), _resp("late")]
-    with pytest.raises(ProviderInterrupted):
+    provider.call.side_effect = [provider_types.ProviderInterrupted("steer"), _resp("late")]
+    with pytest.raises(provider_types.ProviderInterrupted):
         _call(_caller(provider, retry_count=3))
     assert provider.call.call_count == 1
     assert provider.call.call_args.kwargs["should_interrupt"] is _never
@@ -605,7 +603,7 @@ def test_caller_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("agent6.harness.provider_call.time.sleep", slept.append)
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("429 rate limited", status_code=429, retry_after_s=50.0),
+        provider_types.ProviderError("429 rate limited", status_code=429, retry_after_s=50.0),
         _resp("ok"),
     ]
     assert _call(_caller(provider, retry_count=1)).text == "ok"
@@ -619,30 +617,32 @@ def test_caller_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("agent6.harness.provider_call.time.sleep", slept.append)
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("429", status_code=429, retry_after_s=9999.0),
+        provider_types.ProviderError("429", status_code=429, retry_after_s=9999.0),
         _resp("ok"),
     ]
     _call(_caller(provider, retry_count=1))
     assert slept and slept[0] <= 120.0
 
 
-@pytest.mark.parametrize("raised", [ProviderAborted, ProviderInterrupted])
+@pytest.mark.parametrize(
+    "raised", [provider_types.ProviderAborted, provider_types.ProviderInterrupted]
+)
 def test_caller_ends_a_retry_wait_on_a_stop_or_a_steer(
-    monkeypatch: pytest.MonkeyPatch, raised: type[ProviderError]
+    monkeypatch: pytest.MonkeyPatch, raised: type[provider_types.ProviderError]
 ) -> None:
     """A stop or a steer ends a retry wait at its next poll, with no further attempt."""
     slept: list[float] = []
     monkeypatch.setattr("agent6.harness.provider_call.time.sleep", slept.append)
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("429 rate limited", status_code=429, retry_after_s=120.0),
+        provider_types.ProviderError("429 rate limited", status_code=429, retry_after_s=120.0),
         _resp("late"),
     ]
     # The signal arrives once the wait has begun.
     caller = dataclasses.replace(
         _caller(provider, retry_count=1),
-        should_abort=lambda: raised is ProviderAborted and bool(slept),
-        should_interrupt=lambda: raised is ProviderInterrupted and bool(slept),
+        should_abort=lambda: raised is provider_types.ProviderAborted and bool(slept),
+        should_interrupt=lambda: raised is provider_types.ProviderInterrupted and bool(slept),
     )
     with pytest.raises(raised):
         _call(caller)
@@ -650,9 +650,9 @@ def test_caller_ends_a_retry_wait_on_a_stop_or_a_steer(
     assert provider.call.call_count == 1
 
 
-def _empty_tool_call_resp() -> ProviderResponse:
+def _empty_tool_call_resp() -> provider_types.ProviderResponse:
     """A self-contradictory response: stop_reason=tool_calls with no tool_use and no text."""
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=(),
         stop_reason="tool_calls",
@@ -683,7 +683,7 @@ def test_caller_returns_last_empty_after_exhausting() -> None:
 
 def test_reasoning_starvation_counts_only_a_cap_cut_turn() -> None:
     """The count is the thinking a cap-cut, billed turn spent; any other turn counts 0."""
-    starved = ProviderResponse(
+    starved = provider_types.ProviderResponse(
         text="",
         tool_uses=(),
         stop_reason="length",
@@ -709,7 +709,7 @@ def test_is_empty_tool_call_response_discriminates() -> None:
     assert not provider_call.is_empty_tool_call_response(_resp("hi"))  # has text -> a silent finish
     assert not provider_call.is_empty_tool_call_response(_tool_resp("read_file"))  # has a tool_use
     # length-truncated reasoning starvation is handled separately, not retried here.
-    starved = ProviderResponse(
+    starved = provider_types.ProviderResponse(
         text="",
         tool_uses=(),
         stop_reason="length",
@@ -724,7 +724,7 @@ def test_is_empty_tool_call_response_discriminates() -> None:
 def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
     """The default retry budget survives more than one consecutive transient disconnect."""
     provider = mock.MagicMock()
-    disconnect = ProviderError("Server disconnected without sending a response")
+    disconnect = provider_types.ProviderError("Server disconnected without sending a response")
     provider.call.side_effect = [disconnect, disconnect, disconnect, _resp("recovered")]
     wf = _wf(provider=provider)  # uses the default retry_count
     out = wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
@@ -735,9 +735,9 @@ def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
 def test_call_with_retry_zero_retries_no_retry() -> None:
     """retry_count=0 -> single attempt, no retry on error."""
     provider = mock.MagicMock()
-    provider.call.side_effect = [ProviderError("nope")]
+    provider.call.side_effect = [provider_types.ProviderError("nope")]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.01))
-    with pytest.raises(ProviderError, match="nope"):
+    with pytest.raises(provider_types.ProviderError, match="nope"):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
@@ -756,11 +756,11 @@ def test_call_with_retry_skips_retry_on_permanent_status() -> None:
     """A permanent client error (402) re-raises on the first failure without consuming a retry."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("OpenAI API error 402: Insufficient credits", status_code=402),
+        provider_types.ProviderError("OpenAI API error 402: Insufficient credits", status_code=402),
         _resp("should-never-be-reached"),
     ]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=3, retry_delay_s=0.01))
-    with pytest.raises(ProviderError, match="402"):
+    with pytest.raises(provider_types.ProviderError, match="402"):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
@@ -769,11 +769,11 @@ def test_call_with_retry_never_retries_a_fatal_error() -> None:
     """A fatal ProviderError re-raises at once; without the flag a status-less error retries."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("claude not signed in", fatal=True),
+        provider_types.ProviderError("claude not signed in", fatal=True),
         _resp("should-never-be-reached"),
     ]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=3, retry_delay_s=0.01))
-    with pytest.raises(ProviderError, match="not signed in"):
+    with pytest.raises(provider_types.ProviderError, match="not signed in"):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
@@ -786,11 +786,11 @@ def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> N
     """Every status in _NON_RETRYABLE_HTTP_STATUSES re-raises on the first failure."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError(f"provider error {status}", status_code=status),
+        provider_types.ProviderError(f"provider error {status}", status_code=status),
         _resp("should-never-be-reached"),
     ]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=3, retry_delay_s=0.01))
-    with pytest.raises(ProviderError, match=str(status)):
+    with pytest.raises(provider_types.ProviderError, match=str(status)):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
@@ -800,7 +800,7 @@ def test_call_with_retry_keeps_anthropic_transient_client_statuses(status: int) 
     """A timeout, a conflict, too-early and a rate limit are the 4xx a blind retry can outlive."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError(f"provider error {status}", status_code=status),
+        provider_types.ProviderError(f"provider error {status}", status_code=status),
         _resp("recovered"),
     ]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=1, retry_delay_s=0.01))
@@ -812,7 +812,7 @@ def test_call_with_retry_still_retries_transient_5xx() -> None:
     """A 503 carries a status but is not in the permanent set, so the retry path applies."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("OpenAI API error 503: upstream", status_code=503),
+        provider_types.ProviderError("OpenAI API error 503: upstream", status_code=503),
         _resp("recovered"),
     ]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=1, retry_delay_s=0.01))
@@ -829,9 +829,9 @@ def test_call_with_retry_exponential_backoff() -> None:
     """Attempt N sleeps retry_delay_s * 2 ** (attempt - 1), scaled by the jitter factor."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("flake 1"),
-        ProviderError("flake 2"),
-        ProviderError("flake 3"),
+        provider_types.ProviderError("flake 1"),
+        provider_types.ProviderError("flake 2"),
+        provider_types.ProviderError("flake 3"),
         _resp("success"),
     ]
     wf = _wf(
@@ -856,10 +856,10 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
     """Exponential backoff is capped at retry_max_delay_s."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("flake 1"),
-        ProviderError("flake 2"),
-        ProviderError("flake 3"),
-        ProviderError("flake 4"),
+        provider_types.ProviderError("flake 1"),
+        provider_types.ProviderError("flake 2"),
+        provider_types.ProviderError("flake 3"),
+        provider_types.ProviderError("flake 4"),
         _resp("success"),
     ]
     wf = _wf(
@@ -885,13 +885,15 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
 def test_default_retry_waits_about_ten_minutes_on_a_transient_status(status: int) -> None:
     """The default schedule retries a 429 or a 503 for ten minutes on average: 31 attempts."""
     provider = mock.MagicMock()
-    provider.call.side_effect = ProviderError(f"API error {status}", status_code=status)
+    provider.call.side_effect = provider_types.ProviderError(
+        f"API error {status}", status_code=status
+    )
     wf = _wf(provider=provider, call=provider_call.CallSettings())
     sleep_calls: list[float] = []
     with (
         mock.patch("time.sleep", side_effect=sleep_calls.append),
         mock.patch("random.uniform", return_value=0.75),
-        pytest.raises(ProviderError, match=str(status)) as raised,
+        pytest.raises(provider_types.ProviderError, match=str(status)) as raised,
     ):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert raised.value.attempts == provider.call.call_count == 31
@@ -912,13 +914,13 @@ def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
     """A permanent status re-raises at once with no sleep, whatever retry_count allows."""
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        ProviderError("Insufficient credits", status_code=402),
+        provider_types.ProviderError("Insufficient credits", status_code=402),
     ]
     wf = _wf(provider=provider, call=provider_call.CallSettings(retry_count=3, retry_delay_s=10.0))
     sleep_calls: list[float] = []
     with (
         mock.patch("time.sleep", side_effect=sleep_calls.append),
-        pytest.raises(ProviderError, match="Insufficient credits"),
+        pytest.raises(provider_types.ProviderError, match="Insufficient credits"),
     ):
         wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
@@ -1047,7 +1049,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             self.calls: list[list[dict[str, Any]]] = []
             self.saw_metric_feedback = False
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             messages = kwargs["messages"]
             self.calls.append(messages)
             if len(self.calls) == 1:
@@ -1159,7 +1161,7 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
         def __init__(self) -> None:
             self.n = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.n += 1
             if self.n == 1:
@@ -1244,7 +1246,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             if self.calls == 1:
@@ -1252,7 +1254,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
             if ending == "budget":
                 raise agent6_budget.BudgetExceededError("token cap")
             if ending == "provider":
-                raise ProviderError("provider unavailable", fatal=True)
+                raise provider_types.ProviderError("provider unavailable", fatal=True)
             if ending == "quiet":
                 return _resp("")
             raise AssertionError("max_turns should stop before another call")
@@ -1298,9 +1300,9 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
     raw_body = 'OpenRouter API error 400: {"error":"bad model","user_id":"user_SECRET"}'
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
-            raise ProviderError(raw_body, status_code=400)
+            raise provider_types.ProviderError(raw_body, status_code=400)
 
     config = types.SimpleNamespace(
         sandbox=types.SimpleNamespace(hide_paths=()),
@@ -1358,10 +1360,12 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
-            raise ProviderError("Claude Code is not signed in; run `claude auth login`", fatal=True)
+            raise provider_types.ProviderError(
+                "Claude Code is not signed in; run `claude auth login`", fatal=True
+            )
 
     config = types.SimpleNamespace(
         sandbox=types.SimpleNamespace(hide_paths=()),
@@ -1415,7 +1419,7 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(
     """The terminal retry is counted and its statusless reason reaches the run summary."""
     reason = "Server disconnected without sending a response"
     provider = mock.MagicMock()
-    provider.call.side_effect = ProviderError(reason)
+    provider.call.side_effect = provider_types.ProviderError(reason)
     logs: list[str] = []
     wf = _wf(
         root=tmp_path,
@@ -1454,7 +1458,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
         lambda _root, **_kw: types.SimpleNamespace(is_clean=True, head_sha=base),  # pyrefly: ignore[implicit-any-lambda]
     )
     provider = mock.MagicMock()
-    provider.call.side_effect = ProviderError("down")
+    provider.call.side_effect = provider_types.ProviderError("down")
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
@@ -1574,7 +1578,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             rendered = str(kwargs["messages"])
             self.calls.append(rendered)
             if "median" not in rendered:
@@ -1652,7 +1656,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
     captured: list[str] = []
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             captured.append(str(kwargs["messages"]))
             return _resp("done")
 
@@ -1711,7 +1715,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
 
     class ProviderStub:
         # Always pass verify and never call run_metric_command, so the auto path triggers it.
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             return _tool_resp("run_verify_command")
 
@@ -1787,7 +1791,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
     from agent6.tools import tool_errors
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             return _tool_resp("run_verify_command")
 
@@ -1869,11 +1873,11 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
     The edit changed the tree the verify validated; edit-then-verify still commits.
     """
 
-    def _multi(*names: str) -> ProviderResponse:
+    def _multi(*names: str) -> provider_types.ProviderResponse:
         tus: tuple[dict[str, Any], ...] = tuple(
             {"id": f"t{i}", "name": n, "input": {}} for i, n in enumerate(names)
         )
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tus,
             stop_reason="tool_use",
@@ -1888,7 +1892,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
         def __init__(self) -> None:
             self.n = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.n += 1
             if self.n == 1:
@@ -1978,7 +1982,7 @@ def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.
         def __init__(self) -> None:
             self.n = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.n += 1
             if self.n == 1:
@@ -2129,12 +2133,12 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
         def __init__(self) -> None:
             self.caps_seen: list[int] = []
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             cap = kwargs["max_tokens"]
             self.caps_seen.append(cap)
             if cap >= 65536:
                 # Full ceiling: a reasoning binge that emits nothing actionable.
-                return ProviderResponse(
+                return provider_types.ProviderResponse(
                     text="",
                     tool_uses=(),
                     stop_reason="end_turn",
@@ -2209,7 +2213,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
@@ -2301,7 +2305,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
             self.calls = 0
             self.saw_plateau_nudge = False
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             rendered = _turn_input(kwargs["messages"])
             if "[harness plateau]" in rendered:
@@ -2399,7 +2403,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
             self.calls = 0
             self.saw_final_nudge = False
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if "[harness plateau]" in _turn_input(kwargs["messages"]):
                 self.saw_final_nudge = True
@@ -2503,7 +2507,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: pathlib.P
             self.calls = 0
             self.nudged_on: list[int] = []
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.PLAN_BUDGET_NUDGE[:24] in _turn_input(kwargs["messages"]):
                 self.nudged_on.append(self.calls)
@@ -2555,7 +2559,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
             self.calls = 0
             self.nudged_on: list[int] = []
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.PLAN_BUDGET_NUDGE[:24] in _turn_input(kwargs["messages"]):
                 self.nudged_on.append(self.calls)
@@ -2605,7 +2609,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
             self.calls = 0
             self.nudged_on: list[int] = []
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.RUN_BUDGET_NUDGE[:24] in _turn_input(kwargs["messages"]):
                 self.nudged_on.append(self.calls)
@@ -2646,7 +2650,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
             self.calls = 0
             self.saw_nudge = False
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if "[harness settled]" in _turn_input(kwargs["messages"]):
                 self.saw_nudge = True
@@ -2717,7 +2721,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")  # green
@@ -2857,7 +2861,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
             self.calls = 0
             self.saw_nudge = False
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if "[harness settled]" in _turn_input(kwargs["messages"]):
                 self.saw_nudge = True
@@ -2920,7 +2924,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")  # always re-verify
 
@@ -2984,7 +2988,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")  # verify passes
@@ -3070,7 +3074,7 @@ def test_a_batch_count_on_the_score_line_cannot_end_a_plateau_with_budget_left(
             self.calls = 0
             self.plateau_nudges_seen = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             rendered = _turn_input(kwargs["messages"])
             if "[harness plateau]" in rendered:
@@ -3168,7 +3172,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
             self.calls = 0
             self.finish_nudges_seen = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             rendered = _turn_input(kwargs["messages"])
             if metric_rules.METRIC_FINISH_NUDGE in rendered:
@@ -3245,7 +3249,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
             self.calls = 0
             self.finish_nudges_seen = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             rendered = _turn_input(kwargs["messages"])
             if metric_rules.METRIC_FINISH_NUDGE in rendered:
@@ -3313,14 +3317,14 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             uses = (
                 {"id": "f1", "name": "finish_session", "input": {"summary": "done"}},
                 {"id": "c1", "name": "run_command", "input": {"command": "rm -rf build"}},
             )
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text="",
                 tool_uses=uses,
                 stop_reason="tool_use",
@@ -3400,7 +3404,7 @@ def test_only_a_typed_target_allows_an_early_finish(
             self.calls = 0
             self.finish_nudges_seen = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             rendered = _turn_input(kwargs["messages"])
             if metric_rules.METRIC_FINISH_NUDGE in rendered:
@@ -4622,11 +4626,11 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             tid = f"t{self.calls}"
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text="working",
                 tool_uses=({"id": tid, "name": "noop", "input": {}},),
                 stop_reason="tool_use",
@@ -4711,14 +4715,14 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             if self.calls >= 6:
                 return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"f{self.calls}")
             big = "y" * 3000  # accumulates each turn so tier-2 fires mid-run
             tid = f"t{self.calls}"
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text=big,
                 tool_uses=({"id": tid, "name": "noop", "input": {}},),
                 stop_reason="tool_use",
@@ -4735,7 +4739,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             )
 
     class SummarizerStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             return _resp("SUMMARY of progress so far")  # no checkoff block
 
@@ -4898,7 +4902,7 @@ def test_summarize_and_restart_rejects_checkoff_without_a_summary() -> None:
 
 def test_summarize_and_restart_keeps_history_on_provider_error() -> None:
     summarizer = mock.MagicMock()
-    summarizer.call.side_effect = ProviderError("boom")
+    summarizer.call.side_effect = provider_types.ProviderError("boom")
     wf = _wf(
         compaction=compaction_window.CompactionSettings(
             summarizer="helper", helper_context_tokens=200000, helper=summarizer
@@ -5396,7 +5400,9 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: pathlib.Pat
 
     # First "process": crash on the first LLM call.
     crashing_provider = mock.MagicMock()
-    crashing_provider.call.side_effect = ProviderError("simulated network drop / SIGKILL window")
+    crashing_provider.call.side_effect = provider_types.ProviderError(
+        "simulated network drop / SIGKILL window"
+    )
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
@@ -5465,7 +5471,7 @@ def test_tier2_summarize_fires_and_restarts_past_threshold(tmp_path: pathlib.Pat
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             return _resp("PROGRESS SUMMARY: explored modules, applied 3 patches.")
@@ -5497,7 +5503,7 @@ def test_tier2_summarize_fires_and_restarts_past_threshold(tmp_path: pathlib.Pat
 
 def test_tier2_summarize_failsafe_keeps_context_on_empty_summary(tmp_path: pathlib.Path) -> None:
     class EmptySummarizer:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             return _resp("")  # empty -> fail-safe: keep the (tier-1-elided) context
 
@@ -5527,7 +5533,7 @@ def test_drive_loop_summarizes_midrun_then_completes(tmp_path: pathlib.Path) -> 
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             if self.calls >= 6:
@@ -5535,7 +5541,7 @@ def test_drive_loop_summarizes_midrun_then_completes(tmp_path: pathlib.Path) -> 
             # Large assistant text accumulates each turn; tier-1 can't elide it.
             big = "y" * 3000
             tid = f"t{self.calls}"
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text=big,
                 tool_uses=({"id": tid, "name": "noop", "input": {}},),
                 stop_reason="tool_use",
@@ -5555,7 +5561,7 @@ def test_drive_loop_summarizes_midrun_then_completes(tmp_path: pathlib.Path) -> 
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             return _resp("SUMMARY of progress so far")
@@ -5682,7 +5688,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if self.calls == 1:
                 # an edit -> gateless auto-commit -> seeds gateless_ever_edited
@@ -5878,7 +5884,7 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
             self.turns = 0
             self.saw_nudge = False
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.turns += 1
             # After the nudge, the turn's input carries _QUESTION_NUDGE.
             if nudges.QUESTION_NUDGE in _turn_input(kwargs["messages"]):
@@ -5962,7 +5968,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
             self.nudges = 0
             self.escalations = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             last = _turn_input(kwargs["messages"])
             if nudges.NO_PROGRESS_NUDGE[:28] in last:
@@ -6052,7 +6058,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
             self.calls = 0
             self.nudges = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.NO_PROGRESS_NUDGE[:28] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
@@ -6140,7 +6146,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if self.calls % 2 == 1:
                 return _tool_resp(
@@ -6222,7 +6228,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
             self.calls = 0
             self.nudges = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.SILENT_NO_WORK_NUDGE[:22] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
@@ -6283,7 +6289,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
             self.calls = 0
             self.nudges = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.SILENT_NO_WORK_NUDGE[:22] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
@@ -6353,7 +6359,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
             self.calls = 0
             self.nudges = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.NO_PROGRESS_NUDGE[:28] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
@@ -6449,7 +6455,7 @@ def test_drive_loop_leaves_result_deduplication_to_its_compactor(
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if self.calls <= 3:
                 return _tool_resp("read_file", {"path": "big.py"}, tool_id=f"r{self.calls}")
@@ -6535,7 +6541,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
             self.nudges = 0
             self.escs = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             last = _turn_input(kwargs["messages"])
             if nudges.TOOL_ERROR_NUDGE[:26] in last:
@@ -6616,7 +6622,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
             self.malformed_nudges = 0
             self.reach_notes = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             last = _turn_input(kwargs["messages"])
             if nudges.TOOL_DENIED_NUDGE[:30] in last:
@@ -6707,7 +6713,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
             self.calls = 0
             self.nudges = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if nudges.TOOL_ERROR_NUDGE[:26] in _turn_input(kwargs["messages"]):
                 self.nudges += 1
@@ -6902,7 +6908,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
             self.calls = 0
             self.reach_hits = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if any(
                 word in _turn_input(kwargs["messages"]) for word in ("sandbox-\n", "reachability")
@@ -6970,7 +6976,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if self.calls == 1:
                 return _tool_resp(
@@ -7044,7 +7050,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
     """The REPL hook's "stop" ends the run `interactive_stop` with verification="unverified"."""
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             return _tool_resp(
                 "apply_edit",
                 {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 1\n"}]},
@@ -7116,7 +7122,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
     """`/exit` ends the REPL as stopped, without a next command."""
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             return _tool_resp(
                 "apply_edit",
                 {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 1\n"}]},
@@ -7188,7 +7194,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
     """The REPL hook's "undo" is the loop's own /undo: the run ends `undone` naming the fork."""
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             return _tool_resp(
                 "apply_edit",
                 {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 1\n"}]},
@@ -7277,7 +7283,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
             self.calls = 0
             self.adoption_notices = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if "verify command was adopted" in _turn_input(kwargs["messages"]):
                 self.adoption_notices += 1
@@ -7365,7 +7371,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
             self.calls = 0
             self.adoption_notices = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if "verify command was adopted" in _turn_input(kwargs["messages"]):
                 self.adoption_notices += 1
@@ -7423,7 +7429,7 @@ def _run_command_provider(calls_before_idle: int) -> Any:
             self.calls = 0
             self.reachability_notes = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if "the sandbox cannot execute it" in _turn_input(kwargs["messages"]):
                 self.reachability_notes += 1
@@ -7645,10 +7651,10 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
     calls = {"n": 0}
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             calls["n"] += 1
-            return ProviderResponse(
+            return provider_types.ProviderResponse(
                 text="still thinking about the approach",
                 tool_uses=(),
                 stop_reason="end_turn",
@@ -8296,7 +8302,7 @@ def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: pathlib.Path) 
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             return _resp("PROGRESS SUMMARY: " + "s" * 4_000)  # bigger than the threshold
@@ -8401,13 +8407,13 @@ def _loop_config() -> Any:
 _TASK_WIRE = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
 
 
-def _two_call_resp() -> ProviderResponse:
+def _two_call_resp() -> provider_types.ProviderResponse:
     """One assistant message holding two tool calls, `call-a` then `call-b`."""
     blocks = [
         {"type": "tool_use", "id": "call-a", "name": "read_file", "input": {"path": "a"}},
         {"type": "tool_use", "id": "call-b", "name": "run_command", "input": {"argv": ["x"]}},
     ]
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=tuple({"id": b["id"], "name": b["name"], "input": b["input"]} for b in blocks),
         stop_reason="tool_use",
@@ -8428,7 +8434,7 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pat
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             self.calls += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command")
@@ -8483,7 +8489,7 @@ def test_an_end_declared_mid_turn_clears_the_turn_marker(tmp_path: pathlib.Path)
     marker = tmp_path / loop_snapshot.TURN_IN_FLIGHT_NAME
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             return _tool_resp("run_verify_command")
 
     class DispatcherStub(_StubDispatcher):
@@ -8522,7 +8528,7 @@ def _die_in_the_second_call(tmp_path: pathlib.Path) -> pathlib.Path:
     snapshot_path = tmp_path / "loop_state.json"
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             return _two_call_resp()
 
     class DispatcherStub(_StubDispatcher):
@@ -8570,7 +8576,7 @@ def test_a_resume_after_a_death_mid_turn_does_not_run_the_cut_off_call_again(
     dispatched: list[str] = []
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             sent.append(kwargs["messages"])
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-9")
 
@@ -8620,7 +8626,7 @@ def test_a_death_before_the_resumed_call_keeps_the_interrupted_turn(tmp_path: pa
     snapshot_path = _die_in_the_second_call(tmp_path)
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             raise _Died
 
     wf = _wf(
@@ -8664,7 +8670,7 @@ def test_a_resume_clears_a_marker_whose_turn_completed(tmp_path: pathlib.Path) -
     sent: list[list[dict[str, Any]]] = []
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             sent.append(kwargs["messages"])
             return _resp("done")
 
@@ -8695,7 +8701,7 @@ def test_a_resume_names_an_in_flight_record_that_does_not_parse(tmp_path: pathli
     logged: list[str] = []
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             return _resp("done")
 
     wf = _wf(
@@ -9414,9 +9420,9 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
 def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Path) -> None:
     """One turn's end is reviewed once: a surviving finish skips the plateau's end gates."""
 
-    def _tool_use(name: str, call_id: str, args: dict[str, Any]) -> ProviderResponse:
+    def _tool_use(name: str, call_id: str, args: dict[str, Any]) -> provider_types.ProviderResponse:
         block = {"type": "tool_use", "id": call_id, "name": name, "input": args}
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=({"id": call_id, "name": name, "input": args},),
             stop_reason="tool_use",
@@ -9431,7 +9437,7 @@ def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Pa
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             if self.calls == 8:
@@ -9444,7 +9450,7 @@ def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Pa
                         "input": {"summary": "done"},
                     },
                 ]
-                return ProviderResponse(
+                return provider_types.ProviderResponse(
                     text="",
                     tool_uses=tuple(
                         {"id": b["id"], "name": b["name"], "input": b["input"]} for b in blocks
@@ -9555,7 +9561,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             if self.calls == 1:
@@ -9633,7 +9639,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
         def __init__(self) -> None:
             self.calls = 0
 
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             del kwargs
             self.calls += 1
             if self.calls <= 3:
@@ -9790,7 +9796,7 @@ def test_finish_delivers_an_answer_that_lands_during_its_turn(
     calls: list[list[dict[str, Any]]] = []
 
     class ProviderStub:
-        def call(self, **kwargs: Any) -> ProviderResponse:
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             calls.append(kwargs["messages"])
             if len(calls) == 1:
                 return _tool_resp(
@@ -10061,7 +10067,7 @@ def test_media_recovery_updates_canonical_history_snapshot_and_execution_fact(
     response = wf._turn_provider_call(
         "s", conv, [], state, turn=1, ctx=wf._turn_context(state, turn=1, execution_start=1)
     )
-    assert isinstance(response, ProviderResponse) and response.text == "seen"
+    assert isinstance(response, provider_types.ProviderResponse) and response.text == "seen"
     assert provider.call.call_count == 2
     assert "Cannot deliver" in conv.to_wire()[-1]["content"][0]["content"]
     saved = json.loads((tmp_path / "loop_state.json").read_text())

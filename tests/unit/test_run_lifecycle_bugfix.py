@@ -22,7 +22,7 @@ from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.models import cache
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.ui.cli import cli_main
 
 
@@ -76,13 +76,13 @@ class _Scripted:
         self.calls = 0
         self._before = before_call
 
-    def call(self, **_kw: Any) -> ProviderResponse:
+    def call(self, **_kw: Any) -> provider_types.ProviderResponse:
         if self._before is not None:
             self._before(self.calls)
         i = min(self.calls, len(self.script) - 1)
         self.calls += 1
         text, tools = self.script[i]
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text=text,
             tool_uses=tools,
             stop_reason="tool_use" if tools else "end_turn",

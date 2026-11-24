@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from agent6 import kinds
 from agent6.config import Config
-from agent6.providers import ToolDefinition
+from agent6.providers import provider_types
 from agent6.tools import dispatch as tools_dispatch
 from agent6.tools import schema as tools_schema
 
@@ -27,7 +27,7 @@ def tool_definitions(
     dispatcher: tools_dispatch.ToolDispatcher,
     *,
     mode: kinds.SessionMode = "run",
-) -> list[ToolDefinition]:
+) -> list[provider_types.ToolDefinition]:
     """Build the tool list the loop exposes in a mode.
 
     Args:
@@ -39,7 +39,7 @@ def tool_definitions(
     """
     available = set(dispatcher.available_tool_names())
     surface = tools_schema.mode_tools(mode)
-    out: list[ToolDefinition] = []
+    out: list[provider_types.ToolDefinition] = []
     for cls in (*surface.base, *surface.extras):
         if cls.TOOL_NAME not in available and cls not in surface.extras:
             continue  # the extras are exposed without being in ALL_TOOLS
@@ -81,7 +81,7 @@ def tool_definitions(
                 cls.CHILDREN_NOTE.lstrip() if child_stop else description + cls.CHILDREN_NOTE
             )
         out.append(
-            ToolDefinition(
+            provider_types.ToolDefinition(
                 name=cls.TOOL_NAME,
                 description=description,
                 input_schema=tools_schema.wire_schema(cls),
@@ -93,7 +93,7 @@ def tool_definitions(
             schema = dict(desc.input_schema)
             schema.setdefault("type", "object")
             out.append(
-                ToolDefinition(
+                provider_types.ToolDefinition(
                     name=desc.qualified_name,
                     description=desc.description or f"MCP tool {desc.tool_name!r}",
                     input_schema=schema,

@@ -12,20 +12,14 @@ import pytest
 
 from agent6.config import Config
 from agent6.harness import loop, loop_conversation, loop_state, run_chain
-from agent6.providers import (
-    OpenAIProvider,
-    ToolDefinition,
-    TranscriptSink,
-    openai_parse,
-    openai_recovery,
-)
+from agent6.providers import openai, openai_parse, openai_recovery, provider_types
 from agent6.sessions import event_log
 from agent6.tools import dispatch
 from agent6.viewmodel import transcript_render
 from tests.unit.turn_context import turn_context
 
 _TOOLS = frozenset({"list_dir", "read_file"})
-_READ_FILE = ToolDefinition(
+_READ_FILE = provider_types.ToolDefinition(
     name="read_file",
     description="Read a file",
     input_schema={
@@ -34,7 +28,7 @@ _READ_FILE = ToolDefinition(
         "required": ["path"],
     },
 )
-_LIST_DIR = ToolDefinition(
+_LIST_DIR = provider_types.ToolDefinition(
     name="list_dir",
     description="List a directory",
     input_schema={
@@ -118,7 +112,7 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: pathlib.Path
     harness = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
         config=Config(),
-        provider=OpenAIProvider(api_key="k", model="weak-model"),
+        provider=openai.OpenAIProvider(api_key="k", model="weak-model"),
         dispatcher=dispatcher,
         logger=lambda _: None,
     )
@@ -203,10 +197,12 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     transcripts = tmp_path / "transcripts"
-    provider = OpenAIProvider(
+    provider = openai.OpenAIProvider(
         api_key="k",
         model="weak-model",
-        transcript_sink=TranscriptSink(transcripts, objects_dir=tmp_path / "objects"),
+        transcript_sink=provider_types.TranscriptSink(
+            transcripts, objects_dir=tmp_path / "objects"
+        ),
     )
     conversation = loop_conversation.Conversation()
     conversation.notice("Read a.py")
@@ -272,7 +268,7 @@ def test_malformed_recovered_call_returns_only_its_error(
         return _Response(model_text)
 
     monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
-    provider = OpenAIProvider(api_key="k", model="weak-model")
+    provider = openai.OpenAIProvider(api_key="k", model="weak-model")
     response = provider.call(
         system="system",
         messages=[{"role": "user", "content": "Read a.py"}],

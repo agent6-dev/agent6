@@ -13,7 +13,13 @@ import pytest
 
 from agent6 import kinds
 from agent6.config import OAuthExchangeConfig
-from agent6.providers import ProviderError, oauth_chatgpt, oauth_exchange, oauth_protocol, transport
+from agent6.providers import (
+    oauth_chatgpt,
+    oauth_exchange,
+    oauth_protocol,
+    provider_types,
+    transport,
+)
 
 
 class _Resp:
@@ -30,7 +36,7 @@ class _Resp:
 def test_a_grant_whose_token_cannot_ride_a_header_is_refused_without_its_value() -> None:
     """A trailing newline in an access token would otherwise surface in h11's error text."""
     secret = "SECRET-TOKEN-VALUE\n"
-    with pytest.raises(ProviderError, match="cannot ride a header") as refused:
+    with pytest.raises(provider_types.ProviderError, match="cannot ride a header") as refused:
         oauth_protocol.grant_from_response(
             _Resp(200, {"access_token": secret, "expires_in": 60}),  # pyrefly: ignore[bad-argument-type]
             operation="exchange",
@@ -86,7 +92,7 @@ def test_a_redirect_line_shows_no_location(monkeypatch: pytest.MonkeyPatch) -> N
         require_metered=lambda _d: None,
         parse=lambda _d: None,  # pyrefly: ignore[bad-argument-type]
     )
-    with pytest.raises(ProviderError, match="redirected") as refused:
+    with pytest.raises(provider_types.ProviderError, match="redirected") as refused:
         call.run()
     assert "SECRETVALUE" not in str(refused.value) and "evil.example" not in str(refused.value)
 
@@ -128,7 +134,7 @@ def test_a_device_grant_with_a_control_character_in_its_uri_is_refused(
         )
 
     monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
-    with pytest.raises(ProviderError, match="unusable verification URI") as refused:
+    with pytest.raises(provider_types.ProviderError, match="unusable verification URI") as refused:
         oauth_protocol.start_device_grant(
             "https://login.example/device", "c", scopes=(), encoding="form", label="work"
         )
@@ -144,7 +150,7 @@ def test_an_exchange_transport_error_scrubs_the_issuer_token(
         raise httpx2.LocalProtocolError(f"Illegal header value b'Bearer {token}'")
 
     monkeypatch.setattr(transport, "http_request", failing_post)
-    with pytest.raises(ProviderError, match="could not reach") as refused:
+    with pytest.raises(provider_types.ProviderError, match="could not reach") as refused:
         oauth_exchange.run_exchange(
             OAuthExchangeConfig(endpoint="https://credentials.example/token"), token
         )
@@ -176,7 +182,7 @@ def test_chatgpt_device_redirect_refuses_without_reading_the_body(
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT"})
 
     monkeypatch.setattr(oauth_protocol, "post_form", post_form)
-    with pytest.raises(ProviderError, match="redirected") as refused:
+    with pytest.raises(provider_types.ProviderError, match="redirected") as refused:
         if poll:
             oauth_chatgpt.poll_device_auth(
                 "https://auth.example",
@@ -204,7 +210,7 @@ def test_chatgpt_device_poll_scrubs_both_codes(
         return _Resp(500, {}, text=text)
 
     monkeypatch.setattr(oauth_protocol, "post_json", fail)
-    with pytest.raises(ProviderError) as refused:
+    with pytest.raises(provider_types.ProviderError) as refused:
         oauth_chatgpt.poll_device_auth("https://auth.example", "c", device, provider="alias")
     assert "secret" not in str(refused.value)
     assert "AB-12" not in str(refused.value)
@@ -222,7 +228,7 @@ def test_chatgpt_device_start_refuses_unsafe_displayed_codes(
         return response
 
     monkeypatch.setattr(oauth_protocol, "post_json", post_json)
-    with pytest.raises(ProviderError, match="user code"):
+    with pytest.raises(provider_types.ProviderError, match="user code"):
         oauth_chatgpt.start_device_auth("https://auth.example", "c")
 
 
@@ -237,7 +243,7 @@ def test_chatgpt_device_malformed_interval_does_not_echo_credentials(
         return response
 
     monkeypatch.setattr(oauth_protocol, "post_json", post_json)
-    with pytest.raises(ProviderError, match="malformed") as refused:
+    with pytest.raises(provider_types.ProviderError, match="malformed") as refused:
         oauth_chatgpt.start_device_auth("https://auth.example", "c")
     assert "echoed-secret" not in str(refused.value)
 
@@ -258,7 +264,7 @@ def test_chatgpt_device_poll_requires_usable_exchange_fields(
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT"})
 
     monkeypatch.setattr(oauth_protocol, "post_form", post_form)
-    with pytest.raises(ProviderError, match="malformed"):
+    with pytest.raises(provider_types.ProviderError, match="malformed"):
         oauth_chatgpt.poll_device_auth(
             "https://auth.example", "c", oauth_chatgpt.DeviceAuth("D", "AB-12", 5), provider="alias"
         )

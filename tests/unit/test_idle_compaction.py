@@ -10,10 +10,11 @@ from typing import Any
 
 import pytest
 
-from agent6 import config, providers
+from agent6 import config
 from agent6.app import role_providers
 from agent6.harness import loop_conversation, loop_steer, operator_bridge
 from agent6.harness.compaction import driver, window
+from agent6.providers import provider_types
 from agent6.sessions import journal
 from agent6.tools import operator_prompts, schema, waits
 from tests.sandbox import test_command_checkin as commands
@@ -35,10 +36,10 @@ def test_worker_clock_uses_the_start_of_the_successful_attempt() -> None:
     starts: list[float] = []
 
     class Retry:
-        def call(self, **_kwargs: Any) -> providers.ProviderResponse:
+        def call(self, **_kwargs: Any) -> provider_types.ProviderResponse:
             starts.append(time.monotonic())
             if len(starts) == 1:
-                raise providers.ProviderError("transient")
+                raise provider_types.ProviderError("transient")
             return writers.response()
 
     caller = test_harness._caller(Retry(), retry_count=1)

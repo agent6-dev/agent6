@@ -20,7 +20,7 @@ from agent6.config import Config
 from agent6.graph import curator as graph_curator
 from agent6.harness import loop, operator_bridge, provider_call, run_chain, toolset
 from agent6.harness.parallel import merge as parallel_merge
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import child_dispatch, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import background, child_tools, dispatch, schema, tool_errors
@@ -414,9 +414,9 @@ def test_the_description_names_every_role_the_providers_and_the_limits(
 # ---- through the real harness --------------------------------------------------------------
 
 
-def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> ProviderResponse:
+def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> provider_types.ProviderResponse:
     block = {"type": "tool_use", "id": tu_id, "name": name, "input": args}
-    return ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
         stop_reason="tool_use",

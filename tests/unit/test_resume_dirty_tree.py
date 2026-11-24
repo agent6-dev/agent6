@@ -21,7 +21,7 @@ import pytest
 from agent6 import paths
 from agent6.app import resume_tree, role_providers
 from agent6.app.session import runtime as session_runtime
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import cli_main, run
@@ -59,13 +59,13 @@ class _Scripted:
         self.requests: list[list[dict[str, Any]]] = []  # the messages of each call
         self._before = before_call
 
-    def call(self, **kw: Any) -> ProviderResponse:
+    def call(self, **kw: Any) -> provider_types.ProviderResponse:
         if self._before is not None:
             self._before(self.calls)
         self.requests.append(list(kw.get("messages", ())))
         text, tools = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text=text,
             tool_uses=tools,
             stop_reason="tool_use" if tools else "end_turn",

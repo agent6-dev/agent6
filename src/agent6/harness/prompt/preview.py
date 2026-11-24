@@ -15,7 +15,7 @@ from agent6.harness import toolset
 from agent6.harness.prompt import blocks as prompt_blocks
 from agent6.harness.prompt import repo_context
 from agent6.harness.tasks import focus as dag_focus
-from agent6.providers import ToolDefinition
+from agent6.providers import provider_types
 from agent6.sandbox import detect, jail
 from agent6.tools import dispatch, tool_errors
 
@@ -71,7 +71,7 @@ class ModelExchange:
 
     mode: str
     system: str
-    tools: tuple[ToolDefinition, ...]
+    tools: tuple[provider_types.ToolDefinition, ...]
     first_message: str
     mcp_pending: bool
 

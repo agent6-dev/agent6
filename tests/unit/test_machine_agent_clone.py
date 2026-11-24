@@ -20,7 +20,7 @@ from agent6.app import reporter, role_providers
 from agent6.app.machine import agent, state_configs
 from agent6.config import Config
 from agent6.machine import contracts
-from agent6.providers import ProviderResponse
+from agent6.providers import provider_types
 from agent6.sandbox import jail as sandbox_jail
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -691,12 +691,12 @@ class _Finishes:
 
     calls = 0
 
-    def call(self, **_kw: Any) -> ProviderResponse:
+    def call(self, **_kw: Any) -> provider_types.ProviderResponse:
         self.calls += 1
         tools = (
             {"type": "tool_use", "id": "t1", "name": "finish_session", "input": {"summary": "ok"}},
         )
-        return ProviderResponse(
+        return provider_types.ProviderResponse(
             text="",
             tool_uses=tools,
             stop_reason="tool_use",

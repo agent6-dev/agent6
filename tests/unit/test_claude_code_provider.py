@@ -31,15 +31,11 @@ from agent6.app import role_providers
 from agent6.config import Config
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.providers import (
-    ProviderAborted,
-    ProviderError,
-    ProviderInterrupted,
-    ToolDefinition,
-    TranscriptSink,
-    call_for_text,
     claude_code,
     claude_code_session,
     claude_code_wire,
+    provider_calls,
+    provider_types,
     stream_lifecycle,
 )
 from agent6.sessions import event_log
@@ -47,7 +43,7 @@ from agent6.viewmodel import transcript_render
 
 FAKE = pathlib.Path(__file__).with_name("fake_claude.py")
 TOOLS = [
-    ToolDefinition(
+    provider_types.ToolDefinition(
         name="read_file",
         description="Read a file.",
         input_schema={
@@ -57,7 +53,7 @@ TOOLS = [
             "additionalProperties": False,
         },
     ),
-    ToolDefinition(
+    provider_types.ToolDefinition(
         name="finish_session",
         description="Finish.",
         input_schema={
@@ -260,7 +256,7 @@ def test_malformed_inline_frame_is_reported_instead_of_stranding_the_reader(
     monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 10.0)
     binary, cap = _install(tmp_path, {"malformed_initialize": True})
 
-    with pytest.raises(ProviderError, match="invalid stream-json message"):
+    with pytest.raises(provider_types.ProviderError, match="invalid stream-json message"):
         _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
 
     assert not _alive(_spawns(cap)[0]["pid"])
@@ -275,7 +271,7 @@ def test_account_email_is_scrubbed_and_never_recorded(tmp_path: pathlib.Path) ->
             "turns": [[_round(thinking=f"user is {email}", text=f"Hi {email}, done")]],
         },
     )
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = _provider(binary, transcript_sink=sink)
     resp = provider.call(system="s", messages=USER0, tools=None)
     assert resp.text == "Hi <operator-email>, done"
@@ -290,7 +286,7 @@ def test_local_transcript_keeps_the_call_id_without_an_http_request_id(
 ) -> None:
     """A local process records its logical call identity without inventing an HTTP attempt."""
     binary, _ = _install(tmp_path, {"turns": [[_round(text="ok")]]})
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     inner = _provider(binary, transcript_sink=sink.for_actor("worker"))
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     provider = role_providers.InstrumentedProvider(
@@ -324,8 +320,8 @@ def test_a_cut_process_round_keeps_the_model_from_message_start(tmp_path: pathli
         tmp_path,
         {"init": {"model": "init-alias"}, "turns": [[_round(text="ok")]], "die_in_round": 1},
     )
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
-    with pytest.raises(ProviderError, match="exited") as exc:
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    with pytest.raises(provider_types.ProviderError, match="exited") as exc:
         _provider(binary, transcript_sink=sink).call(system="s", messages=USER0)
     assert exc.value.serving.model == "claude-haiku-4-5-20251001"
     (path,) = (tmp_path / "transcripts").glob("*.json")
@@ -340,12 +336,12 @@ def test_system_init_audit_refuses_a_foreign_tool_or_an_api_key(tmp_path: pathli
         {"init": {"tools": ["mcp__agent6__read_file", "mcp__agent6__finish_session", "Bash"]}},
     )
     provider = _provider(binary)
-    with pytest.raises(ProviderError, match="extra: Bash") as exc:
+    with pytest.raises(provider_types.ProviderError, match="extra: Bash") as exc:
         provider.call(system="s", messages=USER0, tools=TOOLS)
     assert exc.value.fatal
     assert not _alive(_spawns(cap)[0]["pid"])
     _rescenario(tmp_path, {"init": {"apiKeySource": "ANTHROPIC_API_KEY"}})
-    with pytest.raises(ProviderError, match="API key source") as exc:
+    with pytest.raises(provider_types.ProviderError, match="API key source") as exc:
         provider.call(system="s", messages=USER0, tools=TOOLS)
     assert exc.value.fatal
 
@@ -507,7 +503,7 @@ def test_changed_tool_definition_restarts_the_session(tmp_path: pathlib.Path) ->
     provider = _provider(binary)
     first = provider.call(system="s", messages=USER0, tools=TOOLS)
     changed_tools = [
-        ToolDefinition(
+        provider_types.ToolDefinition(
             name="read_file",
             description="Read one UTF-8 file.",
             input_schema=TOOLS[0].input_schema,
@@ -581,13 +577,13 @@ def test_budget_sums_rounds_and_fails_closed_without_a_reading_or_usage(
     provider.close()
 
     _rescenario(tmp_path, {"rate_limit": {"when": "never"}, "turns": [[_round(text="x")]]})
-    with pytest.raises(ProviderError, match="no plan window") as exc:
+    with pytest.raises(provider_types.ProviderError, match="no plan window") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert exc.value.fatal  # a retry replays the round into the same absence
 
     _rescenario(tmp_path, {"turns": [[_round(text="x", usage=_usage(0, 5))]]})
     refused = _provider(binary)
-    with pytest.raises(ProviderError, match="no usage input tokens"):
+    with pytest.raises(provider_types.ProviderError, match="no usage input tokens"):
         refused.call(system="s", messages=USER0, tools=None)
     # The round was generated and the plan window moved: on the ledger before the refusal.
     assert refused.budget is not None and refused.budget.snapshot().output_total == 5
@@ -625,13 +621,13 @@ def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(
     binary, cap = _install(tmp_path, {"hang_s": 30, "turns": [[_round(text="x")]]})
     provider = _provider(binary)
     started = time.monotonic()
-    with pytest.raises(ProviderAborted):
+    with pytest.raises(provider_types.ProviderAborted):
         provider.call(
             system="s", messages=USER0, tools=TOOLS, should_abort=lambda: len(_spawns(cap)) >= 1
         )
     assert time.monotonic() - started < 5
     assert not _alive(_spawns(cap)[0]["pid"])
-    with pytest.raises(ProviderInterrupted):
+    with pytest.raises(provider_types.ProviderInterrupted):
         provider.call(
             system="s",
             messages=USER0,
@@ -651,7 +647,7 @@ def test_idle_child_is_killed_after_the_stream_timeout(
     monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
     binary, cap = _install(tmp_path, {"hang_s": 10, "turns": [[_round(text="x")]]})
     provider = _provider(binary)
-    with pytest.raises(ProviderError, match="produced no output") as exc:
+    with pytest.raises(provider_types.ProviderError, match="produced no output") as exc:
         provider.call(system="s", messages=USER0, tools=TOOLS)
     assert not exc.value.fatal
     assert not _alive(_spawns(cap)[0]["pid"])
@@ -666,7 +662,7 @@ def test_stream_ping_does_not_mask_an_idle_child(
         {"hang_s": 0.8, "while_hanging": "ping", "turns": [[_round(text="late")]]},
     )
 
-    with pytest.raises(ProviderError, match="produced no output"):
+    with pytest.raises(provider_types.ProviderError, match="produced no output"):
         _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
 
 
@@ -683,7 +679,7 @@ def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
         {"hang_s": 0.8, "while_hanging": "rate_limit", "turns": [[_round(text="late")]]},
     )
 
-    with pytest.raises(ProviderError, match="produced no output"):
+    with pytest.raises(provider_types.ProviderError, match="produced no output"):
         _provider(binary).call(system="s", messages=USER0, tools=TOOLS)
 
 
@@ -781,7 +777,9 @@ def test_a_call_the_cli_refuses_after_an_answer_ends_the_call_with_its_reason(
     provider = _provider(binary)
     first = provider.call(system="s", messages=USER0, tools=TOOLS)
     assert first.refused == {}
-    with pytest.raises(ProviderError, match="refused tool call toolu_2 itself") as exc:
+    with pytest.raises(
+        provider_types.ProviderError, match="refused tool call toolu_2 itself"
+    ) as exc:
         provider.call(
             system="s",
             messages=[
@@ -816,12 +814,12 @@ def test_an_echoed_reason_is_its_first_line_without_the_tag() -> None:
 
 
 def test_failures_map_to_provider_errors(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(ProviderError, match="not found on PATH") as exc:
+    with pytest.raises(provider_types.ProviderError, match="not found on PATH") as exc:
         _provider(str(tmp_path / "missing")).call(system="s", messages=USER0, tools=None)
     assert exc.value.fatal
 
     binary, _ = _install(tmp_path, {"die_in_round": 1, "turns": [[_round(text="x")]]})
-    with pytest.raises(ProviderError, match="exited 3: boom") as exc:
+    with pytest.raises(provider_types.ProviderError, match="exited 3: boom") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert not exc.value.fatal
 
@@ -845,7 +843,7 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
         real(pipe, keep, close=close)
 
     monkeypatch.setattr(portable, "drain_stderr", lagging)
-    with pytest.raises(ProviderError, match="exited 3: boom late"):
+    with pytest.raises(provider_types.ProviderError, match="exited 3: boom late"):
         _provider(binary).call(system="s", messages=USER0, tools=None)
 
     _rescenario(
@@ -855,12 +853,12 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
             "turns": [[_round(text="x")]],
         },
     )
-    with pytest.raises(ProviderError, match="error_during_execution") as exc:
+    with pytest.raises(provider_types.ProviderError, match="error_during_execution") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert not exc.value.fatal
 
     _rescenario(tmp_path, {"synthetic_error": {"text": "Not logged in · Please run /login"}})
-    with pytest.raises(ProviderError, match="claude auth login") as exc:
+    with pytest.raises(provider_types.ProviderError, match="claude auth login") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert exc.value.fatal and exc.value.status_code is None
 
@@ -919,14 +917,14 @@ def test_side_call_is_one_process_and_call_for_text_returns_the_text(
     )
     assert resp.text == "LGTM"
     assert not _alive(_spawns(cap)[0]["pid"])
-    assert call_for_text(provider, system="s", user="u", max_tokens=10) == "LGTM"
+    assert provider_calls.call_for_text(provider, system="s", user="u", max_tokens=10) == "LGTM"
     assert len(_spawns(cap)) == 2 and not _alive(_spawns(cap)[1]["pid"])
     assert _user_texts(cap) == ["DIFF", "u"]
 
 
 def test_transcript_round_is_anthropic_shaped(tmp_path: pathlib.Path) -> None:
     binary, _ = _install(tmp_path, {"turns": [[_round(text="hello")]]})
-    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     _provider(binary, transcript_sink=sink).call(system="sys", messages=USER0, tools=None)
     files = sorted((tmp_path / "transcripts").glob("*.json"))
     assert len(files) == 1
@@ -1027,7 +1025,7 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Pa
             }
         )
 
-    sink = TranscriptSink(tmp_path / "t", objects_dir=tmp_path / "objects")
+    sink = provider_types.TranscriptSink(tmp_path / "t", objects_dir=tmp_path / "objects")
     provider = role_providers.build_role_provider(
         cfg("low"), "worker", transcript_sink=sink, budget=_budget()
     )
@@ -1038,7 +1036,7 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Pa
         "claude-haiku-4-5",
     )
     assert provider.context_tokens == 200_000
-    with pytest.raises(ProviderError, match="effort = off") as exc:
+    with pytest.raises(provider_types.ProviderError, match="effort = off") as exc:
         role_providers.build_role_provider(
             cfg("off"), "worker", transcript_sink=sink, budget=_budget()
         )
@@ -1130,7 +1128,7 @@ def test_a_side_call_leaves_the_live_worker_session_untouched(tmp_path: pathlib.
     provider = _provider(binary)
     first = provider.call(system="s", messages=USER0, tools=TOOLS)
     worker_pid = _spawns(cap)[0]["pid"]
-    call_for_text(provider, system="commit", user="files", max_tokens=10)
+    provider_calls.call_for_text(provider, system="commit", user="files", max_tokens=10)
     assert _alive(worker_pid)
     assert len(_spawns(cap)) == 2 and not _alive(_spawns(cap)[1]["pid"])
     second = provider.call(
@@ -1330,7 +1328,7 @@ def test_result_and_stderr_error_text_is_scrubbed(tmp_path: pathlib.Path) -> Non
             "turns": [[_round(text="x")]],
         },
     )
-    with pytest.raises(ProviderError, match="error_during_execution") as exc:
+    with pytest.raises(provider_types.ProviderError, match="error_during_execution") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert email not in str(exc.value) and "<operator-email>" in str(exc.value)
     _rescenario(
@@ -1342,7 +1340,7 @@ def test_result_and_stderr_error_text_is_scrubbed(tmp_path: pathlib.Path) -> Non
             "turns": [[_round(text="x")]],
         },
     )
-    with pytest.raises(ProviderError, match="exited 3") as exc:
+    with pytest.raises(provider_types.ProviderError, match="exited 3") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert email not in str(exc.value) and "<operator-email>" in str(exc.value)
 
@@ -1364,7 +1362,7 @@ def test_a_result_with_an_api_error_status_carries_it(tmp_path: pathlib.Path) ->
             "turns": [[_round(text="x")]],
         },
     )
-    with pytest.raises(ProviderError, match="HTTP 404") as exc:
+    with pytest.raises(provider_types.ProviderError, match="HTTP 404") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert exc.value.status_code == 404 and not exc.value.fatal
 
@@ -1417,7 +1415,7 @@ def test_an_oversize_tool_result_is_refused_before_claude_code_persists_it(
             "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "x" * 50_001}],
         },
     ]
-    with pytest.raises(ProviderError, match="50000-byte threshold") as exc:
+    with pytest.raises(provider_types.ProviderError, match="50000-byte threshold") as exc:
         provider.call(system="s", messages=history, tools=TOOLS)
     assert exc.value.fatal
     provider.close()
@@ -1433,7 +1431,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     from agent6.harness import nudges
     from agent6.harness.review import panel as review_panel
     from agent6.harness.verify import gate as verify_gate
-    from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
+    from agent6.providers import claude_code_wire
     from agent6.tools import results
 
     cc = Config.model_validate(
@@ -1452,7 +1450,9 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
         session_runtime.tool_result_cap_bytes(Config(), "worker")
         == compaction_elision.TOOL_RESULT_CAP_BYTES
     )
-    assert compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
+    assert (
+        compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES < claude_code_wire.CLAUDE_CODE_PERSIST_BYTES
+    )
     wide = compaction_elision.cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
     gate = results.ExecResult(
         returncode=1,
@@ -1468,7 +1468,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
         nudges.STAGNATION_NUDGE,
         nudges.RUN_BUDGET_NUDGE,
     ]
-    assert sum(len(text.encode()) for text in turn) < CLAUDE_CODE_PERSIST_BYTES
+    assert sum(len(text.encode()) for text in turn) < claude_code_wire.CLAUDE_CODE_PERSIST_BYTES
 
 
 def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
@@ -1576,7 +1576,7 @@ def test_two_text_blocks_in_a_round_stay_separated(tmp_path: pathlib.Path) -> No
 def test_stdin_line_cap_counts_json_envelope_before_writing() -> None:
     """An encoded MCP reply cannot exceed the stdout line cap once its envelope is included."""
     session = mock.MagicMock()
-    with pytest.raises(ProviderError, match="8 MiB"):
+    with pytest.raises(provider_types.ProviderError, match="8 MiB"):
         claude_code_session.write(session, {"payload": "x" * (8 * 1024 * 1024)})
     session.proc.stdin.write.assert_not_called()
 
@@ -1635,7 +1635,9 @@ def test_media_mcp_answer_bypasses_text_guard_and_omits_persistence(
     )
     provider = _provider(
         binary,
-        transcript_sink=TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects"),
+        transcript_sink=provider_types.TranscriptSink(
+            tmp_path / "transcripts", objects_dir=tmp_path / "objects"
+        ),
     )
     try:
         first = provider.call(system="s", messages=USER0, tools=TOOLS)
@@ -1729,7 +1731,7 @@ def test_media_line_cap_refuses_before_writing_to_fake(
     try:
         if continuing:
             provider.call(system="s", messages=USER0, tools=TOOLS)
-        with pytest.raises(ProviderError, match="8 MiB line cap"):
+        with pytest.raises(provider_types.ProviderError, match="8 MiB line cap"):
             provider.call(system="s", messages=history, tools=TOOLS)
         assert not _tool_answers(cap)
         assert len(_user_texts(cap)) == int(continuing)

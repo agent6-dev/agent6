@@ -14,7 +14,7 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6.app import role_providers
-from agent6.providers import AnthropicProvider
+from agent6.providers import anthropic
 from agent6.sessions import event_log
 from agent6.ui.cli import console_render, sessions_show
 from agent6.ui.tui import conversation as tui_conversation
@@ -45,7 +45,7 @@ def _journal(
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     logs = tmp_path / "logs.jsonl"
     provider = role_providers.InstrumentedProvider(
-        inner=AnthropicProvider(api_key="k", model="m", provider_name="p", budget=budget),
+        inner=anthropic.AnthropicProvider(api_key="k", model="m", provider_name="p", budget=budget),
         actor="worker",
         model="m",
         provider_name="p",

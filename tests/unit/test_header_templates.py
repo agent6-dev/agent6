@@ -17,14 +17,7 @@ from agent6 import budget as agent6_budget
 from agent6.app import conversation_state, role_providers
 from agent6.config import Config, OpenAIProviderEntry, secret_store
 from agent6.models import cache
-from agent6.providers import (
-    ProviderResponse,
-    oauth,
-    oauth_protocol,
-    provider_types,
-    request_headers,
-    transport,
-)
+from agent6.providers import oauth, oauth_protocol, provider_types, request_headers, transport
 
 _HEX32 = "0123456789abcdef"
 
@@ -301,8 +294,8 @@ def test_every_attempt_mints_its_own_request_id_and_reports_it(
     assert all(f.target == "inference" and f.model == "m" for f in observed)
 
 
-def _resp() -> ProviderResponse:
-    return ProviderResponse(
+def _resp() -> provider_types.ProviderResponse:
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=(),
         stop_reason="end_turn",
@@ -341,7 +334,7 @@ class _Inner:
     def __init__(self) -> None:
         self.contexts: list[request_headers.RequestContext] = []
 
-    def call(self, **kw: Any) -> ProviderResponse:
+    def call(self, **kw: Any) -> provider_types.ProviderResponse:
         context = kw["context"]
         assert isinstance(context, request_headers.RequestContext)
         self.contexts.append(context)
