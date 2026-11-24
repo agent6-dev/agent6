@@ -1097,8 +1097,10 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
       The URL is operator-supplied and nothing fetched is executed
 - `app/notify_hook.py`: the operator notify hook (`run_notify_hook`): `[notify].on_event` at a session's end and, from `machine run`, on a machine's notify and end (built by `app/machine/host_preflight.build_machine_notify_hook`).
   Argv from config, env from `hook_env` (a minimal base plus `AGENT6_NOTIFY_*` and `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
-- `app/machine/scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.
+- `app/machine/scriptcheck.py`: ruff and pyrefly with fixed argv, reading generated scripts statically.
   Those scripts execute only via `run_in_jail`.
+  pyrefly gets an empty config file, so it reads none from the bundle.
+  pyrefly gets the `python3` on `PATH` as its interpreter and asks it for its version and package paths, so it runs none from a `.venv` in the bundle.
 - `app/machine/agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
 - `ui/tui/clipboard.py`: `tmux load-buffer -w -` with fixed argv and the copied transcript text on stdin.
 - `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment, transcript text on stdin.

@@ -210,7 +210,7 @@ For each script that has a seam, ALSO emit `scripts/<name>_test.py` that:
 
 Structure each script so its core logic is a small function the test calls
 directly and `main()` only does argv/env/stdout — that makes the seam easy to
-patch. `machine create` and `machine test` LINT (ruff), TYPE-CHECK (ty), and run
+patch. `machine create` and `machine test` LINT (ruff), TYPE-CHECK (pyrefly), and run
 these tests in a no-network jail: a script that isn't typed, isn't lint-clean,
 or whose test needs the real network fails the gate. Default to `python3` + the
 standard library; you may name another available interpreter in `command`
@@ -466,7 +466,7 @@ if __name__ == "__main__":
     mock the seam, or they fail the gate. A script with no `*_test.py` is not
     caught by the gate, so write one for every seam.
   - A script that isn't typed or isn't lint-clean: `machine create` runs ruff +
-    ty and rejects it. Annotate functions; keep imports used.
+    pyrefly and rejects it. Annotate functions; keep imports used.
   - `list[record]` / `list[{...}]` types: unsupported. Append records to a
     file from a tool script and keep a counter in the blackboard (see above).
   - A `tool` script that exits non-zero or times out: capture does not fire

@@ -44,7 +44,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "check",
         help=(
             "Validate a .asm.toml machine file: parse, type-check, reachability,"
-            " bundle paths, and static script lint/types (ruff + ty). No execution."
+            " bundle paths, and static script lint/types (ruff + pyrefly). No execution."
         ),
     )
     _add_file(machine_check)

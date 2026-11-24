@@ -61,7 +61,7 @@ def build_authoring_prompt(
         ' `network = "host"` on its state if it touches the network, prints'
         " ONE JSON object on stdout matching its `output_schema`, and exits 0 on"
         " success. Type-annotate it and keep it lint-clean: `machine create` runs"
-        " ruff + ty and rejects it otherwise. For every script with an external"
+        " ruff + pyrefly and rejects it otherwise. For every script with an external"
         " seam (network/clock/files), ALSO write a `scripts/<name>_test.py` that"
         " mocks the seam and asserts the contract; these run offline in a"
         " no-network jail so the operator can simulate the machine without live"

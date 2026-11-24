@@ -2,12 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Validate the scripts `machine create` generates: lint-clean, typed, and simulated offline.
 
-Two layers, matching their risk. `lint_and_typecheck` is static analysis (ruff and ty read
-the files, never run them), so it shells out with a fixed argv; ruff runs on the real files
-under its own config discovery, ty checks a private temp copy. `run_offline_tests` executes
-each `*_test.py`, model-authored code, so it goes through `run_in_jail` with no network.
+Two layers, matching their risk. `lint_and_typecheck` is static analysis (ruff and pyrefly
+read the files, never run them), so it shells out with a fixed argv; ruff runs under its own
+config discovery, pyrefly under an empty config and the `strict` preset. `run_offline_tests`
+executes each `*_test.py`, model-authored code, so it goes through `run_in_jail` with no network.
 
-A missing ruff or ty is skipped silently, so a stripped install still produces a bundle. An
+A missing ruff or pyrefly is skipped silently, so a stripped install still produces a bundle. An
 unavailable jail surfaces a diagnostic, except on isolation `none`, where execution is skipped.
 """
 
@@ -32,7 +32,7 @@ _MAX_DIAG_LINES = 30
 
 
 def _resolve_tool(name: str) -> list[str] | None:
-    """Return the argv prefix that runs a dev tool (`ruff`, `ty`), or None when it is absent.
+    """Return the argv prefix that runs a tool (`ruff`, `pyrefly`), or None when it is absent.
 
     Args:
         name: The tool's command name.
@@ -54,8 +54,8 @@ def _resolve_tool(name: str) -> list[str] | None:
 
 
 def available_tools() -> list[str]:
-    """Return which of ruff and ty resolve in this environment."""
-    return [name for name in ("ruff", "ty") if _resolve_tool(name) is not None]
+    """Return which of ruff and pyrefly resolve in this environment."""
+    return [name for name in ("ruff", "pyrefly") if _resolve_tool(name) is not None]
 
 
 def _trim(text: str) -> str:
@@ -186,22 +186,30 @@ def lint_and_typecheck(
             problems.append(problem)
     else:
         print("note: ruff not installed; script lint skipped", file=sys.stderr)
-    if ty := _resolve_tool("ty"):
-        real = sorted(p for p in scripts_dir.rglob("*.py") if not p.name.endswith(_TEST_SUFFIX))
+    if pyrefly := _resolve_tool("pyrefly"):
+        base = scripts_dir.resolve()
+        real = sorted(
+            base / p.relative_to(scripts_dir)
+            for p in scripts_dir.rglob("*.py")
+            if not p.name.endswith(_TEST_SUFFIX)
+        )
         if real:
-            # ty walks up to the nearest pyproject.toml and has no isolation flag: a temp copy.
-            work = pathlib.Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
-            try:
-                dst = work / "scripts"
-                shutil.copytree(scripts_dir, dst, symlinks=True)
-                copies = [str(dst / p.relative_to(scripts_dir)) for p in real]
-                problem = _run_static([*ty, "check", *copies], work, "ty (type check)")
-                if problem:
-                    problems.append(problem)
-            finally:
-                shutil.rmtree(work, ignore_errors=True)
+            # No config file applies; unconfigured, the `basic` preset reports no type error.
+            argv = [*pyrefly, "check", "--config", os.devnull, "--preset", "strict"]
+            # Named, so pyrefly runs no interpreter it finds in a `.venv` beside the scripts.
+            python = shutil.which("python3")
+            argv += (
+                ["--python-interpreter-path", python] if python else ["--skip-interpreter-query"]
+            )
+            # A script's own directory is on its import path when it runs.
+            for directory in sorted({p.parent for p in real}):
+                argv += ["--search-path", str(directory)]
+            argv += ["--output-format", "min-text", "--summary=none", *map(str, real)]
+            problem = _run_static(argv, base.parent, "pyrefly (type check)")
+            if problem:
+                problems.append(problem)
     else:
-        print("note: ty not installed; script type check skipped", file=sys.stderr)
+        print("note: pyrefly not installed; script type check skipped", file=sys.stderr)
     return problems
 
 

@@ -25,12 +25,12 @@ def _need(tool: str) -> None:
         pytest.skip(f"{tool} not installed in this environment")
 
 
-# --- static: ruff + ty ------------------------------------------------------
+# --- static: ruff + pyrefly -------------------------------------------------
 
 
 def test_lint_typecheck_clean(tmp_path: pathlib.Path) -> None:
     _need("ruff")
-    _need("ty")
+    _need("pyrefly")
     _write(tmp_path / "scripts", "ok.py", _CLEAN)
     assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
 
@@ -73,20 +73,74 @@ def test_lint_catches_undefined_name(tmp_path: pathlib.Path) -> None:
     assert any("ruff" in p for p in problems)
 
 
+_TYPED_BUG = "def f(x: str) -> int:\n    return x + 1\n"
+
+
 def test_typecheck_catches_type_error(tmp_path: pathlib.Path) -> None:
-    _need("ty")
-    _write(tmp_path / "scripts", "bad.py", "def f(x: str) -> int:\n    return x + 1\n")
+    """An unconfigured pyrefly run uses its `basic` preset, which reports no type error."""
+    _need("pyrefly")
+    _write(tmp_path / "scripts", "bad.py", _TYPED_BUG)
     problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
-    assert any("ty" in p for p in problems)
+    assert any("pyrefly" in p and "scripts/bad.py:2" in p for p in problems), problems
+
+
+def test_typecheck_requires_annotations(tmp_path: pathlib.Path) -> None:
+    """The check runs the `strict` preset: the default one passes an unannotated parameter."""
+    _need("pyrefly")
+    _write(tmp_path / "scripts", "loose.py", "def f(x):\n    return x\n")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    assert any("pyrefly" in p and "scripts/loose.py:1" in p for p in problems), problems
+
+
+def test_typecheck_ignores_a_pyrefly_config_in_the_bundle(tmp_path: pathlib.Path) -> None:
+    """A `pyrefly.toml` beside or above the scripts could switch an error kind off for them."""
+    _need("pyrefly")
+    _write(tmp_path / "scripts", "bad.py", _TYPED_BUG)
+    for directory in (tmp_path, tmp_path / "scripts"):
+        (directory / "pyrefly.toml").write_text(
+            "[errors]\nunsupported-operation = false\n", encoding="utf-8"
+        )
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    assert any("pyrefly" in p for p in problems), problems
+
+
+def test_typecheck_runs_nothing_from_the_bundle(tmp_path: pathlib.Path) -> None:
+    """Unconfigured, pyrefly ran the `python` of a `.venv` it found beside the scripts."""
+    _need("pyrefly")
+    _write(tmp_path / "scripts", "ok.py", _CLEAN)
+    marker = tmp_path / "ran"
+    # The interpreter pyrefly queries imports these; neither directory is on its path.
+    for directory in (tmp_path, tmp_path / "scripts"):
+        for module in ("json", "sysconfig"):
+            _write(directory, f"{module}.py", f"open({str(marker)!r}, 'w').close()\n")
+    planted = tmp_path / "scripts" / ".venv" / "bin"
+    planted.mkdir(parents=True)
+    (planted.parent / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+    for name in ("python", "python3"):
+        (planted / name).write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+        (planted / name).chmod(0o755)
+    scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    assert not marker.exists()
+
+
+def test_typecheck_resolves_an_import_of_a_sibling_script(tmp_path: pathlib.Path) -> None:
+    """A script imports the module beside it, in a subdirectory too, as it does when it runs."""
+    _need("pyrefly")
+    helper = "def double(value: int) -> int:\n    return value * 2\n"
+    caller = "import helper\n\n\ndef f(x: int) -> int:\n    return helper.double(x)\n"
+    for directory in (tmp_path / "scripts", tmp_path / "scripts" / "nested"):
+        _write(directory, "helper.py", helper)
+        _write(directory, "caller.py", caller)
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    assert not any("pyrefly" in p for p in problems), problems
 
 
 def test_typecheck_skips_test_files(tmp_path: pathlib.Path) -> None:
-    """Ty is NOT run on *_test.py (mock internals trip it); ruff still is."""
-    _need("ty")
-    # A type error that only ty would catch, in a *_test.py file -> not flagged.
-    _write(tmp_path / "scripts", "x_test.py", "def f(a: str) -> int:\n    return a + 1\n")
+    """Pyrefly is not run on `*_test.py` (mock internals trip it); ruff still is."""
+    _need("pyrefly")
+    _write(tmp_path / "scripts", "x_test.py", _TYPED_BUG)
     problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
-    assert not any("ty" in p for p in problems)
+    assert not any("pyrefly" in p for p in problems)
 
 
 def test_no_python_scripts_is_clean(tmp_path: pathlib.Path) -> None:
