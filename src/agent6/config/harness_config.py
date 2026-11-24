@@ -685,9 +685,8 @@ class ReviewConfig(pydantic.BaseModel):
         },
         default="none",
         description=(
-            "Rule for new grounded block findings at finish. Quorum counts "
-            "`review.min_blocking_models` distinct provider/model routes. "
-            "Open blocks prevent a merge unless this is `none`."
+            "Rule for new grounded blocks at finish; quorum counts `review.min_blocking_models` "
+            "distinct provider/model routes; open blocks prevent a merge unless this is `none`."
         ),
     )
     min_blocking_models: int = pydantic.Field(
