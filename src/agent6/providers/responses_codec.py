@@ -30,6 +30,8 @@ from agent6.providers import (
 
 # The thinking-block key an opaque reasoning item rides under, with its route.
 REPLAY_KEY = "reasoning_replay"
+# The item and history block type of a hosted search call; the block carries the item and route.
+SEARCH_CALL = "web_search_call"
 # Each carries the final response object; `response.failed` carries an envelope instead.
 TERMINAL_EVENTS = frozenset({"response.completed", "response.done", "response.incomplete"})
 MAX_OUTPUT_TOKENS_FIELD = "max_output_tokens"
@@ -78,7 +80,8 @@ def responses_input(messages: list[dict[str, Any]], *, route: str) -> list[dict[
     `function_call_output` with its content as a string. A `thinking` block carrying a
     `reasoning_replay` made on this route replays its item in place, only with its
     following kept item; any other `thinking` block (another route's, a legacy item with
-    no route, display-only text) is dropped.
+    no route, display-only text) is dropped. A `web_search_call` block made on this route
+    replays its item in place.
 
     Args:
         messages: The conversation in Anthropic shape.
@@ -128,6 +131,12 @@ def _content_items(
             items.append(_message_item(role, "\n\n".join(text_run)))
             text_run.clear()
 
+    def emit(item: dict[str, Any]) -> None:
+        """Emit an item after the pending text run and the reasoning that led to it."""
+        flush()
+        items.extend((*pending_reasoning, item))
+        pending_reasoning.clear()
+
     for block in blocks:
         if not isinstance(block, dict):
             continue
@@ -150,19 +159,18 @@ def _content_items(
                 dropped_ids.add(call_id)
                 pending_reasoning.clear()
                 continue
-            if isinstance(call_input := block.get("input"), dict):
-                paths[call_id] = str(call_input.get("path", ""))
-            flush()
-            items.extend(pending_reasoning)
-            pending_reasoning.clear()
-            items.append(
+            args = block.get("input")
+            paths[call_id] = str(args.get("path", "")) if isinstance(args, dict) else ""
+            emit(
                 {
                     "type": "function_call",
                     "call_id": call_id,
                     "name": str(block.get("name", "")),
-                    "arguments": json.dumps(block.get("input") or {}),
+                    "arguments": json.dumps(args or {}),
                 }
             )
+        elif btype == SEARCH_CALL and role == "assistant" and block.get("route") == route:
+            emit(block["item"])
         elif btype == "tool_result":
             if str(block.get("tool_use_id", "")) in dropped_ids:
                 continue
@@ -191,9 +199,19 @@ def _message_item(role: str, text: str) -> dict[str, Any]:
     return {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
 
 
-def tools_to_responses(tools: list[provider_types.ToolDefinition]) -> list[dict[str, Any]]:
-    """Return the tools as Responses function tools (flat, not nested)."""
-    return [
+def tools_to_responses(
+    tools: list[provider_types.ToolDefinition], *, web_search: bool = False
+) -> list[dict[str, Any]]:
+    """Return the tools as Responses function tools (flat, not nested).
+
+    Args:
+        tools: The tool definitions shown to the model.
+        web_search: Whether the call offers the provider's hosted web search.
+
+    Returns:
+        The function tools, then the hosted search entry when offered.
+    """
+    entries: list[dict[str, Any]] = [
         {
             "type": "function",
             "name": t.name,
@@ -203,6 +221,50 @@ def tools_to_responses(tools: list[provider_types.ToolDefinition]) -> list[dict[
         }
         for t in tools
     ]
+    if web_search:
+        entries.append({"type": "web_search"})
+    return entries
+
+
+def web_searches(items: list[Any]) -> tuple[provider_types.WebSearch, ...]:
+    """Return the hosted searches among the output items, one per distinct id.
+
+    Args:
+        items: The output items received.
+
+    Returns:
+        The searches in order; a message's `url_citation` URLs join the last search before it.
+    """
+    found: dict[str, provider_types.WebSearch] = {}
+    last = ""
+    for n, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == SEARCH_CALL:
+            last = str(item.get("id") or f"search_{n}")
+            action = item.get("action")
+            query = action.get("query") if isinstance(action, dict) else None
+            found.setdefault(
+                last,
+                provider_types.WebSearch(
+                    id=last,
+                    query=query if isinstance(query, str) else "",
+                    status=str(item.get("status") or ""),
+                ),
+            )
+        elif item.get("type") == "message" and last:
+            cited = [
+                note["url"]
+                for part in item.get("content") or []
+                if isinstance(part, dict)
+                for note in part.get("annotations") or []
+                if isinstance(note, dict)
+                and note.get("type") == "url_citation"
+                and isinstance(note.get("url"), str)
+            ]
+            urls = tuple(dict.fromkeys((*found[last].urls, *cited)))
+            found[last] = dataclasses.replace(found[last], urls=urls)
+    return tuple(found.values())
 
 
 def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
@@ -273,7 +335,8 @@ def parse_output_items(
 
     `raw["content"]` holds one block per item in wire order: a message's text, a reasoning
     item as a `thinking` block (its summary for display, the raw item under
-    `reasoning_replay` with this route for replay), a function_call as `tool_use`.
+    `reasoning_replay` with this route for replay), a function_call as `tool_use`, a hosted
+    search call as a `web_search_call` block holding the raw item and this route.
 
     Args:
         items: The output items.
@@ -325,7 +388,10 @@ def parse_output_items(
             if tool_use is not None:
                 tool_uses.append(tool_use)
                 blocks.append({"type": "tool_use", **tool_use})
+        elif itype == SEARCH_CALL:
+            blocks.append({"type": SEARCH_CALL, "route": route, "item": item})
     text = "\n\n".join(text_parts)
+    searches = web_searches(items)
     if tool_uses and stop_reason == "end_turn":
         # A turn that stopped to call tools says so, which arms the loop's empty-call detector.
         stop_reason = "tool_use"
@@ -346,6 +412,8 @@ def parse_output_items(
         cache_read_tokens=cached,
         cache_write_tokens=0,
         raw={"content": blocks, "usage": dict(usage), "output": items},
+        web_searches=searches,
+        web_searches_billed=len(searches),
     )
 
 

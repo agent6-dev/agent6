@@ -224,8 +224,9 @@ def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[st
 def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return the messages the Anthropic wire accepts, without mutating history.
 
-    Reasoning from another wire has no Anthropic signature and cannot be replayed;
-    a message it empties is dropped, since the API rejects an empty one.
+    Reasoning from another wire has no Anthropic signature and cannot be replayed, nor can
+    a Responses search call; a message they empty is dropped, since the API rejects an
+    empty one.
 
     Args:
         messages: The conversation in Anthropic shape.
@@ -238,10 +239,12 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
     """
 
     def foreign(block: Any) -> bool:
-        """Return whether a block is reasoning this wire cannot replay."""
+        """Return whether a block is another wire's reasoning or search call."""
         if not isinstance(block, dict):
             return False
         if "chatgpt_reasoning" in block or "reasoning_replay" in block:
+            return True
+        if block.get("type") == "web_search_call":
             return True
         return block.get("type") == "thinking" and not (
             isinstance(block.get("signature"), str) and block["signature"]

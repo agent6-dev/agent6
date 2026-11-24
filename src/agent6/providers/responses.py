@@ -178,6 +178,7 @@ class ResponsesProvider:
         should_interrupt: Callable[[], bool] | None = None,
         compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
+        web_search: bool = False,
     ) -> provider_types.ProviderResponse:
         """Make one Responses call, streaming when a delta callback is set.
 
@@ -196,6 +197,7 @@ class ResponsesProvider:
             should_interrupt: Polled during a stream; True ends the turn to steer.
             compaction: The history operation on a supporting endpoint.
             context: The application's context for the call; None outside a conversation.
+            web_search: Whether the call offers the provider's hosted web search.
 
         Returns:
             The parsed response.
@@ -224,8 +226,8 @@ class ResponsesProvider:
             # The encrypted reasoning items replayed for continuity across tool calls.
             "include": ["reasoning.encrypted_content"],
         }
-        if tools:
-            body["tools"] = responses_codec.tools_to_responses(tools)
+        if entries := responses_codec.tools_to_responses(tools or [], web_search=web_search):
+            body["tools"] = entries
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
         wire.check_effort_source(effort, self.extra_body)
         if effort:
