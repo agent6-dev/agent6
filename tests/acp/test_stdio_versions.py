@@ -220,6 +220,11 @@ def _updates(frames: list[Frame], kind: str) -> list[Frame]:
     return [body for body in bodies if body["sessionUpdate"] == kind]
 
 
+def steered_id(frames: list[Frame], req_id: int) -> str:
+    """Return the message id a prompt's reply carried."""
+    return str(next(f for f in frames if f.get("id") == req_id)["result"]["messageId"])
+
+
 def _idle(frame: Frame) -> bool:
     update = frame.get("params", {}).get("update", {})
     return update.get("sessionUpdate") == "state_update" and update.get("state") == "idle"
@@ -284,7 +289,7 @@ def test_a_v1_editor_drives_a_run_to_each_of_its_ends(
 def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
     scripted: tuple[_Provider, Callable[[int], _Editor]], tmp_path: pathlib.Path
 ) -> None:
-    """v2: the reply names the added message, and the session's state carries each end."""
+    """v2: the reply names the added message, the state carries each end, a run takes a steer."""
     provider, connect = scripted
     repo = tmp_path / "repo"
     editor = connect(2)
@@ -301,6 +306,22 @@ def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
     assert echo["messageId"] == reply["result"]["messageId"]
     assert echo["content"] == _text("Finish.")
     assert _updates(turn, "agent_message"), "the run's ending never reached the editor"
+
+    provider.script.extend([LIST, FINISH])
+    provider.hold.clear()
+    provider.asked.clear()
+    long = editor.send("session/prompt", {"sessionId": session, "prompt": _text("Look around.")})
+    editor.reply_to(long)
+    assert provider.asked.wait(_WAIT_S)
+    steer = editor.send("session/prompt", {"sessionId": session, "prompt": _text("Also say hi.")})
+    steered = editor.until(lambda f: f.get("id") == steer)
+    provider.hold.set()
+    steered += editor.until(_idle)
+    assert [u["state"] for u in _updates(steered, "state_update")] == ["idle"]
+    echoes = [u for u in _updates(steered, "user_message") if u["content"] == _text("Also say hi.")]
+    assert [u["messageId"] for u in echoes] == [steered_id(steered, steer)]
+    assert "Also say hi." in provider.requests[-1], "the run never took the steer"
+    assert "Also say hi." not in provider.requests[-2]
 
     provider.hold.clear()
     provider.asked.clear()
@@ -331,4 +352,4 @@ def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
     kinds = [f["params"]["update"]["sessionUpdate"] for f in replayed[:-1]]
     assert kinds[-2:] == ["replay_complete", "state_update"]
     said = [u["content"][0]["text"] for u in _updates(replayed, "user_message")]
-    assert said[:2] == ["Finish.", "Wait here."]
+    assert said[:4] == ["Finish.", "Look around.", "Also say hi.", "Wait here."]

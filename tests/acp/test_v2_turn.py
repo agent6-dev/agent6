@@ -14,8 +14,11 @@ from typing import Any, override
 
 import pytest
 
+from agent6 import paths
 from agent6.app import run, stop
 from agent6.app.session import setup as session_setup
+from agent6.sessions import event_log, ipc, journal
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.acp import model, runner
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
@@ -227,3 +230,69 @@ def test_a_permission_wait_reports_requires_action_then_running(
         {"asked": True},
         {"sessionUpdate": "state_update", "state": "running"},
     ]
+
+
+def _steerable_run(
+    cwd: pathlib.Path, started: threading.Event, release: threading.Event
+) -> Callable[..., int]:
+    """Return a run that journals its start, waits, then takes its queued steers and ends."""
+
+    def _run(*_a: object, **kw: Any) -> int:
+        saved = sessions_layout.SessionLayout(paths.state_dir(cwd), kw["session_id"])
+        saved.session_dir.mkdir(parents=True, exist_ok=True)
+        sink = event_log.EventSink(saved.logs_path)
+        sink.emit(journal.SessionStart(user_task=str(_a[1]), mode="run", execution_id="e1"))
+        started.set()
+        release.wait(timeout=10.0)
+        while ipc.promote_queued_steer(saved.session_dir) or ipc.steer_request_pending(
+            saved.session_dir
+        ):
+            text = ipc.take_steer_answer(saved.session_dir) or ""
+            ipc.clear_steer_request(saved.session_dir)
+            sink.emit(journal.SteerInjected(chars=len(text), text=text))
+        sink.emit(journal.SessionStop(reason="finish_session", turns=1, execution_id="e1"))
+        return 0
+
+    return _run
+
+
+def test_a_prompt_during_a_run_joins_the_steer_queue_and_is_answered_at_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """v2 takes the prompt v1 refused as busy: it is in the conversation once it is queued."""
+    cwd = test_runner._repo(tmp_path)
+    started, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(run, "run_task", _steerable_run(cwd, started, release))
+    wire = _Wire()
+    try:
+        session = wire.new_session(cwd)
+        wire.prompt(session, "the long one", req_id=3)
+        wire.collect(lambda f: f.get("id") == 3)
+        assert started.wait(timeout=5.0)
+        wire.prompt(session, "also this", req_id=4)
+        during = wire.collect(lambda f: f.get("id") == 4)
+        message_id = during[-1]["result"]["messageId"]
+        session_dir = sessions_layout.SessionLayout(paths.state_dir(cwd), session).session_dir
+        assert (session_dir / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8") == "also this"
+        wire.prompt(session, "/compact now", req_id=5)
+        during += wire.collect(lambda f: f.get("id") == 5)
+        refused = during[-1]["error"]
+        assert refused["code"] == -32602 and "composer" in refused["message"]
+        wire.prompt(session, "abort", req_id=6)
+        during += wire.collect(lambda f: f.get("id") == 6)
+        assert [entry.text for entry in ipc.queued_steers(session_dir)] == ["Task: abort"]
+        release.set()
+        during += wire.collect(_idle(session))
+        said = [
+            (update["messageId"], update["content"][0]["text"])
+            for frame in during
+            if frame.get("method") == "session/update"
+            and (update := frame["params"]["update"])["sessionUpdate"] == "user_message"
+        ]
+        texts = [text for _id, text in said]
+        assert texts == ["the long one", "also this", "Task: abort"], "the journal's echo was sent"
+        assert said[1][0] == message_id
+        assert _states(during, session) == [("idle", "end_turn")]
+    finally:
+        release.set()
+        wire.close()

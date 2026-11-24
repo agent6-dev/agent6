@@ -453,6 +453,7 @@ class RunBridge:
                 reserved = session.acp_id
                 taken = sessions_layout.session_layout(state_dir, reserved) is not None
                 session.session_id = id.unused_session_id(state_dir, bucket) if taken else reserved
+            session.steerable = True
         if not self._runs.acquire(blocking=False):
             holder = self._running
             who = f"session {holder.acp_id}" if holder is not None else "another session"
@@ -753,6 +754,9 @@ class RunBridge:
             item.kind == "operator" and item.body.strip() == sending.prompt.strip()
         ):
             # The execution's start row reported its own prompt; another front-end's steer is news.
+            return
+        if item.kind == "operator" and item.body.strip() in session.steered:
+            session.steered.remove(item.body.strip())  # reported when this connection sent it
             return
         within = updates.execution_call_id(item) if item.kind in ("tool", "verify") else ""
         wire_id = (

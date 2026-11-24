@@ -504,7 +504,11 @@ class ACPServer:
         )
         if review.handle_command(sessions, session, text, turn=turn):
             return DEFERRED
-        sessions.start_execution(session, text, turn=turn, images=images)
+        if self.protocol_version >= 2 and session.is_running():
+            # v2 takes a prompt during a run; v1 refuses it as busy.
+            sessions.steer(session, text, turn=turn, images=images)
+        else:
+            sessions.start_execution(session, text, turn=turn, images=images)
         return DEFERRED
 
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:

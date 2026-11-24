@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from agent6 import kinds
+from agent6 import directive, kinds
 from agent6.app import preflight, stop
 from agent6.sessions import id, ipc, process
 from agent6.sessions import layout as sessions_layout
@@ -98,6 +98,10 @@ class Session:
         require_resume: Refuse a missing resume point instead of starting new work.
         images: The images of the prompt in flight, as the editor sent them.
         turn: The prompt in flight, as the editor hears of it.
+        steerable: The execution in flight has chosen its run, so a steer has a session
+            directory to land in.
+        steered: The prompts delivered to the execution in flight as steers; the journal's
+            echo of one is not news to the editor that sent it.
         closed: The editor closed the conversation while a prompt was in flight; the
             cancelled prompt still answers, then the entry goes.
         settled: Called once a closed conversation's execution has ended.
@@ -116,6 +120,8 @@ class Session:
     require_resume: bool = False
     images: tuple[operator_images.EncodedImage, ...] = ()
     turn: Turn | None = None
+    steerable: bool = False
+    steered: list[str] = dataclasses.field(default_factory=list[str])
     closed: bool = False
     settled: Callable[[], None] = lambda: None
     model: str = ""
@@ -470,6 +476,8 @@ class Sessions:
                 session.require_resume = False
                 session.images = ()
                 session.turn = None
+                session.steerable = False
+                session.steered.clear()
                 turn.end(answer)
                 closed = session.closed
             if closed:
@@ -486,6 +494,49 @@ class Sessions:
             session.thread = None
             session.turn = None
             raise
+
+    def steer(
+        self,
+        session: Session,
+        text: str,
+        *,
+        turn: Turn,
+        images: tuple[operator_images.EncodedImage, ...] = (),
+    ) -> None:
+        """Deliver a prompt that arrived during the session's run as a steer.
+
+        The prompt joins the run's steer queue, as a message typed during a run does on
+        every other surface, and is in the conversation from then: the run takes it at its
+        next turn boundary, or the next execution does when this one ends first.
+
+        Args:
+            session: The session the prompt came on, with an execution in flight.
+            text: The prompt, as `prompt_text` joined it.
+            turn: How the turn reaches the editor.
+            images: The prompt's image blocks, as `prompt_images` read them.
+
+        Raises:
+            RpcError: The execution has not chosen its run yet, the text is a composer
+                command or a malformed directive, an image is refused, or the steer could
+                not be written.
+        """
+        if not session.steerable:
+            raise rpc.RpcError(
+                rpc.INTERNAL_ERROR, "this session's run is still starting; send the prompt again"
+            )
+        if (problem := directive.steer_problem(text)) is not None:
+            raise rpc.RpcError(rpc.INVALID_PARAMS, problem)
+        # Terminal verbs have no ACP meaning; only session/cancel stops the execution.
+        words = f"Task: {text}" if text.strip().lower() in ipc.STEER_VERBS else text
+        session_dir = session.layout(self.state_dir_for(session.cwd)).session_dir
+        try:
+            message = operator_images.accept(session_dir, words, images)
+        except (operator_images.ImageRefusedError, OSError) as exc:
+            raise rpc.RpcError(rpc.INVALID_PARAMS, f"not sent: {exc}") from exc
+        if not ipc.submit_steer(session_dir, message.text, images=message.images):
+            raise rpc.RpcError(rpc.INTERNAL_ERROR, "could not write the steer request")
+        session.steered.append(message.text.strip())
+        turn.begin(message.text)
 
     def wait_for_executions(self, *, timeout_s: float) -> None:
         """Cancel live executions and let them finish before the process goes.
