@@ -97,3 +97,32 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
 - `--provider anthropic` runs token-capped (Anthropic is unpriced here); `--timeout-scale 2.0` lets kimi's 15 to 70 min stylebook sessions finish.
 - `run_waves.sh` holds the fuller matrix (about $10 to 25).
 - The grader is validated per task: the reference scores 1.0 on every session; the untouched seed 0.0 on later sessions; a hand-edited generated file loses exactly `regen`; a banker's-rounding mutant loses exactly `rounding`.
+
+## Lookup with a clipped memory index
+
+A disposable store held 200 facts, one per drawer.
+The target name sorted last; its first line identified the drawer, but only the file body contained its code.
+Four `chatgpt/gpt-6.2-sol` runs at `medium` per arm wrote the code to a file for exact comparison.
+A used the name-sorted index, B gave the target the newest read, and C left it older than every other fact.
+The tool journal records opens; the `<memory>` block in each worker request supplies the index, not a reconstruction from the finished store.
+
+| Arm | Rep | In index | Opened | Correct | Turns | Index characters |
+| --- | ---: | --- | --- | --- | ---: | ---: |
+| A | 1 | No | Yes | Yes | 4 | 4,087 |
+| A | 2 | No | Yes | Yes | 6 | 4,087 |
+| A | 3 | No | Yes | Yes | 4 | 4,087 |
+| A | 4 | No | Yes | Yes | 4 | 4,087 |
+| B | 1 | Yes | Yes | Yes | 3 | 4,076 |
+| B | 2 | Yes | Yes | Yes | 3 | 4,076 |
+| B | 3 | Yes | Yes | Yes | 3 | 4,076 |
+| B | 4 | Yes | Yes | Yes | 3 | 4,076 |
+| C | 1 | No | Yes | Yes | 4 | 4,087 |
+| C | 2 | No | Yes | Yes | 4 | 4,087 |
+| C | 3 | No | Yes | Yes | 4 | 4,087 |
+| C | 4 | No | Yes | Yes | 4 | 4,087 |
+
+The candidate answered 8/8 correctly against 4/4 for name order.
+The old target was not drawn in these four replicates; all four workers still found and opened it.
+Every request carried the clip line and stayed within the 4,096-character limit.
+The index stayed byte-identical across turns of each run, including after the target was opened.
+This meets the no-harm rule for this lookup, not a claim that the new order is better for other stores or tasks.
