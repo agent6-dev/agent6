@@ -310,6 +310,7 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
         options: object = None,
         config_paths: object = (),
         flags: tuple[str, ...] = (),
+        images: object = (),
     ) -> str:
         calls.append((cwd, session_id, steer, preset, model, flags))
         return ""
@@ -1610,7 +1611,7 @@ def test_oversize_post_body_is_413(server: tuple[web_server.WebServer, int]) -> 
     _srv, port = server
     conn = signin.SignedIn(port, timeout=10)
     try:
-        conn.putrequest("POST", "/api/new")
+        conn.putrequest("POST", "/api/parallel-preview")
         conn.putheader("Content-Type", "application/json")
         conn.putheader("Content-Length", str((1 << 20) + 100))
         conn.endheaders()
@@ -3331,6 +3332,7 @@ def test_new_work_carries_the_picked_model(
         model: str = "",
         options: object = None,
         config_paths: object = (),
+        images: object = (),
     ) -> tuple[pathlib.Path | None, str]:
         seen.append((mode, task, preset, model))
         return tmp_path / "sid", ""

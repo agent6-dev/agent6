@@ -24,7 +24,8 @@ from agent6 import directive, kinds, paths
 from agent6.app import child_wait
 from agent6.models import validate
 from agent6.sandbox import jail
-from agent6.sessions import id, layout, lock, process
+from agent6.sessions import id, ipc, layout, lock, process
+from agent6.ui import operator_images
 from agent6.viewmodel import listing, tail
 
 
@@ -89,6 +90,7 @@ def spawn_new_work(  # noqa: PLR0911
     model: str = "",
     options: RunOptions | None = None,
     config_paths: tuple[pathlib.Path, ...] = (),
+    images: Sequence[operator_images.EncodedImage] = (),
 ) -> tuple[pathlib.Path | None, str]:
     """Start a session detached from a hub.
 
@@ -107,12 +109,13 @@ def spawn_new_work(  # noqa: PLR0911
         model: The `--model` value, when any.
         options: The run options beside the preset and model.
         config_paths: The front-end's explicit config, when any.
+        images: The images sent with the task, which a run's or a plan's task carries.
 
     Returns:
         The new session's dir (the first child's for a group) and "", or None and why.
     """
     options = options or RunOptions()
-    if (problem := _refusal(mode, task, options)) is not None:
+    if (problem := _refusal(mode, task, options, images=bool(images))) is not None:
         return None, problem
     segments = None
     if mode == "run":
@@ -141,9 +144,13 @@ def spawn_new_work(  # noqa: PLR0911
             spec="",
             options=options,
             config_paths=config_paths,
+            images=images,
         )
-    if options.worktree or options.seed_from:
-        return None, "/parallel children clone the checkout; drop the worktree and the seed session"
+    if options.worktree or options.seed_from or images:
+        return None, (
+            "/parallel children clone the checkout; drop the worktree, the seed session"
+            " and the images"
+        )
     refusal = validate.directive_model_refusal(
         cwd, segments, config_paths, preset=preset, model=model
     )
@@ -177,11 +184,14 @@ def spawn_new_work(  # noqa: PLR0911
     return first, ""
 
 
-def _refusal(mode: str, task: str, options: RunOptions) -> str | None:
+def _refusal(mode: str, task: str, options: RunOptions, *, images: bool = False) -> str | None:
     """Return why the request cannot start, before anything is spawned; None when it can."""
     if mode not in kinds.OPERATOR_MODES:
         return f"unknown mode {mode!r}"
-    if not task.strip() and not options.seed_from:
+    if images and mode == "ask":
+        # `ask` reserves no session id, so nothing holds the image before the session starts.
+        return "an ask takes no image; start a run or a plan, or name the image's workspace path"
+    if not task.strip() and not options.seed_from and not images:
         return "empty task"
     if (options.worktree or options.seed_from) and mode != "run":
         return f"a worktree and a seed session are run options; this is {mode}"
@@ -199,8 +209,12 @@ def _spawn_run(
     spec: str,
     options: RunOptions,
     config_paths: tuple[pathlib.Path, ...],
+    images: Sequence[operator_images.EncodedImage] = (),
 ) -> tuple[pathlib.Path | None, str]:
     """Spawn one detached session and locate it by its new session dir.
+
+    A task with images reserves the session directory first: the images are stored there
+    and `--session-id` names it, so the run finds them when it starts.
 
     Args:
         cwd: The checkout.
@@ -211,6 +225,7 @@ def _spawn_run(
         spec: The `--parallel` spec of a child; "" for a plain run.
         options: The run options beside the preset and model.
         config_paths: The front-end's explicit config, when any.
+        images: The images sent with the task.
 
     Returns:
         The session dir and "", or None and why.
@@ -223,16 +238,33 @@ def _spawn_run(
     if spec:
         argv += ["--parallel", spec]
     argv += options.argv()
+    state = paths.state_dir(cwd)
+    reserved: pathlib.Path | None = None
+    if images:
+        bucket = kinds.session_bucket(mode)
+        reserved = layout.SessionLayout(
+            state, id.unused_session_id(state, bucket), subdir=bucket
+        ).session_dir
+        try:
+            message = operator_images.accept(reserved, task, images)
+            ipc.write_launch_input(reserved, message)
+        except (operator_images.ImageRefusedError, OSError) as exc:
+            shutil.rmtree(reserved, ignore_errors=True)
+            return None, f"not started: {exc}"
+        task = message.text
+        argv += ["--session-id", reserved.name]
     if task.strip():
         argv += ["--", task]
-    state = paths.state_dir(cwd)
-    return spawn_and_locate(
+    found, err = spawn_and_locate(
         argv,
         cwd,
         before=set(listing.session_dirs(state)),
         list_dirs=lambda: listing.session_dirs(state),
         env={**os.environ, **DETACHED_RUN_ENV},
     )
+    if found is None and reserved is not None and listing.is_session_husk(reserved):
+        shutil.rmtree(reserved, ignore_errors=True)  # the images of a run that never started
+    return found, err
 
 
 def spawn_detached_resume(
@@ -244,6 +276,7 @@ def spawn_detached_resume(
     model: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
     flags: Sequence[str] = (),
+    images: Sequence[operator_images.EncodedImage] = (),
 ) -> str:
     """Start a detached `agent6 resume` so a run keeps going after the operator detaches.
 
@@ -262,6 +295,8 @@ def spawn_detached_resume(
         model: The `--model` the execution continues under, when any.
         config_paths: The front-end's explicit config, when any.
         flags: Further `resume` options.
+        images: The images sent with the instruction, stored in the session before the
+            resume starts; a directive takes none.
 
     Returns:
         "" once the child owns the run, else why it did not.
@@ -272,6 +307,15 @@ def spawn_detached_resume(
         session_dir = id.resolve_session(paths.state_dir(cwd), session_id).session_dir
     except id.SessionIdError as exc:
         return str(exc)
+    if images:
+        if steer.lstrip().startswith("/"):
+            return "a directive takes no image; send the image with an ordinary instruction"
+        try:
+            message = operator_images.accept(session_dir, steer, images)
+            ipc.write_launch_input(session_dir, message)
+        except (operator_images.ImageRefusedError, OSError) as exc:
+            return f"not resumed: {exc}"
+        steer = message.text
     argv = [*agent6_argv(config_paths), "resume", session_id]
     if preset:
         argv.append(f"--preset={preset}")

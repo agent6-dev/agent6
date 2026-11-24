@@ -30,7 +30,7 @@ from agent6 import __version__, errors, kinds, pack
 from agent6.config import ConfigError, is_loopback_host, layer, write
 from agent6.machine import MachineError
 from agent6.sessions import process
-from agent6.ui import parallel_preview, spawn
+from agent6.ui import operator_images, parallel_preview, spawn
 from agent6.ui.telemetry import export
 from agent6.ui.web import (
     actions,
@@ -47,9 +47,23 @@ from agent6.viewmodel import machine_snapshot, wire
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
 _MAX_BODY_BYTES = 1 << 20
+# A message's images: 4 MiB of them as base64, beside the megabyte of text.
+_MAX_IMAGE_BODY_BYTES = _MAX_BODY_BYTES + operator_images.ENCODED_TOTAL_MAX
+# The verbs under `/api/session/<id>/` whose body may carry images.
+_IMAGE_VERBS = ("resume", "steer")
 # The public routes hold no state: the page shell, static assets and sign-in.
 PUBLIC_GET = frozenset({"/", "/favicon.svg", "/icon.svg", "/manifest.webmanifest", "/sw.js"})
 PUBLIC_POST = frozenset({"/api/login"})
+
+
+def _body_limit(path: str) -> int:
+    """Return the most bytes a POST to the path may carry."""
+    if path == "/api/files/text":
+        return files_edit.MAX_BODY_BYTES
+    parts = path.strip("/").split("/")
+    session_verb = parts[3] if parts[:2] == ["api", "session"] and len(parts) == 4 else ""
+    carries_images = path == "/api/new" or session_verb in _IMAGE_VERBS
+    return _MAX_IMAGE_BODY_BYTES if carries_images else _MAX_BODY_BYTES
 
 
 class _Body(pydantic.BaseModel):
@@ -58,18 +72,36 @@ class _Body(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
 
+class ImageBody(_Body):
+    """One image sent with a message, inline.
+
+    Attributes:
+        media_type: The image's type as the browser read it.
+        data: The image's bytes in base64.
+    """
+
+    media_type: str
+    data: str
+
+
+def _encoded(images: list[ImageBody]) -> list[operator_images.EncodedImage]:
+    """Return a body's images as the intake takes them."""
+    return [(image.media_type, image.data) for image in images]
+
+
 class NewWorkBody(_Body):
     """The `/api/new` body: a session of `mode` on `task`, under a preset and a model.
 
     Attributes:
         mode: The session mode to start.
-        task: The operator's task text; empty only with `seed_from`.
+        task: The operator's task text; empty only with `seed_from` or `images`.
         preset: The preset override, empty for configured selection.
         model: The provider/model override, empty for configured selection.
         worktree: Work in a new git worktree (`run --worktree`); run mode only.
         seed_from: The session whose context seeds the run (`run --from`); a plan becomes
             the task when `task` is empty.
         max_usd: The metered spend ceiling (`--max-usd`), or null for the config's.
+        images: The images sent with the task; a run's or a plan's task carries them.
     """
 
     mode: str
@@ -79,6 +111,7 @@ class NewWorkBody(_Body):
     worktree: bool = False
     seed_from: str = ""
     max_usd: float | None = None
+    images: list[ImageBody] = []
 
 
 class ParallelPreviewBody(_Body):
@@ -101,10 +134,12 @@ class SteerBody(_Body):
     Attributes:
         text: The instruction.
         state: For a machine, the state dir the prompt was rendered from; "" is the newest.
+        images: The images sent with the instruction; a session's ordinary steer carries them.
     """
 
     text: str = ""
     state: str = ""
+    images: list[ImageBody] = []
 
 
 class ApproveBody(_Body):
@@ -129,11 +164,13 @@ class AnswerBody(_Body):
         id: The question prompt identifier.
         answers: One answer per question in prompt order.
         state: The machine execution directory, empty to select the newest.
+        images: Refused when present: an answer is text.
     """
 
     id: str
     answers: list[str]
     state: str = ""
+    images: list[ImageBody] = []
 
 
 class MergeBody(_Body):
@@ -174,12 +211,14 @@ class ResumeBody(_Body):
         preset: The preset override, empty to use the recorded selection.
         model: The provider/model override, empty to use the recorded selection.
         merge: The branch to merge into the run's work before its first turn, empty for none.
+        images: The images sent with the instruction.
     """
 
     text: str = ""
     preset: str = ""
     model: str = ""
     merge: str = ""
+    images: list[ImageBody] = []
 
 
 class MachineCreateBody(_Body):
@@ -633,7 +672,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self.close_connection = True
                 self._send_json({"error": "chunked bodies are not supported"}, status=411)
                 return
-            limit = files_edit.MAX_BODY_BYTES if path == "/api/files/text" else _MAX_BODY_BYTES
+            limit = _body_limit(path)
             if self._body_length > limit:
                 self.close_connection = True
                 self._send_json({"error": f"body larger than {limit} bytes"}, status=413)
@@ -828,6 +867,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 worktree=body.worktree, seed_from=body.seed_from, max_usd=body.max_usd
             ),
             config_paths=self.config_paths,
+            images=_encoded(body.images),
         )
         session_id = session_dir.name if session_dir is not None else None
         self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
@@ -999,13 +1039,23 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         if verb == "steer":
             body = SteerBody.model_validate(self._read_body())
-            ok, msg = actions.steer(self.cwd, session_id, body.text, config_paths=self.config_paths)
+            ok, msg = actions.steer(
+                self.cwd,
+                session_id,
+                body.text,
+                config_paths=self.config_paths,
+                images=_encoded(body.images),
+            )
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
             ok, msg = actions.approve(self.cwd, session_id, ab.id, ab.answer)
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
-            ok, msg = actions.answer_question(self.cwd, session_id, qb.id, qb.answers)
+            ok, msg = (
+                (False, "an answer takes no image; send the image as an instruction")
+                if qb.images
+                else actions.answer_question(self.cwd, session_id, qb.id, qb.answers)
+            )
         elif verb == "merge":
             self._post_merge(session_id)
             return
@@ -1028,6 +1078,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 route=rb.model,
                 merge=rb.merge,
                 config_paths=self.config_paths,
+                images=_encoded(rb.images),
             )
         elif verb == "stop":
             sb = StopBody.model_validate(self._read_body())

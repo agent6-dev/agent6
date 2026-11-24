@@ -736,6 +736,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
         model: str = "",
         config_paths: object = (),
         flags: tuple[str, ...] = (),
+        images: object = (),
     ) -> str:
         spawned.append((steer, flags))
         return ""

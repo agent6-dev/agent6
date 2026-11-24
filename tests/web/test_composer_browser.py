@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import pathlib
 import subprocess
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests.unit import test_operator_images
 from tests.web import session_logs, signin, test_machine_browser, test_web_browser
 
 if TYPE_CHECKING:
@@ -368,4 +370,53 @@ def test_an_at_reference_completes_from_the_workspace_files(
     task.press_sequentially("see @src/")
     page.get_by_role("option", name="@src/main.py").click()
     expect(task).to_have_value("see @src/main.py ")
+    assert not errors
+
+
+def test_a_picked_and_a_pasted_image_go_with_the_message(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """The composer took text alone: a screenshot could not be sent to the run."""
+    from playwright.sync_api import expect
+
+    session_logs.write_run(tmp_path, "live-AAA111", [], live=True)
+    picked, pasted = test_operator_images.png(1), test_operator_images.png(2)
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(picked)
+    page, errors = open_page(port)
+    page.route("**/api/session/*/steer", lambda route: route.fulfill(json={"message": "sent"}))
+    page.goto(f"http://127.0.0.1:{port}/#/session/live-AAA111")
+    entry = page.locator(".composer textarea")
+    send = page.get_by_role("button", name="Send", exact=True)
+    expect(send).to_be_disabled()
+
+    with page.expect_file_chooser() as chooser:
+        page.get_by_role("button", name="Image", exact=True).click()
+    chooser.value.set_files(shot)
+    expect(page.locator(".composer .attachment")).to_have_count(1)
+    expect(send).to_be_enabled()  # an image alone is a message
+    entry.evaluate(
+        """(field, data) => {
+          const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+          const clip = new DataTransfer();
+          clip.items.add(new File([bytes], 'pasted.png', {type: 'image/png'}));
+          const paste = {clipboardData: clip, bubbles: true, cancelable: true};
+          field.dispatchEvent(new ClipboardEvent('paste', paste));
+        }""",
+        base64.b64encode(pasted).decode("ascii"),
+    )
+    expect(page.locator(".composer .attachment")).to_have_count(2)
+    expect(page.get_by_role("button", name="Remove pasted.png")).to_be_visible()
+
+    entry.fill("what changed between these?")
+    with page.expect_request("**/api/session/live-AAA111/steer") as request:
+        send.click()
+    assert request.value.post_data_json == {
+        "text": "what changed between these?",
+        "images": [
+            {"media_type": "image/png", "data": base64.b64encode(picked).decode("ascii")},
+            {"media_type": "image/png", "data": base64.b64encode(pasted).decode("ascii")},
+        ],
+    }
+    expect(page.locator(".composer .attachment")).to_have_count(0)  # sent with the message
     assert not errors

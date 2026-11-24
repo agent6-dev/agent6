@@ -3169,6 +3169,17 @@ Source: [`agent6.vcs.git.files.TreeFile`](https://github.com/agent6-dev/agent6/b
 | `state` | `str` | "tracked", "untracked", "modified" or "ignored" in the working tree, else "". |
 | `target` | `str` | A symlink's target as git or the filesystem stores it, else "". |
 
+### ImageBody
+
+**Support: public.** One image sent with a message, inline.
+
+Source: [`agent6.ui.web.server.ImageBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `media_type` | `str` | The image's type as the browser read it. |
+| `data` | `str` | The image's bytes in base64. |
+
 ### NewWorkBody
 
 **Support: public.** The `/api/new` body: a session of `mode` on `task`, under a preset and a model.
@@ -3178,12 +3189,13 @@ Source: [`agent6.ui.web.server.NewWorkBody`](https://github.com/agent6-dev/agent
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `mode` | `str` | The session mode to start. |
-| `task` | `str` | The operator's task text; empty only with `seed_from`. |
+| `task` | `str` | The operator's task text; empty only with `seed_from` or `images`. |
 | `preset` | `str` | The preset override, empty for configured selection. |
 | `model` | `str` | The provider/model override, empty for configured selection. |
 | `worktree` | `bool` | Work in a new git worktree (`run --worktree`); run mode only. |
 | `seed_from` | `str` | The session whose context seeds the run (`run --from`); a plan becomes the task when `task` is empty. |
 | `max_usd` | `float \| None` | The metered spend ceiling (`--max-usd`), or null for the config's. |
+| `images` | `list[ImageBody]` | The images sent with the task; a run's or a plan's task carries them. |
 
 ### ParallelPreviewBody
 
@@ -3207,6 +3219,7 @@ Source: [`agent6.ui.web.server.SteerBody`](https://github.com/agent6-dev/agent6/
 | --- | --- | --- |
 | `text` | `str` | The instruction. |
 | `state` | `str` | For a machine, the state dir the prompt was rendered from; "" is the newest. |
+| `images` | `list[ImageBody]` | The images sent with the instruction; a session's ordinary steer carries them. |
 
 ### ApproveBody
 
@@ -3231,6 +3244,7 @@ Source: [`agent6.ui.web.server.AnswerBody`](https://github.com/agent6-dev/agent6
 | `id` | `str` | The question prompt identifier. |
 | `answers` | `list[str]` | One answer per question in prompt order. |
 | `state` | `str` | The machine execution directory, empty to select the newest. |
+| `images` | `list[ImageBody]` | Refused when present: an answer is text. |
 
 ### MergeBody
 
@@ -3274,6 +3288,7 @@ Source: [`agent6.ui.web.server.ResumeBody`](https://github.com/agent6-dev/agent6
 | `preset` | `str` | The preset override, empty to use the recorded selection. |
 | `model` | `str` | The provider/model override, empty to use the recorded selection. |
 | `merge` | `str` | The branch to merge into the run's work before its first turn, empty for none. |
+| `images` | `list[ImageBody]` | The images sent with the instruction. |
 
 ### MachineCreateBody
 

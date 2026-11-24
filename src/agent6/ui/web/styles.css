@@ -267,6 +267,16 @@ button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 .pickers[hidden] { display: none; }
 /* Only a phone folds a composer's pickers behind their summary line (pickerSummary, below). */
 .composer .picker-summary { display: none; }
+/* The Image button ends the entry's label line and adds no height to it; its tap area reaches past its text. */
+.composer .entry-head { display: flex; align-items: baseline; gap: 0.5rem; }
+.composer .entry-head > .field-label { flex: 1; }
+.composer button.attach { position: relative; min-height: 0; padding: 0 0.25rem; font-size: var(--fs-s); line-height: inherit; }
+.composer button.attach::after { content: ""; position: absolute; inset: -0.5rem; }
+/* The images attached to a message, above its entry: a thumbnail, the name and size, a remove button. */
+.composer .attachments { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.375rem; }
+.composer .attachment { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.125rem 0.375rem;
+  border: 1px solid var(--border); border-radius: 6px; font-size: var(--fs-s); max-width: 100%; }
+.composer .attachment img { max-height: 2.5rem; max-width: 4rem; border-radius: 4px; }
 /* Suggestions use the side of the entry with more room. The anchor area bounds the scroller. */
 .composer { anchor-scope: --entry; }
 .composer textarea.field { anchor-name: --entry; }

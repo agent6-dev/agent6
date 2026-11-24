@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
-from agent6 import config
+from agent6 import config, operator_input
 from agent6 import directive as agent6_directive
 from agent6.graph import order, storage
 from agent6.sessions import ipc, layout
-from agent6.ui import btw, task_refs
+from agent6.ui import btw, operator_images, task_refs
 from agent6.viewmodel import format
 from agent6.viewmodel.session import log as session_log
 
@@ -178,6 +178,7 @@ def submit_composer_line(
     repo: pathlib.Path,
     now: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
+    images: Sequence[operator_images.EncodedImage] = (),
 ) -> tuple[bool, str]:
     """Act on a composer line: a directive when it is one, else the steer it is.
 
@@ -189,10 +190,13 @@ def submit_composer_line(
         now: Force the urgency `/now` spells, for `agent6 steer --now`.
         config_paths: The front-end's `--config`, which a `/btw` asks on and which names
             the hidden paths an `@path` cannot read.
+        images: The images sent with the line, which only an ordinary steer carries.
 
     Returns:
         Whether it acted, and what to say.
     """
+    if images and (word := _takes_no_image(text)):
+        return False, f"`{word}` takes no image; send the image with an ordinary instruction"
     handled = act_on_directive(session_dir, text, config_paths=config_paths)
     if handled is not None:
         return handled
@@ -200,15 +204,13 @@ def submit_composer_line(
     if urgent == "":
         return False, "/now needs the instruction: /now <text>"
     now = now or urgent is not None
-    sent = urgent or text
-    if "@" in sent and not sent.lstrip().startswith("/"):
-        try:
-            root, hide = task_refs.session_workspace(repo, config_paths, session_dir)
-        except config.ConfigError as exc:
-            return False, f"not sent: `@path` needs sandbox.hide_paths and the config failed: {exc}"
-        sent = task_refs.expand_task_file_refs(sent, root, hide)
+    try:
+        message = _steer_message(session_dir, urgent or text, repo, config_paths, images)
+    except (config.ConfigError, operator_images.ImageRefusedError, OSError) as exc:
+        return False, f"not sent: {exc}"
+    sent, refs = message.text, message.images
     ahead = int(ipc.steer_request_pending(session_dir)) + len(ipc.queued_steers(session_dir))
-    if not ipc.submit_steer(session_dir, sent, now=now):
+    if not ipc.submit_steer(session_dir, sent, now=now, images=refs):
         return False, "could not write the steer request"
     if now:
         said = "steering now, interrupting the call in flight" + (
@@ -222,6 +224,46 @@ def submit_composer_line(
     if (stray := agent6_directive.stray_directive(sent)) is not None:
         said += f" (`{stray}` mid-line is text; a directive has to start the line)"
     return True, said
+
+
+def _steer_message(
+    session_dir: pathlib.Path,
+    sent: str,
+    repo: pathlib.Path,
+    config_paths: tuple[pathlib.Path, ...],
+    images: Sequence[operator_images.EncodedImage],
+) -> operator_input.OperatorInput:
+    """Return the steer as the run receives it: its `@path` files inlined, its images stored.
+
+    Args:
+        session_dir: The live session.
+        sent: The steer's words.
+        repo: The repository the front-end serves.
+        config_paths: The front-end's `--config`, which names the hidden paths.
+        images: The images sent with the words.
+
+    Returns:
+        The message.
+
+    Raises:
+        ConfigError: The words name an `@path` and the config, which holds
+            `sandbox.hide_paths`, does not load.
+        ImageRefusedError: An image is refused.
+        OSError: An image cannot be stored.
+    """
+    if "@" in sent and not sent.lstrip().startswith("/"):
+        root, hide = task_refs.session_workspace(repo, config_paths, session_dir)
+        sent = task_refs.expand_task_file_refs(sent, root, hide)
+    if not images:
+        return operator_input.OperatorInput(parts=(sent,))
+    return operator_images.accept(session_dir, sent, images)
+
+
+def _takes_no_image(text: str) -> str:
+    """Return the directive or verb a line is, which takes no image; "" for an ordinary steer."""
+    sent = agent6_directive.parse_now(text) or text
+    word = sent.split(maxsplit=1)[0] if sent.strip() else ""
+    return word if word.startswith("/") or sent.strip().lower() in ipc.STEER_VERBS else ""
 
 
 def act_on_directive(

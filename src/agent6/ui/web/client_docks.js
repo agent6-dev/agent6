@@ -75,20 +75,21 @@ function newWorkDock(presets, presetDefault, sessions) {
   fold(!!(seed.value || cap.value));
   mode.onchange = () => { followMode(); fillRoutes(); }; preset.onchange = fillRoutes; fillRoutes(); followMode();
   const go = el('button', 'primary', 'Start');
+  const attached = attachImages(task, root, () => go.sync());
   // Running a picked plan as written needs no task text.
   runOnce(go, async () => {
     task.readOnly = true;
     try {
-      const d = await postJSON('/api/new', {
+      const d = await postJSON('/api/new', attached.into({
         mode: mode.value, task: task.value, preset: preset.value, model: model.value,
         worktree: mode.value === 'run' && worktree.checked,
         seed_from: mode.value === 'run' ? seed.value : '',
         max_usd: cap.value.trim() ? Number(cap.value) : null,
-      });
-      if (d.session_id) { forget('a6-draft-new'); location.hash = '#/session/' + encodeURIComponent(d.session_id); }
+      }));
+      if (d.session_id) { forget('a6-draft-new'); attached.clear(); location.hash = '#/session/' + encodeURIComponent(d.session_id); }
     } catch (e) { toast(e.message, true); }
     task.readOnly = false;
-  }, () => capOk() && (!!task.value.trim() || (!!seed.value && mode.value === 'run')));
+  }, () => capOk() && (!!task.value.trim() || attached.count() > 0 || (!!seed.value && mode.value === 'run')));
   task.addEventListener('input', go.sync); mode.addEventListener('change', go.sync); seed.onchange = go.sync;
   const checkCap = () => { cap.setAttribute('aria-invalid', String(!capOk())); go.sync(); };
   cap.oninput = checkCap; checkCap();
@@ -120,7 +121,8 @@ function newWorkDock(presets, presetDefault, sessions) {
   }));
   root.appendChild(picks);
   root.appendChild(more);
-  root.appendChild(fieldLabel(task, 'Task or question'));
+  root.appendChild(attached.head(fieldLabel(task, 'Task or question')));
+  root.appendChild(attached.tray);
   root.appendChild(row);
   const preview = attachParallelPreview(task, root, () => mode.value === 'run' ? {preset: preset.value} : null);
   mode.addEventListener('change', preview); preset.addEventListener('change', preview);

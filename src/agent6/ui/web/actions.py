@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+from collections.abc import Sequence
 from typing import Any
 
 from agent6 import errors
@@ -28,7 +29,7 @@ from agent6.machine import (
 )
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui import directive_actions, spawn
+from agent6.ui import directive_actions, operator_images, spawn
 from agent6.ui.web import model
 from agent6.viewmodel import listing, open_approval, pending_questions, session_is_live
 from agent6.viewmodel.machine import logs as machine_logs
@@ -176,7 +177,12 @@ def answer_question(
 
 
 def steer(
-    cwd: pathlib.Path, session_id: str, text: str, *, config_paths: tuple[pathlib.Path, ...] = ()
+    cwd: pathlib.Path,
+    session_id: str,
+    text: str,
+    *,
+    config_paths: tuple[pathlib.Path, ...] = (),
+    images: Sequence[operator_images.EncodedImage] = (),
 ) -> tuple[bool, str]:
     """Steer a live run at its next safe boundary.
 
@@ -185,6 +191,7 @@ def steer(
         session_id: The run.
         text: A free instruction; "" continues, "abort" stops the run.
         config_paths: The server's `--config`, which a `/btw` asks on.
+        images: The images sent with the instruction.
 
     Returns:
         Whether the request landed, and the note or the refusal.
@@ -193,7 +200,7 @@ def steer(
     if isinstance(session_dir, tuple):
         return session_dir
     return directive_actions.submit_composer_line(
-        session_dir, text, repo=cwd, config_paths=config_paths
+        session_dir, text, repo=cwd, config_paths=config_paths, images=images
     )
 
 
@@ -269,6 +276,7 @@ def resume_run(
     route: str = "",
     merge: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
+    images: Sequence[operator_images.EncodedImage] = (),
 ) -> tuple[bool, str]:
     """Resume a finished or stopped run detached.
 
@@ -280,6 +288,7 @@ def resume_run(
         route: The `provider/model` to continue on; "" as recorded.
         merge: The branch to merge into the run's work before its first turn, or "".
         config_paths: The `--config` files in command-line order.
+        images: The images sent with the instruction.
 
     Returns:
         Whether it started, and the note or the refusal; a live run and a run whose manifest
@@ -295,7 +304,7 @@ def resume_run(
         manifest = sessions_manifest.read_manifest(session_dir)
         if blocker := listing.manifest_resume_blocker(manifest, session_dir.name):
             return False, f"cannot resume {session_dir.name}: {blocker}"
-    if not (text.strip() or merge) and listing.finished_needs_new_work(session_dir):
+    if not (text.strip() or merge or images) and listing.finished_needs_new_work(session_dir):
         return False, (
             f"run {session_id!r} already finished (the agent called finish_session);"
             " type what to do next (Enter resumes it with the instruction)"
@@ -308,6 +317,7 @@ def resume_run(
         model=route,
         config_paths=config_paths,
         flags=(f"--merge={merge}",) if merge else (),
+        images=images,
     )
     return (err == ""), (err or "resuming")
 

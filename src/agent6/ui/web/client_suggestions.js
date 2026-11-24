@@ -129,6 +129,67 @@ function attachParallelSuggest(task, root) {
   } };
 }
 
+// A message's images, pasted, dropped or picked. The limits mirror agent6.media; the server checks each image again.
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const IMAGE_MAX_BYTES = 2 * 1024 * 1024, IMAGE_MAX_COUNT = 4;
+function attachImages(ta, root, onChange = () => {}) {
+  const tray = el('div', 'attachments'); tray.hidden = true;
+  const input = el('input'); input.type = 'file'; input.accept = IMAGE_TYPES.join(','); input.multiple = true; input.hidden = true;
+  const button = el('button', 'quiet attach', 'Image'); button.type = 'button';
+  button.title = 'Attach an image; a paste or a drop attaches one too';
+  let items = [];
+  const paint = () => {
+    tray.replaceChildren(...items.map((item, i) => {
+      const chip = el('span', 'attachment');
+      const thumb = el('img'); thumb.src = 'data:' + item.media_type + ';base64,' + item.data; thumb.alt = '';
+      const remove = el('button', 'quiet x-btn', '×'); remove.type = 'button';
+      remove.setAttribute('aria-label', 'Remove ' + item.name);
+      remove.onclick = () => { items.splice(i, 1); paint(); };
+      chip.append(thumb, el('span', null, item.name + ' · ' + Math.ceil(item.size / 1024) + ' KiB'), remove);
+      return chip;
+    }));
+    tray.hidden = !items.length;
+    onChange();
+  };
+  const base64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.slice(reader.result.indexOf(',') + 1));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  const add = async (files) => {
+    for (const file of files) {
+      const name = file.name || 'image';
+      if (!IMAGE_TYPES.includes(file.type)) { toast(name + ' is not a PNG, JPEG, GIF or WebP image', true); continue; }
+      if (file.size > IMAGE_MAX_BYTES) { toast(name + ' is over the 2 MiB limit', true); continue; }
+      if (items.length >= IMAGE_MAX_COUNT) { toast('a message carries at most four images', true); break; }
+      try { items.push({ media_type: file.type, data: await base64(file), name, size: file.size }); }
+      catch (e) { toast(name + ' could not be read: ' + e.message, true); }
+    }
+    paint();
+  };
+  button.onclick = () => input.click();
+  input.onchange = () => { add([...input.files]); input.value = ''; };
+  ta.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); add(files); }
+  });
+  root.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); });
+  root.addEventListener('drop', (e) => {
+    const files = [...(e.dataTransfer?.files || [])];
+    if (files.length) { e.preventDefault(); add(files); }
+  });
+  return {
+    tray,
+    // The entry's label line, with the button at its end: the entry's row keeps its width.
+    head: (label) => { const line = el('div', 'entry-head'); line.append(label, button, input); return line; },
+    count: () => items.length,
+    // A body without images stays the body a text message always sent.
+    into: (body) => items.length ? { ...body, images: items.map(({ media_type, data }) => ({ media_type, data })) } : body,
+    clear: () => { items = []; paint(); },
+  };
+}
+
 // The fragment mirrors agent6.ui.task_refs; the server lists the files an `@path` can read.
 function attachRefSuggest(ta, root, session = () => '') {
   let box = null, items = [], more = 0, active = -1, timer, generation = 0;

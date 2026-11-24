@@ -86,6 +86,7 @@ function makeComposer(id) {
   const suggest = attachCommandSuggest(ta, root, () => finished === false, offeredCommands);
   const models = attachParallelSuggest(ta, root);
   const refs = attachRefSuggest(ta, root, () => id);
+  const attached = attachImages(ta, root, () => sendBtn.sync());
   const apply = () => {
     const closed = !!finished && !!refused;
     ta.readOnly = busy; // not disabled: the entry keeps the keyboard focus
@@ -126,7 +127,7 @@ function makeComposer(id) {
   const resume = async (text) => {
     busy = true; apply();
     try {
-      await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', { text, preset: preset.value, model: model.value });
+      await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', attached.into({ text, preset: preset.value, model: model.value }));
       const under = [preset.value && 'preset ' + preset.value, model.value && 'model ' + model.value].filter(Boolean).join(', ');
       toast(under ? 'resuming the run under ' + under + '…' : 'resuming the run…');
       // A parked run is already unfinished; only worker liveness confirms a resume.
@@ -134,7 +135,7 @@ function makeComposer(id) {
         await new Promise(r => setTimeout(r, 1000));
         if (!root.isConnected) return;
         let s; try { s = await getJSON('/api/session/' + encodeURIComponent(id)); } catch (_) { continue; }
-        if (s && s.live === true) { clearDraft(); route(); return; }
+        if (s && s.live === true) { clearDraft(); attached.clear(); route(); return; }
       }
       toast('the resume has not started yet; check `agent6 sessions`', true);
     } catch (e) { toast(e.message, true); }
@@ -199,14 +200,14 @@ function makeComposer(id) {
         .catch(err => toast(err.message, true));
     }
     if (!finished) {
-      return postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
-        .then(r => { toast((r && r.message) || 'steer sent'); clearDraft(); })
+      return postJSON('/api/session/' + encodeURIComponent(id) + '/steer', attached.into({ text }))
+        .then(r => { toast((r && r.message) || 'steer sent'); clearDraft(); attached.clear(); })
         .catch(err => toast(err.message, true));
     }
     return resume(text);
-  }, () => finished !== null && !busy && !(finished && refused) && (!!ta.value.trim() || (finished && !needsWork)), ta);
+  }, () => finished !== null && !busy && !(finished && refused) && (!!ta.value.trim() || attached.count() > 0 || (finished && !needsWork)), ta);
   row.appendChild(ta); row.appendChild(sendBtn);
-  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(fieldLabel(ta, 'Message to the run')); root.appendChild(row); root.appendChild(refusal); root.appendChild(hint);
+  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(attached.head(fieldLabel(ta, 'Message to the run'))); root.appendChild(attached.tray); root.appendChild(row); root.appendChild(refusal); root.appendChild(hint);
   const preview = attachParallelPreview(ta, root, () => ta.disabled ? null : {preset: finished ? preset.value : '', session_id: id});
   preset.addEventListener('change', preview);
   root.quote = (note) => {
