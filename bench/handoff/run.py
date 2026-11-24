@@ -46,6 +46,7 @@ run_commands = "deny"
 max_turns = 48
 parallel.tool = true
 parallel.max_children = {job.CHILDREN}
+parallel.judges = []
 verify.infer = false
 verify.when = "never"
 [review]
