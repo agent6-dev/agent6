@@ -595,6 +595,56 @@ def test_a_parked_resume_queues_its_steer_with_the_images_sent_with_it(
     assert (queued.text, queued.images) == (message.text, (image,))
 
 
+def test_a_parked_tasks_images_wait_for_the_start_a_bare_resume_makes(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare resume of a parked run consumed the images recorded for its task.
+
+    A front-end records the task's images before it launches the run. The run parked, and the
+    resume looked the record up under its empty steer, which consumes it: the task then started
+    without its images.
+    """
+    from agent6 import operator_input
+    from agent6.app import resume as resume_mod
+    from agent6.sessions import ipc
+
+    image = operator_input.ImageRef(media_type="image/png", byte_size=4, sha256="0" * 64)
+    message = operator_input.OperatorInput(parts=("match this screenshot", image))
+    session_dir = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="run-PTASK"
+    ).session_dir
+    ipc.write_launch_input(session_dir, message)
+    holder_fd = lock.acquire_repo_writer(paths.state_dir(repo), repo, "run-LIVE")
+    try:
+        parked = app_run.run_task(
+            _load_cfg(),
+            message.text,
+            started_at=time.time(),
+            frontend=mock.MagicMock(),
+            session_id="run-PTASK",
+            mode="run",
+        )
+    finally:
+        lock.release_single_writer(holder_fd)
+    assert parked == 2
+    recorded: list[tuple[operator_input.ImageRef, ...]] = []
+
+    def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
+        # The loop takes the record under the task's words when it starts.
+        recorded.append(ipc.take_launch_input(session_dir, message.text).images)
+        return execution.ExecutionEnd(0)
+
+    monkeypatch.setattr(session_runtime, "select_isolation", _full_isolation)
+    monkeypatch.setattr(execution, "run_execution", _execution)
+
+    rc = resume_mod.resume_task(
+        (), "run-PTASK", started_at=time.time(), frontend=mock.MagicMock(), force=False
+    )
+
+    assert rc == 0
+    assert recorded == [(image,)]
+
+
 def test_a_steer_survives_a_resume_that_parks_again(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -780,6 +830,35 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     session_fd = lock.acquire_single_writer(layout.session_dir)
     assert session_fd is not None
     lock.release_single_writer(session_fd)
+
+
+def test_a_resume_that_fails_before_its_session_opens_releases_the_writer_lock(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume that crashed while it read the journal kept the session's writer lock.
+
+    An in-process front-end then refused every later resume of the session. Nothing of the
+    session was opened, so its view is not closed either.
+    """
+    from agent6.app import resume as resume_mod
+    from agent6.viewmodel.session import log as session_log
+
+    layout = _parked_run(repo, "run-SCAN")
+
+    def _unreadable(_path: pathlib.Path) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(session_log, "scan_session_log", _unreadable)
+    frontend = mock.MagicMock()
+    with pytest.raises(OSError, match="Input/output error"):
+        resume_mod.resume_task(
+            (), "run-SCAN", started_at=time.time(), frontend=frontend, force=False
+        )
+
+    fd = lock.acquire_single_writer(layout.session_dir)
+    assert fd is not None
+    lock.release_single_writer(fd)
+    frontend.close_console_view.assert_not_called()
 
 
 @pytest.mark.parametrize("lifecycle", ["run", "resume"])

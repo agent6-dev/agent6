@@ -924,6 +924,37 @@ def test_an_error_before_the_session_lock_removes_the_worktree(
     assert _worktrees(repo) == [str(repo)]
 
 
+def test_an_error_after_the_session_lock_releases_it_and_removes_the_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash between the session lock and the session's opening stranded both.
+
+    The lock stayed held for the life of an in-process front-end, and no manifest named the
+    worktree, so no sweep found it.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+
+    def _err(line: str) -> None:
+        if "working in the worktree" in line:
+            raise OSError(5, "Input/output error")
+
+    with pytest.raises(OSError, match="Input/output error"):
+        run_lifecycle.run_task(
+            layer.load_effective(repo, ()).config,
+            "task",
+            frontend=cli_run.session_frontend(),
+            started_at=time.time(),
+            session_id="wt-NOTE01",
+            worktree=True,
+            reporter=app_reporter.Reporter(out=print, err=_err),
+        )
+
+    assert _worktrees(repo) == [str(repo)]
+    fd = lock.acquire_single_writer(_run_dir(repo, "wt-NOTE01"))
+    assert fd is not None
+    lock.release_single_writer(fd)
+
+
 def test_a_refusal_before_the_manifest_removes_the_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
