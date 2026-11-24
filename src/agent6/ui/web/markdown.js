@@ -27,7 +27,7 @@ document.addEventListener('click', event => {
   const link = event.target.closest('a[href]');
   if (!link) return;
   event.preventDefault();
-  parent.postMessage({type: 'preview-link', href: link.getAttribute('href')}, '*');
+  parent.postMessage({type: 'preview-link', href: link.getAttribute('href'), newTab: event.ctrlKey || event.metaKey}, '*');
 });
 if (document.body.dataset.remoteAllowed === 'true') {
   for (const player of document.querySelectorAll('video[data-remote-src], audio[data-remote-src]')) {

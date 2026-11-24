@@ -163,6 +163,32 @@ def test_markdown_toc_and_relative_links_keep_the_files_route_and_revision(
     assert not errors
 
 
+def test_modified_markdown_links_open_the_picked_revision_in_another_tab(
+    markdown_repo: tuple[int, str], open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """Ctrl and Cmd open the linked Files page without replacing the current preview."""
+    from playwright import sync_api
+
+    port, _ = markdown_repo
+    page, errors = open_page(port)
+    base = f"http://127.0.0.1:{port}/#/files/HEAD/docs/"
+    guide = base + "guide%20%23%25.md"
+    page.goto(guide)
+    link = page.frame_locator(".files-preview iframe").get_by_role("link", name="next", exact=True)
+    for modifier in ("Control", "Meta"):
+        with page.context.expect_page(timeout=5000) as opened:
+            link.click(modifiers=[modifier])
+        tab = opened.value
+        sync_api.expect(tab).to_have_url(base + "next.markdown?anchor=next-step")
+        sync_api.expect(tab.frame_locator(".files-preview iframe").locator("h1")).to_have_text(
+            "Next step"
+        )
+        assert tab.evaluate("window.opener === null && document.referrer === ''")
+        tab.close()
+        sync_api.expect(page).to_have_url(guide)
+    assert not errors
+
+
 def test_truncated_markdown_keeps_the_source_note_until_opened_whole(
     markdown_repo: tuple[int, str],
     open_page: Callable[[int], tuple[Page, list[str]]],

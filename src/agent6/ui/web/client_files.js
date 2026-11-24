@@ -30,7 +30,8 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
       const href = event.data.href, listed = '#/files/' + encodeURIComponent(opened.rev) + '/';
       if (href.startsWith(listed)) {
         const target = filesPrefix + href.slice(listed.length);
-        if (location.hash === target) route(); else location.hash = target;
+        if (event.data.newTab) window.open(target, '_blank', 'noopener,noreferrer');
+        else if (location.hash === target) route(); else location.hash = target;
       } else if (/^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
       return;
     }
