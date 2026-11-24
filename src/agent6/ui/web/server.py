@@ -433,7 +433,7 @@ def _validation_message(exc: pydantic.ValidationError) -> str:
     clauses: list[str] = []
     for err in exc.errors():
         field = ".".join(str(part) for part in err["loc"]) or "body"
-        msg = str(err["msg"])
+        msg = err["msg"]
         clauses.append(f"{field}: {msg[:1].lower()}{msg[1:]}")
     return "; ".join(clauses)
 

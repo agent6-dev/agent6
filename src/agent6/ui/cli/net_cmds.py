@@ -358,7 +358,7 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
                 borrowed = jail.SessionNetwork(
                     userns_fd=userns_fd,
                     netns_fd=os.open(f"/proc/{pid}/ns/net", os.O_RDONLY),
-                    holder_pid=int(pid or 0),
+                    holder_pid=pid or 0,
                 )
             except OSError as exc:
                 if userns_fd >= 0:

@@ -2025,7 +2025,7 @@ class Harness:
         resolved = self.dispatcher.resolved_skills()
         for w in resolved.warnings:
             self.log(f"LOOP: skills: WARNING: {w}")
-            self.emit(journal.SkillsWarning(warning=str(w)))
+            self.emit(journal.SkillsWarning(warning=w))
         if resolved.enabled or resolved.always:
             self.log(
                 f"LOOP: skills: {len(resolved.enabled)} indexed, {len(resolved.always)} always-on"

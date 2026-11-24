@@ -35,7 +35,7 @@ def outside_listener() -> Iterator[tuple[str, threading.Event]]:
             connected.set()
 
     with socketserver.TCPServer(("127.0.0.1", 0), Connection) as listener:
-        address = ("127.0.0.1", int(listener.server_address[1]))
+        address = ("127.0.0.1", listener.server_address[1])
         thread = threading.Thread(target=listener.serve_forever, daemon=True)
         thread.start()
         try:

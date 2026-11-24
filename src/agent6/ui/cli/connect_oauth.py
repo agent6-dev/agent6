@@ -122,7 +122,7 @@ class CallbackServer:
     @property
     def port(self) -> int:
         """The bound port."""
-        return int(self._server.server_address[1])
+        return self._server.server_address[1]
 
     @property
     def refusal(self) -> str | None:

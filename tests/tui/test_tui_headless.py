@@ -540,7 +540,7 @@ def test_a_question_answered_from_another_front_end_closes_the_modal(
             await pilot.pause()
             assert "Which name?" not in app.export_screenshot().replace("&#160;", " ")
             assert not (tmp_path / "questions" / "question-1.answer").exists()
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert notes == [ipc.ANSWERED_ELSEWHERE]
 
     asyncio.run(scenario())
@@ -998,7 +998,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
             assert not conv_row.display
             await _show_dashboard(pilot)
             assert not app._dash.query_one("#dash-resume", composer.ResumeOptions).display
-            assert "Ctrl+Q to leave" not in str(app.sub_title)
+            assert "Ctrl+Q to leave" not in app.sub_title
 
     asyncio.run(scenario())
 
@@ -1036,7 +1036,7 @@ def test_stop_now_aborts_via_bridge(
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
             assert ipc.steer_request_pending(tmp_path) and ipc.stop_request_pending(tmp_path)
             await app.workers.wait_for_complete()
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert any("did not answer" in note for note in notes)
 
     asyncio.run(scenario())
@@ -1112,7 +1112,7 @@ def test_a_typed_stop_is_the_one_stop(
             app.submit_instruction("/stop")
             await app.workers.wait_for_complete()
             assert calls == [False]
-            notes = [(str(n.message), n.severity) for n in app._notifications]
+            notes = [(n.message, n.severity) for n in app._notifications]
             assert (f"{tmp_path.name} stopped", "information") in notes
 
     async def finished() -> None:
@@ -1126,7 +1126,7 @@ def test_a_typed_stop_is_the_one_stop(
             app.submit_instruction("/stop")
             await pilot.pause()
             assert calls == [False]
-            notes = [(str(n.message), n.severity) for n in app._notifications]
+            notes = [(n.message, n.severity) for n in app._notifications]
             assert ("nothing to stop: the session is not live", "warning") in notes
 
     asyncio.run(scenario())

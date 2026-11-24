@@ -508,7 +508,7 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: pathlib.Path) -> None
             await pilot.pause()
             await pilot.pause()
             pane = app.screen.query_one("#conv-live", widgets.Static)
-            return bool(pane.display), str(pane.content)
+            return pane.display, str(pane.content)
 
     shown_live, text_live = asyncio.run(scenario(True))
     assert shown_live and "thinking" in text_live  # a live turn still streams

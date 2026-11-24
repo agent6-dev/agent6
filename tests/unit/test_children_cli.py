@@ -140,7 +140,7 @@ def test_three_listed_tasks_two_children_and_no_refill(
             with web_server.WebServer(("127.0.0.1", 0), repo, "", secret=signin.SECRET) as srv:
                 threading.Thread(target=srv.serve_forever, daemon=True).start()
                 try:
-                    with contextlib.closing(signin.SignedIn(int(srv.server_address[1]))) as conn:
+                    with contextlib.closing(signin.SignedIn(srv.server_address[1])) as conn:
                         conn.request("GET", f"/api/session/{parent}")
                         response = conn.getresponse()
                         assert response.status == 200

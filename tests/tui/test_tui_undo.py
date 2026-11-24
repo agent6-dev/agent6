@@ -141,7 +141,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
             assert app.continue_as == "fork-child-BBBBBB"
             assert forked_under == [(tmp_path / "custom.toml",)]
             # The rewind notice reaches the screen, as it reaches a `run -i` terminal.
-            shown = [str(n.message) for n in app._notifications]
+            shown = [n.message for n in app._notifications]
             assert any("put 2 path(s) back to turn 1" in m for m in shown), shown
             app.submit_instruction("the message, edited")
             await app.workers.wait_for_complete()
@@ -425,6 +425,6 @@ def test_a_refused_btw_toasts_as_a_warning(
             app.submit_instruction("/btw why?")
             await pilot.pause()
             notes = app._notifications
-            return [(str(n.message), n.severity) for n in notes]
+            return [(n.message, n.severity) for n in notes]
 
     assert ("no live run to ask beside", "warning") in asyncio.run(scenario())

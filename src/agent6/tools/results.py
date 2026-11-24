@@ -639,7 +639,7 @@ class AnswersResult(ToolResult):
             return "queued, no answer yet"
         if self.status == "unanswered":
             return "unanswered"
-        answered = sum(1 for a in self.answers if str(a).strip())
+        answered = sum(1 for a in self.answers if a.strip())
         return f"{answered}/{len(self.answers)} answered"
 
 
@@ -664,7 +664,7 @@ class AddTaskResult(ToolResult):
     @override
     def summary(self) -> str:
         """Return the one-line summary."""
-        return f"{self.status}: {str(self.title)[:60]}"
+        return f"{self.status}: {self.title[:60]}"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -700,7 +700,7 @@ class UpdateTaskResult(ToolResult):
     @override
     def summary(self) -> str:
         """Return the one-line summary."""
-        return f"{self.status}: {str(self.title)[:60]}"
+        return f"{self.status}: {self.title[:60]}"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

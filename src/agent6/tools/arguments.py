@@ -89,7 +89,7 @@ def invalid_arguments(exc: pydantic.ValidationError) -> str:
         ):
             continue
         field = ".".join(str(p) for p in loc) or "arguments"
-        msg = _JSON_WORDS.get(err["type"]) or str(err["msg"]).removeprefix("Value error, ")
+        msg = _JSON_WORDS.get(err["type"]) or err["msg"].removeprefix("Value error, ")
         if err["type"] == "too_long":
             ctx = err.get("ctx") or {}
             msg = f"expected at most {ctx['max_length']} items in the array"

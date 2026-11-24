@@ -52,7 +52,7 @@ _REAL_POPEN = subprocess.Popen
 
 def _fake_popen(argv: list[str], **kw: Any) -> Any:
     """Fake only the machine-agent spawn; git's own Popen calls stay real."""
-    if not any("machine_agent" in str(a) for a in argv):
+    if not any("machine_agent" in a for a in argv):
         return _REAL_POPEN(argv, **kw)
     return _FakeChild(argv, **kw)
 
@@ -579,7 +579,7 @@ def test_invalid_utf8_result_routes_failed_instead_of_escaping(
             return 0
 
     def bad_result(argv: list[str], **kwargs: Any) -> Any:
-        if any("machine_agent" in str(arg) for arg in argv):
+        if any("machine_agent" in arg for arg in argv):
             return _BadResultChild(argv, **kwargs)
         return _REAL_POPEN(argv, **kwargs)
 
@@ -596,7 +596,7 @@ def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
     origin = _origin(tmp_path)
 
     def fail_spawn(argv: list[str] | tuple[str, ...], **kwargs: Any) -> Any:
-        if any("machine_agent" in str(arg) for arg in argv):
+        if any("machine_agent" in arg for arg in argv):
             raise OSError("process table full")
         return _REAL_POPEN(argv, **kwargs)
 

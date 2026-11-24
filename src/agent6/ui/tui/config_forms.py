@@ -140,7 +140,7 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
                     initial = preset_url
                 yield textual_widgets.Input(
                     value=initial,
-                    placeholder=str(config_view.format_value(s.default)),
+                    placeholder=config_view.format_value(s.default),
                     id="edit-value",
                     classes="edit-input edit-gap",
                 )

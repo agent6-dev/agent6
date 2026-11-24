@@ -506,7 +506,7 @@ def test_scalar_model_editor_saves_one_key_and_preserves_siblings(
             await pilot.pause()
             assert app.screen is modal
             assert (repo_cfg if to_repo else cfg).read_text() == before
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert any("model write refused for this test" in note for note in notes)
             monkeypatch.setattr(write, "set_config_leaves", real_write)
             await pilot.press("enter")
@@ -1247,7 +1247,7 @@ def test_provider_form_uses_the_schema_name_refusal(repo: pathlib.Path, name: st
                 f"provider name {name!r} is not a valid TOML bare key"
                 " (use only ASCII letters, digits, '-', '_')."
             )
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert any(expected in note for note in notes), notes
             assert app.screen is modal
             assert paths.global_config_path().read_text() == before
@@ -1379,7 +1379,7 @@ def test_remove_entry_without_an_entry_row(repo: pathlib.Path) -> None:
             screen.action_remove_entry()
             await pilot.pause()
             assert app.screen is screen
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert notes[-1] == (
                 "Select a row of a provider, MCP server, skill or the reviewer roster first."
             )
@@ -1408,7 +1408,7 @@ def test_skill_form_reports_a_repo_override_of_its_global_write(repo: pathlib.Pa
             modal.query_one("#entry-target", forms.ChoiceField).select_value("global config")
             modal.action_add()
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert any("note: the repo config overrides skills.state.alpha;" in n for n in notes)
             table = screen.query_one("#tbl-skills", widgets.DataTable)
             row = next(
@@ -1796,7 +1796,7 @@ def test_unset_names_the_layer_instead_of_claiming_the_default(repo: pathlib.Pat
             screen.action_reset()
             await pilot.pause()
             assert layer.load_effective(repo).config.sandbox.run_commands == "allow"
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert notes[-1] == "Unset sandbox.run_commands from repo config"
 
     asyncio.run(scenario())
@@ -1828,7 +1828,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: pathlib.Path) 
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert notes, "no notification fired"
             assert "already at its default" not in notes[-1]
             assert "preset" in notes[-1]
@@ -1860,7 +1860,7 @@ def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert notes, "no notification fired"
             assert "preset" not in notes[-1]
             assert "flag" in notes[-1]
@@ -1890,7 +1890,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: path
             await pilot.pause()
             assert isinstance(app.screen, config_page.ConfigScreen)  # still alive
             assert _row_total(screen) == baseline  # last-good view retained
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert any("config fix" in m for m in notes), notes
             assert "Config reloaded." not in notes
             # Model suggestions use the last-good config too, never re-reading the invalid file.

@@ -35,7 +35,7 @@ def served(tmp_path: pathlib.Path) -> Iterator[int]:
         encoding="utf-8",
     )
     srv = server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
-    port = int(srv.server_address[1])
+    port = srv.server_address[1]
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
     try:

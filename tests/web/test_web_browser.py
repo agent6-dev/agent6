@@ -45,7 +45,7 @@ def _serve(cwd: pathlib.Path) -> Iterator[int]:
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
     try:
-        yield int(srv.server_address[1])
+        yield srv.server_address[1]
     finally:
         srv.shutdown()
         srv.server_close()

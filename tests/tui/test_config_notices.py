@@ -116,7 +116,7 @@ def test_config_write_notices_name_a_shadowing_layer(
                 '[agent6]\npreset = "mask"\n' + initial + overlay if source == "preset" else initial
             )
             assert io.read_toml_file(target)
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             tail = (
                 " while that flag is used." if source == "flag" else "; a run here reads its value."
             )

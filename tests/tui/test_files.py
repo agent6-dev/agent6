@@ -294,7 +294,7 @@ def test_files_refuses_a_failed_git_listing(tmp_path: pathlib.Path) -> None:
             await pilot.press("F")
             await pilot.pause()
             assert isinstance(app.screen, home.HomeScreen)
-            assert "Could not open files" in "\n".join(str(n.message) for n in app._notifications)
+            assert "Could not open files" in "\n".join(n.message for n in app._notifications)
 
     asyncio.run(scenario())
 

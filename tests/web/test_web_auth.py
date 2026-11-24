@@ -31,7 +31,7 @@ def _serve(cwd: pathlib.Path, secret: str) -> Iterator[int]:
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
     try:
-        yield int(srv.server_address[1])
+        yield srv.server_address[1]
     finally:
         srv.shutdown()
         srv.server_close()
@@ -194,7 +194,7 @@ def test_a_token_from_another_secret_is_refused(port: int, tmp_path: pathlib.Pat
     probe = web_server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=other_secret)
     threading.Thread(target=probe.serve_forever, daemon=True).start()
     try:
-        other_port = int(probe.server_address[1])
+        other_port = probe.server_address[1]
         other = signin.token(other_port, other_secret)
     finally:
         probe.shutdown()

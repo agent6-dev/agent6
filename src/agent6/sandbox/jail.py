@@ -405,7 +405,7 @@ def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
     duration = time.monotonic() - start
     return kinds.CommandResult(
         argv=tuple(policy.argv),
-        returncode=int(proc.returncode),
+        returncode=proc.returncode,
         stdout=lossy_text(proc.stdout),
         stderr=lossy_text(proc.stderr),
         duration_s=duration,

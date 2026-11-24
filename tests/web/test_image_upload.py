@@ -36,7 +36,7 @@ def port(tmp_path: pathlib.Path) -> Iterator[int]:
     srv = server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        yield int(srv.server_address[1])
+        yield srv.server_address[1]
     finally:
         srv.shutdown()
         srv.server_close()

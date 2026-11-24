@@ -33,7 +33,7 @@ def _subtitle(state: pathlib.Path, repo: pathlib.Path) -> str:
         async with app.run_test(size=(120, 30)) as pilot:
             for _ in range(20):
                 await pilot.pause()
-            return str(app.sub_title)
+            return app.sub_title
 
     return asyncio.run(scenario())
 

@@ -305,7 +305,7 @@ def test_close_reports_unconfirmed_cleanup_after_supervisor_loss(tmp_path: pathl
     proc.kill()
     proc.wait(timeout=5)
     error = session.close()
-    assert error and "unknown" in str(error), "transport exit is not confirmed job cleanup"
+    assert error and "unknown" in error, "transport exit is not confirmed job cleanup"
     assert session.close() == error
 
 
@@ -323,7 +323,7 @@ def test_closing_a_hung_transport_leaves_job_reapers_alive(
         pid = wait_file(marker)
         os.kill(session._proc.pid, signal.SIGSTOP)
         error = session.close()
-        assert error and "unknown" in str(error)
+        assert error and "unknown" in error
         deadline = time.monotonic() + 7
         while pathlib.Path(f"/proc/{pid}").exists() and time.monotonic() < deadline:
             time.sleep(0.02)

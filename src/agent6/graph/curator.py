@@ -190,7 +190,7 @@ class GraphCurator:
         """
         return max(
             (
-                int(gv)
+                gv
                 for entry in self._iter_recent_journal()
                 if isinstance((gv := entry.get("graph_version", 0)), int)
             ),

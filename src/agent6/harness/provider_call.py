@@ -498,7 +498,7 @@ class ProviderCaller:
                 self.emit(
                     journal.ProviderEmptyToolCallRetry(
                         attempt=attempt,
-                        stop_reason=str(resp.stop_reason),
+                        stop_reason=resp.stop_reason,
                     )
                 )
             time.sleep(delay)

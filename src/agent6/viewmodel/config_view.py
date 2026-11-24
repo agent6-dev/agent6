@@ -519,7 +519,7 @@ def render_key_detail(
             lines.append(f"    default: {format_value(s.default, display_safe=s.display_safe)}")
         lines.append(f"    source:  {s.source_label}")
         if s.choices:
-            lines.append(f"    choices: {', '.join(str(c) for c in s.choices)}")
+            lines.append(f"    choices: {', '.join(s.choices)}")
         for value in s.choices or ():
             if meaning := s.choice_meanings.get(value):
                 lines.append(f"      {value}: {meaning}")

@@ -178,11 +178,11 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
                 if repaired is not None:
                     parsed_input = repaired
                 else:
-                    raw_str = str(args_raw)
+                    raw_str = args_raw
                     if len(raw_str) > raw_args_cap:
                         raw_str = (
                             raw_str[:raw_args_cap]
-                            + f"... <truncated; original was {len(str(args_raw))} chars>"
+                            + f"... <truncated; original was {len(args_raw)} chars>"
                         )
                     parsed_input = {"_raw_arguments": raw_str}
             raw_id = call.get("id")

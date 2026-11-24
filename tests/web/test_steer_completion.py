@@ -69,7 +69,7 @@ def test_the_refs_route_lists_the_files_of_the_workspace_a_composer_writes_to(
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     def get(path: str) -> tuple[int, dict[str, object]]:
-        conn = signin.SignedIn(int(srv.server_address[1]))
+        conn = signin.SignedIn(srv.server_address[1])
         try:
             conn.request("GET", path)
             resp = conn.getresponse()

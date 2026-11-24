@@ -130,7 +130,7 @@ class DiffPane(forms.ScrollPane):
         if event.checkbox.id != "diff-cumulative":
             return
         event.stop()
-        self.cumulative = bool(event.value)
+        self.cumulative = event.value
         self.post_message(self.CommitChanged())
 
     def render_state(self, s: SessionState, *, sel: str | None, filt: str) -> None:

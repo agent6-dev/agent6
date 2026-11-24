@@ -587,7 +587,7 @@ class JailSession:
             except pydantic.ValidationError as exc:
                 raise jail.JailUnavailableError(
                     "jail session answered with an invalid request ID or JSON: "
-                    + str(exc.errors(include_input=False, include_url=False)[0]["msg"])
+                    + exc.errors(include_input=False, include_url=False)[0]["msg"]
                 ) from None
             if answer.id != self._request_id:
                 raise jail.JailUnavailableError(

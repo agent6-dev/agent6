@@ -333,7 +333,7 @@ class ThinScrollBarRender(ScrollBarRender):
         after = {"@mouse.down": "scroll_down"}
         grab = {"@mouse.down": "grab"}
         segments: list[Segment] = []
-        for cell in range(int(size)):
+        for cell in range(size):
             left, right = 2 * cell, 2 * cell + 1
             left_in = start <= left < end
             right_in = start <= right < end

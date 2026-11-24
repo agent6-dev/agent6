@@ -166,9 +166,7 @@ def _conventional_scope(paths: Sequence[str]) -> str:
         return ""
     src_pkgs = [pp for pp in parts if len(pp) >= 3 and pp[0] == "src"]
     if src_pkgs:
-        names = {
-            pp[2] if len(pp) > 3 else str(pathlib.PurePosixPath(pp[2]).stem) for pp in src_pkgs
-        }
+        names = {pp[2] if len(pp) > 3 else pathlib.PurePosixPath(pp[2]).stem for pp in src_pkgs}
         return names.pop() if len(names) == 1 else ""
     tops = {pp[0] for pp in parts}
     if len(tops) != 1 or any(len(pp) < 3 for pp in parts):

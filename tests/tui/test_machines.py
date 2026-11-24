@@ -298,7 +298,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
             assert isinstance(screen, machmod.MachineWatchScreen)
             assert screen._end_notified is True
             assert fired == []  # no desktop notification for the day-old end
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert not any(m == "ok" or m.endswith(" ok") for m in notes), notes
 
     asyncio.run(scenario())
@@ -342,7 +342,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
             assert not (state / "steer.request").exists()  # nothing dropped in the dead dir
             screen.action_poke()  # a direct call: the action itself answers
             await pilot.pause()
-            toasts = [(str(n.message), n.severity) for n in app._notifications]
+            toasts = [(n.message, n.severity) for n in app._notifications]
             # The CLI's refusal, word for word.
             assert (
                 machine_state.machine_verb_refusal(instance, "tiny", "poke"),
@@ -586,7 +586,7 @@ def test_machine_run_refusal_notifies_and_skips_watch(
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert not isinstance(app.screen, machmod.MachineWatchScreen)  # no watch on nothing
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert any("lock held" in n for n in notes)
 
     asyncio.run(scenario())
@@ -1085,7 +1085,7 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
             await pilot.pause()
             await pilot.press("x")
             await pilot.pause()
-            toasts = [(str(n.message), n.severity) for n in app._notifications]
+            toasts = [(n.message, n.severity) for n in app._notifications]
             # Nothing to stop is the note, not a warning: the CLI's answer.
             assert any("not running" in m and s == "information" for m, s in toasts), toasts
             assert not (instance / "stop").exists()
@@ -1239,7 +1239,7 @@ def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: pa
             # A click on a dimmed key shows the refusal the key shows, not only the bell.
             await pilot.click(keys["Steer"])
             await pilot.pause()
-            notes = [(str(n.message), n.severity) for n in app._notifications]
+            notes = [(n.message, n.severity) for n in app._notifications]
             assert (
                 machine_state.machine_verb_refusal(instance, "tiny", "steer"),
                 "warning",
@@ -1327,7 +1327,7 @@ def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathli
             await pilot.press("ctrl+s")
             await pilot.pause()
             assert not (state / "steer.answer").exists()
-            notes = [(str(n.message), n.severity) for n in app._notifications]
+            notes = [(n.message, n.severity) for n in app._notifications]
             assert (refusal, "warning") in notes
 
     asyncio.run(scenario())
@@ -1367,7 +1367,7 @@ def test_a_poke_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathlib
             await pilot.press("enter")
             await pilot.pause()
             assert not journal.signal_path.exists()
-            notes = [(str(n.message), n.severity) for n in app._notifications]
+            notes = [(n.message, n.severity) for n in app._notifications]
             assert (refusal, "warning") in notes
 
     asyncio.run(scenario())
@@ -1399,7 +1399,7 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: path
             await pilot.press("y")
             await pilot.pause()
             assert not (state / "approvals").exists()
-            notes = [(str(n.message), n.severity) for n in app._notifications]
+            notes = [(n.message, n.severity) for n in app._notifications]
             assert (machmod._ANSWER_LOST, "warning") in notes
 
     asyncio.run(scenario())
@@ -1502,7 +1502,7 @@ def test_a_click_on_a_stale_lit_verb_explains_itself_once(tmp_path: pathlib.Path
             app._notifications.clear()
             await pilot.click(stop)
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]
+            notes = [n.message for n in app._notifications]
             assert notes == [machine_state.machine_verb_refusal(instance, "tiny", "stop")]
 
     asyncio.run(scenario())

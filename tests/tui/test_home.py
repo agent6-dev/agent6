@@ -447,7 +447,7 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
             toasts: list[tuple[str, str]] = []
             while not toasts and time.monotonic() < deadline:
                 await pilot.pause(0.05)
-                toasts = [(str(n.message), n.severity) for n in app._notifications]
+                toasts = [(n.message, n.severity) for n in app._notifications]
             assert ("REFUSING: the tree is dirty", "error") in toasts, toasts
 
     asyncio.run(scenario())

@@ -294,7 +294,7 @@ class ChoiceField(Widget, can_focus=True):
 
     def on_click(self, event: events.Click) -> None:
         """Highlight and select the clicked row."""
-        row = int(event.offset.y) - self.styles.padding.top  # the offset includes padding-top
+        row = event.offset.y - self.styles.padding.top  # the offset includes padding-top
         if 0 <= row < self._row_count:
             self._cursor = row
             self.focus()
@@ -302,7 +302,7 @@ class ChoiceField(Widget, can_focus=True):
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
         """Track the hovered row, repainting only on a change."""
-        row = int(event.offset.y) - self.styles.padding.top
+        row = event.offset.y - self.styles.padding.top
         row = row if 0 <= row < self._row_count else -1
         if row != self._hover:
             self._hover = row
@@ -518,7 +518,7 @@ class TypeaheadField(Widget, can_focus=True):
 
     def on_click(self, event: events.Click) -> None:
         """Focus the text line, or highlight the clicked suggestion."""
-        row = int(event.offset.y) - self.styles.padding.top
+        row = event.offset.y - self.styles.padding.top
         matches = self._matches if self.has_focus else []
         if row == 0:
             self.focus()

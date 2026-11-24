@@ -386,7 +386,7 @@ def task_tree_views(
             holders = ()
         note = models.owner_note(
             created_by=created_by,
-            parent_id=str(parent_id) if isinstance(parent_id, str) else None,
+            parent_id=parent_id if isinstance(parent_id, str) else None,
             standing=standing,
         )
         if holders:

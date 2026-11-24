@@ -218,7 +218,7 @@ def safe_poll(fn: Callable[[], bool] | None) -> bool:
     if fn is None:
         return False
     try:
-        return bool(fn())
+        return fn()
     except Exception:
         return False
 
