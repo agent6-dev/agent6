@@ -4,7 +4,7 @@
 
 `ProviderCall` owns the attempt loop: per-attempt auth headers (a refreshable
 credential is re-minted once on a 401 or 403), one-shot 400 body adaptation,
-transcript recording, a retryable error for a malformed 2xx, usage metering and
+transcript recording, errors for malformed 2xx replies, usage metering and
 the budget charge. Body construction, headers, adaptation, metering rules and
 parsing stay per provider through its hook fields.
 """
@@ -558,9 +558,7 @@ class ProviderCall:
             The parsed response.
 
         Raises:
-            ProviderError: A non-JSON or non-object body, an error envelope, or a
-                body off the wire shape (each retryable unless the envelope's
-                status says otherwise).
+            ProviderError: A non-JSON or malformed body, an error envelope or a tier mismatch.
         """
         try:
             data: Any = resp.json()
@@ -581,20 +579,25 @@ class ProviderCall:
         transcript.observe_serving(data)
         transcript.response_body = data
         try:
-            err = data.get("error")
-            if err and not _has_assistant_output(data):
-                status = envelope_status(err)
-                self._observe_recovery(recovery_pending, status)
+            try:
+                err = data.get("error")
+                if err and not _has_assistant_output(data):
+                    status = envelope_status(err)
+                    self._observe_recovery(recovery_pending, status)
+                    raise provider_types.ProviderError(
+                        f"{self.api_label} error in 2xx body: "
+                        f"{self._safe_text(envelope_detail(err), headers)}",
+                        status_code=status,
+                        tier_refused=provider_types.refuses_service_tier(err, status),
+                        retry_after_s=provider_types.parse_retry_after(resp.headers),
+                    )
+                if self.budget is not None:
+                    self.require_metered(data)
+                parsed = self.parse(data)
+            except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
                 raise provider_types.ProviderError(
-                    f"{self.api_label} error in 2xx body: "
-                    f"{self._safe_text(envelope_detail(err), headers)}",
-                    status_code=status,
-                    tier_refused=provider_types.refuses_service_tier(err, status),
-                    retry_after_s=provider_types.parse_retry_after(resp.headers),
-                )
-            if self.budget is not None:
-                self.require_metered(data)
-            parsed = self.parse(data)
+                    f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
+                ) from exc
         except provider_types.ProviderError as exc:
             # A failed generation can carry a bill. Its output need not be parseable.
             usage = data.get("usage")
@@ -621,11 +624,6 @@ class ProviderCall:
                     exc.usage = billed.usage
             self._refuse_tier(exc, transcript.serving)
             raise
-        except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
-            # The one parse seam: a malformed body never bypasses the retry wrapper as a traceback.
-            raise provider_types.ProviderError(
-                f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
-            ) from exc
         parsed = dataclasses.replace(parsed, serving=transcript.serving)
         transcript.usage = parsed.usage if data.get("usage") else None
         meter_completion(self.budget, self.route, parsed, self.api_label)

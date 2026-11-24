@@ -507,6 +507,40 @@ def test_a_tier_refusal_without_a_parameter_keeps_the_reason(
     assert exc.value.fatal and "providers.work.service_tier" in str(exc.value) and len(calls) == 1
 
 
+@pytest.mark.parametrize("served", ["priority", "flex"])
+def test_malformed_json_output_is_billed_before_checking_the_tier(
+    tmp_path: pathlib.Path, served: str
+) -> None:
+    """A wire shape error keeps the bill and is final only for a tier mismatch."""
+    body = {
+        "status": "completed",
+        "model": "snapshot",
+        "service_tier": served,
+        "output": [{"type": "message", "content": 1}],
+        "usage": {"input_tokens": 10, "output_tokens": 2, "cost": 0.25},
+    }
+    with provider_endpoint.serve(body) as (url, calls):
+        worker = _worker(tmp_path, url, "responses", False, service_tier="flex")
+        with pytest.raises(
+            provider_types.ProviderError, match="did not match the wire shape"
+        ) as exc:
+            worker.call(system="s", messages=[])
+    mismatch = served != "flex"
+    assert len(calls) == 1
+    assert (worker.budget.snapshot().usd_own_calls, exc.value.fatal) == (0.25, mismatch)
+    assert ("providers.work.service_tier" in str(exc.value)) == mismatch
+    if mismatch:
+        assert "asked 'flex', served 'priority'" in str(exc.value)
+    else:
+        assert exc.value.status_code is None
+    transcript, rows = _records(tmp_path)
+    assert len(rows) == 2 and transcript["usage"]["cost_usd"] == 0.25
+    assert all(
+        (row["input_tokens"], row["output_tokens"], row["served_service_tier"]) == (10, 2, served)
+        for row in rows
+    )
+
+
 @pytest.mark.parametrize("stream", [False, True])
 def test_billed_tier_mismatch_keeps_the_failed_generations_usage(
     tmp_path: pathlib.Path, stream: bool
