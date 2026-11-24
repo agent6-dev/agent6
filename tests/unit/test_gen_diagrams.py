@@ -123,6 +123,41 @@ def test_qualified_loop_calls_do_not_match_another_objects_run(tmp_path: pathlib
     ]
 
 
+def test_a_stage_stands_for_its_calls_and_a_context_manager_comes_where_its_block_ends(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The lifecycle calls its stages, and its teardown is a context manager's exit.
+
+    Reading only the lifecycle's own body drew no stage, and reading a `with` item where it
+    is written drew the teardown first.
+    """
+    gen = _load_generator()
+    source = tmp_path / "stages.py"
+    source.write_text(
+        "def lifecycle():\n"
+        "    with hold():\n"
+        "        opened = stage(check())\n"
+        "        drive()\n"
+        "\n"
+        "def stage(checked):\n"
+        "    claim()\n"
+        "    def later():\n"
+        "        never()\n"
+        "    return later\n"
+        "\n"
+        "def hold():\n"
+        "    release()\n",
+        encoding="utf-8",
+    )
+    tier = ("check", "claim", "drive", "never", "release")
+    assert gen._calls_in_order(str(source), "lifecycle", tier) == [
+        "check",
+        "claim",
+        "drive",
+        "release",
+    ]
+
+
 def test_the_generator_never_spawns_uv() -> None:
     """The layering diagram invokes tach from the running interpreter's environment, never `uv`.
 

@@ -199,43 +199,86 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
     return "\n".join(lines)
 
 
+# The modules that hold the lifecycle's stages, by the name their callers import them under.
+_STAGE_MODULES = {
+    "execution": "src/agent6/app/execution.py",
+    "run": "src/agent6/app/run.py",
+    "session_prepare": "src/agent6/app/session/prepare.py",
+}
+# The stage behind a call through a callable the lifecycle hands in, by the attribute called:
+# the execution calls a run's gate step as `inputs.gate`.
+_HANDED_STAGES = {"gate": ("src/agent6/app/run.py", "_gate")}
+
+
+@functools.cache
+def _functions(rel_path: str) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Return a file's functions by name, nested ones included."""
+    tree = ast.parse((_ROOT / rel_path).read_text(encoding="utf-8"))
+    return {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+
+
+def _stage_called(func: ast.expr, rel_path: str) -> tuple[str, str] | None:
+    """Return the file and name of the stage a call's target names, or None for any other call."""
+    if isinstance(func, ast.Name):
+        return (rel_path, func.id) if func.id in _functions(rel_path) else None
+    if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)):
+        return None
+    if func.attr in _HANDED_STAGES:
+        return _HANDED_STAGES[func.attr]
+    path = _STAGE_MODULES.get(func.value.id)
+    return (path, func.attr) if path is not None and func.attr in _functions(path) else None
+
+
 def _calls_in_order(
-    rel_path: str, func: str, tier: tuple[str, ...], *, own_body_only: bool = False
+    rel_path: str, func: str, tier: tuple[str, ...], *, following: tuple[str, ...] = ()
 ) -> list[str]:
     """Return the tier functions a function calls, in source order, each once.
 
-    A composition function's information is its order.
+    A composition function's information is its order. A call to a stage, a function of the
+    lifecycle's own modules, stands for the stage's calls. A context manager's calls come
+    where its block ends, since that is where it releases. A nested function's body is left
+    out: a closure's calls happen when it is called.
 
     Args:
         rel_path: The file.
         func: The calling function.
         tier: The functions that count, qualified when their receiver matters.
-        own_body_only: Leave nested functions' bodies out; a closure's calls happen
-            when it is called.
+        following: The stages being read, so a stage that calls back into one is read once.
 
     Returns:
         The names.
     """
-    tree = ast.parse((_ROOT / rel_path).read_text(encoding="utf-8"))
-    target = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == func
-    )
+    target = _functions(rel_path)[func]
     members = set(tier)
     seen: list[str] = []
+
+    def see(names: list[str]) -> None:
+        seen.extend(name for name in names if name not in seen)
 
     class V(ast.NodeVisitor):
         def visit_Call(self, node: ast.Call) -> None:
             name = ast.unparse(node.func)
             if name not in members and isinstance(node.func, ast.Attribute):
                 name = node.func.attr
-            if name in members and name not in seen:
-                seen.append(name)
+            stage = None if name in members else _stage_called(node.func, rel_path)
+            if name in members:
+                see([name])
             self.generic_visit(node)
+            if stage is not None and stage[1] not in (func, *following):
+                see(_calls_in_order(*stage, tier, following=(func, *following)))
+
+        def visit_With(self, node: ast.With) -> None:
+            for statement in node.body:
+                self.visit(statement)
+            for item in node.items:
+                self.visit(item)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-            if node is target or not own_body_only:
+            if node is target:
                 self.generic_visit(node)
 
     V().visit(target)
@@ -271,25 +314,12 @@ _DISPATCH_TIER = (
 
 
 def _run_lifecycle_mermaid() -> str:
-    """Return `run_task`'s stages with the execution body spliced in at the hand-off.
+    """Return the calls `run_task` makes through its stages, the execution body among them.
 
     Raises:
         SystemExit: A lifecycle tier member matched no calls.
     """
-    outer = _calls_in_order(
-        "src/agent6/app/run.py",
-        "run_task",
-        (*_RUN_LIFECYCLE_TIER, "run_execution"),
-        own_body_only=True,
-    )
-    # The execution calls the lifecycle's gate step (`inputs.gate`) between the
-    # providers and the tools; run's is the `_gate` closure in run_task.
-    gate = _calls_in_order("src/agent6/app/run.py", "_gate", _RUN_LIFECYCLE_TIER)
-    execution = _calls_in_order(
-        "src/agent6/app/execution.py", "run_execution", (*_RUN_LIFECYCLE_TIER, "gate")
-    )
-    body = [stage for name in execution for stage in (gate if name == "gate" else [name])]
-    stages = [stage for name in outer for stage in (body if name == "run_execution" else [name])]
+    stages = _calls_in_order("src/agent6/app/run.py", "run_task", _RUN_LIFECYCLE_TIER)
     if missing := set(_RUN_LIFECYCLE_TIER) - set(stages):
         raise SystemExit(f"run-lifecycle tier matched no calls: {', '.join(sorted(missing))}")
     lines = ["graph TD", '    n_run_task["run_task"]']

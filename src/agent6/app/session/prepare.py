@@ -1,29 +1,214 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The steps a run and a resume share before their execution body.
+"""The steps a run and a resume share before their execution body, and their one teardown.
 
 Each lifecycle calls them in its own order; a refusal is reported here and raised as
-`preflight.SessionRefusedError`, which the lifecycle turns into its exit code.
+`preflight.SessionRefusedError`, which the lifecycle turns into its exit code. `hold` releases
+what the stages took, on every exit.
 """
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import pathlib
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Generator
 
-from agent6 import kinds
+from agent6 import kinds, paths
+from agent6.app import finalize, fork_worktrees, preflight, resume_questions, stamps
 from agent6.app import frontend as app_frontend
-from agent6.app import preflight, resume_questions, stamps
 from agent6.app import reporter as app_reporter
+from agent6.app.parallel import launch as child_launch
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.harness.prompt import repo_context
 from agent6.providers import TranscriptSink
-from agent6.sessions import event_log, lock
+from agent6.sessions import event_log, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AddedWorktree:
+    """A worktree a run's start added for itself.
+
+    Attributes:
+        repo: The repository it was added to.
+        path: The worktree.
+        base_sha: The commit it was added at.
+    """
+
+    repo: pathlib.Path
+    path: pathlib.Path
+    base_sha: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AutoStash:
+    """The operator's edits an execution stashed at its start, and what ending the stash reads.
+
+    Attributes:
+        cwd: The checkout.
+        base_branch: The base branch, used for a run without a worktree.
+        run_branch: The run's branch, or None.
+        auto_pop: Whether the end applies the stash back.
+        in_worktree: Whether the checkout is the session's own worktree.
+    """
+
+    cwd: pathlib.Path
+    base_branch: str
+    run_branch: str | None
+    auto_pop: bool
+    in_worktree: bool
+
+
+@dataclasses.dataclass(slots=True)
+class Held:
+    """What a lifecycle holds: each stage records what it took, and `hold` releases it.
+
+    Attributes:
+        worker_lock_fd: The session's one writer lock.
+        repo_lock_fd: The checkout's writer lock.
+        added_worktree: The worktree this start added, dropped unless the manifest records it.
+        in_session: Whether this worker opened the session: its end then closes the console
+            view, clears the worker pid and ends the stash. Before that a refusal releases
+            only the locks and the worktree, so it never clears another worker's pid.
+        handed_off: Whether another lifecycle started the session under the same id; the pid
+            is then that lifecycle's.
+        detached: Whether the execution continues in the background, which keeps the pid for
+            it and leaves the stash stashed.
+        stash: The stash this execution pushed.
+        untracked_at_start: The operator's untracked files, left out of the stash's status check.
+    """
+
+    worker_lock_fd: int | None = None
+    repo_lock_fd: int | None = None
+    added_worktree: AddedWorktree | None = None
+    in_session: bool = False
+    handed_off: bool = False
+    detached: bool = False
+    stash: AutoStash | None = None
+    untracked_at_start: frozenset[str] = frozenset()
+
+
+def _drop_unrecorded_worktree(
+    added: AddedWorktree,
+    layout: sessions_layout.SessionLayout,
+    *,
+    reporter: app_reporter.Reporter,
+) -> None:
+    """Remove a worktree a start added, unless the session's manifest records it."""
+    # The manifest names a worktree as agent6's, so a start refused before it leaves none.
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        if sessions_manifest.read_manifest(layout.session_dir).worktree == added.path:
+            return
+    gone, why = fork_worktrees.remove_fork_worktree(added.repo, added.path, (added.base_sha,))
+    if not gone:
+        reporter.note(
+            f"the worktree {added.path} stays: it {why}. No session names it; remove"
+            f" it with `git worktree remove {added.path}`"
+        )
+
+
+def _end_session(
+    held: Held,
+    layout: sessions_layout.SessionLayout,
+    *,
+    frontend: app_frontend.SessionFrontend,
+    reporter: app_reporter.Reporter,
+) -> None:
+    """Close the console view, then clear the worker pid and end the stash.
+
+    The pid and the stash are settled even when the close raises.
+    """
+    try:
+        frontend.close_console_view()  # stops the heartbeat, clears the spinner
+    finally:
+        if not held.detached and not held.handed_off:
+            # A detach keeps the pid until the background `resume` claims it.
+            process.clear_worker_pid(layout.session_dir)
+        if held.stash is not None:
+            finalize.end_auto_stash(
+                held.stash.cwd,
+                detached=held.detached,
+                base_branch=held.stash.base_branch,
+                run_branch=held.stash.run_branch,
+                auto_pop=held.stash.auto_pop,
+                session_id=layout.session_id,
+                in_worktree=held.stash.in_worktree,
+                exclude=held.untracked_at_start,
+                reporter=reporter,
+            )
+
+
+@contextlib.contextmanager
+def hold(
+    layout: sessions_layout.SessionLayout,
+    *,
+    frontend: app_frontend.SessionFrontend,
+    reporter: app_reporter.Reporter,
+) -> Generator[Held]:
+    """Release what a lifecycle holds, on every exit path.
+
+    The one owner of worker.pid, both locks, the stash and an unrecorded worktree. The order
+    is fixed and is not the reverse of the order taken: the session's end, both locks, the
+    worktree. The locks go even when the session's end raises, since an in-process front-end
+    outlives the run.
+
+    Args:
+        layout: The session's directory layout.
+        frontend: The surface whose console view the session's end closes.
+        reporter: Receives the stash's notes and a worktree that stays.
+
+    Yields:
+        The record the lifecycle's stages fill.
+    """
+    held = Held()
+    try:
+        yield held
+    finally:
+        try:
+            if held.in_session:
+                _end_session(held, layout, frontend=frontend, reporter=reporter)
+        finally:
+            lock.release_single_writer(held.repo_lock_fd)
+            lock.release_single_writer(held.worker_lock_fd)
+            if held.added_worktree is not None:
+                _drop_unrecorded_worktree(held.added_worktree, layout, reporter=reporter)
+
+
+def record_dirs(
+    repo: pathlib.Path,
+    launch: child_launch.ChildLaunch | None,
+    *,
+    reporter: app_reporter.Reporter,
+) -> tuple[pathlib.Path, pathlib.Path]:
+    """Return the state directory a session's record goes under and the one it executes with.
+
+    A child's record goes under the state of the repository that dispatched it, so its
+    listings read the child from its first event; its memory and rulings stay with its clone.
+
+    Args:
+        repo: The repository the session was started in.
+        launch: The child launch that binds the record; None outside one.
+        reporter: Receives the refusal.
+
+    Returns:
+        The record's state directory, then the execution's.
+
+    Raises:
+        preflight.SessionRefusedError: The launch is unbound or its checkout changed.
+    """
+    if launch is None:
+        state = paths.state_dir(repo)
+        return state, state
+    try:
+        state = launch.checked_clone(repo).state
+    except child_launch.LaunchError as exc:
+        reporter.refuse(str(exc))
+        raise preflight.SessionRefusedError(2) from exc
+    return launch.record_state, state
 
 
 def hold_workspace_and_select_isolation(

@@ -14,12 +14,12 @@ import os
 import pathlib
 import shutil
 from collections.abc import Callable, Sequence
+from typing import NoReturn
 
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, pack, paths
 from agent6.app import (
     execution,
-    finalize,
     fork_worktrees,
     preflight,
     stamps,
@@ -50,7 +50,7 @@ def discard_husk_dir(session_dir: pathlib.Path) -> None:
         shutil.rmtree(session_dir)
 
 
-def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is refused, in preflight order
+def run_task(
     cfg: Config,
     task: str,
     *,
@@ -132,6 +132,79 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     """
     if (mode == "reviewer") != (contract is not None):
         raise ValueError("mode 'reviewer' is the one mode that drives a conversation contract")
+    try:
+        return _run(
+            cfg,
+            task,
+            frontend=frontend,
+            cwd=cwd,
+            started_at=started_at,
+            operator_task=operator_task,
+            session_id=session_id,
+            source_session_id=source_session_id,
+            interactive=interactive,
+            tui=tui,
+            mode=mode,
+            metric=metric,
+            standing_goal=standing_goal,
+            budget_overrides=budget_overrides,
+            sandbox_overrides=sandbox_overrides,
+            preset=preset,
+            initial_steer=initial_steer,
+            pins=pins,
+            preset_stamp=preset_stamp,
+            model=model,
+            explicit_leaves=explicit_leaves,
+            worktree=worktree,
+            config_paths=config_paths,
+            effective=effective,
+            reporter=reporter,
+            contract=contract,
+            opening=opening,
+        )
+    except preflight.SessionRefusedError as refusal:
+        return refusal.rc
+
+
+def _run(  # noqa: C901, PLR0912, PLR0915  # every way a run is refused, in preflight order
+    cfg: Config,
+    task: str,
+    *,
+    frontend: app_frontend.SessionFrontend,
+    cwd: pathlib.Path | None,
+    started_at: float,
+    operator_task: str | None,
+    session_id: str,
+    source_session_id: str | None,
+    interactive: bool,
+    tui: bool,
+    mode: kinds.LoopMode,
+    metric: directive.MetricSpec | None,
+    standing_goal: str,
+    budget_overrides: session_setup.BudgetOverrides | None,
+    sandbox_overrides: session_setup.SandboxOverrides | None,
+    preset: str,
+    initial_steer: str,
+    pins: Sequence[str],
+    preset_stamp: tuple[str, bool] | None,
+    model: str | kinds.ModelRoute | None,
+    explicit_leaves: frozenset[str],
+    worktree: bool,
+    config_paths: tuple[pathlib.Path, ...],
+    effective: layer_data.EffectiveConfig | None,
+    reporter: app_reporter.Reporter,
+    contract: kinds.ConversationContract | None,
+    opening: directive.Segment | tuple[directive.Segment, ...] | None,
+) -> int:
+    """Run the session; `run_task` documents the arguments.
+
+    Returns:
+        The process exit code of a run that started.
+
+    Raises:
+        preflight.SessionRefusedError: A check refused or parked the run, already reported;
+            an empty `/review` raises exit 0.
+    """
     if operator_task is None:
         operator_task = task
     role = kinds.session_kind(mode).role
@@ -139,19 +212,19 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     # The run's checkout: the repository, or the worktree `worktree` adds below.
     cwd = repo
     if (cwd / ".git").is_file() and not preflight.require_git_repo(cwd, reporter=reporter):
-        return 2
+        raise preflight.SessionRefusedError(2)
     # A startup grant is recorded before model commands can rewrite the pointer under partial.
     worktree_git_dir = paths.linked_worktree_git_dir(cwd)
     # A first prompt is a task, not a composer line.
     if (problem := directive.steer_problem(task)) is not None:
         reporter.error(problem)
-        return 2
+        raise preflight.SessionRefusedError(2)
     if session_id:
         try:
             id.validate_explicit_session_id(session_id)
         except id.SessionIdError as exc:
             reporter.error(str(exc))
-            return 2
+            raise preflight.SessionRefusedError(2) from exc
 
     # The clamp comes before anything reads a knob; the invocation's grant lands after it.
     cfg = session_setup.session_config(cfg, mode, sandbox_overrides)
@@ -161,13 +234,13 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             review_world = review_directive.build(repo, review_target, hide=cfg.sandbox.hide_paths)
         except review_directive.ReviewDirectiveError as exc:
             reporter.refuse(str(exc))
-            return 2
+            raise preflight.SessionRefusedError(2) from exc
         if review_world.empty:
             reporter.out(review_world.message)
-            return 0
+            raise preflight.SessionRefusedError(0)
         if worktree and not review_target:
             reporter.refuse("/review needs this working tree; drop --worktree or name a ref")
-            return 2
+            raise preflight.SessionRefusedError(2)
         worktree = worktree or review_world.needs_worktree
         task = review_world.message
     if worktree and (top := paths.checkout_root(repo)) != repo.resolve():
@@ -175,46 +248,37 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             f"--worktree starts at the repository's top level, and this is a subdirectory of"
             f" {top}. Run it from there, or run without --worktree."
         )
-        return 2
+        raise preflight.SessionRefusedError(2)
     # Refuse an unanswerable run before anything is created, so its id stays free. A fresh run
     # has no dir yet, so the env is the only away answer.
-    try:
-        tui_enabled = session_prepare.headless_check(
-            cfg,
-            frontend,
-            tui=tui,
-            interactive=interactive,
-            mode=mode,
-            away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
-            reporter=reporter,
-        )
-    except preflight.SessionRefusedError as refusal:
-        return refusal.rc
+    tui_enabled = session_prepare.headless_check(
+        cfg,
+        frontend,
+        tui=tui,
+        interactive=interactive,
+        mode=mode,
+        away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
+        reporter=reporter,
+    )
     # Before isolation: its budget preflight prices the model from the refreshed listing.
     if not preflight.route_preflight(
         cfg, role, reporter=reporter, model_flag=session_setup.route_text(model)
     ):
-        return 2
+        raise preflight.SessionRefusedError(2)
     # A worktree run selects below, once the worktree its commands run in exists.
     isolation: kinds.IsolationLevel | None = None
     if not worktree:
-        try:
-            isolation = session_prepare.hold_workspace_and_select_isolation(
-                cfg, cwd, frontend=frontend, reporter=reporter, worktree_git_dir=worktree_git_dir
-            )
-        except preflight.SessionRefusedError as refusal:
-            return refusal.rc
-
-    try:
-        git = preflight.git_preflight(
-            repo,
-            cfg,
-            mode,
-            confirm_run_on_run_branch=frontend.confirm_run_on_run_branch,
-            reporter=reporter,
+        isolation = session_prepare.hold_workspace_and_select_isolation(
+            cfg, cwd, frontend=frontend, reporter=reporter, worktree_git_dir=worktree_git_dir
         )
-    except preflight.SessionRefusedError as refusal:
-        return refusal.rc
+
+    git = preflight.git_preflight(
+        repo,
+        cfg,
+        mode,
+        confirm_run_on_run_branch=frontend.confirm_run_on_run_branch,
+        reporter=reporter,
+    )
     base_sha, base_branch = git.base_sha, git.base_branch
     if review_world is not None:
         base_sha = review_world.target.head_commit or review_world.target.base_commit or ""
@@ -224,28 +288,17 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             "--worktree starts from HEAD's commit, and this repository has none. Commit first"
             ' (`git add -A && git commit -m "initial commit"`), or run without --worktree.'
         )
-        return 2
+        raise preflight.SessionRefusedError(2)
 
-    # A child's record goes under the state of the repository that dispatched it, so its
-    # listings read the child from its first event; its memory and rulings stay with its clone.
-    launch = child_launch.read()
-    if launch is not None:
-        try:
-            state = launch.checked_clone(repo).state
-        except child_launch.LaunchError as exc:
-            reporter.refuse(str(exc))
-            return 2
-        record = launch.record_state
-    else:
-        record = state = paths.state_dir(repo)
+    record, state = session_prepare.record_dirs(repo, child_launch.read(), reporter=reporter)
     bucket = kinds.session_bucket(mode)
     # Same-bucket reuse is the resume or park flow below; another bucket's id is a collision.
-    if session_id and (held := id.session_id_bucket(record, session_id)) not in (None, bucket):
+    if session_id and (other := id.session_id_bucket(record, session_id)) not in (None, bucket):
         reporter.error(
-            f"--session-id {session_id!r} already names a session under {held}/;"
+            f"--session-id {session_id!r} already names a session under {other}/;"
             " ids are unique across every bucket. Pick another id."
         )
-        return 2
+        raise preflight.SessionRefusedError(2)
     effective_session_id = session_id or id.unused_session_id(record, bucket)
     layout = sessions_layout.SessionLayout(
         state_dir=record,
@@ -273,7 +326,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 else " Choose a different --session-id."
             )
             reporter.error(f"run {session_id!r} already exists.{next_step}")
-            return 2
+            raise preflight.SessionRefusedError(2)
 
     if worktree or stamps.parallel_lineage() is not None:
         cfg = worktree_setup.read_if_unset(cfg, repo, reporter=reporter, at=base_sha)
@@ -290,41 +343,27 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         )
     ):
         reporter.refuse(gate_refusal)
-        return 2
+        raise preflight.SessionRefusedError(2)
 
     checkout: fork_worktrees.Checkout | None = None
-
-    def _drop_unrecorded_worktree() -> None:
-        # The manifest names a worktree as agent6's, so a start refused before it leaves none.
-        if checkout is None:
-            return
-        with contextlib.suppress(sessions_manifest.ManifestError):
-            if sessions_manifest.read_manifest(layout.session_dir).worktree == checkout.worktree:
-                return
-        gone, why = fork_worktrees.remove_fork_worktree(repo, checkout.worktree, (base_sha,))
-        if not gone:
-            reporter.note(
-                f"the worktree {checkout.worktree} stays: it {why}. No session names it; remove"
-                f" it with `git worktree remove {checkout.worktree}`"
-            )
-
-    if worktree:
-        try:
-            path = worktrees.place(cfg, repo, effective_session_id)
-            checkout = fork_worktrees.add_session_worktree(
-                repo, path, base_sha, cfg.git.worktree.kind
-            )
-        except errors.OperatorError as exc:
-            reporter.refuse(str(exc))
-            return 2
-        except (errors.GitError, OSError) as exc:
-            reporter.error(f"could not add the run's worktree: {exc}")
-            return 1
-        cwd = checkout.worktree
-        cfg = cfg.with_hidden_in_checkout(repo, cwd)
-        worktree_git_dir = checkout.git_dir
-    worker_lock_fd: int | None = None
-    try:
+    with session_prepare.hold(layout, frontend=frontend, reporter=reporter) as held:
+        if worktree:
+            try:
+                path = worktrees.place(cfg, repo, effective_session_id)
+                checkout = fork_worktrees.add_session_worktree(
+                    repo, path, base_sha, cfg.git.worktree.kind
+                )
+            except errors.OperatorError as exc:
+                reporter.refuse(str(exc))
+                raise preflight.SessionRefusedError(2) from exc
+            except (errors.GitError, OSError) as exc:
+                reporter.error(f"could not add the run's worktree: {exc}")
+                raise preflight.SessionRefusedError(1) from exc
+            # A start that ends before its manifest records the worktree drops it.
+            held.added_worktree = session_prepare.AddedWorktree(repo, checkout.worktree, base_sha)
+            cwd = checkout.worktree
+            cfg = cfg.with_hidden_in_checkout(repo, cwd)
+            worktree_git_dir = checkout.git_dir
         if checkout is not None:
             isolation = session_prepare.hold_workspace_and_select_isolation(
                 cfg, cwd, frontend=frontend, reporter=reporter, worktree_git_dir=worktree_git_dir
@@ -338,37 +377,28 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     " (`agent6 config set --repo git.control agent6`), set git.worktree.kind ="
                     ' "clone", or run without --worktree.'
                 )
-                return 2
+                raise preflight.SessionRefusedError(2)
         assert isolation is not None  # selected before the git preflight, or on the worktree
         # One writer per session dir, taken before any shared state is touched.
-        worker_lock_fd = session_prepare.take_single_writer(layout, reporter=reporter)
-    except preflight.SessionRefusedError as refusal:
-        return refusal.rc
-    finally:
-        # Refused, interrupted or failed before the run's own cleanup below takes over.
-        if worker_lock_fd is None:
-            _drop_unrecorded_worktree()
-    if checkout is not None:
-        reporter.note(
-            f"working in the worktree {cwd} (at {base_sha[:12]}); this checkout and its"
-            " uncommitted changes stay as they are"
-        )
-    repo_lock_fd: int | None = None
-    stashed = False
-    # Whether the stash is applied back at run end: config, or "stash" chosen at the start.
-    stash_pop = cfg.git.auto_stash_pop
-    untracked_at_start: frozenset[str] = frozenset()
-    run_branch: str | None = None
-    detach_requested = False
+        held.worker_lock_fd = session_prepare.take_single_writer(layout, reporter=reporter)
+        if checkout is not None:
+            reporter.note(
+                f"working in the worktree {cwd} (at {base_sha[:12]}); this checkout and its"
+                " uncommitted changes stay as they are"
+            )
+        # Whether the stash is applied back at run end: config, or "stash" chosen at the start.
+        stash_pop = cfg.git.auto_stash_pop
+        untracked_at_start: frozenset[str] = frozenset()
+        run_branch: str | None = None
 
-    try:
+        held.in_session = True
         # A reused dir carries the previous execution's bridge state.
         ipc.clear_pending_answers(layout.session_dir, started_at=started_at)
         if initial_steer.strip() and not ipc.submit_steer(
             layout.session_dir, initial_steer.strip()
         ):
             reporter.error("could not write the initial steer request")
-            return 2
+            raise preflight.SessionRefusedError(2)
         app_frontend.settle_away_mode(
             layout.session_dir, cfg, can_ask=frontend.capabilities.can_ask
         )
@@ -396,7 +426,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         if must_ask and not answerable:
             reporter.refuse(preflight.dirty_tree_refusal(modified, unmerged_run=unmerged_run))
             discard_husk_dir(layout.session_dir)
-            return 2
+            raise preflight.SessionRefusedError(2)
 
         channels = session_prepare.operator_channels(layout, frontend)
         events, prompts = channels.events, channels.prompts
@@ -453,7 +483,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 layout.session_dir, task=parked[0], reason=parked[1], operator_task=parked[2]
             )
 
-        def _park(reason: str, detail: str, *, hint: str = "") -> int:
+        def _park(reason: str, detail: str, *, hint: str = "") -> NoReturn:
             # `reason` is the short cause listings show; `detail` is the sentence read now.
             stamps.stamp_parked(
                 layout.session_dir,
@@ -466,16 +496,16 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 f"    agent6 resume {effective_session_id}    (starts it)"
                 + (f"\n{hint}" if hint else "")
             )
-            return 2
+            raise preflight.SessionRefusedError(2)
 
         # A live worker from here, so the start questions below reach `agent6 answer`.
         process.write_worker_pid(layout.session_dir, os.getpid())
 
         if mode == "run":
             # One run-mode worker per checkout, taken before any tree mutation.
-            repo_lock_fd, holder = lock.take_checkout_writer(cwd, effective_session_id)
-            if repo_lock_fd is None:
-                return _park(
+            held.repo_lock_fd, holder = lock.take_checkout_writer(cwd, effective_session_id)
+            if held.repo_lock_fd is None:
+                _park(
                     "checkout busy",
                     f"run {holder!r} is already driving this checkout, and a second run-mode"
                     " worker would interleave auto-commits on the one working tree",
@@ -505,14 +535,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         if unmerged_run
                         else "commit or stash them"
                     )
-                    return _park(
+                    _park(
                         "uncommitted changes",
                         f"the working tree has uncommitted changes to tracked files; {settle},"
                         " then start the run",
                     )
                 if choice == "stash":
                     if review_world is not None and review_world.target.source == "worktree":
-                        return _park(
+                        _park(
                             "review needs uncommitted changes",
                             "a bare /review cannot stash the changes it reviews; use agent6 ask "
                             '"/review", or set git.dirty_tree to include and retry',
@@ -523,11 +553,15 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                             git_ops.auto_stash_message(effective_session_id),
                             paths=modified if hidden else (),
                         )
-                        stashed = True
-                    except errors.GitError as exc:
-                        return _park(
-                            "stash failed", f"stashing the working tree's changes failed: {exc}"
+                        held.stash = session_prepare.AutoStash(
+                            cwd,
+                            base_branch=base_branch,
+                            run_branch=run_branch,
+                            auto_pop=stash_pop,
+                            in_worktree=checkout is not None,
                         )
+                    except errors.GitError as exc:
+                        _park("stash failed", f"stashing the working tree's changes failed: {exc}")
             # agent6's own directory stays out of the run's commits, a pack a model writes too.
             try:
                 excluded = pack.keep_out_of_git(cwd)
@@ -537,9 +571,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 if excluded is not None:
                     reporter.note(f"excluded .agent6/ in {excluded}; .gitignore is untouched")
             # The operator's files, untracked after any stash; every commit leaves them out.
-            untracked_at_start = git_read.untracked_paths(cwd)
+            untracked_at_start = held.untracked_at_start = git_read.untracked_paths(cwd)
             sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
-            if unmerged_run and not stashed:
+            if unmerged_run and held.stash is None:
                 # A merge includes the earlier run only if its entire tip matches this tree.
                 included = preflight.included_run(
                     cwd,
@@ -622,7 +656,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 pins=tuple(pins),
                 worktree_git_dir=worktree_git_dir,
                 mirror_into=fork_worktrees.mirror_origin(repo, cwd),
-                worker_lock_fd=worker_lock_fd,
+                worker_lock_fd=held.worker_lock_fd,
                 base_rules=review_world.rules if review_world is not None else None,
                 review_target=(
                     (review_world.target, review_world.diff) if review_world is not None else None
@@ -635,43 +669,17 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             cwd=cwd,
             state_dir=state,
         )
-        detach_requested = end.detach_requested
-        return end.rc
-    finally:
-        # The one owner of worker.pid, both locks and the stash, on every exit path; the
-        # releases come last and survive a teardown raise (ACP runs this in-process).
-        try:
-            try:
-                frontend.close_console_view()  # stops the heartbeat, clears the spinner
-            finally:
-                if not detach_requested:
-                    # A detach keeps the pid until the background `resume` claims it.
-                    process.clear_worker_pid(layout.session_dir)
-                if stashed:
-                    finalize.end_auto_stash(
-                        cwd,
-                        detached=detach_requested,
-                        base_branch=base_branch,
-                        run_branch=run_branch,
-                        auto_pop=stash_pop,
-                        session_id=layout.session_id,
-                        in_worktree=checkout is not None,
-                        exclude=untracked_at_start,
-                        reporter=reporter,
-                    )
-        finally:
-            lock.release_single_writer(repo_lock_fd)
-            lock.release_single_writer(worker_lock_fd)
-            _drop_unrecorded_worktree()
-        if detach_requested:
-            # The worker lock is released, so the detached `resume` can acquire it.
-            execution.detach_to_background(
-                frontend=frontend,
-                cfg=cfg,
-                layout=layout,
-                cwd=repo,
-                flags=session_setup.override_flags(
-                    budget_overrides, sandbox_overrides, session_setup.flag_route(cfg, mode, model)
-                ),
-                reporter=reporter,
-            )
+        held.detached = end.detach_requested
+    if end.detach_requested:
+        # The worker lock is released, so the detached `resume` can acquire it.
+        execution.detach_to_background(
+            frontend=frontend,
+            cfg=cfg,
+            layout=layout,
+            cwd=repo,
+            flags=session_setup.override_flags(
+                budget_overrides, sandbox_overrides, session_setup.flag_route(cfg, mode, model)
+            ),
+            reporter=reporter,
+        )
+    return end.rc

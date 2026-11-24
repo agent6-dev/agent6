@@ -221,7 +221,7 @@ def settle(
     session_id: str,
     ask: Callable[[schema.UserQuestion], str],
     reporter: app_reporter.Reporter,
-) -> Settled | None:
+) -> Settled:
     """Apply `[git].dirty_tree` to the outside edits, asking when the policy says so.
 
     Args:
@@ -237,7 +237,10 @@ def settle(
         reporter: Receives a refusal.
 
     Returns:
-        What was done, or None when the resume is refused or cancelled (already reported).
+        What was done.
+
+    Raises:
+        preflight.SessionRefusedError: The resume is refused or cancelled, already reported.
     """
     if not outside or policy == "include":
         return Settled(kept=tuple(outside))
@@ -261,18 +264,18 @@ def settle(
         )
         if choice == "cancel":
             reporter.refuse("not resuming: the working tree is left as it is")
-            return None
+            raise preflight.SessionRefusedError(2)
         if choice == "include":
             return Settled(kept=tuple(outside))
         left = end_tree or seed or ""
         if shared := _also_the_runs(cwd, left, outside):
             reporter.refuse(_shared_refusal(cwd, shared, end_tree=left, run_branch=run_branch))
-            return None
+            raise preflight.SessionRefusedError(2)
     try:
         git_ops.stash_tracked_changes(cwd, git_ops.auto_stash_message(session_id), outside)
     except errors.GitError as exc:
         reporter.refuse(f"stashing the edits made outside the run failed: {exc}")
-        return None
+        raise preflight.SessionRefusedError(2) from exc
     names = ", ".join(terminal.printable_name(p) for p in outside[:4])
     shown = names + (f", +{len(outside) - 4} more" if len(outside) > 4 else "")
     since = "the run last ended" if end_tree else "the run's last commit"

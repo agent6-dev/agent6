@@ -44,10 +44,10 @@ Each entry is the package's docstring.
 ## The run lifecycle
 
 - `run_task` in `app/run.py` composes a run's stages, and `resume_task` in `app/resume.py` a resume's.
-- The steps both take before the execution body live in `app/session/prepare.py`.
+- The steps both take before the execution body live in `app/session/prepare.py`, with `hold`, the one teardown both end in.
 - The body both share is `run_execution` in `app/execution.py`.
 - The diagram draws a run's stages in call order.
-- `end_auto_stash` is last because it runs from `finally`, on every exit path.
+- `end_auto_stash` is last because `hold` runs it on every exit path.
 
 <!-- diagram: run-lifecycle -->
 
