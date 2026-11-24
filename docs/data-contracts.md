@@ -228,8 +228,8 @@ Typed tool-handler results.
 
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `StartedResult`, `SteeredResult`, `BackgroundRosterResult`, `BackgroundReadResult`, `SessionsResult`, `SessionEntriesResult`, `FindingsResult`
 
-- **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fetch, fs_tools, nav_tools, skill_tools}
-- **Read by:** app/review/actions, harness/{child_work, guards, memory_touch, metric_sampler, tool_effects}, harness/verify/gate, tools/{child_tools, result_format, sessions}
+- **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fetch, fs_tools, nav_tools, sessions, skill_tools}
+- **Read by:** app/review/actions, harness/{child_work, guards, memory_touch, metric_sampler, tool_effects}, harness/verify/gate, tools/{child_tools, result_format}
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (43 test files exercise it)
 
 ## Event union

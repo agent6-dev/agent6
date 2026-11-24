@@ -17,14 +17,17 @@ import json
 import os
 import pathlib
 from collections.abc import Generator, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pydantic
 
 from agent6 import kinds, path_safety, terminal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest, shells
-from agent6.tools import results, schema
+from agent6.tools import results, schema, tool_errors
+
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
 # Who said what, from which field; settled events only (deltas repeat them), and every steer.
 _SPEAKER = {
@@ -404,3 +407,60 @@ def _journal_contains(layout: sessions_layout.SessionLayout, needle: str) -> boo
     except (OSError, path_safety.ContainmentError):
         return False
     return miss
+
+
+def read_session(
+    ctx: dispatch.ToolContext, raw: dict[str, Any]
+) -> results.SessionsResult | results.SessionEntriesResult:
+    """List the project's sessions or read entries from one journal.
+
+    Args:
+        ctx: The project state directory and the current session.
+        raw: The tool call's arguments.
+
+    Returns:
+        The roster or the selected page.
+
+    Raises:
+        ToolError: No state dir was wired, or the session does not exist.
+    """
+    args = schema.ReadSessionInput.model_validate(raw)
+    if ctx.state_dir is None:
+        raise tool_errors.ToolError("read_session needs the project state dir; none was wired")
+    if not args.id:
+        return results.SessionsResult(roster(ctx.state_dir, args.query).lines())
+    if ctx.session_dir is not None and args.id == ctx.session_id:
+        bound = sessions_layout.layout_of(ctx.session_dir)
+        if bound.session_dir == ctx.session_dir:
+            return read_entries(bound, args)
+    layout = resolve_reader_id(ctx.state_dir, args.id)
+    if layout is None:
+        raise tool_errors.ToolError(f"no session {args.id!r} in this project")
+    return read_entries(layout, args)
+
+
+def list_findings(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.FindingsResult:
+    """List the session's findings: the open ones, or every one with `all`.
+
+    Args:
+        ctx: The session id and its findings reader.
+        raw: The tool call's arguments.
+
+    Returns:
+        The findings.
+
+    Raises:
+        ToolError: No reader was wired, or the journal is unreadable.
+    """
+    args = schema.ListFindingsInput.model_validate(raw)
+    if ctx.findings is None:
+        raise tool_errors.ToolError("list_findings needs the session's journal; none was wired")
+    listed = dataclasses.replace(
+        ctx.findings(),
+        session_id=ctx.session_id,
+    )
+    if args.all:
+        return listed
+    return dataclasses.replace(
+        listed, findings=tuple(f for f in listed.findings if f.status == "open")
+    )

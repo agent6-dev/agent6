@@ -179,6 +179,7 @@ CONTRACTS: tuple[Contract, ...] = (
             "tools/fetch.py",
             "tools/fs_tools.py",
             "tools/nav_tools.py",
+            "tools/sessions.py",
             "tools/skill_tools.py",
         ),
         pins=("tests/unit/test_tool_result_wire.py", "tests/unit/test_tool_result_summaries.py"),

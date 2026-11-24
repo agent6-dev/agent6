@@ -29,7 +29,6 @@ from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, journal, shells
-from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
     arguments,
     background,
@@ -238,7 +237,7 @@ class ToolDispatcher:
             schema.ApplyPatchInput.TOOL_NAME: fs_tools.apply_patch,
             schema.RunVerifyInput.TOOL_NAME: command_tools.run_verify_command,
             schema.RunCommandInput.TOOL_NAME: command_tools.run_command,
-            schema.ReadSessionInput.TOOL_NAME: lambda ctx, raw: self._read_session(raw),
+            schema.ReadSessionInput.TOOL_NAME: sessions.read_session,
             schema.FetchInput.TOOL_NAME: fetch.fetch,
             schema.ReadBackgroundInput.TOOL_NAME: command_tools.read_background,
             schema.StopBackgroundInput.TOOL_NAME: command_tools.stop_background,
@@ -246,7 +245,7 @@ class ToolDispatcher:
             schema.FinishSessionInput.TOOL_NAME: control_tools.finish_session,
             schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
             schema.AskUserInput.TOOL_NAME: control_tools.ask_user,
-            schema.ListFindingsInput.TOOL_NAME: lambda ctx, raw: self._list_findings(raw),
+            schema.ListFindingsInput.TOOL_NAME: sessions.list_findings,
             schema.ParallelInput.TOOL_NAME: lambda ctx, raw: self._parallel(raw),
             schema.SteerChildInput.TOOL_NAME: lambda ctx, raw: self._steer_child(raw),
             schema.MergeChildInput.TOOL_NAME: lambda ctx, raw: self._merge_child(raw),
@@ -1003,59 +1002,6 @@ class ToolDispatcher:
                 "background commands need a session directory; none was wired"
             )
         return self._shells
-
-    def _read_session(
-        self, raw: dict[str, Any]
-    ) -> results.SessionsResult | results.SessionEntriesResult:
-        """List the project's sessions or read entries from one journal.
-
-        Args:
-            raw: The tool call's arguments.
-
-        Returns:
-            The roster or the selected page.
-
-        Raises:
-            ToolError: No state dir was wired, or the session does not exist.
-        """
-        args = schema.ReadSessionInput.model_validate(raw)
-        if self._state_dir is None:
-            raise tool_errors.ToolError("read_session needs the project state dir; none was wired")
-        if not args.id:
-            return results.SessionsResult(sessions.roster(self._state_dir, args.query).lines())
-        if self._session_dir is not None and args.id == self.session_id:
-            bound = sessions_layout.layout_of(self._session_dir)
-            if bound.session_dir == self._session_dir:
-                return sessions.read_entries(bound, args)
-        layout = sessions.resolve_reader_id(self._state_dir, args.id)
-        if layout is None:
-            raise tool_errors.ToolError(f"no session {args.id!r} in this project")
-        return sessions.read_entries(layout, args)
-
-    def _list_findings(self, raw: dict[str, Any]) -> results.FindingsResult:
-        """List the session's findings: the open ones, or every one with `all`.
-
-        Args:
-            raw: The tool call's arguments.
-
-        Returns:
-            The findings.
-
-        Raises:
-            ToolError: No reader was wired, or the journal is unreadable.
-        """
-        args = schema.ListFindingsInput.model_validate(raw)
-        if self._findings is None:
-            raise tool_errors.ToolError("list_findings needs the session's journal; none was wired")
-        listed = dataclasses.replace(
-            self._findings(),
-            session_id=self.session_id,
-        )
-        if args.all:
-            return listed
-        return dataclasses.replace(
-            listed, findings=tuple(f for f in listed.findings if f.status == "open")
-        )
 
     def _parallel(self, raw: dict[str, Any]) -> results.StartedResult:
         """Start one task's children through the loop.
