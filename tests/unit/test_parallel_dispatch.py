@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, directive, errors
-from agent6.app import children
+from agent6.app.parallel import children
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import merge as parallel_merge
 from agent6.vcs.git import ops as git_ops

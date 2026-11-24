@@ -17,8 +17,6 @@ from collections.abc import Callable, Collection
 from agent6 import budget, directive, errors, kinds, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import (
-    child_launch,
-    child_resume,
     execution,
     finalize,
     fork_worktrees,
@@ -32,6 +30,8 @@ from agent6.app import (
 )
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import resume as child_resume
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
 from agent6.config import (

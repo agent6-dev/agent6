@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import child_launch
+from agent6.app.parallel import launch as child_launch
 from agent6.config import Config, layer
 from agent6.sessions import child_dispatch
 from agent6.ui.cli import entry

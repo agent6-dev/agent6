@@ -22,7 +22,8 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, directive, kinds
-from agent6.app import children, finalize
+from agent6.app import finalize
+from agent6.app.parallel import children
 from agent6.config import Config
 from agent6.graph import curator, models
 from agent6.harness import loop, operator_bridge, provider_call, run_chain

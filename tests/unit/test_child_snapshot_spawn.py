@@ -11,7 +11,9 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, kinds, paths
-from agent6.app import child_wait, children, stop
+from agent6.app import stop
+from agent6.app.parallel import children
+from agent6.app.parallel import wait as child_wait
 from agent6.config import Config, RoleModel
 from agent6.sessions import manifest, process
 from agent6.ui.cli import parallel

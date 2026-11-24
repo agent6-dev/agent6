@@ -16,14 +16,10 @@ from typing import Any
 import pytest
 
 from agent6 import budget, child_records, directive, kinds, paths
-from agent6.app import (
-    child_launch,
-    children,
-    parallel_results,
-    role_providers,
-    stop,
-    worktrees,
-)
+from agent6.app import role_providers, stop, worktrees
+from agent6.app.parallel import children
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import results as parallel_results
 from agent6.harness import loop_conversation, loop_state, run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch
 from agent6.harness.parallel import panel as parallel_panel

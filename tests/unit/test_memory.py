@@ -584,7 +584,8 @@ def test_carry_back_lands_a_children_use_record(tmp_path: pathlib.Path) -> None:
 
     Otherwise it goes with the child's state dir.
     """
-    from agent6.app import parallel_results, reporter
+    from agent6.app import reporter
+    from agent6.app.parallel import results as parallel_results
 
     origin, child, dest = tmp_path / "origin", tmp_path / "child", tmp_path / "dest"
     memory.add(child, "child-fact", "A fact the child found.")
@@ -609,7 +610,8 @@ def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathli
     Left in place, the origin's record kept naming the fact's writers and readers after the
     file was gone, and a child that later recreated the name inherited them.
     """
-    from agent6.app import parallel_results, reporter
+    from agent6.app import reporter
+    from agent6.app.parallel import results as parallel_results
 
     origin, child = tmp_path / "origin", tmp_path / "child"
     memory.add(origin, "fact", "Original.")

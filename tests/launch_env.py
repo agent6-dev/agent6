@@ -15,7 +15,7 @@ from typing import Any, override
 import pytest
 
 from agent6 import paths
-from agent6.app import child_launch
+from agent6.app.parallel import launch as child_launch
 from agent6.sessions import manifest
 
 FINISH: tuple[str, dict[str, Any]] = ("finish_session", {"summary": "Local child completed."})

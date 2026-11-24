@@ -18,17 +18,14 @@ from typing import Any, Protocol
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, errors, journal_tail, kinds, paths
-from agent6.app import (
-    child_launch,
-    child_resume,
-    child_wait,
-    child_watch,
-    parallel_results,
-    stop,
-    worktrees,
-)
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
+from agent6.app import stop, worktrees
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import relay as child_watch
+from agent6.app.parallel import results as parallel_results
+from agent6.app.parallel import resume as child_resume
+from agent6.app.parallel import wait as child_wait
 from agent6.config import Config, ConfigError
 from agent6.context import memory
 from agent6.harness.parallel import repo as child_repo

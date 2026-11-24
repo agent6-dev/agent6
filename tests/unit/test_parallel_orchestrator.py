@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A child's life under its parent: spawn, wait, import and cleanup (app/children.py).
+"""A child's life under its parent: spawn, wait, import and cleanup (app/parallel/children.py).
 
 Driven with a fake spawner that, for each ChildSpec, really clones the origin,
 commits on the child's `agent6/<id>` branch, and fabricates a finished session dir
@@ -27,18 +27,12 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, directive, kinds, paths, portable
-from agent6.app import (
-    child_launch,
-    child_wait,
-    child_watch,
-    compare,
-    parallel_results,
-    reporter,
-    role_providers,
-    stamps,
-    worktrees,
-)
-from agent6.app import children as app_children
+from agent6.app import compare, reporter, role_providers, stamps, worktrees
+from agent6.app.parallel import children as app_children
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import relay as child_watch
+from agent6.app.parallel import results as parallel_results
+from agent6.app.parallel import wait as child_wait
 from agent6.config import Config
 from agent6.context import memory
 from agent6.harness.parallel import repo as child_repo

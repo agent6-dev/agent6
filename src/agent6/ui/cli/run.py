@@ -14,8 +14,8 @@ import sys
 import time
 
 from agent6 import directive, errors, kinds, portable
-from agent6.app import children as app_children
 from agent6.app import frontend, preflight, run
+from agent6.app.parallel import children as app_children
 from agent6.app.session import setup as session_setup
 from agent6.config import (
     Config,

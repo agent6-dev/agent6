@@ -14,7 +14,9 @@ from unittest import mock
 import pytest
 
 from agent6 import child_records, kinds, paths
-from agent6.app import child_launch, child_wait, worktrees
+from agent6.app import worktrees
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import wait as child_wait
 from agent6.config import Config
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.compaction import window as compaction_window

@@ -14,8 +14,12 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, paths
-from agent6.app import child_launch, child_resume, child_wait, child_watch, worktrees
-from agent6.app import children as app_children
+from agent6.app import worktrees
+from agent6.app.parallel import children as app_children
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import relay as child_watch
+from agent6.app.parallel import resume as child_resume
+from agent6.app.parallel import wait as child_wait
 from agent6.config import Config, layer
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, event_log, ipc, journal, lock, process

@@ -339,7 +339,7 @@ def test_a_reviewer_reads_the_retained_target_not_head_or_live_tree(
 
 
 def test_configured_top_level_ask_retains_panel_authority(short_repo: pathlib.Path) -> None:
-    from agent6.app import child_launch
+    from agent6.app.parallel import launch as child_launch
 
     authority = child_launch.dispatch_authority(
         child_env.config(), mode="ask", session_id="review", root=short_repo

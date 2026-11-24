@@ -15,8 +15,8 @@ from typing import Any
 import pytest
 
 from agent6 import budget, child_records, directive, kinds, paths
-from agent6.app import children as app_children
 from agent6.app import reporter as app_reporter
+from agent6.app.parallel import children as app_children
 from agent6.config import Config, ConfigError
 from agent6.harness import loop_conversation, loop_state, run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch

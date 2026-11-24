@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Clone a child's workspace and import its finished branch.
 
-Git plumbing over `agent6.vcs.git.ops`, with no model, UI or process spawning; `app.children`
-drives a `ChildSpawner` over it.
+Git plumbing over `agent6.vcs.git.ops`, with no model, UI or process spawning;
+`app.parallel.children` drives a `ChildSpawner` over it.
 """
 
 from __future__ import annotations

@@ -2,15 +2,15 @@
 # Copyright 2026 Eric Lesiuta
 """The CLI adapter for `agent6 run --parallel` and the parent `/parallel` dispatch.
 
-The children are headless in `agent6.app.children`; this module supplies the `ChildRuntime` they
-drive (the detached spawn from `ui.spawn`, the reviewer provider and judging spinner from
-`compare_ranking`) and the check of a `--parallel` spec. `run.py` routes here.
+The children are headless in `agent6.app.parallel.children`; this module supplies the
+`ChildRuntime` they drive (the detached spawn from `ui.spawn`, the reviewer provider and judging
+spinner from `compare_ranking`) and the check of a `--parallel` spec. `run.py` routes here.
 """
 
 from __future__ import annotations
 
 from agent6 import directive
-from agent6.app import children as app_children
+from agent6.app.parallel import children as app_children
 from agent6.config import Config, ConfigError
 from agent6.models import validate
 from agent6.ui import spawn as ui_spawn
@@ -21,7 +21,7 @@ def child_runtime() -> app_children.ChildRuntime:
     """Return the front-end primitives the parallel pipeline drives.
 
     Injected so `agent6.app` never imports `agent6.ui`. Child liveness and stop are the
-    session-dir bridge, which `agent6.app.children` imports directly.
+    session-dir bridge, which `agent6.app.parallel.children` imports directly.
 
     Returns:
         The primitives.

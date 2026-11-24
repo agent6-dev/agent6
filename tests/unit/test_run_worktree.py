@@ -24,7 +24,6 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, errors, kinds, paths
-from agent6.app import children as app_children
 from agent6.app import (
     fork_worktrees,
     preflight,
@@ -34,6 +33,7 @@ from agent6.app import (
 )
 from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
+from agent6.app.parallel import children as app_children
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
 from agent6.harness.parallel import repo as child_repo

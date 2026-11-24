@@ -78,15 +78,19 @@ Each entry is the package's docstring.
     - App owns what spans executions: the manifest, the writer lock and the providers.
     - The loop and every primitive it calls in a turn belong to `harness`.
     - App imports `harness` and the layers below it, never `ui`.
-    - A front-end injects what app cannot do itself: `frontend.SessionFrontend`, `children.ChildRuntime`.
+    - A front-end injects what app cannot do itself: `frontend.SessionFrontend` and `parallel.children.ChildRuntime`.
     - Output goes through the injected `reporter.Reporter`, never a direct `print`.
-    - Main modules: `run`, `resume`, `fork`, `execution`, `children`, `merge`, `finalize`, `stop`.
+    - Main modules: `run`, `resume`, `fork`, `execution`, `parallel`, `merge`, `finalize`, `stop`.
 - **[`app/machine`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app/machine)**: Compose the machine engine behind `agent6 machine run` and `create`.
     - Part of `app`: it imports `agent6.machine`, `harness` and the layers below, never `ui`.
     - It resolves one config per state and runs the sandbox, egress and budget preflight.
     - It spawns the runner of each `agent` state.
     - `ui/cli/machine_cmds.py` keeps argv adaptation and console rendering.
     - Main modules: `run`, `create`, `agent`, `check`, `state_configs`, `scriptcheck`.
+- **[`app/parallel`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app/parallel)**: A group's child sessions: their launch files, spawning, relay, waiting, resume and import.
+    - Part of `app`: it imports `harness` and the layers below, never `ui`.
+    - The dispatcher the loop runs is `harness.parallel`.
+    - Main modules: `children`, `launch`, `relay`, `wait`, `results`, `resume`.
 - **[`app/review`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app/review)**: The reviews an operator starts or acts on: finding actions, `/review` and `sessions review`.
     - Part of `app`: it imports `harness` and the layers below, never `ui`.
     - The panel the loop runs itself is `harness.review`.
@@ -108,6 +112,7 @@ Each entry is the package's docstring.
 - **[`harness/parallel`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/parallel)**: The children a run dispatches: their dispatch, merge, ranking, panels and recovery.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
     - `[harness.parallel]` configures it.
+    - `app.parallel` clones, spawns, awaits and imports each child.
     - Main modules: `dispatch`, `merge`, `rank`, `panel`, `recovery`, `work`.
 - **[`harness/prompt`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/prompt)**: The run's system prompt and first message: the block fillers, the repo context and the preview.
     - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
@@ -467,13 +472,13 @@ One rule holds for every child and reviewer: the parent hands down, the child pu
 Four entries start children: `run --parallel`, the composers' `/parallel` directive, a live run's `/parallel` steer, and the model's `parallel` tool (`[harness.parallel].tool`, off by default).
 All of them share `parse_spec` in `directive.py`, a stdlib leaf both `harness` and `ui` import.
 
-- `child_records.py` holds the `ChildSpawner` and `GroupChildSpawner` protocols, and `app/children.py` implements them over the front-end's `ChildRuntime`.
+- `child_records.py` holds the `ChildSpawner` and `GroupChildSpawner` protocols, and `app/parallel/children.py` implements them over the front-end's `ChildRuntime`.
 - `harness/parallel/repo.py` is the git plumbing: `clone_worktree` and `import_run`, with no LLM and no process spawning.
 - `ParallelDispatcher` in `harness/parallel/dispatch.py` starts a task's children and settles them at turn boundaries.
 - `harness/parallel/rank.py` ranks a task's attempts: a judge is a reviewer child whose verdict is an order.
 - `harness/parallel/recovery.py` settles the dispatches an earlier execution left behind, before a resumed one's first provider call.
-- `app/child_launch.py` writes the child's launch file (`AGENT6_LAUNCH`, mode `0600`): its task, pins, caps, away mode and lineage.
-- `app/parallel_results.py` imports a finished child and carries its memory and rulings back.
+- `app/parallel/launch.py` writes the child's launch file (`AGENT6_LAUNCH`, mode `0600`): its task, pins, caps, away mode and lineage.
+- `app/parallel/results.py` imports a finished child and carries its memory and rulings back.
 - `app/worktrees.py` places the clones (`[git.worktree].base_dir`) and removes imported ones.
 - `sessions/child_dispatch.py` writes `<session-dir>/dispatch/<group>.json` before any child launches.
 - A dispatch record's state advances `prepared`, `running`, `settling`, `ranking`, `merging`, `complete`.
@@ -481,7 +486,7 @@ All of them share `parse_spec` in `directive.py`, a stdlib leaf both `harness` a
 The invariants:
 
 - A dispatch reserves nothing: each child starts under what the parent has left (`BudgetTracker.available`), and its settlement charges its final usage once (`BudgetTracker.settle_child`).
-- A child cannot dispatch work: every child bootstrap sets `AGENT6_CHILD=1`, and `app.child_launch.dispatch_authority` separates work dispatch from panel scheduling.
+- A child cannot dispatch work: every child bootstrap sets `AGENT6_CHILD=1`, and `app.parallel.launch.dispatch_authority` separates work dispatch from panel scheduling.
 - Children end with the execution that started them (`ParallelDispatcher.close`).
 - A stopped child never merges by itself.
 - Under agent6-owned git a task's only child merges into the parent chain, and of several attempts only the first-ranked does.
@@ -588,4 +593,4 @@ agent6 also sets markers for its own children:
 
 - `AGENT6_CHILD=1`: a child of a session (a child, a machine state, a `/btw` question), which cannot dispatch work ([Parallel runs](#parallel-runs)).
 - `AGENT6_STREAM_TO_LOG=1`: a detached spawn or child emits its stream deltas as events with no console echo.
-- `AGENT6_LAUNCH=<path>`: the child's launch file (`app/child_launch.py`), which the bootstrap refuses when it is missing, malformed, foreign-owned or exposed.
+- `AGENT6_LAUNCH=<path>`: the child's launch file (`app/parallel/launch.py`), which the bootstrap refuses when it is missing, malformed, foreign-owned or exposed.

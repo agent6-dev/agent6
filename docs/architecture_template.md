@@ -255,13 +255,13 @@ One rule holds for every child and reviewer: the parent hands down, the child pu
 Four entries start children: `run --parallel`, the composers' `/parallel` directive, a live run's `/parallel` steer, and the model's `parallel` tool (`[harness.parallel].tool`, off by default).
 All of them share `parse_spec` in `directive.py`, a stdlib leaf both `harness` and `ui` import.
 
-- `child_records.py` holds the `ChildSpawner` and `GroupChildSpawner` protocols, and `app/children.py` implements them over the front-end's `ChildRuntime`.
+- `child_records.py` holds the `ChildSpawner` and `GroupChildSpawner` protocols, and `app/parallel/children.py` implements them over the front-end's `ChildRuntime`.
 - `harness/parallel/repo.py` is the git plumbing: `clone_worktree` and `import_run`, with no LLM and no process spawning.
 - `ParallelDispatcher` in `harness/parallel/dispatch.py` starts a task's children and settles them at turn boundaries.
 - `harness/parallel/rank.py` ranks a task's attempts: a judge is a reviewer child whose verdict is an order.
 - `harness/parallel/recovery.py` settles the dispatches an earlier execution left behind, before a resumed one's first provider call.
-- `app/child_launch.py` writes the child's launch file (`AGENT6_LAUNCH`, mode `0600`): its task, pins, caps, away mode and lineage.
-- `app/parallel_results.py` imports a finished child and carries its memory and rulings back.
+- `app/parallel/launch.py` writes the child's launch file (`AGENT6_LAUNCH`, mode `0600`): its task, pins, caps, away mode and lineage.
+- `app/parallel/results.py` imports a finished child and carries its memory and rulings back.
 - `app/worktrees.py` places the clones (`[git.worktree].base_dir`) and removes imported ones.
 - `sessions/child_dispatch.py` writes `<session-dir>/dispatch/<group>.json` before any child launches.
 - A dispatch record's state advances `prepared`, `running`, `settling`, `ranking`, `merging`, `complete`.
@@ -269,7 +269,7 @@ All of them share `parse_spec` in `directive.py`, a stdlib leaf both `harness` a
 The invariants:
 
 - A dispatch reserves nothing: each child starts under what the parent has left (`BudgetTracker.available`), and its settlement charges its final usage once (`BudgetTracker.settle_child`).
-- A child cannot dispatch work: every child bootstrap sets `AGENT6_CHILD=1`, and `app.child_launch.dispatch_authority` separates work dispatch from panel scheduling.
+- A child cannot dispatch work: every child bootstrap sets `AGENT6_CHILD=1`, and `app.parallel.launch.dispatch_authority` separates work dispatch from panel scheduling.
 - Children end with the execution that started them (`ParallelDispatcher.close`).
 - A stopped child never merges by itself.
 - Under agent6-owned git a task's only child merges into the parent chain, and of several attempts only the first-ranked does.
@@ -376,4 +376,4 @@ agent6 also sets markers for its own children:
 
 - `AGENT6_CHILD=1`: a child of a session (a child, a machine state, a `/btw` question), which cannot dispatch work ([Parallel runs](#parallel-runs)).
 - `AGENT6_STREAM_TO_LOG=1`: a detached spawn or child emits its stream deltas as events with no console echo.
-- `AGENT6_LAUNCH=<path>`: the child's launch file (`app/child_launch.py`), which the bootstrap refuses when it is missing, malformed, foreign-owned or exposed.
+- `AGENT6_LAUNCH=<path>`: the child's launch file (`app/parallel/launch.py`), which the bootstrap refuses when it is missing, malformed, foreign-owned or exposed.

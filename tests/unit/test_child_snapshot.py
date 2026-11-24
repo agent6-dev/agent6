@@ -9,7 +9,8 @@ import tomllib
 import pytest
 
 from agent6 import child_records, kinds, paths
-from agent6.app import child_launch, stamps, worktrees
+from agent6.app import stamps, worktrees
+from agent6.app.parallel import launch as child_launch
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, RoleModel
 from tests import launch_env

@@ -18,8 +18,8 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import child_env, kinds
-from agent6.app import child_launch
 from agent6.app import reporter as app_reporter
+from agent6.app.parallel import launch as child_launch
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,

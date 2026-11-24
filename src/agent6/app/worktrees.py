@@ -12,7 +12,8 @@ import shutil
 from collections.abc import Callable
 
 from agent6 import child_records, errors, kinds, paths
-from agent6.app import child_launch, child_trees
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import trees as child_trees
 from agent6.config import Config, child_snapshot
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, lineage, process

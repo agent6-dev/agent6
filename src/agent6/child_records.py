@@ -3,7 +3,7 @@
 """The child records every group shares: what a child runs, what it returned, how it merged.
 
 `run --parallel`, the `/parallel` steer and the import plumbing read and write these; the
-code that clones, spawns and merges lives in `harness.parallel.repo`, `app.children` and
+code that clones, spawns and merges lives in `harness.parallel.repo`, `app.parallel.children` and
 `harness.parallel.dispatch`.
 """
 
@@ -259,7 +259,7 @@ class StartedChild:
 class GroupChildSpawner(Protocol):
     """Start a group of sibling children, each imported into the parent's repo at its end.
 
-    One call returns at once; `app.children` clones, spawns, awaits and imports every child
+    One call returns at once; `app.parallel.children` clones, spawns, awaits and imports every child
     behind it, and the parent supplies the tasks and the group id (`p<seq>`). A child that
     failed to start, outlived the teardown or was refused at import has `ok` False and
     leaves the parent's repo untouched.

@@ -18,11 +18,9 @@ from typing import Any
 import pytest
 
 from agent6 import budget, child_records, directive, kinds, paths
-from agent6.app import (
-    child_launch,
-    children,
-    worktrees,
-)
+from agent6.app import worktrees
+from agent6.app.parallel import children
+from agent6.app.parallel import launch as child_launch
 from agent6.config import Config
 from agent6.harness import loop_conversation, loop_state, run_chain
 from agent6.harness.parallel import dispatch as parallel_dispatch

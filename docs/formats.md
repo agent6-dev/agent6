@@ -2852,7 +2852,7 @@ Source: [`agent6.ui.web.files_preview.PreviewKeyBody`](https://github.com/agent6
 
 **Support: public.** What a child needs to start, and what it knows about itself that no config layer holds.
 
-Source: [`agent6.app.child_launch.ChildLaunch`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/child_launch.py).
+Source: [`agent6.app.parallel.launch.ChildLaunch`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel/launch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3476,7 +3476,7 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 
 **Support: public.** The independent checkout and state the parent granted for this execution.
 
-Source: [`agent6.app.child_launch.CloneReceipt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/child_launch.py).
+Source: [`agent6.app.parallel.launch.CloneReceipt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel/launch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |

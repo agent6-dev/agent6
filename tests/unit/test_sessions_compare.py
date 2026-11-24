@@ -25,8 +25,8 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, kinds, paths
-from agent6.app import children as app_children
 from agent6.app import compare as app_compare
+from agent6.app.parallel import children as app_children
 from agent6.config import Config, layer_data
 from agent6.providers import Provider, ProviderError
 from agent6.sessions import completion

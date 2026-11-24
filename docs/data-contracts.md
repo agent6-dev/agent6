@@ -42,7 +42,7 @@ Scan session dirs into the listing rows every front-end's hub shows.
 Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_list, ui/web/model
-- **Read by:** pack, app/{btw, child_wait, children, compare, finalize, fork, fork_worktrees, merge_plan, preflight, resume, run, stop}, app/review/recap, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_children, sessions_cmds, sessions_compare, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, children, wire}, viewmodel/session/view
+- **Read by:** pack, app/{btw, compare, finalize, fork, fork_worktrees, merge_plan, preflight, resume, run, stop}, app/parallel/{children, wait}, app/review/recap, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_children, sessions_cmds, sessions_compare, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, children, wire}, viewmodel/session/view
 - **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (29 test files exercise it)
 
 ## CLI session status
@@ -164,7 +164,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** pack, app/{child_launch, child_resume, child_trees, child_wait, children, compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{mcp_server, parallel_preview, path_completion}, ui/cli/{ask, entry, net_cmds, sessions_children, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_children, dashboard_header, diff_pane, home}, ui/web/{actions, model}, viewmodel/{children, comparison, format, listing, merges, policy, receipt, wire}, viewmodel/session/{status, view}
+- **Read by:** pack, app/{compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/parallel/{children, launch, results, resume, trees, wait}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{mcp_server, parallel_preview, path_completion}, ui/cli/{ask, entry, net_cmds, sessions_children, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_children, dashboard_header, diff_pane, home}, ui/web/{actions, model}, viewmodel/{children, comparison, format, listing, merges, policy, receipt, wire}, viewmodel/session/{status, view}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (54 test files exercise it)
 
 ## SessionSnapshot
@@ -215,7 +215,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `base_sha` | `str` | `''` |
 
 - **Written by:** harness/loop
-- **Read by:** app/{child_resume, execution, finalize, fork, frontend, resume, undo}, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, quiet_turns}, ui/acp/frontend, ui/cli/ask
+- **Read by:** app/{execution, finalize, fork, frontend, resume, undo}, app/parallel/resume, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, quiet_turns}, ui/acp/frontend, ui/cli/ask
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (41 test files exercise it)
 
 ## ToolResult family
@@ -241,7 +241,7 @@ Read logs.jsonl rows into the journal's records, with the coercions old session 
 Public fields: [Formats](formats.md#journal).
 
 - **Written by:** viewmodel/events
-- **Read by:** app/children, app/review/recap, harness/parallel/recovery, ui/acp/updates, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, telemetry, transcript, transcript_items, transcript_text}, viewmodel/session/{core, log, state}
+- **Read by:** app/parallel/children, app/review/recap, harness/parallel/recovery, ui/acp/updates, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, telemetry, transcript, transcript_items, transcript_text}, viewmodel/session/{core, log, state}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (8 test files exercise it)
 
 ## MachineSpec

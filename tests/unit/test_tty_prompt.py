@@ -24,7 +24,8 @@ from typing import Any
 import pytest
 
 from agent6 import portable
-from agent6.app import child_watch, frontend
+from agent6.app import frontend
+from agent6.app.parallel import relay as child_watch
 from agent6.config import Config
 from agent6.sessions import event_log, journal, process
 from agent6.sessions import ipc as sessions_ipc

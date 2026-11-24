@@ -21,7 +21,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import IO, Any
 
 from agent6 import directive, kinds, paths
-from agent6.app import child_wait
+from agent6.app.parallel import wait as child_wait
 from agent6.models import validate
 from agent6.sandbox import jail
 from agent6.sessions import id, ipc, layout, lock, process

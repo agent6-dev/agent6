@@ -459,7 +459,7 @@ MODELS = (
     ("ui.web.files_edit", "FileTextBody"),
     ("ui.web.files_preview", "OpenPreviewBody"),
     ("ui.web.files_preview", "PreviewKeyBody"),
-    ("app.child_launch", "ChildLaunch"),
+    ("app.parallel.launch", "ChildLaunch"),
     ("sessions.completion", "CompletionRecord"),
     ("sessions.child_dispatch", "DispatchRecord"),
     ("sessions.manifest", "SessionManifest"),

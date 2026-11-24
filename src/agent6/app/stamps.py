@@ -14,8 +14,8 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent6 import __version__, evidence, kinds, portable, task_text
-from agent6.app import child_launch
 from agent6.app import reporter as app_reporter
+from agent6.app.parallel import launch as child_launch
 from agent6.config import Config, ReviewerConfig, RoleModel
 from agent6.models import registry
 from agent6.sessions import event_log, manifest

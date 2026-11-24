@@ -11,7 +11,8 @@ import threading
 import pytest
 
 from agent6 import budget, kinds, paths
-from agent6.app import child_watch, children
+from agent6.app.parallel import children
+from agent6.app.parallel import relay as child_watch
 from agent6.sessions import budget_events, child_dispatch, event_log, journal, layout
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import view

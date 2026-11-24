@@ -23,9 +23,6 @@ from typing import Any
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, pack, paths, review_records
 from agent6.app import (
-    child_launch,
-    child_resume,
-    child_watch,
     conversation_state,
     finalize,
     notify_hook,
@@ -34,9 +31,12 @@ from agent6.app import (
     stamps,
     worktree_setup,
 )
-from agent6.app import children as app_children
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
+from agent6.app.parallel import children as app_children
+from agent6.app.parallel import launch as child_launch
+from agent6.app.parallel import relay as child_watch
+from agent6.app.parallel import resume as child_resume
 from agent6.app.review import actions as review_actions
 from agent6.app.review import directive as review_directive
 from agent6.app.session import runtime as session_runtime

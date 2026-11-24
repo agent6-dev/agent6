@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent6 import directive, evidence
-from agent6.app import child_launch
+from agent6.app.parallel import launch as child_launch
 from agent6.sessions import journal
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import receipt, transcript, transcript_items

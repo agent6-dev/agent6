@@ -13,7 +13,8 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, paths
-from agent6.app import child_launch, worktrees
+from agent6.app import worktrees
+from agent6.app.parallel import launch as child_launch
 from agent6.config import Config, ConfigError
 from agent6.ui import spawn
 

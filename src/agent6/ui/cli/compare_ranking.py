@@ -16,8 +16,8 @@ import uuid
 from collections.abc import Generator
 
 from agent6 import child_records, paths
-from agent6.app import children as app_children
 from agent6.app import compare
+from agent6.app.parallel import children as app_children
 from agent6.config import layer_data
 from agent6.ui.cli import console_render, terminal_guard
 from agent6.ui.cli import parallel as cli_parallel

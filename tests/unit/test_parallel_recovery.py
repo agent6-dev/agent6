@@ -19,7 +19,8 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, credit_usage, paths
-from agent6.app import child_watch, children
+from agent6.app.parallel import children
+from agent6.app.parallel import relay as child_watch
 from agent6.config import Config
 from agent6.harness import (
     loop,

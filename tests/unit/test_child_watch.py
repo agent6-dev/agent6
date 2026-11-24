@@ -14,7 +14,8 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records
-from agent6.app import child_wait, child_watch
+from agent6.app.parallel import relay as child_watch
+from agent6.app.parallel import wait as child_wait
 from agent6.sessions import event_log, ipc, journal
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import interact

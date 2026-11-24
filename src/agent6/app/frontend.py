@@ -16,7 +16,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from agent6 import budget, kinds, portable
-from agent6.app import children
+from agent6.app.parallel import children
 from agent6.config import Config
 from agent6.harness import loop, loop_snapshot
 from agent6.sessions import event_log, ipc, layout

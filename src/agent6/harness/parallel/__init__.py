@@ -4,6 +4,7 @@
 
 Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
 `[harness.parallel]` configures it.
+`app.parallel` clones, spawns, awaits and imports each child.
 Main modules: `dispatch`, `merge`, `rank`, `panel`, `recovery`, `work`.
 """
 

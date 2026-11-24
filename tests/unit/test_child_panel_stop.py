@@ -13,7 +13,9 @@ from typing import Any
 import pytest
 
 from agent6 import budget, child_records, paths
-from agent6.app import children, parallel_results, stop
+from agent6.app import stop
+from agent6.app.parallel import children
+from agent6.app.parallel import results as parallel_results
 from agent6.sessions import child_dispatch, layout, process
 from agent6.viewmodel import receipt
 from tests import child_env, launch_env

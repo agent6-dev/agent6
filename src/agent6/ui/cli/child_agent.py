@@ -21,8 +21,9 @@ import time
 from collections.abc import Callable
 
 from agent6 import kinds
-from agent6.app import child_launch, preflight, resume, stop
+from agent6.app import preflight, resume, stop
 from agent6.app import run as app_run
+from agent6.app.parallel import launch as child_launch
 from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError
 from agent6.harness import operator_bridge

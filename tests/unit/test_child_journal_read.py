@@ -11,7 +11,7 @@ import subprocess
 import pytest
 
 from agent6 import config, paths
-from agent6.app import child_launch
+from agent6.app.parallel import launch as child_launch
 from agent6.tools import dispatch, tool_errors
 from tests import child_env, launch_env
 

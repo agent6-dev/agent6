@@ -18,7 +18,7 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import kinds, paths
-from agent6.app import children
+from agent6.app.parallel import children
 from agent6.config import TelemetryConfig
 from agent6.sessions import budget_events, event_log, journal, process
 from agent6.ui.cli import main

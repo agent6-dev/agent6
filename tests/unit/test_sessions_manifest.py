@@ -257,7 +257,8 @@ def test_rewriting_an_older_manifest_upgrades_it(
 
 def test_merge_and_child_stamps_survive_a_newer_manifest(tmp_path: pathlib.Path) -> None:
     """Both rewrite paths degrade on a manifest they may not rewrite, and the child reports it."""
-    from agent6.app import merge, parallel_results
+    from agent6.app import merge
+    from agent6.app.parallel import results as parallel_results
     from agent6.sessions import layout as sessions_layout
 
     session_dir = tmp_path / "sessions" / "runs" / "r-newer"
