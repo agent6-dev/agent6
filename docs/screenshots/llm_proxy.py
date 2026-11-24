@@ -14,7 +14,8 @@ endpoint, with two modes:
            (method, path). No upstream, no key, fully deterministic -- so a real
            agent6 run (real loop, real tools, real dashboard) reproduces exactly,
            which is what the demo videos record and what a CI integration test
-           could assert against.
+           could assert against. With AGENT6_PROXY_PER_CONVERSATION=1 the order
+           is per conversation, so each child of a run replays the cassette.
 
 It relays/replays raw bytes, so it is api-format-agnostic (openai or anthropic).
 Nothing here imports agent6; agent6 is unmodified, just pointed at this URL.
@@ -25,10 +26,13 @@ Nothing here imports agent6; agent6 is unmodified, just pointed at this URL.
   AGENT6_PROXY_PORT      default 8900
   AGENT6_PROXY_CHUNK_MS  per-SSE-event delay on replay (default 12), for a live
                          streaming feel in the recording
+  AGENT6_PROXY_PER_CONVERSATION  1 replays the cassette from its start for each
+                         conversation (default 0: one order for every caller)
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -45,11 +49,12 @@ CASSETTE = os.environ.get("AGENT6_PROXY_CASSETTE", "cassette.jsonl")
 UPSTREAM = os.environ.get("AGENT6_PROXY_UPSTREAM", "").rstrip("/")
 PORT = int(os.environ.get("AGENT6_PROXY_PORT", "8900"))
 CHUNK_MS = int(os.environ.get("AGENT6_PROXY_CHUNK_MS", "12"))
+PER_CONVERSATION = os.environ.get("AGENT6_PROXY_PER_CONVERSATION", "0") == "1"
 
 _LOCK = threading.Lock()
-# replay: (method, path) -> list of recorded exchanges, consumed in order.
+# replay: (method, path) -> list of recorded exchanges, consumed in order per conversation.
 _REPLAY: dict[tuple[str, str], list[dict]] = defaultdict(list)
-_REPLAY_IDX: dict[tuple[str, str], int] = defaultdict(int)
+_REPLAY_IDX: dict[tuple[str, str, str], int] = defaultdict(int)
 
 
 def _load_cassette() -> None:
@@ -62,6 +67,17 @@ def _load_cassette() -> None:
                 continue
             e = json.loads(line)
             _REPLAY[(e["method"], e["path"])].append(e)
+
+
+def _conversation(body: bytes) -> str:
+    """Name a request's conversation by its first message, which holds the session's memory path."""
+    if not PER_CONVERSATION or not body:
+        return ""
+    try:
+        messages = json.loads(body)["messages"]
+    except (ValueError, KeyError, TypeError):
+        return ""
+    return hashlib.sha256(json.dumps(messages[:1]).encode()).hexdigest()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -125,11 +141,11 @@ class Handler(BaseHTTPRequestHandler):
             fh.write(json.dumps(entry) + "\n")
 
     # -- replay: serve the next recorded exchange for this (method, path) -----
-    def _replay(self, method: str) -> None:
-        key = (method, self.path)
+    def _replay(self, method: str, body: bytes) -> None:
+        key = (method, self.path, _conversation(body))
         with _LOCK:
             i = _REPLAY_IDX[key]
-            entries = _REPLAY.get(key, [])
+            entries = _REPLAY.get(key[:2], [])
             entry = entries[i] if i < len(entries) else None
             if entry is not None:
                 _REPLAY_IDX[key] = i + 1
@@ -148,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
             if MODE == "record":
                 self._record(method, body)
             else:
-                self._replay(method)
+                self._replay(method, body)
         except Exception as exc:
             self._send(500, "text/plain", f"proxy error: {exc}".encode(), False)
 

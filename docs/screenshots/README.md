@@ -41,7 +41,7 @@ Supporting files:
 - `build_fixtures.py`: rebuilds run fixtures from `$XDG_STATE_HOME/agent6/`, trimming token deltas and scrubbing paths; not run in CI.
 - `tui_snapshot.py`: captures a run's dashboard, log or transcript through Textual's headless Pilot as SVG, or PNG with Chromium or `rsvg-convert`; not run in CI.
 - `web_demo.py`: drives the browser tours with Playwright and trims the loading screen from each recording.
-- `llm_proxy.py`: serves recorded LLM responses or forwards live requests to OpenRouter while recording a cassette.
+- `llm_proxy.py`: serves recorded LLM responses or forwards live requests to OpenRouter while recording a cassette; with `AGENT6_PROXY_PER_CONVERSATION=1` each conversation replays the cassette from its start, so a run's children each get it.
 - `make_cover.py`: composes the README cover from TUI and web screenshots and a frame from the temperature demo.
 - `sync_theme.py`: copies the terminal palette into each tape's `Set Theme` line.
 
