@@ -90,12 +90,6 @@ def observations(
     hide: tuple[str, ...],
 ) -> tuple[review_records.FindingObservation, ...]:
     """Return every grounded finding, including repeats omitted from feedback."""
-    grouped: dict[str, tuple[review_records.Finding, list[int]]] = {}
-    for verdict in verdicts:
-        for finding in verdict.findings:
-            _, reviewers = grouped.setdefault(review_records.finding_key(finding), (finding, []))
-            if verdict.reviewer_index not in reviewers:
-                reviewers.append(verdict.reviewer_index)
     return tuple(
         review_records.FindingObservation(
             finding_id=known.get(key) or uuid.uuid4().hex,
@@ -104,5 +98,5 @@ def observations(
             reviewer_indexes=tuple(reviewers),
             line_origin=review.classify_line_origin(root, target, finding.location, hide=hide),
         )
-        for key, (finding, reviewers) in grouped.items()
+        for key, (finding, reviewers) in review_records.group_findings(verdicts).items()
     )

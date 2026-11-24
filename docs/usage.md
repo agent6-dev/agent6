@@ -378,7 +378,7 @@ Each finding carries the reviewer's category and may include a suggested fix as 
 The suggestion is evidence for the worker and the operator, not an edit.
 A repeat on the same cited blob keeps its finding ID across rounds and resumes, even under a different label or suggested fix.
 The worker receives each finding once unless the feedback notice cut it.
-If a suggestion alone would hide the first finding, the notice marks the cut and `list_findings` keeps the full suggestion.
+If a suggestion alone would hide the first finding, the notice marks the cut and the recorded finding keeps the full suggestion.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
 A panel asked to review trees a complete panel already reviewed with the same paths and reviewers is not sat again: the journal records `review.reused` naming that panel, whose findings stand, and the worker hears that nothing new was raised.
 `agent6 attach --json` includes structured review evidence, open counts, action history and completion state.

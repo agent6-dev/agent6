@@ -138,6 +138,7 @@ def test_a_large_patch_does_not_hide_the_block_from_the_worker() -> None:
     notice = review_panel.render_findings((shown,))
     assert len(notice.encode()) <= 512
     assert "[block:Bounds]" in notice and "Suggestion: +界" in notice and "cut" in notice
+    assert "recorded finding" in notice and "list_findings" not in notice
     assert finding.suggestion == patch
     assert review_records.finding_key(shown) == review_records.finding_key(finding)
 
@@ -213,10 +214,11 @@ def test_abstain_does_not_count_as_pass_or_block() -> None:
 
 def test_dedup_across_reviewers_and_against_prior_findings() -> None:
     f = _block("security", _location("foo.py", 11))
+    patch = f.model_copy(update={"suggestion": "Use a constant."})
     res = _agg(
-        [_reviewer("m1", f, reviewer="a"), _reviewer("m2", f, reviewer="b")], block_on="none"
+        [_reviewer("m1", f, reviewer="a"), _reviewer("m2", patch, reviewer="b")], block_on="none"
     )
-    assert len(res.merged_findings) == 1
+    assert res.merged_findings == (patch,) and res.n_block == 2
     prior = (f,)
     res2 = review_panel.aggregate_verdicts(
         [_reviewer("m1", f)],

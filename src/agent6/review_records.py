@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+from collections.abc import Iterable
 from typing import Annotated, Literal, Self
 
 import pydantic
@@ -321,6 +322,27 @@ def finding_key(finding: Finding) -> str:
             "detail": finding.detail.strip(),
         }
     ).model_dump_json(exclude={"category", "suggestion"})
+
+
+def group_findings(verdicts: Iterable[ReviewVerdict]) -> dict[str, tuple[Finding, list[int]]]:
+    """Group observations of the same defect.
+
+    Args:
+        verdicts: Grounded reports in roster order.
+
+    Returns:
+        Each defect's representative and reviewer indexes, preferring the first suggested fix.
+    """
+    grouped: dict[str, tuple[Finding, list[int]]] = {}
+    for verdict in verdicts:
+        for finding in verdict.findings:
+            key = finding_key(finding)
+            kept, reviewers = grouped.setdefault(key, (finding, []))
+            if not kept.suggestion and finding.suggestion:
+                grouped[key] = (finding, reviewers)
+            if verdict.reviewer_index not in reviewers:
+                reviewers.append(verdict.reviewer_index)
+    return grouped
 
 
 class FindingResolution(pydantic.BaseModel):

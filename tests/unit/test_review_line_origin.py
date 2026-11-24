@@ -112,6 +112,28 @@ def test_observation_classifies_bytes_not_hunk_membership(
         assert origin.base_location is None and not origin.commits
 
 
+def test_one_observation_keeps_the_suggestion_from_a_second_reviewer(
+    tmp_path: pathlib.Path,
+) -> None:
+    review_helpers.git(tmp_path, "init", "-q")
+    target = _target(tmp_path, None, _commit(tmp_path, b"line\n"))
+    first = _observe(tmp_path, target, 1).finding
+    second = first.model_copy(update={"category": "Bounds", "suggestion": "Use a constant."})
+    verdicts = (
+        review_records.ReviewVerdict(0, "a", "model", (first,)),
+        review_records.ReviewVerdict(1, "b", "model", (second,)),
+    )
+    (seen,) = review_history.observations(
+        "panel",
+        verdicts,
+        {review_records.finding_key(first): "f"},
+        root=tmp_path,
+        target=target,
+        hide=(),
+    )
+    assert (seen.finding, seen.finding_id, seen.reviewer_indexes) == (second, "f", (0, 1))
+
+
 def test_pure_rename_preserves_an_exact_range(tmp_path: pathlib.Path) -> None:
     review_helpers.git(tmp_path, "init", "-q")
     base = _commit(tmp_path, b"first\nsecond\n")

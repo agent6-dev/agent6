@@ -216,15 +216,12 @@ def aggregate_verdicts(
             n_reviewers_blocking += 1
 
     # Merge and dedup the grounded findings, dropping those already injected.
-    merged: dict[str, review_records.Finding] = {}
-    for v in grounded_reviewers:
-        for f in v.findings:
-            key = review_records.finding_key(f)
-            if key in prior_keys:
-                continue
-            merged.setdefault(key, f)
+    grouped = review_records.group_findings(grounded_reviewers)
     merged_findings = tuple(
-        sorted(merged.values(), key=lambda f: (_SEV_ORDER[f.severity], str(f.location)))
+        sorted(
+            (f for key, (f, _) in grouped.items() if key not in prior_keys),
+            key=lambda f: (_SEV_ORDER[f.severity], str(f.location)),
+        )
     )
 
     n_block = len(blocking_models)  # distinct blocking provider/model routes
@@ -263,7 +260,7 @@ def findings_within(
         if len(render_findings(findings[:n]).encode()) <= budget:
             return findings[:n]
     if findings and (patch := findings[0].suggestion):
-        marker = "\n[suggestion cut; full text in list_findings]"
+        marker = "\n[suggestion cut; full text in the recorded finding]"
         marked = findings[0].model_copy(update={"suggestion": marker})
         room = budget - len(render_findings((marked,)).encode())
         if room >= 0:
