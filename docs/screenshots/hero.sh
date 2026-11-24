@@ -79,7 +79,7 @@ TUI_SEGMENTS=(
 CLI_SEGMENTS=(
   "hero-src-cli.webm:0.3:5.0:1.8:0"
   "hero-src-cli.webm:5.6:22.4:3.6:0"
-  "hero-src-cli.webm:28.0:2.4:0.9:1.0"
+  "hero-src-cli.webm:28.0:3.2:1.0:1.0"
   "hero-src-cli.webm:31.4:6.6:1.8:0.5"
   "hero-src-cli.webm:38.2:5.0:1.2:0.9"
 )
@@ -92,7 +92,7 @@ WEB_SEGMENTS=(
   "hero-src-web.webm:51.0:3.6:0.9:0.4"
   "hero-src-web.webm:60.2:10.4:1.9:0"
   "hero-src-web.webm:72.2:4.6:1.0:0"
-  "hero-src-web.webm:83.2:3.0:0.7:0.9"
+  "hero-src-web.webm:82.0:4.2:0.8:0.9"
 )
 
 build() {
