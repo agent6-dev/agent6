@@ -229,8 +229,8 @@ banned-from = [
 [tool.pyrefly]
 project-includes = ["docs/gen_contracts.py", "docs/gen_formats.py", "src", "tests"]
 python-version = "3.13"
-# The tree itself is on the path, so `tests.*`, `bench.*` and `docs.*` resolve.
-search-path = ["."]
+# `src` comes first, so its modules are `agent6.*`; the tree root resolves `tests.*` and `bench.*`.
+search-path = ["src", "."]
 preset = "strict"
 
 [tool.pyrefly.errors]
