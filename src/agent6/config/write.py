@@ -190,6 +190,9 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
         An error for a leaf no member has (with a did-you-mean) or a value every owning
         member rejects, every member's complaint de-duplicated; None when a member accepts it.
     """
+    if leaf == "backend":
+        backends = sorted(get_args(m.model_fields[leaf].annotation)[0] for m in PROVIDER_MEMBERS)
+        return None if value in backends else f"{key}: expected one of {', '.join(backends)}"
     fields = sorted({f for m in PROVIDER_MEMBERS for f in m.model_fields})
     if leaf not in fields:
         close = difflib.get_close_matches(leaf, fields, n=2)

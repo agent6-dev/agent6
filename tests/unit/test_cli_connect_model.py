@@ -101,6 +101,15 @@ def test_connect_preserves_hand_edited_provider_keys(
     assert "# hand-added" in text
 
 
+def test_config_set_changes_the_backend_of_a_complete_entry(iso: pathlib.Path) -> None:
+    """Changing to Responses validates the entry with its configured URL."""
+    gc = paths.global_config_path()
+    gc.parent.mkdir(parents=True)
+    gc.write_text('[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:8000"\n')
+    assert main(["config", "set", "providers.p.backend", "responses"]) == 0
+    assert tomllib.loads(gc.read_text())["providers"]["p"]["backend"] == "responses"
+
+
 _AZURE_BLOCK = (
     "[providers.az]\n"
     'backend = "openai"\n'
