@@ -93,6 +93,14 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " not-ready wait instead of blocking, for an external scheduler to resume."
         ),
     )
+    machine_run.add_argument(
+        "--restart",
+        action="store_true",
+        help=(
+            "When the machine's last run ended, archive its instance directory and start a"
+            " fresh run. No effect on a run that has not ended."
+        ),
+    )
     # An overlay never widens the sandbox past the operator's config, so the grant comes here.
     common._add_sandbox_flags(machine_run)
     machine_status = common._sub(

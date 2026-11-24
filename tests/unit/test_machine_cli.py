@@ -841,7 +841,7 @@ def test_run_refuses_rerun_of_ended_instance(
     assert code == 2  # a refusal
     err = capsys.readouterr().err
     assert "already ended" in err
-    assert str(root) in err  # the archive remedy names the instance dir
+    assert f"`agent6 machine run {f} --restart`" in err
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
     assert process.read_worker_pid(root) == sentinel
     # The journal still reads terminal, unchanged.
@@ -857,19 +857,20 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path.parent / f"{tmp_path.name} state"))
-    f = tmp_path / "tiny.asm.toml"
-    f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     state_dir = paths.state_dir(tmp_path)
-    root = state_dir / "machines" / "tiny"
+    root = state_dir / "machines" / "waiter_delayed"
     # Moving inside machines/ still produces an instance row, even with an invalid id.
-    ghost = root.with_name("tiny.archived-1")
+    ghost = root.with_name("waiter_delayed.archived-1")
     root.rename(ghost)
     assert machine_state.machine_instance_dirs(state_dir) == [ghost]
     ghost.rename(root)
 
-    assert main(["machine", "run", str(f)]) == 2
+    # The drift refusal prints the command: `--restart` moves only an ended instance.
+    f.write_text(WAITER_DELAYED.replace('reason = "ticked"', 'reason = "changed"'), "utf-8")
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 2
     err = capsys.readouterr().err
     match = re.search(r"`(mv -- [^`]+)`", err)
     assert match is not None, err
@@ -877,12 +878,72 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
     source, target = map(pathlib.Path, argv[-2:])
     assert source == root
     assert target.parent == root.parent.parent
-    assert target.name.startswith("tiny.archived-")
+    assert target.name.startswith("waiter_delayed.archived-")
     subprocess.run(argv, check=True)
     assert not root.exists()
     assert (target / "machine.asm.toml").is_file()
     assert machine_state.machine_instance_dirs(state_dir) == []
-    assert main(["machine", "run", str(f)]) == 0
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+
+
+def test_restart_archives_an_ended_run_and_starts_fresh(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--restart` on an ended machine begins a new run and keeps the old journal readable."""
+    import datetime
+
+    from agent6.machine import MachineBegin, MachineEnd, drive, load_machine
+    from agent6.viewmodel.machine import state as machine_state
+
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert main(["machine", "poke", "waiter_delayed"]) == 0
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    state_dir = paths.state_dir(tmp_path)
+    root = state_dir / "machines" / "waiter_delayed"
+    old = MachineJournal(root).read()
+    assert isinstance(old[-1], MachineEnd) and old[-1].state == "woken"
+    capsys.readouterr()
+
+    assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
+
+    captured = capsys.readouterr()
+    assert "WAITING" in captured.out  # the fresh run parks at its first wait
+    ended = datetime.datetime.fromisoformat(old[-1].ts)
+    archive = state_dir / f"waiter_delayed.archived-{ended:%Y%m%dT%H%M%S%fZ}"
+    assert str(archive) in captured.err
+    assert MachineJournal(archive).read() == old
+    replay = drive(
+        load_machine(archive / "machine.asm.toml"), MachineJournal(archive), None, live=False
+    )
+    assert (replay.status, replay.state) == ("ok", "woken")
+    fresh = MachineJournal(root).read()
+    assert [type(event) for event in fresh] == [MachineBegin]
+    assert fresh[0].ts != old[0].ts
+    assert machine_state.machine_instance_dirs(state_dir) == [root]
+
+
+def test_restart_resumes_a_run_that_has_not_ended(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--restart` leaves a waiting machine's instance in place, and the run resumes."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    state_dir = paths.state_dir(tmp_path)
+    root = state_dir / "machines" / "waiter_delayed"
+    begun = MachineJournal(root).read()
+    armed = MachineJournal(root).read_pending_wait()
+    capsys.readouterr()
+
+    assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
+
+    captured = capsys.readouterr()
+    assert "WAITING" in captured.out
+    assert not list(state_dir.glob("waiter_delayed.archived-*"))
+    assert MachineJournal(root).read() == begun
+    assert MachineJournal(root).read_pending_wait() == armed
 
 
 def test_poke_drops_signal_for_waiting_machine(
@@ -1650,6 +1711,74 @@ model = "p/m"
         check=False,
     )
     assert gone.returncode != 0  # the spent chain ref is dropped
+
+
+def test_restart_refuses_unmerged_chain_work_before_it_archives(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `--restart` refused for unmerged chain work leaves the ended instance in place."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    f = repo / "runwarn.asm.toml"
+    # The branch routes past the run state, so the machine ends with no model call.
+    f.write_text(
+        PARKED_RUN_MACHINE.replace(
+            'kind = "wait"\ndelay_s = "{{ secs }}"\non = { tick = "judge", signal = "judge" }',
+            'kind = "branch"\n'
+            'when = [{ if = "secs == 0", goto = "judge" }, { else = true, goto = "done" }]',
+        ),
+        encoding="utf-8",
+    )
+    for argv in (
+        ["git", "init", "-q"],
+        ["git", "add", "runwarn.asm.toml"],
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"],
+    ):
+        subprocess.run(argv, cwd=repo, check=True)
+    cfg = tmp_path / "agent6.toml"
+    cfg.write_text(
+        """[providers.p]
+backend = "openai"
+base_url = "http://127.0.0.1:9"
+api_key_env = "AGENT6_TEST_KEY"
+
+[models.default]
+model = "p/m"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_TEST_KEY", "x")
+    run = ["--config", str(cfg), "machine", "run", str(f)]
+    assert main(run) == 0, capsys.readouterr().err
+    # The ended run's work: a commit past HEAD that nothing merged.
+    work = subprocess.run(
+        ["git", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "work"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    ref = "refs/agent6/machine-run-warn/head"
+    subprocess.run(["git", "update-ref", ref, work], cwd=repo, check=True)
+    state_dir = paths.state_dir(repo)
+    root = state_dir / "machines" / "run-warn"
+    capsys.readouterr()
+
+    assert main([*run, "--restart"]) == 2
+
+    err = capsys.readouterr().err
+    assert "git merge agent6/machine-run-warn" in err
+    assert f"git update-ref -d {ref}" in err
+    assert MachineJournal(root).end_event() is not None
+    assert not list(state_dir.glob("run-warn.archived-*"))
+
+    subprocess.run(["git", "update-ref", "-d", ref], cwd=repo, check=True)
+    assert main([*run, "--restart"]) == 0, capsys.readouterr().err
+    assert len(list(state_dir.glob("run-warn.archived-*"))) == 1
 
 
 def test_run_flags_never_land_in_the_supervisors_environment(

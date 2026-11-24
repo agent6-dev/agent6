@@ -50,6 +50,7 @@ __all__ = [
     "StepEvent",
     "ToolFact",
     "WaitFact",
+    "archive_ended",
     "fresh_start_remedy",
     "machine_lock",
     "read_source",
@@ -70,6 +71,20 @@ class JournalError(schema.MachineError):
         super().__init__([message])
 
 
+def archive_path(root: pathlib.Path, when: datetime.datetime) -> pathlib.Path:
+    """Return where an instance archives: beside `machines/`, outside its listing.
+
+    Args:
+        root: The instance directory under `machines/`.
+        when: The instant the name carries.
+
+    Returns:
+        `<state-dir>/<machine-id>.archived-<UTC instant>`.
+    """
+    stamp = when.astimezone(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    return root.parent.parent / f"{root.name}.archived-{stamp}"
+
+
 def fresh_start_remedy(root: pathlib.Path) -> str:
     """Return a command that archives an instance outside the machines listing.
 
@@ -77,10 +92,9 @@ def fresh_start_remedy(root: pathlib.Path) -> str:
         root: The instance directory under `machines/`.
 
     Returns:
-        The remedy sentence; the archive sits beside `machines/`, not inside it.
+        The remedy sentence, with the archive named for the current instant.
     """
-    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    target = root.parent.parent / f"{root.name}.archived-{stamp}"
+    target = archive_path(root, datetime.datetime.now(datetime.UTC))
     command = shlex.join(("mv", "--", str(root), str(target)))
     return f"To start fresh, archive the instance directory with `{command}`."
 
@@ -655,6 +669,30 @@ def machine_lock(root: pathlib.Path) -> Generator[None]:
             portable.unlock(fd)
     finally:
         os.close(fd)
+
+
+def archive_ended(root: pathlib.Path, end: MachineEnd) -> pathlib.Path:
+    """Move an ended instance out of the machines listing, named for its end time.
+
+    The caller holds the instance's lock. The directory moves whole, so the archive replays
+    as the instance did.
+
+    Args:
+        root: The instance directory under `machines/`.
+        end: The journal's terminal event.
+
+    Returns:
+        The archive.
+
+    Raises:
+        JournalError: The end time does not parse, or the directory cannot move.
+    """
+    try:
+        target = archive_path(root, datetime.datetime.fromisoformat(end.ts))
+        root.rename(target)
+    except (ValueError, OSError) as exc:
+        raise JournalError(f"cannot archive {root}: {exc}") from exc
+    return target
 
 
 def write_source(root: pathlib.Path, text: str) -> None:

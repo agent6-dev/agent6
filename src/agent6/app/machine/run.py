@@ -12,6 +12,7 @@ import contextlib
 import dataclasses
 import os
 import pathlib
+import shlex
 import shutil
 import uuid
 from collections.abc import Callable, Mapping
@@ -280,6 +281,74 @@ def machine_tool_policy_factory(
     return build
 
 
+def _unmerged_chain(cwd: pathlib.Path, machine_id: str) -> str | None:
+    """Return the remedy when the machine's chain holds work HEAD lacks, else None.
+
+    The chain ref and the visible branch both outlive an instance directory.
+
+    Args:
+        cwd: The repository.
+        machine_id: The machine a fresh instance would start.
+
+    Returns:
+        The sentence naming the branch, the merge and the discard, or None when HEAD holds
+        both tips.
+    """
+    ref = git_read.machine_chain_ref_for(machine_id)
+    branch = git_read.machine_branch_for(machine_id)
+    tips = (git_read.chain_tip(cwd, ref), git_read.chain_tip(cwd, branch))
+    if all(tip is None or git_read.is_ancestor(cwd, tip, "HEAD") for tip in tips):
+        return None
+    return (
+        f"its chain branch {branch!r} exists with a previous instance's work."
+        f" Keep it (`git merge {branch}`) or discard it"
+        f" (`git branch -D {branch}` and `git update-ref -d {ref}`), then rerun."
+    )
+
+
+def _archive_for_restart(
+    root: pathlib.Path,
+    cwd: pathlib.Path,
+    machine_id: str,
+    reporter: app_reporter.Reporter,
+    *,
+    has_chain: bool,
+) -> int | None:
+    """Archive the machine's instance when its last run ended, for `--restart`.
+
+    An instance that has not ended stays in place.
+
+    Args:
+        root: The instance directory.
+        cwd: The repository.
+        machine_id: The machine.
+        reporter: Receives the archive's path, or the refusal.
+        has_chain: The machine has run states, whose commits ride its git chain.
+
+    Returns:
+        None to go on to the run. Else the exit code: 2 when the chain holds unmerged work,
+        with the instance left in place; 1 when the instance cannot be read or moved.
+    """
+    journal = MachineJournal(root)
+    if not journal.exists():
+        return None
+    try:
+        with machine_lock(root):
+            end = journal.end_event()
+            if end is None:
+                return None
+            unmerged = _unmerged_chain(cwd, machine_id) if has_chain else None
+            if unmerged is not None:
+                reporter.refuse(f"{machine_id} ended, but {unmerged}")
+                return 2
+            archive = machine_journal.archive_ended(root, end)
+    except JournalError as exc:
+        reporter.error(str(exc))
+        return 1
+    reporter.note(f"archived the ended run to {archive}")
+    return None
+
+
 def _labelled(reporter: app_reporter.Reporter, where: str) -> app_reporter.Reporter:
     """Return a reporter whose stderr lines name the overlay they are about.
 
@@ -324,6 +393,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     *,
     config_paths: tuple[pathlib.Path, ...] = (),
     exit_on_wait: bool = False,
+    restart: bool = False,
     disable_sandbox: bool = False,
     auto_approve: bool = False,
     no_commands: bool = False,
@@ -335,6 +405,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter: The two output channels.
         config_paths: The `--config` files, part of the operator's ceiling.
         exit_on_wait: Return at the first wait state instead of blocking through it.
+        restart: Archive an ended instance and start a fresh run; no effect on any other.
         disable_sandbox: Run unconfined.
         auto_approve: Approve every run_command in the agent states.
         no_commands: Withhold the command tools from the agent states.
@@ -416,6 +487,10 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             " run_command's gate, so an unattended execution ends unverified."
         )
     root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
+    if restart:
+        code = _archive_for_restart(root, cwd, spec.machine, reporter, has_chain=has_run_agent)
+        if code is not None:
+            return code
     base_commit = None
     # has_run_agent supplies both clone arguments: every tool and agent state then runs in a clone.
     if has_run_agent:
@@ -564,11 +639,12 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             events = journal.read()
             if events and isinstance(events[-1], MachineEnd):
                 end = events[-1]
+                rerun = shlex.join(("agent6", "machine", "run", str(path), "--restart"))
                 reporter.refuse(
                     f"{spec.machine} already ended in {end.state!r}"
                     f" ({end.status}: {end.reason})."
-                    f" Replay it with `agent6 machine replay {spec.machine}`."
-                    f" {machine_journal.fresh_start_remedy(journal.root)}"
+                    f" Replay it with `agent6 machine replay {spec.machine}`,"
+                    f" or start a fresh run with `{rerun}`."
                 )
                 return 2
             if journal.exists():
@@ -587,27 +663,16 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             crash_spend.book_crashed_attempt(journal, root)
             app_frontend.apply_spawned_away_default(root, app_frontend.approval_scopes(cfg))
             if not journal.exists():
-                # Either ref can outlive an archived instance and hold unmerged work.
-                ref = git_read.machine_chain_ref_for(spec.machine)
-                branch = git_read.machine_branch_for(spec.machine)
-                tip = git_read.chain_tip(cwd, ref) if has_run_agent else None
-                branch_tip = git_read.chain_tip(cwd, branch) if has_run_agent else None
-                if any(
-                    candidate is not None and not git_read.is_ancestor(cwd, candidate, "HEAD")
-                    for candidate in (tip, branch_tip)
-                ):
-                    reporter.refuse(
-                        f"no journal for {spec.machine!r}, but its chain branch"
-                        f" {branch!r} exists with a previous instance's work."
-                        f" Keep it (`git merge {branch}`) or discard it"
-                        f" (`git branch -D {branch}` and `git update-ref -d {ref}`),"
-                        " then rerun."
-                    )
+                unmerged = _unmerged_chain(cwd, spec.machine) if has_run_agent else None
+                if unmerged is not None:
+                    reporter.refuse(f"no journal for {spec.machine!r}, but {unmerged}")
                     return 2
-                if tip is not None:
+                ref = git_read.machine_chain_ref_for(spec.machine)
+                if has_run_agent and git_read.chain_tip(cwd, ref) is not None:
                     git_ops.delete_ref(cwd, ref)
                     reporter.note(
-                        f"the previous instance's work on {branch!r} is in HEAD;"
+                        "the previous instance's work on"
+                        f" {git_read.machine_branch_for(spec.machine)!r} is in HEAD;"
                         " this instance starts from HEAD"
                     )
                 write_bundle(root, path)

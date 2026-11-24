@@ -1092,6 +1092,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
             app_reporter.STDIO_REPORTER,
             config_paths=args.config,
             exit_on_wait=args.exit_on_wait,
+            restart=args.restart,
             disable_sandbox=args.disable_sandbox,
             auto_approve=args.auto_approve,
             no_commands=args.no_commands,
