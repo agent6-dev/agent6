@@ -2,6 +2,7 @@
 
 The six-module task measures what a worker keeps after a requested summary.
 For a measurement that opens only a journal and never starts a worker, use the [offline counter](compaction-offline.md).
+Recorded sessions are not live inputs.
 Neither experiment changes a product setting.
 
 ## Six-module task
@@ -31,10 +32,22 @@ The loopback worker edits one module and adds a passing unittest.
 The expected external score is **1/6** and the task does not pass.
 Its token counts come from scripted responses.
 
-For model measurements, use a fresh private directory on a real disk and a separate profile with only `[providers.chatgpt]` and `backend = "chatgpt"`.
-Run `uv run agent6 connect chatgpt` with that profile.
+For model measurements, use a fresh private directory on a real disk and a separate profile.
+Run `uv run agent6 connect chatgpt` there. Use this `$XDG_CONFIG_HOME/agent6/config.toml` for the trials:
+
+```toml
+[providers.chatgpt]
+backend = "chatgpt"
+[budget]
+max_plan_points = 5.0
+max_usd = 5.0
+```
+
+Choose the limits before running a set.
+`max_plan_points` caps observed subscription-plan percentage points per execution.
+`max_usd` caps dollar-metered usage, not ordinary subscription usage.
+Neither caps the whole set. Leave plan overage disabled.
 Use your normal user outside another agent6 run on a host with full command isolation.
-Set a `[budget]` cap for each execution before starting a set.
 Under the default command policy, answer command prompts in the terminal.
 The bench asks separately before running the external scorer.
 Do not weaken a sandbox or approve a command you would otherwise deny.
@@ -99,6 +112,8 @@ If a reread count depends on such a preview in the frozen prefix or the resumed 
 The measured tree, source session ID, restart turn, model, arm, replicate and checkpoint digest identify a comparison in the trial artifacts and row.
 The small scorer starts through isolated Python in the bench directory.
 It uses the `agent6 exec --new` sandbox with the policy captured before the worker ran, without loading config from the finished checkout.
+Both the model-backed worker and its scorer require `full` isolation at launch.
+Only the scripted fixture may use automatic isolation.
 The runner allows 120 seconds and 64 KiB per output stream for one report of six boolean verdicts.
 A refused, malformed or oversized report is a measurement error, not a score.
 The submitted modules run inside the interpreter returning the verdicts: the report is not proof against a submission written to falsify it.
