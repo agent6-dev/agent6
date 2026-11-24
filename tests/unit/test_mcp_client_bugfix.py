@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import sys
 import textwrap
-import time
 from typing import Any
 
 import pytest
@@ -399,13 +398,11 @@ def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
 
 
 def _slow_call_server_argv() -> tuple[str, ...]:
-    """A server that handshakes promptly and sleeps 0.5s before every tools/call reply.
-
-    A short-call-timeout client times out and the reply arrives late.
-    """
+    """Hold each tool reply until a barrier request releases them in order."""
     script = textwrap.dedent(
         """
-        import json, sys, time
+        import json, sys
+        held = []
         def reply(req_id, result):
             sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req_id,
                                          "result": result}) + "\\n")
@@ -430,9 +427,11 @@ def _slow_call_server_argv() -> tuple[str, ...]:
                 ]})
                 continue
             if method == "tools/call":
-                time.sleep(0.5)
-                reply(msg["id"], {"content": [{"type": "text", "text": "late"}]})
+                held.append(msg["id"])
                 continue
+            for req_id in held:
+                reply(req_id, {"content": [{"type": "text", "text": "late"}]})
+            held.clear()
             reply(msg["id"], {})
         """
     )
@@ -460,11 +459,9 @@ def test_timed_out_requests_leave_no_pending_residue() -> None:
         srv = mgr._servers["fake"]
         for _ in range(2):
             with pytest.raises(mcp_client.MCPError, match="timed out"):
-                mgr.call(f"{mcp_client.MCP_TOOL_PREFIX}fake__slow", {})
-        # The server answers sequentially (0.5s each), so both late replies
-        # have flushed well before 2s; the drop is unobservable from outside,
-        # so wait past that point and then prove nothing was retained.
-        time.sleep(2.0)
+                srv._request("tools/call", {"name": "slow"}, timeout_s=0.02)
+        # A call through the manager restarts the server on timeout; this pins the reader itself.
+        assert srv._request("barrier", {}, timeout_s=5.0) == {}
         with srv._pending_cv:
             pending = dict(srv._pending)
         assert pending == {}

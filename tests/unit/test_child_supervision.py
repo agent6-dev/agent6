@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import os
 import pathlib
@@ -240,7 +241,10 @@ def test_a_child_past_its_deadline_is_stopped_and_reported_failed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The parent ends a child at its deadline, kills what ignores the stop, and says so."""
-    monkeypatch.setattr(child_wait, "STOP_GRACE_S", 0.2)
+    monkeypatch.setattr(child_wait, "STOP_GRACE_S", 0.05)
+    monkeypatch.setattr(
+        child_wait, "stop_child", functools.partial(child_wait.stop_child, grace_s=0.05)
+    )
     d = _live_forever(tmp_path, "late-l1")
     deaf = _child(_DEAF, tmp_path)
     spec = _spec(tmp_path, "late-l1")
@@ -276,7 +280,10 @@ def test_a_child_is_stopped_once_the_runs_budget_is_spent(
 
     A child ran on to its own share's end whatever its siblings had spent.
     """
-    monkeypatch.setattr(child_wait, "STOP_GRACE_S", 0.2)
+    monkeypatch.setattr(child_wait, "STOP_GRACE_S", 0.05)
+    monkeypatch.setattr(
+        child_wait, "stop_child", functools.partial(child_wait.stop_child, grace_s=0.05)
+    )
     d = _live_forever(tmp_path, "spent-l1")
     deaf = _child(_DEAF, tmp_path)
     spec = _spec(tmp_path, "spent-l1")

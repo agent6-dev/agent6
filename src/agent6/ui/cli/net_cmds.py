@@ -33,6 +33,8 @@ from agent6.sessions import manifest, process
 from agent6.ui.cli import common, exec_cmds
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
+_HOLDER_POLL_S = 2.0
+
 # The namespaces to enter; the `os` flags are looked up at join time so the module imports anywhere.
 _JOIN_ORDER = (("user", "CLONE_NEWUSER"), ("net", "CLONE_NEWNET"))
 
@@ -163,7 +165,7 @@ def forward(
             return 2
         listener.listen(16)
         # Wake between connections: a bridge outliving its run reads as a broken server.
-        listener.settimeout(2.0)
+        listener.settimeout(_HOLDER_POLL_S)
         bound = listener.getsockname()[1]
         print(
             f"[agent6] forwarding http://127.0.0.1:{bound} -> port {remote_port} inside"

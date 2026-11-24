@@ -33,6 +33,8 @@ from typing import IO, Any, NoReturn
 
 from agent6 import child_env, kinds, paths
 
+_LAUNCHER_GRACE_S = 5.0
+
 # Loaded at import, never between fork and exec: a post-fork dlopen can deadlock on malloc.
 _LIBC: ctypes.CDLL | None = ctypes.CDLL(None, use_errno=True) if sys.platform == "linux" else None
 
@@ -866,7 +868,7 @@ def run_in_jail(
             except OSError:
                 launcher.kill()
             with contextlib.suppress(subprocess.TimeoutExpired):
-                launcher.communicate(timeout=5.0)
+                launcher.communicate(timeout=_LAUNCHER_GRACE_S)
         forget_launcher(launcher.pid)
         survivors = kill_escapees(before | {launcher.pid})
     if survivors:
@@ -905,7 +907,7 @@ def _launcher_result(
         JailUnavailableError: The launcher failed setup or wrote no result.
     """
     # The launcher enforces the command's deadline; this bounds only its teardown after it.
-    wait_s = policy.timeout_s + 5.0 if policy.timeout_s > 0 else None
+    wait_s = policy.timeout_s + _LAUNCHER_GRACE_S if policy.timeout_s > 0 else None
     try:
         raw_out, raw_err = launcher.communicate(input=spec.encode(), timeout=wait_s)
     except subprocess.TimeoutExpired as exc:
@@ -914,7 +916,7 @@ def _launcher_result(
         except (ProcessLookupError, PermissionError):
             launcher.kill()
         try:
-            raw_out, raw_err = launcher.communicate(timeout=5.0)
+            raw_out, raw_err = launcher.communicate(timeout=_LAUNCHER_GRACE_S)
         except subprocess.TimeoutExpired:
             raw_out, raw_err = b"", b""
         return kinds.CommandResult(

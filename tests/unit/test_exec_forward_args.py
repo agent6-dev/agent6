@@ -530,6 +530,8 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
 
     from agent6.ui.cli import net_cmds
 
+    monkeypatch.setattr(net_cmds, "_HOLDER_POLL_S", 0.05)
+
     inside_server = socket.socket()
     inside_server.bind(("127.0.0.1", 0))
     inside_server.listen(4)
@@ -593,6 +595,8 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
 
     from agent6.ui.cli import net_cmds
 
+    monkeypatch.setattr(net_cmds, "_HOLDER_POLL_S", 0.05)
+
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="fwd")
     layout.session_dir.mkdir(parents=True)
     # a live holder: us
@@ -618,7 +622,7 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
                 break
             except OSError:
                 time.sleep(0.02)
-        # The run ends, so the next 2 s accept timeout returns the loop.
+        # The run ends, so the next accept timeout returns the loop.
         (layout.session_dir / "netns.pid").unlink()
 
     thread = threading.Thread(target=knock)
@@ -697,6 +701,8 @@ def test_forward_local_port_zero_picks_a_free_port(
     import io
 
     from agent6.ui.cli import net_cmds
+
+    monkeypatch.setattr(net_cmds, "_HOLDER_POLL_S", 0.05)
 
     layout = sessions_layout.SessionLayout(
         state_dir=tmp_path, session_id="free-port-run", subdir="runs"

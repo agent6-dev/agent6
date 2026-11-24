@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import io
 import time
+from collections.abc import Callable
 from typing import Any, override
 
 import pytest
@@ -243,26 +244,30 @@ class _FakeTTY:
         return "".join(self.chunks)
 
 
-# Comfortably past the module's stall threshold (1.5s) + a couple 0.5s ticks.
-_STALL_WAIT_S = 3.0
+@pytest.fixture(autouse=True)
+def _fast_heartbeat(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(console_render, "_HEARTBEAT_TICK_S", 0.01)
+    monkeypatch.setattr(console_render, "_STALL_AFTER_S", 0.02)
+
+
+def _wait_until(ready: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 3.0
+    while not ready():
+        assert time.monotonic() < deadline, "heartbeat did not tick"
+        time.sleep(0.005)
 
 
 def test_cli_heartbeat_shows_working_when_the_stream_stalls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A turn that goes silent mid-flight shows a ticking 'working… Ns' line.
-
-    Mid-block the real threshold is 10s; it is shrunk here so the stall path needs no 10s sleep.
-    """
-    import time
-
-    monkeypatch.setattr("agent6.ui.cli.console_render._MID_BLOCK_STALL_S", 1.5)
+    """A turn that goes silent mid-flight shows a ticking working line."""
+    monkeypatch.setattr(console_render, "_MID_BLOCK_STALL_S", 0.02)
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "Let me investigate"})
-        time.sleep(_STALL_WAIT_S)  # let the stall register and the spinner tick
+        _wait_until(lambda: "working…" in out.getvalue())
         assert "working…" in out.getvalue()
         # Output resuming clears the spinner (\r + erase) and shows the new text.
         view.feed({"type": "model.text_delta", "text": " the theme system"})
@@ -287,15 +292,13 @@ def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
 
     `_raw` coalesces flushes and leaves a line's tail in the buffer until the spinner's threshold.
     """
-    import time
-
     out = _CountingTTY()
     view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "partial"})
         before = out.flushes
-        time.sleep(1.2)  # two heartbeat ticks, under every stall threshold
+        _wait_until(lambda: out.flushes > before)
         assert out.flushes > before, "the heartbeat flushed nothing while output flowed"
         assert "working…" not in out.getvalue()
     finally:
@@ -307,14 +310,12 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
 
     A spinner there closes the block and splits a streamed word in two.
     """
-    import time
-
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "writing to tests/test"})
-        time.sleep(_STALL_WAIT_S)  # over the between-blocks threshold, under 10s
+        time.sleep(0.1)  # past the between-blocks threshold, below the mid-block threshold
         view.feed({"type": "model.text_delta", "text": "_calc.py now"})
         got = out.getvalue()
         assert "working…" not in got  # no spinner mid-block at a short gap
@@ -325,8 +326,6 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
 
 def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
     """The heartbeat spins during a long tool run between model.result and the next model.call."""
-    import time
-
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
@@ -334,7 +333,7 @@ def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
         view.feed({"type": "model.result", "actor": "worker"})  # turn done...
         # ...now a tool.call starts a long jail command (no result yet).
         view.feed({"type": "tool.call", "name": "run_verify_command", "args_preview": {}})
-        time.sleep(_STALL_WAIT_S)
+        _wait_until(lambda: "working…" in out.getvalue())
         assert "working…" in out.getvalue()  # spins through the command, not frozen
     finally:
         view.close()
@@ -342,25 +341,21 @@ def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
 
 def test_cli_heartbeat_silent_on_a_non_tty() -> None:
     """No spinner thread or bytes when the sink is not a terminal."""
-    import time
-
     buf = io.StringIO()
     view = console_render.ConsoleView(buf, color=False)
     view.feed({"type": "model.call", "actor": "worker", "model": "m"})
-    time.sleep(_STALL_WAIT_S)
+    assert view._heartbeat is None
     assert "working…" not in buf.getvalue()
     view.close()
 
 
 def test_notice_clears_the_spinner_before_printing() -> None:
     """A harness notice clears the spinner line first and writes to the same stream."""
-    import time
-
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
-        time.sleep(_STALL_WAIT_S)  # spinner up
+        _wait_until(lambda: "working…" in out.getvalue())
         assert "working…" in out.getvalue()
         view.notice("[agent6]   auto-commit: abc123")
         v = out.getvalue()
@@ -372,20 +367,18 @@ def test_notice_clears_the_spinner_before_printing() -> None:
 
 def test_pause_suspends_the_heartbeat_spinner() -> None:
     """console_view.pause() stops the spinner around a /dev/tty prompt and resumes after it."""
-    import time
-
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "tool.call", "name": "ask_user", "args_preview": {}})
-        time.sleep(_STALL_WAIT_S)  # a tool is in flight + output silent: spinner up
+        _wait_until(lambda: "working…" in out.getvalue())
         assert "working…" in out.getvalue()
         with view.pause():
             marker = len(out.chunks)  # after pause() cleared the spinner line
-            time.sleep(1.2)  # a couple ticks: the prompt owns the terminal now
+            time.sleep(0.1)  # the prompt owns the terminal for several ticks
             assert "working" not in "".join(out.chunks[marker:])  # no spinner redraws
         resume = len(out.chunks)
-        time.sleep(1.2)  # after the prompt the heartbeat is free to spin again
+        _wait_until(lambda: "working" in "".join(out.chunks[resume:]))
         assert "working" in "".join(out.chunks[resume:])
     finally:
         view.close()

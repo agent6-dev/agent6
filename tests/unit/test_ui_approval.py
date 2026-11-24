@@ -36,8 +36,7 @@ def test_own_pid_is_live(tmp_path: pathlib.Path) -> None:
 
 
 def test_read_answer_returns_none_when_no_tui_and_no_answer(tmp_path: pathlib.Path) -> None:
-    # tui not live -> short-circuit immediately
-    assert sessions_ipc.read_answer(tmp_path, "abc", timeout_s=2.0, poll_s=0.05) is None
+    assert sessions_ipc.read_answer(tmp_path, "abc", timeout_s=2.0, dead_grace_s=0.0) is None
 
 
 def test_read_answer_picks_up_written_answer(tmp_path: pathlib.Path) -> None:

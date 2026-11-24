@@ -8,6 +8,7 @@ communicate() never sees EOF.
 from __future__ import annotations
 
 import pathlib
+import shlex
 import stat
 import time
 
@@ -15,6 +16,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail
+from agent6.sessions import process
 
 
 @pytest.mark.parametrize("timed_out", [False, True])
@@ -26,16 +28,9 @@ def test_launcher_result_preserves_timeout_fact(timed_out: bool) -> None:
 
 
 def _write_fake_launcher(tmp_path: pathlib.Path) -> pathlib.Path:
-    # A child holds stdout open and blocks forever; the marker file shows whether the group died.
-    marker = tmp_path / "grandchild_alive"
+    marker = shlex.quote(str(tmp_path / "grandchild.pid"))
     script = tmp_path / "fake-jail.sh"
-    script.write_text(
-        "#!/bin/sh\n"
-        # The grandchild keeps fd 1 open and refreshes a marker, so its survival is detectable.
-        f"( while true; do echo alive > '{marker}'; sleep 0.2; done ) &\n"
-        # parent launcher blocks forever -> communicate() must time out.
-        "sleep 600\n"
-    )
+    script.write_text(f"#!/bin/sh\nsleep 600 &\necho $! > {marker}\nwait\n")
     script.chmod(script.stat().st_mode | stat.S_IEXEC | stat.S_IRUSR)
     return script
 
@@ -43,6 +38,7 @@ def _write_fake_launcher(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_jail_timeout_returns_124_and_kills_group(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(jail, "_LAUNCHER_GRACE_S", 0.25)
     fake = _write_fake_launcher(tmp_path)
     monkeypatch.setattr(jail, "locate_jail_binary", lambda: fake)
 
@@ -56,8 +52,7 @@ def test_jail_timeout_returns_124_and_kills_group(
         argv=("/bin/true",),
         isolation="full",
         network="none",
-        # launcher sleeps 600s; timeout is timeout_s + 5.0, so keep it tiny.
-        timeout_s=0.5,
+        timeout_s=0.25,
     )
 
     start = time.monotonic()
@@ -71,11 +66,5 @@ def test_jail_timeout_returns_124_and_kills_group(
     # Bounded: must not block for the full 600s sleep.
     assert elapsed < 30.0
 
-    # The grandchild was reaped by the group kill: the marker stops being refreshed.
-    marker = tmp_path / "grandchild_alive"
-    time.sleep(1.0)
-    if marker.exists():
-        first = marker.stat().st_mtime
-        time.sleep(1.0)
-        second = marker.stat().st_mtime
-        assert first == second, "grandchild still alive after group kill"
+    pid = int((tmp_path / "grandchild.pid").read_text())
+    assert not process.pid_alive(pid), "grandchild still alive after group kill"
