@@ -2460,7 +2460,7 @@ Source: [`ui.web.git_model.graph_payload`](https://github.com/agent6-dev/agent6/
 | --- | --- | --- |
 | `commits` | `JSON` | Commit rows with their ref decorations. |
 | `commits[].refs` | `JSON` | The ref decorations attached to this commit. |
-| `tips` | `JSON` | The resolved commit tips to reuse for the next page. |
+| `tips` | `JSON` | The resolved tips to reuse for the next page. A range has the base then the head. |
 | `has_more` | `JSON` | Whether another commit page exists. |
 | `skip` | `JSON` | The number of commits skipped. |
 | `limit` | `JSON` | The effective page size. |

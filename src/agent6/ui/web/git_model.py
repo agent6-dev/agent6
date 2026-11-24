@@ -322,13 +322,19 @@ def _whole_number(raw: str, name: str, default: int) -> int:
 
 
 def graph_payload(
-    repo: pathlib.Path, refs: list[str] | None, *, limit: str = "", skip: str = ""
+    repo: pathlib.Path,
+    refs: list[str] | None,
+    *,
+    base: str | None = None,
+    head: str | None = None,
+    limit: str = "",
+    skip: str = "",
 ) -> dict[str, Any]:
     """Return one page of the commit graph.
 
     Attributes:
         commits: Commit rows with their ref decorations.
-        tips: The resolved commit tips to reuse for the next page.
+        tips: The resolved tips to reuse for the next page. A range has the base then the head.
         has_more: Whether another commit page exists.
 
         skip: The number of commits skipped.
@@ -340,6 +346,8 @@ def graph_payload(
         repo: The repository.
         refs: Full ref names, resolved shas or `HEAD`; None walks branches, remotes and tags
             plus HEAD, leaving out the `refs/agent6/*` chain refs.
+        base: With head, walk commits reachable from just one side instead of walking refs.
+        head: The other commit in the range.
         limit: Commits in the page, as the query gave it; "" is `GRAPH_PAGE`, more than
             `GRAPH_PAGE_MAX` is clamped.
         skip: Commits to pass over first, as the query gave it.
@@ -348,38 +356,44 @@ def graph_payload(
         `commits`, each with its refs, then `tips`, `has_more`, `skip` and `limit`.
 
     Raises:
-        GitRequestError: A name is not a listed ref, or a number is not one.
+        GitRequestError: A ref, range or page argument is invalid.
     """
     _repo(repo)
     page = min(_whole_number(limit, "limit", GRAPH_PAGE), GRAPH_PAGE_MAX)
     start = _whole_number(skip, "skip", 0)
     listed = _refs_by_kind(repo)
-    head_sha, _branch = git_history.head_commit(repo)
-    known = {r.full: r.sha for r in listed}
-    known["HEAD"] = head_sha
-    if refs is None:
-        revs = [r.sha for r in listed if r.kind != "agent6"] + ([head_sha] if head_sha else [])
+    if base is not None or head is not None:
+        if not base or not head or refs is not None:
+            raise GitRequestError("a graph range takes both base and head instead of refs")
+        tips = [_resolve(repo, base), _resolve(repo, head)]
+        walk = [f"{tips[0]}...{tips[1]}"]
     else:
-        revs: list[str] = []
+        head_sha, _branch = git_history.head_commit(repo)
+        known = {r.full: r.sha for r in listed}
+        known["HEAD"] = head_sha
+        if refs is None:
+            refs = [r.full for r in listed if r.kind != "agent6"] + ["HEAD"]
+        tips = []
         for name in refs:
             if name in known:
                 if known[name]:
-                    revs.append(known[name])
+                    tips.append(known[name])
             elif (
                 len(name) in (40, 64)
                 and all(c in "0123456789abcdef" for c in name)
                 and git_history.resolve_commit(repo, name) == name
             ):
-                revs.append(name)
+                tips.append(name)
             else:
                 raise GitRequestError(f"no such ref {name!r}")
-    revs = list(dict.fromkeys(_resolve(repo, rev) for rev in revs))
-    rows = git_history.log_commits(repo, revs, limit=page + 1, skip=start) if revs else ()
+        tips = list(dict.fromkeys(_resolve(repo, rev) for rev in tips))
+        walk = tips
+    rows = git_history.log_commits(repo, walk, limit=page + 1, skip=start) if walk else ()
     decorated = _decorations(listed)
     commits = [{**_log_row(c), "refs": decorated.get(c.sha, [])} for c in rows[:page]]
     return {
         "commits": commits,
-        "tips": revs,
+        "tips": tips,
         "has_more": len(rows) > page,
         "skip": start,
         "limit": page,

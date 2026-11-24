@@ -198,11 +198,11 @@ def _parse_log(stdout: str) -> tuple[LogCommit, ...]:
 def log_commits(
     path: pathlib.Path, revs: Sequence[str], *, limit: int, skip: int = 0
 ) -> tuple[LogCommit, ...]:
-    """Return the commits reachable from the revs, newest first in topological order.
+    """Walk the given revisions, newest first in topological order.
 
     Args:
         path: The repository.
-        revs: The starting points, ref names or shas.
+        revs: Ref names, commit identifiers or a range of resolved commits.
         limit: The most commits returned.
         skip: Commits passed over first; the walk is stable for the same revs, so this pages.
 
@@ -219,6 +219,7 @@ def log_commits(
         f"--format={_LOG_FORMAT}",
         "--end-of-options",
         *revs,
+        "--",
         check=False,
     )
     return _parse_log(res.stdout) if res.ok else ()

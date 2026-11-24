@@ -125,6 +125,9 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge
     - **Compare** counts the commits between the base and head. If the histories diverge, it shows how many commits the head is ahead and behind.
       A working-tree head counts to `HEAD` and notes uncommitted changes. An empty tree or recorded review tree has no commit count.
+    - **Compared commits** lists the commits reachable from just one side, including commits outside the selected refs.
+      **Show all commits** returns to the graph for your selected refs without closing Compare.
+      Closing Compare also restores that graph.
     - your own hands, file by file: the working-tree panel stages and unstages a file, discards one tracked file's unstaged edits after a confirm (restored from the index; no untracked file is ever deleted), and commits the index with the message you type under the repository's own identity; the toolbar switches branches, creates one at HEAD, and **Review** fills the new-work composer with `/review <branch>`
     - each working-tree row says when its changes are staged or partly staged, and an untracked file reads `U`
     - every write is refused while a session is live in this checkout (a worktree run, a fork or a child works elsewhere and does not block); push, pull, rebase, amend and reset stay in your terminal
@@ -235,7 +238,10 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - `GET /metrics` answers Prometheus text when `web.metrics_route = true`, with the web secret as the bearer, not the sign-in token ([telemetry export](cli.md#telemetry-export))
 - reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,merge,resume_defaults}` (`merge` is what the Merge confirm states), `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>?provider=<name>` (an optional provider filter), `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?commit=<sha>` folds up to that commit) with `/conversation` (`?recent=1` reads the live conversation tail), `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
 - git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name or resolved sha>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
-    - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **Refresh** starts from live refs
+    - ref graph pages return `tips`, the resolved shas to pass as `refs` with the next `skip`. **Refresh** starts from live refs.
+    - `/api/git/graph?base=<commit>&head=<commit>` walks the symmetric difference instead of `refs`.
+      Pass the two returned `tips` as `base` and `head` with the next `skip`.
+      **Refresh** keeps the commit pair shown in Compare.
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
     - `WORKTREE` names the working tree as the `head` of a compare or diff (an untracked file diffs against nothing); as a `base` or a commit it answers `422`
     - `/api/git/diff` accepts `full_context=1` for all unchanged lines, independently of `whole=1`, which lifts the patch byte cap

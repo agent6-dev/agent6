@@ -395,7 +395,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const reloadBtn = el('button'); reloadBtn.appendChild(icon('refresh')); reloadBtn.title = 'refresh: re-read the refs, the graph and the working tree';
   reloadBtn.setAttribute('aria-label', 'refresh');
   const counts = el('span', 'muted git-counts');
-  bar.appendChild(refsBtn); bar.appendChild(compareBtn); bar.appendChild(reloadBtn); bar.appendChild(counts);
+  const allBtn = el('button', null, 'Show all commits'); allBtn.hidden = true;
+  bar.append(refsBtn, allBtn, compareBtn, reloadBtn, counts);
   // A field and the buttons that act on it wrap as one group.
   const together = (...controls) => { const g = el('span', 'git-group'); for (const c of controls) g.appendChild(c); return g; };
 
@@ -482,7 +483,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   // -- the graph -------------------------------------------------------------------
   // A commit's refs as its row and its panel badge them; a detached HEAD's commit reads HEAD.
   const commitRefs = (c) => orderedRefs((c.sha === head.sha && !head.branch ? [{ name: 'HEAD', kind: 'head', head: true }] : []).concat(c.refs));
-  let commits = [], tips = null, hasMore = false, selected = null, loading = 0, loadError = '';
+  let commits = [], tips = null, hasMore = false, selected = null, loadError = '';
+  let graphRange = null, graphPage = null;
   const settle = rovingRows(graph, '.gc-row');
   // The selected row reads current, and Tab enters the graph there.
   const markRow = (sha) => {
@@ -495,6 +497,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     return hit;
   };
   const graphUrl = (skip) => {
+    if (graphRange) return '/api/git/graph?' + new URLSearchParams({base: graphRange.base, head: graphRange.head, skip});
     const revs = tips === null ? selectedRefs().map(r => r.full).concat(head.sha ? ['HEAD'] : []) : tips;
     const params = (revs.length ? revs : ['']).map(r => 'refs=' + encodeURIComponent(r));
     params.push('skip=' + skip);
@@ -503,7 +506,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const paintGraph = () => {
     graph.innerHTML = '';
     // The working tree tops the graph as a commit whose parent is HEAD.
-    const dirty = wt.files.length > 0;
+    const dirty = !graphRange && wt.files.length > 0;
     const lays = gitLayout(dirty ? [{ sha: GIT_WORKTREE, parents: head.sha ? [head.sha] : [] }, ...commits] : commits);
     let cols = 1;
     for (const l of lays) cols = Math.max(cols, l.before.length, l.after.length, l.column + 1);
@@ -539,7 +542,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       graph.appendChild(row);
     });
     if (loadError) graph.appendChild(el('div', 'empty err', 'error: ' + loadError)).setAttribute('role', 'alert');
-    else if (!commits.length) graph.appendChild(el('div', 'empty', refs.length && !selectedRefs().length ? 'no refs selected' : 'no commits yet'));
+    else if (!commits.length) graph.appendChild(el('div', 'empty', graphRange ? 'no commits between these revisions'
+      : refs.length && !selectedRefs().length ? 'no refs selected' : 'no commits yet'));
     if (hasMore) {
       // The next page waits on a disabled button; the focus it held goes to the first row it adds.
       const more = el('button', 'git-more', 'Load more');
@@ -552,23 +556,35 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       graph.appendChild(more);
     }
     if (!markRow(selected)) settle(graph.querySelector('.gc-row'));
-    const n = selectedRefs().length;
-    counts.textContent = (loadError ? '' : commits.length + (hasMore ? '+' : '') + (commits.length === 1 && !hasMore ? ' commit · ' : ' commits · ')) + n + ' of ' + refs.length + ' refs';
+    const count = commits.length + (hasMore ? '+' : '') + (commits.length === 1 && !hasMore ? ' commit' : ' commits');
+    counts.textContent = graphRange ? 'Compared commits' + (loadError ? '' : ' · ' + count)
+      : (loadError ? '' : count + ' · ') + selectedRefs().length + ' of ' + refs.length + ' refs';
   };
   // While a page loads, the graph reads busy and, past a moment, dims. A first page that fails
   // reads as the error in the graph; a later one keeps the rows it has and raises a toast.
-  const loadGraph = async (reset) => {
-    const n = ++loading;
+  const loadGraph = (reset) => {
     if (reset) { commits = []; tips = null; hasMore = false; loadError = ''; }
     graph.setAttribute('aria-busy', 'true');
-    try {
-      const d = await getJSON(graphUrl(commits.length));
-      if (n !== loading || !app.isConnected) return;
+    const page = getJSON(graphUrl(commits.length)).then(d => {
+      if (page !== graphPage || !app.isConnected) return;
       commits = commits.concat(d.commits); tips = d.tips; hasMore = d.has_more;
-    } catch (e) { if (n === loading) { if (reset) loadError = e.message; else toast(e.message, true); } }
-    if (n === loading) graph.setAttribute('aria-busy', 'false');
-    paintGraph();
+    }, e => {
+      if (page !== graphPage || !app.isConnected) return;
+      if (reset) loadError = e.message; else toast(e.message, true);
+    }).then(() => {
+      if (page !== graphPage || !app.isConnected) return;
+      graph.setAttribute('aria-busy', 'false'); paintGraph();
+    });
+    graphPage = page;
+    return page;
   };
+  const setGraphRange = (range) => {
+    if (graphPage && range?.base === graphRange?.base && range?.head === graphRange?.head) return graphPage;
+    graphRange = range;
+    refsBtn.hidden = !!range; allBtn.hidden = !range;
+    return loadGraph(true);
+  };
+  allBtn.onclick = () => { setGraphRange(null); refsBtn.focus(); };
   // ↻: the refs, the working tree and the graph again; an open commit panel stays, an
   // open working-tree panel is painted afresh. ↻ waits until they are in, keeping its focus.
   const reload = async (keep) => {
@@ -633,14 +649,28 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
 
   // -- the side panel: a commit, or the compare --------------------------------------
   // A phone's panel covers the graph; ‹ Graph closes it, and the focus it held goes to the graph.
+  const emptySide = () => {
+    side.replaceChildren(el('div', 'empty', 'click a commit for its files and diff, or Compare for any two revisions'));
+    side.classList.remove('open');
+  };
+  const closeCompare = () => {
+    emptySide(); compareBtn.textContent = 'Compare';
+    setViewHash('#/git');
+    return setGraphRange(null);
+  };
   const sideHead = (title) => {
+    const comparing = title === 'Compare';
+    compareBtn.textContent = comparing ? 'Close Compare' : 'Compare';
+    if (!comparing && graphRange) setGraphRange(null);
     const h = el('div', 'git-side-head row');
     const back = el('button', 'mini git-back');
     back.append(icon('back'), ' Graph');
-    back.onclick = () => {
+    back.onclick = async () => {
       const had = document.activeElement === back;
-      side.classList.remove('open');
-      if (had) graph.querySelector('.gc-row[tabindex="0"]')?.focus();
+      if (comparing) await closeCompare(); else side.classList.remove('open');
+      if (had && (document.activeElement === back || document.activeElement === document.body)) {
+        (graph.querySelector('.gc-row[tabindex="0"]') || compareBtn).focus();
+      }
     };
     const heading = el('h3', null, title); heading.tabIndex = -1;
     h.appendChild(back); h.appendChild(heading);
@@ -795,8 +825,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const run = async () => {
       const { base, head: h } = gitState.compare;
       result.innerHTML = '';
-      if (!base || !h) { setViewHash('#/git'); result.appendChild(el('div', 'empty', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return; }
       const n = ++compareRun;
+      if (!base || !h) { setViewHash('#/git'); result.appendChild(el('div', 'empty', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return setGraphRange(null); }
       setViewHash('#/git/compare/' + encodeURIComponent(base.rev) + '..' + encodeURIComponent(h.rev) + (query.size ? '?' + query : ''));
       result.appendChild(el('div', 'muted gcmp-status', 'comparing…'));
       try {
@@ -829,8 +859,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
         }
         const ctx = {base: d.base.sha, head: d.head.sha, files: d.files, panel: reviewed ? query.get('panel') : '', query};
         result.appendChild(fileList(d.files, d.truncated, (i) => showDiff(ctx, i)));
-        if (path && selectedFile >= 0) await showDiff(ctx, selectedFile);
-      } catch (e) { if (n === compareRun) { result.innerHTML = ''; result.appendChild(el('div', 'err gcmp-status', e.message)); } }
+        await Promise.all([setGraphRange(d.commit_range || null), path && selectedFile >= 0 && showDiff(ctx, selectedFile)]);
+      } catch (e) {
+        if (n !== compareRun || !result.isConnected) return;
+        result.replaceChildren(el('div', 'err gcmp-status', e.message));
+        await setGraphRange(null);
+      }
     };
     const listHost = el('div', 'gpick-host');
     const pickBase = gitPicker('base', gitState.compare.base, (v) => { query = new URLSearchParams(); gitState.compare.base = v; run(); }, listHost);
@@ -852,7 +886,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     refocus();
     return run();
   };
-  compareBtn.onclick = showCompare;
+  compareBtn.onclick = () => side.querySelector('.gcmp') ? closeCompare() : showCompare();
 
   // -- the ref filter: group toggles and one checkbox per ref, a popover under Refs ---
   // The browser closes it on Escape (focus back on Refs) or a click outside.
@@ -901,16 +935,16 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     paintList();
   };
 
-  await loadGraph(true);
-  if (!app.isConnected) return;
-  if (link[0] === 'commit' && link[1]) await showCommit(link[1], query);
-  else if (link[0] === 'compare' && link[1]) {
+  if (link[0] === 'compare' && link[1]) {
     const [base, head] = link[1].split('..');
     // A revision reads as the picker would write it: the working tree by its name.
     const pick = (rev) => rev === GIT_WORKTREE ? GIT_WORKTREE_PICK : { rev: rev || '', label: rev || '' };
     gitState.compare = { base: pick(base), head: pick(head) };
-    await showCompare();
+    return showCompare();
   }
+  emptySide();
+  await loadGraph(true);
+  if (!app.isConnected) return;
+  if (link[0] === 'commit' && link[1]) await showCommit(link[1], query);
   else if (link[0] === 'worktree' && wt.files.length) showWorktree();
-  else side.appendChild(el('div', 'empty', 'click a commit for its files and diff, or Compare for any two revisions'));
 }

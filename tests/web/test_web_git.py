@@ -183,6 +183,26 @@ def test_graph_pages_keep_the_original_tips_when_refs_move(
     assert "no such ref" in _refused(port, "/api/git/graph?refs=--all")
 
 
+def test_graph_range_pages_only_the_commits_unique_to_either_side(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """The graph resolves its range before paging and keeps both tips when refs move."""
+    path, shas = repo
+    first = _ok(port, "/api/git/graph?base=main~1&head=feature&limit=1")
+    assert first["has_more"]
+    base, head = first["tips"]
+    assert [base, head] == [shas["main"], shas["feature"]]
+    _git(path, "branch", "-f", "feature", "HEAD")
+    rest = _ok(port, f"/api/git/graph?base={base}&head={head}&skip=1")
+    assert not rest["has_more"]
+    assert {row["sha"] for row in first["commits"] + rest["commits"]} == {base, head}
+    assert _ok(port, "/api/git/graph?base=HEAD&head=HEAD")["commits"] == []
+    for query in ["base=HEAD", "head=HEAD", "base=&head=HEAD", "base=HEAD&head=HEAD&refs=HEAD"]:
+        assert "both base and head instead of refs" in _refused(port, "/api/git/graph?" + query)
+    for rev in ["--all", "unknown", "WORKTREE", git_read.empty_tree(path)]:
+        _refused(port, f"/api/git/graph?base=HEAD&head={rev}")
+
+
 def test_commit_lists_its_files_against_the_first_parent(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:

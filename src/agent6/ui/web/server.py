@@ -1352,7 +1352,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 full_context=arg("full_context") == "1",
             ),
             "graph": lambda: git_model.graph_payload(
-                cwd, refs, limit=arg("limit"), skip=arg("skip")
+                cwd,
+                refs,
+                base=arg("base") if "base" in q else None,
+                head=arg("head") if "head" in q else None,
+                limit=arg("limit"),
+                skip=arg("skip"),
             ),
             "refs": lambda: git_model.refs_payload(cwd),
             "search": lambda: git_model.search_payload(cwd, arg("q")),
