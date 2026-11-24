@@ -250,12 +250,17 @@ def test_a_finished_task_merges_at_the_next_boundary_while_an_earlier_one_still_
         assert f"[parallel] started child {sid}." in provider.seen[1]
     assert "[parallel] child" not in provider.seen[2]
     # Turn 4 read the second task's end and its merge, while the first task still ran.
-    assert f"[parallel] child {two} finished.\\nsummary: wrote b" in provider.seen[3]
+    assert (
+        f"[parallel] child {two} finished. agent6/{two} holds 1 commit.\\nsummary: wrote b"
+        in provider.seen[3]
+    )
     assert "[parallel] group run-p2 complete (1 child(ren))" in provider.seen[3]
     assert "[parallel] group run-p1" not in provider.seen[3]
     # Turn 5 read the first task's end and its merge.
     last = provider.seen[4]
-    assert f"[parallel] child {one} finished.\\nsummary: wrote a" in last
+    assert (
+        f"[parallel] child {one} finished. agent6/{one} holds 1 commit.\\nsummary: wrote a" in last
+    )
     assert "[parallel] group run-p1 complete (1 child(ren))" in last
     assert (repo / "a.txt").exists() and (repo / "b.txt").exists()
     records = child_dispatch.read_records(tmp_path / "run")
@@ -1003,7 +1008,10 @@ def test_a_merge_at_the_runs_last_boundary_is_in_the_snapshot_a_resume_reads(
     assert (record.state, record.delivered, record.children[0].reported) == ("complete", True, True)
     resumed = _Script((None, _calls(("finish_session", {"summary": "done"}))))
     _harness(repo, tmp_path / "run", resumed, _Children(repo, "run"), max_turns=2).resume()
-    assert f"[parallel] child {child} finished.\\nsummary: wrote a" in resumed.seen[0]
+    assert (
+        f"[parallel] child {child} finished. agent6/{child} holds 1 commit.\\nsummary: wrote a"
+        in resumed.seen[0]
+    )
     assert resumed.seen[0].count("[parallel] group run-p1 complete") == 1
 
 

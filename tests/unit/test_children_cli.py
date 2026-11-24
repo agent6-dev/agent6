@@ -159,9 +159,13 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
             if line.startswith("[parallel] ")
         ]
 
+    def finished(sid: str) -> str:
+        ref = f"agent6/{sid}" if control == "agent6" else f"refs/agent6/{sid}/head"
+        return f"[parallel] child {sid} finished. {ref} holds 1 commit."
+
     # The parent's third call read the second task's end and its merge: the first task ran on.
     assert notices(parent[2]) == [
-        f"[parallel] child {two} finished.",
+        finished(two),
         f"[parallel] group {session}-p2 complete (1 child(ren)):",
     ]
     assert "summary: wrote b.txt" in json.dumps(parent[2])
@@ -169,9 +173,9 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
     assert order.index(("PARENT", 2)) < order.index(("CHILD-A", 1))
     # Its fourth call read the first task's end and its merge.
     assert notices(parent[3]) == [
-        f"[parallel] child {two} finished.",
+        finished(two),
         f"[parallel] group {session}-p2 complete (1 child(ren)):",
-        f"[parallel] child {one} finished.",
+        finished(one),
         f"[parallel] group {session}-p1 complete (1 child(ren)):",
     ]
     assert "summary: wrote a.txt" in json.dumps(parent[3])

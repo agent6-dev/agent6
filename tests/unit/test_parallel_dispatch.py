@@ -193,7 +193,7 @@ def test_retained_notice_names_the_ref_without_claiming_a_merge() -> None:
     )
     notice = parallel_merge.summary_text("p1", [retained])
     assert notice.splitlines()[1:] == [
-        "  - one: retained on refs/agent6/one/head (1 commit).",
+        "  - one: retained on refs/agent6/one/head (1 commit); merge unknown.",
         "Agent6 made no merge.",
     ]
 

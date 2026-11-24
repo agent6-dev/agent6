@@ -647,8 +647,9 @@ def recorded_result(
     )
     ok = produced_result(summary.status)
     commits = child_commits(origin, dest, imported)
+    noun = "commit" if commits == 1 else "commits"
     held = (
-        f"{imported.ref} holds {commits} commit(s)"
+        f"{imported.ref} holds {commits} {noun}"
         if imported.ref
         else "no branch (the run made no commit)"
     )
@@ -669,7 +670,7 @@ def recorded_result(
         commits=commits,
         verification=summary.verification,
         usage=usage,
-        report=recorded.finish_summary,
+        report=recorded.finish_summary if ok else "",
         context=context,
         # A stop counts as a result, and one that never merges by itself: the child's own
         # record says it was one, whoever asked.
@@ -883,7 +884,7 @@ def child_commits(
         base = sessions_manifest.read_manifest(session_dir).base_sha
     except sessions_manifest.ManifestError:
         return 0
-    return len(git_read.list_run_commits(origin, base, imported.tip)) if base else 0
+    return (git_read.commit_count(origin, base, imported.tip) or 0) if base else 0
 
 
 def build_rank_recorder(

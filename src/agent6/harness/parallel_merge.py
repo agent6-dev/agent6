@@ -150,7 +150,8 @@ def merge_words(j: child_records.ChildMerge) -> str:
     if j.status == "retained":
         rank = f"ranked {j.detail}; " if j.detail else ""
         noun = "commit" if j.commits == 1 else "commits"
-        return f"{rank}retained on {j.branch} ({j.commits} {noun})"
+        status = "; merge unknown" if j.branch == git_read.chain_ref_for(j.session_id) else ""
+        return f"{rank}retained on {j.branch} ({j.commits} {noun}){status}"
     if j.status == "stopped":
         return stopped_words(j.detail, j.branch, j.commits, j.context)
     return "no changes" if j.status == "no_changes" else j.status
@@ -212,6 +213,9 @@ def end_notice(res: child_records.ChildResult) -> str:
             res.stopped_by, res.imported_ref or res.branch, res.commits, res.context
         )
     head = f"[parallel] child {sid} {how}."
+    if not res.stopped_by and res.imported_ref and res.commits:
+        noun = "commit" if res.commits == 1 else "commits"
+        head += f" {res.imported_ref} holds {res.commits} {noun}."
     report = res.report.strip()
     return f"{head}\nsummary: " + report.replace("\n", "\n  ") if report else head
 
