@@ -128,7 +128,8 @@
       "child_model_tokens": {
         "input_tokens": null,
         "output_tokens": null
-      }
+      },
+      "web_searches": 0
     },
     "account": null,
     "prior_model_tokens": {
