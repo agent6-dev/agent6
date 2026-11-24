@@ -15,28 +15,18 @@ import pathlib
 import shutil
 import uuid
 
-from agent6 import budget, errors, kinds, path_safety, paths, portable
+from agent6 import errors, kinds, machine, path_safety, paths, portable
 from agent6.app import preflight, worktrees
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import agent, bundle, check, scriptcheck
+from agent6.app.machine import agent, bundle
+from agent6.app.machine import draft as drafting
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError, layer
-from agent6.machine import (
-    AgentRequest,
-    MachineSpec,
-    ToolState,
-    build_authoring_prompt,
-    dry_run,
-)
 from agent6.sessions import event_log, id, journal, layout, lock, process
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import execution_settings
-
-_CREATE_TIMEOUT_S = 900.0
-
-_CREATE_STOP_REASONS = frozenset({"budget_exhausted", "timeout", "provider_error", "steer_abort"})
 
 
 def _write_scripts(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:
@@ -87,67 +77,6 @@ def _write_scripts(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:
                 path_safety.unlink_contained(tmp)
 
 
-def _machine_file(workspace: pathlib.Path) -> tuple[pathlib.Path | None, str]:
-    """Return the one `.asm.toml` the agent wrote and "", or None and the problem."""
-    found = sorted(workspace.glob("*.asm.toml"))
-    if not found:
-        return None, (
-            "No .asm.toml in the workspace: write the machine file there"
-            " (and any scripts/ it references) with apply_edit."
-        )
-    if len(found) > 1:
-        names = ", ".join(p.name for p in found)
-        return None, f"Write ONE machine file; the workspace holds {len(found)}: {names}."
-    return found[0], ""
-
-
-def _read_scripts(workspace: pathlib.Path) -> dict[str, str]:
-    """Return the bundle's whole `scripts/` tree as {bundle-relative path: source}.
-
-    The whole tree is what the validators passed: a script may import a module or read a data
-    file no `tool` command names.
-
-    Args:
-        workspace: The drafting workspace, the bundle's root.
-
-    Returns:
-        The sources; a file that is not plain readable text is left out, and so is one
-        reached through a symlink.
-    """
-    out: dict[str, str] = {}
-    for path in sorted((workspace / "scripts").rglob("*")):
-        rel = str(path.relative_to(workspace))
-        try:
-            out[rel] = path_safety.read_contained(path_safety.contain(workspace, rel))
-        except (OSError, UnicodeDecodeError, path_safety.ContainmentError):
-            continue
-    return out
-
-
-def _attempt_reason(problems: list[str]) -> str:
-    """Return a one-line reason an attempt failed.
-
-    Args:
-        problems: The attempt's problems; one may span several lines.
-
-    Returns:
-        The first problem's first line, plus the block's last line when the first only
-        introduces it (a traceback ends with the actual error), then a count of the rest.
-    """
-    first = problems[0] if problems and problems[0].strip() else ""
-    lines = [ln.strip() for ln in first.splitlines() if ln.strip()]
-    head = lines[0] if lines else "unknown"
-    if head.endswith(":") and len(lines) > 1:
-        # Clip the intro first: a long one would truncate away the appended error.
-        if len(head) > 100:
-            head = head[:97] + "..."
-        head = f"{head} {lines[-1]}"
-    if len(head) > 160:
-        head = head[:157] + "..."
-    extra = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
-    return f"{head}{extra}"
-
-
 def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter) -> None:
     """Remove a drafting workspace whose bundle is published, with its per-repo state dir.
 
@@ -169,12 +98,12 @@ def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter)
         reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
 
 
-def _pass_env_to_allow(spec: MachineSpec, allowed: tuple[str, ...]) -> list[str]:
+def _pass_env_to_allow(spec: machine.MachineSpec, allowed: tuple[str, ...]) -> list[str]:
     """Return the variables the machine's tools name that `[machine].pass_env` lacks, sorted."""
     asked = {
         name
         for state in spec.states.values()
-        if isinstance(state, ToolState)
+        if isinstance(state, machine.ToolState)
         for name in state.pass_env
     }
     return sorted(asked - set(allowed))
@@ -186,7 +115,208 @@ def new_draft_dir(state: pathlib.Path) -> pathlib.Path:
     return layout.bucket_dir(state, bucket) / id.unused_session_id(state, bucket)
 
 
-def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop's attempts and refusals, in order
+def _open_draft(
+    task: str,
+    output: pathlib.Path | None,
+    config_paths: tuple[pathlib.Path, ...],
+    budget_overrides: session_setup.BudgetOverrides | None,
+    reporter: app_reporter.Reporter,
+) -> drafting.Draft:
+    """Check the config and open the draft journal before preparing the workspace.
+
+    Args:
+        task: The operator's prompt.
+        output: The requested machine file.
+        config_paths: Explicit config layers.
+        budget_overrides: Budget flags for the draft.
+        reporter: The output channels.
+
+    Returns:
+        The opened draft.
+
+    Raises:
+        SessionRefusedError: A preflight check refused the draft.
+    """
+    cwd = pathlib.Path.cwd()
+    try:
+        eff = layer.load_effective(cwd, config_paths)
+        cfg = eff.config
+        if budget_overrides is not None:
+            cfg = budget_overrides.apply(cfg)
+        cfg.require_runnable("worker")
+    except ConfigError as exc:
+        reporter.error(str(exc))
+        raise preflight.SessionRefusedError(2) from exc
+    missing = session_setup.check_provider_keys(cfg)
+    if missing is not None:
+        reporter.err(missing)
+        raise preflight.SessionRefusedError(2)
+    if not lock.hold_workspace(cwd):
+        reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
+        raise preflight.SessionRefusedError(2)
+    # A create session withholds the command tools: an unconfined autorun needs no confirmation.
+    isolation = session_runtime.select_isolation(
+        cfg,
+        cwd=cwd,
+        confirm_unconfined=lambda _isolation, _cfg: True,
+        reporter=reporter,
+    )
+    scratch = new_draft_dir(paths.state_dir(cwd))
+    paths.mkdir_for_real_user(scratch.parent)
+    scratch.mkdir(mode=0o700)
+    (scratch / "prompt.txt").write_text(task, encoding="utf-8")
+    # The draft's watchable log: this process owns session.start, the attempt markers and
+    # session.stop; each attempt's subprocess appends its own events to the same file.
+    events_log = scratch / layout.LOGS_NAME
+    execution_id = uuid.uuid4().hex
+    events = event_log.EventSink(events_log)
+    # A terminal draft has its own session.stop, which the status reads first: no clearing.
+    process.emit_session_start(
+        events,
+        scratch,
+        journal.SessionStart(
+            execution_id=execution_id, user_task=task, task_source="operator", mode="machine"
+        ),
+        settings=execution_settings.observations(cfg, eff),
+    )
+    reporter.err(
+        f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
+    )
+    # An empty repo of its own beside the children's worktrees: the jail masks the state dir.
+    workspace = worktrees.child_worktree_root(cfg, cwd, scratch.name)
+    return drafting.Draft(
+        workspace, events, execution_id, reporter, cwd, output, cfg, isolation, config_paths
+    )
+
+
+def _prepare_runner(draft: drafting.Draft) -> drafting.Runner:
+    """Prepare the confined authoring execution and journal any refusal.
+
+    Args:
+        draft: The session receiving the attempt logs.
+
+    Returns:
+        The authoring runner.
+
+    Raises:
+        SessionRefusedError: The workspace or commit identity could not be prepared.
+    """
+    workspace = draft.workspace
+    cfg = draft.cfg
+    try:
+        workspace.mkdir(parents=True)
+        git_ops.init_repo(workspace)
+    except (OSError, errors.GitError) as exc:
+        draft.reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
+        draft.stop("workspace_failed")
+        raise preflight.SessionRefusedError(1) from exc
+    # The complete effective config as the overlay: omitting values equal to built-in defaults
+    # loses an explicit repo reset when the workspace reloads the operator's global layer.
+    overlay = cfg.model_dump(mode="json")
+    overlay["agent6"].pop("preset", None)  # the overlay layer forbids a preset
+    # The execution writes files and nothing else; agent6 runs the validators itself.
+    overlay["sandbox"] = {
+        **overlay.get("sandbox", {}),
+        "run_commands": "deny",
+        "fetch_approved_hosts": list[str](),
+    }
+    # Resolved on the host: the confined execution cannot read ~/.gitconfig.
+    try:
+        name, email = git_read.verify_git_identity(
+            workspace, git_read.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+        )
+    except errors.GitError as exc:
+        draft.reporter.error(str(exc))
+        draft.stop("no_git_identity")
+        raise preflight.SessionRefusedError(2) from exc
+    return agent.build_machine_agent_runner(
+        # The authoring agent is no state: its requests carry the empty name.
+        {"": agent.StateOverlay(overlay, draft.isolation)},
+        workspace,
+        draft.events.path.parent / "agent_transcripts",
+        commit_identity=git_read.CommitIdentity(name=name, email=email),
+    )
+
+
+def publish_draft(
+    draft: drafting.Draft,
+    valid: drafting.ValidatedDraft,
+) -> int:
+    """Publish the validated scripts before their machine file and check the result.
+
+    Args:
+        draft: The create session.
+        valid: The bundle that passed every check.
+
+    Returns:
+        Zero on success, one on failure or two on an output collision.
+    """
+    reporter = draft.reporter
+    workspace = draft.workspace
+    spec = valid.spec
+    draft_text = valid.path.read_text(encoding="utf-8")
+    payload = draft_text if draft_text.endswith("\n") else draft_text + "\n"
+    target = draft.output if draft.output is not None else draft.cwd / f"{spec.machine}.asm.toml"
+    existing = [
+        p
+        for p in (target, *(target.parent / rel for rel in sorted(valid.scripts)))
+        if p.exists() or p.is_symlink()
+    ]
+    # The default path clobbers nothing, scripts included; `-o` replaces existing targets.
+    if draft.output is None and existing:
+        draft.stop("output_collision")
+        reporter.err("REFUSING to overwrite existing file(s):")
+        for clash in existing:
+            reporter.err(f"  {clash}")
+        reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
+        reporter.out(payload.removesuffix("\n"))
+        return 2
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Scripts first, the machine file last: a death mid-publish leaves inert scripts.
+        _write_scripts(target.parent, valid.scripts)
+        portable.atomic_write(target, payload)
+    except (OSError, path_safety.ContainmentError) as exc:
+        draft.stop("write_failed")
+        reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
+        reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
+        reporter.out(payload.removesuffix("\n"))
+        return 1
+    # A pre-existing symlink under scripts/ can make the published bundle differ: check it.
+    out_problems = bundle.validate_bundle(spec, target)
+    if out_problems:
+        draft.stop("bundle_invalid")
+        reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")
+        for problem in out_problems:
+            reporter.err(f"  - {problem}")
+        return 1
+    draft.stop("machine_created", verification="passed")
+    scripts_note = f" + {len(valid.scripts)} script(s)" if valid.scripts else ""
+    replaced_note = (
+        f"; replaced {', '.join(repr(str(path)) for path in existing)}" if existing else ""
+    )
+    reporter.err(
+        f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states)"
+        f"{scripts_note}{replaced_note}."
+    )
+    if git_read.is_git_repo(target.parent):
+        reporter.err(
+            "Review and commit the bundle; `machine run` checks it for uncommitted changes"
+            " when run from this repository."
+        )
+    if to_allow := _pass_env_to_allow(spec, draft.cfg.machine.pass_env):
+        reporter.err(
+            "The draft's tools read operator environment variables; `machine run` refuses"
+            " until your config allows each:"
+        )
+        for name in to_allow:
+            reporter.err(f"  agent6 config add machine.pass_env {name}")
+    # A failure keeps the workspace: the draft in it is what the operator reads.
+    _discard_workspace(workspace, reporter)
+    return 0
+
+
+def create_machine(
     task: str,
     reporter: app_reporter.Reporter,
     *,
@@ -212,342 +342,10 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     if max_attempts < 1:
         reporter.error("--max-attempts must be >= 1.")
         return 2
-    cwd = pathlib.Path.cwd()
     try:
-        eff = layer.load_effective(cwd, config_paths)
-        cfg = eff.config
-        if budget_overrides is not None:
-            cfg = budget_overrides.apply(cfg)
-        cfg.require_runnable("worker")
-    except ConfigError as exc:
-        reporter.error(str(exc))
-        return 2
-    missing = session_setup.check_provider_keys(cfg)
-    if missing is not None:
-        reporter.err(missing)
-        return 2
-    if not lock.hold_workspace(cwd):
-        reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
-        return 2
-    try:
-        # A create session withholds the command tools: an unconfined autorun needs no confirmation.
-        isolation = session_runtime.select_isolation(
-            cfg,
-            cwd=cwd,
-            confirm_unconfined=lambda _isolation, _cfg: True,
-            reporter=reporter,
-        )
+        draft = _open_draft(task, output, config_paths, budget_overrides, reporter)
+        runner = _prepare_runner(draft)
     except preflight.SessionRefusedError as refusal:
         return refusal.rc
-
-    scratch = new_draft_dir(paths.state_dir(cwd))
-    paths.mkdir_for_real_user(scratch.parent)
-    scratch.mkdir(mode=0o700)
-    (scratch / "prompt.txt").write_text(task, encoding="utf-8")
-    # The draft's watchable log: this process owns session.start, the attempt markers and
-    # session.stop; each attempt's subprocess appends its own events to the same file.
-    events_log = scratch / layout.LOGS_NAME
-    execution_id = uuid.uuid4().hex
-    events = event_log.EventSink(events_log)
-    # A terminal draft has its own session.stop, which the status reads first: no clearing.
-    process.emit_session_start(
-        events,
-        scratch,
-        journal.SessionStart(
-            execution_id=execution_id, user_task=task, task_source="operator", mode="machine"
-        ),
-        settings=execution_settings.observations(cfg, eff),
-    )
-    reporter.err(
-        f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
-    )
-    # An empty repo of its own beside the children's worktrees: the jail masks the state dir.
-    workspace = worktrees.child_worktree_root(cfg, cwd, scratch.name)
-    try:
-        workspace.mkdir(parents=True)
-        git_ops.init_repo(workspace)
-    except (OSError, errors.GitError) as exc:
-        reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
-        events.emit(
-            journal.SessionStop(
-                execution_id=execution_id,
-                reason="workspace_failed",
-                turns=0,
-                verification="unverified",
-            )
-        )
-        return 1
-    # The complete effective config as the overlay: omitting values equal to built-in defaults
-    # loses an explicit repo reset when the workspace reloads the operator's global layer.
-    overlay = cfg.model_dump(mode="json")
-    overlay["agent6"].pop("preset", None)  # the overlay layer forbids a preset
-    # The execution writes files and nothing else; agent6 runs the validators itself.
-    overlay["sandbox"] = {
-        **overlay.get("sandbox", {}),
-        "run_commands": "deny",
-        "fetch_approved_hosts": list[str](),
-    }
-    # Resolved on the host: the confined execution cannot read ~/.gitconfig.
-    try:
-        name, email = git_read.verify_git_identity(
-            workspace, git_read.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
-        )
-    except errors.GitError as exc:
-        reporter.error(str(exc))
-        events.emit(
-            journal.SessionStop(
-                execution_id=execution_id,
-                reason="no_git_identity",
-                turns=0,
-                verification="unverified",
-            )
-        )
-        return 2
-    runner = agent.build_machine_agent_runner(
-        # The authoring agent is no state: its requests carry the empty name.
-        {"": agent.StateOverlay(overlay, isolation)},
-        workspace,
-        scratch / "agent_transcripts",
-        commit_identity=git_read.CommitIdentity(name=name, email=email),
-    )
-
-    diagnostics: list[str] | None = None
-    spec: MachineSpec | None = None
-    valid_path: pathlib.Path | None = None
-    valid_scripts: dict[str, str] = {}
-    total_usd = 0.0
-    total_own = 0.0
-    total_partial = False
-    total_in = 0
-    total_out = 0
-    # One ledger across attempts: each subprocess is otherwise a fresh tracker. -1 = unlimited.
-    create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
-    plan_cap = None if cfg.budget.max_plan_points == -1 else cfg.budget.max_plan_points
-    total_plan = 0.0
-    attempt = 0
-    for next_attempt in range(1, max_attempts + 1):
-        # A cap binds spend: a plan model's attempts spend no dollars and keep going.
-        if total_usd > 0 and create_cap is not None and total_usd >= create_cap:
-            reporter.err(
-                f"machine create: budget max_usd (${create_cap}) exhausted after"
-                f" {attempt} attempt(s)"
-                f" (spent {budget.format_usd(total_usd, partial=total_partial)}); stopping."
-            )
-            break
-        if total_plan > 0 and plan_cap is not None and total_plan >= plan_cap:
-            reporter.err(
-                f"machine create: budget max_plan_points ({plan_cap:g}) exhausted after"
-                f" {attempt} attempt(s) ({total_plan:g} plan points); stopping."
-            )
-            break
-        attempt = next_attempt
-        prompt = build_authoring_prompt(task, attempt=attempt, diagnostics=diagnostics)
-        reporter.err(f"machine create: attempt {attempt}/{max_attempts}...")
-        events.emit(journal.LoopNote(text=f"attempt {attempt}/{max_attempts}"))
-        # effort="off": authoring transcribes a described design. Measured on kimi-k2.6: "low"
-        # timed out on 3 of 3 attempts in 30-minute thinks; "off" drafted in 2.5 minutes for $0.02.
-        remaining = None if create_cap is None else max(create_cap - total_usd, 0.0)
-        remaining_plan = None if plan_cap is None else max(plan_cap - total_plan, 0.0)
-        result = runner(
-            AgentRequest(
-                prompt=prompt,
-                operator_task=task,
-                timeout_s=_CREATE_TIMEOUT_S,
-                mode="run",
-                effort="off",
-                remaining_usd=remaining,
-                max_plan_points=remaining_plan,
-            ),
-            events_log,
-        )
-        total_usd += result.usd
-        total_own += result.usd_own_calls or 0.0
-        total_plan += result.plan_observed_points
-        total_partial |= result.usd_partial
-        total_in += result.input_tokens
-        total_out += result.output_tokens
-        candidate_path, missing = _machine_file(workspace)
-        if candidate_path is None:
-            diagnostics = [f"{missing} (agent loop reason: {result.reason})"]
-            reporter.err(f"machine create: attempt {attempt} failed: {missing}")
-            if result.reason in _CREATE_STOP_REASONS:
-                break
-            continue
-        candidate_scripts = _read_scripts(workspace)
-        try:
-            checked = check.check_bundle(candidate_path, cwd, config_paths=config_paths)
-        except check.CheckError as exc:
-            problems = exc.problems
-            if candidate_scripts:
-                # Lint the scripts now, so one attempt reveals every problem class.
-                problems = [
-                    *problems,
-                    *scriptcheck.lint_and_typecheck(
-                        workspace / "scripts",
-                        isolation,
-                        fix=True,
-                        ruff_config_from=output.parent if output is not None else cwd,
-                        reporter=reporter,
-                    ),
-                ]
-        else:
-            candidate_spec = checked.spec
-            for warning in checked.warnings:
-                reporter.err(f"[agent6] WARNING: {warning}")
-            # Lint, type-check, offline-test and dry-run; a failure is the next attempt's input.
-            reporter.err("machine create: linting + offline-testing scripts...")
-            events.emit(journal.LoopNote(text="linting + offline-testing the draft"))
-            problems = scriptcheck.lint_and_typecheck(
-                workspace / "scripts",
-                isolation,
-                fix=True,
-                ruff_config_from=output.parent if output is not None else cwd,
-                reporter=reporter,
-            )
-            # ruff --fix rewrote the workspace copies: publish what validated.
-            candidate_scripts = _read_scripts(workspace)
-            offline = scriptcheck.run_offline_tests(workspace, isolation)
-            problems.extend(offline.problems)
-            if offline.skipped:
-                reporter.err(
-                    f"machine create: {offline.skipped} offline script test"
-                    f"{'' if offline.skipped == 1 else 's'} not run"
-                    f" ({offline.skip_reason})"
-                )
-            report = dry_run(candidate_spec, None)
-            problems.extend(
-                f"dry-run state {c.name!r}: {c.detail}"
-                for c in (*report.states, *report.branches)
-                if not c.ok
-            )
-            if not problems:
-                spec = candidate_spec
-                valid_path = candidate_path
-                valid_scripts = candidate_scripts
-                break
-        reporter.err(f"machine create: attempt {attempt} failed: {_attempt_reason(problems)}")
-        diagnostics = problems
-        if result.reason in _CREATE_STOP_REASONS:
-            break
-
-    points = f", {total_plan:g} plan points" if total_plan else ""
-    reporter.err(
-        f"machine create: spent {budget.format_usd(total_usd, partial=total_partial)}{points}"
-        f" (in={total_in} tok, out={total_out} tok)"
-    )
-    # Each attempt's subprocess logs its own budget.update; the fold's last one must be the total.
-    events.emit(
-        journal.BudgetUpdate(
-            usd_total=total_usd,
-            usd_own_calls=total_own,
-            input_total=total_in,
-            output_total=total_out,
-            plan_observed_points=total_plan,
-        )
-    )
-    # session.stop reasons are tokens: the listing prints one beside "failed". turns = attempts.
-    if spec is None or valid_path is None:
-        events.emit(
-            journal.SessionStop(
-                execution_id=execution_id,
-                reason="no_valid_machine",
-                turns=attempt,
-                verification="unverified",
-            )
-        )
-        reporter.err(f"FAILED: no valid machine after {attempt} attempt(s).")
-        if diagnostics:
-            reporter.err("Last diagnostics:")
-            for problem in diagnostics:
-                reporter.err(f"  - {problem}")
-        reporter.err(f"The last draft is in {workspace}.")
-        return 1
-
-    draft_text = valid_path.read_text(encoding="utf-8")
-    payload = draft_text if draft_text.endswith("\n") else draft_text + "\n"
-    target = output if output is not None else cwd / f"{spec.machine}.asm.toml"
-    existing = [
-        p
-        for p in (target, *(target.parent / rel for rel in sorted(valid_scripts)))
-        if p.exists() or p.is_symlink()
-    ]
-    # The default path clobbers nothing, scripts included; `-o` replaces existing targets.
-    if output is None and existing:
-        events.emit(
-            journal.SessionStop(
-                execution_id=execution_id,
-                reason="output_collision",
-                turns=attempt,
-                verification="unverified",
-            )
-        )
-        reporter.err("REFUSING to overwrite existing file(s):")
-        for clash in existing:
-            reporter.err(f"  {clash}")
-        reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
-        reporter.out(payload.removesuffix("\n"))
-        return 2
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        # Scripts first, the machine file last: a death mid-publish leaves inert scripts.
-        _write_scripts(target.parent, valid_scripts)
-        portable.atomic_write(target, payload)
-    except (OSError, path_safety.ContainmentError) as exc:
-        events.emit(
-            journal.SessionStop(
-                execution_id=execution_id,
-                reason="write_failed",
-                turns=attempt,
-                verification="unverified",
-            )
-        )
-        reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
-        reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
-        reporter.out(payload.removesuffix("\n"))
-        return 1
-    # A pre-existing symlink under scripts/ can make the published bundle differ: check it.
-    out_problems = bundle.validate_bundle(spec, target)
-    if out_problems:
-        events.emit(
-            journal.SessionStop(
-                execution_id=execution_id,
-                reason="bundle_invalid",
-                turns=attempt,
-                verification="unverified",
-            )
-        )
-        reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")
-        for problem in out_problems:
-            reporter.err(f"  - {problem}")
-        return 1
-    events.emit(
-        journal.SessionStop(
-            execution_id=execution_id,
-            reason="machine_created",
-            turns=attempt,
-            verification="passed",
-        )
-    )
-    scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
-    replaced_note = (
-        f"; replaced {', '.join(repr(str(path)) for path in existing)}" if existing else ""
-    )
-    reporter.err(
-        f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states)"
-        f"{scripts_note}{replaced_note}."
-    )
-    if git_read.is_git_repo(target.parent):
-        reporter.err(
-            "Review and commit the bundle; `machine run` checks it for uncommitted changes"
-            " when run from this repository."
-        )
-    if to_allow := _pass_env_to_allow(spec, cfg.machine.pass_env):
-        reporter.err(
-            "The draft's tools read operator environment variables; `machine run` refuses"
-            " until your config allows each:"
-        )
-        for name in to_allow:
-            reporter.err(f"  agent6 config add machine.pass_env {name}")
-    # A failure keeps the workspace: the draft in it is what the operator reads.
-    _discard_workspace(workspace, reporter)
-    return 0
+    valid = drafting.try_draft(draft, runner, task, max_attempts)
+    return publish_draft(draft, valid) if valid is not None else 1

@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from agent6 import budget, kinds, paths
-from agent6.app.machine import agent
+from agent6.app.machine import agent, draft
 from agent6.app.machine import create as _create
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
@@ -892,10 +892,9 @@ def test_attempt_reason_pulls_the_error_from_an_introducing_block() -> None:
 
     block = "offline test scripts/t.py failed (exit 1):\nusage: run.py <pkg>\nAssertionError"
     assert (
-        _create._attempt_reason([block])
-        == "offline test scripts/t.py failed (exit 1): AssertionError"
+        draft.attempt_reason([block]) == "offline test scripts/t.py failed (exit 1): AssertionError"
     )
-    assert _create._attempt_reason(["plain reason", "extra"]) == "plain reason (+1 more)"
+    assert draft.attempt_reason(["plain reason", "extra"]) == "plain reason (+1 more)"
 
 
 def test_create_no_payload_gives_diagnostic_and_retries(
@@ -1294,7 +1293,7 @@ def test_reading_a_draft_follows_no_linked_scripts_directory(tmp_path: pathlib.P
     workspace.mkdir()
     (workspace / "scripts").symlink_to(outside)
 
-    assert _create._read_scripts(workspace) == {}
+    assert draft.read_scripts(workspace) == {}
 
 
 def test_create_writes_scripts_before_the_machine_file(
