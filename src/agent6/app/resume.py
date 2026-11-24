@@ -286,6 +286,12 @@ def _require_worktree(
 ) -> None:
     """Refuse a session whose recorded worktree is gone or cannot be jailed.
 
+    Args:
+        repo: The repository, where the refusal looks for the session's commits.
+        session_id: The session's id.
+        manifest: The session's manifest.
+        reporter: Receives the refusal.
+
     Raises:
         preflight.SessionRefusedError: The worktree is missing, or the manifest names no
             repository git dir for a linked one.
@@ -413,7 +419,18 @@ def _load_config(
     effort: kinds.EffortLevel | None,
     reporter: app_reporter.Reporter,
 ) -> layer_data.EffectiveConfig:
-    """Return the config this execution runs under, the recorded choices under its flags.
+    """Load the config this execution runs under, the recorded choices under its flags.
+
+    Args:
+        target: The session.
+        config_paths: The `--config` files.
+        sandbox_overrides: The sandbox flags.
+        preset: The `--preset` flag's value.
+        effort: The reasoning effort of this execution's role.
+        reporter: Receives the refusal.
+
+    Returns:
+        The effective config, checked runnable for the mode's role.
 
     Raises:
         preflight.SessionRefusedError: The config does not load or its role cannot run.
@@ -967,11 +984,9 @@ def _note_uncommitted_changes(
     *,
     reporter: app_reporter.Reporter,
 ) -> None:
-    """Name the changes the next auto-commit takes.
-
-    The previous execution's tail and any operator edit since; the operator's untracked
-    files stay out.
-    """
+    """Name the changes no commit has, which the next auto-commit takes."""
+    # The previous execution's tail and any operator edit since; the operator's untracked
+    # files stay out.
     with contextlib.suppress(errors.GitError, OSError):
         dirty = git_read.chain_dirty_paths(
             target.cwd,

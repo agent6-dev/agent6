@@ -140,7 +140,17 @@ def _review_world(
     worktree: bool,
     reporter: app_reporter.Reporter,
 ) -> review_directive.ReviewWorld | None:
-    """Return the comparison a `/review` task resolves to; None for any other task.
+    """Resolve a `/review` task into its comparison.
+
+    Args:
+        repo: The repository.
+        task: The task text.
+        cfg: The run's config, for the hidden paths.
+        worktree: Whether `--worktree` was asked for.
+        reporter: Receives the refusal, or the line of a review with nothing to review.
+
+    Returns:
+        The comparison; None for any other task.
 
     Raises:
         preflight.SessionRefusedError: The directive is refused, or names no ref under
@@ -173,7 +183,19 @@ def _start_base(
     frontend: app_frontend.SessionFrontend,
     reporter: app_reporter.Reporter,
 ) -> tuple[str, str]:
-    """Return the commit and the branch the run starts from, after the git preflight.
+    """Run the git preflight, and find where the run starts from.
+
+    Args:
+        repo: The repository.
+        cfg: The run's config.
+        mode: The session mode.
+        review_world: The comparison of a `/review` task, whose head is the start.
+        worktree: Whether the run works in its own worktree.
+        frontend: The surface that confirms a start on another run's branch.
+        reporter: Receives the refusal.
+
+    Returns:
+        The commit and the branch the run starts from.
 
     Raises:
         preflight.SessionRefusedError: The git preflight refused, or `--worktree` has no
@@ -206,7 +228,16 @@ def _session_slot(
     *,
     reporter: app_reporter.Reporter,
 ) -> sessions_layout.SessionLayout:
-    """Return the layout of the id the run takes: the explicit one, else an unused one.
+    """Take the session's id: the explicit one, else an unused one.
+
+    Args:
+        record: The state directory the session's record goes under.
+        session_id: An explicit id; empty allocates one.
+        mode: The session mode, which names the bucket.
+        reporter: Receives the refusal.
+
+    Returns:
+        The session's directory layout.
 
     Raises:
         preflight.SessionRefusedError: The explicit id names a session in another bucket,
@@ -261,7 +292,19 @@ def _setup_and_gate(
     opening: directive.Segment | tuple[directive.Segment, ...] | None,
     reporter: app_reporter.Reporter,
 ) -> Config:
-    """Return the config with the setup command a new worktree or a child's clone needs.
+    """Read the setup command a new worktree or a child's clone needs, and check its gate.
+
+    Args:
+        cfg: The run's config.
+        repo: The repository.
+        review_world: The comparison of a `/review` task, which carries its own gate.
+        base_sha: The commit the run starts from.
+        worktree: Whether the run works in its own worktree.
+        opening: The tasks the run dispatches to children's clones.
+        reporter: Receives the refusal.
+
+    Returns:
+        The config, with the setup command when it was unset.
 
     Raises:
         preflight.SessionRefusedError: The gate cannot run on tracked files alone.
@@ -417,7 +460,15 @@ def check_run(
 def _add_worktree(
     start: RunStart, held: session_prepare.Held, *, reporter: app_reporter.Reporter
 ) -> RunStart:
-    """Return the start in the worktree added for it, at the commit it starts from.
+    """Add the run's own worktree, at the commit the run starts from.
+
+    Args:
+        start: What the checks resolved.
+        held: The teardown record, which takes the worktree.
+        reporter: Receives the refusal.
+
+    Returns:
+        The start in its worktree, with the paths hidden there.
 
     Raises:
         preflight.SessionRefusedError: The worktree could not be placed or added.
@@ -448,7 +499,15 @@ def _add_worktree(
 def _isolation_in_worktree(
     start: RunStart, *, frontend: app_frontend.SessionFrontend, reporter: app_reporter.Reporter
 ) -> kinds.IsolationLevel:
-    """Return the isolation selected on the run's own worktree.
+    """Select the isolation on the run's own worktree.
+
+    Args:
+        start: The start in its worktree.
+        frontend: The surface that confirms an unconfined autorun.
+        reporter: Receives the refusal.
+
+    Returns:
+        The isolation level.
 
     Raises:
         preflight.SessionRefusedError: The level was refused, or the model's git could not
@@ -518,7 +577,15 @@ def claim_checkout(
 def _dirty_tree(
     start: RunStart, *, frontend: app_frontend.SessionFrontend, reporter: app_reporter.Reporter
 ) -> DirtyTree:
-    """Return the operator's uncommitted changes to tracked files.
+    """Read the operator's uncommitted changes to tracked files.
+
+    Args:
+        start: The start in its checkout.
+        frontend: The surface, which says whether it can ask.
+        reporter: Receives the refusal.
+
+    Returns:
+        The changes outside the hidden paths, and the earlier run they match.
 
     Raises:
         preflight.SessionRefusedError: The run would have to ask about them and cannot.
@@ -551,6 +618,11 @@ def _seed_steer(
     layout: sessions_layout.SessionLayout, steer: str, *, reporter: app_reporter.Reporter
 ) -> None:
     """Queue the steer a parked resume hands the start, with the images sent with it.
+
+    Args:
+        layout: The session's directory layout.
+        steer: The steer as the operator gave it.
+        reporter: Receives the refusal.
 
     Raises:
         preflight.SessionRefusedError: The steer could not be written.
@@ -712,6 +784,13 @@ def _settle_dirty_tree(
 ) -> None:
     """Apply `[git].dirty_tree` to the operator's changes, asking when the policy says so.
 
+    Args:
+        start: The start in its checkout.
+        held: The teardown record, which takes the stash.
+        dirty: The operator's uncommitted changes.
+        prompts: The gate to the operator.
+        reporter: Receives a park.
+
     Raises:
         preflight.SessionRefusedError: The operator cancelled, a bare `/review` would stash
             what it reviews, or the stash failed; each parks the run.
@@ -783,6 +862,13 @@ def _settle_checkout(
     reporter: app_reporter.Reporter,
 ) -> None:
     """Take a run's checkout and settle what its commits leave out.
+
+    Args:
+        start: The start in its checkout.
+        held: The teardown record, which takes the lock, the stash and the untracked files.
+        dirty: The operator's uncommitted changes.
+        prompts: The gate to the operator.
+        reporter: Receives a park and the notes.
 
     Raises:
         preflight.SessionRefusedError: Another run drives the checkout, or the operator's
@@ -866,10 +952,8 @@ def settle_run_tree(
 def no_gate(
     cfg: Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]
 ) -> Config:
-    """Return the config as it is: a bounded conversation's gate step.
-
-    It never verifies: no inference, no gate rows in its journal.
-    """
+    """Return the config as it is: a bounded conversation never verifies."""
+    # No inference, no gate rows in its journal.
     del budget, available
     return cfg
 

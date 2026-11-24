@@ -118,13 +118,11 @@ def _end_session(
     frontend: app_frontend.SessionFrontend,
     reporter: app_reporter.Reporter,
 ) -> None:
-    """Close the console view, then clear the worker pid and end the stash.
-
-    The pid and the stash are settled even when the close raises.
-    """
+    """Close the console view, then clear the worker pid and end the stash."""
     try:
         frontend.close_console_view()  # stops the heartbeat, clears the spinner
     finally:
+        # Settled even when the close raises.
         if not held.detached and not held.handed_off:
             # A detach keeps the pid until the background `resume` claims it.
             process.clear_worker_pid(layout.session_dir)
