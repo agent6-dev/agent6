@@ -105,4 +105,6 @@ A pair is comparable when both prompts returned a verdict in the same repetition
 - **State-only prompt:** of the seven replies that changed from block to pass, six reported the same defect or the same lines at `warn`, and one did not mention it.
   Over all 39 answered replies under this prompt the findings were 61 `warn`, 9 `block` and 3 `nit`.
   The recorded prompt's rows kept block findings only, so its `warn` count is unknown.
+  Every replayed call carried the project's `AGENTS.md` and the one-word focus `security`, and no other operator text.
+  The state-only prompt was adopted.
 - Replies with tools were not measured.
