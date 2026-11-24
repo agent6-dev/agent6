@@ -203,6 +203,7 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
 _STAGE_MODULES = {
     "execution": "src/agent6/app/execution.py",
     "run": "src/agent6/app/run.py",
+    "run_preflight": "src/agent6/app/run_preflight.py",
     "session_prepare": "src/agent6/app/session/prepare.py",
 }
 # The stage behind a call through a callable the lifecycle hands in, by the attribute called:
