@@ -34,6 +34,16 @@ ANTHROPIC_VERSION = "2023-06-01"
 # Vertex carries the protocol version in the body, under its own value.
 ANTHROPIC_VERTEX_VERSION = "vertex-2023-10-16"
 DEFAULT_MAX_TOKENS = 8192
+# One search per response: the budget check between calls then bounds the fee.
+WEB_SEARCH_TOOL: dict[str, Any] = {
+    "type": "web_search_20250305",
+    "name": "web_search",
+    "max_uses": 1,
+}
+
+
+# Usage fields outside the token counts that the synthesised reply keeps.
+_USAGE_EXTRAS = ("iterations", "server_tool_use")
 
 
 def _anthropic_version(deployment: str) -> tuple[str, str]:
@@ -324,6 +334,31 @@ def _check_budget(body: dict[str, Any], thinking_budget: int | None, level: str 
             )
 
 
+def _tool_payload(
+    tools: list[provider_types.ToolDefinition], prompt_caching: bool, web_search: bool
+) -> list[dict[str, Any]]:
+    """Return the request's `tools`: agent6's own, the last cache marked, then the hosted search.
+
+    Args:
+        tools: The tool definitions shown to the model.
+        prompt_caching: Whether the last definition carries the cache mark.
+        web_search: Whether the call offers the provider's hosted web search.
+
+    Returns:
+        The entries, in request order.
+    """
+    payload: list[dict[str, Any]] = [
+        {"name": t.name, "description": t.description, "input_schema": t.input_schema}
+        for t in tools
+    ]
+    if prompt_caching and payload:
+        payload[-1]["cache_control"] = {"type": "ephemeral"}
+    if web_search:
+        # After the marked tool: a call without the search still reads the tools from cache.
+        payload.append(dict(WEB_SEARCH_TOOL))
+    return payload
+
+
 def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
     """Return whether a 400 rejects a `temperature` the body still carries."""
     return status == 400 and "temperature" in body and "temperature" in (text or "").lower()
@@ -440,6 +475,7 @@ class AnthropicProvider:
         should_interrupt: Callable[[], bool] | None = None,
         compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
+        web_search: bool = False,
     ) -> provider_types.ProviderResponse:
         """Make one Messages call, streaming when a delta callback is set.
 
@@ -457,6 +493,7 @@ class AnthropicProvider:
             should_interrupt: Polled during a stream; True ends the turn to steer.
             compaction: The history operation on a supporting endpoint.
             context: The application's context for the call; None outside a conversation.
+            web_search: Whether the call offers the provider's hosted web search.
 
         Returns:
             The parsed response.
@@ -486,17 +523,7 @@ class AnthropicProvider:
         else:
             messages = strip_cache_control_messages(messages)
 
-        tool_payload: list[dict[str, Any]] = []
-        if tools:
-            for i, t in enumerate(tools):
-                block: dict[str, Any] = {
-                    "name": t.name,
-                    "description": t.description,
-                    "input_schema": t.input_schema,
-                }
-                if self.prompt_caching and i == len(tools) - 1:
-                    block["cache_control"] = {"type": "ephemeral"}
-                tool_payload.append(block)
+        tool_payload = _tool_payload(tools or [], self.prompt_caching, web_search)
 
         level = self.effort if reasoning_effort is None else reasoning_effort
         adaptive_thinking = level not in (None, "off") and _is_adaptive_thinking(self.model)
@@ -631,6 +658,8 @@ class AnthropicProvider:
         # A thinking block's signature must round-trip, or a tool call after it breaks next turn.
         thinking_acc: dict[int, list[str]] = {}
         signature_acc: dict[int, list[str]] = {}
+        # A cited text block replays with its citations, which a hosted search's results need.
+        citations_acc: dict[int, list[Any]] = {}
         stop_reason: str = ""
         # A clean EOF before `message_stop` is a cut mid-message, not a completion.
         saw_message_stop = False
@@ -638,7 +667,7 @@ class AnthropicProvider:
         usage_output = 0
         reported_cache: dict[str, int] = {}
         history_fields: dict[str, Any] = {}
-        iteration_usage: dict[str, Any] = {}
+        usage_extras: dict[str, Any] = {}
         saw_usage = False
         saw_input_usage = False
         saw_output_usage = False
@@ -695,8 +724,7 @@ class AnthropicProvider:
                         if key in msg:
                             history_fields[key] = msg[key]
                     u = anthropic_parse.usage_mapping(msg.get("usage"))
-                    if "iterations" in u:
-                        iteration_usage["iterations"] = u["iterations"]
+                    usage_extras.update({k: u[k] for k in _USAGE_EXTRAS if k in u})
                     saw_usage = saw_usage or bool(u)
                     if "input_tokens" in u and u.get("input_tokens") is not None:
                         saw_input_usage = True
@@ -726,6 +754,8 @@ class AnthropicProvider:
                         text_acc[idx] = [
                             anthropic_parse.response_string(cb.get("text", ""), "content text")
                         ]
+                        if isinstance(cited := cb.get("citations"), list):
+                            citations_acc[idx] = list(cited)
                     elif btype == "thinking":
                         clock.enter_thinking()
                         thinking_acc[idx] = [
@@ -749,20 +779,21 @@ class AnthropicProvider:
                                 ),
                             }
                         )
-                    elif btype == "tool_use":
+                    elif btype in ("tool_use", "server_tool_use"):
+                        # A hosted tool's call streams its input as agent6's own tools do.
                         tool_input = cb.get("input", {})
                         if not isinstance(tool_input, dict):
                             raise provider_types.ProviderError(
-                                "Anthropic response content tool_use.input was not an object"
+                                f"Anthropic response content {btype}.input was not an object"
                             )
                         tool_acc[idx] = {
                             **cb,
-                            "type": "tool_use",
+                            "type": btype,
                             "id": anthropic_parse.response_string(
-                                cb.get("id"), "content tool_use.id", empty=False
+                                cb.get("id"), f"content {btype}.id", empty=False
                             ),
                             "name": anthropic_parse.response_string(
-                                cb.get("name"), "content tool_use.name", empty=False
+                                cb.get("name"), f"content {btype}.name", empty=False
                             ),
                             "input": tool_input,
                         }
@@ -816,6 +847,8 @@ class AnthropicProvider:
                                 d.get("partial_json", ""), "content input JSON delta"
                             )
                         )
+                    elif dt == "citations_delta":
+                        citations_acc.setdefault(idx, []).append(d.get("citation"))
                 elif et == "content_block_stop":
                     idx = anthropic_parse.non_negative_integer(
                         evt.get("index", 0), "content block index"
@@ -826,12 +859,13 @@ class AnthropicProvider:
                         )
                     open_blocks.remove(idx)
                     if idx in text_acc:
-                        content_blocks.append(
-                            {
-                                "type": "text",
-                                "text": "".join(text_acc.pop(idx)),
-                            }
-                        )
+                        text_block: dict[str, Any] = {
+                            "type": "text",
+                            "text": "".join(text_acc.pop(idx)),
+                        }
+                        if cited := citations_acc.pop(idx, None):
+                            text_block["citations"] = cited
+                        content_blocks.append(text_block)
                     elif idx in thinking_acc:
                         clock.exit_thinking()
                         block_out: dict[str, Any] = {
@@ -872,8 +906,7 @@ class AnthropicProvider:
                         if key in d or key in evt:
                             history_fields[key] = d.get(key, evt.get(key))
                     u = anthropic_parse.usage_mapping(evt.get("usage"))
-                    if "iterations" in u:
-                        iteration_usage["iterations"] = u["iterations"]
+                    usage_extras.update({k: u[k] for k in _USAGE_EXTRAS if k in u})
                     saw_usage = saw_usage or bool(u)
                     if u.get("output_tokens") is not None:
                         saw_output_usage = True
@@ -916,7 +949,7 @@ class AnthropicProvider:
                     "input_tokens": usage_input,
                     "output_tokens": usage_output,
                     **reported_cache,
-                    **iteration_usage,
+                    **usage_extras,
                 }
             )
             read, write = "cache_read_input_tokens", "cache_creation_input_tokens"
@@ -971,7 +1004,7 @@ class AnthropicProvider:
                     "input_tokens": usage_input,
                     "output_tokens": usage_output,
                     **reported_cache,
-                    **iteration_usage,
+                    **usage_extras,
                 },
             }
             call.record(status=200, response=synthesised)

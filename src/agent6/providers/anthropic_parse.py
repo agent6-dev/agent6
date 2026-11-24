@@ -129,6 +129,71 @@ def billed_usage(value: Any) -> Mapping[str, Any]:
     }
 
 
+def web_searches(content: list[Any]) -> tuple[provider_types.WebSearch, ...]:
+    """Pair each hosted search call in a reply with its result block.
+
+    Args:
+        content: The reply's content blocks.
+
+    Returns:
+        One record per `server_tool_use` block named `web_search`, in order; a result list
+        reads `completed`, an error object reads as its `error_code`.
+    """
+    blocks = [block for block in content if isinstance(block, dict)]
+    results = {
+        block.get("tool_use_id"): block.get("content")
+        for block in blocks
+        if block.get("type") == "web_search_tool_result"
+    }
+    found: list[provider_types.WebSearch] = []
+    for block in blocks:
+        if block.get("type") != "server_tool_use" or block.get("name") != "web_search":
+            continue
+        call_input = block.get("input")
+        query = call_input.get("query") if isinstance(call_input, dict) else None
+        result = results.get(block.get("id"))
+        status = ""
+        urls: tuple[str, ...] = ()
+        if isinstance(result, list):
+            status = "completed"
+            urls = tuple(
+                item["url"]
+                for item in result
+                if isinstance(item, dict) and isinstance(item.get("url"), str)
+            )
+        elif isinstance(result, dict):
+            status = str(result.get("error_code") or "error")
+        found.append(
+            provider_types.WebSearch(
+                id=str(block.get("id") or ""),
+                query=query if isinstance(query, str) else "",
+                status=status,
+                urls=urls,
+            )
+        )
+    return tuple(found)
+
+
+def billed_searches(usage: Any, content: list[Any]) -> int:
+    """Return the hosted searches the provider bills for a reply.
+
+    Args:
+        usage: The reply's usage object.
+        content: The content blocks received.
+
+    Returns:
+        The reported `server_tool_use.web_search_requests`, or the completed searches received
+        when a stream was cut before its final count.
+    """
+    count = usage_mapping(usage_mapping(usage).get("server_tool_use")).get("web_search_requests")
+    reported = (
+        0
+        if count is None
+        else non_negative_integer(count, "usage.server_tool_use.web_search_requests")
+    )
+    return max(reported, sum(search.status == "completed" for search in web_searches(content)))
+
+
 def require_metered_usage(usage: object, *, source: str) -> None:
     """Refuse a budgeted call whose usage cannot be metered.
 
@@ -239,6 +304,8 @@ def parse_response(data: dict[str, Any]) -> provider_types.ProviderResponse:
         cache_read_tokens=usage_count(usage, "cache_read_input_tokens"),
         cache_write_tokens=usage_count(usage, "cache_creation_input_tokens"),
         raw=data,
+        web_searches=web_searches(content),
+        web_searches_billed=billed_searches(data.get("usage"), content),
         summary_block=summary_block,
         thinking_blocks_dropped=sum(
             item.get("type") == "thinking_dropped" for item in transformations
