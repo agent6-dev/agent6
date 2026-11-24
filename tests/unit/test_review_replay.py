@@ -32,19 +32,27 @@ def answer(*findings: dict[str, Any]) -> str:
     )
 
 
-def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Score the public command using actual provider request bodies but no network."""
+@pytest.fixture
+def responses_config(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     monkeypatch.chdir(tmp_path)
-    state = tmp_path / "state"
-    for sid in ("alpha", "beta"):
-        env.record_review(state, sid, env.responses_body())
     config = tmp_path / "provider.toml"
     config.write_text(
         '[models.default]\nmodel = "p/other"\neffort = "low"\n[providers.p]\n'
         'backend = "responses"\nbase_url = "https://scripted.invalid/v1"\nauth_style = "none"\n'
     )
+    return config
+
+
+def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    responses_config: pathlib.Path,
+) -> None:
+    """Score the public command using actual provider request bodies but no network."""
+    state = tmp_path / "state"
+    for sid in ("alpha", "beta"):
+        env.record_review(state, sid, env.responses_body())
 
     reader = finding("security", "Metadata exposed", "An unauthenticated client can read the row.")
     bug = finding("data-loss", "Loses zero", "Zero becomes null.")
@@ -103,7 +111,7 @@ def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
             [
                 str(state),
                 "--config",
-                str(config),
+                str(responses_config),
                 "--model",
                 "p/selected",
                 "--effort",
@@ -168,6 +176,27 @@ def test_a_provider_failure_leaves_a_call_record_not_a_pass(
     assert (row["arm"], row["repeat"], row["verdict"]) == ("recorded", 1, None)
     assert row["outcome"] == "call failed" and row["error"] == "service unavailable"
     assert provider.call.call_count == 1
+
+
+def test_cli_displays_a_gateway_error_as_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    responses_config: pathlib.Path,
+) -> None:
+    env.record_review(tmp_path, "first", env.responses_body())
+    monkeypatch.setattr(
+        transport, "http_post", lambda *a, **kw: httpx2.Response(400, text="bad\x01 request")
+    )
+    assert (
+        replay.main(
+            [str(tmp_path), "--config", str(responses_config), "--model", "p/m", "--effort", "high"]
+        )
+        == 1
+    )
+    out, err = capsys.readouterr()
+    assert json.loads(out)["outcome"] == "call failed"
+    assert "bad request" in err and "\x01" not in err
 
 
 @pytest.mark.parametrize("reader", ["A caller can read it", "Reader: unknown", "No reader named"])

@@ -12,7 +12,7 @@ from typing import Any, get_args
 
 from bench.review import recordings, scoring
 
-from agent6 import budget, config, kinds, providers
+from agent6 import budget, config, kinds, providers, terminal
 from agent6.app import preflight, role_providers
 from agent6.app.session import setup
 from agent6.config import layer
@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         providers.ProviderError,
         budget.BudgetExceededError,
     ) as exc:
-        print(f"review replay: {exc}", file=sys.stderr)
+        print(f"review replay: {terminal.scrub_terminal_controls(str(exc))}", file=sys.stderr)
         return 1
     return 0
 
