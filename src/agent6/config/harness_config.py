@@ -499,8 +499,8 @@ class CompactionConfig(pydantic.BaseModel):
     cold_start: kinds.ColdStart = pydantic.Field(
         default="drop",
         description=(
-            "Local history on resume when the route changes or the provider's idle limit "
-            "has elapsed. Endpoint compaction does not use this setting."
+            "local history on resume when the route changes or the provider's idle limit "
+            "is reached (not used when the endpoint writes summaries)"
         ),
         json_schema_extra={
             "choice_meanings": {
