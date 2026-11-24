@@ -16,7 +16,7 @@ import json
 import pathlib
 from typing import Any
 
-import jsonschema
+import jsonschema  # pyrefly: ignore [untyped-import]
 
 _SCHEMA = pathlib.Path(__file__).parent / "data" / "acp-schema.json"
 _SCHEMA_V2 = pathlib.Path(__file__).parent / "data" / "acp-schema-v2.json"

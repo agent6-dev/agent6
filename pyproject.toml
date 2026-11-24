@@ -239,8 +239,7 @@ preset = "strict"
 implicit-any-type-argument = "error"
 non-exhaustive-match = "error"
 protected-access = "error"
-# jsonschema ships no stubs.
-untyped-import = "ignore"
+untyped-import = "error"
 
 # cli/ shares sibling helpers across its modules as the package-internal API.
 [[tool.pyrefly.sub-config]]

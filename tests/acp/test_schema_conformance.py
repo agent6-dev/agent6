@@ -20,7 +20,7 @@ import json
 import pathlib
 from typing import Any
 
-import jsonschema
+import jsonschema  # pyrefly: ignore [untyped-import]
 import pytest
 
 from agent6.ui.acp import updates
