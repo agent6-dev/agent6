@@ -12,13 +12,13 @@ import pytest
 
 from agent6 import paths
 from tests.unit import test_git_history
-from tests.web import session_logs, signin, test_web_browser
+from tests.web import session_logs, signin, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Locator, Page
 
 pytestmark = pytest.mark.browser
-browser = test_web_browser.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 git_port = test_web_browser.git_port

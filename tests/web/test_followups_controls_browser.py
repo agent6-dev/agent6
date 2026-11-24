@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.web import captures, session_logs, test_web_browser
+from tests.web import captures, session_logs, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 

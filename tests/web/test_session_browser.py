@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent6 import paths
-from tests.web import geometry, session_logs, test_web_browser
+from tests.web import geometry, session_logs, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
-browser = test_web_browser.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 
@@ -749,6 +749,9 @@ def test_a_long_child_model_wraps_on_a_phone(
             manifest["models"] = {"driver": {"provider": "openrouter", "model": model}}
         (session / "manifest.json").write_text(json.dumps(manifest))
     page, errors = open_page(port)
+    assert page.context.browser
+    if page.context.browser.browser_type.name != "chromium":
+        pytest.skip("only Chromium sets the standard font size of an open page")
     page.set_viewport_size({"width": 390, "height": 844})
     page.context.new_cdp_session(page).send("Page.setFontSizes", {"fontSizes": {"standard": 20}})
     page.goto(f"http://127.0.0.1:{port}/#/session/{fan}")

@@ -12,13 +12,18 @@ import pytest
 from agent6 import paths
 from agent6.sessions import event_log, journal, layout
 from tests import review_helpers
-from tests.web import session_logs, test_review_evidence, test_web_browser
+from tests.web import (
+    session_logs,
+    test_files_preview_browser,
+    test_review_evidence,
+    test_web_browser,
+)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
-browser = test_web_browser.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 evidence = test_review_evidence.evidence
