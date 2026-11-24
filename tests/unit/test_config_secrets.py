@@ -23,7 +23,10 @@ def _run(argv: list[str]) -> int:
         return int(exc.code or 0)
 
 
-@pytest.mark.parametrize("value", ["Bearer private-telemetry-token", "123", 'a"quoted"value'])
+# The digit-only value is longer than any counter pytest puts in the temporary path it prints.
+@pytest.mark.parametrize(
+    "value", ["Bearer private-telemetry-token", "1234567890123", 'a"quoted"value']
+)
 def test_secret_set_round_trips_without_touching_config_or_printing_the_value(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
