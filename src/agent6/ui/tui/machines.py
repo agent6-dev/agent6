@@ -892,7 +892,7 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     def _machine_run_started(self, path: pathlib.Path, err: str) -> None:
         """Open the watch on the started run, or show the refusal."""
         if err:
-            self.app.notify(err, severity="error", timeout=8.0)
+            self.app.push_screen(modals.TextModal(f"Could not start {path.name}", err))
             return
         self._open_watch(path)
 

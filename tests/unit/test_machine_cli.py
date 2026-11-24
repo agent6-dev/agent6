@@ -1827,9 +1827,11 @@ model = "p/m"
     root = state_dir / "machines" / "run-warn"
     capsys.readouterr()
 
+    monkeypatch.delenv("AGENT6_AUTO_APPROVE")
     assert main([*run, "--restart"]) == 2
 
     err = capsys.readouterr().err
+    assert "--auto-approve" not in err
     assert "git merge agent6/machine-run-warn" in err
     assert f"git update-ref -d {ref}" in err
     assert MachineJournal(root).end_event() is not None

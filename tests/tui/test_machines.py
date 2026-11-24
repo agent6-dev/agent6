@@ -577,7 +577,7 @@ def test_stopped_machine_offers_resume_and_confirms_restart(
 
     def record(argv: list[str], *_a: object, **_k: object) -> str:
         captured.append(argv)
-        return ""
+        return "REFUSING: cannot restart. Keep it (`git merge agent6/machine-waiter_demo`)."
 
     monkeypatch.setattr(spawn, "spawn_and_confirm", record)
 
@@ -599,6 +599,10 @@ def test_stopped_machine_offers_resume_and_confirms_restart(
             assert not captured
             await pilot.press("S", "y")
             await app.workers.wait_for_complete()
+            assert isinstance(app.screen, modals.TextModal)
+            assert "git merge" in app.screen.query_one("#text-view", widgets.TextArea).text
+            await pilot.press("escape")
+            assert app.screen is screen
             assert [argv[-4:] for argv in captured] == [["machine", "run", str(path), "--restart"]]
 
     asyncio.run(scenario())

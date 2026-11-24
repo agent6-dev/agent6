@@ -472,6 +472,11 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         return 2
     # Every state's grants are judged against the regions any state may write.
     shared_writes = state_configs.shared_write_regions(configs, cwd)
+    root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
+    if restart:
+        code = _archive_for_restart(root, cwd, spec.machine, reporter)
+        if code is not None:
+            return code
     if any(
         state.mode == "run" and configs.states[name].config.sandbox.run_commands == "ask"
         for name, state in agent_states.items()
@@ -489,11 +494,6 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             " to always allow. Edits and the auto-commit need no approval; verify shares"
             " run_command's gate, so an unattended execution ends unverified."
         )
-    root = layout.machines_root(paths.state_dir(cwd)) / spec.machine
-    if restart:
-        code = _archive_for_restart(root, cwd, spec.machine, reporter)
-        if code is not None:
-            return code
     base_commit = None
     # has_run_agent supplies both clone arguments: every tool and agent state then runs in a clone.
     if has_run_agent:
