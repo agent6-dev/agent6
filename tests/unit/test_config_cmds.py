@@ -147,7 +147,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
     The leaf surgery knows only [table] headers, so a header for such a leaf would collide with the
     inline parent.
     """
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry
 
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
@@ -164,7 +164,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
 
-    rc = cli_main(["config", "set", "providers.openrouter.extra_body.provider.sort", "price"])
+    rc = entry.cli_main(["config", "set", "providers.openrouter.extra_body.provider.sort", "price"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "providers.openrouter.extra_body" in err
@@ -176,7 +176,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config set` refuses a target that does not parse instead of appending to it."""
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry
 
     cfg = tmp_path / "config.toml"
     cfg.write_text('[sandbox\nprotect_git = "on"\n', encoding="utf-8")  # missing ]
@@ -187,7 +187,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     monkeypatch.setattr(paths, "global_config_path", _global_path)
     monkeypatch.setattr(paths, "global_config_path", _global_path)
 
-    rc = cli_main(["config", "set", "sandbox.run_commands", "allow"])
+    rc = entry.cli_main(["config", "set", "sandbox.run_commands", "allow"])
     out = capsys.readouterr()
     assert rc == 2, "a target that does not parse must not report success"
     assert "Set sandbox.run_commands" not in out.out
@@ -248,12 +248,12 @@ def test_write_machine_writes_a_valid_spec(
 def test_config_show_and_get_share_the_unknown_key_error(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     expected = "ERROR: unknown config key 'nope.nope' (see `agent6 config show`)\n"
     for verb in ("show", "get"):
-        assert main(["config", verb, "nope.nope"]) == 2
+        assert entry.main(["config", verb, "nope.nope"]) == 2
         assert capsys.readouterr().err == expected
 
 
@@ -261,7 +261,7 @@ def test_config_get_suggests_a_key_from_the_layers_it_was_given(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config get`'s did-you-mean pool comes from the layers it was given, `--config` included."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     overlay = tmp_path / "overlay.toml"
@@ -269,7 +269,7 @@ def test_config_get_suggests_a_key_from_the_layers_it_was_given(
         '[providers.zz]\nbackend = "openai"\nbase_url = "https://zz.test/v1"\n',
         encoding="utf-8",
     )
-    assert main(["--config", str(overlay), "config", "get", "providers.zz.base_ur"]) == 2
+    assert entry.main(["--config", str(overlay), "config", "get", "providers.zz.base_ur"]) == 2
     assert "Did you mean 'providers.zz.base_url'" in capsys.readouterr().err
 
 
@@ -281,12 +281,12 @@ def test_config_refuses_the_old_settled_stop_key(
     verb: str,
 ) -> None:
     """The removed key is refused by name with its replacement, never mapped."""
-    from agent6.ui import cli
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     key = "harness.verify_settled_stop_after"
     args = ["config", verb, key, *(["3"] if verb == "set" else [])]
-    assert cli.main(args) == 2
+    assert entry.main(args) == 2
     err = capsys.readouterr().err
     assert f"unknown config key '{key}'" in err
     assert "'harness.settled_stop_after'" in err
@@ -295,12 +295,12 @@ def test_config_refuses_the_old_settled_stop_key(
 def test_config_get_distinguishes_a_section_from_an_unknown_key(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "get", "sandbox"]) == 2
+    assert entry.main(["config", "get", "sandbox"]) == 2
     assert "'sandbox' is not a config leaf" in capsys.readouterr().err
-    assert main(["config", "get", "sandbox.nope"]) == 2
+    assert entry.main(["config", "get", "sandbox.nope"]) == 2
     assert "unknown config key 'sandbox.nope'" in capsys.readouterr().err
 
 
@@ -317,7 +317,7 @@ def test_config_refuses_and_fix_drops_the_metric_table(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     repo_cfg = paths.repo_config_path(tmp_path)
@@ -329,11 +329,11 @@ def test_config_refuses_and_fix_drops_the_metric_table(
     with pytest.raises(ConfigError, match="--metric"):
         config_layer.load_effective(tmp_path)
 
-    assert main(["config", "fix"]) == 0
+    assert entry.main(["config", "fix"]) == 0
     assert "metric" not in repo_cfg.read_text(encoding="utf-8")
     assert config_layer.load_effective(tmp_path).config.harness.verify.command == ("check",)
     for key in ("harness.metric", "harness.metric.command"):
-        assert main(["config", "set", key, '["true"]']) == 2
+        assert entry.main(["config", "set", key, '["true"]']) == 2
         assert "--metric" in capsys.readouterr().err
 
 
@@ -345,10 +345,10 @@ def test_config_get_calls_a_section_with_no_resolved_leaf_a_section(
     key: str,
 ) -> None:
     """Sections with no runtime-resolved leaf were called unknown config keys."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "get", key]) == 2
+    assert entry.main(["config", "get", key]) == 2
     err = capsys.readouterr().err
     assert f"{key!r} is not a config leaf" in err
     assert "unknown config key" not in err
@@ -356,10 +356,10 @@ def test_config_get_calls_a_section_with_no_resolved_leaf_a_section(
 
 def test_config_set_help_names_inline_tables(capsys: pytest.CaptureFixture[str]) -> None:
     """The set help omitted inline tables even though they preserve types and set siblings."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     with pytest.raises(SystemExit) as exc:
-        main(["config", "set", "--help"])
+        entry.main(["config", "set", "--help"])
     assert exc.value.code == 0
     assert "inline tables" in " ".join(capsys.readouterr().out.split())
 
@@ -368,14 +368,14 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A value a schema change left invalid never blocks an unrelated valid key; a warning names it.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "set", "budget.max_usd", "5"])
+    rc = entry.main(["config", "set", "budget.max_usd", "5"])
     captured = capsys.readouterr()
     assert rc == 0  # the valid write is kept...
     assert "Set budget" in captured.out  # ...it succeeded,
@@ -384,7 +384,7 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
     assert "config set harness.prompt.decompose <value>" in captured.err  # and how to fix it.
 
     # Overwriting the offending value clears the warning; the write is clean.
-    assert main(["config", "set", "harness.prompt.decompose", "off"]) == 0
+    assert entry.main(["config", "set", "harness.prompt.decompose", "off"]) == 0
     assert "WARNING" not in capsys.readouterr().err
 
 
@@ -394,29 +394,29 @@ def test_config_set_rejects_a_masked_invalid_value(
     # A repo overlay masks the key; an invalid value in a lower layer is still rejected.
     import subprocess
 
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "--repo", "sandbox.run_commands", "allow"]) == 0  # the mask
+    assert entry.main(["config", "set", "--repo", "sandbox.run_commands", "allow"]) == 0  # the mask
     capsys.readouterr()
     # Global set of an invalid value -> rejected despite the repo mask.
-    rc = main(["config", "set", "sandbox.run_commands", "bogus"])
+    rc = entry.main(["config", "set", "sandbox.run_commands", "bogus"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "sandbox.run_commands" in err  # a friendly per-field error, not a merge dump
     # A valid global set still succeeds.
-    assert main(["config", "set", "sandbox.run_commands", "deny"]) == 0
+    assert entry.main(["config", "set", "sandbox.run_commands", "deny"]) == 0
 
 
 def test_config_set_rejects_a_newly_invalid_value(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An invalid value still fails loud and reverts, whatever stale value sits elsewhere.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "harness.prompt.decompose", "bogus"])
+    rc = entry.main(["config", "set", "harness.prompt.decompose", "bogus"])
     assert rc == 2  # the write itself is invalid -> reverted + fail loud
     assert "harness.prompt.decompose" in capsys.readouterr().err
     gpath = paths.global_config_path()
@@ -428,7 +428,7 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refused write still hands the config back to the operator under sudo."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     handed: list[pathlib.Path] = []
     monkeypatch.setattr(paths, "chown_to_real_user", handed.append)
@@ -438,7 +438,7 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "set", "harness.prompt.decompose", "bogus"]) == 2  # refused
+    assert entry.main(["config", "set", "harness.prompt.decompose", "bogus"]) == 2  # refused
     assert gpath in handed  # the file is the operator's
     assert gpath.parent in handed  # and so is the dir the write may have created
 
@@ -447,7 +447,7 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # On an already-broken config an invalid value is rejected, while a valid one lands and clears.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
@@ -455,10 +455,12 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
     monkeypatch.chdir(tmp_path)
 
     assert (
-        main(["config", "set", "harness.prompt.decompose", "enabled"]) == 2
+        entry.main(["config", "set", "harness.prompt.decompose", "enabled"]) == 2
     )  # invalid value: rejected
     assert "harness.prompt.decompose" in capsys.readouterr().err  # friendly per-field error
-    assert main(["config", "set", "harness.prompt.decompose", "on"]) == 0  # a valid value clears it
+    assert (
+        entry.main(["config", "set", "harness.prompt.decompose", "on"]) == 0
+    )  # a valid value clears it
     assert "WARNING" not in capsys.readouterr().err
 
 
@@ -466,10 +468,10 @@ def test_config_set_unknown_leaf_gets_a_did_you_mean(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A typo under a known section gets the near-miss and the show pointer, not pydantic's text.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "sandbox.run_command", "allow"])  # missing 's'
+    rc = entry.main(["config", "set", "sandbox.run_command", "allow"])  # missing 's'
     assert rc == 2
     err = capsys.readouterr().err
     assert "unknown config key 'sandbox.run_command'" in err
@@ -481,10 +483,10 @@ def test_config_set_unknown_section_gets_the_same_friendly_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An unknown top-level section errors at the section loc, a parent of the written key.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "bogus.key", "foo"])
+    rc = entry.main(["config", "set", "bogus.key", "foo"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "unknown config key 'bogus.key'" in err
@@ -498,10 +500,10 @@ def test_config_set_accepts_a_profiles_write(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # [presets.*] is stripped before validation, so the unknown-key reroute does not reject it.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "presets.mine.review.when", "finish"])
+    rc = entry.main(["config", "set", "presets.mine.review.when", "finish"])
     assert rc == 0
     text = paths.global_config_path().read_text(encoding="utf-8")
     assert "[presets.mine.review]" in text
@@ -511,10 +513,10 @@ def test_config_set_accepts_a_profiles_write(
 def test_config_set_bool_error_speaks_human(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "git.auto_merge", "notabool"])
+    rc = entry.main(["config", "set", "git.auto_merge", "notabool"])
     assert rc == 2
     assert "git.auto_merge: expected true or false, got 'notabool'" in capsys.readouterr().err
 
@@ -523,14 +525,14 @@ def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # harness.prompt.decompose is stale in the repo layer; a valid global write is kept, warned.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     repo_cfg = paths.repo_config_path(tmp_path)
     repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     repo_cfg.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "set", "harness.prompt.decompose", "auto"])
+    rc = entry.main(["config", "set", "harness.prompt.decompose", "auto"])
     captured = capsys.readouterr()
     assert rc == 0  # the valid global write is KEPT, not reverted over the repo's stale value
     assert "WARNING" in captured.err  # ...but warns the repo layer still shadows it
@@ -541,7 +543,7 @@ def test_config_set_sub_leaf_on_an_existing_provider(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A leaf's isolated dict lacks the union tag; the parent's error is not the written child's.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
@@ -549,20 +551,20 @@ def test_config_set_sub_leaf_on_an_existing_provider(
         '[providers.op]\nbackend = "openai"\nbase_url = "https://x.test/v1"\n', encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "providers.op.base_url", "https://y.test/v1"]) == 0
+    assert entry.main(["config", "set", "providers.op.base_url", "https://y.test/v1"]) == 0
 
 
 def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An inline table a lower layer completes is accepted; the missing child is not this write's.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text('[models.worker]\nmodel = "p/m"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "--repo", "models.worker", '{ effort = "high" }']) == 0
+    assert entry.main(["config", "set", "--repo", "models.worker", '{ effort = "high" }']) == 0
 
 
 # --- `config fix`: drop invalid entries, print what was dropped and where -------
@@ -572,7 +574,7 @@ def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The valid budget entry beside the stale harness.prompt.decompose survives the repair.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
@@ -581,14 +583,14 @@ def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
     )
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "fix"])
+    rc = entry.main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "harness.prompt.decompose" in out and "global" in out  # named the entry + its layer
     text = gpath.read_text(encoding="utf-8")
     assert "decompose" not in text  # the invalid entry is gone
     assert "max_usd" in text  # the valid one stays
-    assert main(["config", "show"]) == 0  # config is valid now
+    assert entry.main(["config", "show"]) == 0  # config is valid now
 
 
 def test_config_fix_drops_a_masked_invalid_global_value(
@@ -596,7 +598,7 @@ def test_config_fix_drops_a_masked_invalid_global_value(
 ) -> None:
     """A repo override must not hide a stale global value from config fix."""
     from agent6.config import layer
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -610,7 +612,7 @@ def test_config_fix_drops_a_masked_invalid_global_value(
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text('[sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
 
-    assert main(["config", "fix"]) == 0
+    assert entry.main(["config", "fix"]) == 0
     assert "sandbox.run_commands" in capsys.readouterr().out
     assert "run_commands" not in global_path.read_text(encoding="utf-8")
     assert 'run_commands = "allow"' in repo_path.read_text(encoding="utf-8")
@@ -623,7 +625,7 @@ def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config fix` keeps a table whose validator only the repo layer satisfies."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -638,7 +640,7 @@ def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text("[web]\nallow_non_loopback = true\n", encoding="utf-8")
 
-    assert main(["config", "fix"]) == 0
+    assert entry.main(["config", "fix"]) == 0
     assert "nothing to fix" in capsys.readouterr().out.lower()
     assert global_path.read_text(encoding="utf-8") == global_text
 
@@ -646,7 +648,7 @@ def test_config_fix_keeps_a_table_whose_validator_the_repo_layer_satisfies(
 def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -664,7 +666,7 @@ def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
         encoding="utf-8",
     )
 
-    assert main(["config", "fix"]) == 0
+    assert entry.main(["config", "fix"]) == 0
     assert "nothing to fix" in capsys.readouterr().out.lower()
     assert 'model = "p/m"' in global_path.read_text(encoding="utf-8")
 
@@ -672,7 +674,7 @@ def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
 def test_config_fix_drops_an_invalid_unselected_preset_leaf(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.chdir(tmp_path)
@@ -683,7 +685,7 @@ def test_config_fix_drops_an_invalid_unselected_preset_leaf(
         encoding="utf-8",
     )
 
-    assert main(["config", "fix"]) == 0
+    assert entry.main(["config", "fix"]) == 0
     out = capsys.readouterr().out
     assert "presets.bad.sandbox.network" in out
     text = path.read_text(encoding="utf-8")
@@ -694,7 +696,7 @@ def test_config_fix_drops_an_invalid_unselected_preset_leaf(
 def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -708,7 +710,7 @@ def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text('[presets.demo.sandbox]\nnetwork = "host"\n', encoding="utf-8")
 
-    assert main(["config", "fix"]) == 0
+    assert entry.main(["config", "fix"]) == 0
     out = capsys.readouterr().out
     assert "presets.demo.sandbox.network" in out
     assert str(global_path) in out
@@ -719,14 +721,14 @@ def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(
 def test_config_fix_drops_an_unknown_key(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[sandbox]\nprotct_git = true\n", encoding="utf-8")  # typo of protect_git
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "fix"])
+    rc = entry.main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "sandbox.protct_git" in out
@@ -741,7 +743,7 @@ def test_config_fix_drops_a_refused_provider_leaf(
     table: str,
 ) -> None:
     """Fix named `providers.p.openai.idle_compact_s`, a key no file holds, and dropped nothing."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
@@ -752,12 +754,12 @@ def test_config_fix_drops_a_refused_provider_leaf(
     )
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "fix"]) == 0
+    assert entry.main(["config", "fix"]) == 0
     out = capsys.readouterr().out
     assert f"Removed {table}.idle_compact_s = 0" in out and f"{table}.bogus" in out
     text = gpath.read_text(encoding="utf-8")
     assert "idle_compact_s" not in text and "bogus" not in text and 'backend = "openai"' in text
-    assert main(["config", "show"]) == 0  # the config loads again
+    assert entry.main(["config", "show"]) == 0  # the config loads again
 
 
 def test_a_load_error_names_the_provider_key_the_file_holds(tmp_path: pathlib.Path) -> None:
@@ -775,14 +777,14 @@ def test_config_set_names_the_one_write_for_a_provider_table(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The missing fields were looked up under `providers.p.openai.oauth`, so no hint matched."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text('[providers.p]\nbackend = "openai"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "set", "providers.p.oauth.issuer", "https://issuer.example"]) != 0
+    assert entry.main(["config", "set", "providers.p.oauth.issuer", "https://issuer.example"]) != 0
     said = capsys.readouterr()
     text = said.out + said.err
     assert "- providers.p.oauth.client_id: Field required" in text
@@ -793,14 +795,14 @@ def test_config_set_names_the_one_write_for_a_provider_table(
 def test_config_fix_labels_a_repo_layer_entry(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     rpath = paths.repo_config_path(tmp_path)
     rpath.parent.mkdir(parents=True, exist_ok=True)
     rpath.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
 
-    rc = main(["config", "fix"])
+    rc = entry.main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "harness.prompt.decompose" in out and "repo" in out
@@ -810,7 +812,7 @@ def test_config_fix_labels_a_repo_layer_entry(
 def test_config_fix_on_valid_config_reports_nothing_to_fix(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
@@ -818,7 +820,7 @@ def test_config_fix_on_valid_config_reports_nothing_to_fix(
     gpath.write_text(before, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "fix"])
+    rc = entry.main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "nothing to fix" in out.lower()
@@ -828,7 +830,7 @@ def test_config_fix_on_valid_config_reports_nothing_to_fix(
 def test_config_fix_repairs_both_layers_and_labels_each(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
@@ -838,7 +840,7 @@ def test_config_fix_repairs_both_layers_and_labels_each(
     rpath.parent.mkdir(parents=True, exist_ok=True)
     rpath.write_text('[sandbox]\nrun_commands = "bogus"\n', encoding="utf-8")
 
-    rc = main(["config", "fix"])
+    rc = entry.main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "harness.prompt.decompose" in out and "global" in out
@@ -850,13 +852,13 @@ def test_config_fix_repairs_both_layers_and_labels_each(
 def test_config_fix_machine_overlay_leaves_the_spec_untouched(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     mfile = tmp_path / "m.asm.toml"
     mfile.write_text(_GOOD + "[config.harness.prompt]\ndecompose = true\n", encoding="utf-8")
 
-    rc = main(["config", "fix", "--machine-file", str(mfile)])
+    rc = entry.main(["config", "fix", "--machine-file", str(mfile)])
     out = capsys.readouterr().out
     assert rc == 0
     assert "harness.prompt.decompose" in out
@@ -869,17 +871,17 @@ def test_config_set_unknown_provider_key_speaks_human(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The standalone minimal dict cannot resolve a union member; the member models answer directly.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "providers.p.backend", "anthropic"]) == 0
+    assert entry.main(["config", "set", "providers.p.backend", "anthropic"]) == 0
     capsys.readouterr()
-    rc = main(["config", "set", "providers.p.bogus_key", "x"])
+    rc = entry.main(["config", "set", "providers.p.bogus_key", "x"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "unknown provider key 'providers.p.bogus_key'" in err
     assert "Extra inputs" not in err and "anthropic.bogus" not in err
-    rc = main(["config", "set", "providers.p.api_key_enw", "MY_KEY"])  # typo
+    rc = entry.main(["config", "set", "providers.p.api_key_enw", "MY_KEY"])  # typo
     assert rc == 2
     assert "'api_key_env'" in capsys.readouterr().err  # the did-you-mean
 
@@ -887,24 +889,24 @@ def test_config_set_unknown_provider_key_speaks_human(
 def test_config_set_invalid_provider_value_names_the_field(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "providers.p.backend", "anthropic"]) == 0
+    assert entry.main(["config", "set", "providers.p.backend", "anthropic"]) == 0
     capsys.readouterr()
-    rc = main(["config", "set", "providers.p.http_timeout_s", "not-a-number"])
+    rc = entry.main(["config", "set", "providers.p.http_timeout_s", "not-a-number"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "providers.p.http_timeout_s" in err
     assert "merged config layers" not in err
     # A Field-constraint violation gets the same member answer, no discriminator tag in the loc.
-    rc = main(["config", "set", "providers.p.http_timeout_s", "-5"])
+    rc = entry.main(["config", "set", "providers.p.http_timeout_s", "-5"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "greater than 0" in err
     assert "merged config layers" not in err and ".anthropic." not in err
     # A partial-entry write some member accepts still lands (never reverted).
-    assert main(["config", "set", "providers.p.base_url", "https://x.example/v1"]) == 0
+    assert entry.main(["config", "set", "providers.p.base_url", "https://x.example/v1"]) == 0
 
 
 def test_config_fix_skips_an_entry_another_writer_already_fixed(
@@ -948,20 +950,20 @@ def test_config_fix_removes_a_nan_entry_instead_of_claiming_valid(
 
     TOML `nan` never compares equal to itself, so an identity re-check reads it as replaced.
     """
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[sandbox]\nbogus_entry = nan\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "fix"])
+    rc = entry.main(["config", "fix"])
     out = capsys.readouterr().out
     assert "nothing to fix" not in out  # the config was NOT valid
     assert rc == 0
     assert "bogus_entry" in out  # removed and named
     assert "bogus_entry" not in gpath.read_text(encoding="utf-8")
-    assert main(["config", "show"]) == 0
+    assert entry.main(["config", "show"]) == 0
 
 
 def test_equal_tolerating_nan_matches_nan_at_every_depth() -> None:
@@ -978,19 +980,19 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`agent6 --config F config set` notes that F keeps overriding the key it just wrote."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     flag = tmp_path / "f.toml"
     flag.write_text('[sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
-    rc = main(["--config", str(flag), "config", "set", "sandbox.run_commands", "deny"])
+    rc = entry.main(["--config", str(flag), "config", "set", "sandbox.run_commands", "deny"])
     out = capsys.readouterr().out
     assert rc == 0
     assert f"--config {flag} overrides sandbox.run_commands" in out
     # A key the flag file does not set carries no note.
-    rc = main(["--config", str(flag), "config", "set", "sandbox.protect_git", "on"])
+    rc = entry.main(["--config", str(flag), "config", "set", "sandbox.protect_git", "on"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "overrides sandbox.protect_git" not in out
@@ -1000,15 +1002,15 @@ def test_config_set_notes_a_repo_layer_that_keeps_a_global_write_out(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A global write under a repo override said nothing; a run kept reading the repo value."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "--repo", "harness.max_turns", "7"]) == 0
+    assert entry.main(["config", "set", "--repo", "harness.max_turns", "7"]) == 0
     capsys.readouterr()
-    assert main(["config", "set", "harness.max_turns", "9"]) == 0
+    assert entry.main(["config", "set", "harness.max_turns", "9"]) == 0
     out = capsys.readouterr().out
     assert "note: the repo config overrides harness.max_turns; a run here reads its value." in out
-    assert main(["config", "set", "--repo", "harness.max_turns", "8"]) == 0
+    assert entry.main(["config", "set", "--repo", "harness.max_turns", "8"]) == 0
     assert "overrides" not in capsys.readouterr().out
 
 
@@ -1016,7 +1018,7 @@ def test_config_set_shadow_note_names_the_last_file_setting_the_key(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Under two `--config` files the note names the later file that sets the key."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -1026,12 +1028,12 @@ def test_config_set_shadow_note_names_the_last_file_setting_the_key(
     first.write_text('[sandbox]\nrun_commands = "allow"\nprotect_git = "on"\n', encoding="utf-8")
     second.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
     both = ["--config", str(first), "--config", str(second)]
-    assert main([*both, "config", "set", "sandbox.run_commands", "deny"]) == 0
+    assert entry.main([*both, "config", "set", "sandbox.run_commands", "deny"]) == 0
     out = capsys.readouterr().out
     assert f"--config {second} overrides sandbox.run_commands" in out
     assert str(first) not in out
     # A key only the first file sets is shadowed by the first file.
-    assert main([*both, "config", "set", "sandbox.protect_git", "off"]) == 0
+    assert entry.main([*both, "config", "set", "sandbox.protect_git", "off"]) == 0
     assert f"--config {first} overrides sandbox.protect_git" in capsys.readouterr().out
 
 
@@ -1039,14 +1041,14 @@ def test_config_show_legend_names_the_flag_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The legend reads a "flag" source back to the one path the operator typed."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     flag = tmp_path / "f.toml"
     flag.write_text('[sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
-    rc = main(["--config", str(flag), "config", "show"])
+    rc = entry.main(["--config", str(flag), "config", "show"])
     out = capsys.readouterr().out
     assert rc == 0
     assert f"flag = {flag}" in out

@@ -16,7 +16,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import process
-from agent6.ui.cli import main, ps_cmd
+from agent6.ui.cli import entry, ps_cmd
 
 WAITER = """
 machine = "waiter_demo"
@@ -59,7 +59,7 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "waiter.asm.toml"
     f.write_text(WAITER, encoding="utf-8")
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     assert not (paths.state_dir(tmp_path) / "sessions").exists()
     instance = paths.state_dir(tmp_path) / "machines" / "waiter_demo"
@@ -140,7 +140,7 @@ def test_ps_json_carries_the_row_facts(
         encoding="utf-8",
     )
     process.write_worker_pid(child, os.getpid())
-    assert main(["ps", "--json"]) == 0
+    assert entry.main(["ps", "--json"]) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["id"] == "fan-l1" and row["mode"] == "run" and row["pid"] == os.getpid()
     assert row["attached"] is False and row["repo_id"] == "child-repo-000000"
@@ -171,7 +171,7 @@ def test_ps_json_waiting_facts(
             + "\n"
         )
 
-    assert main(["ps", "--json"]) == 0
+    assert entry.main(["ps", "--json"]) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row == {
         "directory": str(repo),
@@ -187,7 +187,7 @@ def test_ps_json_waiting_facts(
         "worktree": None,
     }
 
-    assert main(["ps"]) == 0
+    assert entry.main(["ps"]) == 0
     line = next(line for line in capsys.readouterr().out.splitlines() if "waiting-run" in line)
     assert line.startswith("~/repo ")
     assert "waiting · approval <1m" in line
@@ -218,9 +218,9 @@ def test_pending_step_stop_is_visible_on_cli_listings(
     monkeypatch.chdir(tmp_path)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "step-AAAAAA"
     _live(session_dir, {"mode": "run", "session_id": "step-AAAAAA", "user_task": "t"})
-    assert main(["stop", "step-AAAAAA", "--after-turn"]) == 0
+    assert entry.main(["stop", "step-AAAAAA", "--after-turn"]) == 0
     assert "stops after its current turn" in capsys.readouterr().out
-    assert main(args) == 0
+    assert entry.main(args) == 0
     assert "running · stopping after this turn" in capsys.readouterr().out
 
 

@@ -15,7 +15,7 @@ from agent6.app.review import actions as review_actions
 from agent6.providers import provider_types
 from agent6.sessions import event_log, ipc, lock, process
 from agent6.ui import spawn
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.viewmodel.session import log as session_log
 from tests import review_helpers
 
@@ -84,7 +84,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     worker = mock.Mock()
     worker.call.side_effect = call
     monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=worker))
-    assert main(["--config", str(config), "run", "--session-id", "review-run", "task"]) == 130
+    assert entry.main(["--config", str(config), "run", "--session-id", "review-run", "task"]) == 130
     assert len(calls) == 2
     assert "Review finding f1" in json.dumps(calls[1], default=str)
     rows = [
@@ -101,7 +101,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     )
 
     def resume(text: str) -> str:
-        assert main(["--config", str(config), "resume", "review-run", "--steer", text]) == 0
+        assert entry.main(["--config", str(config), "resume", "review-run", "--steer", text]) == 0
         return ""
 
     result = review_actions.act(
@@ -128,11 +128,11 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     assert len(calls) == 3
 
     capsys.readouterr()
-    assert main(["sessions", "findings", "review-run"]) == 0
+    assert entry.main(["sessions", "findings", "review-run"]) == 0
     text = capsys.readouterr().out
     assert text.count("Fix: submitted") == 2
     assert "f1  open  block" in text and "f2  open  block" in text
-    assert main(["sessions", "findings", "review-run", "--json"]) == 0
+    assert entry.main(["sessions", "findings", "review-run", "--json"]) == 0
     wire = json.loads(capsys.readouterr().out)
     assert [(f["status"], f["fix_state"], f["resolution"]) for f in wire["findings"]] == [
         ("open", "submitted", None),
@@ -141,10 +141,10 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     assert wire["merge_guard"]["open_block_ids"] == ["f1", "f2"]
 
     resolve = ["sessions", "resolve", "review-run", "f2", "--as", "fixed", "--reason"]
-    assert main([*resolve, " "]) == 2
+    assert entry.main([*resolve, " "]) == 2
     assert capsys.readouterr().err
     assert (pathlib.Path(delivered[0]) / "logs.jsonl").read_bytes() == before
-    assert main([*resolve, "Corrected empty-input handling"]) == 0
+    assert entry.main([*resolve, "Corrected empty-input handling"]) == 0
     resolved = review_actions.read_review(pathlib.Path(delivered[0]))
     assert resolved.findings[0] == view.findings[0]
     finding = resolved.findings[1]
@@ -172,7 +172,7 @@ def test_cli_fixes_several_findings_with_one_resume(
         return ""
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
-    assert main(["steer", saved.session_id, *flags, "--resume", "--request-id", "many"]) == 0
+    assert entry.main(["steer", saved.session_id, *flags, "--resume", "--request-id", "many"]) == 0
     assert len(launches) == 1
     assert launches[0].startswith("Review findings f1, f2: each report below is one finding")
     assert "Defect f1" in launches[0] and "Defect f2" in launches[0]
@@ -183,9 +183,11 @@ def test_cli_fixes_several_findings_with_one_resume(
     assert [f.status for f in view.findings] == ["open", "open"]
     assert all(f.actions[0].request_id == "many" for f in view.findings)
     assert review_actions.fixable_findings(saved.session_dir, view) == ()
-    assert main(["steer", saved.session_id, "--all-findings", "--resume"]) == 2
+    assert entry.main(["steer", saved.session_id, "--all-findings", "--resume"]) == 2
     assert "no open finding without a queued Fix" in capsys.readouterr().err
-    assert main(["steer", saved.session_id, "--finding", "f1", "--expected-version", "1"]) == 2
+    assert (
+        entry.main(["steer", saved.session_id, "--finding", "f1", "--expected-version", "1"]) == 2
+    )
     assert "drop --expected-version" in capsys.readouterr().err
 
 
@@ -200,7 +202,7 @@ def test_cli_finding_resume_failure_keeps_diagnostic_and_exit_code(
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
     assert (
-        main(
+        entry.main(
             [
                 "steer",
                 saved.session_id,
@@ -265,7 +267,7 @@ def test_cli_finding_resume_reports_launch_and_forwards_evidence_and_config(
     monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
     try:
         assert (
-            main(
+            entry.main(
                 [
                     "--config",
                     str(configs[0]),

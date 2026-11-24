@@ -18,7 +18,7 @@ import pytest
 
 from agent6 import directive, paths
 from agent6.sessions import ipc, process
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.ui.web import actions
 
 
@@ -142,7 +142,7 @@ def test_agent6_steer_acts_on_the_directive_instead_of_sending_it(
     (d / "logs.jsonl").write_text("", encoding="utf-8")
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "tiny-run", "/task add a --json flag"]) == 0
+    assert entry.main(["steer", "tiny-run", "/task add a --json flag"]) == 0
 
     assert "task queued" in capsys.readouterr().out
     assert [r.text for r in ipc.drain_requests(d)] == ["add a --json flag"]
@@ -162,7 +162,7 @@ def test_agent6_steer_sends_the_typed_path(
     process.write_worker_pid(d, os.getpid())
 
     (tmp_path / "notes.md").write_text("from disk", encoding="utf-8")
-    assert main(["steer", "tiny-run", prefix + "read @notes.md"]) == 0
+    assert entry.main(["steer", "tiny-run", prefix + "read @notes.md"]) == 0
 
     assert ipc.steer_interrupt_pending(d) == bool(prefix)
     assert ipc.take_steer_answer(d) == "read @notes.md"

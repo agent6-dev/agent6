@@ -26,7 +26,7 @@ from agent6.context import memory
 from agent6.providers import provider_types
 from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.viewmodel.session import log as session_log
 
 _EVENTS: list[dict[str, Any]] = [
@@ -470,7 +470,7 @@ def test_the_verb_prints_and_saves_the_review(
         role_providers, "build_role_provider", mock.MagicMock(return_value=provider)
     )
 
-    rc = main(["sessions", "review", "run-AAAA11"])
+    rc = entry.main(["sessions", "review", "run-AAAA11"])
 
     out = capsys.readouterr()
     assert rc == 0
@@ -522,12 +522,12 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
         + "\n",
         encoding="utf-8",
     )
-    assert main(["sessions", "review", "run-MODEL1"]) == 0
+    assert entry.main(["sessions", "review", "run-MODEL1"]) == 0
     assert "reviewing run: run-MODEL1" in capsys.readouterr().err
 
     bare = _write_session(repo, session_id="run-BARE01")
     bare.manifest_path.unlink()
-    assert main(["sessions", "review", "run-BARE01"]) == 0
+    assert entry.main(["sessions", "review", "run-BARE01"]) == 0
     capsys.readouterr()
 
     time.sleep(0.05)
@@ -544,7 +544,7 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
         json.dumps({"type": "session.start", "mode": "plan", "user_task": "p"}) + "\n",
         encoding="utf-8",
     )
-    assert main(["sessions", "review"]) == 0
+    assert entry.main(["sessions", "review"]) == 0
     err = capsys.readouterr().err
     assert "reviewing the newest session: plan-NEWEST" in err
 
@@ -570,7 +570,7 @@ def test_the_model_flag_reaches_the_reviewer(
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
     monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(role_providers, "build_role_provider", build)
-    assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 0
+    assert entry.main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 0
     capsys.readouterr()
     assert seen == ["other"]
 
@@ -579,7 +579,7 @@ def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_session(repo)
-    assert main(["sessions", "review", "nope"]) == 2
+    assert entry.main(["sessions", "review", "nope"]) == 2
     assert "nope" in capsys.readouterr().err
 
     cfg = _reviewer_config()
@@ -594,7 +594,7 @@ def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
         "build_role_provider",
         mock.MagicMock(side_effect=provider_types.ProviderError("no key")),
     )
-    assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 2
+    assert entry.main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 2
     assert "provider init failed: no key" in capsys.readouterr().err
 
 
@@ -614,7 +614,7 @@ def test_a_failed_reviewer_call_is_reported(
         "build_role_provider",
         mock.MagicMock(return_value=_FakeProvider(raise_error=True)),
     )
-    assert main(["sessions", "review"]) == 2
+    assert entry.main(["sessions", "review"]) == 2
     err = capsys.readouterr().err
     assert "reviewing the newest session: run-AAAA11" in err
     assert "REVIEW FAILED: provider call failed: boom" in err
@@ -632,7 +632,7 @@ def test_a_live_session_is_refused_before_any_call(
         "agent6.config.layer.load_effective",
         mock.MagicMock(side_effect=AssertionError("config loaded")),
     )
-    assert main(["sessions", "review", "run-AAAA11"]) == 2
+    assert entry.main(["sessions", "review", "run-AAAA11"]) == 2
     err = capsys.readouterr().err
     assert "run-AAAA11 is live" in err and "agent6 stop run-AAAA11" in err
 
@@ -646,7 +646,7 @@ def test_the_verb_refuses_a_session_that_never_started(
         role_providers, "build_role_provider", mock.MagicMock(side_effect=AssertionError("called"))
     )
 
-    assert main(["sessions", "review", "run-AAAA11"]) == 2
+    assert entry.main(["sessions", "review", "run-AAAA11"]) == 2
 
     assert "never started" in capsys.readouterr().err
 

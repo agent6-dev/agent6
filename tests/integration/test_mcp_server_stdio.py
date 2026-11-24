@@ -69,7 +69,7 @@ def test_mcp_serve_roundtrip(tmp_path: pathlib.Path) -> None:
         [
             sys.executable,
             "-c",
-            "from agent6.ui.cli import main; raise SystemExit(main())",
+            "from agent6.ui.cli import entry; raise SystemExit(entry.main())",
             "mcp",
             "serve",
             "--config",
@@ -157,7 +157,7 @@ def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: pathlib.Path)
         [
             sys.executable,
             "-c",
-            "from agent6.ui.cli import main; raise SystemExit(main())",
+            "from agent6.ui.cli import entry; raise SystemExit(entry.main())",
             "mcp",
             "serve",
             "--config",

@@ -18,7 +18,7 @@ import pytest
 
 from agent6 import errors
 from agent6.config import ConfigError
-from agent6.ui.cli import cli_main, entry, run
+from agent6.ui.cli import entry, run
 
 
 @pytest.mark.parametrize(
@@ -60,7 +60,7 @@ def test_cli_main_passes_through_return_code(monkeypatch: pytest.MonkeyPatch) ->
         return 3
 
     monkeypatch.setattr(entry, "main", _ok)
-    assert cli_main() == 3
+    assert entry.cli_main() == 3
 
 
 def test_cli_main_converts_unexpected_exception_to_friendly_error(
@@ -74,7 +74,7 @@ def test_cli_main_converts_unexpected_exception_to_friendly_error(
 
     monkeypatch.setattr(entry, "main", _boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    rc = cli_main()
+    rc = entry.cli_main()
     assert rc == 1
     err = capsys.readouterr().err
     assert "ERROR: unexpected RuntimeError: kaboom" in err
@@ -96,7 +96,7 @@ def test_an_operator_error_refuses_without_a_crash_report(
 
     monkeypatch.setattr(entry, "main", _bad)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert cli_main() == 2
+    assert entry.cli_main() == 2
     captured = capsys.readouterr()
     assert captured.err == "ERROR: no such machine file: overlay.toml\n"
 
@@ -111,7 +111,7 @@ def test_a_config_error_is_an_operator_error(
 
     monkeypatch.setattr(entry, "main", _bad)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert cli_main() == 2
+    assert entry.cli_main() == 2
     err = capsys.readouterr().err
     assert err.startswith("ERROR: ")
     assert "not valid TOML" in err
@@ -130,7 +130,7 @@ def test_an_unreadable_config_file_refuses_end_to_end(
     bad.write_text("x = 1\n", encoding="utf-8")
     bad.chmod(0o000)
     try:
-        rc = cli_main(["--config", str(bad), "config", "show"])
+        rc = entry.cli_main(["--config", str(bad), "config", "show"])
     finally:
         bad.chmod(0o600)
     assert rc == 2
@@ -149,7 +149,7 @@ def test_a_bad_budget_flag_refuses_end_to_end(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "s"))
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    rc = cli_main(["run", "task", "--max-usd", "inf"])
+    rc = entry.cli_main(["run", "task", "--max-usd", "inf"])
     assert rc == 2
     err = capsys.readouterr().err
     assert err.startswith("ERROR: ")
@@ -164,7 +164,7 @@ def test_cli_main_reraises_under_debug(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(entry, "main", _boom)
     monkeypatch.setenv("AGENT6_DEBUG", "1")
     with pytest.raises(RuntimeError, match="kaboom"):
-        cli_main()
+        entry.cli_main()
 
 
 def test_cli_main_handles_keyboard_interrupt(
@@ -174,7 +174,7 @@ def test_cli_main_handles_keyboard_interrupt(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(entry, "main", _interrupt)
-    assert cli_main() == 130
+    assert entry.cli_main() == 130
     assert "interrupted" in capsys.readouterr().err
 
 
@@ -189,7 +189,7 @@ def test_a_closed_stdout_ends_quietly(tmp_path: pathlib.Path) -> None:
     }
     env.pop("AGENT6_DEBUG", None)
     env.pop("PYTHONUNBUFFERED", None)
-    script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
+    script = "import sys; from agent6.ui.cli import entry; sys.exit(entry.cli_main())"
     try:
         proc = subprocess.run(
             [sys.executable, "-c", script, "config", "show"],
@@ -217,7 +217,7 @@ def test_a_short_answer_to_a_closed_stdout_ends_at_141_too(tmp_path: pathlib.Pat
     }
     env.pop("AGENT6_DEBUG", None)
     env.pop("PYTHONUNBUFFERED", None)
-    script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
+    script = "import sys; from agent6.ui.cli import entry; sys.exit(entry.cli_main())"
     try:
         proc = subprocess.run(
             [sys.executable, "-c", script, "--version"],
@@ -245,7 +245,7 @@ def test_a_closed_stderr_ends_at_141_too(tmp_path: pathlib.Path) -> None:
     }
     env.pop("AGENT6_DEBUG", None)
     env.pop("PYTHONUNBUFFERED", None)
-    script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
+    script = "import sys; from agent6.ui.cli import entry; sys.exit(entry.cli_main())"
     try:
         proc = subprocess.run(
             [sys.executable, "-c", script, "sessions", "show", "no-such-run"],
@@ -276,7 +276,7 @@ def test_a_plan_task_that_names_an_existing_plan_points_at_run_from(
     plan.ensure()
     plan.manifest_path.write_text('{"version": 0, "mode": "plan", "session_id": "x"}')
 
-    rc = cli_main(["plan", "run", "quiet-lake-AAAA11"])
+    rc = entry.cli_main(["plan", "run", "quiet-lake-AAAA11"])
 
     assert rc == 2
     err = capsys.readouterr().err
@@ -300,7 +300,7 @@ def test_a_long_plan_task_reaches_the_preflight(
 
     # A repository that already holds a plan: the stat reaches the long name.
     sessions_layout.bucket_dir(paths.state_dir(tmp_path), "plans").mkdir(parents=True)
-    rc = cli_main(["plan", "word " * 60 + "x" * 300])
+    rc = entry.cli_main(["plan", "word " * 60 + "x" * 300])
     err = capsys.readouterr().err
     assert rc == 2, err
     assert "No providers configured" in err
@@ -321,7 +321,7 @@ def test_crash_report_uses_active_session(
 
     monkeypatch.setattr(entry, "main", boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert cli_main() == 1
+    assert entry.cli_main() == 1
     reports = list(session.glob("agent6-crash-*.log"))
     assert len(reports) == 1
     assert "session crash" in reports[0].read_text()

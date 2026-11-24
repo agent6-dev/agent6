@@ -21,7 +21,7 @@ from agent6 import kinds, paths
 from agent6.app.parallel import children
 from agent6.config import TelemetryConfig
 from agent6.sessions import budget_events, event_log, journal, process
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.ui.telemetry import export
 from agent6.viewmodel import telemetry_records
 from agent6.viewmodel.session import log as session_log
@@ -766,7 +766,7 @@ def test_the_cli_refuses_an_unselected_export_and_names_a_missing_header_secret(
     _write_session(repo, "run-a", fold_tests._journal())
     nothing = tmp_path / "nothing.toml"
     nothing.write_text("[telemetry]\n", encoding="utf-8")
-    assert main(["--config", str(nothing), "telemetry", "export"]) == 2
+    assert entry.main(["--config", str(nothing), "telemetry", "export"]) == 2
     assert "nothing is selected" in capsys.readouterr().err
     secretless = tmp_path / "otlp.toml"
     secretless.write_text(
@@ -774,13 +774,13 @@ def test_the_cli_refuses_an_unselected_export_and_names_a_missing_header_secret(
         'headers = ["Authorization"]\n',
         encoding="utf-8",
     )
-    assert main(["--config", str(secretless), "telemetry", "export"]) == 2
+    assert entry.main(["--config", str(secretless), "telemetry", "export"]) == 2
     assert "[telemetry.headers]" in capsys.readouterr().err
     out = tmp_path / "agent6.prom"
     textfile = tmp_path / "prom.toml"
     textfile.write_text(
         f'[telemetry]\nmetrics = "prometheus"\nprometheus_file = "{out}"\n', encoding="utf-8"
     )
-    assert main(["--config", str(textfile), "telemetry", "export"]) == 0
+    assert entry.main(["--config", str(textfile), "telemetry", "export"]) == 0
     assert f"metrics written to {out}" in capsys.readouterr().out
     assert out.read_text(encoding="utf-8").startswith("# HELP ")

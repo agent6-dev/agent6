@@ -14,7 +14,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import journal, process
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 # A branch -> terminal machine: no model/jail, reaches a journaled end at once.
 TINY = """
@@ -64,7 +64,7 @@ def test_watch_run_json_snapshot(
             {"type": "tool.call", "name": "grep", "args_preview": {"q": "x"}},
         ],
     )
-    assert main(["attach", "willing-glen-001", "--json"]) == 0
+    assert entry.main(["attach", "willing-glen-001", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["task"] == "demo\n" + "words " * 900
     assert "user_task" not in out and "task_clipped" not in out
@@ -74,7 +74,7 @@ def test_watch_run_json_snapshot(
         ["sessions", "list", "--json"],
         ["sessions", "show", "willing-glen-001", "--json"],
     ):
-        assert main(command) == 0
+        assert entry.main(command) == 0
         result = json.loads(capsys.readouterr().out)
         row = result[0] if isinstance(result, list) else result
         assert row["task"] == out["task"]
@@ -146,7 +146,7 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
     question = (schema.UserQuestion(question="which?", options=("a", "b")),)
     queued = prompts.ask(question, wait=False)
     assert queued.status == "pending"
-    assert main(["attach", session_id, "--json"]) == 0
+    assert entry.main(["attach", session_id, "--json"]) == 0
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["live"]
     assert not any(not q["answered"] and q["blocking"] for q in snapshot["questions"])
@@ -172,7 +172,7 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
         assert entered.wait(timeout=5), "question did not enter the front-end wait"
         assert worker.is_alive() and not answers
         assert not process.frontend_is_live(session_dir)
-        assert main(["attach", session_id, "--json"]) == 0
+        assert entry.main(["attach", session_id, "--json"]) == 0
         snapshot = json.loads(capsys.readouterr().out)
         assert snapshot["live"] and snapshot["operator_blocked"]
         assert [q["id"] for q in snapshot["questions"] if not q["answered"] and q["blocking"]] == [
@@ -182,12 +182,12 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
             old = snapshot["questions"][0]
             assert old["id"] == "question-1" and old["wait"] and not old["answered"]
             assert not old["blocking"]
-        assert main(["answer", session_id, "--question", blocking_id, "b"]) == 0
+        assert entry.main(["answer", session_id, "--question", blocking_id, "b"]) == 0
         capsys.readouterr()
         worker.join(timeout=10)
         assert not worker.is_alive()
         assert answers[0].answers == ("b",)
-        assert main(["attach", session_id, "--json"]) == 0
+        assert entry.main(["attach", session_id, "--json"]) == 0
         snapshot = json.loads(capsys.readouterr().out)
         assert snapshot["live"] and not snapshot["operator_blocked"]
         assert snapshot["questions"][-1]["id"] == blocking_id
@@ -208,9 +208,9 @@ def test_watch_machine_json_snapshot(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     capsys.readouterr()  # drop run output
-    assert main(["attach", "tiny", "--json"]) == 0
+    assert entry.main(["attach", "tiny", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["machine"] == "tiny"
     assert out["spend"]["cost_usd"] == 0.0
@@ -251,7 +251,7 @@ def test_attach_refuses_raw_event_tail_for_a_machine(
         encoding="utf-8",
     )
 
-    assert main(["attach", "tiny", "--raw", "--since", "1"]) == 2
+    assert entry.main(["attach", "tiny", "--raw", "--since", "1"]) == 2
     err = capsys.readouterr().err
     assert err == "ERROR: --raw applies to run sessions, not machines.\n"
 
@@ -270,7 +270,7 @@ def test_attach_since_zero_still_needs_raw(
         ],
     )
 
-    assert main(["attach", "done-run", "--since", "0"]) == 2
+    assert entry.main(["attach", "done-run", "--since", "0"]) == 2
     assert capsys.readouterr().err == "ERROR: --since applies to --raw only.\n"
 
 
@@ -288,7 +288,7 @@ def test_attach_refuses_a_negative_since_count(
         ],
     )
 
-    assert main(["attach", "done-run", "--raw", "--since", "-1"]) == 2
+    assert entry.main(["attach", "done-run", "--raw", "--since", "-1"]) == 2
     assert capsys.readouterr().err == "ERROR: --since must be non-negative.\n"
 
 
@@ -296,7 +296,7 @@ def test_watch_unknown_target_errors(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert main(["attach", "nope"]) == 2
+    assert entry.main(["attach", "nope"]) == 2
     err = capsys.readouterr().err
     assert "no run or machine matches" in err
     # The search covers every session bucket and the machines: the refusal
@@ -312,7 +312,7 @@ def test_watch_ambiguous_prefix_surfaces_disambiguation(
     monkeypatch.chdir(tmp_path)
     _make_run(tmp_path, "willing-glen-001", [{"type": "session.start"}])
     _make_run(tmp_path, "willing-glen-002", [{"type": "session.start"}])
-    assert main(["attach", "willing-glen"]) == 2
+    assert entry.main(["attach", "willing-glen"]) == 2
     err = capsys.readouterr().err
     assert "ambiguous" in err
     assert "no run or machine matches" not in err
@@ -348,7 +348,9 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
 
     monkeypatch.setattr(pw._CliFrontEnd, "handle", _no_prompt)
     result: list[int] = []
-    t = threading.Thread(target=lambda: result.append(main(["attach", "dead-run"])), daemon=True)
+    t = threading.Thread(
+        target=lambda: result.append(entry.main(["attach", "dead-run"])), daemon=True
+    )
     t.start()
     t.join(timeout=5)
     assert not t.is_alive(), "attach failed to terminate on a crashed run"
@@ -386,13 +388,13 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
         encoding="utf-8",
     )
 
-    assert main(["attach", "parked-run-77"]) == 0
+    assert entry.main(["attach", "parked-run-77"]) == 0
     out = capsys.readouterr().out
     assert "parked-run-77: parked" in out
     assert "resume" in out
     assert "logs.jsonl" not in out
 
-    assert main(["attach", "parked-run-77", "--json"]) == 0
+    assert entry.main(["attach", "parked-run-77", "--json"]) == 0
     snap = json.loads(capsys.readouterr().out)
     assert snap["status_label"].startswith("parked")
     assert snap["session_id"] == "parked-run-77"
@@ -417,7 +419,7 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
     # a live worker, mid-preflight
     process.write_worker_pid(session_dir, os.getpid())
 
-    assert main(["attach", "launching-run-88"]) == 0
+    assert entry.main(["attach", "launching-run-88"]) == 0
     out = capsys.readouterr().out
     assert "starting" in out
     assert "resume" not in out  # not resumable; it is already running
@@ -446,7 +448,7 @@ def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
 
     result: list[int] = []
     t = threading.Thread(
-        target=lambda: result.append(main(["attach", "vanished-run"])), daemon=True
+        target=lambda: result.append(entry.main(["attach", "vanished-run"])), daemon=True
     )
     t.start()
     t.join(timeout=5)
@@ -468,7 +470,7 @@ def test_attach_returns_nonzero_when_a_live_runs_worker_dies(
 
     result: list[int] = []
     watcher = threading.Thread(
-        target=lambda: result.append(main(["attach", "dying-run"])), daemon=True
+        target=lambda: result.append(entry.main(["attach", "dying-run"])), daemon=True
     )
     watcher.start()
     time.sleep(0.5)
@@ -504,7 +506,9 @@ def test_attach_to_a_finished_run_reports_its_outcome_not_a_crash(
     monkeypatch.chdir(tmp_path)
 
     result: list[int] = []
-    t = threading.Thread(target=lambda: result.append(main(["attach", "done-run"])), daemon=True)
+    t = threading.Thread(
+        target=lambda: result.append(entry.main(["attach", "done-run"])), daemon=True
+    )
     t.start()
     t.join(timeout=5)
     assert not t.is_alive(), "attach failed to terminate on a finished run"
@@ -537,7 +541,7 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    assert main(["attach", "done-run"]) == 0
+    assert entry.main(["attach", "done-run"]) == 0
     assert "  m-1 · isolation full · run_commands ask · " in capsys.readouterr().out
 
 
@@ -574,11 +578,11 @@ def test_watch_json_checks_the_merged_claim_against_the_repo(
         ),
         encoding="utf-8",
     )
-    assert main(["attach", "stamped-run", "--json"]) == 0
+    assert entry.main(["attach", "stamped-run", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["merged_into_checkout"] == "main"
     subprocess.run([*git, "checkout", "-q", "agent6/stamped-run"], check=True)
     subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "more"], check=True, env=env)
-    assert main(["attach", "stamped-run", "--json"]) == 0
+    assert entry.main(["attach", "stamped-run", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert "merged_into_checkout" not in out
     assert out["branch_line"] == "agent6/stamped-run → merges into main"
@@ -609,7 +613,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
     process.write_worker_pid(session_dir, os.getpid())
     result: list[int] = []
     t = threading.Thread(
-        target=lambda: result.append(main(["attach", "done-run", "--raw", "--since", "5"])),
+        target=lambda: result.append(entry.main(["attach", "done-run", "--raw", "--since", "5"])),
         daemon=True,
     )
     t.start()
@@ -630,7 +634,7 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
     _make_run(tmp_path, "gone-run", [{"type": "session.start", "user_task": "t"}])
     run_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "gone-run"
     rcs: list[int] = []
-    t = threading.Thread(target=lambda: rcs.append(main(["attach", "gone-run", "--raw"])))
+    t = threading.Thread(target=lambda: rcs.append(entry.main(["attach", "gone-run", "--raw"])))
     t.daemon = True
     t.start()
     time.sleep(1.0)
@@ -649,7 +653,7 @@ def test_attach_to_a_husk_names_the_crash_not_a_missing_id(
     """
     monkeypatch.chdir(tmp_path)
     (paths.state_dir(tmp_path) / "sessions" / "runs" / "husky-one-AAAAAA").mkdir(parents=True)
-    assert main(["attach", "husky-one-AAAAAA"]) == 2
+    assert entry.main(["attach", "husky-one-AAAAAA"]) == 2
     err = capsys.readouterr().err
     assert "crashed before it ever started" in err
     assert "sessions remove husky-one-AAAAAA" in err

@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 
 
 def test_the_cli_line_buffers_a_redirected_stdout(
@@ -20,5 +20,5 @@ def test_the_cli_line_buffers_a_redirected_stdout(
     monkeypatch.chdir(tmp_path)
     out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", line_buffering=False)
     monkeypatch.setattr(sys, "stdout", out)
-    assert cli_main(["sessions", "dir"]) == 0
+    assert entry.cli_main(["sessions", "dir"]) == 0
     assert out.line_buffering is True

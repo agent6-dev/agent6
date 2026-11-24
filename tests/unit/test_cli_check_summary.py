@@ -23,7 +23,7 @@ from agent6.providers import oauth, oauth_protocol, provider_types, transport
 from agent6.sandbox import detect, jail, landlock
 from agent6.sessions import event_log
 from agent6.ui.cli import check_cmds as cli_check_cmds
-from agent6.ui.cli import main
+from agent6.ui.cli import entry as cli_entry
 from agent6.vcs.git import policy as git_policy
 
 
@@ -81,11 +81,11 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
     }[state] in cause
     assert session_setup.check_provider_keys(load_config(config)) == cause
     with mock.patch.object(transport, "http_request") as request:
-        assert main(["check", "config"]) == 1
+        assert cli_entry.main(["check", "config"]) == 1
         checked = capsys.readouterr()
         assert f"[FAIL] config.provider_keys: {cause}" in checked.out
         for command in (["model"], ["model", "worker", name], ["model", "worker", f"{name}/m2"]):
-            assert main(command) == 0
+            assert cli_entry.main(command) == 0
             output = capsys.readouterr()
             assert cause in output.err
             assert output.out
@@ -115,7 +115,7 @@ def test_healthy_local_sign_in_check_does_not_claim_remote_acceptance(
     with mock.patch.object(
         transport, "http_request", side_effect=provider_types.ProviderError("offline")
     ):
-        assert main(["check", "config"]) == 0
+        assert cli_entry.main(["check", "config"]) == 0
     out = capsys.readouterr().out
     assert "[PASS] config.provider_keys" in out
     assert "resolve locally" in out and "remote authentication is not verified" in out
@@ -136,10 +136,10 @@ def test_check_summary_carries_info_through(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `check verify` on a default config: verify_command is unset, an advisory INFO at exit 0.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["check", "verify"])
+    rc = cli_entry.main(["check", "verify"])
     assert rc == 0
     out = capsys.readouterr().out
     summary = out.split("== summary ==", 1)[1]
@@ -180,14 +180,14 @@ def test_check_verify_says_what_this_repo_infers(
 
     It says when there is nothing to infer from.
     """
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     monkeypatch.chdir(tmp_path)
-    assert main(["check", "verify"]) == 0
+    assert cli_entry.main(["check", "verify"]) == 0
     assert "unset; nothing here to infer from" in capsys.readouterr().out
     (tmp_path / "verify.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     (tmp_path / "verify.sh").chmod(0o755)
-    assert main(["check", "verify"]) == 0
+    assert cli_entry.main(["check", "verify"]) == 0
     assert "unset; a run here infers ./verify.sh from verify.sh" in capsys.readouterr().out
 
 
@@ -211,13 +211,13 @@ def test_check_verify_reads_the_agents_md_fence_as_shell(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An assignment, a comment, a second line or a `$` prompt in the fence is not an argument."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     (tmp_path / "AGENTS.md").write_text(
         f"## Verify command\n\n```bash\n{fence}\n```\n", encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
-    assert main(["check", "verify"]) == 0
+    assert cli_entry.main(["check", "verify"]) == 0
     assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
 
 
@@ -229,14 +229,14 @@ def test_run_header_prints_the_inferred_gate_as_check_verify_does(
 
     Joined on bare spaces, the header's `sh -c` line pastes as a different command.
     """
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     (tmp_path / "AGENTS.md").write_text(
         "## Verify command\n\n```bash\npytest -q &&\n  mypy --strict pkg\n```\n", encoding="utf-8"
     )
     command = "sh -c 'pytest -q && mypy --strict pkg'"
     monkeypatch.chdir(tmp_path)
-    assert main(["check", "verify"]) == 0
+    assert cli_entry.main(["check", "verify"]) == 0
     assert f"unset; a run here infers {command} from AGENTS.md\n" in capsys.readouterr().out
 
     cfg = preflight.infer_verify_if_unset(
@@ -264,20 +264,20 @@ def test_check_verify_and_the_run_header_say_why_a_manifest_was_passed_over(
 
     Offered unchecked, `npm test` aborted the run at its first gate as unexecutable.
     """
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     (jail_bin / "npm").unlink()
     (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
     why = "passed over: package.json names `npm test --silent`, and the sandbox has no `npm`"
     monkeypatch.chdir(tmp_path)
-    assert main(["check", "verify"]) == 0
+    assert cli_entry.main(["check", "verify"]) == 0
     out = capsys.readouterr().out
     assert "infers" not in out and "nothing here to infer from" not in out
     assert "unset; nothing here a run can use (a run asks the reviewer model" in out
     assert f"else goes gateless); {why}\n" in out
 
     (tmp_path / "Makefile").write_text("test:\n\t./run\n", encoding="utf-8")
-    assert main(["check", "verify"]) == 0
+    assert cli_entry.main(["check", "verify"]) == 0
     assert f"unset; a run here infers make test from Makefile:test; {why}\n" in (
         capsys.readouterr().out
     )
@@ -307,13 +307,13 @@ def test_check_verify_and_the_run_header_name_the_manifests_the_gate_leaves_out(
 
     Unnamed, a Go regression passed a gate that ran only the Node tests, with no word of it.
     """
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
     (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
     left_out = "passed over: go.mod names `go test ./...`, which this gate does not run"
     monkeypatch.chdir(tmp_path)
-    assert main(["check", "verify"]) == 0
+    assert cli_entry.main(["check", "verify"]) == 0
     assert f"unset; a run here infers npm test --silent from package.json; {left_out}\n" in (
         capsys.readouterr().out
     )
@@ -410,11 +410,11 @@ def test_sandbox_alone_prints_its_summary(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`check sandbox` on its own ends with the three rows it owns."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     monkeypatch.chdir(tmp_path)
     _stub_probes(monkeypatch, "full")
-    assert main(["check", "sandbox"]) == 0
+    assert cli_entry.main(["check", "sandbox"]) == 0
     out = capsys.readouterr().out
     assert "== sandbox ==" in out
     file_tools = out.split("in-process file tools (", 1)[1].splitlines()[0]

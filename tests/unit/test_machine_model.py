@@ -321,7 +321,7 @@ def test_tool_schema_without_capture_is_refused_at_load_and_check(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A schema without a capture must not leave stdout unchecked."""
-    from agent6.ui import cli
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     body = VALID_MACHINE.replace(
@@ -334,7 +334,7 @@ def test_tool_schema_without_capture_is_refused_at_load_and_check(
         schema.MachineError, match="state 'scan': `output_schema` requires `capture`"
     ):
         semantics.load_machine(path)
-    assert cli.main(["machine", "check", str(path)]) == 1
+    assert entry.main(["machine", "check", str(path)]) == 1
     assert "state 'scan': `output_schema` requires `capture`" in capsys.readouterr().err
 
 

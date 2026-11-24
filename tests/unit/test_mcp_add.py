@@ -557,12 +557,12 @@ def test_mcp_add_without_a_transport_refuses_cleanly(
 
     "unexpected TypeError", a crash log, exit 1.
     """
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry as cli_entry
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path.parent / f"{tmp_path.name}-cfg"))
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert cli_main(["mcp", "add", "x"]) == 2
+    assert cli_entry.cli_main(["mcp", "add", "x"]) == 2
     err = capsys.readouterr().err
     assert "exactly one" in err
     assert "unexpected" not in err

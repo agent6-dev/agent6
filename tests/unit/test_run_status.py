@@ -1551,7 +1551,7 @@ def test_show_names_why_a_run_whose_manifest_broke_cannot_be_resumed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A torn manifest's run read `resume with: agent6 resume <id>`, a command that refuses it."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
     from tests.unit import test_viewmodel_listing
 
     d = _make_run(tmp_path, monkeypatch, [])
@@ -1563,7 +1563,7 @@ def test_show_names_why_a_run_whose_manifest_broke_cannot_be_resumed(
     (line,) = [ln for ln in out.splitlines() if ln.startswith("resume:")]
     reason = line.removeprefix("resume:").strip()
     assert reason.startswith("unreadable manifest: ")
-    assert main(["resume", "winsome-dawn-YWH5ZS"]) == 2
+    assert entry.main(["resume", "winsome-dawn-YWH5ZS"]) == 2
     assert reason.removeprefix("unreadable manifest: ") in capsys.readouterr().err
 
 

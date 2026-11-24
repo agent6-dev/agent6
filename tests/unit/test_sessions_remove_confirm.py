@@ -19,7 +19,7 @@ import pytest
 from agent6 import paths, portable
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
-from agent6.ui.cli import main, sessions_cmds, steer_tty
+from agent6.ui.cli import entry, sessions_cmds, steer_tty
 from agent6.vcs.git import read as git_read
 
 pytestmark = pytest.mark.usefixtures("linked_worktrees")
@@ -85,7 +85,7 @@ def cli_under_pty(argv: list[str], *, stdout: pathlib.Path | None = None) -> tup
             sys.stdin = open(0, closefd=False)  # noqa: SIM115  # held until the child exits
             sys.stdout = open(1, "w", closefd=False)  # noqa: SIM115  # held until the child exits
             sys.stderr = open(2, "w", closefd=False)  # noqa: SIM115  # held until the child exits
-            code = main(argv)
+            code = entry.main(argv)
             sys.stdout.flush()
         finally:
             os._exit(code)
@@ -227,7 +227,7 @@ def test_remove_without_a_terminal_refuses_without_an_id(
         raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "remove"]) == 2
+    assert entry.main(["sessions", "remove"]) == 2
     out = capsys.readouterr()
     assert "no controlling terminal" in out.err
     assert f"agent6 sessions remove {_ID}" in out.err
@@ -249,7 +249,7 @@ def test_remove_with_an_id_without_a_terminal_deletes_without_asking(
         raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "remove", _ID]) == 0
+    assert entry.main(["sessions", "remove", _ID]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) is None
@@ -271,7 +271,7 @@ def test_remove_yes_without_a_terminal_deletes_without_asking(
         raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "remove", flag]) == 0
+    assert entry.main(["sessions", "remove", flag]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) is None
@@ -291,11 +291,11 @@ def test_remove_asks_without_a_terminal_refuses_without_yes(
         raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "remove", "--asks"]) == 2
+    assert entry.main(["sessions", "remove", "--asks"]) == 2
     err = capsys.readouterr().err
     assert "no controlling terminal" in err and "2 asks" in err and "--yes" in err
     assert asks.is_dir()
-    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
+    assert entry.main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert not asks.exists()
 
 
@@ -313,7 +313,7 @@ def test_remove_refuses_a_session_that_went_live_while_the_question_stood(
         return True
 
     monkeypatch.setattr(steer_tty, "delete_confirmed", _resumed_meanwhile)
-    assert main(["sessions", "remove", _ID]) == 2
+    assert entry.main(["sessions", "remove", _ID]) == 2
     assert "still live" in capsys.readouterr().err
     assert layout.session_dir.exists()
 
@@ -338,7 +338,7 @@ def test_remove_owns_review_refs_only_after_the_record_goes(
             raise PermissionError("record stays")
 
         monkeypatch.setattr(sessions_cmds.shutil, "rmtree", refuse)
-    assert main(["sessions", "remove", _ID]) == int(failure)
+    assert entry.main(["sessions", "remove", _ID]) == int(failure)
     assert saved.session_dir.exists() is failure
     assert bool(git_read.chain_tip(tmp_path, ref)) is failure
     assert git_read.chain_tip(tmp_path, other)
@@ -356,7 +356,7 @@ def test_remove_asks_removes_their_review_refs(
     (asks / "review-ask").mkdir(parents=True)
     ref = "refs/agent6/review-ask/review/tree"
     _git(tmp_path, "update-ref", ref, "HEAD")
-    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
+    assert entry.main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert not asks.exists()
     assert git_read.chain_tip(tmp_path, ref) is None
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID))
@@ -394,7 +394,7 @@ def test_remove_takes_the_review_reviewer_records_no_listing_shows(
     theirs = _reviewer(state, "other-rpanel-l1", "other")
     ref = f"refs/agent6/{mine.name}/review/tree"
     _git(tmp_path, "update-ref", ref, "HEAD")
-    assert main(["sessions", "remove", _ID]) == 0
+    assert entry.main(["sessions", "remove", _ID]) == 0
     assert not mine.exists() and theirs.exists()
     assert git_read.chain_tip(tmp_path, ref) is None
     assert "1 reviewer record" in capsys.readouterr().out
@@ -410,7 +410,7 @@ def test_remove_asks_takes_their_review_reviewer_records(
     (state / "sessions" / "asks" / "review-ask").mkdir(parents=True)
     asked = _reviewer(state, "review-ask-rpanel-l1", "review-ask")
     kept = _reviewer(state, f"{_ID}-rpanel-l1", _ID)
-    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
+    assert entry.main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert not asked.exists() and kept.exists()
 
 
@@ -456,7 +456,7 @@ def test_remove_takes_the_runs_children_with_it(
     _git(tmp_path, "update-ref", chain, "HEAD")
     _git(tmp_path, "branch", f"agent6/{child.name}", "HEAD")
 
-    assert main(["sessions", "remove", _ID]) == 0
+    assert entry.main(["sessions", "remove", _ID]) == 0
 
     assert not child.exists() and not child_reviewer.exists() and other.exists()
     assert git_read.chain_tip(tmp_path, chain) is None
@@ -477,7 +477,7 @@ def test_remove_refuses_while_a_child_of_the_run_is_live(
     child = _child(paths.state_dir(tmp_path), f"{_ID}-p1-l1", _ID)
     process.write_worker_pid(child, os.getpid())
 
-    assert main(["sessions", "remove", _ID]) == 2
+    assert entry.main(["sessions", "remove", _ID]) == 2
 
     assert layout.session_dir.exists() and child.exists()
     assert f"{child.name} is still live" in capsys.readouterr().err

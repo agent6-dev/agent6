@@ -16,7 +16,7 @@ from agent6.app.review import actions as review_actions
 from agent6.config import Config
 from agent6.sessions import event_log, journal, layout, lock, manifest
 from agent6.ui import spawn
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.ui.tui import home
 from agent6.ui.web import server
 from agent6.vcs import review
@@ -138,7 +138,7 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
     assert all(f.line_origin.kind == "pre_existing" for f in view.findings)
     (paths.state_dir(tmp_path) / "config.toml").write_text('[review]\nblock_on = "any"\n')
     if surface == "cli":
-        ok = main(["sessions", "merge", run.session_id]) == 0
+        ok = entry.main(["sessions", "merge", run.session_id]) == 0
         captured = capsys.readouterr()
         text = captured.out + captured.err
     elif surface == "tui":
@@ -177,7 +177,7 @@ def test_advisory_merge_reports_open_blocks_and_merges(
     tmp_path: pathlib.Path, run: layout.SessionLayout, capsys: pytest.CaptureFixture[str]
 ) -> None:
     tip = _git(tmp_path, "rev-parse", "agent6/review-run")
-    assert main(["sessions", "merge", run.session_id, "--method", "ff_only"]) == 0
+    assert entry.main(["sessions", "merge", run.session_id, "--method", "ff_only"]) == 0
     assert _git(tmp_path, "rev-parse", "main") == tip
     output = capsys.readouterr()
     assert "2 open block findings" in output.out + output.err

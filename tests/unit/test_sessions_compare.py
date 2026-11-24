@@ -31,7 +31,7 @@ from agent6.config import Config, layer_data
 from agent6.providers import provider_calls, provider_types
 from agent6.sessions import completion
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import compare_ranking, main
+from agent6.ui.cli import compare_ranking, entry
 from agent6.viewmodel import format
 
 
@@ -139,7 +139,7 @@ def test_compare_needs_at_least_two_ids(
 ) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
-    rc = main(["sessions", "compare", "run-AAAA11"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11"])
     assert rc == 2
     assert "2 or more run ids, or one --parallel group id" in capsys.readouterr().err
 
@@ -162,7 +162,7 @@ def test_compare_of_a_group_id_compares_its_children(
             manifest_extra={"parallel": {"group": "fan", "number": child, "parent": "fan"}},
         )
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
-    assert main(["sessions", "compare", "fan"]) == 0
+    assert entry.main(["sessions", "compare", "fan"]) == 0
     out = capsys.readouterr().out
     assert "comparing 2 runs" in out
     assert "fan-1" in out and "fan-2" in out and "run-AAAA11" not in out
@@ -173,7 +173,7 @@ def test_compare_unknown_id_errors_loudly(
 ) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
-    rc = main(["sessions", "compare", "run-AAAA11", "nonexistent"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "nonexistent"])
     assert rc == 2
     assert "no session matches" in capsys.readouterr().err
 
@@ -185,7 +185,7 @@ def test_compare_ambiguous_id_errors_loudly(
     _setup_run(repo, "run-DUPXX1", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     _setup_run(repo, "run-DUPXX2", base_sha=base, commits=[("b.txt", "b\n", "add b")])
     _setup_run(repo, "run-CCCC33", base_sha=base, commits=[("c.txt", "c\n", "add c")])
-    rc = main(["sessions", "compare", "run-DUP", "run-CCCC33"])
+    rc = entry.main(["sessions", "compare", "run-DUP", "run-CCCC33"])
     assert rc == 2
     assert "ambiguous" in capsys.readouterr().err
 
@@ -196,7 +196,7 @@ def test_compare_rejects_duplicate_id(
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")])
-    rc = main(["sessions", "compare", "run-AAAA11", "run-AAAA11"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-AAAA11"])
     assert rc == 2
     assert "more than once" in capsys.readouterr().err
 
@@ -228,7 +228,7 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
         status="passed",
         cost=0.09,
     )
-    rc = main(["sessions", "compare", "run-AAAA", "run-BBBB22"])  # unique prefix + exact id
+    rc = entry.main(["sessions", "compare", "run-AAAA", "run-BBBB22"])  # unique prefix + exact id
     assert rc == 0
     out = capsys.readouterr().out
     assert "ranked candidates" in out
@@ -247,7 +247,7 @@ def test_compare_row_of_a_run_without_a_commit_offers_no_merge(
     _setup_run(repo, "run-CCCC77", base_sha=base, commits=[("c.txt", "c\n", "add c")])
     _setup_run(repo, "run-NNNN88", base_sha=base, commits=[], status="passed", cost=0.01)
     _git(repo, "branch", "-D", "agent6/run-NNNN88")  # a run's branch appears at its first commit
-    assert main(["sessions", "compare", "run-CCCC77", "run-NNNN88"]) == 0
+    assert entry.main(["sessions", "compare", "run-CCCC77", "run-NNNN88"]) == 0
     out = capsys.readouterr().out
     assert next(ln for ln in out.splitlines() if "run-CCCC77" in ln).endswith(
         "merge with: agent6 sessions merge run-CCCC77"
@@ -264,10 +264,10 @@ def test_compare_marks_a_run_merged_only_until_its_next_commit(
     base = _init_repo(repo)
     _setup_run(repo, "run-MMMM55", base_sha=base, commits=[("m.txt", "m\n", "add m")])
     _setup_run(repo, "run-NNNN66", base_sha=base, commits=[("n.txt", "n\n", "add n")])
-    assert main(["sessions", "merge", "run-MMMM55"]) == 0
+    assert entry.main(["sessions", "merge", "run-MMMM55"]) == 0
     capsys.readouterr()
     compare = ["sessions", "compare", "run-MMMM55", "run-NNNN66"]
-    assert main(compare) == 0
+    assert entry.main(compare) == 0
     out = capsys.readouterr().out
     merged_row = next(line for line in out.splitlines() if "run-MMMM55" in line)
     assert merged_row.endswith("merged into main")
@@ -279,7 +279,7 @@ def test_compare_marks_a_run_merged_only_until_its_next_commit(
     _git(repo, "commit", "-qm", "extend m", "--", "m.txt")
     _git(repo, "update-ref", "refs/agent6/run-MMMM55/head", "HEAD")
     _git(repo, "switch", "main")
-    assert main(compare) == 0
+    assert entry.main(compare) == 0
     out = capsys.readouterr().out
     resumed_row = next(line for line in out.splitlines() if "run-MMMM55" in line)
     assert resumed_row.endswith("merge with: agent6 sessions merge run-MMMM55")
@@ -309,7 +309,7 @@ def test_compare_rows_and_total_format_cost_the_same_way(
         status="passed",
         cost=0.02,
     )
-    assert main(["sessions", "compare", "run-CCCC33", "run-DDDD44"]) == 0
+    assert entry.main(["sessions", "compare", "run-CCCC33", "run-DDDD44"]) == 0
     out = capsys.readouterr().out
     assert "$1.5000" not in out
     assert "$1.50" in out
@@ -345,7 +345,7 @@ def test_compare_excludes_a_run_that_never_finished(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-FFFF66")
     (layout.session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
 
-    assert main(["sessions", "compare", "run-EEEE55", "run-FFFF66"]) == 0
+    assert entry.main(["sessions", "compare", "run-EEEE55", "run-FFFF66"]) == 0
     out = capsys.readouterr().out
     assert "1. run-EEEE55" in out
     assert "1. run-FFFF66" not in out
@@ -385,7 +385,7 @@ def test_compare_excludes_a_run_that_is_still_live(
         str(os.getpid()), encoding="utf-8"
     )  # ...but LIVE
 
-    assert main(["sessions", "compare", "run-GGGG77", "run-HHHH88"]) == 0
+    assert entry.main(["sessions", "compare", "run-GGGG77", "run-HHHH88"]) == 0
     out = capsys.readouterr().out
     assert "1. run-GGGG77" in out
     assert "1. run-HHHH88" not in out
@@ -404,7 +404,7 @@ def test_compare_is_read_only(repo: pathlib.Path) -> None:
             state_dir=paths.state_dir(repo), session_id="run-AAAA11"
         ).manifest_path
     ).read_text(encoding="utf-8")
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
     assert rc == 0
     assert _git(repo, "rev-parse", "main") == head_before
     assert (
@@ -582,7 +582,7 @@ def test_compare_uses_judge_when_reviewer_configured(
     provider = _FakeProvider([verdict])
     _stub_reviewers(monkeypatch, _stub_builder(provider))
 
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -604,7 +604,7 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
     provider = _CostingFakeProvider([verdict])
     _stub_reviewers(monkeypatch, _costing_stub_builder(provider))
 
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -631,7 +631,7 @@ def test_plan_points_and_a_judge_s_dollars_are_not_added(
     _write_reviewer_config(repo)
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b is cleaner"}'
     _stub_reviewers(monkeypatch, _costing_stub_builder(_CostingFakeProvider([verdict])))
-    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    assert entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
     out = capsys.readouterr().out
     assert "total: candidates 2pt + judge $0.01\n" in out
 
@@ -650,7 +650,7 @@ def test_without_a_judge_the_candidates_keep_their_points(
             cost=0.0,
             plan_points=1.0,
         )
-    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    assert entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
     assert "total: candidates 2pt\n" in capsys.readouterr().out
 
 
@@ -685,7 +685,7 @@ def test_the_candidates_total_reads_as_their_rows_do(
         _setup_run(
             repo, sid, base_sha=base, commits=[(f"{name}.txt", f"{name}\n", f"add {name}")], **spend
         )
-    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    assert entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
     assert f"total: {total}" in capsys.readouterr().out
 
 
@@ -707,7 +707,7 @@ def test_unpriced_candidates_make_the_sum_with_the_judge_a_lower_bound(
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b is cleaner"}'
     provider = _CostingFakeProvider([verdict])
     _stub_reviewers(monkeypatch, _costing_stub_builder(provider))
-    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    assert entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
     assert "total: candidates $? + judge $0.01 = ~$0.01\n" in capsys.readouterr().out
 
 
@@ -742,7 +742,7 @@ def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
     verdict = '{"order": ["run-AAAA11", "run-BBBB22"], "summary": "a is cleaner"}'
     _stub_reviewers(monkeypatch, _stub_builder(_FakeProvider([verdict])))
 
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -772,7 +772,7 @@ def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
     verdict = '{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b still wins"}'
     _stub_reviewers(monkeypatch, _stub_builder(_FakeProvider([verdict])))
 
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     assert "note:" not in capsys.readouterr().out
@@ -792,7 +792,7 @@ def test_failed_judge_announces_what_its_attempts_still_spent(
     provider = _CostingFakeProvider(["not json at all", "still not json"])
     _stub_reviewers(monkeypatch, _costing_stub_builder(provider))
 
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     captured = capsys.readouterr()
@@ -839,7 +839,7 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
 
     _stub_reviewers(monkeypatch, _build)
 
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -874,7 +874,7 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
     provider = _FakeProvider(["not json at all", "still not json"])
     _stub_reviewers(monkeypatch, _stub_builder(provider))
 
-    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = entry.main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     captured = capsys.readouterr()
@@ -1155,7 +1155,7 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     data["merged"] = {"into": "main", "sha": merged_sha, "tip": tip}
     manifest.write_text(json.dumps(data), encoding="utf-8")
     _setup_run(repo, "run-QQQQ88", base_sha=base, commits=[("q.txt", "q\n", "add q")])
-    assert main(["sessions", "compare", "run-PPPP77", "run-QQQQ88"]) == 0
+    assert entry.main(["sessions", "compare", "run-PPPP77", "run-QQQQ88"]) == 0
     out = capsys.readouterr().out
     assert "read from the recorded merge" in out
     assert "empty diff" not in out.lower()
@@ -1205,7 +1205,7 @@ def test_compare_of_a_group_id_prints_the_recorded_verdict_without_judging(
     judge = _FakeProvider(['{"order": ["run-AAAA11", "run-BBBB22"], "summary": "flip"}'])
     _stub_reviewers(monkeypatch, _stub_builder(judge))
 
-    rc = main(["sessions", "compare", "fan"])
+    rc = entry.main(["sessions", "compare", "fan"])
 
     assert rc == 0
     assert judge.calls == 0, "the recorded verdict is on disk; asking for it costs nothing"
@@ -1224,7 +1224,7 @@ def test_rejudge_on_a_group_id_spends_a_fresh_judge_call(
     judge = _FakeProvider(['{"order": ["run-AAAA11", "run-BBBB22"], "summary": "flip"}'])
     _stub_reviewers(monkeypatch, _stub_builder(judge))
 
-    rc = main(["sessions", "compare", "fan", "--rejudge"])
+    rc = entry.main(["sessions", "compare", "fan", "--rejudge"])
 
     assert rc == 0
     assert judge.calls == 1
@@ -1250,7 +1250,7 @@ def test_a_group_with_no_recorded_verdict_is_judged(
     judge = _FakeProvider(['{"order": ["run-BBBB22", "run-AAAA11"], "summary": "b wins"}'])
     _stub_reviewers(monkeypatch, _stub_builder(judge))
 
-    rc = main(["sessions", "compare", "fan"])
+    rc = entry.main(["sessions", "compare", "fan"])
 
     assert rc == 0
     assert judge.calls == 1

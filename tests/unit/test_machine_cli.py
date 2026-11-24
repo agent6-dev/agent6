@@ -21,7 +21,7 @@ from agent6.app.machine import agent
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
 from agent6.sessions import ipc, process
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def _git_init(path: pathlib.Path) -> None:
@@ -70,7 +70,7 @@ def test_run_exit_on_wait_yields_waiting(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    code = main(["machine", "run", str(f), "--exit-on-wait"])
+    code = entry.main(["machine", "run", str(f), "--exit-on-wait"])
     assert code == 0
     out = capsys.readouterr().out
     assert "WAITING" in out
@@ -92,7 +92,7 @@ def test_a_foreground_wait_says_where_it_parked(
     )
     f.write_text(ticks_at_once, encoding="utf-8")
 
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
 
     captured = capsys.readouterr()
     assert "waiting in 'poll': wakes at " in captured.err
@@ -114,7 +114,7 @@ def test_a_polling_run_prints_the_poke_hint_once(
         '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "poked"\n',
         encoding="utf-8",
     )
-    assert main(["machine", "run", str(f)]) == 1
+    assert entry.main(["machine", "run", str(f)]) == 1
     captured = capsys.readouterr()
     assert captured.err.count("wakes at") == 2
     assert captured.err.count("agent6 machine poke poller") == 1
@@ -126,7 +126,7 @@ def test_the_waiting_line_names_its_state_once(
     """The WAITING ending does not repeat its state inside the engine's reason."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     out = capsys.readouterr().out
     assert "WAITING: waiter_delayed paused in 'poll'" in out
     assert out.count("'poll'") == 1
@@ -146,7 +146,7 @@ def test_run_prints_a_notify_on_the_foreground_terminal(
         ),
         encoding="utf-8",
     )
-    code = main(["machine", "run", str(f), "--exit-on-wait"])
+    code = entry.main(["machine", "run", str(f), "--exit-on-wait"])
     assert code == 0
     err = capsys.readouterr().err
     assert "[agent6] notify [warn] 'poll': parked, awaiting a poke" in err
@@ -157,12 +157,12 @@ def test_status_reports_waiting_state_and_spend(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     # `--exit-on-wait` exits the process; in-process the pid is this pytest, so clear it.
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     process.clear_worker_pid(root)
-    code = main(["machine", "status", "waiter_delayed"])
+    code = entry.main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
     assert "waiter_delayed" in out
@@ -177,12 +177,12 @@ def test_status_of_a_parked_instance_with_no_worker_names_the_resume_command(
     """With no worker alive, status names `machine run` and never says a poke wakes it now."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert not process.worker_is_alive(root)
 
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
 
     out = capsys.readouterr().out
     assert "wakes it now" not in out
@@ -190,7 +190,7 @@ def test_status_of_a_parked_instance_with_no_worker_names_the_resume_command(
     assert "resume with `agent6 machine run waiter_delayed`" in out
     assert "a poke wakes it on that run: agent6 machine poke waiter_delayed" in out
     # The command as printed resumes the instance: `machine run` takes the name.
-    assert main(["machine", "run", "waiter_delayed", "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", "waiter_delayed", "--exit-on-wait"]) == 0
     assert "WAITING: waiter_delayed paused in 'poll'" in capsys.readouterr().out
 
 
@@ -214,14 +214,14 @@ def test_status_after_an_operator_stop_names_the_resume_command(
     stopper = threading.Thread(target=stop_once_parked)
     stopper.start()
     try:
-        assert main(["machine", "run", str(f)]) == 0
+        assert entry.main(["machine", "run", str(f)]) == 0
     finally:
         stopper.join()
     stopped = capsys.readouterr().out
     assert "STOPPED: waiter_delayed parked in 'poll'" in stopped
     assert "resume with `agent6 machine run waiter_delayed`." in stopped
 
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
 
     out = capsys.readouterr().out
     assert "wakes it now" not in out
@@ -235,10 +235,10 @@ def test_attach_to_a_parked_instance_with_no_worker_names_the_resume_command(
     """With no worker alive, the watch's exit line names `machine run`, not a poke that resumes."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
 
-    assert main(["attach", "waiter_delayed"]) == 0
+    assert entry.main(["attach", "waiter_delayed"]) == 0
 
     out = capsys.readouterr().out
     assert "poke to resume" not in out
@@ -254,13 +254,13 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     """A foreground `machine run` persists its wait record before sleeping; the poke line shows."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert machine_journal.MachineJournal(root).read_pending_wait() is not None
     # The run cleared its own pid on exit; re-stamp a live worker (this pytest).
     process.write_worker_pid(root, os.getpid())
-    code = main(["machine", "status", "waiter_delayed"])
+    code = entry.main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
     assert "status: waiting" in out
@@ -274,13 +274,13 @@ def test_status_names_a_poke_only_for_an_armed_wait(
     """The poke line comes from the wait record, never from the fold's guess."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     machine_journal.MachineJournal(root).clear_pending_wait()
     process.write_worker_pid(root, os.getpid())
 
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
 
     out = capsys.readouterr().out
     assert "machine poke" not in out
@@ -293,20 +293,20 @@ def test_status_shows_a_pending_poke_until_it_is_acked(
     """A poke the machine has not acted on shows its payload until the wake's step is acked."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     process.clear_worker_pid(root)
-    assert main(["machine", "poke", "waiter_delayed", "--message", "go"]) == 0
+    assert entry.main(["machine", "poke", "waiter_delayed", "--message", "go"]) == 0
     capsys.readouterr()
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
     assert "poke pending: 'go'" in capsys.readouterr().out
     journal = machine_journal.MachineJournal(root)
     assert journal.take_signal() == (True, "go")  # claimed, the step not yet durable
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
     assert "poke pending: 'go'" in capsys.readouterr().out
     journal.ack_signal()
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
     assert "poke pending" not in capsys.readouterr().out
 
 
@@ -316,13 +316,13 @@ def test_status_of_an_alive_but_parked_instance_reads_waiting(
     """machine_word_for_dir checks `parked` before `alive`: alive-but-parked reads "waiting"."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     # a LIVE worker alongside the persisted wait
     process.write_worker_pid(root, os.getpid())
 
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
     out = capsys.readouterr().out
     assert "status: waiting" in out  # parked wins over alive
     assert "status: running" not in out
@@ -334,13 +334,13 @@ def test_status_tolerates_a_corrupt_pending_wait(
     """A corrupt wait.json does not abort the readout: status reads parked and notes the file."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     process.clear_worker_pid(root)
     machine_journal.MachineJournal(root).wait_path.write_text("{ not valid json", encoding="utf-8")
 
-    code = main(["machine", "status", "waiter_delayed"])
+    code = entry.main(["machine", "status", "waiter_delayed"])
     assert code == 0  # not aborted
     out = capsys.readouterr().out
     assert "pending wait: unreadable" in out  # truthful, not silently swallowed
@@ -403,7 +403,7 @@ def test_status_reports_stopped_for_a_crashed_instance(
         )
     )
     # No worker.pid file -> not alive; no pending wait -> not parked.
-    assert main(["machine", "status", "crasher"]) == 0
+    assert entry.main(["machine", "status", "crasher"]) == 0
     out = capsys.readouterr().out
     assert "status: stopped" in out
 
@@ -412,7 +412,7 @@ def test_status_missing_instance_errors(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    code = main(["machine", "status", "nope"])
+    code = entry.main(["machine", "status", "nope"])
     assert code == 2
     assert "no machine instance" in capsys.readouterr().err
 
@@ -430,9 +430,9 @@ def test_a_missing_instance_names_available_instances_and_the_run_command(
     monkeypatch.chdir(tmp_path)
     if existing:
         f = _write_machine(tmp_path)
-        assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+        assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
         capsys.readouterr()
-    assert main(["machine", verb, "nosuch"]) == 2
+    assert entry.main(["machine", verb, "nosuch"]) == 2
     err = capsys.readouterr().err
     assert "no machine instance 'nosuch'" in err
     assert str(tmp_path) in err
@@ -471,10 +471,10 @@ def test_status_asm_file_path_hints_the_instance_id(
     # `machine run` takes a file; the other verbs take the instance id and suggest it for a file.
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)  # machine = "waiter_delayed"
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     process.clear_worker_pid(paths.state_dir(tmp_path) / "machines" / "waiter_delayed")
-    code = main(["machine", "status", "waiter.asm.toml"])
+    code = entry.main(["machine", "status", "waiter.asm.toml"])
     assert code == 2
     err = capsys.readouterr().err
     assert "no machine instance" in err
@@ -487,7 +487,7 @@ def test_status_on_an_invalid_machine_file_names_it_as_a_file(
     """An unparsable .asm.toml where an id belongs is still a file, and the hint says so."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "bad.asm.toml").write_text('machine = "bad"\n', encoding="utf-8")
-    assert main(["machine", "status", "bad.asm.toml"]) == 2
+    assert entry.main(["machine", "status", "bad.asm.toml"]) == 2
     err = capsys.readouterr().err
     assert "no machine instance" in err
     assert "machine file" in err, err
@@ -526,10 +526,10 @@ def test_watch_finished_instance_shows_overview_and_end(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     capsys.readouterr()  # drop run output
     # A finished instance has a MachineEnd, so `attach` prints the overview and returns.
-    code = main(["attach", "tiny"])
+    code = entry.main(["attach", "tiny"])
     assert code == 0
     out = capsys.readouterr().out
     assert "machine: tiny" in out
@@ -564,7 +564,7 @@ def _watch_in_thread(timeout_s: float) -> tuple[list[int], bool]:
     import threading
 
     result: list[int] = []
-    t = threading.Thread(target=lambda: result.append(main(["attach", "tiny"])), daemon=True)
+    t = threading.Thread(target=lambda: result.append(entry.main(["attach", "tiny"])), daemon=True)
     t.start()
     t.join(timeout=timeout_s)
     return result, t.is_alive()
@@ -594,7 +594,7 @@ def test_watch_follows_a_live_machine_in_a_wait(
     inst = paths.state_dir(tmp_path) / "machines" / "tiny"
     process.write_worker_pid(inst, os.getpid())
     result: list[int] = []
-    t = threading.Thread(target=lambda: result.append(main(["attach", "tiny"])), daemon=True)
+    t = threading.Thread(target=lambda: result.append(entry.main(["attach", "tiny"])), daemon=True)
     t.start()
     t.join(timeout=2.0)
     assert t.is_alive(), f"attach left a live machine: exit {result}"
@@ -644,9 +644,9 @@ def test_replay_pluralizes_the_transition_count(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    assert main(["machine", "replay", "tiny"]) == 0
+    assert entry.main(["machine", "replay", "tiny"]) == 0
     out = capsys.readouterr().out
     assert "after 1 transition (" in out and "1 transitions" not in out
 
@@ -659,7 +659,7 @@ def test_run_refuses_uncommitted_machine(
     _git_init(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    code = main(["machine", "run", str(f)])
+    code = entry.main(["machine", "run", str(f)])
     assert code == 2  # a refusal, like every REFUSING
     err = capsys.readouterr().err
     assert "uncommitted" in err and "committed machine" in err
@@ -707,7 +707,7 @@ def test_run_checks_the_whole_repository_from_a_subdirectory(
     subdir = tmp_path / "subdir"
     subdir.mkdir()
     monkeypatch.chdir(subdir)
-    assert main(["machine", "run", "../machines/tiny.asm.toml"]) == 2
+    assert entry.main(["machine", "run", "../machines/tiny.asm.toml"]) == 2
     assert "has uncommitted changes" in capsys.readouterr().err
     assert not (paths.state_dir(subdir) / "machines" / "tiny" / "journal.jsonl").exists()
 
@@ -789,7 +789,7 @@ def test_first_run_records_the_bundle_and_drift_refuses_continuation(
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
 
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     assert "WAITING" in capsys.readouterr().out
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     recorded = root / "scripts" / "do.py"
@@ -797,13 +797,13 @@ def test_first_run_records_the_bundle_and_drift_refuses_continuation(
 
     (scripts / "do.py").write_text("print('changed')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "edit"], check=True)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 2  # a refusal
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 2  # a refusal
     err = capsys.readouterr().err
     assert "scripts/do.py" in err and "archive the instance" in err
 
     (scripts / "do.py").write_text("print('hi')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "restore"], check=True)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     assert "WAITING" in capsys.readouterr().out
 
 
@@ -816,11 +816,11 @@ def test_continuation_refuses_an_edited_machine_file(
     f = _write_machine(tmp_path)
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     f.write_text(WAITER_DELAYED.replace('reason = "ticked"', 'reason = "changed"'), "utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "edit"], check=True)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 2  # a refusal
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 2  # a refusal
     err = capsys.readouterr().err
     assert "differs from the recorded" in err and "archive the instance" in err
 
@@ -835,18 +835,18 @@ def test_run_refuses_rerun_of_ended_instance(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0  # runs to a terminal
+    assert entry.main(["machine", "run", str(f)]) == 0  # runs to a terminal
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "tiny"
     # Stand in for the previous worker having exited: a pid that is never alive.
     sentinel = 10**9
     process.write_worker_pid(root, sentinel)
-    code = main(["machine", "run", str(f)])
+    code = entry.main(["machine", "run", str(f)])
     assert code == 2  # a refusal
     err = capsys.readouterr().err
     assert "already ended" in err
     assert f"`agent6 machine run {f} --restart`" in err
-    assert main(["machine", "run", "tiny"]) == 2
+    assert entry.main(["machine", "run", "tiny"]) == 2
     assert "`agent6 machine run tiny --restart`" in capsys.readouterr().err
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
     assert process.read_worker_pid(root) == sentinel
@@ -869,7 +869,7 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path.parent / f"{tmp_path.name} state"))
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
@@ -881,7 +881,7 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
 
     # The drift refusal prints a shell-quoted command even when the state path has spaces.
     f.write_text(WAITER_DELAYED.replace('reason = "ticked"', 'reason = "changed"'), "utf-8")
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 2
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 2
     err = capsys.readouterr().err
     match = re.search(r"`(mv -- [^`]+)`", err)
     assert match is not None, err
@@ -894,7 +894,7 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
     assert not root.exists()
     assert (target / "machine.asm.toml").is_file()
     assert machine_state.machine_instance_dirs(state_dir) == []
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
 
 
 def _committed_waiter(repo: pathlib.Path) -> pathlib.Path:
@@ -919,16 +919,16 @@ def test_restart_archives_an_ended_run_and_starts_fresh(
 
     monkeypatch.chdir(tmp_path)
     f = _committed_waiter(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
-    assert main(["machine", "poke", "waiter_delayed"]) == 0
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "poke", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
     old = machine_journal.MachineJournal(root).read()
     assert isinstance(old[-1], machine_journal.MachineEnd) and old[-1].state == "woken"
     capsys.readouterr()
 
-    assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
 
     captured = capsys.readouterr()
     assert "WAITING" in captured.out  # the fresh run parks at its first wait
@@ -959,18 +959,18 @@ def test_restart_archives_a_stopped_wait_and_starts_fresh(
 
     monkeypatch.chdir(tmp_path)
     f = _committed_waiter(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
     begun = machine_journal.MachineJournal(root).read()
     armed = machine_journal.MachineJournal(root).read_pending_wait()
     capsys.readouterr()
 
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     assert machine_journal.MachineJournal(root).read() == begun
     assert machine_journal.MachineJournal(root).read_pending_wait() == armed
     with machine_journal.machine_lock(root):
-        assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 1
+        assert entry.main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 1
     err = capsys.readouterr().err
     assert "waiter_delayed is already running" in err
     # The refusal named the lock file and no next step.
@@ -978,7 +978,7 @@ def test_restart_archives_a_stopped_wait_and_starts_fresh(
     assert not list(state_dir.glob("waiter_delayed.archived-*"))
 
     before = datetime.datetime.now(datetime.UTC)
-    assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
 
     captured = capsys.readouterr()
     assert "WAITING" in captured.out
@@ -1003,7 +1003,7 @@ def test_restart_checks_the_previous_branch_even_without_a_run_state(
     monkeypatch.chdir(tmp_path)
     f = _committed_waiter(tmp_path)
     args = ["machine", "run", str(f), "--exit-on-wait"]
-    assert main(args) == 0
+    assert entry.main(args) == 0
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
     old = machine_journal.MachineJournal(root).read()
@@ -1015,7 +1015,7 @@ def test_restart_checks_the_previous_branch_even_without_a_run_state(
     ).stdout.strip()
     branch = "agent6/machine-waiter_delayed"
     subprocess.run(["git", "update-ref", f"refs/heads/{branch}", work], check=True)
-    assert main([*args, "--restart"]) == 2
+    assert entry.main([*args, "--restart"]) == 2
     assert f"git merge {branch}" in capsys.readouterr().err
     assert machine_journal.MachineJournal(root).read() == old
     assert not list(state_dir.glob("waiter_delayed.archived-*"))
@@ -1026,9 +1026,9 @@ def test_poke_drops_signal_for_waiting_machine(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    code = main(["machine", "poke", "waiter_delayed"])
+    code = entry.main(["machine", "poke", "waiter_delayed"])
     assert code == 0
     assert "poked" in capsys.readouterr().out
     # The signal is now pending for the next take_signal().
@@ -1041,15 +1041,15 @@ def test_poke_carries_data_payload(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    assert main(["machine", "poke", "waiter_delayed", "--data", '{"cmd": "go"}']) == 0
+    assert entry.main(["machine", "poke", "waiter_delayed", "--data", '{"cmd": "go"}']) == 0
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     j = machine_journal.MachineJournal(root)
     assert j.take_signal() == (True, {"cmd": "go"})
     j.ack_signal()
     # --message wraps a plain string.
-    assert main(["machine", "poke", "waiter_delayed", "--message", "hello"]) == 0
+    assert entry.main(["machine", "poke", "waiter_delayed", "--message", "hello"]) == 0
     assert j.take_signal() == (True, "hello")
 
 
@@ -1058,9 +1058,9 @@ def test_poke_rejects_invalid_json_data(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    assert main(["machine", "poke", "waiter_delayed", "--data", "{not json}"]) == 2
+    assert entry.main(["machine", "poke", "waiter_delayed", "--data", "{not json}"]) == 2
     assert "not valid JSON" in capsys.readouterr().err
 
 
@@ -1071,9 +1071,9 @@ def test_poke_refuses_ended_machine(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    code = main(["machine", "poke", "tiny"])
+    code = entry.main(["machine", "poke", "tiny"])
     assert code == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING:") and "already ended" in err
@@ -1098,7 +1098,7 @@ def test_poke_refuses_an_instance_without_an_open_wait(
     if alive:
         process.write_worker_pid(root, os.getpid())
 
-    assert main(["machine", "poke", "tiny"]) == 2
+    assert entry.main(["machine", "poke", "tiny"]) == 2
 
     assert "machine 'tiny' has no open wait to poke" in capsys.readouterr().err
     assert not (root / "signal").exists()
@@ -1108,7 +1108,7 @@ def test_poke_missing_instance_errors(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    code = main(["machine", "poke", "nope"])
+    code = entry.main(["machine", "poke", "nope"])
     assert code == 2
     assert "no machine instance" in capsys.readouterr().err
 
@@ -1121,7 +1121,7 @@ def test_poke_rejects_an_absolute_path_as_an_instance_id(
     victim = tmp_path / "not-a-machine"
     victim.mkdir()
 
-    assert main(["machine", "poke", str(victim)]) == 2
+    assert entry.main(["machine", "poke", str(victim)]) == 2
 
     assert "no machine instance" in capsys.readouterr().err
     assert not (victim / "signal").exists()
@@ -1174,7 +1174,7 @@ def test_machine_check_accepts_read_only_mode(
         body = body.replace('kind = "agent"', f'kind = "agent"\nmode = "{mode}"')
     source.write_text(body, encoding="utf-8")
 
-    assert main(["machine", "check", str(source)]) == 0, capsys.readouterr().err
+    assert entry.main(["machine", "check", str(source)]) == 0, capsys.readouterr().err
     state = semantics.load_machine(source).states["judge"]
     assert isinstance(state, schema.AgentState)
     assert state.mode == "read_only"
@@ -1191,7 +1191,7 @@ def test_machine_check_refuses_agent_mode(
         encoding="utf-8",
     )
 
-    assert main(["machine", "check", str(source)]) == 1
+    assert entry.main(["machine", "check", str(source)]) == 1
     problems = capsys.readouterr().err.splitlines()
     assert len(problems) == 2
     assert "mode" in problems[1] and "read_only" in problems[1]
@@ -1272,7 +1272,7 @@ model = "anthropic/x"
 
     monkeypatch.setattr(agent, "state_overlay", capture)
     argv = ["machine", "run", str(source), "--exit-on-wait", "--auto-approve"]
-    assert main(argv) == 0
+    assert entry.main(argv) == 0
     root = layout.machines_root(paths.state_dir(tmp_path)) / "wait-then-run"
     journal = machine_journal.MachineJournal(root)
     first = journal.read()[0]
@@ -1281,7 +1281,7 @@ model = "anthropic/x"
     agents.write_text("## Setup command\n\n```sh\nfalse\n```\n")
     subprocess.run(["git", "commit", "-qam", "move checkout"], check=True)
     assert git_read.status(tmp_path).head_sha != base
-    assert main(argv) == 0
+    assert entry.main(argv) == 0
     assert carried == [("true",), ("true",)]
     begins = [event for event in journal.read() if isinstance(event, machine_journal.MachineBegin)]
     assert begins == [first]
@@ -1340,7 +1340,7 @@ def test_fresh_instance_refuses_unmerged_visible_branch(
     branch = "agent6/machine-wait-then-run"
     branch_tip = git_read.chain_tip(tmp_path, branch)
 
-    assert main(["machine", "run", str(f), "--exit-on-wait", "--auto-approve"]) == 2
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait", "--auto-approve"]) == 2
     captured = capsys.readouterr()
     assert "WAITING" not in captured.out
     assert f"git merge {branch}" in captured.err
@@ -1380,7 +1380,7 @@ def test_a_state_default_supplies_the_required_baseline(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", build)
-    assert main(["--config", str(cfg), "machine", "run", str(machine)]) == 0
+    assert entry.main(["--config", str(cfg), "machine", "run", str(machine)]) == 0
 
 
 def _stub_agent_result(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1473,7 +1473,7 @@ def test_machine_preflight_judges_the_states_routes(
         encoding="utf-8",
     )
 
-    assert main(["--config", str(config), "machine", "run", str(machine)]) == 0
+    assert entry.main(["--config", str(config), "machine", "run", str(machine)]) == 0
     err = capsys.readouterr().err
     assert ("'plan-model' draws on a subscription plan" in err) is plan_note
 
@@ -1520,7 +1520,7 @@ def test_machine_run_end_line_carries_spend_and_tokens(
         stopper.start()
     flags = ["--exit-on-wait"] if ending == "waiting" else []
     try:
-        assert main(["--config", str(config), "machine", "run", str(machine), *flags]) == 0
+        assert entry.main(["--config", str(config), "machine", "run", str(machine), *flags]) == 0
     finally:
         if stopper is not None:
             stopper.join()
@@ -1549,7 +1549,7 @@ def test_run_refuses_a_legacy_journal_without_a_starting_commit(
         '{"type":"machine.begin","ts":"t","machine":"run-warn","version":1}\n',
         encoding="utf-8",
     )
-    assert main(["machine", "run", str(source)]) == 2
+    assert entry.main(["machine", "run", str(source)]) == 2
     output = capsys.readouterr().err
     assert (
         "journal has no starting commit.\nTo start fresh, archive the instance directory"
@@ -1569,7 +1569,7 @@ def test_run_refuses_clone_setup_under_ask_at_preflight(
     (tmp_path / "AGENTS.md").write_text("## Setup command\n\n```sh\ntrue\n```\n")
     subprocess.run(["git", "add", "setup.asm.toml", "AGENTS.md"], check=True)
     subprocess.run(["git", "commit", "-qm", "machine"], check=True)
-    assert main(["machine", "run", str(machine_file)]) == 2
+    assert entry.main(["machine", "run", str(machine_file)]) == 2
     output = capsys.readouterr().err
     assert output.count("REFUSING:") == 1
     assert "needs workspace setup" in output
@@ -1586,7 +1586,7 @@ def test_run_warns_on_mode_run_states_under_ask_policy(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "runwarn.asm.toml"
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
-    code = main(["machine", "run", str(f)])
+    code = entry.main(["machine", "run", str(f)])
     err = capsys.readouterr().err
     assert code == 2  # no worker configured: refused right after the note
     assert "auto-denies" in err and "--auto-approve" in err
@@ -1602,7 +1602,7 @@ def test_run_warns_naming_the_config_file_the_ask_came_from(
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
     config = tmp_path / "ask.toml"
     config.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
-    assert main(["--config", str(config), "machine", "run", str(f)]) == 2
+    assert entry.main(["--config", str(config), "machine", "run", str(f)]) == 2
     err = capsys.readouterr().err
     assert f'set sandbox.run_commands = "allow" in {config}' in err
     assert "config set --repo" not in err
@@ -1620,7 +1620,9 @@ def test_run_warns_naming_the_last_config_file(
     first.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
     second = tmp_path / "later.toml"
     second.write_text("[review]\ninterval_turns = 7\n", encoding="utf-8")
-    assert main(["--config", str(first), "--config", str(second), "machine", "run", str(f)]) == 2
+    assert (
+        entry.main(["--config", str(first), "--config", str(second), "machine", "run", str(f)]) == 2
+    )
     err = capsys.readouterr().err
     assert f'set sandbox.run_commands = "allow" in {second}' in err
     assert str(first) not in err
@@ -1635,7 +1637,7 @@ def test_run_auto_approve_suppresses_the_warning_and_leaves_the_env_alone(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "runwarn.asm.toml"
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
-    code = main(["machine", "run", str(f), "--auto-approve"])
+    code = entry.main(["machine", "run", str(f), "--auto-approve"])
     err = capsys.readouterr().err
     assert code == 2  # still refused on the missing worker; that is fine
     assert "auto-denies" not in err  # the grant removed the dead-end
@@ -1686,7 +1688,7 @@ model = "p/m"
         encoding="utf-8",
     )
     monkeypatch.setenv("AGENT6_TEST_KEY", "x")
-    code = main(["--config", str(cfg), "machine", "run", str(f)])
+    code = entry.main(["--config", str(cfg), "machine", "run", str(f)])
     err = capsys.readouterr().err
     assert code == 2
     assert "chain branch 'agent6/machine-run-warn' exists" in err
@@ -1777,7 +1779,7 @@ model = "p/m"
         encoding="utf-8",
     )
     monkeypatch.setenv("AGENT6_TEST_KEY", "x")
-    code = main(["--config", str(cfg), "machine", "run", str(f), "--exit-on-wait"])
+    code = entry.main(["--config", str(cfg), "machine", "run", str(f), "--exit-on-wait"])
     captured = capsys.readouterr()
     assert code == 0, captured.err
     assert "REFUSING" not in captured.err
@@ -1833,7 +1835,7 @@ model = "p/m"
     )
     monkeypatch.setenv("AGENT6_TEST_KEY", "x")
     run = ["--config", str(cfg), "machine", "run", str(f)]
-    assert main(run) == 0, capsys.readouterr().err
+    assert entry.main(run) == 0, capsys.readouterr().err
     # The ended run's work: a commit past HEAD that nothing merged.
     work = subprocess.run(
         ["git", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "work"],
@@ -1849,7 +1851,7 @@ model = "p/m"
     capsys.readouterr()
 
     monkeypatch.delenv("AGENT6_AUTO_APPROVE")
-    assert main([*run, "--restart"]) == 2
+    assert entry.main([*run, "--restart"]) == 2
 
     err = capsys.readouterr().err
     assert "--auto-approve" not in err
@@ -1859,7 +1861,7 @@ model = "p/m"
     assert not list(state_dir.glob("run-warn.archived-*"))
 
     subprocess.run(["git", "update-ref", "-d", ref], cwd=repo, check=True)
-    assert main([*run, "--restart"]) == 0, capsys.readouterr().err
+    assert entry.main([*run, "--restart"]) == 0, capsys.readouterr().err
     assert len(list(state_dir.glob("run-warn.archived-*"))) == 1
 
 
@@ -1874,7 +1876,7 @@ def test_run_flags_never_land_in_the_supervisors_environment(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "nocmd.asm.toml"
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
-    main(["machine", "run", str(f), "--no-commands", "--disable-sandbox"])
+    entry.main(["machine", "run", str(f), "--no-commands", "--disable-sandbox"])
     assert not any(key in os.environ for key in keys)
 
 
@@ -1938,7 +1940,7 @@ def test_offline_validation_reads_the_explicit_config_layer(
     config = tmp_path / "broken.toml"
     config.write_text('[harness]\nnonsense_key = "x"\n', encoding="utf-8")
 
-    assert main(["--config", str(config), "machine", verb, str(machine)]) == 1
+    assert entry.main(["--config", str(config), "machine", verb, str(machine)]) == 1
     err = capsys.readouterr().err
     assert "FAIL" in err and "nonsense_key" in err
 
@@ -1953,10 +1955,10 @@ def test_check_validates_the_config_overlay_run_will_merge(
         TINY + '\n[config.harness]\nnonsense_key = "x"\n',
         encoding="utf-8",
     )
-    assert main(["machine", "check", str(f)]) == 1
+    assert entry.main(["machine", "check", str(f)]) == 1
     err = capsys.readouterr().err
     assert "FAIL" in err and "nonsense_key" in err
-    assert main(["machine", "test", str(f)]) == 1
+    assert entry.main(["machine", "test", str(f)]) == 1
 
 
 @pytest.mark.parametrize("verb", ["check", "test"])
@@ -1980,7 +1982,7 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
         "    return 0\n",
         encoding="utf-8",
     )
-    code = main(["machine", verb, str(f)])
+    code = entry.main(["machine", verb, str(f)])
     out = capsys.readouterr()
     assert code == 0  # advisory: the operator may install the tool later
     assert "OK:" in out.out
@@ -2006,7 +2008,7 @@ def test_offline_validation_prints_sandbox_and_pass_env_notes(
         + '\n[states.lint.config.sandbox]\nrun_commands = "ask"\n',
         encoding="utf-8",
     )
-    assert main(["machine", verb, str(machine)]) == 0
+    assert entry.main(["machine", verb, str(machine)]) == 0
     out = capsys.readouterr().out
     assert "[config] sets the sandbox of every state: run_commands = 'deny'" in out
     assert "[states.lint] sets its own sandbox: run_commands = 'ask'" in out
@@ -2032,7 +2034,7 @@ def test_script_findings_are_warnings_under_an_ok_verdict(
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     (scripts / "loose.py").write_text("import os\n\n\ndef f(x):\n    return x\n", encoding="utf-8")
-    assert main(["machine", verb, str(machine)]) == 0
+    assert entry.main(["machine", verb, str(machine)]) == 0
     out = capsys.readouterr()
     assert "FAIL" not in out.err
     assert "[agent6] WARNING: the scripts have lint or type findings" in out.err
@@ -2071,7 +2073,7 @@ def test_machine_test_uses_the_resolved_isolation(
 
     monkeypatch.setattr(detect, "probed_environment", environment)
     monkeypatch.setattr(jail, "run_in_jail", unexpected_jail)
-    assert main(["--config", str(config), "machine", "test", str(machine)]) == 0
+    assert entry.main(["--config", str(config), "machine", "test", str(machine)]) == 0
     assert "1 offline script test not run (no sandbox)" in capsys.readouterr().out
 
 
@@ -2085,19 +2087,19 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "tiny"
-    assert main(["machine", "stop", "tiny"]) == 0  # ended: nothing to stop
+    assert entry.main(["machine", "stop", "tiny"]) == 0  # ended: nothing to stop
     err = capsys.readouterr().err
     assert err.startswith("[agent6] ") and "already ended" in err and "nothing to stop" in err
     assert not (root / "stop").exists()
 
     w = _write_machine(tmp_path)  # waiter: parks WAITING, journal not ended
-    assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(w), "--exit-on-wait"]) == 0
     capsys.readouterr()
     wroot = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert main(["machine", "stop", "waiter_delayed"]) == 0  # parked, worker dead
+    assert entry.main(["machine", "stop", "waiter_delayed"]) == 0  # parked, worker dead
     err = capsys.readouterr().err
     assert err.startswith("[agent6] ") and "not running" in err
     assert not (wroot / "stop").exists()
@@ -2106,7 +2108,7 @@ def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(
         return True
 
     monkeypatch.setattr(process, "worker_is_alive", _alive)  # the verb gate's owner
-    assert main(["machine", "stop", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "stop", "waiter_delayed"]) == 0
     assert "stop requested" in capsys.readouterr().out
     assert (wroot / "stop").is_file()
 
@@ -2121,7 +2123,7 @@ def test_run_start_clears_a_stale_stop_marker(
     root = paths.state_dir(tmp_path) / "machines" / "tiny"
     root.mkdir(parents=True)
     (root / "stop").touch()
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     out = capsys.readouterr().out
     assert "OK:" in out and "STOPPED" not in out
     assert not (root / "stop").exists()
@@ -2138,7 +2140,7 @@ def test_hub_spawn_away_mode_reaches_the_instance(
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     root = paths.state_dir(tmp_path) / "machines" / "tiny"
     assert ipc.away_mode(root) == "wait"
 
@@ -2150,11 +2152,11 @@ def test_attach_degrades_a_corrupt_journal_like_status(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "tiny"
     (root / "journal.jsonl").write_text('{"type": "machine.begin"\n', encoding="utf-8")
-    code = main(["attach", "tiny"])
+    code = entry.main(["attach", "tiny"])
     assert code == 1
     err = capsys.readouterr().err
     assert "ERROR:" in err
@@ -2186,7 +2188,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     monkeypatch.setattr(detect, "resolve_isolation", _partial)
     f = workspace / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 2
+    assert entry.main(["machine", "run", str(f)]) == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err and "protect_git" in err
 
@@ -2210,7 +2212,7 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     f = tmp_path / "probe.asm.toml"
     f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 2
+    assert entry.main(["machine", "run", str(f)]) == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err and "private directory" in err
 
@@ -2224,15 +2226,15 @@ def test_list_joins_instances_with_their_files_and_names_the_rest(
     instance has run, and an unparsable file kept by path alone.
     """
     monkeypatch.chdir(tmp_path)
-    assert main(["machine"]) == 0
+    assert entry.main(["machine"]) == 0
     assert "no machines yet" in capsys.readouterr().out
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     (tmp_path / "waiter.asm.toml").write_text(WAITER_DELAYED, encoding="utf-8")
     (tmp_path / "broken.asm.toml").write_text("not toml {{", encoding="utf-8")
     (tmp_path / "broken2.asm.toml").write_text("also not toml {{", encoding="utf-8")
-    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    assert entry.main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
-    assert main(["machine"]) == 0
+    assert entry.main(["machine"]) == 0
     out = capsys.readouterr().out
     lines = out.splitlines()
     assert lines[0].split() == ["updated", "status", "state", "machine", "spec", "file"]
@@ -2256,7 +2258,7 @@ def test_list_names_a_corrupt_machine_journal(
     (root / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (root / "journal.jsonl").write_text("{not json\n", encoding="utf-8")
 
-    assert main(["machine", "list"]) == 0
+    assert entry.main(["machine", "list"]) == 0
 
     row = next(line for line in capsys.readouterr().out.splitlines() if "tiny" in line)
     assert "unreadable · corrupt journal line 1" in row
@@ -2271,7 +2273,7 @@ def test_status_and_list_name_a_parked_approval(
     """
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
-    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     machine_journal.MachineJournal(root).clear_pending_wait()
@@ -2284,10 +2286,10 @@ def test_status_and_list_name_a_parked_approval(
         encoding="utf-8",
     )
     process.write_worker_pid(execution, os.getpid())
-    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "status", "waiter_delayed"]) == 0
     out = capsys.readouterr().out
     assert "status: waiting · on an answer in 0001-attempt (answer it in the TUI" in out
-    assert main(["machine", "list"]) == 0
+    assert entry.main(["machine", "list"]) == 0
     row = next(line for line in capsys.readouterr().out.splitlines() if "waiter_delayed" in line)
     assert "waiting" in row and "0001-attempt" in row
 
@@ -2300,7 +2302,7 @@ def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
 
     monkeypatch.chdir(tmp_path)
     w = _write_machine(tmp_path)
-    assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
+    assert entry.main(["machine", "run", str(w), "--exit-on-wait"]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     journal = root / "journal.jsonl"
@@ -2309,12 +2311,12 @@ def test_machine_stop_refuses_an_instance_whose_journal_it_cannot_read(
     for alive in (False, True):
         if alive:
             process.write_worker_pid(root, os.getpid())
-        assert main(["machine", "stop", "waiter_delayed"]) == 2
+        assert entry.main(["machine", "stop", "waiter_delayed"]) == 2
         err = capsys.readouterr().err
         assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err
         assert not (root / "stop").exists()
     # Poke reads the whole journal too: a tail-only read wrote a signal into a dead instance.
-    assert main(["machine", "poke", "waiter_delayed"]) == 2
+    assert entry.main(["machine", "poke", "waiter_delayed"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING: machine 'waiter_delayed':") and "journal" in err
     assert not any(p.name.startswith("signal") for p in root.iterdir())
@@ -2327,12 +2329,12 @@ def test_a_machine_verb_takes_the_name_the_listing_prints(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "machines").mkdir()
     (tmp_path / "machines" / "nightly.asm.toml").write_text(WAITER_DELAYED, encoding="utf-8")
-    assert main(["machine", "check", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "check", "waiter_delayed"]) == 0
     assert "machines/nightly.asm.toml" in capsys.readouterr().out
-    assert main(["machine", "graph", "waiter_delayed"]) == 0
+    assert entry.main(["machine", "graph", "waiter_delayed"]) == 0
     # An existing path wins over a name.
     (tmp_path / "waiter_delayed").write_text("not a machine", encoding="utf-8")
-    assert main(["machine", "check", "waiter_delayed"]) == 1
+    assert entry.main(["machine", "check", "waiter_delayed"]) == 1
 
 
 def test_a_name_two_files_declare_is_refused_with_both(
@@ -2342,7 +2344,7 @@ def test_a_name_two_files_declare_is_refused_with_both(
     for name in ("a.asm.toml", "b.asm.toml"):
         (tmp_path / name).write_text(WAITER_DELAYED, encoding="utf-8")
     with pytest.raises(errors.OperatorError, match=r"a\.asm\.toml, b\.asm\.toml\); name the file"):
-        main(["machine", "check", "waiter_delayed"])
+        entry.main(["machine", "check", "waiter_delayed"])
 
 
 FAILING_TOOL = """
@@ -2396,7 +2398,7 @@ def test_a_failed_tool_step_says_why_in_the_run_and_in_status(
     said: list[str] = []
     assert run.run_machine(mfile, app_reporter.Reporter(out=said.append, err=said.append)) == 1
     assert "[agent6] state 'check': exit 3: python3: can't open file 'scripts/x.py'" in said
-    assert main(["machine", "status", "failing_tool"]) == 0
+    assert entry.main(["machine", "status", "failing_tool"]) == 0
     assert (
         "[0] check --nonzero--> broken -- exit 3: python3: can't open file 'scripts/x.py'"
         in capsys.readouterr().out
@@ -2444,5 +2446,5 @@ reason = "routed-timeout"
     assert run.run_machine(mfile, reporter.Reporter(out=said.append, err=said.append)) == 1
     assert any("routed-nonzero" in line for line in said), said
     assert any(line.startswith("[agent6] state 't': exit 124:") for line in said), said
-    assert main(["machine", "status", "exit124"]) == 0
+    assert entry.main(["machine", "status", "exit124"]) == 0
     assert "t --nonzero--> nzend" in capsys.readouterr().out

@@ -17,7 +17,7 @@ from agent6.harness.review import gate as review_gate
 from agent6.providers import provider_types
 from agent6.sessions import manifest
 from agent6.ui import directive_actions
-from agent6.ui.cli import cli_main, session_prompt
+from agent6.ui.cli import entry, session_prompt
 from agent6.viewmodel import transcript
 from tests import review_env
 from tests.unit import test_review_directive_world as world_tests
@@ -123,7 +123,7 @@ def session(repo: pathlib.Path, mode: str, sid: str = "review-session") -> pathl
 
 def cli(mode: str, task: str) -> int:
     flags = ["--session-id", "review-session"] if mode == "run" else []
-    return cli_main([mode, *flags, task])
+    return entry.cli_main([mode, *flags, task])
 
 
 def assert_no_review_store(repo: pathlib.Path, directory: pathlib.Path) -> None:
@@ -190,7 +190,7 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
     assert [o["finding"]["title"] for o in panel["findings"]] == ["x = 2 breaks the invariant"]
     # The worker read the findings with the patch.
     assert "x = 2 breaks the invariant" in json.dumps(provider.calls[0]["messages"])
-    assert cli_main(["sessions", "findings", directory.name]) == 0
+    assert entry.cli_main(["sessions", "findings", directory.name]) == 0
     assert "x = 2 breaks the invariant" in capsys.readouterr().out
     view = review_actions.read_review(directory)
     assert view.findings and review_actions.fixable_findings(directory, view) == ()
@@ -326,7 +326,7 @@ def test_ask_repl_followup_uses_live_review_preparation(
     monkeypatch.setattr("builtins.input", answer)
     provider = ScriptedReview()
     install(monkeypatch, provider)
-    assert cli_main(["ask", "-i", "inspect a.py"]) == 0
+    assert entry.cli_main(["ask", "-i", "inspect a.py"]) == 0
     assert "Review: /review main...HEAD" in json.dumps(provider.calls[-1]["messages"])
     assert "DIFF STAT:" in json.dumps(provider.calls[-1]["messages"])
 
@@ -403,7 +403,7 @@ def test_review_can_run_an_approved_check_in_the_reviewed_tree(
     provider = CheckProvider()
     install(monkeypatch, provider)
     flags = ["--session-id", "review-session"] if mode == "run" else []
-    assert cli_main([mode, *flags, "--auto-approve", "/review feature-x"]) == 0
+    assert entry.cli_main([mode, *flags, "--auto-approve", "/review feature-x"]) == 0
     assert "checked" in json.dumps(provider.calls[1]["messages"])
     if mode == "ask":
         assert "apply_edit" not in provider.calls[0]["tools"]
@@ -427,7 +427,7 @@ def test_review_worktree_keeps_the_model_git_refusal(
         return "full"
 
     monkeypatch.setattr(session_runtime, "select_isolation", _full)
-    assert cli_main(["run", "--session-id", "review-session", "/review feature-x"]) == 2
+    assert entry.cli_main(["run", "--session-id", "review-session", "/review feature-x"]) == 2
     assert '[git].control = "model"' in capsys.readouterr().err
     assert not provider.calls
     assert world_tests.git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1

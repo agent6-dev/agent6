@@ -16,7 +16,7 @@ from agent6.config import Config, layer, layer_data
 from agent6.models import choices as models_choices
 from agent6.models import registry
 from agent6.sandbox import detect
-from agent6.ui.cli import main
+from agent6.ui.cli import entry as cli_entry
 from agent6.ui.web import model
 from agent6.viewmodel import config_view
 
@@ -39,7 +39,7 @@ def test_config_show_uses_compaction_keys(
 ) -> None:
     """Config show exposes compaction defaults and their origins under the editable section."""
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "show", "--json"]) == 0
+    assert cli_entry.main(["config", "show", "--json"]) == 0
     settings = json.loads(capsys.readouterr().out)
     assert settings["compaction.summary_max_tokens"]["value"] == 2048
     assert settings["compaction.summary_max_tokens"]["source"] == "default"
@@ -50,7 +50,7 @@ def test_config_show_uses_compaction_keys(
         assert (settings[key]["value"], settings[key]["source"]) == (-1, "default")
     assert not any(key.startswith("context.") for key in settings)
 
-    assert main(["config", "show"]) == 0
+    assert cli_entry.main(["config", "show"]) == 0
     assert "[compaction]" in capsys.readouterr().out
 
 
@@ -66,7 +66,7 @@ def test_config_show_prints_the_clamped_local_restart_cap(
 
     monkeypatch.setattr(registry, "context_window", small_window)
     monkeypatch.chdir(tmp_path)
-    assert main(["--config", str(path), "config", "show"]) == 0
+    assert cli_entry.main(["--config", str(path), "config", "show"]) == 0
     row = next(
         line
         for line in capsys.readouterr().out.splitlines()
@@ -113,7 +113,7 @@ def test_config_presets_reads_the_explicit_config_file(
     cfg.write_text('[presets.myfast.sandbox]\nrun_commands = "allow"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["--config", str(cfg), "config", "presets"]) == 0
+    assert cli_entry.main(["--config", str(cfg), "config", "presets"]) == 0
     assert "myfast" in capsys.readouterr().out, "presets ignored the explicit config file"
 
 
@@ -150,7 +150,7 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     )
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "fill", "--force"]) == 0
+    assert cli_entry.main(["config", "fill", "--force"]) == 0
 
     after = layer.load_effective(tmp_path)
     assert after.config.sandbox.run_commands == "allow", "the preset stopped applying"
@@ -172,10 +172,10 @@ def test_mapping_setting_prints_its_contents(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "skills.state", '{debugging = "disabled"}']) == 0
+    assert cli_entry.main(["config", "set", "skills.state", '{debugging = "disabled"}']) == 0
     capsys.readouterr()
 
-    assert main(["config", verb, "skills.state"]) == 0
+    assert cli_entry.main(["config", verb, "skills.state"]) == 0
     output = capsys.readouterr().out
     assert "skills.state.debugging" in output
     assert "disabled" in output
@@ -358,13 +358,13 @@ def test_mapping_credentials_are_masked(
     monkeypatch.chdir(tmp_path)
     key = f"providers.demo.{field}" + (".token" if entry else "")
     args = ["--config", str(cfg), "config", verb, key]
-    assert main(args) == 0
+    assert cli_entry.main(args) == 0
     output = capsys.readouterr().out
     assert f"providers.demo.{field}.token" in output
     assert "***" in output
     assert "secret-value" not in output
     if verb == "show":
-        assert main([*args, "--json"]) == 0
+        assert cli_entry.main([*args, "--json"]) == 0
         assert "secret-value" not in capsys.readouterr().out
 
 
@@ -456,7 +456,7 @@ def test_repeated_config_show_names_each_winning_file(
     second = tmp_path / "second.toml"
     first.write_text("[review]\ninterval_turns = 7\n[budget]\nmax_usd = 2\n", encoding="utf-8")
     second.write_text("[budget]\nmax_usd = 3\n", encoding="utf-8")
-    assert main(["--config", str(first), "--config", str(second), "config", "show"]) == 0
+    assert cli_entry.main(["--config", str(first), "--config", str(second), "config", "show"]) == 0
     lines = capsys.readouterr().out.splitlines()
     assert any("review.interval_turns" in line and str(first) in line for line in lines)
     assert any("budget.max_usd" in line and str(second) in line for line in lines)
@@ -502,13 +502,13 @@ def test_config_surfaces_share_toml(
     config = tmp_path / "config.toml"
     config.write_text(f"{key} = {literal}\n")
     args = ["--config", str(config), "config"]
-    assert main([*args, "get", key]) == 0
+    assert cli_entry.main([*args, "get", key]) == 0
     shown = capsys.readouterr().out.split(" = ", 1)[1].rsplit("  [", 1)[0]
     assert tomllib.loads("v = " + shown)["v"] == tomllib.loads("v = " + literal)["v"]
-    assert main([*args, "show"]) == 0
+    assert cli_entry.main([*args, "show"]) == 0
     assert shown in capsys.readouterr().out
     assert model.config_payload(tmp_path, (config,))[key]["display"] == shown
-    assert main(["config", "set", key, shown, "--repo"]) == 0
+    assert cli_entry.main(["config", "set", key, shown, "--repo"]) == 0
     assert shown in capsys.readouterr().out
 
 

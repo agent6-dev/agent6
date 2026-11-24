@@ -17,7 +17,7 @@ from typing import override
 import pytest
 
 from agent6.sessions import layout
-from agent6.ui.cli import cli_main, console_render, steer_tty, terminal_guard
+from agent6.ui.cli import console_render, entry, steer_tty, terminal_guard
 
 OSC52 = "\x1b]52;c;aGVsbG8=\x07"
 
@@ -107,7 +107,7 @@ def test_a_task_a_model_wrote_cannot_drive_the_terminal(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     _session_with_task(tmp_path, f"rename the {OSC52}widget")
-    assert cli_main(["sessions", "show", "brave-oak-AAAAAA"]) == 0
+    assert entry.cli_main(["sessions", "show", "brave-oak-AAAAAA"]) == 0
     out = capsys.readouterr().out
     assert "rename the widget" in out
     assert "\x1b]" not in out and "\x07" not in out
@@ -125,7 +125,7 @@ def test_a_crash_report_naming_model_text_prints_scrubbed(
 
     monkeypatch.setattr("agent6.ui.cli.entry.main", crash)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    assert cli_main(["sessions", "dir"]) == 1
+    assert entry.cli_main(["sessions", "dir"]) == 1
     err = capsys.readouterr().err
     assert "unexpected RuntimeError: file gone" in err
     assert "\x1b]" not in err and "\x07" not in err

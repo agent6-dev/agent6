@@ -21,7 +21,7 @@ from agent6.app import stop as stop_mod
 from agent6.providers import provider_types
 from agent6.sessions import ipc, process
 from agent6.tools import command_tools, results
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.ui.cli import parser as cli_parser
 
 _ANSWERING_WORKER = """
@@ -154,7 +154,7 @@ def test_worker_stop_words_match_the_request(
             )
         ),
     )
-    assert main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
+    assert entry.main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
     output = capsys.readouterr().out
     assert "tool_error:" not in output
     assert f"operator stopped the run {when}{cut}" in output
@@ -185,7 +185,7 @@ def test_worker_stop_during_a_model_call_names_the_interruption(
             raise provider_types.ProviderAborted("operator stop")
 
     monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=Worker()))
-    assert main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
+    assert entry.main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
     output = capsys.readouterr().out
     assert "operator stopped the run during turn 1; model call was cut short" in output
     assert "LOOP: operator stop during turn 1; model call was cut short" in output
@@ -216,7 +216,7 @@ def test_after_turn_writes_the_marker_and_names_the_resume(
     d = _run(tmp_path, "step-run-AAAAAA")
     (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
     process.write_worker_pid(d, os.getpid())
-    assert main(["stop", "step-run", "--after-turn"]) == 0
+    assert entry.main(["stop", "step-run", "--after-turn"]) == 0
     out = capsys.readouterr().out
     assert "step-run-AAAAAA stops after its current turn" in out
     assert "resume with:  agent6 resume step-run-AAAAAA" in out
@@ -236,7 +236,7 @@ def test_all_stops_every_live_session(
     for d, proc in zip(live, workers, strict=True):
         process.write_worker_pid(d, proc.pid)
     try:
-        assert main(["stop", "--all"]) == 0
+        assert entry.main(["stop", "--all"]) == 0
         out = capsys.readouterr().out
         assert "live-one-AAAAAA stopped" in out and "live-two-BBBBBB stopped" in out
         assert "done-run-CCCCCC" not in out
@@ -252,7 +252,7 @@ def test_all_with_nothing_live_is_a_successful_noop(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _run(tmp_path, "done-run-AAAAAA", finished=True)
-    assert main(["stop", "--all"]) == 0
+    assert entry.main(["stop", "--all"]) == 0
     captured = capsys.readouterr()
     assert "no live session to stop" in captured.err and not captured.out
 
@@ -295,7 +295,7 @@ def test_a_group_stops_only_its_live_children(
     for d, proc in zip((fan, live), workers, strict=True):
         process.write_worker_pid(d, proc.pid)
     try:
-        assert main(["stop", "fan-run-AAAAAA"]) == 0
+        assert entry.main(["stop", "fan-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
         assert "fan-run-AAAAAA stopped with its 1 live child" in out
         assert "fan-run-AAAAAA-l2" not in out
@@ -367,7 +367,7 @@ def test_a_groups_children_end_before_its_parent_drains(
     process.write_worker_pid(fan, parent.pid)
     _wait_for_file(fan / "draining")  # the drain loop is running, so the wait times a drain
     try:
-        assert main(["stop", "drain-run-AAAAAA"]) == 0
+        assert entry.main(["stop", "drain-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
         assert "drain-run-AAAAAA stopped with its 1 live child" in out
         assert parent.wait(timeout=5.0) == 0, "the parent was killed, not drained"
@@ -383,7 +383,7 @@ def test_a_session_that_is_not_live_gets_a_note_and_exit_0(
     """A stop that finds nothing running has done what was asked."""
     monkeypatch.chdir(tmp_path)
     _run(tmp_path, "done-run-AAAAAA", finished=True)
-    assert main(["stop", "done-run"]) == 0
+    assert entry.main(["stop", "done-run"]) == 0
     err = capsys.readouterr().err
     assert "done-run-AAAAAA is already passed; nothing to stop" in err
 
@@ -393,7 +393,7 @@ def test_an_unknown_session_is_an_error(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _run(tmp_path, "some-run-AAAAAA")
-    assert main(["stop", "nope"]) == 2
+    assert entry.main(["stop", "nope"]) == 2
     assert capsys.readouterr().err
 
 
@@ -417,7 +417,7 @@ def test_a_marker_that_cannot_be_written_is_an_error(
     process.write_worker_pid(rd, os.getpid())
     rd.chmod(0o555)
     try:
-        assert main(["stop", "live-run-RO1111", "--after-turn"]) == 1
+        assert entry.main(["stop", "live-run-RO1111", "--after-turn"]) == 1
         assert not ipc.stop_request_pending(rd)
     finally:
         rd.chmod(0o700)
@@ -442,7 +442,7 @@ def test_a_finished_run_with_a_lingering_pid_is_already_over(
     )
     # teardown not finished yet
     process.write_worker_pid(rd, os.getpid())
-    assert main(["stop", "done-run-CCC333"]) == 0
+    assert entry.main(["stop", "done-run-CCC333"]) == 0
     assert not ipc.stop_request_pending(rd)
     err = capsys.readouterr().err
     assert "already passed" in err and "not running" not in err
@@ -458,7 +458,7 @@ def test_a_parked_run_says_it_has_not_started(
         ' "parked_task": "wait for the checkout"}',
         encoding="utf-8",
     )
-    assert main(["stop", "parked-run-DDD444"]) == 0
+    assert entry.main(["stop", "parked-run-DDD444"]) == 0
     assert not ipc.stop_request_pending(rd)
     err = capsys.readouterr().err
     assert "is parked" in err and "has not started" in err
@@ -471,7 +471,7 @@ def test_a_dead_run_is_not_running(
     rd = _session_dir(tmp_path, "dead-run-BBB222")
     # no such process
     process.write_worker_pid(rd, 2**31 - 1)
-    assert main(["stop", "dead-run-BBB222"]) == 0
+    assert entry.main(["stop", "dead-run-BBB222"]) == 0
     assert not ipc.stop_request_pending(rd)
     assert "not running" in capsys.readouterr().err
 
@@ -489,7 +489,7 @@ def test_a_bare_stop_targets_the_newest_live_session(
     )
     process.write_worker_pid(live, worker.pid)
     try:
-        assert main(["stop"]) == 0
+        assert entry.main(["stop"]) == 0
         out = capsys.readouterr().out
         assert "live-run-AAAAAA stopped" in out and "created-fork-BBBBBB" not in out
         worker.wait(timeout=5)
@@ -502,7 +502,7 @@ def test_a_bare_stop_with_nothing_live_is_a_successful_noop(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _run(tmp_path, "done-run-AAAAAA", finished=True)
-    assert main(["stop"]) == 0
+    assert entry.main(["stop"]) == 0
     captured = capsys.readouterr()
     assert "no live session to stop (`agent6 sessions` lists them)" in captured.err
     assert not captured.out
@@ -535,7 +535,7 @@ def test_a_bare_stop_passes_over_a_groups_child(
     for d, proc in zip((fan, child), workers, strict=True):
         process.write_worker_pid(d, proc.pid)
     try:
-        assert main(["stop"]) == 0
+        assert entry.main(["stop"]) == 0
         out = capsys.readouterr().out
         assert "fan-run-AAAAAA stopped" in out and "-l1 stopped" not in out
     finally:

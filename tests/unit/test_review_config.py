@@ -20,7 +20,7 @@ from agent6.config import Config, ReviewConfig, io, layer_data
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.providers import provider_types
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry as cli_entry
 from agent6.viewmodel import config_view
 from tests import review_env
 from tests.unit import test_run_lifecycle_bugfix
@@ -77,7 +77,7 @@ def test_configured_call_budget_reaches_the_reviewer(
     )
     argv = ["run", "--session-id", "review-TURNS1", "Update x"]
 
-    rc = cli_main(["--config", str(config), *argv])
+    rc = cli_entry.cli_main(["--config", str(config), *argv])
 
     captured = capsys.readouterr()
     assert rc == 1, captured.err

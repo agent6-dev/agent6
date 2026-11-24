@@ -24,7 +24,8 @@ from agent6.app.session import runtime as session_runtime
 from agent6.providers import provider_types
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
-from agent6.ui.cli import cli_main, run
+from agent6.ui.cli import entry as cli_entry
+from agent6.ui.cli import run
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
@@ -157,7 +158,7 @@ def _stopped_run(
 
     prov = _Scripted([*steps, _finish()], before_call=_stop_after_steps)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
-    cli_main(["run", "--session-id", session_id, "task"])
+    cli_entry.cli_main(["run", "--session-id", session_id, "task"])
     assert prov.calls == len(steps)
 
 
@@ -170,7 +171,7 @@ def _resume_recording(
 ) -> tuple[int, _Scripted]:
     prov = _Scripted(script)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
-    return cli_main(["resume", session_id]), prov
+    return cli_entry.cli_main(["resume", session_id]), prov
 
 
 def _user_texts(messages: list[dict[str, Any]]) -> list[str]:
@@ -323,13 +324,13 @@ def test_resume_stashes_a_staged_rename_without_taking_run_work(
         "build_role_provider",
         _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
-    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", session_id, "task"]) == 0
     _git(repo, "mv", "b.py", "b.rst")
     (repo / "b.rst").write_text("y = 2  # operator draft\n", encoding="utf-8")
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
-    assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "new work"]) == 0
 
     assert _chain_file(repo, session_id, "a.py") == "x = 5\n"
     assert _chain_file(repo, session_id, "b.py") == "y = 1\n"
@@ -362,16 +363,16 @@ def test_auto_stash_pop_restores_over_nonconflicting_run_work(
             "build_role_provider",
             _use(_Scripted([_edit("b.py", "y = 2\n"), _finish()])),
         )
-        assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+        assert cli_entry.cli_main(["run", "--session-id", session_id, "task"]) == 0
     (repo / "a.py").write_text("x = 2  # operator draft\n", encoding="utf-8")
     capsys.readouterr()
     script = [_edit("b.py", "y = 5  # the run\n"), _finish()]
 
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted(script)))
     if resuming:
-        assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
+        assert cli_entry.cli_main(["resume", session_id, "--steer", "new work"]) == 0
     else:
-        assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+        assert cli_entry.cli_main(["run", "--session-id", session_id, "task"]) == 0
 
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2  # operator draft\n"
     assert (repo / "b.py").read_text(encoding="utf-8") == "y = 5  # the run\n"
@@ -395,7 +396,7 @@ def test_auto_stash_pop_keeps_a_stash_that_would_overwrite_run_work(
         _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
 
-    assert cli_main(["run", "--session-id", "tree-POP002", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", "tree-POP002", "task"]) == 0
 
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
     entry = git_read.find_stash(repo, git_ops.auto_stash_message("tree-POP002"))
@@ -440,7 +441,7 @@ def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
         "build_role_provider",
         _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
-    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", session_id, "task"]) == 0
     (repo / "a.py").write_text("x = 6  # operator on top\n", encoding="utf-8")
     (repo / "b.py").write_text("y = 2  # operator draft\n", encoding="utf-8")
     if policy == "ask":
@@ -448,7 +449,7 @@ def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
-    assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "new work"]) == 2
 
     err = capsys.readouterr().err
     assert "1 file blocks stashing" in err
@@ -471,7 +472,7 @@ def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
     subprocess.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
     assert (repo / "b.py").read_text(encoding="utf-8") == "y = 2  # operator draft\n"
-    assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "new work"]) == 0
     assert _chain_file(repo, session_id, "a.py") == "x = 5\n"
     assert _chain_file(repo, session_id, "b.py") == "y = 1\n"
 
@@ -494,13 +495,13 @@ def test_resume_stash_refusal_restore_touches_only_the_files_it_names(
         "build_role_provider",
         _use(_Scripted([_edit("data[1].py", "run\n"), _finish()])),
     )
-    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", session_id, "task"]) == 0
     (repo / "data[1].py").write_text("operator on top\n", encoding="utf-8")
     (repo / "data1.py").write_text("operator draft\n", encoding="utf-8")
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
-    assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "new work"]) == 2
 
     err = capsys.readouterr().err
     restore = next(
@@ -522,7 +523,7 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
         "build_role_provider",
         _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
-    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", session_id, "task"]) == 0
     events = [
         json.loads(line)
         for line in (_session_dir(repo, session_id) / "logs.jsonl").read_text().splitlines()
@@ -532,7 +533,7 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
-    assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "new work"]) == 2
 
     err = capsys.readouterr().err
     restore = next(
@@ -548,7 +549,7 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
     ]
     subprocess.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
-    assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "new work"]) == 0
 
 
 def test_resume_refuses_an_outside_edit_nobody_can_answer_for(

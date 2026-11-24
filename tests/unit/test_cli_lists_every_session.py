@@ -15,7 +15,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import layout
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def _session(state: pathlib.Path, bucket: str, session_id: str, mode: str) -> None:
@@ -35,7 +35,7 @@ def test_a_machine_draft_appears_in_the_listing(
     state = paths.state_dir(tmp_path)
     _session(state, "machines", "fair-trail-AAAAAA", "machine")
 
-    assert main(["sessions", "list"]) == 0
+    assert entry.main(["sessions", "list"]) == 0
     out = capsys.readouterr().out
     assert "fair-trail-AAAAAA" in out, out
     # The mode column is what tells them apart, so it must say which it is.
@@ -81,10 +81,10 @@ def test_an_undone_run_lists_as_undone_and_never_unmerged(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "list", "--json"]) == 0
+    assert entry.main(["sessions", "list", "--json"]) == 0
     [row] = json.loads(capsys.readouterr().out)
     assert (row["status"], row["status_detail"], row["unmerged"]) == ("undone", "", False)
-    assert main(["sessions", "list"]) == 0
+    assert entry.main(["sessions", "list"]) == 0
     out = capsys.readouterr().out
     assert "undone" in out and "stopped" not in out and "unmerged" not in out
 
@@ -102,7 +102,7 @@ def test_every_bucket_is_listed_together(
     ):
         _session(state, bucket, sid, mode)
 
-    assert main(["sessions", "list"]) == 0
+    assert entry.main(["sessions", "list"]) == 0
     out = capsys.readouterr().out
     for sid in ("runny-one-AAAAAA", "planny-two-BBBBB", "asky-three-CCCCC", "drafty-four-DDDD"):
         assert sid in out, f"{sid} missing from:\n{out}"

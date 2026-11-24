@@ -10,7 +10,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.ui.cli import common, main, plan_watch
+from agent6.ui.cli import common, entry, plan_watch
 from agent6.viewmodel import listing
 
 
@@ -66,7 +66,7 @@ def test_run_without_task_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
-    rc = main(["run"])
+    rc = entry.main(["run"])
     assert rc == 2
     # With no task AND no prior plan to fall back to, name both ways to start.
     err = capsys.readouterr().err
@@ -84,7 +84,7 @@ def test_run_no_task_points_at_most_recent_plan(
     session_dir = paths.state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     (session_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
-    rc = main(["run"])
+    rc = entry.main(["run"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "tidy-otter-AB12CD" in err
@@ -114,7 +114,7 @@ def test_run_no_task_terminal_offer_names_the_newest_updated_plan(
 
     monkeypatch.setattr(common, "safe_input", decline)
 
-    assert main(["run"]) == 0
+    assert entry.main(["run"]) == 0
 
     out = capsys.readouterr().out
     assert "alpha-plan-NEW222  (new work)" in out
@@ -148,7 +148,7 @@ def test_run_no_task_at_a_terminal_executes_the_plan_on_enter(
 
         monkeypatch.setattr(common, "safe_input", answer)
         ran.clear()
-        assert main(["run"]) == 0
+        assert entry.main(["run"]) == 0
         assert (len(ran) == 1) is executes, typed
         out = capsys.readouterr().out
         assert ("Aborted" in out) is not executes, typed
@@ -159,7 +159,7 @@ def test_run_continue_flag_is_gone(tmp_path: pathlib.Path, monkeypatch: pytest.M
     # `run --continue` was a subset of `resume`; argparse refuses it like any unknown flag.
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as exc:
-        main(["run", "--continue"])
+        entry.main(["run", "--continue"])
     assert exc.value.code == 2
 
 
@@ -170,7 +170,7 @@ def test_parallel_refuses_a_standing_goal(
 ) -> None:
     """`--parallel` refuses `--standing`, which reaches no child."""
     monkeypatch.chdir(tmp_path)
-    rc = main(["run", "--parallel", "2", "--standing", "keep tests green", "task"])
+    rc = entry.main(["run", "--parallel", "2", "--standing", "keep tests green", "task"])
     assert rc == 2
     assert "--standing" in capsys.readouterr().err
 
@@ -190,5 +190,5 @@ def test_parallel_takes_the_tui_like_any_run(
 
     monkeypatch.setattr(run_mod, "_cmd_run", fake_run)
 
-    assert main(["run", "--parallel", "2", "--tui", "task"]) == 0
+    assert entry.main(["run", "--parallel", "2", "--tui", "task"]) == 0
     assert seen == [("2", True)]

@@ -12,8 +12,7 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.ui import cli
-from agent6.ui.cli import prompt_cmds
+from agent6.ui.cli import entry, prompt_cmds
 from tests import launch_env
 
 
@@ -105,9 +104,9 @@ def test_prompt_show_matches_a_fresh_runs_child_offers_with_commands_denied(
             encoding="utf-8",
         )
         argv = ["--config", str(config)]
-        assert cli.cli_main([*argv, "prompt", "show", "--mode", "run", "--json"]) == 0
+        assert entry.cli_main([*argv, "prompt", "show", "--mode", "run", "--json"]) == 0
         preview = {t["name"]: t for t in json.loads(capsys.readouterr().out)["tools"]}
-        assert cli.cli_main([*argv, "run", "Report the available tools."]) == 0
+        assert entry.cli_main([*argv, "run", "Report the available tools."]) == 0
 
     actual = {t["function"]["name"]: t["function"] for t in calls[0]["tools"]}
     children = {"parallel", "steer_child", "read_background", "stop_background"}

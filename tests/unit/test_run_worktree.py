@@ -41,7 +41,7 @@ from agent6.providers import provider_types
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry as cli_entry
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
 from agent6.vcs.git import ops as git_ops
@@ -238,7 +238,9 @@ def test_the_run_works_in_its_own_worktree_and_the_checkout_stays_as_it_was(
     monkeypatch.setattr(session_runtime, "build_session_tools", _tools)
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-AAAA01", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-AAAA01", "add new.txt"]) == 0
+    )
     out, err = capsys.readouterr()
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-AAAA01"))
@@ -271,14 +273,16 @@ def test_resume_from_the_checkout_continues_in_the_worktree(
     """`agent6 resume <id>` typed in the checkout drives the run's worktree, not the checkout."""
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-RESU01", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-RESU01", "add new.txt"]) == 0
+    )
     before = _checkout_facts(repo)
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-RESU01")).worktree
     assert worktree is not None
 
     capsys.readouterr()
     _script(monkeypatch, _edit("more.txt", "two\n"))
-    assert cli_main(["resume", "wt-RESU01", "--steer", "add more.txt"]) == 0
+    assert cli_entry.cli_main(["resume", "wt-RESU01", "--steer", "add more.txt"]) == 0
     assert f"working in the worktree {worktree}" in capsys.readouterr().err
 
     assert pathlib.Path.cwd() == repo
@@ -308,11 +312,14 @@ def test_resume_stash_restore_command_targets_the_sessions_worktree(
     session_id = "wt-STAS01"
     _script(monkeypatch, _edit("new.txt", "one\n"))
     if forked:
-        assert cli_main(["run", "--worktree", "--session-id", "wt-STAS00", "task"]) == 0
+        assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-STAS00", "task"]) == 0
         _script(monkeypatch, _edit("fork.txt", "fork work\n"))
-        assert cli_main(["fork", "wt-STAS00", "--session-id", session_id, "--steer", "task"]) == 0
+        assert (
+            cli_entry.cli_main(["fork", "wt-STAS00", "--session-id", session_id, "--steer", "task"])
+            == 0
+        )
     else:
-        assert cli_main(["run", "--worktree", "--session-id", session_id, "task"]) == 0
+        assert cli_entry.cli_main(["run", "--worktree", "--session-id", session_id, "task"]) == 0
     worktree = sessions_manifest.read_manifest(_run_dir(repo, session_id)).worktree
     assert worktree is not None
     before = _checkout_facts(repo)[:3]
@@ -321,7 +328,7 @@ def test_resume_stash_restore_command_targets_the_sessions_worktree(
     capsys.readouterr()
     _script(monkeypatch, _edit("more.txt", "two\n"))
 
-    assert cli_main(["resume", session_id, "--steer", "add more.txt"]) == 0
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "add more.txt"]) == 0
 
     err = capsys.readouterr().err
     entry = git_read.find_stash(repo, git_ops.auto_stash_message(session_id))
@@ -353,7 +360,7 @@ def test_resume_auto_stash_pop_keeps_the_run_branch_checked_out_in_its_worktree(
     )
     session_id = "wt-STAS02"
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--worktree", "--session-id", session_id, "task"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", session_id, "task"]) == 0
     worktree = sessions_manifest.read_manifest(_run_dir(repo, session_id)).worktree
     assert worktree is not None
     _git(worktree, "add", "new.txt")
@@ -363,7 +370,7 @@ def test_resume_auto_stash_pop_keeps_the_run_branch_checked_out_in_its_worktree(
     capsys.readouterr()
     _script(monkeypatch, _edit("more.txt", "two\n"))
 
-    assert cli_main(["resume", session_id, "--steer", "add more.txt"]) == 0
+    assert cli_entry.cli_main(["resume", session_id, "--steer", "add more.txt"]) == 0
 
     assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 3  # worktree draft\n"
     assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"
@@ -382,21 +389,23 @@ def test_prune_removes_the_worktree_after_its_work_merges(
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-MERG01", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-MERG01", "add new.txt"]) == 0
+    )
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-MERG01")).worktree
     assert worktree is not None
     capsys.readouterr()
 
-    assert cli_main(["sessions", "prune"]) == 0
+    assert cli_entry.cli_main(["sessions", "prune"]) == 0
     assert "kept wt-MERG01's worktree (unmerged)" in capsys.readouterr().out
     assert worktree.is_dir()
 
-    assert cli_main(["sessions", "merge", "wt-MERG01"]) == 0
+    assert cli_entry.cli_main(["sessions", "merge", "wt-MERG01"]) == 0
     capsys.readouterr()
     assert _git(repo, "show", "main:new.txt") == "made by the run\n"
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2  # the operator's edit\n"
 
-    assert cli_main(["sessions", "prune"]) == 0
+    assert cli_entry.cli_main(["sessions", "prune"]) == 0
     assert "removed wt-MERG01's worktree (merged)" in capsys.readouterr().out
     assert not worktree.exists()
     assert _worktrees(repo) == [str(repo)]
@@ -413,26 +422,28 @@ def test_a_worktree_run_resumed_after_its_merge_shows_only_its_unmerged_work(
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("one.txt", "1\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-RESUME", "add one.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-RESUME", "add one.txt"]) == 0
+    )
     chain = git_read.chain_ref_for("wt-RESUME")
     first_tip = git_read.chain_tip(repo, chain)
     assert first_tip is not None
-    assert cli_main(["sessions", "merge", "wt-RESUME"]) == 0
+    assert cli_entry.cli_main(["sessions", "merge", "wt-RESUME"]) == 0
     merged_tip = _git(repo, "rev-parse", "main").strip()
 
     _script(monkeypatch, _edit("two.txt", "2\n"))
-    assert cli_main(["resume", "wt-RESUME", "--steer", "add two.txt"]) == 0
+    assert cli_entry.cli_main(["resume", "wt-RESUME", "--steer", "add two.txt"]) == 0
     assert "earlier work was merged into main" in capfd.readouterr().err
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-RESUME"))
     assert manifest.base_sha == first_tip and manifest.base_branch == "main"
-    assert cli_main(["sessions", "diff", "wt-RESUME", "--stat"]) == 0
+    assert cli_entry.cli_main(["sessions", "diff", "wt-RESUME", "--stat"]) == 0
     shown = capfd.readouterr().out
     assert "two.txt" in shown and "one.txt" not in shown
-    assert cli_main(["sessions", "commits", "wt-RESUME"]) == 0
+    assert cli_entry.cli_main(["sessions", "commits", "wt-RESUME"]) == 0
     listed = capfd.readouterr().out
     assert listed.strip() and first_tip[:12] not in listed
-    assert cli_main(["sessions", "merge", "wt-RESUME"]) == 0
+    assert cli_entry.cli_main(["sessions", "merge", "wt-RESUME"]) == 0
     assert _git(repo, "diff", "--name-only", merged_tip, "main").split() == ["two.txt"]
 
 
@@ -442,12 +453,14 @@ def test_remove_removes_the_worktree_with_the_record(
     """`sessions remove <id>` takes an unmerged worktree run's worktree with its history."""
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-GONE01", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-GONE01", "add new.txt"]) == 0
+    )
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-GONE01")).worktree
     assert worktree is not None
     capsys.readouterr()
 
-    assert cli_main(["sessions", "remove", "wt-GONE01"]) == 0
+    assert cli_entry.cli_main(["sessions", "remove", "wt-GONE01"]) == 0
     assert "its worktree" in capsys.readouterr().out
     assert not worktree.exists()
     assert _nothing_was_created(repo, "wt-GONE01")
@@ -459,10 +472,14 @@ def test_prune_typed_in_a_worktree_removes_it_and_finishes_the_sweep(
     """Prune ran its git in the worktree it had just removed, and crashed mid-sweep."""
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch)
-    assert cli_main(["run", "--worktree", "--session-id", "wt-IDLE01", "look around"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-IDLE01", "look around"]) == 0
+    )
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-HERE01", "add new.txt"]) == 0
-    assert cli_main(["sessions", "merge", "wt-HERE01"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-HERE01", "add new.txt"]) == 0
+    )
+    assert cli_entry.cli_main(["sessions", "merge", "wt-HERE01"]) == 0
     here = sessions_manifest.read_manifest(_run_dir(repo, "wt-HERE01")).worktree
     idle = sessions_manifest.read_manifest(_run_dir(repo, "wt-IDLE01")).worktree
     assert here is not None and idle is not None
@@ -471,7 +488,7 @@ def test_prune_typed_in_a_worktree_removes_it_and_finishes_the_sweep(
     capsys.readouterr()
     monkeypatch.chdir(here)
 
-    assert cli_main(["sessions", "prune"]) == 0
+    assert cli_entry.cli_main(["sessions", "prune"]) == 0
     out, err = capsys.readouterr()
     assert "removed wt-HERE01's worktree (merged)" in out
     assert "removed wt-IDLE01's worktree (committed nothing)" in out
@@ -487,13 +504,15 @@ def test_remove_typed_in_the_worktree_removes_the_chain_ref_too(
     """Rm removed the record and the worktree, then crashed before the chain ref."""
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SELF01", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SELF01", "add new.txt"]) == 0
+    )
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SELF01")).worktree
     assert worktree is not None
     capsys.readouterr()
     monkeypatch.chdir(worktree)
 
-    assert cli_main(["sessions", "remove", "wt-SELF01"]) == 0
+    assert cli_entry.cli_main(["sessions", "remove", "wt-SELF01"]) == 0
     out, err = capsys.readouterr()
     assert "removed wt-SELF01, its worktree and its chain ref" in out
     assert f"this shell's directory is gone; cd {repo}" in err
@@ -558,7 +577,7 @@ def test_a_budget_stopped_child_continues_with_the_fork_command_its_record_names
                 checkout=spec.worktree,
             )
             argv = ["run", "--config", str(snapshot), "--session-id", spec.session_id]
-            assert cli_main([*argv, "--max-tokens-fallback", "1", task]) == 3, (
+            assert cli_entry.cli_main([*argv, "--max-tokens-fallback", "1", task]) == 3, (
                 output.getvalue() + errors.getvalue()
             )
         session_dir = state / "sessions" / "runs" / spec.session_id
@@ -580,11 +599,11 @@ def test_a_budget_stopped_child_continues_with_the_fork_command_its_record_names
     assert not result.ok and "budget exhausted" in result.error
     assert not child.worktree.exists()
     capsys.readouterr()
-    assert cli_main(["sessions", "show", "capped-fan-l1"]) == 0
+    assert cli_entry.cli_main(["sessions", "show", "capped-fan-l1"]) == 0
     assert "`agent6 fork capped-fan-l1" in capsys.readouterr().out
     _script(monkeypatch, _FINISH)
     command = ["fork", "capped-fan-l1", "--session-id", "continued"]
-    assert cli_main([*command, "--max-tokens-fallback", "100"]) == 0
+    assert cli_entry.cli_main([*command, "--max-tokens-fallback", "100"]) == 0
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "continued"))
     assert manifest.parent_session_id == "capped-fan-l1"
     assert manifest.worktree is not None and manifest.worktree.is_dir()
@@ -600,7 +619,10 @@ def test_a_worktree_run_starts_while_another_run_drives_the_checkout(
     assert held is not None
     try:
         _script(monkeypatch, _edit("new.txt", "made by the run\n"))
-        assert cli_main(["run", "--worktree", "--session-id", "wt-BUSY01", "add new.txt"]) == 0
+        assert (
+            cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-BUSY01", "add new.txt"])
+            == 0
+        )
     finally:
         lock.release_single_writer(held)
     assert "PARKED" not in capsys.readouterr().err
@@ -617,7 +639,7 @@ def test_a_repository_with_no_commit_refuses(
     _git(unborn, "init", "-q", "-b", "main")
     monkeypatch.chdir(unborn)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-UNBN01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-UNBN01", "task"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING: --worktree starts from HEAD's commit" in err and "git commit" in err
     assert _nothing_was_created(unborn, "wt-UNBN01")
@@ -632,7 +654,7 @@ def test_outside_a_git_repository_refuses(
     plain.mkdir()
     monkeypatch.chdir(plain)
 
-    assert cli_main(["run", "--worktree", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "task"]) == 2
     err = capsys.readouterr().err
     assert "is not a git repository" in err and "git init" in err
 
@@ -654,7 +676,7 @@ def test_parallel_is_a_run_that_takes_a_worktree_and_an_id(
     monkeypatch.setattr(app_run, "run_task", run_task)
 
     argv = ["run", "--worktree", "--session-id", "myid", "--parallel", "2", "task"]
-    assert cli_main(argv) == 0
+    assert cli_entry.cli_main(argv) == 0
 
     assert seen["opening"] == directive.Segment(task="task", spec="2")
     assert (seen["worktree"], seen["session_id"], seen["task"]) == (True, "myid", "task")
@@ -679,7 +701,7 @@ def test_model_controlled_git_refuses_where_the_jail_confines_the_git_dir(
 
     monkeypatch.setattr(session_runtime, "select_isolation", _full)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-MODL01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-MODL01", "task"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING: --worktree runs in a linked worktree" in err
     assert "sandbox.isolation = 'full'" in err and '[git].control = "model"' in err
@@ -698,7 +720,9 @@ def test_model_controlled_git_runs_in_a_worktree_where_nothing_confines_it(
     _repo(tmp_path, monkeypatch, config=model_git + '\n[git]\ncontrol = "model"\n')
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-MODL02", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-MODL02", "add new.txt"]) == 0
+    )
     err = capsys.readouterr().err
     assert "REFUSING" not in err and "working in the worktree" in err
 
@@ -714,7 +738,7 @@ def test_a_failed_worktree_add_leaves_nothing_behind(
 
     monkeypatch.setattr(git_ops, "add_worktree", _fail)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-FAIL01", "task"]) == 1
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-FAIL01", "task"]) == 1
     err = capsys.readouterr().err
     assert "could not add the run's worktree" in err and "could not create the worktree" in err
     assert _nothing_was_created(repo, "wt-FAIL01")
@@ -734,7 +758,7 @@ def test_a_refusal_after_the_worktree_was_added_removes_it(
 
     monkeypatch.setattr(session_runtime, "select_isolation", _refuse)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-REFU01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-REFU01", "task"]) == 2
     assert "working in the worktree" not in capsys.readouterr().err
     assert added and not added[0].exists()
     assert _nothing_was_created(repo, "wt-REFU01")
@@ -772,7 +796,7 @@ def test_a_missing_provider_key_refuses_before_any_worktree(
     repo = _repo(tmp_path, monkeypatch, config=keyed)
     monkeypatch.delenv("PROBE_KEY")
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-NKEY01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-NKEY01", "task"]) == 2
     assert "no API key for [providers.p]" in capsys.readouterr().err
     assert _nothing_was_created(repo, "wt-NKEY01")
 
@@ -785,7 +809,7 @@ def test_from_a_subdirectory_refuses(
     (repo / "sub").mkdir()
     monkeypatch.chdir(repo / "sub")
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SUBD01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SUBD01", "task"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING: --worktree starts at the repository's top level" in err and str(repo) in err
     assert _nothing_was_created(repo, "wt-SUBD01")
@@ -803,7 +827,9 @@ def test_a_base_inside_the_checkout_stays_out_of_its_git(
     before = _checkout_facts(repo)
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-RELW01", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-RELW01", "add new.txt"]) == 0
+    )
 
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-RELW01")).worktree
     assert worktree is not None and worktree.is_relative_to(repo / "wt")
@@ -821,7 +847,7 @@ def test_a_base_a_gitignore_rule_un_ignores_refuses_before_any_worktree(
     _git(repo, "add", ".gitignore")
     _git(repo, "commit", "-qm", "un-ignore wt")
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-UNIG01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-UNIG01", "task"]) == 2
     err = capsys.readouterr().err
     assert "un-ignores it" in err and "[git.worktree].base_dir" in err
     assert _nothing_was_created(repo, "wt-UNIG01")
@@ -833,12 +859,14 @@ def test_prune_removes_the_worktree_of_a_run_that_committed_nothing(
     """With no commit there is no merge to stamp, so prune would keep the empty worktree forever."""
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch)
-    assert cli_main(["run", "--worktree", "--session-id", "wt-NOOP01", "look around"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-NOOP01", "look around"]) == 0
+    )
     assert git_read.chain_tip(repo, git_read.chain_ref_for("wt-NOOP01")) is None
     assert len(_worktrees(repo)) == 2
     capsys.readouterr()
 
-    assert cli_main(["sessions", "prune"]) == 0
+    assert cli_entry.cli_main(["sessions", "prune"]) == 0
     assert "removed wt-NOOP01's worktree (committed nothing)" in capsys.readouterr().out
     assert _worktrees(repo) == [str(repo)]
 
@@ -854,7 +882,7 @@ def test_prune_worktree_uses_head_and_counts_worktrees(
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch)
     sid = "wt-MODL01"
-    assert cli_main(["run", "--worktree", "--session-id", sid, "look around"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", sid, "look around"]) == 0
     # Historical model-owned worktrees remain prunable even though new runs refuse them.
     manifest_path = _run_dir(repo, sid) / "manifest.json"
     data = json.loads(manifest_path.read_text())
@@ -869,14 +897,14 @@ def test_prune_worktree_uses_head_and_counts_worktrees(
     assert git_read.chain_tip(repo, git_read.chain_ref_for(sid)) is None
     capsys.readouterr()
 
-    assert cli_main(["sessions", "prune"]) == 0
+    assert cli_entry.cli_main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert f"kept {sid}'s worktree (1 unmerged commit on {sid})" in out
     assert "worktrees: removed 0, kept 1" in out
     assert worktree.exists()
 
     _git(repo, "merge", "--ff-only", sid)
-    assert cli_main(["sessions", "prune"]) == 0
+    assert cli_entry.cli_main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert f"removed {sid}'s worktree (merged)" in out
     assert "worktrees: removed 1, kept 0" in out
@@ -889,12 +917,14 @@ def test_uncommitted_edits_are_named_in_the_worktree_and_survive_prune(
     """With `commit_per_turn = false`, "the working tree" in the footer would name the checkout."""
     repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\ncommit_per_turn = false\n")
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-NOCM01", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-NOCM01", "add new.txt"]) == 0
+    )
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-NOCM01")).worktree
     assert worktree is not None
     assert f"the run's edits are in the worktree {worktree}" in capsys.readouterr().out
 
-    assert cli_main(["sessions", "prune"]) == 0
+    assert cli_entry.cli_main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert "kept wt-NOCM01's worktree (holds work no commit has: new.txt)" in out
     assert (worktree / "new.txt").is_file()
@@ -994,7 +1024,7 @@ def test_a_worktree_the_cleanup_cannot_remove_is_named(
 
     monkeypatch.setattr(session_runtime, "select_isolation", _refuse)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-KEPT01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-KEPT01", "task"]) == 2
     err = capsys.readouterr().err
     assert f"the worktree {added[0]} stays: it holds work no commit has: junk.txt" in err
     assert f"git worktree remove {added[0]}" in err
@@ -1034,7 +1064,7 @@ def test_the_setup_command_runs_in_the_new_worktree_before_the_first_turn(
 
     monkeypatch.setattr(prov, "call", _call)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU01", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU01", "task"]) == 0
     err = capsys.readouterr().err
 
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU01")).worktree
@@ -1058,7 +1088,7 @@ def test_a_failed_setup_command_ends_the_session_before_any_turn(
     _with_setup(repo, '["sh", "-c", "echo no lockfile >&2; exit 3"]')
     prov = _script(monkeypatch)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU02", "task"]) == 1
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU02", "task"]) == 1
     out, err = capsys.readouterr()
 
     assert prov.calls == 0
@@ -1077,7 +1107,7 @@ def test_a_failed_setup_command_ends_the_session_before_any_turn(
     events = (_run_dir(repo, "wt-SETU02") / "logs.jsonl").read_text(encoding="utf-8")
     assert '"setup_command_failed"' in events
     # A resume of it says what happened in the reader's terms, with no internal path.
-    assert cli_main(["resume", "wt-SETU02"]) == 2
+    assert cli_entry.cli_main(["resume", "wt-SETU02"]) == 2
     refused = capsys.readouterr().err
     assert "wt-SETU02 never reached its first turn" in refused
     assert "loop_state.json" not in refused
@@ -1095,7 +1125,7 @@ def test_a_run_in_the_checkout_runs_no_setup_command(
     _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran"]')
     _script(monkeypatch)
 
-    assert cli_main(["run", "--session-id", "wt-SETU03", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", "wt-SETU03", "task"]) == 0
     capsys.readouterr()
 
     assert not (repo / ".setup-ran").exists()
@@ -1114,7 +1144,10 @@ def test_a_child_runs_the_setup_command_in_its_clone(
     snapshot = _child_snapshot(repo, tmp_path, monkeypatch)
     _script(monkeypatch)
 
-    assert cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"])
+        == 0
+    )
     capsys.readouterr()
 
     assert (repo / ".setup-ran").read_text(encoding="utf-8") == "ready\n"
@@ -1133,7 +1166,9 @@ def test_the_setup_is_journaled_and_a_resume_never_runs_it_again(
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _with_setup(repo, '["sh", "-c", "echo ran >> .setup-ran"]')
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU05", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU05", "add new.txt"]) == 0
+    )
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU05"))
     assert manifest.worktree_set_up and manifest.worktree is not None
@@ -1143,7 +1178,7 @@ def test_the_setup_is_journaled_and_a_resume_never_runs_it_again(
 
     capsys.readouterr()
     _script(monkeypatch, _edit("more.txt", "two\n"))
-    assert cli_main(["resume", "wt-SETU05", "--steer", "add more.txt"]) == 0
+    assert cli_entry.cli_main(["resume", "wt-SETU05", "--steer", "add more.txt"]) == 0
 
     assert "setup command" not in capsys.readouterr().err
     assert (manifest.worktree / ".setup-ran").read_text(encoding="utf-8") == "ran\n"
@@ -1157,16 +1192,18 @@ def test_a_fork_starts_not_set_up_and_runs_the_setup_command_in_its_own_worktree
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _with_setup(repo, '["sh", "-c", "echo ran >> .setup-ran"]')
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU06", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU06", "add new.txt"]) == 0
+    )
 
-    assert cli_main(["fork", "wt-SETU06", "--session-id", "wt-FORK06", "--no-run"]) == 0
+    assert cli_entry.cli_main(["fork", "wt-SETU06", "--session-id", "wt-FORK06", "--no-run"]) == 0
     forked = sessions_manifest.read_manifest(_run_dir(repo, "wt-FORK06"))
     assert forked.worktree is not None and not forked.worktree_set_up
     assert not (forked.worktree / ".setup-ran").exists()
 
     capsys.readouterr()
     _script(monkeypatch, _edit("more.txt", "two\n"))
-    assert cli_main(["resume", "wt-FORK06", "--steer", "add more.txt"]) == 0
+    assert cli_entry.cli_main(["resume", "wt-FORK06", "--steer", "add more.txt"]) == 0
 
     assert "setup command: sh -c" in capsys.readouterr().err
     assert (forked.worktree / ".setup-ran").read_text(encoding="utf-8") == "ran\n"
@@ -1180,11 +1217,16 @@ def test_bare_resume_delivers_a_forks_steer_after_setup_failed(
     """A setup failure cannot discard the fork's unread instruction on bare resume."""
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "steer-parent", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "steer-parent", "task"]) == 0
     _with_setup(repo, '["sh", "-c", "exit 3"]')
     provider = _script(monkeypatch)
     steer = "add a regression test for the parser"
-    assert cli_main(["fork", "steer-parent", "--session-id", "steer-child", "--steer", steer]) == 1
+    assert (
+        cli_entry.cli_main(
+            ["fork", "steer-parent", "--session-id", "steer-child", "--steer", steer]
+        )
+        == 1
+    )
     assert provider.calls == 0
     assert "resume with:  agent6 resume steer-child" in capsys.readouterr().out
     session_dir = _run_dir(repo, "steer-child")
@@ -1193,7 +1235,7 @@ def test_bare_resume_delivers_a_forks_steer_after_setup_failed(
         os.utime(session_dir / name, (old, old))
     _with_setup(repo, '["true"]')
     with mock.patch.object(provider, "call", wraps=provider.call) as called:
-        assert cli_main(["resume", "steer-child"]) == 0
+        assert cli_entry.cli_main(["resume", "steer-child"]) == 0
     assert steer in json.dumps(called.call_args.kwargs["messages"])
     assert not (session_dir / ipc.STEER_ANSWER_FILE).exists()
 
@@ -1205,13 +1247,15 @@ def test_resume_reads_setup_from_the_sessions_base_commit(
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _commit_agents_md(repo, "echo base > .setup-ran")
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "setup-parent", "task"]) == 0
-    assert cli_main(["fork", "setup-parent", "--session-id", "setup-child", "--no-run"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "setup-parent", "task"]) == 0
+    assert (
+        cli_entry.cli_main(["fork", "setup-parent", "--session-id", "setup-child", "--no-run"]) == 0
+    )
     (repo / "AGENTS.md").write_text(
         "## Setup command\n```sh\necho dirty > .setup-ran\n```\n", encoding="utf-8"
     )
     _script(monkeypatch)
-    assert cli_main(["resume", "setup-child", "--steer", "continue"]) == 0
+    assert cli_entry.cli_main(["resume", "setup-child", "--steer", "continue"]) == 0
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "setup-child")).worktree
     assert worktree is not None
     assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "base\n"
@@ -1225,7 +1269,7 @@ def test_a_failed_setup_leaves_the_workspace_not_set_up(
     _with_setup(repo, '["sh", "-c", "exit 3"]')
     _script(monkeypatch)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU07", "task"]) == 1
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU07", "task"]) == 1
     capsys.readouterr()
 
     assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU07")).worktree_set_up
@@ -1249,7 +1293,7 @@ def test_the_setup_command_is_read_from_the_agents_md_block(
     _commit_agents_md(repo, "echo from-agents-md > .setup-ran")
     _script(monkeypatch)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU08", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU08", "task"]) == 0
     err = capsys.readouterr().err
 
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU08")).worktree
@@ -1287,7 +1331,7 @@ def test_worktree_setup_is_read_from_its_commit_not_the_dirty_agents_md(
         )
     before = _checkout_facts(repo)
     _script(monkeypatch)
-    assert cli_main(["run", "--worktree", "--session-id", "committed-setup", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "committed-setup", "task"]) == 0
     assert _checkout_facts(repo) == before
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "committed-setup")).worktree
     assert worktree is not None
@@ -1307,7 +1351,7 @@ def test_a_configured_setup_command_outranks_the_agents_md_block(
     _with_setup(repo, '["sh", "-c", "echo configured > .setup-ran"]')
     _script(monkeypatch)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU09", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU09", "task"]) == 0
     err = capsys.readouterr().err
 
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU09")).worktree
@@ -1349,7 +1393,7 @@ def test_a_default_run_whose_gate_the_model_never_ran_exits_zero_and_reads_unver
     _repo(tmp_path, monkeypatch, config=in_checkout + '\n[harness]\nverify.command = ["true"]\n')
     _script(monkeypatch, _edit("new.txt", "one\n"))
 
-    assert cli_main(["run", "--session-id", "wt-UNJ01", "add new.txt"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", "wt-UNJ01", "add new.txt"]) == 0
 
     out = capsys.readouterr().out
     assert "unverified" in out, out
@@ -1364,7 +1408,7 @@ def test_a_gate_on_an_untracked_path_with_no_setup_command_refuses_before_anythi
     _pin_gate(repo)
     prov = _script(monkeypatch)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-GATE01", "task"]) == 2
     err = capsys.readouterr().err
 
     assert prov.calls == 0
@@ -1384,7 +1428,7 @@ def test_a_gate_on_an_untracked_path_refuses_a_parallel_run_before_any_child_is_
     _pin_gate(repo)
     prov = _script(monkeypatch)
 
-    assert cli_main(["run", "--parallel", "2", "--session-id", "par-GATE01", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--parallel", "2", "--session-id", "par-GATE01", "task"]) == 2
     err = capsys.readouterr().err
 
     assert prov.calls == 0
@@ -1405,7 +1449,9 @@ def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
     _with_setup(repo, _BUILD_VENV)
     _script(monkeypatch, _edit("new.txt", "one\n"))
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE02", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-GATE02", "add new.txt"]) == 0
+    )
     err = capsys.readouterr().err
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-GATE02"))
@@ -1424,7 +1470,10 @@ def test_a_child_stamps_the_gate_origin_its_parent_resolved(
     _script(monkeypatch)
     snapshot = _child_snapshot(repo, tmp_path, monkeypatch, gate_source="inferred")
 
-    assert cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"])
+        == 0
+    )
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "fan-l1"))
     assert manifest.harness.gate.command == ("true",)
@@ -1440,7 +1489,7 @@ def test_a_setup_command_that_leaves_the_gate_path_missing_ends_the_session_sayi
     _pin_gate(repo, '\n[git.worktree]\nsetup_command = ["true"]\n')
     prov = _script(monkeypatch)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE03", "task"]) == 1
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-GATE03", "task"]) == 1
     out = capsys.readouterr().out
 
     assert prov.calls == 0
@@ -1458,10 +1507,10 @@ def test_a_fork_whose_gate_is_on_an_untracked_path_refuses_before_its_worktree_e
     _untracked_venv(repo)
     _pin_gate(repo)
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--session-id", "wt-GATE04", "add new.txt"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", "wt-GATE04", "add new.txt"]) == 0
     capsys.readouterr()
 
-    assert cli_main(["fork", "wt-GATE04", "--session-id", "wt-FORK04", "--no-run"]) == 2
+    assert cli_entry.cli_main(["fork", "wt-GATE04", "--session-id", "wt-FORK04", "--no-run"]) == 2
     err = capsys.readouterr().err
 
     assert _nothing_was_created(repo, "wt-FORK04")
@@ -1479,11 +1528,13 @@ def test_a_setup_on_resume_leaves_the_runs_own_files_in_its_commits(
     """
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _script(monkeypatch, _edit("new.txt", "one\n"))
-    assert cli_main(["run", "--worktree", "--session-id", "wt-SETU10", "add new.txt"]) == 0
+    assert (
+        cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-SETU10", "add new.txt"]) == 0
+    )
 
     _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran"]')
     _script(monkeypatch, _edit("new.txt", "two\n"))
-    assert cli_main(["resume", "wt-SETU10", "--steer", "rewrite new.txt"]) == 0
+    assert cli_entry.cli_main(["resume", "wt-SETU10", "--steer", "rewrite new.txt"]) == 0
     assert "setup command: sh -c" in capsys.readouterr().err
 
     tip = git_read.chain_tip(repo, git_read.chain_ref_for("wt-SETU10"))
@@ -1635,7 +1686,7 @@ def test_a_gate_script_staged_but_not_committed_refuses_before_the_worktree_exis
     _pin_gate(repo)
     prov = _script(monkeypatch)
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-GATE02", "task"]) == 2
+    assert cli_entry.cli_main(["run", "--worktree", "--session-id", "wt-GATE02", "task"]) == 2
 
     assert prov.calls == 0
     assert _nothing_was_created(repo, "wt-GATE02")
@@ -1652,4 +1703,4 @@ def test_a_run_in_a_repo_with_a_name_that_is_not_utf8_completes(
     _git(repo, "commit", "-qm", "a latin-1 name")
     _script(monkeypatch, _edit("new.txt", "one\n"))
 
-    assert cli_main(["run", "--session-id", "latin-1", "add new.txt"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", "latin-1", "add new.txt"]) == 0

@@ -19,7 +19,7 @@ from agent6.providers import provider_calls
 from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
@@ -151,7 +151,7 @@ def test_tasks_merge_creates_one_commit_per_task_range_under_its_title(
     _checkpoint(tmp_path, ref, base, "parser_test.py", first.id)
     tip = _checkpoint(tmp_path, ref, base, "cli.py", second.id)
 
-    assert main(["sessions", "merge", "run-TASK01"]) == 0
+    assert entry.main(["sessions", "merge", "run-TASK01"]) == 0
 
     subjects = _git(tmp_path, "log", "--format=%s", "main").splitlines()
     assert subjects == ["Wire the parser into the CLI", "Add the parser", "init"]
@@ -202,7 +202,7 @@ def test_tasks_merge_under_the_model_style_takes_the_models_message_with_the_tas
     monkeypatch.setattr(role_providers, "build_role_provider", provider)
     monkeypatch.setattr(provider_calls, "call_for_text", draft)
 
-    assert main(["sessions", "merge", "run-TASK05"]) == 0
+    assert entry.main(["sessions", "merge", "run-TASK05"]) == 0
 
     subjects = _git(tmp_path, "log", "--format=%s", "main").splitlines()
     assert subjects == ["feat(cli): wire the parser in", "feat(parser): add the parser", "init"]
@@ -224,7 +224,7 @@ def test_tasks_merge_of_an_undecomposed_run_creates_one_commit(
     _checkpoint(tmp_path, ref, base, "a.txt", None)
     _checkpoint(tmp_path, ref, base, "b.txt", None)
 
-    assert main(["sessions", "merge", "run-TASK02"]) == 0
+    assert entry.main(["sessions", "merge", "run-TASK02"]) == 0
 
     assert len(_git(tmp_path, "log", "--format=%s", "main").splitlines()) == 2
     assert (tmp_path / "b.txt").exists()
@@ -241,7 +241,7 @@ def test_tasks_merge_with_an_operator_message_creates_one_commit(
     _checkpoint(tmp_path, ref, base, "one.txt", first.id)
     _checkpoint(tmp_path, ref, base, "two.txt", second.id)
 
-    assert main(["sessions", "merge", "run-TASK03", "-m", "both at once"]) == 0
+    assert entry.main(["sessions", "merge", "run-TASK03", "-m", "both at once"]) == 0
 
     assert _git(tmp_path, "log", "--format=%s", "main").splitlines() == ["both at once", "init"]
 
@@ -267,7 +267,7 @@ def test_a_conflict_in_a_later_task_range_leaves_the_target_unchanged(
     _git(tmp_path, "commit", "-qam", "main edits the README")
     moved = _git(tmp_path, "rev-parse", "main")
 
-    assert main(["sessions", "merge", "run-TASK04"]) == 1
+    assert entry.main(["sessions", "merge", "run-TASK04"]) == 1
 
     assert _git(tmp_path, "rev-parse", "main") == moved
     assert "added.txt" not in _git(tmp_path, "ls-tree", "--name-only", "main")

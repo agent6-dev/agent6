@@ -18,7 +18,7 @@ from agent6 import paths
 from agent6.app import fork_worktrees, role_providers
 from agent6.providers import provider_types
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from agent6.vcs.git import read as git_read
 
 _CONFIG = """
@@ -127,7 +127,7 @@ def _manifest(repo: pathlib.Path, session_id: str) -> sessions_manifest.SessionM
 def _run(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: str) -> pathlib.Path:
     """Run one editing session in its own worktree and return the worktree."""
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
-    assert cli_main(["run", "--worktree", "--session-id", session_id, "add new.txt"]) == 0
+    assert entry.cli_main(["run", "--worktree", "--session-id", session_id, "add new.txt"]) == 0
     worktree = _manifest(repo, session_id).worktree
     assert worktree is not None
     return worktree
@@ -168,7 +168,7 @@ def test_a_command_typed_in_the_clone_finds_the_repositorys_sessions(
     capsys.readouterr()
 
     monkeypatch.chdir(worktree)
-    assert cli_main(["sessions", "show", "cl-HERE01"]) == 0
+    assert entry.cli_main(["sessions", "show", "cl-HERE01"]) == 0
     assert "cl-HERE01" in capsys.readouterr().out
 
 
@@ -181,7 +181,7 @@ def test_resume_from_the_checkout_continues_in_the_clone(
     first = git_read.chain_tip(repo, git_read.chain_ref_for("cl-RESU01"))
 
     _script(monkeypatch, _edit("more.txt", "from the resume\n"))
-    assert cli_main(["resume", "cl-RESU01", "--steer", "add more.txt"]) == 0
+    assert entry.cli_main(["resume", "cl-RESU01", "--steer", "add more.txt"]) == 0
 
     tip = git_read.chain_tip(repo, git_read.chain_ref_for("cl-RESU01"))
     assert tip is not None and tip != first
@@ -198,9 +198,9 @@ def test_prune_removes_the_clone_after_its_work_merges(
     worktree = _run(repo, monkeypatch, "cl-MERG01")
     capsys.readouterr()
 
-    assert cli_main(["sessions", "merge", "cl-MERG01", "--method", "squash"]) == 0
+    assert entry.cli_main(["sessions", "merge", "cl-MERG01", "--method", "squash"]) == 0
     assert (repo / "new.txt").read_text(encoding="utf-8") == "made by the run\n"
-    assert cli_main(["sessions", "prune"]) == 0
+    assert entry.cli_main(["sessions", "prune"]) == 0
 
     assert "removed cl-MERG01's worktree (merged)" in capsys.readouterr().out
     assert not worktree.exists()
@@ -213,11 +213,11 @@ def test_prune_keeps_a_clone_that_holds_work_no_commit_has(
     repo = _repo(tmp_path, monkeypatch)
     _git(repo, "checkout", "-q", "--", "a.py")
     worktree = _run(repo, monkeypatch, "cl-KEPT01")
-    assert cli_main(["sessions", "merge", "cl-KEPT01", "--method", "squash"]) == 0
+    assert entry.cli_main(["sessions", "merge", "cl-KEPT01", "--method", "squash"]) == 0
     (worktree / "left.txt").write_text("not committed\n", encoding="utf-8")
     capsys.readouterr()
 
-    assert cli_main(["sessions", "prune"]) == 0
+    assert entry.cli_main(["sessions", "prune"]) == 0
 
     assert (
         "kept cl-KEPT01's worktree (holds work no commit has: left.txt)" in capsys.readouterr().out
@@ -250,7 +250,7 @@ def test_remove_deletes_the_clone_with_the_record(
     repo = _repo(tmp_path, monkeypatch)
     worktree = _run(repo, monkeypatch, "cl-REMO01")
 
-    assert cli_main(["sessions", "remove", "cl-REMO01", "--yes"]) == 0
+    assert entry.cli_main(["sessions", "remove", "cl-REMO01", "--yes"]) == 0
 
     assert not worktree.exists()
     assert git_read.chain_tip(repo, git_read.chain_ref_for("cl-REMO01")) is None
@@ -280,7 +280,7 @@ def test_a_fork_gets_a_clone_at_the_turn_it_forks_from(
     _run(repo, monkeypatch, "cl-SRC001")
 
     _script(monkeypatch, _edit("fork.txt", "from the fork\n"))
-    assert cli_main(["fork", "cl-SRC001", "--session-id", "cl-FORK01", "--steer", "add"]) == 0
+    assert entry.cli_main(["fork", "cl-SRC001", "--session-id", "cl-FORK01", "--steer", "add"]) == 0
 
     worktree = _manifest(repo, "cl-FORK01").worktree
     assert worktree is not None and fork_worktrees.is_clone(worktree)

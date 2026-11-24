@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 from agent6 import errors, paths
-from agent6.ui.cli import cli_main, entry, main
+from agent6.ui.cli import entry
 from agent6.viewmodel.session import status as session_status
 
 
@@ -28,7 +28,7 @@ def test_plan_show_prints_plan(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n\nbody\n")
-    rc = main(["plan", "show", "happy-tree-abcd"])
+    rc = entry.main(["plan", "show", "happy-tree-abcd"])
     assert rc == 0
     assert "# Plan: foo" in capsys.readouterr().out
 
@@ -40,7 +40,7 @@ def test_plan_show_resolves_prefix(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n")
-    rc = main(["plan", "show", "happy"])
+    rc = entry.main(["plan", "show", "happy"])
     assert rc == 0
     assert "# Plan: foo" in capsys.readouterr().out
 
@@ -54,7 +54,7 @@ def test_plan_show_prefix_ignores_a_run_of_the_same_prefix(
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n")
     (paths.state_dir(tmp_path) / "sessions" / "runs" / "happy-tree-zzzz").mkdir(parents=True)
-    assert main(["plan", "show", "happy"]) == 0
+    assert entry.main(["plan", "show", "happy"]) == 0
     assert "# Plan: foo" in capsys.readouterr().out
 
 
@@ -66,7 +66,7 @@ def test_plan_show_omit_id_uses_most_recent_plan(
     # Matches the omit-for-latest convention of the runs commands.
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "only-plan-abcd", "# Plan: the latest\n\nsteps\n")
-    rc = main(["plan", "show"])
+    rc = entry.main(["plan", "show"])
     assert rc == 0
     assert "# Plan: the latest" in capsys.readouterr().out
 
@@ -92,7 +92,7 @@ def test_plan_show_ends_with_one_newline(
     """Plan output terminates its last line without adding a blank line to terminated files."""
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n\nbody" + newline)
-    assert main(["plan", "show", "happy-tree-abcd"]) == 0
+    assert entry.main(["plan", "show", "happy-tree-abcd"]) == 0
     assert capsys.readouterr().out == "# Plan: foo\n\nbody\n"
 
 
@@ -114,7 +114,7 @@ def test_plan_show_omit_id_with_no_plans_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert main(["plan", "show"]) == 2
+    assert entry.main(["plan", "show"]) == 2
     assert "no plans yet" in capsys.readouterr().err
 
 
@@ -125,7 +125,7 @@ def test_plan_show_missing_run_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (paths.state_dir(tmp_path) / "sessions" / "plans").mkdir(parents=True)
-    rc = main(["plan", "show", "nonexistent"])
+    rc = entry.main(["plan", "show", "nonexistent"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
 
@@ -137,7 +137,7 @@ def test_plan_show_no_plan_md_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (paths.state_dir(tmp_path) / "sessions" / "plans" / "happy-tree-abcd").mkdir(parents=True)
-    rc = main(["plan", "show", "happy-tree-abcd"])
+    rc = entry.main(["plan", "show", "happy-tree-abcd"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "plan.md" in err
@@ -150,7 +150,7 @@ def test_plan_requires_task_or_show(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     # Bare `plan` injects the `run` verb and reports the missing task.
-    rc = main(["plan"])
+    rc = entry.main(["plan"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
 
@@ -166,7 +166,7 @@ def test_plan_edit_invokes_editor(
     script.write_text(f"#!/bin/sh\necho edited >> $1\ntouch {marker}\n", encoding="utf-8")
     script.chmod(0o755)
     monkeypatch.setenv("EDITOR", str(script))
-    rc = main(["plan", "edit", "happy-tree-abcd"])
+    rc = entry.main(["plan", "edit", "happy-tree-abcd"])
     assert rc == 0
     assert marker.exists()
     assert "edited" in plan.read_text(encoding="utf-8")
@@ -187,7 +187,7 @@ def test_plan_edit_honors_a_multi_word_editor(
     )
     script.chmod(0o755)
     monkeypatch.setenv("EDITOR", f"{script} --wait")
-    rc = main(["plan", "edit", "happy-tree-efgh"])
+    rc = entry.main(["plan", "edit", "happy-tree-efgh"])
     assert rc == 0
     assert marker.exists()
     assert "edited" in plan.read_text(encoding="utf-8")
@@ -212,7 +212,7 @@ def test_run_from_a_plan_with_no_task_runs_that_plan(
 
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _fake_run)
     monkeypatch.setattr(entry, "_prompt_for_the_next_input", _no_prompt)
-    assert main(["run", "--from", "happy-tree-abcd"]) == 0
+    assert entry.main(["run", "--from", "happy-tree-abcd"]) == 0
     assert "do it" in str(seen["context"]) and "1. step" in str(seen["context"])
     assert seen["task"] == ""
     assert seen["seed_from"] == ""
@@ -255,7 +255,7 @@ def _run_from_plan(
 
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _fake_run)
     monkeypatch.setattr(entry, "_prompt_for_the_next_input", _no_prompt)
-    assert main(["run", "--from", "happy-tree-abcd"]) == 0
+    assert entry.main(["run", "--from", "happy-tree-abcd"]) == 0
     return seen
 
 
@@ -305,7 +305,7 @@ def test_run_from_a_run_with_no_task_names_what_it_needs(
     run_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "busy-fox-abcd"
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text('{"mode": "run"}', encoding="utf-8")
-    assert main(["run", "--from", "busy-fox-abcd"]) == 2
+    assert entry.main(["run", "--from", "busy-fox-abcd"]) == 2
     assert "needs a task" in capsys.readouterr().err
 
 
@@ -316,7 +316,7 @@ def test_run_from_a_plan_missing_plan_md_names_the_plan(
     session_id = "empty-fox-abcd"
     (paths.state_dir(tmp_path) / "sessions" / "plans" / session_id).mkdir(parents=True)
 
-    assert cli_main(["run", "--from", session_id]) == 2
+    assert entry.cli_main(["run", "--from", session_id]) == 2
 
     err = capsys.readouterr().err
     assert session_id in err
@@ -330,7 +330,7 @@ def test_run_from_a_plan_with_empty_plan_md_names_the_plan(
     session_id = "blank-owl-abcd"
     _seed_plan(tmp_path, session_id, " \n\t")
 
-    assert cli_main(["run", "--from", session_id]) == 2
+    assert entry.cli_main(["run", "--from", session_id]) == 2
 
     err = capsys.readouterr().err
     assert session_id in err
@@ -364,8 +364,8 @@ def test_an_unreadable_plan_refuses_rather_than_crashing(
     plan.chmod(0o000)
     try:
         with pytest.raises(errors.OperatorError, match="could not read"):
-            main(["run", "--from", "quiet-fox-abcd"])
-        assert cli_main(["run", "--from", "quiet-fox-abcd"]) == 2
+            entry.main(["run", "--from", "quiet-fox-abcd"])
+        assert entry.cli_main(["run", "--from", "quiet-fox-abcd"]) == 2
         err = capsys.readouterr().err
         assert "could not read" in err
         assert str(plan) in err
@@ -384,7 +384,7 @@ def test_an_unreadable_plan_refuses_in_plan_show_too(
     plan = _seed_plan(tmp_path, "quiet-owl-abcd", "# Plan: do it\n")
     plan.chmod(0o000)
     try:
-        assert cli_main(["plan", "show", "quiet-owl-abcd"]) == 2
+        assert entry.cli_main(["plan", "show", "quiet-owl-abcd"]) == 2
         err = capsys.readouterr().err
         assert "could not read" in err
         assert "report this" not in err
@@ -406,7 +406,7 @@ def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
         return rc
 
     monkeypatch.setattr(entry, "_prompt_for_the_next_input", _no_prompt)
-    assert main(["plan", "--tui", "lay out the work"]) == 0
+    assert entry.main(["plan", "--tui", "lay out the work"]) == 0
     assert seen["task"] == "lay out the work"
     assert seen["mode"] == "plan" and seen["tui"] is True
 
@@ -421,7 +421,7 @@ def test_plan_edit_reports_an_editor_that_failed(
     script.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
     script.chmod(0o755)
     monkeypatch.setenv("EDITOR", str(script))
-    assert main(["plan", "edit", "happy-tree-ijkl"]) == 1
+    assert entry.main(["plan", "edit", "happy-tree-ijkl"]) == 1
     assert "exited 3" in capsys.readouterr().err
 
 
@@ -432,7 +432,7 @@ def test_plan_edit_refuses_a_malformed_editor(
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-mnop", "original\n")
     monkeypatch.setenv("EDITOR", "'oops")
-    rc = main(["plan", "edit", "happy-tree-mnop"])
+    rc = entry.main(["plan", "edit", "happy-tree-mnop"])
     assert rc == 1
     assert "$EDITOR" in capsys.readouterr().err
 
@@ -447,7 +447,7 @@ def test_a_bare_run_names_the_plan_the_way_its_execution_does(
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-qrst", "# Plan: Do the thing\n\n1. step\n")
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    assert main(["run"]) == 2
+    assert entry.main(["run"]) == 2
     err = capsys.readouterr().err
     assert "happy-tree-qrst (Do the thing)" in err
     assert "Plan: Do the thing" not in err
@@ -467,7 +467,7 @@ def test_plan_show_names_a_session_that_is_not_a_plan(
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
-    assert main(["plan", "show", session_id]) == 2
+    assert entry.main(["plan", "show", session_id]) == 2
     err = capsys.readouterr().err
     assert f"{session_id} is a session under {bucket}/, not a plan" in err
     assert "no session matches" not in err

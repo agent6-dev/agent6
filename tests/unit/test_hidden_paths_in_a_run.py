@@ -13,7 +13,7 @@ import pytest
 
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from tests.unit import test_queued_question_lifecycle as lifecycle
 
 _CONFIG = """
@@ -100,7 +100,7 @@ def _run(monkeypatch: pytest.MonkeyPatch, session_id: str, steps: list[Any]) -> 
     monkeypatch.setattr(
         role_providers, "build_role_provider", lifecycle._use(lifecycle._Scripted(steps))
     )
-    return cli_main(["run", "--session-id", session_id, "task"])
+    return entry.cli_main(["run", "--session-id", session_id, "task"])
 
 
 def test_a_hidden_file_a_command_writes_reaches_no_commit_and_no_object(

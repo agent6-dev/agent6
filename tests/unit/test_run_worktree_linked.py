@@ -14,7 +14,7 @@ from agent6.config import Config, layer
 from agent6.sandbox import jail
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import policy as tools_policy
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from agent6.ui.cli import run as cli_run
 from tests.unit import test_run_worktree as worktree_tests
 
@@ -81,7 +81,7 @@ def test_resume_and_forks_keep_the_recorded_git_grant(
     """Resume and a same-checkout fork must not drop or rediscover the source's grant."""
     repo, checkout = _checkout(tmp_path, monkeypatch)
     worktree_tests._script(monkeypatch)
-    assert cli_main(["run", "--session-id", "linked-source", "look around"]) == 0
+    assert entry.cli_main(["run", "--session-id", "linked-source", "look around"]) == 0
     granted: list[pathlib.Path | None] = []
     real_tools = session_runtime.build_session_tools
 
@@ -91,7 +91,7 @@ def test_resume_and_forks_keep_the_recorded_git_grant(
 
     monkeypatch.setattr(session_runtime, "build_session_tools", tools)
     worktree_tests._script(monkeypatch)
-    assert cli_main(["resume", "linked-source", "--steer", "look again"]) == 0
+    assert entry.cli_main(["resume", "linked-source", "--steer", "look again"]) == 0
     child, rc = fork.create_fork(
         (), "linked-source", new_session_id="linked-child", cwd=checkout, worktree=False
     )
@@ -100,9 +100,9 @@ def test_resume_and_forks_keep_the_recorded_git_grant(
     assert saved.worktree is None
     assert saved.worktree_git_dir == repo / ".git"
     worktree_tests._script(monkeypatch)
-    assert cli_main(["resume", child, "--steer", "look again"]) == 0
+    assert entry.cli_main(["resume", child, "--steer", "look again"]) == 0
     assert granted == [repo / ".git", repo / ".git"]
-    assert cli_main(["fork", child, "--session-id", "linked-new", "--no-run"]) == 0
+    assert entry.cli_main(["fork", child, "--session-id", "linked-new", "--no-run"]) == 0
     added = sessions_manifest.read_manifest(worktree_tests._run_dir(repo, "linked-new"))
     assert added.worktree is not None and added.worktree != checkout
     assert added.worktree_git_dir == repo / ".git"
@@ -128,7 +128,7 @@ def test_a_pointer_outside_any_repository_refuses_before_start(
     pointer.write_text(f"gitdir: {target}\n", encoding="utf-8")
     provider = worktree_tests._script(monkeypatch)
     if surface == "cli":
-        rc = cli_main(["run", "--session-id", "bad-pointer", "look around"])
+        rc = entry.cli_main(["run", "--session-id", "bad-pointer", "look around"])
     else:
         rc = run_lifecycle.run_task(
             layer.load_effective(checkout).config,
@@ -151,7 +151,7 @@ def test_a_rewritten_pointer_cannot_replace_the_startup_grant(
     """The saved grant, not a replacement .git pointer, controls later command policies."""
     repo, checkout = _checkout(tmp_path, monkeypatch)
     worktree_tests._script(monkeypatch)
-    assert cli_main(["run", "--session-id", "linked-rewrite", "look around"]) == 0
+    assert entry.cli_main(["run", "--session-id", "linked-rewrite", "look around"]) == 0
     saved = sessions_manifest.read_manifest(worktree_tests._run_dir(repo, "linked-rewrite"))
     (checkout / ".git").write_text("gitdir: /etc\n", encoding="utf-8")
     with pytest.raises(jail.JailUnavailableError, match="a rewritten pointer grants nothing"):

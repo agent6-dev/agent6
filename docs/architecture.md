@@ -54,7 +54,7 @@ Each entry is the package's docstring.
 - **[`ui/cli`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/cli)**: The agent6 command-line interface.
     - The entry point that wires a run: it imports every other `ui` package, and none imports it.
     - `entry` parses argv and dispatches to one module per command family.
-    - The console script and the tests enter through `main` and `cli_main`.
+    - The console script and the tests enter through `entry.main` and `entry.cli_main`.
     - Main modules: `entry`, `run`, `sessions_cmds`, `machine_cmds`, `config_cmds`.
 - **[`ui/telemetry`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/telemetry)**: The telemetry exporter: a reader of session journals beside the four front-ends.
     - It imports `viewmodel`, `sessions` and `config`, and no layer below `ui`.

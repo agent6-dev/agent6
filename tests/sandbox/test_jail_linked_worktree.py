@@ -9,7 +9,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from tests.unit import test_run_worktree as worktree_tests
 
 
@@ -83,7 +83,7 @@ def test_a_user_worktree_session_reads_git_but_cannot_write_metadata(
         for i, argv in enumerate(commands)
     ]
     worktree_tests._script(monkeypatch, *turns)
-    assert cli_main(["run", "--session-id", "jailed-linked", "inspect git"]) == 0
+    assert entry.cli_main(["run", "--session-id", "jailed-linked", "inspect git"]) == 0
     session_dir = worktree_tests._run_dir(repo, "jailed-linked")
     saved = sessions_manifest.read_manifest(session_dir)
     assert saved.worktree is None and saved.worktree_git_dir == git_dir
@@ -122,6 +122,6 @@ def test_a_write_grant_inside_the_git_dir_refuses_the_start(
     paths.global_config_path().write_text(config, encoding="utf-8")
     monkeypatch.chdir(checkout)
     worktree_tests._script(monkeypatch)
-    assert cli_main(["run", "--session-id", "jailed-linked-grant", "inspect git"]) == 2
+    assert entry.cli_main(["run", "--session-id", "jailed-linked-grant", "inspect git"]) == 2
     err = capsys.readouterr().err
     assert str(admin) in err and "inside the repository git dir" in err

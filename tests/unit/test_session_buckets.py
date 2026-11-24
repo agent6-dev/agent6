@@ -108,7 +108,7 @@ def test_every_hub_lists_every_hub_bucket(
     Each surface carried its own `("runs", "asks")` tuple, so adding plans/ left `agent6 sessions`
     printing "no sessions yet" over a real plan.
     """
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
     from agent6.ui.web import model as web_model
     from agent6.viewmodel import listing
 
@@ -120,7 +120,7 @@ def test_every_hub_lists_every_hub_bucket(
         '{"type": "session.start", "mode": "run", "user_task": "t"}\n', encoding="utf-8"
     )
 
-    assert main(["sessions", "list"]) == 0
+    assert entry.main(["sessions", "list"]) == 0
     assert "brave-oak-AAAAAA" in capsys.readouterr().out
     assert [p.name for p in listing.session_dirs(state)] == ["brave-oak-AAAAAA"]
     hub_ids = [s["session_id"] for s in web_model.hub_payload(tmp_path)["sessions"]]

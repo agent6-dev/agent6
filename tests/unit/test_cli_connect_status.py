@@ -16,7 +16,8 @@ import pytest
 from agent6 import paths
 from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry, secret_store
 from agent6.providers import oauth, oauth_protocol, transport
-from agent6.ui.cli import connect_status, main
+from agent6.ui.cli import connect_status
+from agent6.ui.cli import entry as cli_entry
 
 
 @pytest.fixture
@@ -78,7 +79,7 @@ def test_status_probes_keys_and_command_tokens(
 
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr(transport, "http_request", request)
-    assert main(["connect", "--status"]) == 0
+    assert cli_entry.main(["connect", "--status"]) == 0
     output = capsys.readouterr()
     assert output.out.splitlines()[1].endswith(expected)
     assert output.out.splitlines()[0].split() == [
@@ -159,7 +160,7 @@ def test_status_lists_with_bound_bearer_without_refresh_or_exchange(
         return httpx2.Response(response, json=body, request=httpx2.Request(method, url))
 
     monkeypatch.setattr(transport, "http_request", request)
-    assert main(["connect", "--status", "work"]) == 0
+    assert cli_entry.main(["connect", "--status", "work"]) == 0
     output = capsys.readouterr()
     row = " ".join(output.out.splitlines()[1].split())
     expected = "verified" if response == 200 else "refused: HTTP 401"
@@ -204,7 +205,7 @@ def test_status_checks_claude_code_login_without_a_model_call(
         )
 
     monkeypatch.setattr(subprocess, "run", run)
-    assert main(["connect", "--status"]) == 0
+    assert cli_entry.main(["connect", "--status"]) == 0
     row = capsys.readouterr().out.splitlines()[1]
     if signed_in:
         assert row.endswith("verified")
@@ -239,7 +240,7 @@ def test_status_skips_without_credentials_or_listing(
         pytest.fail("a skipped provider must not send a request")
 
     monkeypatch.setattr(transport, "http_request", forbidden)
-    assert main(["connect", "--status"]) == 0
+    assert cli_entry.main(["connect", "--status"]) == 0
     assert capsys.readouterr().out.splitlines()[1].endswith(f"skipped: {reason}")
 
 

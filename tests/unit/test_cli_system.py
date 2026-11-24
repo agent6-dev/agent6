@@ -11,7 +11,7 @@ import tempfile
 
 import pytest
 
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.ui.cli import system_cmds as sc
 
 
@@ -34,11 +34,11 @@ def test_status_reports_installed(
     profile = tmp_path / "agent6-jail"
     profile.write_text("x", encoding="utf-8")
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(profile))
-    assert main(["system", "apparmor", "status"]) == 0
+    assert entry.main(["system", "apparmor", "status"]) == 0
     assert "AppArmor profile: installed" in capsys.readouterr().out
     # and a missing profile reads not-installed
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(tmp_path / "absent"))
-    assert main(["system", "apparmor", "status"]) == 0
+    assert entry.main(["system", "apparmor", "status"]) == 0
     assert "AppArmor profile: not installed" in capsys.readouterr().out
 
 

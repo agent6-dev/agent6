@@ -228,12 +228,12 @@ def test_watch_screen_shows_states_transitions_and_end(
 ) -> None:
     """The watch screen renders the state overview, the log transition and the ended status."""
     from agent6.machine import semantics
-    from agent6.ui.cli import main as cli_main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert cli_main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
     spec = semantics.load_machine(f)
 
@@ -269,7 +269,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
     watched still announces.
     """
     from agent6.machine import semantics
-    from agent6.ui.cli import main as cli_main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     fired: list[tuple[str, str]] = []
@@ -280,7 +280,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
     monkeypatch.setattr(notify, "desktop_notify", fake_notify)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert cli_main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
     spec = semantics.load_machine(f)
 
@@ -309,12 +309,12 @@ def test_watch_screen_disables_steer_and_message_when_ended(
 ) -> None:
     """An ended machine takes no input: Steer and Message dim and their actions are no-ops."""
     from agent6.machine import semantics
-    from agent6.ui.cli import main as cli_main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert cli_main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
     spec = semantics.load_machine(f)
     # A per-state dir so _current_state_dir() resolves: the dead dir a steer would hit.
@@ -357,12 +357,12 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
 ) -> None:
     """An ended machine's log ending on a model.call renders no live thinking line."""
     from agent6.machine import semantics
-    from agent6.ui.cli import main as cli_main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert cli_main(["machine", "run", str(f)]) == 0  # terminates at once -> ended
+    assert entry.main(["machine", "run", str(f)]) == 0  # terminates at once -> ended
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
     spec = semantics.load_machine(f)
     state = instance / "states" / "0000-route"
@@ -1035,13 +1035,13 @@ def test_machines_page_lists_instances_with_their_files(
     An instance's status and current state join its authored file; a file no instance ran has
     a blank status.
     """
-    from agent6.ui.cli import main as cli_main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     (tmp_path / "other.asm.toml").write_text(TINY.replace('"tiny"', '"other"'), encoding="utf-8")
-    assert cli_main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     state = paths.state_dir(tmp_path)
 
     class _Host(textual_app.App[None]):
@@ -1154,11 +1154,11 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
     Disabling the binding made it a silent no-op that Help still listed.
     """
     from agent6.machine import semantics
-    from agent6.ui.cli import main as cli_main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = _write(tmp_path / "waiter.asm.toml")
-    assert cli_main(["machine", "run", str(f), "--exit-on-wait"]) == 0  # parks, worker gone
+    assert entry.main(["machine", "run", str(f), "--exit-on-wait"]) == 0  # parks, worker gone
     instance = paths.state_dir(tmp_path) / "machines" / "waiter_demo"
     spec = semantics.load_machine(f)
 

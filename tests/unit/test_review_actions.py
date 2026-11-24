@@ -10,7 +10,7 @@ import pytest
 from agent6 import review_records
 from agent6.app.review import actions as review_actions
 from agent6.sessions import event_log, ipc, journal, lock, process
-from agent6.ui.cli import main
+from agent6.ui.cli import entry as cli_entry
 from agent6.viewmodel.session import log as session_log
 from tests import review_helpers
 
@@ -20,12 +20,12 @@ def test_cli_lists_line_evidence_without_lowering_severity(
 ) -> None:
     saved = review_helpers.reviewed_repo(tmp_path)
     monkeypatch.chdir(tmp_path)
-    assert main(["sessions", "findings", saved.session_id]) == 0
+    assert cli_entry.main(["sessions", "findings", saved.session_id]) == 0
     text = capsys.readouterr().out
     assert text.count("Pre-existing line") == 1
     assert "old.txt:2" in text and text.count("  block  ") == 4
     assert "Blame:" in text
-    assert main(["sessions", "findings", saved.session_id, "--json"]) == 0
+    assert cli_entry.main(["sessions", "findings", saved.session_id, "--json"]) == 0
     wire = json.loads(capsys.readouterr().out)
     assert wire["findings"][0]["line_origin"]["kind"] == "pre_existing"
     assert wire["findings"][2]["line_origin"]["kind"] == "changed"
@@ -40,13 +40,13 @@ def test_findings_names_an_absent_review_and_an_empty_review(
     monkeypatch.chdir(tmp_path)
     saved.logs_path.write_text('{"type":"session.start"}\n')
     args = ["sessions", "findings", saved.session_id]
-    assert main(args) == 0
+    assert cli_entry.main(args) == 0
     assert capsys.readouterr().out == "no review recorded\n"
     panel.update(findings=[], injected_finding_ids=[])
     saved.logs_path.write_text(json.dumps(panel) + "\n")
-    assert main(args) == 0
+    assert cli_entry.main(args) == 0
     assert capsys.readouterr().out == "Review version 1\nno open findings\n"
-    assert main([*args, "--all"]) == 0
+    assert cli_entry.main([*args, "--all"]) == 0
     assert capsys.readouterr().out == "Review version 1\nno findings\n"
     skipped = {
         "type": "review.skipped",
@@ -55,7 +55,7 @@ def test_findings_names_an_absent_review_and_an_empty_review(
         "reason": "review rules incomplete",
     }
     saved.logs_path.write_text(json.dumps(skipped) + "\n")
-    assert main([*args, "--all"]) == 0
+    assert cli_entry.main([*args, "--all"]) == 0
     assert (
         capsys.readouterr().out
         == "Review version 1\nskipped: review rules incomplete\nno findings\n"
@@ -380,7 +380,7 @@ def test_cli_resolve_reopen_and_findings(
     saved = review_helpers.reviewed_session(tmp_path)
     monkeypatch.chdir(tmp_path)
     assert (
-        main(
+        cli_entry.main(
             [
                 "sessions",
                 "resolve",
@@ -398,11 +398,14 @@ def test_cli_resolve_reopen_and_findings(
         )
         == 0
     )
-    assert main(["sessions", "findings", saved.session_id, "--json"]) == 0
+    assert cli_entry.main(["sessions", "findings", saved.session_id, "--json"]) == 0
     output = capsys.readouterr().out
     assert '"finding_id": "f2"' in output
     assert '"finding_id": "f1"' not in output
-    assert main(["sessions", "reopen", saved.session_id, "f1", "--reason", "Still occurs"]) == 0
+    assert (
+        cli_entry.main(["sessions", "reopen", saved.session_id, "f1", "--reason", "Still occurs"])
+        == 0
+    )
     assert review_actions.read_review(saved.session_dir).findings[0].status == "open"
 
 
@@ -411,7 +414,7 @@ def test_cli_finding_fix_refuses_a_finished_run_without_starting_one(
 ) -> None:
     saved = review_helpers.reviewed_session(tmp_path)
     monkeypatch.chdir(tmp_path)
-    assert main(["steer", saved.session_id, "--finding", "f1"]) == 2
+    assert cli_entry.main(["steer", saved.session_id, "--finding", "f1"]) == 2
     assert "Resume to fix" in capsys.readouterr().err
     assert review_actions.read_review(saved.session_dir).version == 1
 

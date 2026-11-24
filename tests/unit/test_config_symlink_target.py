@@ -66,7 +66,7 @@ def test_every_writer_keeps_the_link_not_just_config_set(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every writer keeps the link, through one resolver, not just `config set`."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
@@ -78,14 +78,14 @@ def test_every_writer_keeps_the_link_not_just_config_set(
     link = paths.global_config_path()
     link.symlink_to(real)
 
-    assert main(["config", "add", "sandbox.fetch_approved_hosts", "b.example"]) == 0
+    assert entry.main(["config", "add", "sandbox.fetch_approved_hosts", "b.example"]) == 0
     assert link.is_symlink(), "`config add` replaced the dotfiles symlink"
     assert "b.example" in real.read_text(encoding="utf-8"), "the write missed the real file"
 
-    assert main(["config", "remove", "sandbox.fetch_approved_hosts", "b.example"]) == 0
+    assert entry.main(["config", "remove", "sandbox.fetch_approved_hosts", "b.example"]) == 0
     assert link.is_symlink(), "`config remove` replaced the dotfiles symlink"
 
-    assert main(["config", "fill", "--force"]) == 0
+    assert entry.main(["config", "fill", "--force"]) == 0
     assert link.is_symlink(), "`config fill` replaced the dotfiles symlink"
 
 
@@ -94,7 +94,7 @@ def test_config_fix_preserves_the_link_while_removing_invalid_entries(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, destination: str
 ) -> None:
     """Config repair keeps symlinks and repairs several invalid entries in one file."""
-    from agent6.ui import cli
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
@@ -113,7 +113,7 @@ def test_config_fix_preserves_the_link_while_removing_invalid_entries(
     )
     link.symlink_to(real)
     args = ["--machine-file", str(link)] if destination == "machine" else []
-    assert cli.main(["config", "fix", *args]) == 0
+    assert entry.main(["config", "fix", *args]) == 0
     assert link.is_symlink()
     text = real.read_text(encoding="utf-8")
     assert "run_commands" not in text and "unknown" not in text
@@ -162,7 +162,7 @@ def test_machine_overlay_writers_keep_a_symlinked_machine_file(
     expected: dict[str, object],
 ) -> None:
     """Machine overlay edits follow an owned machine-file symlink."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -175,7 +175,7 @@ def test_machine_overlay_writers_keep_a_symlinked_machine_file(
     link = tmp_path / "linked.asm.toml"
     link.symlink_to(target)
 
-    assert main(["config", *command, "--machine-file", str(link)]) == 0
+    assert entry.main(["config", *command, "--machine-file", str(link)]) == 0
 
     assert link.is_symlink(), f"`config {command[0]} --machine-file` replaced the symlink"
     assert (

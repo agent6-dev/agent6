@@ -351,7 +351,7 @@ def test_ask_review_uses_real_reviewer_sessions(
     short_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6 import paths
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry
     from agent6.viewmodel import receipt
 
     repo = short_repo / "origin"
@@ -378,7 +378,7 @@ decompose = "off"
 verify.infer = false
 verify.when = "never"
 ''')
-        rc = cli_main(["--config", str(config), "ask", "/review"])
+        rc = entry.cli_main(["--config", str(config), "ask", "/review"])
     assert rc == 0
     (parent,) = (paths.state_dir(repo) / "sessions" / "asks").iterdir()
     view = receipt.read_receipt(parent, repo)

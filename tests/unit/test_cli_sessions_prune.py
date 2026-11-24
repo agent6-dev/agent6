@@ -14,7 +14,7 @@ from agent6 import paths
 from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
@@ -104,7 +104,7 @@ def test_runs_prune_classifies_branches(
     _make_branch(tmp_path, "unmrg11", "u.txt")
     _manifest(tmp_path, "unmrg11", base, merged=False)
 
-    rc = main(["sessions", "prune"])
+    rc = entry.main(["sessions", "prune"])
     cap = capsys.readouterr()
     text = cap.out + cap.err
     assert rc == 0
@@ -134,12 +134,12 @@ def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
     # The manifest says squash-merged, but the branch itself is gone.
     _manifest(tmp_path, "gone11", base, merged=True, merged_sha="0" * 40)
 
-    assert main(["sessions", "commits", "gone11"]) == 0
+    assert entry.main(["sessions", "commits", "gone11"]) == 0
     out = capsys.readouterr().out
     # A stamp naming no merge commit reads as the content being on the base.
     assert "was pruned; already on main, no merge commit" in out
 
-    assert main(["sessions", "diff", "gone11"]) == 0
+    assert entry.main(["sessions", "diff", "gone11"]) == 0
     assert "was pruned" in capsys.readouterr().out
 
 
@@ -157,13 +157,13 @@ def test_a_run_that_committed_nothing_is_not_reported_as_deleted(
     base = _git(tmp_path, "rev-parse", "HEAD")
     _manifest(tmp_path, "nocommit1", base, merged=False)  # no branch, no chain ref
 
-    assert main(["sessions", "commits", "nocommit1"]) == 0
+    assert entry.main(["sessions", "commits", "nocommit1"]) == 0
     out = capsys.readouterr().out
     assert "committed nothing" in out and "never cut" in out
     assert "no longer exists" not in out
 
     # Nothing to merge is not a failure (a zero-commit branch says the same).
-    assert main(["sessions", "merge", "nocommit1"]) == 0
+    assert entry.main(["sessions", "merge", "nocommit1"]) == 0
     assert "nothing to merge: this run committed nothing" in capsys.readouterr().out
 
 
@@ -188,7 +188,7 @@ def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
     _git(tmp_path, "branch", "-D", "agent6/gonebr1")
     _manifest(tmp_path, "gonebr1", base, merged=False)
 
-    assert main(["sessions", "commits", "gonebr1"]) == 0
+    assert entry.main(["sessions", "commits", "gonebr1"]) == 0
     out, err = capsys.readouterr()
     assert tip[:12] in out and "work gonebr1" in out
     assert git_read.chain_ref_for("gonebr1") in err
@@ -221,7 +221,7 @@ def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
     _git(tmp_path, "branch", "-D", "agent6/stale11")
     _manifest(tmp_path, "stale11", base, merged=True, merged_tip=merged_tip)
 
-    assert main(["sessions", "commits", "stale11"]) == 0
+    assert entry.main(["sessions", "commits", "stale11"]) == 0
     out, err = capsys.readouterr()
     assert "work stale11" in out and "a later execution" in out
     assert git_read.chain_ref_for("stale11") in err
@@ -249,7 +249,7 @@ def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(
     _make_branch(tmp_path, "unmrg22", "u.txt")
     _manifest(tmp_path, "unmrg22", base, merged=False)
 
-    rc = main(["sessions", "prune", "--delete-squashed"])
+    rc = entry.main(["sessions", "prune", "--delete-squashed"])
     cap = capsys.readouterr()
     text = cap.out + cap.err
     assert rc == 0
@@ -278,7 +278,7 @@ def test_runs_prune_from_non_base_does_not_mislabel_merge_as_squash(
     # switch to a branch cut from the ORIGINAL base, so reach22 is unreachable here
     _git(tmp_path, "checkout", "-q", "-b", "feature", base)
 
-    rc = main(["sessions", "prune"])
+    rc = entry.main(["sessions", "prune"])
     cap = capsys.readouterr()
     text = cap.out + cap.err
     assert rc == 0
@@ -297,7 +297,7 @@ def test_runs_prune_no_branches(
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
-    rc = main(["sessions", "prune"])
+    rc = entry.main(["sessions", "prune"])
     assert rc == 0
     assert "no agent6/* run branches" in capsys.readouterr().out
 
@@ -332,7 +332,7 @@ def test_runs_prune_delete_squashed_keeps_a_branch_that_advanced_after_the_merge
     after = _git(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "checkout", "-q", "main")
 
-    rc = main(["sessions", "prune", "--delete-squashed"])
+    rc = entry.main(["sessions", "prune", "--delete-squashed"])
     text = "".join(capsys.readouterr())
     assert rc == 0
     assert _branch_exists(tmp_path, "agent6/resmd33")  # the post-merge commit survives
@@ -377,7 +377,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     text = "".join(capsys.readouterr())
     assert _branch_exists(tmp_path, "agent6/pretip1")  # unconfirmed: kept
     assert "no merge tip was recorded" in text
@@ -426,7 +426,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     plain = "".join(capsys.readouterr())
     assert "no merge tip was recorded" in plain
     assert "git branch -D agent6/pretip2" in plain
@@ -436,7 +436,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     _manifest(tmp_path, "pretip2", base, merged=True)
     _git(tmp_path, "checkout", "-q", "-b", "elsewhere")
     _git(tmp_path, "branch", "-q", "-m", "main", "renamed")
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     no_base = "".join(capsys.readouterr())
     assert _branch_exists(tmp_path, "agent6/pretip2")
     assert "--delete-squashed, or:" not in no_base
@@ -449,7 +449,7 @@ def test_runs_dir_prints_the_state_dir(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    assert main(["sessions", "dir"]) == 0
+    assert entry.main(["sessions", "dir"]) == 0
     printed = capsys.readouterr().out.strip()
     assert printed == str(paths.state_dir(repo))
     assert "\n" not in printed
@@ -476,7 +476,7 @@ def test_runs_remove_deletes_history_but_refuses_a_live_run(
     with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n')
 
-    assert main(["sessions", "remove", "live-run"]) == 2
+    assert entry.main(["sessions", "remove", "live-run"]) == 2
     err = capsys.readouterr().err
     assert "still live" in err and "agent6 stop live-run-AAAA11" in err
     assert live.is_dir()
@@ -484,12 +484,12 @@ def test_runs_remove_deletes_history_but_refuses_a_live_run(
     # session.stop precedes the worker's finalizer; the pid remains the deletion gate until then.
     with (live / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n')
-    assert main(["sessions", "remove", "live-run"]) == 2
+    assert entry.main(["sessions", "remove", "live-run"]) == 2
     err = capsys.readouterr().err
     assert "still live" in err and "agent6 stop live-run-AAAA11" in err
     assert live.is_dir()
 
-    assert main(["sessions", "remove", "dead-run"]) == 0
+    assert entry.main(["sessions", "remove", "dead-run"]) == 0
     assert "removed dead-run-BBBB22" in capsys.readouterr().out
     assert not dead.exists()
 
@@ -535,7 +535,7 @@ def test_runs_remove_names_the_kept_branch(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "remove", "gone-run-CCCC33"]) == 0
+    assert entry.main(["sessions", "remove", "gone-run-CCCC33"]) == 0
     out = capsys.readouterr().out
     assert "branch agent6/gone-run-CCCC33 kept" in out
     assert "prune" in out
@@ -576,7 +576,7 @@ def test_remove_names_the_sha_when_the_chain_was_the_only_anchor(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "remove", "loose-run111"]) == 0
+    assert entry.main(["sessions", "remove", "loose-run111"]) == 0
 
     out = capsys.readouterr().out
     assert f"git branch <name> {head[:12]}" in out, out
@@ -592,8 +592,8 @@ def test_runs_remove_asks_clears_the_bucket(
     asks = paths.state_dir(repo) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
-    assert main(["sessions", "remove", "some-id", "--asks"]) == 2
-    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
+    assert entry.main(["sessions", "remove", "some-id", "--asks"]) == 2
+    assert entry.main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert "removed 2 asks" in capsys.readouterr().out
     assert not asks.exists()
 
@@ -645,7 +645,7 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     # machine chain: no run manifest; never touched, never mentioned.
     _git(tmp_path, "update-ref", git_read.chain_ref_for("machine-box1"), base)
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert not _chain_ref_exists(tmp_path, "run-RCH111")
     assert _chain_ref_exists(tmp_path, "run-SQH111")  # squash needs the flag
@@ -655,7 +655,7 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     assert "machine-box1" not in out
     assert "chain refs: deleted 1, kept 3 (1 machine, 1 squash-merged, 1 unmerged)" in out
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert not _chain_ref_exists(tmp_path, "run-SQH111")
     assert _chain_ref_exists(tmp_path, "run-UNM111")
@@ -683,7 +683,7 @@ def test_prune_reaches_chain_refs_with_no_run_branches(
     _manifest(tmp_path, "run-NOBR11", base, merged=True)
     assert not _git(tmp_path, "branch", "--list", "agent6/*")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
 
     assert not _chain_ref_exists(tmp_path, "run-NOBR11")
     assert f"deleted {git_read.chain_ref_for('run-NOBR11')}" in capsys.readouterr().out
@@ -712,7 +712,7 @@ def test_a_squash_deleted_chain_ref_prints_its_undelete(
     _git(tmp_path, "branch", "-D", "agent6/run-SQCH11")
     _manifest(tmp_path, "run-SQCH11", base, merged=True, merged_tip=tip)
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
 
     out = capsys.readouterr().out
     assert not _chain_ref_exists(tmp_path, "run-SQCH11")
@@ -742,7 +742,7 @@ def test_a_noop_merge_stamp_is_checked_by_the_base_tip_it_recorded(
     _git(tmp_path, "commit", "-q", "-m", "the same edit, by hand")
     held_by = _git(tmp_path, "rev-parse", "HEAD")
     _manifest(tmp_path, "run-NOOP11", base, merged=False)
-    assert main(["sessions", "merge", "run-NOOP11"]) == 0
+    assert entry.main(["sessions", "merge", "run-NOOP11"]) == 0
     capsys.readouterr()
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-NOOP11"
@@ -754,7 +754,7 @@ def test_a_noop_merge_stamp_is_checked_by_the_base_tip_it_recorded(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "edit n again")
     _git(tmp_path, "reset", "-q", "--hard", "HEAD~2")  # main no longer holds either
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert _branch_exists(tmp_path, "agent6/run-NOOP11")
     assert "main no longer holds its content" in out, out
@@ -763,12 +763,12 @@ def test_a_noop_merge_stamp_is_checked_by_the_base_tip_it_recorded(
     (tmp_path / "n.txt").write_text("y\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "edit n again")
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     assert not _branch_exists(tmp_path, "agent6/run-NOOP11")  # the base still holds it
 
     _make_branch(tmp_path, "run-OLD11", "o.txt")
     _manifest(tmp_path, "run-OLD11", base, merged=True, merged_sha="0" * 40)  # an older record
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert _branch_exists(tmp_path, "agent6/run-OLD11")
     assert "the record names no commit to check" in out, out
@@ -786,7 +786,7 @@ def test_prune_with_nothing_at_all_says_so(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     assert "nothing to prune" in capsys.readouterr().out
 
 
@@ -807,7 +807,7 @@ def test_remove_reports_a_deletion_failure_instead_of_success(
     )
     runs.chmod(0o500)  # the parent refuses the unlink
     try:
-        rc = main(["sessions", "remove", "stuck-run"])
+        rc = entry.main(["sessions", "remove", "stuck-run"])
     finally:
         runs.chmod(0o700)
     assert rc == 1
@@ -890,13 +890,18 @@ def test_prune_preserves_a_created_fork_at_an_already_reachable_commit(
         ).model_dump_json(),
         encoding="utf-8",
     )
-    assert main(["fork", "origin11", "--at-turn", "4", "--no-run", "--session-id", "fresh11"]) == 0
+    assert (
+        entry.main(["fork", "origin11", "--at-turn", "4", "--no-run", "--session-id", "fresh11"])
+        == 0
+    )
     capsys.readouterr()
     child = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="fresh11")
     worktree = pathlib.Path(json.loads(child.manifest_path.read_text(encoding="utf-8"))["worktree"])
     assert not child.logs_path.exists()
 
-    assert main(["sessions", "prune", *(["--delete-squashed"] if delete_squashed else [])]) == 0
+    assert (
+        entry.main(["sessions", "prune", *(["--delete-squashed"] if delete_squashed else [])]) == 0
+    )
 
     out = capsys.readouterr().out
     assert _branch_exists(tmp_path, "agent6/fresh11"), out
@@ -905,7 +910,7 @@ def test_prune_preserves_a_created_fork_at_an_already_reachable_commit(
     assert "kept agent6/fresh11 (unmerged" in out
     assert "kept fresh11's worktree (unmerged)" in out
     assert "deleted agent6/fresh11" not in out
-    assert main(["sessions", "show", "fresh11"]) == 0
+    assert entry.main(["sessions", "show", "fresh11"]) == 0
     shown = capsys.readouterr().out
     assert "created (no events yet)" in shown
     assert "is gone" not in shown
@@ -927,7 +932,7 @@ def test_prune_removes_the_worktree_of_a_merged_fork_and_keeps_an_unmerged_one(
     kept = _fork_with_worktree(tmp_path, "fork-unmrgd11", merged=False)
     (kept / "wip.txt").write_text("in flight\n", encoding="utf-8")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert not merged.exists()
     assert (kept / "wip.txt").read_text(encoding="utf-8") == "in flight\n"
@@ -956,7 +961,7 @@ def test_prune_leaves_a_worktree_no_manifest_records_alone(
     forgotten = _fork_with_worktree(tmp_path, "fork-forgot11", merged=False, record=False)
     (forgotten / "wip.txt").write_text("in flight\n", encoding="utf-8")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert (foreign / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
     assert (forgotten / "wip.txt").read_text(encoding="utf-8") == "in flight\n"
@@ -980,7 +985,7 @@ def test_remove_removes_the_worktree_its_manifest_records(
     worktree = _fork_with_worktree(tmp_path, "fork-gone11", merged=False)
     _git(tmp_path, "update-ref", git_read.chain_ref_for("fork-gone11"), "HEAD")
 
-    assert main(["sessions", "remove", "fork-gone11"]) == 0
+    assert entry.main(["sessions", "remove", "fork-gone11"]) == 0
     out = capsys.readouterr().out
     assert not worktree.exists()
     assert str(worktree) not in _git(tmp_path, "worktree", "list", "--porcelain")
@@ -1043,7 +1048,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
         os.getpid(),
     )
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert (shared / "wip.txt").exists() and (moved / "later.txt").exists() and live.exists()
     assert "kept fork-child011's worktree (unmerged)" in out
@@ -1052,7 +1057,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     assert "kept fork-live0011's worktree (live)" in out
 
     _git(tmp_path, "update-ref", git_read.chain_ref_for("fork-parent11"), "HEAD")
-    assert main(["sessions", "remove", "fork-parent11"]) == 0
+    assert entry.main(["sessions", "remove", "fork-parent11"]) == 0
     out = capsys.readouterr().out
     assert (shared / "wip.txt").exists()
     assert "removed fork-parent11 and its chain ref" in out
@@ -1080,7 +1085,7 @@ def test_removing_a_worktree_deletes_only_its_checkout_lock(
     planted.mkdir(parents=True)
     (planted / "manifest.json").write_text('{"session_id": "planted-run-AAAA11"}', encoding="utf-8")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert not merged.exists()
     assert not lock.exists()
@@ -1101,7 +1106,7 @@ def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
     (merged / "README.md").write_text("edited, never committed\n", encoding="utf-8")
     (merged / "notes.md").write_text("hours of untracked notes\n", encoding="utf-8")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
 
     out = capsys.readouterr().out
     assert merged.is_dir(), "a dirty worktree was deleted"
@@ -1125,7 +1130,7 @@ def test_remove_removes_a_record_whose_worktree_is_already_gone(
     _git(tmp_path, "worktree", "remove", "--force", str(worktree))
     assert not worktree.exists()
 
-    assert main(["sessions", "remove", "fork-swept11"]) == 0
+    assert entry.main(["sessions", "remove", "fork-swept11"]) == 0
 
     assert "removed fork-swept11" in capsys.readouterr().out
     assert not (paths.state_dir(tmp_path) / "sessions" / "runs" / "fork-swept11").exists()
@@ -1143,7 +1148,7 @@ def test_remove_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
     worktree = _fork_with_worktree(tmp_path, "fork-hold111", merged=True)
     (worktree / "notes.md").write_text("hours of untracked notes\n", encoding="utf-8")
 
-    assert main(["sessions", "remove", "fork-hold111"]) == 2
+    assert entry.main(["sessions", "remove", "fork-hold111"]) == 2
 
     err = capsys.readouterr().err
     assert "notes.md" in err and str(worktree) in err
@@ -1183,7 +1188,7 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
     data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
 
     out = capsys.readouterr().out
     assert not worktree.exists(), "a worktree holding only committed work was kept"
@@ -1219,7 +1224,7 @@ def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
     _git(tmp_path, "branch", "-D", "feature")  # the base the stamp names is gone
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
 
     out = capsys.readouterr().out
     assert _git(
@@ -1249,7 +1254,7 @@ def test_delete_squashed_keeps_a_branch_whose_merge_commit_the_base_lost(
     _manifest(tmp_path, "lost22", base, merged=True, merged_sha=squash)
     _git(tmp_path, "reset", "-q", "--hard", base)
 
-    rc = main(["sessions", "prune", "--delete-squashed"])
+    rc = entry.main(["sessions", "prune", "--delete-squashed"])
     text = capsys.readouterr().out
     assert rc == 0
     assert _branch_exists(tmp_path, "agent6/lost22")
@@ -1287,7 +1292,7 @@ def test_delete_squashed_counts_a_chain_ref_whose_merge_commit_the_base_lost_by_
     )
     _git(tmp_path, "reset", "-q", "--hard", base)
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert _git(tmp_path, "rev-parse", "--verify", "--quiet", git_read.chain_ref_for("reflost1"))
     assert "1 main no longer holds the merge commit" in out
@@ -1308,7 +1313,7 @@ def test_remove_says_why_a_worktree_it_could_not_remove_stays(
     wt = _fork_with_worktree(tmp_path, "fork-stuck001", merged=True)
     wt.chmod(0o500)  # clean, and no file in it will unlink
     try:
-        assert main(["sessions", "remove", "fork-stuck001"]) == 0
+        assert entry.main(["sessions", "remove", "fork-stuck001"]) == 0
     finally:
         wt.chmod(0o700)
     out = capsys.readouterr().out
@@ -1347,7 +1352,7 @@ def test_prune_names_a_chain_ref_that_advanced_since_its_squash_merge(
         merged_sha=_git(tmp_path, "rev-parse", "HEAD"),
     )
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert _git(tmp_path, "rev-parse", "--verify", "--quiet", git_read.chain_ref_for("moved1"))
     assert "1 advanced since the merge" in out
@@ -1379,7 +1384,7 @@ def test_delete_squashed_names_a_chain_ref_whose_merge_tip_was_never_recorded(
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
 
     for argv in (["sessions", "prune"], ["sessions", "prune", "--delete-squashed"]):
-        assert main(argv) == 0
+        assert entry.main(argv) == 0
         out = capsys.readouterr().out
         assert _git(tmp_path, "rev-parse", "--verify", "--quiet", git_read.chain_ref_for("notip1"))
         assert "1 no merge tip was recorded" in out, argv
@@ -1422,7 +1427,7 @@ def test_prune_confirms_a_forked_plans_branch_across_buckets(
         + "\n",
         encoding="utf-8",
     )
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     assert "deleted agent6/brave-oak-AAAAAA (squash-merged into main)" in capsys.readouterr().out
     assert not _branch_exists(tmp_path, "agent6/brave-oak-AAAAAA")
 
@@ -1466,7 +1471,7 @@ def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
     process.write_worker_pid(live2.session_dir, os.getpid())
     live2.manifest_path.write_text("{", encoding="utf-8")  # torn: its liveness still counts
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert _branch_exists(tmp_path, "agent6/live1") and _branch_exists(tmp_path, "agent6/live2")
     assert "kept agent6/live1 (live)" in out and "kept agent6/live2 (live)" in out
@@ -1491,7 +1496,7 @@ def test_prune_counts_a_branch_without_a_record_apart_from_the_unmerged(
     _git(tmp_path, "merge", "--squash", "agent6/norec11")
     _git(tmp_path, "commit", "-q", "-m", "squash norec11")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
 
     out = capsys.readouterr().out
     assert "kept agent6/norec11 (no session record; review, then: git branch -D" in out
@@ -1558,7 +1563,7 @@ def test_prune_records_a_manual_merge(
     _manifest(tmp_path, "diff11", base, merged=False)
     main_tip = _git(tmp_path, "rev-parse", "main")
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert (
         "[agent6] agent6/hand11: main already has its content; recorded as merged into main" in out
@@ -1583,7 +1588,7 @@ def test_prune_records_a_manual_merge(
     assert "kept 3 (1 merged, 2 unmerged)" in out
     assert "chain refs: deleted 0, kept 1 (1 squash-merged)" in out
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert not _branch_exists(tmp_path, "agent6/hand11")
     assert not _chain_ref_exists(tmp_path, "pick11")
@@ -1608,7 +1613,7 @@ def test_prune_checks_the_checked_out_branch_when_the_runs_base_is_gone(
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     layout.manifest_path.write_text(json.dumps({**data, "base_branch": "feature"}) + "\n")
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert "agent6/gone11: main already has its content; recorded as merged into main" in out
     merged = _recorded_merge(tmp_path, "gone11")
@@ -1634,7 +1639,7 @@ def test_delete_squashed_follows_the_content_through_a_rewritten_base(
     _git(tmp_path, "commit", "-q", "--amend", "-m", "squash sign11, reworded")
     assert _git(tmp_path, "rev-parse", "HEAD") != squash
 
-    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert not _branch_exists(tmp_path, "agent6/sign11"), out
     assert "deleted agent6/sign11 (squash-merged into main)" in out

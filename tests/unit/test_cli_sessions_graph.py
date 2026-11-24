@@ -16,7 +16,7 @@ from agent6 import paths
 from agent6.graph import models, storage
 from agent6.sessions import child_dispatch, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def _node(
@@ -94,7 +94,7 @@ def test_the_task_tree_prints_beside_a_dispatch_record_this_version_cannot_read(
         "segments": [],
     }
     (records / f"{sid}-p1.json").write_text(json.dumps(old), encoding="utf-8")
-    assert main(["sessions", command, sid]) == 0
+    assert entry.main(["sessions", command, sid]) == 0
     out = capsys.readouterr().out
     assert "step 1" in out and "sub 1b" in out
     (named,) = [line for line in out.splitlines() if f"{sid}-p1.json" in line]
@@ -106,7 +106,7 @@ def test_history_graph_renders_dfs_order(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_tree(tmp_path, "test-run-AAAA11")
-    rc = main(["sessions", "graph", "test-run-AAAA11"])
+    rc = entry.main(["sessions", "graph", "test-run-AAAA11"])
     out = capsys.readouterr().out
     assert rc == 0
     lines = [line for line in out.splitlines() if line and not line.startswith("Session id:")]
@@ -141,7 +141,7 @@ def test_a_half_linked_task_is_still_shown(
     for n in nodes.values():
         storage.write_node(layout, nodes, n)
 
-    assert main(["sessions", "graph", "half-run-AAAA11"]) == 0
+    assert entry.main(["sessions", "graph", "half-run-AAAA11"]) == 0
 
     out = capsys.readouterr().out
     assert "step A" in out, out
@@ -159,7 +159,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
     os.utime(runs / "older-run-AAAA11" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run-BBBB22" / "logs.jsonl", (1000, 1000))
     process.register_frontend(runs / "older-run-AAAA11", 12345)
-    rc = main(["sessions", "graph"])
+    rc = entry.main(["sessions", "graph"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "· root task" in captured.out
@@ -179,7 +179,7 @@ def test_history_graph_skips_sessions_without_a_graph_dir(
     newest.mkdir()
     (newest / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(newest / "logs.jsonl", (2000, 2000))
-    assert main(["sessions", "graph"]) == 0
+    assert entry.main(["sessions", "graph"]) == 0
     captured = capsys.readouterr()
     assert "Session id: older-with-graph" in captured.out
     assert "older-with-graph" in captured.err
@@ -189,7 +189,7 @@ def test_history_graph_missing_run_errors(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    rc = main(["sessions", "graph", "nonexistent"])
+    rc = entry.main(["sessions", "graph", "nonexistent"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "no runs directory" in err or "no session matches" in err
@@ -204,7 +204,7 @@ def test_history_graph_empty_graph_errors(
     )
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
-    rc = main(["sessions", "graph", "empty-run-CCCC33"])
+    rc = entry.main(["sessions", "graph", "empty-run-CCCC33"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "no persisted graph nodes" in err

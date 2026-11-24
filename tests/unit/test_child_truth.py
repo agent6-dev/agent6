@@ -15,7 +15,7 @@ from agent6.config import Config, layer
 from agent6.graph import storage
 from agent6.harness.verify import child as child_verify
 from agent6.sessions import child_dispatch, layout
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from tests import launch_env
 from tests.unit import test_children_cli as children_cli
 
@@ -57,7 +57,7 @@ def _run(
         )
         config = tmp / "config.toml"
         config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
-        cli_main(
+        entry.cli_main(
             ["--config", str(config), "run", "--auto-approve", "--parallel", "1", "write answer"]
         )
     runs = paths.state_dir(repo) / "sessions" / "runs"
@@ -72,20 +72,20 @@ def test_parent_names_the_child_that_verified_its_exact_tree(
     (record,) = child_dispatch.read_records(parent)
     child = record.children[0].session_id
     capsys.readouterr()
-    assert cli_main(["sessions", "show", parent.name, "--json"]) == 0
+    assert entry.cli_main(["sessions", "show", parent.name, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["verification"] == "passed"
-    assert cli_main(["sessions", "show", parent.name]) == 0
+    assert entry.cli_main(["sessions", "show", parent.name]) == 0
     assert f"verified by child {child}" in capsys.readouterr().out
-    assert cli_main(["sessions", "receipt", parent.name]) == 0
+    assert entry.cli_main(["sessions", "receipt", parent.name]) == 0
     receipt = capsys.readouterr().out
     assert "Final tree passed" in receipt and f"verified by child {child}" in receipt
     assert "No verification recorded" not in receipt
-    assert cli_main(["sessions", "receipt", parent.name, "--json"]) == 0
+    assert entry.cli_main(["sessions", "receipt", parent.name, "--json"]) == 0
     parent_receipt = json.loads(capsys.readouterr().out)
     assert not parent_receipt["verifications"] and parent_receipt["final_verify_id"] is None
     proof = parent_receipt["child_verification"]
     assert (proof["session_id"], proof["tree"]) == (child, parent_receipt["end_tree"])
-    assert cli_main(["sessions", "receipt", child, "--json"]) == 0
+    assert entry.cli_main(["sessions", "receipt", child, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["final_verify_id"] == proof["verify_id"]
 
     # Even with the same imported ref and end word, only the actual full gate can certify.
@@ -111,7 +111,7 @@ def test_a_child_pass_does_not_cancel_the_parents_finish_gate(
     """A child's result cannot stand in for a gate the parent must run."""
     parent = _run(tmp_path, monkeypatch, "agent6", when="finish")
     capsys.readouterr()
-    assert cli_main(["sessions", "receipt", parent.name, "--json"]) == 0
+    assert entry.cli_main(["sessions", "receipt", parent.name, "--json"]) == 0
     receipt = json.loads(capsys.readouterr().out)
     assert receipt["final_verify_id"]
     assert receipt["child_verification"] is None
@@ -129,15 +129,15 @@ def test_model_git_completed_task_passes_with_its_retained_ref(
     )
     node = storage.load_graph(layout.layout_of(parent))[record.node_id or ""]
     assert node.status == "passed"
-    assert cli_main(["sessions", "show", parent.name]) == 0
+    assert entry.cli_main(["sessions", "show", parent.name]) == 0
     out = capsys.readouterr().out
     assert "no_child_result" not in out and f"retained on {merge.branch}" in out
     assert not (pathlib.Path.cwd() / "answer").exists()
-    assert cli_main(["sessions", "show", parent.name, "--json"]) == 0
+    assert entry.cli_main(["sessions", "show", parent.name, "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["stop_reason"] == "children_ranked"
     assert shown["verification"] == "unverified" and shown["child_verification"] is None
-    assert cli_main(["sessions", "show", record.children[0].session_id]) == 0
+    assert entry.cli_main(["sessions", "show", record.children[0].session_id]) == 0
     child = capsys.readouterr().out
     assert merge.branch in child and " · unmerged" not in child
 
@@ -155,7 +155,7 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
     capsys.readouterr()
     pages: list[str] = []
     for sid in (parent.name, child):
-        assert cli_main(["sessions", "show", sid]) == 0
+        assert entry.cli_main(["sessions", "show", sid]) == 0
         pages.append(capsys.readouterr().out)
     assert all(f"merged into {parent.name}'s chain at {merge.sha[:12]}" in page for page in pages)
     assert (
@@ -167,7 +167,7 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
         and f"sessions show {parent.name}" in pages[1]
     )
     assert f"sessions merge {child}" not in pages[1] and " · unmerged" not in pages[1]
-    assert cli_main(["sessions", "show", child, "--json"]) == 0
+    assert entry.cli_main(["sessions", "show", child, "--json"]) == 0
     own = json.loads(capsys.readouterr().out)
     assert (own["merged_into_parent"], own["parent_merge_sha"], own["merged_into_checkout"]) == (
         parent.name,
@@ -177,7 +177,7 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
 
     label = f"passed · merged into {parent.name}'s chain"
     assert own["status_label"] == label
-    assert cli_main(["attach", child, "--json"]) == 0
+    assert entry.cli_main(["attach", child, "--json"]) == 0
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["status_label"] == label
     assert snapshot["unmerged"] is False
@@ -185,7 +185,7 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
         parent.name,
         merge.sha,
     )
-    assert cli_main(["sessions", "merge", parent.name]) == 0
+    assert entry.cli_main(["sessions", "merge", parent.name]) == 0
     assert "unmerged runs that changed" not in capsys.readouterr().out
 
     # A legacy checkout stamp can name the destination without recording a tip.
@@ -193,7 +193,7 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
     manifest = json.loads(manifest_path.read_bytes())
     manifest["merged"].pop("tip")
     manifest_path.write_text(json.dumps(manifest))
-    assert cli_main(["attach", parent.name, "--json"]) == 0
+    assert entry.cli_main(["attach", parent.name, "--json"]) == 0
     legacy = json.loads(capsys.readouterr().out)
     assert legacy["merged_into_checkout"] == "main" and legacy["unmerged"] is False
 
@@ -203,11 +203,11 @@ def test_show_distinguishes_a_parent_chain_merge_from_a_checkout_merge(
     git(repo, "switch", merge.branch)
     git(repo, "commit", "--allow-empty", "-qm", "Extend answer")
     git(repo, "switch", "main")
-    assert cli_main(["attach", child, "--json"]) == 0
+    assert entry.cli_main(["attach", child, "--json"]) == 0
     advanced = json.loads(capsys.readouterr().out)
     assert advanced["unmerged"] is True and advanced["status_label"] == "passed · unmerged"
     assert advanced["parent_merge_sha"] == merge.sha
-    assert cli_main(["sessions", "show", child]) == 0
+    assert entry.cli_main(["sessions", "show", child]) == 0
     assert f"merge with: agent6 sessions merge {child}" in capsys.readouterr().out
 
 
@@ -227,14 +227,14 @@ def test_show_keeps_the_parent_chain_and_checkout_destinations_for_one_child(
     git(repo, "worktree", "add", str(checkout), first.branch)
     (checkout / "answer").write_text("extended\n")
     git(checkout, "commit", "-qam", "Extend answer")
-    assert cli_main(["sessions", "merge", child, "--into", "main", "--method", "squash"]) == 0
+    assert entry.cli_main(["sessions", "merge", child, "--into", "main", "--method", "squash"]) == 0
     assert children_cli._git(repo, "show", "main:answer") == "extended"
     capsys.readouterr()
-    assert cli_main(["sessions", "show", child, "--json"]) == 0
+    assert entry.cli_main(["sessions", "show", child, "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["merged_into_parent"] == parent.name
     assert shown["parent_merge_sha"] == parent_tip
     assert shown["merged_into_checkout"] == "main"
     assert shown["status_label"] == "passed · merged into main"
-    assert cli_main(["attach", child, "--json"]) == 0
+    assert entry.cli_main(["attach", child, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["status_label"] == shown["status_label"]

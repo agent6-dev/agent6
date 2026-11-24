@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import merge_plan
-from agent6.ui.cli import common, main, sessions_cmds, sessions_list, sessions_show
+from agent6.ui.cli import common, entry, sessions_cmds, sessions_list, sessions_show
 from agent6.ui.web import model as web_model
 
 
@@ -493,12 +493,12 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     assert merge_plan.same_paths_note(repo, run_one) == same
     assert web_model.merge_preview_payload(repo, run_one) == {"same_paths": same}
     assert merge_plan.same_paths_note(repo, common._runs_dir(repo) / "run-far-CCCCCC") == ""
-    assert main(["sessions", "merge", "run-one-AAAAAA"]) == 0
+    assert entry.main(["sessions", "merge", "run-one-AAAAAA"]) == 0
     merged = capsys.readouterr().out
     assert f"[agent6] {same}\n" in merged, merged
     assert "run-far-CCCCCC" not in merged
     # The last unmerged run over those paths has nobody left to name.
-    assert main(["sessions", "merge", "run-far-CCCCCC"]) == 0
+    assert entry.main(["sessions", "merge", "run-far-CCCCCC"]) == 0
     assert "same paths" not in capsys.readouterr().out
 
 
@@ -733,9 +733,9 @@ def test_the_json_row_carries_the_journal_task(
         encoding="utf-8",
     )
 
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
-    assert main(["sessions", "list", "--json"]) == 0
+    assert entry.main(["sessions", "list", "--json"]) == 0
 
     (row,) = json.loads(capsys.readouterr().out)
     assert row["task"] == task
@@ -914,8 +914,8 @@ def test_listing_does_not_start_the_run_engine(tmp_path: pathlib.Path) -> None:
 
     script = """\
 import sys
-from agent6.ui.cli import cli_main
-assert cli_main(['sessions', 'list', '--children']) == 0
+from agent6.ui.cli import entry
+assert entry.cli_main(['sessions', 'list', '--children']) == 0
 assert 'agent6.app.execution' not in sys.modules
 """
     subprocess.run([sys.executable, "-c", script], cwd=tmp_path, check=True)

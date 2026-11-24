@@ -12,7 +12,7 @@ from agent6.app import finalize, reporter, role_providers
 from agent6.harness import loop_snapshot
 from agent6.providers import provider_types
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from agent6.vcs.git import read as git_read
 
 
@@ -270,7 +270,7 @@ def test_cli_records_unverified_work_and_prints_its_guidance(
         return provider
 
     monkeypatch.setattr(role_providers, "build_role_provider", provider_factory)
-    assert cli_main(["run", "--session-id", "guidance", "write work"]) == (
+    assert entry.cli_main(["run", "--session-id", "guidance", "write work"]) == (
         5 if policy == "failed_commit" else 0
     )
     out = capsys.readouterr().out

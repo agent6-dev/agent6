@@ -558,7 +558,7 @@ def test_a_scoped_search_names_the_session_it_searched(
 
     from agent6 import paths
     from agent6.sessions import layout
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     if shutil.which("rg") is None:
         pytest.skip("ripgrep is not installed")
@@ -569,7 +569,7 @@ def test_a_scoped_search_names_the_session_it_searched(
         (runs / sid / "logs.jsonl").write_text(
             json.dumps({"type": "session.start", "user_task": text}) + "\n", encoding="utf-8"
         )
-    assert main(["history", "search", "UNIQUETERM123", "--session", "quiet-run-AAAAAA"]) == 1
+    assert entry.main(["history", "search", "UNIQUETERM123", "--session", "quiet-run-AAAAAA"]) == 1
     out = capsys.readouterr().out
     assert "no matches under" in out and "quiet-run-AAAAAA" in out
 
@@ -583,7 +583,7 @@ def test_cross_bucket_inspection_errors_call_an_ask_a_session(
 ) -> None:
     from agent6 import paths
     from agent6.sessions import layout
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     session = layout.bucket_dir(paths.state_dir(tmp_path), "asks") / "ask-one-AAAAAA"
@@ -592,7 +592,7 @@ def test_cross_bucket_inspection_errors_call_an_ask_a_session(
         json.dumps({"type": "session.start", "mode": "ask"}) + "\n", encoding="utf-8"
     )
 
-    assert main(["sessions", verb, "ask-one-AAAAAA"]) == 2
+    assert entry.main(["sessions", verb, "ask-one-AAAAAA"]) == 2
     err = capsys.readouterr().err
     assert "session ask-one-AAAAAA has no" in err
     assert "run ask-one-AAAAAA" not in err
@@ -607,7 +607,7 @@ def test_an_unscoped_no_match_names_the_sessions_root_it_read(
     from agent6 import paths
     from agent6.context import memory
     from agent6.sessions import layout
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     if shutil.which("rg") is None:
         pytest.skip("ripgrep is not installed")
@@ -620,5 +620,5 @@ def test_an_unscoped_no_match_names_the_sessions_root_it_read(
         encoding="utf-8",
     )
     memory.add(state, "rounding-rule", "UNIQUETERM123 is banker's rounding.")
-    assert main(["history", "search", "UNIQUETERM123"]) == 1
+    assert entry.main(["history", "search", "UNIQUETERM123"]) == 1
     assert f"no matches under {state / 'sessions'}." in capsys.readouterr().out

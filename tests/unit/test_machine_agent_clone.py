@@ -643,7 +643,7 @@ def test_prune_handles_a_machine_clone_after_failed_import(
     from agent6 import paths
     from agent6.app import worktrees
     from agent6.sessions import layout, process
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     origin = _origin(tmp_path)
     monkeypatch.chdir(origin)
@@ -676,7 +676,7 @@ def test_prune_handles_a_machine_clone_after_failed_import(
         process.write_worker_pid(instance, os.getpid())
     capsys.readouterr()
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     swept = proof == "reachable"
     assert clone.exists() is not swept

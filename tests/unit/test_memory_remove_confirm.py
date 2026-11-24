@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import paths, portable
 from agent6.context import memory
-from agent6.ui.cli import main, steer_tty
+from agent6.ui.cli import entry, steer_tty
 from tests.unit import test_sessions_remove_confirm as pty_cli
 
 pytestmark = pytest.mark.filterwarnings(
@@ -80,7 +80,7 @@ def test_memory_remove_without_a_terminal_deletes_without_asking(
         raise AssertionError("memory remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["memory", "remove", "build-quirk"]) == 0
+    assert entry.main(["memory", "remove", "build-quirk"]) == 0
     assert "removed build-quirk" in capsys.readouterr().out
     assert not fact.exists()
 
@@ -88,6 +88,6 @@ def test_memory_remove_without_a_terminal_deletes_without_asking(
 def test_memory_remove_help_states_the_question(capsys: pytest.CaptureFixture[str]) -> None:
     """`memory remove --help` says when it asks and names `--yes`."""
     with pytest.raises(SystemExit):
-        main(["memory", "remove", "--help"])
+        entry.main(["memory", "remove", "--help"])
     out = " ".join(capsys.readouterr().out.split())
     assert "asks [y/N] first" in out and "--yes" in out and "with no terminal" in out

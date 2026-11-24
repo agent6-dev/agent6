@@ -43,7 +43,7 @@ def test_cmd_init_reports_invalid_config_cleanly(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An invalid but parseable config makes `agent6 init` exit 2 with a repair pointer."""
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry as cli_entry
 
     repo = _repo(tmp_path)
     # A valid global with a provider, so the validator has a known-providers set to reject the typo.
@@ -60,7 +60,7 @@ def test_cmd_init_reports_invalid_config_cleanly(
 
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
-    rc = cli_main(["init", "--yes"])
+    rc = cli_entry.cli_main(["init", "--yes"])
     assert rc == 2
     err = capsys.readouterr().err
     assert err.startswith("ERROR: ")
@@ -72,14 +72,14 @@ def test_cmd_init_reports_invalid_config_cleanly(
 def test_cmd_init_does_not_blame_repo_config_for_an_invalid_explicit_config(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry as cli_entry
 
     repo = _repo(tmp_path)
     explicit = tmp_path / "broken.toml"
     explicit.write_text("not = [valid", encoding="utf-8")
     monkeypatch.chdir(repo)
 
-    assert cli_main(["--config", str(explicit), "init", "--yes"]) == 2
+    assert cli_entry.cli_main(["--config", str(explicit), "init", "--yes"]) == 2
 
     err = capsys.readouterr().err
     repair = err.splitlines()[-1]
@@ -102,13 +102,13 @@ def test_init_go_uses_go_advice_and_artifacts(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, flags: list[str]
 ) -> None:
     """A Go scaffold must not give Python advice or reject the explicit Go ecosystem."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     repo = _repo(tmp_path)
     (repo / "go.mod").write_text("module example.com/probe\n\ngo 1.22\n", encoding="utf-8")
     monkeypatch.chdir(repo)
 
-    assert main(["init", "--yes", *flags]) == 0
+    assert cli_entry.main(["init", "--yes", *flags]) == 0
 
     assert layer.load_effective(repo).config.harness.verify.command == ("go", "test", "./...")
     text = (repo / "AGENTS.md").read_text(encoding="utf-8")
@@ -262,11 +262,11 @@ def test_init_next_steps_name_only_what_is_still_missing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The "Next:" block lists only what the effective config still lacks."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     repo = _repo(tmp_path)
     monkeypatch.chdir(repo)
-    assert main(["init", "--yes"]) == 0
+    assert cli_entry.main(["init", "--yes"]) == 0
     out = capsys.readouterr().out
     assert "agent6 connect" in out and "agent6 model default" in out
     assert "verify is inferred per run" in out
@@ -280,7 +280,7 @@ def test_init_next_steps_name_only_what_is_still_missing(
         encoding="utf-8",
     )
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    assert main(["init", "--yes"]) == 0
+    assert cli_entry.main(["init", "--yes"]) == 0
     out = capsys.readouterr().out
     assert "agent6 connect" not in out and "agent6 model default" not in out
     assert "verify is inferred" not in out and 'agent6 run "<task>"' in out

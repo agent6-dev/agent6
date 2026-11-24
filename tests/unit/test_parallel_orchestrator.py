@@ -39,7 +39,7 @@ from agent6.harness.parallel import repo as child_repo
 from agent6.providers import provider_types
 from agent6.sessions import event_log, ipc, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import child_agent, cli_main, interact, main
+from agent6.ui.cli import child_agent, entry, interact
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -876,7 +876,7 @@ def test_child_setup_output_survives_import_and_a_failed_one_reaches_the_operato
         assert sum(event["type"] == "worktree.setup" for event in events) == 1
         with monkeypatch.context() as showing:
             showing.chdir(origin)
-            assert cli_main(["sessions", "show", child.session_id]) == 0
+            assert entry.cli_main(["sessions", "show", child.session_id]) == 0
         shown = capsys.readouterr().out
         assert command in shown
         # A setup that worked shows as its command line; a failed one keeps its output.
@@ -2280,7 +2280,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     assert child.is_dir()
     assert not listing.session_dirs(paths.state_dir(child))
     for _ in range(2):
-        assert main(["sessions", "prune"]) == 0
+        assert entry.main(["sessions", "prune"]) == 0
         out = capsys.readouterr().out
         assert child.is_dir()
         assert "no child session record" in out
@@ -2570,7 +2570,8 @@ def test_model_parallel_import_keeps_child_commits(
     config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
     monkeypatch.chdir(origin)
     assert (
-        cli_main(["--config", str(config), "run", "--auto-approve", "/parallel 2 -- do work"]) == 0
+        entry.cli_main(["--config", str(config), "run", "--auto-approve", "/parallel 2 -- do work"])
+        == 0
     )
     out = capsys.readouterr().out
     assert len(tips) == 2
@@ -2582,14 +2583,14 @@ def test_model_parallel_import_keeps_child_commits(
         assert wire.commits_ref(m, origin) == expected
         table = out.split("ranked candidates (best first):", 1)[1]
         assert f"work is on {expected}" in table
-        assert cli_main(["sessions", "show", name]) == 0
+        assert entry.cli_main(["sessions", "show", name]) == 0
         shown = capsys.readouterr().out
         assert f"work is on {expected}" in shown
         assert "merge with:" not in shown
         if head_kind == "taken":
             assert git_read.branch_tip_sha(origin, name) == base
     group = next(iter(tips)).rsplit("-l", 1)[0]
-    assert cli_main(["--config", str(config), "sessions", "compare", group]) == 0
+    assert entry.cli_main(["--config", str(config), "sessions", "compare", group]) == 0
     compared = capsys.readouterr().out
     for name in tips:
         expected = name if head_kind == "branch" else git_read.chain_ref_for(name)

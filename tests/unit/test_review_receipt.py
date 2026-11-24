@@ -234,7 +234,7 @@ def test_receipt_cli_states_the_cap_once_for_multiple_attempts(
     """The CLI receipt keeps one output cap and each attempt's truncation evidence."""
     import json
 
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
     from tests import review_helpers
 
     saved = review_helpers.reviewed_session(tmp_path)
@@ -243,7 +243,7 @@ def test_receipt_cli_states_the_cap_once_for_multiple_attempts(
             row = dataclasses.asdict(_record(stdout_truncated=cut, stderr_truncated=False))
             stream.write(json.dumps({"type": "verify.end", **row}) + "\n")
     monkeypatch.chdir(tmp_path)
-    assert main(["sessions", "receipt", saved.session_id]) == 0
+    assert entry.main(["sessions", "receipt", saved.session_id]) == 0
     out = capsys.readouterr().out
     assert "Testing (output cap: 2000 characters per stream)\n" in out
     assert out.count("2000 characters") == 1
@@ -257,11 +257,11 @@ def test_receipt_cli_is_read_only(
     """The receipt command reads evidence without needing a configured provider."""
     import json
 
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     merge_tests._setup_run(tmp_path, "receipt", commits=[])
     monkeypatch.chdir(tmp_path)
-    assert main(["sessions", "receipt", "receipt", "--json"]) == 0
+    assert entry.main(["sessions", "receipt", "receipt", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["session_id"] == "receipt"
     assert data["verifications"] == []

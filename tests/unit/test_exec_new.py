@@ -17,8 +17,7 @@ from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.sessions import lock
 from agent6.tools import policy as tools_policy
-from agent6.ui import cli
-from agent6.ui.cli import exec_cmds
+from agent6.ui.cli import entry, exec_cmds
 from agent6.viewmodel import listing
 
 
@@ -96,7 +95,7 @@ def test_disable_sandbox_reaches_the_executed_policy(
 
     monkeypatch.setattr(exec_cmds, "run_attached", attached)
     argv = ["exec", "--disable-sandbox", *(["--new"] if fresh else [layout.session_id])]
-    assert cli.main([*argv, "--", "true"]) == 0
+    assert entry.main([*argv, "--", "true"]) == 0
     assert len(seen) == 1
     assert seen[0].isolation == "none"
     assert seen[0].network == "host"
@@ -104,7 +103,7 @@ def test_disable_sandbox_reaches_the_executed_policy(
 
 
 def test_new_takes_the_command_verbatim(dispatched: dict[str, Any]) -> None:
-    assert cli.main(["exec", "--new", "ls", "-la"]) == 0
+    assert entry.main(["exec", "--new", "ls", "-la"]) == 0
     assert dispatched == {
         "form": "new",
         "argv": ("ls", "-la"),
@@ -112,26 +111,26 @@ def test_new_takes_the_command_verbatim(dispatched: dict[str, Any]) -> None:
 
 
 def test_new_without_a_command_asks_for_the_shell(dispatched: dict[str, Any]) -> None:
-    assert cli.main(["exec", "--new"]) == 0
+    assert entry.main(["exec", "--new"]) == 0
     assert dispatched["form"] == "new" and dispatched["argv"] == ()
 
 
 def test_new_drops_one_leading_separator(dispatched: dict[str, Any]) -> None:
-    assert cli.main(["exec", "--new", "--", "git", "log", "--", "p"]) == 0
+    assert entry.main(["exec", "--new", "--", "git", "log", "--", "p"]) == 0
     assert dispatched["argv"] == ("git", "log", "--", "p")
 
 
 def test_new_with_a_session_is_refused_naming_both_forms(
     dispatched: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["exec", "--new", "brave-otter", "--", "ls"]) == 2
+    assert entry.main(["exec", "--new", "brave-otter", "--", "ls"]) == 2
     err = capsys.readouterr().err
     assert "agent6 exec --new -- CMD..." in err and "agent6 exec SESSION -- CMD..." in err
     assert dispatched == {}
 
 
 def test_new_after_the_command_belongs_to_the_command(dispatched: dict[str, Any]) -> None:
-    assert cli.main(["exec", "ls", "--new"]) == 0
+    assert entry.main(["exec", "ls", "--new"]) == 0
     assert dispatched == {"form": "session", "argv": ("ls", "--new")}
 
 

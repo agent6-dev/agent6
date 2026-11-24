@@ -15,7 +15,7 @@ from agent6 import paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.providers import provider_types
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 
 _CONFIG = """
 [sandbox]
@@ -153,7 +153,7 @@ def test_a_seeded_runs_manifest_records_its_resolved_source(
     if bucket != "plans":
         args.append("continue from the source")
 
-    assert cli_main(args) == 0
+    assert entry.cli_main(args) == 0
 
     manifest = json.loads(
         (paths.state_dir(repo) / "sessions" / "runs" / destination_id / "manifest.json").read_text(
@@ -184,7 +184,7 @@ def test_a_seeded_asks_manifest_records_its_resolved_source(
     _seed_source(repo, "runs", source_id)
     provider.answer_ask = True
 
-    assert cli_main(["ask", "--from", "source-run-", "what should I do next?"]) == 0
+    assert entry.cli_main(["ask", "--from", "source-run-", "what should I do next?"]) == 0
 
     asks = list((paths.state_dir(repo) / "sessions" / "asks").iterdir())
     assert len(asks) == 1
@@ -209,7 +209,7 @@ def test_journal_keeps_operator_words_before_composition(
     session_id = "whole-prompt-AAA111"
     source = "source-plan-AAA111"
     _seed_source(repo, "plans", source)
-    assert cli_main(["run", "--session-id", session_id, "--from", source, words]) == 0
+    assert entry.cli_main(["run", "--session-id", session_id, "--from", source, words]) == 0
     session = paths.state_dir(repo) / "sessions" / "runs" / session_id
     rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
     assert next(row for row in rows if row["type"] == "session.start")["user_task"] == words
@@ -220,7 +220,7 @@ def test_journal_keeps_operator_words_before_composition(
     args = [continuation, session_id, "--steer", steer]
     if continuation == "fork":
         args += ["--session-id", "whole-fork-BBB222"]
-    assert cli_main(args) == 0
+    assert entry.cli_main(args) == 0
     if continuation == "fork":
         session = session.parent / "whole-fork-BBB222"
     rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
@@ -229,7 +229,7 @@ def test_journal_keeps_operator_words_before_composition(
     assert start["steer"] == steer
     assert next(row for row in rows if row["type"] == "steer.injected")["text"] == steer
     capsys.readouterr()
-    assert cli_main(["sessions", "show", session.name]) == 0
+    assert entry.cli_main(["sessions", "show", session.name]) == 0
     shown = capsys.readouterr().out.replace("\n" + " " * 12, "\n")
     assert steer in shown
     if continuation == "resume":
@@ -248,10 +248,10 @@ def test_parked_submission_keeps_the_typed_task(
     held = lock.acquire_repo_writer(paths.state_dir(repo), repo, "busy-run")
     assert held is not None
     try:
-        assert cli_main(["run", "--session-id", session_id, words]) == 2
+        assert entry.cli_main(["run", "--session-id", session_id, words]) == 2
     finally:
         lock.release_single_writer(held)
-    assert cli_main(["resume", session_id]) == 0
+    assert entry.cli_main(["resume", session_id]) == 0
     session = paths.state_dir(repo) / "sessions" / "runs" / session_id
     rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
     assert next(row for row in rows if row["type"] == "session.start")["user_task"] == words

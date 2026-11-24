@@ -20,7 +20,8 @@ from agent6 import paths
 from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry, secret_store
 from agent6.models import cache
 from agent6.providers import oauth, oauth_chatgpt, oauth_protocol, provider_types, transport
-from agent6.ui.cli import common, connect_oauth, main
+from agent6.ui.cli import common, connect_oauth
+from agent6.ui.cli import entry as cli_entry
 from agent6.ui.cli import model as modelmod
 from tests import provider_endpoint
 
@@ -58,7 +59,7 @@ def test_connect_stores_key_and_provider_and_never_execs(
 
     monkeypatch.setattr("subprocess.run", _record_run)
 
-    rc = main(["connect", "anthropic"])
+    rc = cli_entry.main(["connect", "anthropic"])
     assert rc == 0
 
     sp = tmp_path / "g" / "agent6" / "secrets.toml"
@@ -70,7 +71,7 @@ def test_connect_stores_key_and_provider_and_never_execs(
     assert "[providers.anthropic]" in gc
     assert calls == []
     assert "agent6 model default anthropic/<model>" in capsys.readouterr().out
-    assert main(["model", "default", "anthropic/claude-x"]) == 0
+    assert cli_entry.main(["model", "default", "anthropic/claude-x"]) == 0
     configured = tomllib.loads(paths.global_config_path().read_text())
     assert configured["models"] == {"default": {"model": "anthropic/claude-x"}}
 
@@ -81,7 +82,7 @@ def test_connect_openai_writes_the_responses_endpoint(
     """The OpenAI preset uses the Responses tools and reasoning wire."""
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
     _scripted_input(monkeypatch, "")
-    assert main(["connect", "openai"]) == 0
+    assert cli_entry.main(["connect", "openai"]) == 0
     entry = tomllib.loads(paths.global_config_path().read_text())["providers"]["openai"]
     assert entry == {"backend": "responses", "base_url": "https://api.openai.com/v1"}
 
@@ -103,7 +104,7 @@ def test_connect_preserves_hand_edited_provider_keys(
     )
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-or-FAKE\n"))
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept the preset base_url
-    rc = main(["connect", "openrouter"])
+    rc = cli_entry.main(["connect", "openrouter"])
     assert rc == 0
     text = gc.read_text(encoding="utf-8")
     assert "[providers.openrouter]" in text
@@ -118,7 +119,7 @@ def test_config_set_changes_the_backend_of_a_complete_entry(iso: pathlib.Path) -
     gc = paths.global_config_path()
     gc.parent.mkdir(parents=True)
     gc.write_text('[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:8000"\n')
-    assert main(["config", "set", "providers.p.backend", "responses"]) == 0
+    assert cli_entry.main(["config", "set", "providers.p.backend", "responses"]) == 0
     assert tomllib.loads(gc.read_text())["providers"]["p"]["backend"] == "responses"
 
 
@@ -190,7 +191,7 @@ def test_enter_at_the_base_url_prompt_keeps_the_url_it_shows(
         return cache.KeyProbeResult(ok=True, status="ok", detail="provider accepted the key")
 
     monkeypatch.setattr("agent6.models.cache.probe_provider_key", probe)
-    assert main(["connect", "az"]) == 0
+    assert cli_entry.main(["connect", "az"]) == 0
     saved = tomllib.loads(paths.global_config_path().read_text())["providers"]["az"]
     assert (prompts[-1], saved.get("base_url", "https://api.openai.com/v1"), probed) == (
         f"Base URL [{host}]: ",
@@ -212,7 +213,7 @@ def test_enter_at_the_backend_prompt_keeps_an_existing_blocks_format(
     gc.write_text(_AZURE_BLOCK + ("[budget]\nbogus_key = 1\n" if broken else ""), encoding="utf-8")
     prompts = _scripted_input(monkeypatch, "", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
-    rc = main(["connect", "az"])
+    rc = cli_entry.main(["connect", "az"])
     backend = tomllib.loads(gc.read_text())["providers"]["az"]["backend"]
     assert (rc, backend, prompts[0]) == (
         0,
@@ -253,7 +254,7 @@ def test_connect_checks_effective_host_after_target_layer_edit(
         return httpx2.Response(200, json={"data": [{"id": "model"}]})
 
     monkeypatch.setattr(transport, "http_request", get)
-    assert main(["connect", "custom", *(["--repo"] if to_repo else [])]) == 0
+    assert cli_entry.main(["connect", "custom", *(["--repo"] if to_repo else [])]) == 0
     out = capsys.readouterr().out
     assert prompts[-1] == "Base URL [https://repo.example/v1]: "
     notice = (
@@ -286,7 +287,7 @@ def test_connect_says_when_a_typed_url_is_kept_out_by_the_repo_layer(
         path.write_text(same)
     _scripted_input(monkeypatch, "", "https://typed.example/v1")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
-    assert main(["connect", "custom"]) == 0
+    assert cli_entry.main(["connect", "custom"]) == 0
     out = capsys.readouterr().out
     assert (
         "note: the repo config sets base_url = https://same.example/v1, above the global config"
@@ -305,7 +306,7 @@ def test_a_broken_config_still_offers_the_default_url_for_a_bare_openai_block(
     gc.write_text('[providers.az]\nbackend = "openai"\n[budget]\nbogus_key = 1\n')
     prompts = _scripted_input(monkeypatch, "", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
-    assert main(["connect", "az"]) == 0
+    assert cli_entry.main(["connect", "az"]) == 0
     assert prompts[-1] == "Base URL [https://api.openai.com/v1]: "
     saved = tomllib.loads(gc.read_text())["providers"]["az"]
     assert saved["base_url"] == "https://api.openai.com/v1"
@@ -322,7 +323,7 @@ def test_connect_writes_a_repo_only_providers_url_to_the_global_file(
     )
     _scripted_input(monkeypatch, "", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
-    assert main(["connect", "custom"]) == 0
+    assert cli_entry.main(["connect", "custom"]) == 0
     saved = tomllib.loads(paths.global_config_path().read_text())["providers"]["custom"]
     assert saved == {"backend": "openai", "base_url": "https://repo.example/v1"}
 
@@ -336,7 +337,7 @@ def test_a_preset_name_keeps_an_existing_blocks_other_format(
     gc.write_text('[providers.claude]\nbackend = "anthropic"\n')
     prompts = _scripted_input(monkeypatch, "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant\n"))
-    assert main(["connect", "claude"]) == 0
+    assert cli_entry.main(["connect", "claude"]) == 0
     assert prompts == [
         "Backend for 'claude' (anthropic/openai/chatgpt/responses/claude_code) [anthropic]: "
     ]
@@ -351,7 +352,7 @@ def test_logout_reads_the_blocks_format_not_the_preset_name(
     gc = paths.global_config_path()
     gc.parent.mkdir(parents=True)
     gc.write_text('[providers.cc]\nbackend = "claude_code"\n')
-    assert main(["connect", "cc", "--logout"]) == 2
+    assert cli_entry.main(["connect", "cc", "--logout"]) == 2
     assert "claude auth logout" in capsys.readouterr().err
 
 
@@ -364,7 +365,7 @@ def test_connect_over_a_non_table_provider_entry_does_not_crash(
     gc.write_text('[providers]\naz = "bad"\n')
     _scripted_input(monkeypatch, "openai", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
-    rc = main(["connect", "az"])
+    rc = cli_entry.main(["connect", "az"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "providers.az" in err and "Traceback" not in err
@@ -387,7 +388,7 @@ def test_connect_auth_none_skips_key_check(
         return httpx2.Response(200, json={"data": [{"id": "model"}]})
 
     monkeypatch.setattr(transport, "http_request", get)
-    assert main(["connect", "local"]) == 0
+    assert cli_entry.main(["connect", "local"]) == 0
     out = capsys.readouterr().out
     assert requested == []
     assert "Key validated" not in out
@@ -398,7 +399,7 @@ def test_connect_validates_key_and_reports_ok(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-REAL\n"))
-    rc = main(["connect", "anthropic"])  # iso stubs the probe -> ok
+    rc = cli_entry.main(["connect", "anthropic"])  # iso stubs the probe -> ok
     assert rc == 0
     out = capsys.readouterr().out
     assert "Checking the key against the provider" in out
@@ -413,7 +414,7 @@ def test_connect_warns_when_provider_rejects_key(
         "agent6.models.cache.probe_provider_key",
         lambda *a, **k: cache.KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # pyrefly: ignore[implicit-any-lambda]
     )
-    rc = main(["connect", "anthropic"])
+    rc = cli_entry.main(["connect", "anthropic"])
     assert rc == 0  # the key is saved anyway; the warning is advisory
     err = capsys.readouterr().err
     assert "REJECTED this key" in err
@@ -431,7 +432,7 @@ def test_connect_no_verify_skips_the_probe(
         raise AssertionError("--no-verify must not probe the provider")
 
     monkeypatch.setattr("agent6.models.cache.probe_provider_key", _boom)
-    rc = main(["connect", "anthropic", "--no-verify"])
+    rc = cli_entry.main(["connect", "anthropic", "--no-verify"])
     assert rc == 0
     assert "Checking the key" not in capsys.readouterr().out
 
@@ -446,7 +447,7 @@ def test_connect_non_tty_reads_plain_input_without_getpass(
     monkeypatch.setattr("getpass.getpass", _boom)
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-PIPED\n"))
 
-    rc = main(["connect", "anthropic"])
+    rc = cli_entry.main(["connect", "anthropic"])
     assert rc == 0
     assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-PIPED"
 
@@ -455,7 +456,7 @@ def test_connect_rejects_non_bare_key_provider_name(
     iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A name with a space would corrupt `[providers.<name>]`; rejected before any write.
-    rc = main(["connect", "my provider"])
+    rc = cli_entry.main(["connect", "my provider"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "not a valid TOML bare key" in err
@@ -469,7 +470,7 @@ def test_connect_prints_post_entry_key_summary(
 ) -> None:
     # Off a terminal nothing shows while typing, so the helper prints the length captured.
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-0123456789wxyz\n"))
-    rc = main(["connect", "anthropic"])
+    rc = cli_entry.main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Captured key: 21 chars." in out
@@ -482,7 +483,7 @@ def test_connect_short_key_summary_omits_tail(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("short\n"))
-    rc = main(["connect", "anthropic"])
+    rc = cli_entry.main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Captured key: 5 chars." in out
@@ -497,7 +498,7 @@ def test_connect_masked_echo_skips_summary(
     monkeypatch.setattr(
         "agent6.ui.cli.connect.common.read_secret", lambda prompt="": "sk-ant-0123456789wxyz"
     )
-    rc = main(["connect", "anthropic"])
+    rc = cli_entry.main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Captured key:" not in out
@@ -508,7 +509,7 @@ def test_connect_local_endpoint_no_key(
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("\n"))
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept default base_url
-    rc = main(["connect", "ollama"])
+    rc = cli_entry.main(["connect", "ollama"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.ollama]" in gc
@@ -519,7 +520,7 @@ def test_connect_local_endpoint_no_key(
 def test_model_refuses_a_route_without_any_provider(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["model", "worker", "missing/m"]) == 2
+    assert cli_entry.main(["model", "worker", "missing/m"]) == 2
     assert "configured providers: (none)" in capsys.readouterr().err
     assert not (iso / "agent6" / "config.toml").exists()
 
@@ -530,7 +531,7 @@ def test_model_set_and_show(
     cfg = iso / "agent6" / "config.toml"
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n')
-    rc = main(["model", "worker", "anthropic/claude-x", "--effort", "medium"])
+    rc = cli_entry.main(["model", "worker", "anthropic/claude-x", "--effort", "medium"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
@@ -538,7 +539,7 @@ def test_model_set_and_show(
     assert "medium" in gc
 
     capsys.readouterr()
-    rc = main(["model"])
+    rc = cli_entry.main(["model"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "worker" in out
@@ -567,7 +568,7 @@ def test_model_change_preserves_the_target_layers_other_fields(
         args.append("--repo")
     if effort:
         args.extend(["--effort", effort])
-    assert main(args) == 0
+    assert cli_entry.main(args) == 0
     role = tomllib.loads((repo_cfg if to_repo else cfg).read_text())["models"]["worker"]
     assert role == {
         "model": "b/new",
@@ -583,7 +584,7 @@ def test_model_all_sets_every_role(
     cfg = iso / "agent6" / "config.toml"
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n')
-    rc = main(["model", "all", "anthropic/claude-x"])
+    rc = cli_entry.main(["model", "all", "anthropic/claude-x"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.planner]" in gc
@@ -601,8 +602,8 @@ def test_model_invalid_provider_refuses_and_rolls_back(
 ) -> None:
     # A role on an unconfigured provider refuses at rc 2 and leaves config.toml byte for byte.
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-FAKE\n"))
-    assert main(["connect", "anthropic"]) == 0
-    assert main(["model", "worker", "anthropic/good-x"]) == 0
+    assert cli_entry.main(["connect", "anthropic"]) == 0
+    assert cli_entry.main(["model", "worker", "anthropic/good-x"]) == 0
     capsys.readouterr()
     cfg = tmp_path / "g" / "agent6" / "config.toml"
     before = cfg.read_text(encoding="utf-8")
@@ -611,12 +612,12 @@ def test_model_invalid_provider_refuses_and_rolls_back(
         return "models.worker.provider: no such provider"
 
     monkeypatch.setattr("agent6.config.write.set_config_leaves", _invalid)
-    assert main(["model", "worker", "anthropic/bad-x"]) == 2
+    assert cli_entry.main(["model", "worker", "anthropic/bad-x"]) == 2
     assert capsys.readouterr().err.startswith("REFUSING:")
     after = cfg.read_text(encoding="utf-8")
     assert after == before  # rolled back exactly
     assert "bad-x" not in after
-    assert main(["model"]) == 0  # config still loads (not bricked)
+    assert cli_entry.main(["model"]) == 0  # config still loads (not bricked)
 
 
 def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
@@ -629,7 +630,7 @@ def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
 
     monkeypatch.setattr("agent6.config.write.set_config_leaves", bad_combination)
 
-    assert main(["connect", "anthropic", "--no-verify"]) == 2
+    assert cli_entry.main(["connect", "anthropic", "--no-verify"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING:") and "bad combination" in err
     assert secret_store.resolve_api_key("anthropic", None) is None
@@ -651,7 +652,7 @@ def test_connect_config_rollback_precedes_oauth_sign_in(
     monkeypatch.setattr("agent6.config.write.set_config_leaves", bad_combination)
     monkeypatch.setattr("agent6.ui.cli.connect._sign_in", _sign_in)
 
-    assert main(["connect", "chatgpt"]) == 2
+    assert cli_entry.main(["connect", "chatgpt"]) == 2
     assert "bad combination" in capsys.readouterr().err
     assert signed_in == []
 
@@ -659,7 +660,7 @@ def test_connect_config_rollback_precedes_oauth_sign_in(
 def test_model_rejects_unknown_role(iso: pathlib.Path) -> None:
     # argparse `choices` validates the role positional (and feeds argcomplete).
     with pytest.raises(SystemExit) as exc:
-        main(["model", "bogus", "anthropic", "claude-x"])
+        cli_entry.main(["model", "bogus", "anthropic", "claude-x"])
     assert exc.value.code == 2
 
 
@@ -691,7 +692,7 @@ def test_a_refused_model_listing_prints_the_status_and_reason(
         gc = paths.global_config_path()
         gc.parent.mkdir(parents=True)
         gc.write_text(f'[providers.work]\nbackend = "responses"\nbase_url = "{url}"\n')
-        assert main(["model", "worker", "work"]) == 2
+        assert cli_entry.main(["model", "worker", "work"]) == 2
     error = capsys.readouterr().err
     assert len(calls) == 1
     assert "HTTP 403" in error and reason in error
@@ -711,7 +712,7 @@ def test_model_piped_without_model_lists_the_catalog(
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a", "claude-b"]))
-    rc = main(["model", "worker", "anthropic"])
+    rc = cli_entry.main(["model", "worker", "anthropic"])
     assert rc == 0
     captured = capsys.readouterr()
     assert captured.out == "claude-a\nclaude-b\n"
@@ -734,7 +735,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
         '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.config.secret_store.resolve_api_key", _key_stub(None))
-    rc = main(["model", "worker", "anthropic/claude-x"])
+    rc = cli_entry.main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     err = capsys.readouterr().err
     assert err.startswith("[agent6] WARNING: provider 'anthropic' has no stored API key")
@@ -752,7 +753,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
         '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.config.secret_store.resolve_api_key", _key_stub("sk-x"))
-    rc = main(["model", "worker", "anthropic/claude-x"])
+    rc = cli_entry.main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     assert "note:" not in capsys.readouterr().err
 
@@ -769,8 +770,8 @@ def test_model_set_requires_the_provider_before_an_openrouter_slug(
         encoding="utf-8",
     )
 
-    assert main(["model", "worker", "moonshotai/kimi-k2.6"]) == 2
-    assert main(["model", "worker", "openrouter/moonshotai/kimi-k2.6"]) == 0
+    assert cli_entry.main(["model", "worker", "moonshotai/kimi-k2.6"]) == 2
+    assert cli_entry.main(["model", "worker", "openrouter/moonshotai/kimi-k2.6"]) == 0
     text = config.read_text(encoding="utf-8")
     assert "provider =" not in text
     assert 'model = "openrouter/moonshotai/kimi-k2.6"' in text
@@ -781,7 +782,7 @@ def test_model_piped_unknown_provider_errors(
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub([]))
-    rc = main(["model", "worker", "nosuch"])
+    rc = cli_entry.main(["model", "worker", "nosuch"])
     assert rc == 2
     assert "name the provider as provider/model" in capsys.readouterr().err
 
@@ -798,7 +799,7 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
         '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a"]))
-    rc = main(["model", "worker", "anthropic"])
+    rc = cli_entry.main(["model", "worker", "anthropic"])
     assert rc == 0
     assert capsys.readouterr().out == "claude-a\n"
 
@@ -808,7 +809,7 @@ def test_model_piped_without_provider_errors_without_prompt_dump(
 ) -> None:
     # The provider prompt is interactive-only; piped, it is a listing.
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    rc = main(["model", "worker"])
+    rc = cli_entry.main(["model", "worker"])
     assert rc == 2
     captured = capsys.readouterr()
     assert "no provider given" in captured.err
@@ -818,7 +819,7 @@ def test_model_piped_without_provider_errors_without_prompt_dump(
 def test_model_whitespace_route_names_the_value(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["model", "worker", "   "]) == 2
+    assert cli_entry.main(["model", "worker", "   "]) == 2
     assert "'   ': no model id" in capsys.readouterr().err
 
 
@@ -834,7 +835,7 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a"]))
-    rc = main(["model", "worker", "anthropic", "--effort", "high"])
+    rc = cli_entry.main(["model", "worker", "anthropic", "--effort", "high"])
     assert rc == 0
     assert "--effort ignored" in capsys.readouterr().err
 
@@ -842,7 +843,7 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
 def test_model_aborts_without_provider(iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Role given, provider omitted, none connected: refuse instead of writing bad config.
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
-    assert main(["model", "worker"]) == 2
+    assert cli_entry.main(["model", "worker"]) == 2
 
 
 def test_model_interactive_prefill(
@@ -861,7 +862,7 @@ def test_model_interactive_prefill(
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     answers = iter(["", "2"])  # provider default, then model #2
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
-    rc = main(["model", "worker"])
+    rc = cli_entry.main(["model", "worker"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
@@ -890,7 +891,7 @@ def test_model_all_interactive_prompts_once(
         return next(answers)
 
     monkeypatch.setattr("builtins.input", _input)
-    rc = main(["model", "all"])
+    rc = cli_entry.main(["model", "all"])
     assert rc == 0
     assert calls["n"] == 2  # one provider prompt + one model prompt, total
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -903,14 +904,14 @@ def test_model_repo_scope_writes_repo(iso: pathlib.Path, tmp_path: pathlib.Path)
     cfg = iso / "agent6" / "config.toml"
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n')
-    rc = main(["model", "reviewer", "anthropic/claude-o", "--repo"])
+    rc = cli_entry.main(["model", "reviewer", "anthropic/claude-o", "--repo"])
     assert rc == 0
     repo_cfg = (paths.state_dir(tmp_path) / "config.toml").read_text(encoding="utf-8")
     assert "[models.reviewer]" in repo_cfg
 
 
 def test_config_fill_writes_global(iso: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    rc = main(["config", "fill"])
+    rc = cli_entry.main(["config", "fill"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[sandbox]" in gc
@@ -918,14 +919,14 @@ def test_config_fill_writes_global(iso: pathlib.Path, tmp_path: pathlib.Path) ->
 
 
 def test_config_show_runs(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["config", "show"]) == 0
+    assert cli_entry.main(["config", "show"]) == 0
     out = capsys.readouterr().out
     assert "[sandbox]" in out
     assert "source:" in out
 
 
 def test_config_path_runs(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["config", "path"]) == 0
+    assert cli_entry.main(["config", "path"]) == 0
     out = capsys.readouterr().out
     assert "global config" in out
     assert "secrets" in out
@@ -1013,7 +1014,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
     monkeypatch.setattr("subprocess.run", run)
     monkeypatch.setattr("builtins.input", forbidden)
     monkeypatch.setattr("getpass.getpass", forbidden)
-    assert main(["connect", "--status", *(["chatgpt"] if filtered else [])]) == 0
+    assert cli_entry.main(["connect", "--status", *(["chatgpt"] if filtered else [])]) == 0
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
     rows = [line.split() for line in lines[1:] if line.strip()]
@@ -1113,7 +1114,7 @@ def test_connect_status_names_bound_grant_causes(
         return httpx2.Response(401, request=httpx2.Request(method, url))
 
     monkeypatch.setattr(transport, "http_request", request)
-    assert main(["connect", "--status", "work"]) == 0
+    assert cli_entry.main(["connect", "--status", "work"]) == 0
     output = capsys.readouterr()
     assert expected in " ".join(output.out.split())
     live = f"skipped: {expected}" if state != "expired" else "refused: HTTP 401"
@@ -1128,7 +1129,10 @@ def test_connect_status_refuses_sign_in_options(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str], option: str
 ) -> None:
     """Status refuses every write or sign-in option, including an explicit default flow."""
-    assert main(["connect", "--status", option, *(["auto"] if option == "--flow" else [])]) == 2
+    assert (
+        cli_entry.main(["connect", "--status", option, *(["auto"] if option == "--flow" else [])])
+        == 2
+    )
     error = capsys.readouterr().err
     assert "--status" in error and option in error and "cannot combine" in error
 
@@ -1148,7 +1152,7 @@ def test_connect_status_reads_explicit_config(
         return httpx2.Response(200, json={"data": []}, request=httpx2.Request(method, url))
 
     monkeypatch.setattr(transport, "http_request", request)
-    assert main(["--config", str(config), "connect", "--status"]) == 0
+    assert cli_entry.main(["--config", str(config), "connect", "--status"]) == 0
     assert "extra openai none ok verified" in " ".join(capsys.readouterr().out.split())
 
 
@@ -1187,7 +1191,7 @@ def test_logout_unbound_chatgpt_is_local_only(
         return httpx2.Response(200)
 
     monkeypatch.setattr(transport, "http_request", request)
-    assert main(["connect", "work", "--logout"]) == 0
+    assert cli_entry.main(["connect", "work", "--logout"]) == 0
     assert requests == []
     output = capsys.readouterr()
     assert "locally only" in output.out + output.err
@@ -1236,7 +1240,7 @@ def test_chatgpt_connect_replaces_old_format_entry_atomically_with_bound_grant(
 
     monkeypatch.setattr(connect_oauth, "paste_callback", paste)
     monkeypatch.setattr(oauth_protocol, "post_form", exchange)
-    assert main(["connect", "chatgpt", "--no-verify"]) == 0
+    assert cli_entry.main(["connect", "chatgpt", "--no-verify"]) == 0
     assert len(published) == 1 and "obsolete_field" not in published[0]
     grant = secret_store.load_oauth_grant("chatgpt")
     assert grant is not None
@@ -1253,7 +1257,7 @@ def test_logout_without_config_reports_local_removal(
 ) -> None:
     """An old-format entry without provider config can only be removed locally."""
     secret_store.save_secret("chatgpt", "", extra={"oauth_access_token": "old"})
-    assert main(["connect", "chatgpt", "--logout"]) == 0
+    assert cli_entry.main(["connect", "chatgpt", "--logout"]) == 0
     output = capsys.readouterr()
     assert "locally only" in output.out
     assert "Revoked" not in output.out
@@ -1306,7 +1310,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
 
     monkeypatch.setattr("subprocess.run", record_run)
 
-    rc = main(["connect", "chatgpt"])
+    rc = cli_entry.main(["connect", "chatgpt"])
     assert rc == 0
     assert opened == [] and execs == []
     assert exchanges[0]["grant_type"] == "authorization_code"
@@ -1343,18 +1347,18 @@ def test_connect_claude_writes_the_format_only_and_stores_no_secret(
         return "not signed in; run `claude auth login`"
 
     monkeypatch.setattr("agent6.providers.claude_code.login_status", signed_in)
-    assert main(["connect", "claude"]) == 0
+    assert cli_entry.main(["connect", "claude"]) == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.claude]" in gc and 'backend = "claude_code"' in gc
     assert not (tmp_path / "g" / "agent6" / "secrets.toml").exists()
     assert "Claude Code (`claude` on PATH): signed in." in capsys.readouterr().out
 
     monkeypatch.setattr("agent6.providers.claude_code.login_status", signed_out)
-    assert main(["connect", "claude"]) == 0
+    assert cli_entry.main(["connect", "claude"]) == 0
     err = capsys.readouterr().err
     assert "WARNING: not signed in; run `claude auth login`" in err and "not usable yet" in err
 
-    assert main(["connect", "claude", "--logout"]) == 2
+    assert cli_entry.main(["connect", "claude", "--logout"]) == 2
     assert "claude auth logout" in capsys.readouterr().err
 
 
@@ -1366,7 +1370,7 @@ def test_connect_chatgpt_state_mismatch_refuses(
     monkeypatch.setattr(
         "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=EVIL\n")
     )
-    rc = main(["connect", "chatgpt"])
+    rc = cli_entry.main(["connect", "chatgpt"])
     assert rc == 2
     assert secret_store.load_oauth_grant("chatgpt") is None
 
@@ -1424,14 +1428,14 @@ def test_connect_logout_revokes_and_removes_tokens(
         return _RevokeResp()
 
     monkeypatch.setattr("agent6.providers.transport.http_request", fake_request)
-    rc = main(["connect", "chatgpt", "--logout"])
+    rc = cli_entry.main(["connect", "chatgpt", "--logout"])
     assert rc == 0
     assert revoked[0]["url"] == "https://auth.openai.com/oauth/revoke"
     assert revoked[0]["token"] == "RT" and revoked[0]["token_type_hint"] == "refresh_token"
     assert secret_store.load_oauth_grant("chatgpt") is None
     assert "Removed stored credentials" in capsys.readouterr().out
 
-    rc = main(["connect", "chatgpt", "--logout"])
+    rc = cli_entry.main(["connect", "chatgpt", "--logout"])
     assert rc == 0
     assert "No stored credentials" in capsys.readouterr().out
 
@@ -1468,7 +1472,7 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
     opened: list[str] = []
     monkeypatch.setattr("webbrowser.open", opened.append)
 
-    rc = main(["connect", "chatgpt"])
+    rc = cli_entry.main(["connect", "chatgpt"])
     assert rc == 0 and opened == []
     tokens = secret_store.load_oauth_grant("chatgpt")
     assert tokens is not None and tokens.refresh_token == "RT9"
@@ -1509,7 +1513,7 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
     monkeypatch.setattr("builtins.input", backend)
     monkeypatch.setattr("webbrowser.open", no_browser)
 
-    assert main(["connect", "codex"]) == 0
+    assert cli_entry.main(["connect", "codex"]) == 0
     assert told == ["codex"]
     tokens = secret_store.load_oauth_grant("codex")
     assert tokens is not None and tokens.refresh_token == "RT9"
@@ -1552,7 +1556,7 @@ def test_connect_chatgpt_device_failure_falls_back_to_paste(
     monkeypatch.setattr(
         "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=STATE1\n")
     )
-    rc = main(["connect", "chatgpt"])
+    rc = cli_entry.main(["connect", "chatgpt"])
     assert rc == 0
     assert secret_store.load_oauth_grant("chatgpt") is not None
 
@@ -1566,7 +1570,7 @@ def test_connect_eof_at_the_backend_prompt_says_why(
         raise EOFError
 
     monkeypatch.setattr("builtins.input", _eof)
-    rc = main(["connect", "mycustom"])
+    rc = cli_entry.main(["connect", "mycustom"])
     assert rc == 2
     assert "no input." in capsys.readouterr().err
 
@@ -1588,7 +1592,7 @@ def test_a_role_that_inherits_the_default_says_so(
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text(_DEFAULT_ONLY, encoding="utf-8")
 
-    assert main(["model"]) == 0
+    assert cli_entry.main(["model"]) == 0
     lines = capsys.readouterr().out.splitlines()
     worker = next(line for line in lines if line.strip().startswith("worker"))
     planner = next(line for line in lines if line.strip().startswith("planner"))
@@ -1621,7 +1625,7 @@ def test_a_number_outside_the_model_list_is_refused(
     # A provider name alone is that provider with the model still to pick.
     cfg = tmp_path / "custom.toml"
     cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8")
-    assert main(["--config", str(cfg), "model", "worker", "anthropic"]) == 2
+    assert cli_entry.main(["--config", str(cfg), "model", "worker", "anthropic"]) == 2
     err = capsys.readouterr().err
     assert err.count("ERROR") == 1 and "no model 7" in err
 
@@ -1645,7 +1649,7 @@ def test_connect_offers_the_default_model_on_a_terminal(
 ) -> None:
     """Setup is two commands: the picker `agent6 model default` runs comes up after the key."""
     _connect_terminal(monkeypatch, "sk-ant-FAKE\n2\n", ["claude-a", "claude-b"])
-    assert main(["connect", "anthropic"]) == 0
+    assert cli_entry.main(["connect", "anthropic"]) == 0
     out = capsys.readouterr().out
     assert "No default model yet" in out and "Set [models.default] = anthropic/claude-b" in out
     configured = tomllib.loads(paths.global_config_path().read_text())
@@ -1657,7 +1661,7 @@ def test_connect_keeps_the_credentials_when_the_pick_is_skipped(
 ) -> None:
     """Enter at the pick leaves no default and prints the command; the key stays stored."""
     _connect_terminal(monkeypatch, "sk-ant-FAKE\n\n", ["claude-a"])
-    assert main(["connect", "anthropic"]) == 0
+    assert cli_entry.main(["connect", "anthropic"]) == 0
     assert "agent6 model default anthropic/<model>" in capsys.readouterr().out
     assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-FAKE"
     assert "models" not in tomllib.loads(paths.global_config_path().read_text())
@@ -1671,7 +1675,7 @@ def test_connect_names_a_configured_default_instead_of_prompting(
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[models.default]\nmodel = "anthropic/claude-x"\n')
     _connect_terminal(monkeypatch, "sk-ant-FAKE\n", ["claude-a"])
-    assert main(["connect", "anthropic"]) == 0
+    assert cli_entry.main(["connect", "anthropic"]) == 0
     out = capsys.readouterr().out
     assert "Default model: anthropic/claude-x" in out and "No default model yet" not in out
     assert tomllib.loads(cfg.read_text())["models"] == {"default": {"model": "anthropic/claude-x"}}
@@ -1683,7 +1687,7 @@ def test_connect_repo_writes_the_picked_default_to_the_repo_config(
     """`--repo` carries through to the picked default, as it does to the provider block."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _connect_terminal(monkeypatch, "sk-ant-FAKE\n1\n", ["claude-a"])
-    assert main(["connect", "--repo", "anthropic"]) == 0
+    assert cli_entry.main(["connect", "--repo", "anthropic"]) == 0
     repo_cfg = tomllib.loads(paths.repo_config_path(tmp_path).read_text())
     assert repo_cfg["models"] == {"default": {"model": "anthropic/claude-a"}}
     global_cfg = paths.global_config_path()

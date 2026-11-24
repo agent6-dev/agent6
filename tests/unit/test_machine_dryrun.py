@@ -178,10 +178,10 @@ def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: pathlib.Pat
 def test_cli_machine_test_passes(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
-    assert main(["machine", "test", str(f)]) == 0
+    assert entry.main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
     assert "per-state dry-run" in out
     assert "per-branch routing" in out
@@ -192,7 +192,7 @@ def test_machine_test_verdict_names_the_offline_tests_that_ran(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A successful dry-run names the number of offline script files actually executed."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
     from tests.unit import test_scriptcheck
 
     f = _write(tmp_path)
@@ -204,7 +204,7 @@ def test_machine_test_verdict_names_the_offline_tests_that_ran(
     monkeypatch.setattr(detect, "probed_environment", lambda: full)
     monkeypatch.setattr(jail, "run_in_jail", test_scriptcheck._run_python_script)
 
-    assert main(["machine", "test", str(f)]) == 0
+    assert entry.main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
     assert "; 2 offline script tests passed" in out
     assert "not run" not in out
@@ -214,12 +214,12 @@ def test_check_and_test_count_states_the_same(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A branch belongs to the total state count in both check and test verdicts."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
-    assert main(["machine", "check", str(f)]) == 0
+    assert entry.main(["machine", "check", str(f)]) == 0
     assert "5 states" in capsys.readouterr().out
-    assert main(["machine", "test", str(f)]) == 0
+    assert entry.main(["machine", "test", str(f)]) == 0
     assert "5 states, including 1 branch" in capsys.readouterr().out
 
 
@@ -227,7 +227,7 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The OK verdict says how many offline script tests were not run and why."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
     scripts = tmp_path / "scripts"
@@ -236,7 +236,7 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     # A real environment minus user namespaces: the level under which offline tests are skipped.
     partial = dataclasses.replace(detect.probed_environment(), userns_supported=False)
     monkeypatch.setattr(detect, "probed_environment", lambda: partial)
-    assert main(["machine", "test", str(f)]) == 0
+    assert entry.main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
     assert "1 offline script test not run" in out
     assert "needs sandbox.isolation = 'full'" in out
@@ -245,12 +245,12 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
 def test_cli_machine_test_with_blackboard(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
     bb = tmp_path / "bb.toml"
     bb.write_text("approved = true\n", encoding="utf-8")
-    assert main(["machine", "test", str(f), "--blackboard", str(bb)]) == 0
+    assert entry.main(["machine", "test", str(f), "--blackboard", str(bb)]) == 0
     out = capsys.readouterr().out
     # The branch row must show clause 0 routing to judge; "judge" alone matches the per-state row.
     assert re.search(r"check\s+\[0\]\s+judge", out), out
@@ -260,54 +260,54 @@ def test_cli_machine_test_rejects_a_fixture_off_the_blackboard_schema(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The fixture is validated: every key names a declared var, every value satisfies its type."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
     bad_type = tmp_path / "bad_type.toml"
     bad_type.write_text('approved = "false"\n', encoding="utf-8")
-    assert main(["machine", "test", str(f), "--blackboard", str(bad_type)]) == 1
+    assert entry.main(["machine", "test", str(f), "--blackboard", str(bad_type)]) == 1
     err = capsys.readouterr().err
     assert "FAIL" in err and "approved" in err and "bool" in err
 
     typo = tmp_path / "typo.toml"
     typo.write_text("aproved = true\n", encoding="utf-8")
-    assert main(["machine", "test", str(f), "--blackboard", str(typo)]) == 1
+    assert entry.main(["machine", "test", str(f), "--blackboard", str(typo)]) == 1
     assert "not a declared variable" in capsys.readouterr().err
 
 
 def test_cli_machine_test_runs_check_first(tmp_path: pathlib.Path) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     # An invalid machine (goto target missing) must fail like `machine check`.
     bad = DEMO.replace('goto = "judge"', 'goto = "nope"')
     f = _write(tmp_path, bad)
-    assert main(["machine", "test", str(f)]) == 1
+    assert entry.main(["machine", "test", str(f)]) == 1
 
 
 def test_cli_machine_test_missing_fixture(tmp_path: pathlib.Path) -> None:
     from agent6 import errors
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
     with pytest.raises(errors.OperatorError, match="could not read"):
-        main(["machine", "test", str(f), "--blackboard", str(tmp_path / "nope.toml")])
+        entry.main(["machine", "test", str(f), "--blackboard", str(tmp_path / "nope.toml")])
 
 
 def test_cli_machine_test_bad_fixture_toml(tmp_path: pathlib.Path) -> None:
     from agent6 import errors
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
     bb = tmp_path / "bb.toml"
     bb.write_text("not = valid = toml", encoding="utf-8")
     with pytest.raises(errors.OperatorError, match="not valid TOML"):
-        main(["machine", "test", str(f), "--blackboard", str(bb)])
+        entry.main(["machine", "test", str(f), "--blackboard", str(bb)])
 
 
 def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: pathlib.Path) -> None:
     """An unreadable fixture is the operator-error refusal every unreadable operator file gets."""
     from agent6 import errors
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path)
     bb = tmp_path / "bb.toml"
@@ -315,7 +315,7 @@ def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: pathlib.Path) -> 
     bb.chmod(0o000)
     try:
         with pytest.raises(errors.OperatorError, match="could not read"):
-            main(["machine", "test", str(f), "--blackboard", str(bb)])
+            entry.main(["machine", "test", str(f), "--blackboard", str(bb)])
     finally:
         bb.chmod(0o600)
 
@@ -326,15 +326,15 @@ def test_synthesized_records_omit_optional_fields(tmp_path: pathlib.Path) -> Non
     A branch reading it unguarded fails `machine test` as it halts live; the has()-guarded twin
     routes.
     """
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     unguarded = tmp_path / "unguarded.asm.toml"
     unguarded.write_text(PRESENCE.format(pred="out.score > 0"), encoding="utf-8")
-    assert main(["machine", "test", str(unguarded)]) == 1
+    assert entry.main(["machine", "test", str(unguarded)]) == 1
 
     guarded = tmp_path / "guarded.asm.toml"
     guarded.write_text(PRESENCE.format(pred="has(out.score) and out.score > 0"), encoding="utf-8")
-    assert main(["machine", "test", str(guarded)]) == 0
+    assert entry.main(["machine", "test", str(guarded)]) == 0
 
 
 PRESENCE = """\

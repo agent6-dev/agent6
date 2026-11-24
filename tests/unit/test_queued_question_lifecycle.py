@@ -15,7 +15,7 @@ from agent6 import paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.providers import provider_types
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from agent6.viewmodel import listing
 
 _CONFIG = """
@@ -125,7 +125,7 @@ def test_a_queued_question_is_answered_on_disk_and_delivered_once_across_resumes
 
     first = _Scripted([_ask_queued(), _finish()])
     monkeypatch.setattr(role_providers, "build_role_provider", _use(first))
-    assert cli_main(["run", "--session-id", session_id, "task"]) == 0
+    assert entry.cli_main(["run", "--session-id", session_id, "task"]) == 0
     assert len(first.seen) == 2
     assert "pending" in _dump(first.seen[1])
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
@@ -134,17 +134,17 @@ def test_a_queued_question_is_answered_on_disk_and_delivered_once_across_resumes
     assert not [e for e in events if e["type"] == "question.answer"]
 
     capsys.readouterr()
-    assert cli_main(["answer", session_id]) == 0
+    assert entry.cli_main(["answer", session_id]) == 0
     listed = capsys.readouterr().out
     assert "question-1" in listed and "Which DB?" in listed
     assert listing.finished_needs_new_work(log.parent)  # finished: a bare resume refuses
-    assert cli_main(["answer", session_id, "pg"]) == 0
+    assert entry.cli_main(["answer", session_id, "pg"]) == 0
     assert "resume" in capsys.readouterr().out
     assert not listing.finished_needs_new_work(log.parent)  # the saved answer is the new work
 
     second = _Scripted([_finish()])
     monkeypatch.setattr(role_providers, "build_role_provider", _use(second))
-    assert cli_main(["resume", session_id]) == 0
+    assert entry.cli_main(["resume", session_id]) == 0
     assert len(second.seen) == 1
     opening = _dump(second.seen[0])
     assert opening.count("OPERATOR ANSWERS") == 1
@@ -157,9 +157,11 @@ def test_a_queued_question_is_answered_on_disk_and_delivered_once_across_resumes
 
     third = _Scripted([_finish()])
     monkeypatch.setattr(role_providers, "build_role_provider", _use(third))
-    assert cli_main(["resume", session_id]) == 2  # the answer is consumed: finished, no new work
+    assert (
+        entry.cli_main(["resume", session_id]) == 2
+    )  # the answer is consumed: finished, no new work
     assert third.seen == []
-    assert cli_main(["resume", session_id, "--steer", "carry on"]) == 0
+    assert entry.cli_main(["resume", session_id, "--steer", "carry on"]) == 0
     again = _dump(third.seen[0])
     assert again.count("OPERATOR ANSWERS") == 1  # the history's copy, no second delivery
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]

@@ -24,16 +24,16 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
 
 
 def _run(args: list[str]) -> int:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
-    return main(args)
+    return entry.main(args)
 
 
 def _refuse(args: list[str]) -> int:
     """Run through the guarded entry point, where operator errors present as `ERROR:` and exit 2."""
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry
 
-    return cli_main(args)
+    return entry.cli_main(args)
 
 
 def _global_toml(tmp_path: pathlib.Path) -> dict[str, object]:
@@ -901,14 +901,14 @@ def test_config_fix_reports_an_entry_it_cannot_auto_remove(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`config fix` says when an entry is not a leaf it can drop and exits non-zero."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text('[agent6]\npreset = "nope"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "fix"]) == 2
+    assert entry.main(["config", "fix"]) == 2
     err = capsys.readouterr().err
     assert "not an auto-removable entry" in err and "nope" in err
 

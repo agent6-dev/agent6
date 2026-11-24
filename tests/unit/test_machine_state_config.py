@@ -216,7 +216,7 @@ def test_run_state_requires_commits_at_resolution_and_check(
     layer_name: str,
 ) -> None:
     """A run state's clone can merge work only through its committed chain."""
-    from agent6.ui import cli
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     text = RUN_STATE_AFTER_WAIT
@@ -229,7 +229,7 @@ def test_run_state_requires_commits_at_resolution_and_check(
     spec = semantics.load_machine(path)
     with pytest.raises(ConfigError, match=r"git\.commit_per_turn = true.*chain.*only.*clone"):
         state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
-    assert cli.main(["machine", "check", str(path)]) == 1
+    assert entry.main(["machine", "check", str(path)]) == 1
     output = capsys.readouterr().err
     assert "work" in output and "git.commit_per_turn" in output and "chain" in output
 
@@ -1063,12 +1063,12 @@ def test_run_and_check_refuse_a_widening_before_anything_runs(
     capsys: pytest.CaptureFixture[str],
     working_jail: list[kinds.JailPolicy],
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR.replace('extra_read_paths = ["/srv/inbox", "/opt/toolchain"]', ""))
     mfile = _write(tmp_path, MACHINE)
-    assert main(["machine", "check", str(mfile)]) == 1
+    assert entry.main(["machine", "check", str(mfile)]) == 1
     assert (
         '[states.scan.config] sets sandbox.extra_read_paths = ["/srv/inbox"]'
         in capsys.readouterr().err
@@ -1084,7 +1084,7 @@ def test_check_and_run_report_every_tables_widening(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One check lists each widening under the table that sets it, one line each."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR.partition("[sandbox]")[0])
@@ -1100,7 +1100,7 @@ def test_check_and_run_report_every_tables_widening(
         '[states.store.config] sets sandbox.protect_git = "off",',
         '[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"],',
     ]
-    assert main(["machine", "check", str(mfile)]) == 1
+    assert entry.main(["machine", "check", str(mfile)]) == 1
     bullets = [line for line in capsys.readouterr().err.splitlines() if line.startswith("  - ")]
     assert [b.removeprefix("  - ").partition(" wider")[0] for b in bullets] == expected
     reporter = mock.MagicMock()
@@ -1112,11 +1112,11 @@ def test_check_and_run_report_every_tables_widening(
 def test_check_prints_each_sandbox_overlay(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     _operator()
-    assert main(["machine", "check", str(_write(tmp_path, MACHINE))]) == 0
+    assert entry.main(["machine", "check", str(_write(tmp_path, MACHINE))]) == 0
     out = capsys.readouterr().out
     assert (
         "[config] sets the sandbox of every state: extra_read_paths = [], extra_write_paths = []"

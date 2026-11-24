@@ -13,7 +13,7 @@ import pytest
 from agent6 import paths
 from agent6.sessions import child_dispatch, completion, ipc, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def _session(repo: pathlib.Path, session_id: str, manifest: dict[str, object]) -> None:
@@ -86,9 +86,9 @@ def test_show_names_the_driving_route_and_its_model_flag(
         },
     )
 
-    assert main(["sessions", "show", "flagged"]) == 0
+    assert entry.main(["sessions", "show", "flagged"]) == 0
     assert "model:      openrouter/moonshotai/kimi-k2.6 (from --model)" in capsys.readouterr().out
-    assert main(["sessions", "show", "flagged", "--json"]) == 0
+    assert entry.main(["sessions", "show", "flagged", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["model"] == "openrouter/moonshotai/kimi-k2.6"
     assert data["model_from_flag"] is True
@@ -103,9 +103,9 @@ def test_show_names_the_preset_the_run_continues_under(
     monkeypatch.chdir(repo)
     _session(repo, "preset", {"harness": {"preset": "deep_review", "preset_from_flag": True}})
 
-    assert main(["sessions", "show", "preset"]) == 0
+    assert entry.main(["sessions", "show", "preset"]) == 0
     assert "preset:     deep_review" in capsys.readouterr().out
-    assert main(["sessions", "show", "preset", "--json"]) == 0
+    assert entry.main(["sessions", "show", "preset", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["preset"] == "deep_review"
 
 
@@ -113,24 +113,24 @@ def test_show_labels_the_session_status(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Text and JSON call the session's lifecycle result status."""
-    assert main(["sessions", "show", "fan-l1"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1"]) == 0
     out = capsys.readouterr().out
     assert "status:     passed" in out
     assert "state:" not in out
-    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "passed"
 
 
 def test_show_on_a_parent_lists_its_children(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["sessions", "show", "fan"]) == 0
+    assert entry.main(["sessions", "show", "fan"]) == 0
     out = capsys.readouterr().out
     assert "children:      2\n" in out
     children = [ln for ln in out.splitlines() if "fan-l" in ln]
     assert len(children) == 2 and "fan-l1" in children[0] and "fan-l2" in children[1]
     assert children[1].split()[:2] == ["rank", "1/2"] and "passed" in children[1]
-    assert main(["sessions", "show", "fan", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert [ln["session_id"] for ln in data["children"]] == ["fan-l1", "fan-l2"]
     assert data["children"][1]["winner"] is True
@@ -139,12 +139,12 @@ def test_show_on_a_parent_lists_its_children(
 def test_show_on_a_parent_lists_each_children_route(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["sessions", "show", "fan"]) == 0
+    assert entry.main(["sessions", "show", "fan"]) == 0
     lines = [ln for ln in capsys.readouterr().out.splitlines() if "fan-l" in ln]
     assert "openai/child-1" in lines[0]
     assert "openai/child-2" in lines[1]
 
-    assert main(["sessions", "show", "fan", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan", "--json"]) == 0
     children = json.loads(capsys.readouterr().out)["children"]
     assert [child["model"] for child in children] == ["openai/child-1", "openai/child-2"]
     assert all(child["model_from_flag"] is True for child in children)
@@ -160,7 +160,7 @@ def test_stale_parent_does_not_offer_resume(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "show", "fan"]) == 0
+    assert entry.main(["sessions", "show", "fan"]) == 0
 
     out = capsys.readouterr().out
     assert "status:     stale" in out
@@ -190,22 +190,22 @@ def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
-    assert main(["sessions", "show", "fan-l1"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1"]) == 0
     shown = capsys.readouterr().out
     assert "failed · setup command failed" in shown
     assert "ended:      the setup command failed (exit 1): uv sync --offline\n" in shown
     assert "setup:      no cached package\n" in shown and "(sandbox.network)" in shown
-    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["setup_output"] == problem
 
 
 def test_show_on_a_child_names_its_parent(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["sessions", "show", "fan-l1"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1"]) == 0
     out = capsys.readouterr().out
     assert "child of:    fan (attempt 1 of group fan)" in out
-    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["parallel"] == {
         "group": "fan",
@@ -243,11 +243,11 @@ def test_show_marks_a_child_unmerged_like_the_listing(
     manifest.update({"base_sha": base, "base_branch": "main", "run_branch": "agent6/fan-l1"})
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    assert main(["sessions", "show", "fan"]) == 0
+    assert entry.main(["sessions", "show", "fan"]) == 0
     out = capsys.readouterr().out
     (line,) = [ln for ln in out.splitlines() if "fan-l1" in ln]
     assert "unmerged" in line
-    assert main(["sessions", "show", "fan", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan", "--json"]) == 0
     children = json.loads(capsys.readouterr().out)["children"]
     assert children[0]["session_id"] == "fan-l1" and children[0]["unmerged"] is True
 
@@ -278,14 +278,14 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     layout.logs_path.write_text(
         "\n".join([lines[0], json.dumps(budget), *lines[1:]]) + "\n", encoding="utf-8"
     )
-    assert main(["sessions", "show", "cached"]) == 0
+    assert entry.main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert usage.split(None, 1)[1] == "in=18 out=2194 cache_r=42486 cache_w=22617  usage $0"
     layout.logs_path.write_text(
         "\n".join([lines[0], json.dumps({**budget, "usd_total": 0.5}), *lines[1:]]) + "\n",
         encoding="utf-8",
     )
-    assert main(["sessions", "show", "cached"]) == 0
+    assert entry.main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert usage.endswith("cache_w=22617  usage $0.50")
 
@@ -299,7 +299,7 @@ def test_show_usage_reads_nothing_spent_without_a_budget_row(
     repo.mkdir()
     monkeypatch.chdir(repo)
     _session(repo, "refused", {})
-    assert main(["sessions", "show", "refused"]) == 0
+    assert entry.main(["sessions", "show", "refused"]) == 0
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:")]
     assert lines == ["usage:      in=0 out=0  usage $0"]
 
@@ -331,10 +331,10 @@ def test_show_usage_and_json_carry_the_plan_points(
     layout.logs_path.write_text(
         "\n".join([lines[0], json.dumps(budget), *lines[1:]]) + "\n", encoding="utf-8"
     )
-    assert main(["sessions", "show", "capped"]) == 0
+    assert entry.main(["sessions", "show", "capped"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert usage.split(None, 1)[1] == "in=18 out=2194 plan moved=2.5/6pt"
-    assert main(["sessions", "show", "capped", "--json"]) == 0
+    assert entry.main(["sessions", "show", "capped", "--json"]) == 0
     obj = json.loads(capsys.readouterr().out)
     budget_json = obj["budget"]
     assert budget_json["session"]["plan_observed_points"] == 2.5
@@ -343,7 +343,7 @@ def test_show_usage_and_json_carry_the_plan_points(
         "\n".join([lines[0], json.dumps({**budget, "plan_cap": 0.0}), *lines[1:]]) + "\n",
         encoding="utf-8",
     )
-    assert main(["sessions", "show", "capped"]) == 0
+    assert entry.main(["sessions", "show", "capped"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert "plan" not in usage
 
@@ -363,7 +363,7 @@ def test_show_leads_with_the_status_and_the_end_before_the_task(
     layout.logs_path.write_text(
         json.dumps({**json.loads(start), "user_task": task}) + "\n" + stop + "\n", encoding="utf-8"
     )
-    assert main(["sessions", "show", "long"]) == 0
+    assert entry.main(["sessions", "show", "long"]) == 0
     keys = [ln.split(":")[0] for ln in capsys.readouterr().out.splitlines() if ln[:1].isalpha()]
     assert keys[:2] == ["session", "status"]
     assert keys.index("verify") < keys.index("task") < keys.index("model")
@@ -383,12 +383,12 @@ def test_show_says_a_live_run_has_not_settled_instead_of_unknown(
     start = layout.logs_path.read_text(encoding="utf-8").splitlines()[0]
     layout.logs_path.write_text(start + "\n", encoding="utf-8")
     process.write_worker_pid(layout.session_dir, os.getpid())
-    assert main(["sessions", "show", "live"]) == 0
+    assert entry.main(["sessions", "show", "live"]) == 0
     live = capsys.readouterr().out
     assert "Run jobs not settled: the run is live" in live
     assert "Environment lifecycle not recorded: the run is live" in live
     assert "unknown" not in live.replace("Environment: unknown", "")
-    assert main(["sessions", "show", "ended"]) == 0
+    assert entry.main(["sessions", "show", "ended"]) == 0
     ended = capsys.readouterr().out
     assert "Run job settlement unknown" in ended and "Environment lifecycle unknown" in ended
 
@@ -402,9 +402,9 @@ def test_show_names_the_session_that_seeded_a_run(
     repo.mkdir()
     monkeypatch.chdir(repo)
     _session(repo, "seeded", {"source_session_id": "seed-src-AAAAAA"})
-    assert main(["sessions", "show", "seeded"]) == 0
+    assert entry.main(["sessions", "show", "seeded"]) == 0
     assert "seeded from: seed-src-AAAAAA" in capsys.readouterr().out
-    assert main(["sessions", "show", "seeded", "--json"]) == 0
+    assert entry.main(["sessions", "show", "seeded", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["source_session_id"] == "seed-src-AAAAAA"
 
 
@@ -435,13 +435,13 @@ def test_show_names_the_questions_nobody_answered(
     layout.logs_path.write_text(
         "\n".join([lines[0], *(json.dumps(e) for e in asked), *lines[1:]]) + "\n", encoding="utf-8"
     )
-    assert main(["sessions", "show", "asked"]) == 0
+    assert entry.main(["sessions", "show", "asked"]) == 0
     line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("questions:"))
     assert (
         line.split(None, 1)[1]
         == "1 unanswered (nobody was attached): agent6 sessions transcript asked"
     )
-    assert main(["sessions", "show", "asked", "--json"]) == 0
+    assert entry.main(["sessions", "show", "asked", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["unattended_questions"] == 1
 
 
@@ -479,9 +479,9 @@ def test_show_drops_the_questions_line_after_a_resume(
         + "".join(json.dumps(e) + "\n" for e in resumed),
         encoding="utf-8",
     )
-    assert main(["sessions", "show", "asked"]) == 0
+    assert entry.main(["sessions", "show", "asked"]) == 0
     assert "questions:" not in capsys.readouterr().out
-    assert main(["sessions", "show", "asked", "--json"]) == 0
+    assert entry.main(["sessions", "show", "asked", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["unattended_questions"] == 0
 
 
@@ -512,7 +512,7 @@ def test_show_names_a_failed_end_once_beside_the_unanswered_count(
         {"type": "session.stop", "verification": "unverified", "reason": "max_turns"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    assert main(["sessions", "show", "capped"]) == 0
+    assert entry.main(["sessions", "show", "capped"]) == 0
     line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("status:"))
     assert line == "status:     failed · max turns · 1 question unanswered"
 
@@ -542,11 +542,11 @@ def test_show_offers_plan_show_only_once_the_plan_is_written(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "show", "plan-AAAA11"]) == 0
+    assert entry.main(["sessions", "show", "plan-AAAA11"]) == 0
     assert "plan show" not in capsys.readouterr().out
 
     (layout.session_dir / "plan.md").write_text("# Plan\n", encoding="utf-8")
-    assert main(["sessions", "show", "plan-AAAA11"]) == 0
+    assert entry.main(["sessions", "show", "plan-AAAA11"]) == 0
     assert "plan:       agent6 plan show plan-AAAA11" in capsys.readouterr().out
 
 
@@ -576,7 +576,7 @@ def test_show_offers_resume_for_a_run_that_stopped_short(
     _session(group, "solo-1", {})
     _stopped_short(group, "solo-1", reason)
 
-    assert main(["sessions", "show", "solo-1"]) == 0
+    assert entry.main(["sessions", "show", "solo-1"]) == 0
 
     assert "resume with:  agent6 resume solo-1" in capsys.readouterr().out
 
@@ -587,7 +587,7 @@ def test_show_offers_fork_for_a_child_that_stopped_short(
     """A stopped child offers parent continuation or independent work, not direct resume."""
     _stopped_short(group, "fan-l1", "steer_abort")
 
-    assert main(["sessions", "show", "fan-l1"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1"]) == 0
 
     out = capsys.readouterr().out
     assert "resume with:" not in out
@@ -601,11 +601,11 @@ def test_show_json_and_the_listing_name_the_stop_reason_alike(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Both JSON forms carry `stop_reason`; the listing's `reason` stays the label's detail."""
-    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1", "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["stop_reason"] == "finish_session" and "reason" not in shown
 
-    assert main(["sessions", "list", "--json"]) == 0
+    assert entry.main(["sessions", "list", "--json"]) == 0
     children = {r["session_id"]: r for r in json.loads(capsys.readouterr().out)[0]["children"]}
     assert (children["fan-l1"]["stop_reason"], children["fan-l1"]["status_detail"]) == (
         "finish_session",
@@ -628,7 +628,7 @@ def test_show_nests_attempts_directly_under_the_verify_field(
             {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
-    assert main(["sessions", "show", "fan-l1"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1"]) == 0
     out = capsys.readouterr().out
     assert (
         "verify:     green on the final tree\n"
@@ -653,10 +653,10 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
         ],
     )
 
-    assert main(["sessions", "show", "fan-l1"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1"]) == 0
     assert "verify:     green on the final tree (red before the run)" in capsys.readouterr().out
 
-    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan-l1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["baseline_ok"] is False
 
 
@@ -664,11 +664,11 @@ def test_status_json_keeps_comparison_on_its_owner(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Child status names the group; parent status carries its ranking and judge cost."""
-    assert main(["sessions", "show", "fan-l2", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan-l2", "--json"]) == 0
     child = json.loads(capsys.readouterr().out)
     assert child["placement"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
     assert child["comparison"] is None
-    assert main(["sessions", "show", "fan", "--json"]) == 0
+    assert entry.main(["sessions", "show", "fan", "--json"]) == 0
     parent = json.loads(capsys.readouterr().out)
     assert parent["placement"] is None
     assert parent["comparison"] == {
@@ -679,7 +679,7 @@ def test_status_json_keeps_comparison_on_its_owner(
         "judge_cost_usd": 0.0123,
         "judge_cost_partial": True,
     }
-    assert main(["sessions", "show", "fan-l2"]) == 0
+    assert entry.main(["sessions", "show", "fan-l2"]) == 0
     assert "judge: covers the edge case" in capsys.readouterr().out
 
 
@@ -745,7 +745,7 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_merges(
     ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A `/parallel` run is no group: no group line, its children listed with their outcomes."""
-    assert main(["sessions", "show", "co"]) == 0
+    assert entry.main(["sessions", "show", "co"]) == 0
     out = capsys.readouterr().out
     assert "group:" not in out
     assert "children:      2" in out
@@ -757,7 +757,7 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_merges(
 def test_show_on_a_child_of_an_ordinary_parent_names_it(
     ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["sessions", "show", "co-p1-l1"]) == 0
+    assert entry.main(["sessions", "show", "co-p1-l1"]) == 0
     assert "child of:    co (attempt 1 of group co-p1)" in capsys.readouterr().out
 
 
@@ -848,7 +848,7 @@ def test_cli_child_roster_text(
         "list": ["sessions", "list", "--children"],
         "attach": ["attach", "co"],
     }[surface]
-    assert main(args) == 0
+    assert entry.main(args) == 0
     out = capsys.readouterr().out
     for words in (
         "co-p2 attempt 1",
@@ -888,7 +888,7 @@ def test_cli_child_roster_json(
         "list": ["sessions", "list"],
         "attach": ["attach", "co"],
     }[surface]
-    assert main([*args, "--json"]) == 0
+    assert entry.main([*args, "--json"]) == 0
     obj = json.loads(capsys.readouterr().out)
     rows = (obj[0] if surface == "list" else obj)["children"]
     assert len(rows) == 7
@@ -951,7 +951,7 @@ def test_a_queued_steer_stays_on_its_childs_status_line(
     assert ipc.submit_steer(
         child_roster.parent / sid, "Read the tests.\nPlease check the documentation."
     )
-    assert main(["sessions", command, "co"]) == 0
+    assert entry.main(["sessions", command, "co"]) == 0
     line = next(line for line in capsys.readouterr().out.splitlines() if sid in line)
     assert (
         "running · steer queued, not yet delivered: Read the tests. Please check the documentation."
@@ -962,10 +962,10 @@ def test_a_queued_steer_stays_on_its_childs_status_line(
 def test_steer_and_stop_address_only_the_named_child(child_roster: pathlib.Path) -> None:
     """An explicit child id never steers or stops the parent."""
     sid = "co-p2-l1"
-    assert main(["steer", sid, "keep the change small"]) == 0
+    assert entry.main(["steer", sid, "keep the change small"]) == 0
     assert ipc.take_steer_answer(child_roster.parent / sid) == "keep the change small"
     assert not ipc.steer_answer_written(child_roster)
-    assert main(["stop", sid, "--after-turn"]) == 0
+    assert entry.main(["stop", sid, "--after-turn"]) == 0
     assert ipc.stop_request_pending(child_roster.parent / sid)
     assert not ipc.stop_request_pending(child_roster)
 
@@ -991,11 +991,11 @@ def test_list_counts_recorded_children_and_nests_their_reviewers(
         ),
         now=3,
     )
-    assert main(["sessions", "list"]) == 0
+    assert entry.main(["sessions", "list"]) == 0
     assert "co (7 children)" in capsys.readouterr().out
-    assert main(["sessions", "list", "--children"]) == 0
+    assert entry.main(["sessions", "list", "--children"]) == 0
     out = capsys.readouterr().out
     assert "    └ nested-reviewer" in out and "no reviewer route" in out
-    assert main(["sessions", "list", "--json"]) == 0
+    assert entry.main(["sessions", "list", "--json"]) == 0
     rows = json.loads(capsys.readouterr().out)
     assert rows[0]["children"][2]["children"][0]["session_id"] == "nested-reviewer"

@@ -227,9 +227,9 @@ def test_bare_parent_command_error_names_subcommand_not_dest(
 
 
 def test_bare_agent6_prints_help_not_an_error(capsys: pytest.CaptureFixture[str]) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
-    rc = main([])
+    rc = cli_entry.main([])
     out = capsys.readouterr().out
     assert rc == 0
     assert "usage: agent6" in out
@@ -237,10 +237,10 @@ def test_bare_agent6_prints_help_not_an_error(capsys: pytest.CaptureFixture[str]
 
 
 def test_global_config_without_a_value_is_an_argparse_error() -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
     with pytest.raises(SystemExit) as exc:
-        main(["--config"])
+        cli_entry.main(["--config"])
     assert exc.value.code == 2
 
 
@@ -474,9 +474,9 @@ def test_option_metavars() -> None:
 
 def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]) -> None:
     # Every role inherits its unset fields from the default.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry as cli_entry
 
-    assert main(["model"]) == 0
+    assert cli_entry.main(["model"]) == 0
     out = capsys.readouterr().out
     assert "unset fields inherit models.default" in out
 

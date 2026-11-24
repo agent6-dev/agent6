@@ -436,18 +436,18 @@ def test_bundle_reports_circular_symlink_command_ref(tmp_path: pathlib.Path) -> 
 def test_machine_check_fails_on_bad_bundle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     text = NET_MACHINE.replace('command = ["scripts/fetch.sh"]', 'command = ["scripts/../escape"]')
     f = _write(tmp_path, text)
     monkeypatch.chdir(tmp_path)
-    assert main(["machine", "check", str(f)]) == 1
+    assert entry.main(["machine", "check", str(f)]) == 1
 
 
 def test_machine_check_passes_with_valid_bundle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
@@ -456,16 +456,16 @@ def test_machine_check_passes_with_valid_bundle(
     # An explicit ceiling does not depend on whether auto resolves to session or host here.
     paths.global_config_path().parent.mkdir(parents=True, exist_ok=True)
     paths.global_config_path().write_text('[sandbox]\nnetwork = "none"\n', encoding="utf-8")
-    assert main(["machine", "check", str(f)]) == 1
+    assert entry.main(["machine", "check", str(f)]) == 1
     paths.global_config_path().write_text('[sandbox]\nnetwork = "host"\n', encoding="utf-8")
-    assert main(["machine", "check", str(f)]) == 0
+    assert entry.main(["machine", "check", str(f)]) == 0
 
 
 def test_machine_run_refuses_escaping_bundle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `machine run` re-validates the bundle: a `scripts/` symlink escaping it must refuse first.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
@@ -474,14 +474,14 @@ def test_machine_run_refuses_escaping_bundle(
     (tmp_path / "scripts" / "fetch.sh").symlink_to(outside)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
-    assert main(["machine", "run", str(f)]) == 1
+    assert entry.main(["machine", "run", str(f)]) == 1
 
 
 def test_machine_run_validates_config_overlay_for_pure_machine(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A pure wait/terminal machine still validates its [config] overlay.
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     pure = (
         'machine = "pure"\nversion = 1\ninitial = "go"\n'
@@ -494,4 +494,4 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     f = _write(tmp_path, pure)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
-    assert main(["machine", "run", str(f)]) == 2
+    assert entry.main(["machine", "run", str(f)]) == 2

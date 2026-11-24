@@ -15,7 +15,7 @@ from agent6.config import Config
 from agent6.harness import guards, loop, loop_conversation, loop_state, run_chain, tool_effects
 from agent6.providers import provider_types
 from agent6.tools import dispatch, results
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from tests.unit.turn_context import turn_context
 
 
@@ -180,7 +180,7 @@ def test_cli_settles_only_unrelated_commands_beside_a_live_job(
         return provider
 
     monkeypatch.setattr(role_providers, "build_role_provider", provider_factory)
-    assert cli_main(["run", "--session-id", "settled", "write work, then inspect it"]) == 0
+    assert entry.cli_main(["run", "--session-id", "settled", "write work, then inspect it"]) == 0
     out = capsys.readouterr().out
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "settled"
     events = [json.loads(line) for line in (session_dir / "logs.jsonl").read_text().splitlines()]

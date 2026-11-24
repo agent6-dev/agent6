@@ -21,7 +21,7 @@ from agent6.config import Config, layer, layer_data
 from agent6.machine import authoring, contracts
 from agent6.sandbox import detect
 from agent6.sessions import budget_events, event_log
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.viewmodel import format, telemetry
 from agent6.viewmodel.session import status as session_status
 
@@ -252,7 +252,7 @@ def test_create_runs_the_authoring_agent_as_a_run_on_the_worker_model(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    code = main(["machine", "create", "Greet the user"])
+    code = entry.main(["machine", "create", "Greet the user"])
     assert code == 0
     assert captured, "runner was never invoked"
     assert "model" not in captured[0].model_dump()
@@ -294,7 +294,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    assert main(["machine", "create", "Greet the user"]) == 0
+    assert entry.main(["machine", "create", "Greet the user"]) == 0
     assert seen == [Config().harness.max_turns]
 
 
@@ -330,7 +330,7 @@ def test_create_takes_the_budget_flags_run_takes(
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     argv = ["machine", "create", "--max-plan-points", "30", "--max-usd", "2", "Greet the user"]
-    assert main(argv) == 0
+    assert entry.main(argv) == 0
     assert seen == [(30.0, 2.0, 30.0)]
 
 
@@ -364,7 +364,7 @@ def test_create_keeps_one_plan_point_ledger_across_attempts(
         ],
     )
     argv = ["machine", "create", "--max-plan-points", "30", "--max-attempts", "3", "Greet the user"]
-    assert main(argv) == 1
+    assert entry.main(argv) == 1
     err = capsys.readouterr().err
     assert "max_plan_points (30) exhausted after 2 attempt(s) (40 plan points)" in err
     assert "40 plan points (in=" in err
@@ -390,7 +390,7 @@ def test_create_commit_guidance_applies_only_to_a_target_in_git(
         monkeypatch,
         [(_draft(VALID_MACHINE), contracts.AgentExecResult(payload=None, reason="finish_session"))],
     )
-    assert main(["machine", "create", "Greet", "-o", str(target / "draft.asm.toml")]) == 0
+    assert entry.main(["machine", "create", "Greet", "-o", str(target / "draft.asm.toml")]) == 0
     err = capsys.readouterr().err
     assert "only accepts committed machines" not in err
     assert ("Review and commit the bundle" in err) is in_git
@@ -412,7 +412,7 @@ def test_create_writes_default_path(
             )
         ],
     )
-    code = main(["machine", "create", "Greet the user"])
+    code = entry.main(["machine", "create", "Greet the user"])
     assert code == 0
     out = capsys.readouterr()
     written = tmp_path / "greeter.asm.toml"
@@ -458,7 +458,7 @@ def test_create_spend_line_has_tokens_and_an_accurate_partial_marker(
             ),
         ],
     )
-    assert main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
+    assert entry.main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
     mark = "~" if partial else ""
     assert f"machine create: spent {mark}$0.03 (in=250 tok, out=50 tok)" in capsys.readouterr().err
 
@@ -490,7 +490,7 @@ def test_create_writes_watchable_event_log(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    assert main(["machine", "create", "Greet the user"]) == 0
+    assert entry.main(["machine", "create", "Greet the user"]) == 0
 
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
@@ -541,7 +541,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
             ),
         ],
     )
-    assert main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
+    assert entry.main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
     logs = next((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     budgets = [e for e in events if e["type"] == "budget.update"]
@@ -593,7 +593,7 @@ def test_create_counts_every_attempts_own_cost_in_the_cost_metric(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    assert main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
+    assert entry.main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
     logs = next((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     fold = telemetry.TelemetryFold(logs.parent.name)
     for line in logs.read_text(encoding="utf-8").splitlines():
@@ -616,7 +616,7 @@ def test_create_saves_the_prompt(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
             )
         ],
     )
-    code = main(["machine", "create", "Greet the user warmly"])
+    code = entry.main(["machine", "create", "Greet the user warmly"])
     assert code == 0
     prompts = list((tmp_path / "state").glob("**/sessions/machines/*/prompt.txt"))
     assert len(prompts) == 1
@@ -641,7 +641,7 @@ def test_create_retries_then_succeeds(
             ),
         ],
     )
-    code = main(["machine", "create", "Greet the user"])
+    code = entry.main(["machine", "create", "Greet the user"])
     assert code == 0
     out = capsys.readouterr()
     assert (tmp_path / "greeter.asm.toml").exists()
@@ -682,10 +682,10 @@ def test_create_retries_config_problems_before_publishing(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", build)
-    assert main(["machine", "create", "Greet", "--max-attempts", "2"]) == 0
+    assert entry.main(["machine", "create", "Greet", "--max-attempts", "2"]) == 0
     assert len(prompts) == 2
     assert diagnostic in prompts[1]
-    assert main(["machine", "check", str(tmp_path / "greeter.asm.toml")]) == 0
+    assert entry.main(["machine", "check", str(tmp_path / "greeter.asm.toml")]) == 0
 
 
 def test_create_reports_the_shared_jail_path_warnings(
@@ -703,7 +703,7 @@ def test_create_reports_the_shared_jail_path_warnings(
             )
         ],
     )
-    assert main(["machine", "create", "Greet"]) == 0
+    assert entry.main(["machine", "create", "Greet"]) == 0
     assert "`missing-machine-tool-xyz` ([states.say] command)" in capsys.readouterr().err
 
 
@@ -723,7 +723,7 @@ def test_create_refuses_to_overwrite_default_path(
             )
         ],
     )
-    code = main(["machine", "create", "Greet the user"])
+    code = entry.main(["machine", "create", "Greet the user"])
     assert code == 2  # a refusal
     out = capsys.readouterr()
     # untouched
@@ -751,7 +751,7 @@ def test_create_refuses_to_replace_a_broken_output_symlink(
         ],
     )
 
-    assert main(["machine", "create", "Greet the user"]) == 2
+    assert entry.main(["machine", "create", "Greet the user"]) == 2
     assert target.is_symlink()
     assert target.readlink() == pathlib.Path("missing.asm.toml")
 
@@ -773,7 +773,7 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
             )
         ],
     )
-    assert main(["machine", "create", "Greet the user"]) == 2  # a refusal
+    assert entry.main(["machine", "create", "Greet the user"]) == 2  # a refusal
     capsys.readouterr()
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
@@ -809,7 +809,7 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
         raise PermissionError("scripts/: Permission denied")  # the output dir only
 
     monkeypatch.setattr(_create, "_write_scripts", denied)
-    assert main(["machine", "create", "Greet the user"]) == 1
+    assert entry.main(["machine", "create", "Greet the user"]) == 1
     out = capsys.readouterr()
     assert "could not write" in out.err
     assert out.out.startswith('machine = "greeter"')  # the draft is not lost
@@ -837,7 +837,7 @@ def test_create_output_flag_overwrites(
             )
         ],
     )
-    code = main(["machine", "create", "Greet the user", "-o", str(target)])
+    code = entry.main(["machine", "create", "Greet the user", "-o", str(target)])
     assert code == 0
     assert target.read_text(encoding="utf-8").startswith('machine = "greeter"')
 
@@ -869,7 +869,7 @@ def test_create_output_flag_names_the_files_it_replaced(
         ],
     )
 
-    assert main(["machine", "create", "Run a script", "-o", str(target)]) == 0
+    assert entry.main(["machine", "create", "Run a script", "-o", str(target)]) == 0
     assert "print(json.dumps({}))" in old_script.read_text(encoding="utf-8")
     assert target.read_text(encoding="utf-8").startswith('machine = "scripted"')
     ok = next(line for line in capsys.readouterr().err.splitlines() if line.startswith("OK:"))
@@ -885,7 +885,7 @@ def test_create_output_help_discloses_sibling_script_overwrites(
 ) -> None:
     """Output help names the scripts directory whose same-named files the flag replaces."""
     with pytest.raises(SystemExit) as exc:
-        main(["machine", "create", "--help"])
+        entry.main(["machine", "create", "--help"])
     assert exc.value.code == 0
     help_text = " ".join(capsys.readouterr().out.split()).replace("- ", "-")
     assert (
@@ -911,7 +911,7 @@ def test_create_never_valid_exits_1(
             ),
         ],
     )
-    code = main(["machine", "create", "Greet the user", "--max-attempts", "2"])
+    code = entry.main(["machine", "create", "Greet the user", "--max-attempts", "2"])
     assert code == 1
     out = capsys.readouterr()
     assert "no valid machine after 2 attempt(s)" in out.err
@@ -940,7 +940,7 @@ def test_create_surfaces_a_reason_per_failed_attempt(
             ),
         ],
     )
-    code = main(["machine", "create", "Greet the user", "--max-attempts", "2"])
+    code = entry.main(["machine", "create", "Greet the user", "--max-attempts", "2"])
     assert code == 1
     err = capsys.readouterr().err
     assert "attempt 1 failed: No .asm.toml in the workspace" in err
@@ -972,7 +972,7 @@ def test_create_no_payload_gives_diagnostic_and_retries(
             ),
         ],
     )
-    code = main(["machine", "create", "Greet the user"])
+    code = entry.main(["machine", "create", "Greet the user"])
     assert code == 0
     assert (tmp_path / "greeter.asm.toml").exists()
 
@@ -981,7 +981,7 @@ def test_create_rejects_bad_max_attempts(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    code = main(["machine", "create", "Greet the user", "--max-attempts", "0"])
+    code = entry.main(["machine", "create", "Greet the user", "--max-attempts", "0"])
     assert code == 2
     assert "--max-attempts must be >= 1" in capsys.readouterr().err
 
@@ -1002,7 +1002,7 @@ def test_create_output_flag_creates_parent_dirs(
         ],
     )
     target = tmp_path / "new" / "deep" / "m.asm.toml"
-    code = main(["machine", "create", "Greet the user", "-o", str(target)])
+    code = entry.main(["machine", "create", "Greet the user", "-o", str(target)])
     assert code == 0
     assert target.read_text(encoding="utf-8").startswith('machine = "greeter"')
 
@@ -1037,7 +1037,7 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    assert main(["machine", "create", "Run a script"]) == 0
+    assert entry.main(["machine", "create", "Run a script"]) == 0
     written = (tmp_path / "scripts" / "run.py").read_text(encoding="utf-8")
     assert "import json" not in written, written
     assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full") == []
@@ -1087,7 +1087,7 @@ def test_create_retry_prompt_names_the_script_problem(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    code = main(["machine", "create", "Run a script"])
+    code = entry.main(["machine", "create", "Run a script"])
     assert code == 0
     assert len(prompts) == 2
     assert "undefined_name" not in prompts[0]
@@ -1150,7 +1150,7 @@ def test_create_attempts_share_one_budget_ledger(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    code = main(["machine", "create", "Run a script"])
+    code = entry.main(["machine", "create", "Run a script"])
     assert code == 1  # no valid draft, and no third full-budget attempt
     assert caps == [10.0, 4.0]
     err = capsys.readouterr().err
@@ -1176,7 +1176,7 @@ def test_create_writes_script_bundle(
             )
         ],
     )
-    code = main(["machine", "create", "Run a script"])
+    code = entry.main(["machine", "create", "Run a script"])
     assert code == 0
     out = capsys.readouterr()
     assert (tmp_path / "scripted.asm.toml").exists()
@@ -1206,7 +1206,7 @@ def test_create_refuses_to_overwrite_existing_script(
             )
         ],
     )
-    code = main(["machine", "create", "Run a script"])
+    code = entry.main(["machine", "create", "Run a script"])
     assert code == 2  # a refusal
     out = capsys.readouterr()
     assert "REFUSING to overwrite" in out.err
@@ -1236,7 +1236,7 @@ def test_create_rejects_missing_script_then_succeeds(
             ),
         ],
     )
-    code = main(["machine", "create", "Run a script"])
+    code = entry.main(["machine", "create", "Run a script"])
     assert code == 0
     out = capsys.readouterr()
     assert (tmp_path / "scripts" / "run.py").exists()
@@ -1264,7 +1264,7 @@ def test_create_rejects_lint_bad_script(
             )
         ],
     )
-    code = main(["machine", "create", "Run a script", "--max-attempts", "1"])
+    code = entry.main(["machine", "create", "Run a script", "--max-attempts", "1"])
     assert code == 1
     out = capsys.readouterr()
     assert "ruff" in out.err
@@ -1294,7 +1294,7 @@ def test_create_publish_validates_the_destination_before_claiming_success(
     outside = tmp_path / "outside.py"
     outside.write_text("print('x')\n", encoding="utf-8")
     (out_dir / "scripts" / "evil.py").symlink_to(outside)
-    code = main(["machine", "create", "Run a script", "-o", str(out_dir / "m.asm.toml")])
+    code = entry.main(["machine", "create", "Run a script", "-o", str(out_dir / "m.asm.toml")])
     assert code == 1
     err = capsys.readouterr().err
     assert "FAILED" in err and "does not validate" in err
@@ -1324,7 +1324,7 @@ def test_create_writes_no_script_through_a_linked_scripts_directory(
             )
         ],
     )
-    assert main(["machine", "create", "Run a script", "--max-attempts", "1"]) == 1
+    assert entry.main(["machine", "create", "Run a script", "--max-attempts", "1"]) == 1
     assert list(outside.iterdir()) == [], "nothing lands behind the link"
     assert not (repo / "scripted.asm.toml").exists()
     err = capsys.readouterr().err
@@ -1391,7 +1391,7 @@ def test_create_writes_scripts_before_the_machine_file(
         real_write(base_dir, scripts)
 
     monkeypatch.setattr(_create, "_write_scripts", boom)
-    code = main(["machine", "create", "Run a script"])
+    code = entry.main(["machine", "create", "Run a script"])
     assert code == 1
     assert not (tmp_path / "scripted.asm.toml").exists()
 
@@ -1410,7 +1410,7 @@ def test_create_never_ships_script_exits_1(
             )
         ],
     )
-    code = main(["machine", "create", "Run a script", "--max-attempts", "1"])
+    code = entry.main(["machine", "create", "Run a script", "--max-attempts", "1"])
     assert code == 1
     out = capsys.readouterr()
     assert "not found in bundle" in out.err
@@ -1485,7 +1485,7 @@ def test_create_failure_stop_reason_names_the_failure(
         monkeypatch,
         [({}, contracts.AgentExecResult(payload=None, reason="max_turns", usd=0.0))],
     )
-    assert main(["machine", "create", "Greet the user", "--max-attempts", "1"]) == 1
+    assert entry.main(["machine", "create", "Greet the user", "--max-attempts", "1"]) == 1
 
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
@@ -1516,7 +1516,7 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
             )
         ],
     )
-    assert main(["machine", "create", "Greet the user"]) == 0
+    assert entry.main(["machine", "create", "Greet the user"]) == 0
 
     pids = list((tmp_path / "state").glob("**/sessions/machines/*/worker.pid"))
     assert pids, "the draft recorded no liveness marker"
@@ -1566,7 +1566,7 @@ def test_create_runs_the_shared_isolation_preflight(
     monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
     monkeypatch.setattr(detect, "probed_environment", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
-    assert main(["machine", "create", "a nightly loop"]) == 2
+    assert entry.main(["machine", "create", "a nightly loop"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err and "private directory" in err
 
@@ -1600,7 +1600,7 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    code = main(["machine", "create", "--max-attempts", "2", "Doomed draft"])
+    code = entry.main(["machine", "create", "--max-attempts", "2", "Doomed draft"])
     assert code == 1
     retry_prompt = seen_prompts[1]
     assert "initial" in retry_prompt  # the schema problem
@@ -1656,7 +1656,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    assert main(["--config", str(config), "machine", "create", "Greet the user"]) == 0
+    assert entry.main(["--config", str(config), "machine", "create", "Greet the user"]) == 0
     assert captured, "runner was never invoked"
     req, root, cfg = captured[0]
     assert req.mode == "run", "the authoring agent writes files"
@@ -1701,7 +1701,7 @@ def test_create_confirms_unconfined_autorun_before_drafting(
 
     monkeypatch.setattr(preflight_prompts, "confirm_unconfined_autorun", decline)
     _stub_runner(monkeypatch, [])  # a refused launch must not draft
-    assert main(["machine", "create", "Greet the user"]) == 2
+    assert entry.main(["machine", "create", "Greet the user"]) == 2
 
 
 def test_create_publishes_the_files_a_referenced_script_needs(
@@ -1728,7 +1728,7 @@ def test_create_publishes_the_files_a_referenced_script_needs(
         ],
     )
 
-    assert main(["machine", "create", "Run a script", "--max-attempts", "1"]) == 0
+    assert entry.main(["machine", "create", "Run a script", "--max-attempts", "1"]) == 0
 
     assert (tmp_path / "scripts" / "common.py").exists(), "the module it imports"
     assert (tmp_path / "scripts" / "data.json").exists(), "the data file it reads"
@@ -1793,7 +1793,7 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    assert main(["machine", "create", "Greet the user", "--max-attempts", "3"]) == 1
+    assert entry.main(["machine", "create", "Greet the user", "--max-attempts", "3"]) == 1
     assert attempts == 1
     assert "no valid machine after 1 attempt(s)" in capsys.readouterr().err
 
@@ -1819,7 +1819,8 @@ def test_create_under_a_zero_dollar_cap_still_runs_its_first_attempt(
         ],
     )
     assert (
-        main(["machine", "create", "--max-usd", "0", "--max-attempts", "3", "Greet the user"]) == 0
+        entry.main(["machine", "create", "--max-usd", "0", "--max-attempts", "3", "Greet the user"])
+        == 0
     )
     assert "exhausted after" not in capsys.readouterr().err
 
@@ -1846,11 +1847,12 @@ def test_create_names_the_pass_env_grant_a_draft_needs(
             ),
         ],
     )
-    assert main(["machine", "create", "Run a script"]) == 0
+    assert entry.main(["machine", "create", "Run a script"]) == 0
     err = capsys.readouterr().err
     assert "  agent6 config add machine.pass_env FEED_TOKEN\n" in err
     assert "  agent6 config add machine.pass_env FEED_USER\n" in err
     assert (
-        main(["machine", "create", "Run a script", "-o", str(tmp_path / "b" / "m.asm.toml")]) == 0
+        entry.main(["machine", "create", "Run a script", "-o", str(tmp_path / "b" / "m.asm.toml")])
+        == 0
     )
     assert "machine.pass_env" not in capsys.readouterr().err

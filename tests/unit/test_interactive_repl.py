@@ -408,8 +408,6 @@ def test_i_on_a_pipe_refuses_up_front(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """-i on a pipe refuses before anything runs, for run, resume and ask alike: it needs a TTY."""
-    from agent6.ui import cli
-
     monkeypatch.setattr(entry.sys.stdin, "isatty", lambda: False)
 
     def _must_not_run(*_a: object, **_k: object) -> int:
@@ -417,11 +415,11 @@ def test_i_on_a_pipe_refuses_up_front(
 
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _must_not_run)
     monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", _must_not_run)
-    assert cli.main(["run", "-i", "do the thing"]) == 2
+    assert entry.main(["run", "-i", "do the thing"]) == 2
     assert "-i needs a TTY" in capsys.readouterr().err
-    assert cli.main(["resume", "some-run-AAAAAA", "-i"]) == 2
+    assert entry.main(["resume", "some-run-AAAAAA", "-i"]) == 2
     assert "-i needs a TTY" in capsys.readouterr().err
-    assert cli.main(["ask", "-i", "why?"]) == 2
+    assert entry.main(["ask", "-i", "why?"]) == 2
     assert "-i needs a TTY" in capsys.readouterr().err
 
 
@@ -443,7 +441,6 @@ def test_i_from_a_background_process_group_refuses_before_start(
     argv: list[str],
 ) -> None:
     """A background job with a TTY on stdin cannot read it, so no interactive execution starts."""
-    from agent6.ui import cli
     from agent6.ui.cli import session_prompt
 
     monkeypatch.setattr(session_prompt.sys.stdin, "isatty", lambda: True)
@@ -456,7 +453,7 @@ def test_i_from_a_background_process_group_refuses_before_start(
 
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _must_not_run)
     monkeypatch.setattr("agent6.ui.cli.resume._cmd_resume", _must_not_run)
-    assert cli.main(argv) == 2
+    assert entry.main(argv) == 2
     assert "-i needs a TTY" in capsys.readouterr().err
 
 
@@ -464,7 +461,6 @@ def test_bare_ask_from_a_background_process_group_refuses(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Bare ask defaults to its REPL only when the TTY belongs to this job."""
-    from agent6.ui import cli
     from agent6.ui.cli import session_prompt
 
     monkeypatch.setattr(session_prompt.sys.stdin, "isatty", lambda: True)
@@ -476,7 +472,7 @@ def test_bare_ask_from_a_background_process_group_refuses(
         pytest.fail("the ask REPL must not start")
 
     monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _must_not_run)
-    assert cli.main(["ask"]) == 2
+    assert entry.main(["ask"]) == 2
     assert "needs a question" in capsys.readouterr().err
 
 

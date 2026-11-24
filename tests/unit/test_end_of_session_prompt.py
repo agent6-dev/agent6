@@ -496,11 +496,11 @@ def test_plan_tui_does_not_hand_the_terminal_back(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`plan --tui` ends where the TUI ends, as `run --tui` does."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     asked = _plan_harness(tmp_path, monkeypatch)
-    assert main(["plan", "--tui", "do a thing"]) == 0
+    assert entry.main(["plan", "--tui", "do a thing"]) == 0
     assert asked == []
     asked = _plan_harness(tmp_path, monkeypatch)
-    assert main(["plan", "do a thing"]) == 0
+    assert entry.main(["plan", "do a thing"]) == 0
     assert asked == ["next (/exit to finish): "]

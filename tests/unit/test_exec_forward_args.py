@@ -20,7 +20,7 @@ from agent6.sandbox import detect
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.tools import policy
-from agent6.ui import cli
+from agent6.ui.cli import entry
 
 
 @pytest.fixture
@@ -56,40 +56,40 @@ def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str, A
 
 
 def test_exec_command_after_separator_runs_in_the_newest_session(seen: dict[str, Any]) -> None:
-    assert cli.main(["exec", "--", "echo", "hi"]) == 0
+    assert entry.main(["exec", "--", "echo", "hi"]) == 0
     assert seen == {"target": "newest-run", "argv": ("echo", "hi")}
 
 
 def test_exec_names_a_session_before_the_separator(seen: dict[str, Any]) -> None:
-    assert cli.main(["exec", "brave-otter", "--", "echo", "hi"]) == 0
+    assert entry.main(["exec", "brave-otter", "--", "echo", "hi"]) == 0
     assert seen == {"target": "brave-otter", "argv": ("echo", "hi")}
 
 
 def test_exec_keeps_a_later_separator_in_the_command(seen: dict[str, Any]) -> None:
-    assert cli.main(["exec", "brave-otter", "--", "git", "log", "--", "p"]) == 0
+    assert entry.main(["exec", "brave-otter", "--", "git", "log", "--", "p"]) == 0
     assert seen["argv"] == ("git", "log", "--", "p")
 
 
 def test_exec_without_separator_is_all_command(seen: dict[str, Any]) -> None:
-    assert cli.main(["exec", "ls", "-la"]) == 0
+    assert entry.main(["exec", "ls", "-la"]) == 0
     assert seen == {"target": "newest-run", "argv": ("ls", "-la")}
 
 
 def test_exec_refuses_two_tokens_before_the_separator(
     seen: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["exec", "a", "b", "--", "cmd"]) == 2
+    assert entry.main(["exec", "a", "b", "--", "cmd"]) == 2
     assert "at most one session id" in capsys.readouterr().err
     assert seen == {}
 
 
 def test_forward_bare_number_is_a_port_of_the_newest_session(seen: dict[str, Any]) -> None:
-    assert cli.main(["forward", "8000"]) == 0
+    assert entry.main(["forward", "8000"]) == 0
     assert seen == {"target": "newest-run", "port": 8000}
 
 
 def test_forward_session_and_port(seen: dict[str, Any]) -> None:
-    assert cli.main(["forward", "brave-otter", "8000"]) == 0
+    assert entry.main(["forward", "brave-otter", "8000"]) == 0
     assert seen == {"target": "brave-otter", "port": 8000}
 
 
@@ -97,7 +97,7 @@ def test_forward_without_a_listener_is_a_refusal(
     seen: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A REFUSING diagnostic is the shared exit-2 class, not a runtime failure."""
-    assert cli.main(["forward", "brave-otter"]) == 2
+    assert entry.main(["forward", "brave-otter"]) == 2
     assert capsys.readouterr().err.startswith("REFUSING:")
     assert seen == {}
 
@@ -158,14 +158,14 @@ def test_attach_presentation_modes_are_mutually_exclusive(
 ) -> None:
     """Combining --json with --raw or --tui is refused by the parser: one presentation at a time."""
     with pytest.raises(SystemExit) as exc:
-        cli.main(["attach", "--json", "--raw"])
+        entry.main(["attach", "--json", "--raw"])
     assert exc.value.code == 2
     assert "not allowed with" in capsys.readouterr().err
 
 
 def test_attach_since_needs_raw(capsys: pytest.CaptureFixture[str]) -> None:
     """--since replays event lines only the --raw tail renders; other views ignored it silently."""
-    rc = cli.main(["attach", "--since", "5"])
+    rc = entry.main(["attach", "--since", "5"])
     assert rc == 2
     err = capsys.readouterr().err
     assert err.startswith("ERROR:") and "--since applies to --raw only" in err
@@ -257,8 +257,8 @@ def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
             encoding="utf-8",
         )
 
-    assert cli.main(["exec", "ambig", "--", "true"]) == 2
-    assert cli.main(["forward", "ambig", "8000"]) == 2
+    assert entry.main(["exec", "ambig", "--", "true"]) == 2
+    assert entry.main(["forward", "ambig", "8000"]) == 2
 
     err = capsys.readouterr().err
     assert err.count("is ambiguous (2 matches)") == 2, err

@@ -836,14 +836,14 @@ def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
     """
     from agent6.config import ConfigError
     from agent6.ui import mcp_server
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     bad = tmp_path / "bad.toml"
     bad.write_text("[agent6]\nnope = 1\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         mcp_server.run_server((bad,))
-    assert cli_main(["--config", str(bad), "mcp", "serve"]) == 2
+    assert entry.cli_main(["--config", str(bad), "mcp", "serve"]) == 2
     err = capsys.readouterr().err
     assert "ERROR:" in err and "failed to load config" not in err
 

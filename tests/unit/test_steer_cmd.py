@@ -12,7 +12,7 @@ import pytest
 from agent6 import paths
 from agent6.app import stop as app_stop
 from agent6.sessions import ipc, process
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def _run_session(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
@@ -31,15 +31,15 @@ def test_steer_queues_for_a_live_run(
     d = _run_session(tmp_path, "tiny-run-AAAA11")
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "tiny-run", "merge your best patch now"]) == 0
+    assert entry.main(["steer", "tiny-run", "merge your best patch now"]) == 0
     out = capsys.readouterr().out
     assert "tiny-run-AAAA11: steer queued, not yet delivered." in out
-    assert main(["sessions", "show", d.name]) == 0
+    assert entry.main(["sessions", "show", d.name]) == 0
     shown = capsys.readouterr().out
     assert "steer queued, not yet delivered: merge your best patch now" in shown
-    assert main(["steer", "tiny-run", "then run the gate"]) == 0
+    assert entry.main(["steer", "tiny-run", "then run the gate"]) == 0
     assert "steer queued behind 1 other; not yet delivered" in (capsys.readouterr().out)
-    assert main(["sessions", "show", d.name]) == 0
+    assert entry.main(["sessions", "show", d.name]) == 0
     assert "merge your best patch now (+1 more queued)" in capsys.readouterr().out
     # The one shared channel: request marker + answer, exactly what the
     # composers write and the loop consumes. A plain steer never carries the
@@ -49,7 +49,7 @@ def test_steer_queues_for_a_live_run(
     assert not ipc.steer_interrupt_pending(d)
     assert ipc.take_steer_answer(d) == "merge your best patch now"
 
-    assert main(["steer", "tiny-run", "wrap up", "--now"]) == 0
+    assert entry.main(["steer", "tiny-run", "wrap up", "--now"]) == 0
     out = capsys.readouterr().out
     assert "interrupting the call in flight" in out
     assert ipc.steer_interrupt_pending(d)
@@ -67,7 +67,7 @@ def test_steer_reports_a_failed_marker_write(
     (session / "steer.request").mkdir()
     (session / ipc.STEERS_DIR_NAME).write_text("", encoding="utf-8")  # no inbox to fall back to
 
-    assert main(["steer", "tiny-run-EEEE55", "hello"]) == 1
+    assert entry.main(["steer", "tiny-run-EEEE55", "hello"]) == 1
     captured = capsys.readouterr()
     assert "could not write the steer request" in captured.err
     assert "steer queued" not in captured.out
@@ -84,7 +84,7 @@ def test_steer_refuses_a_session_that_is_not_running(
     # a pid that is never alive
     process.write_worker_pid(d, 10**9)
 
-    assert main(["steer", "tiny-run-BBBB22", "hello"]) == 2
+    assert entry.main(["steer", "tiny-run-BBBB22", "hello"]) == 2
     err = capsys.readouterr().err
     assert "not running" in err
     assert "agent6 resume tiny-run-BBBB22 --steer" in err
@@ -109,7 +109,7 @@ def test_steer_refuses_a_finished_run_even_with_a_stale_live_pid(
     )
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "done-run-FFFF66", "more work"]) == 2
+    assert entry.main(["steer", "done-run-FFFF66", "more work"]) == 2
     err = capsys.readouterr().err
     assert "not running" in err
     assert "agent6 resume done-run-FFFF66 --steer" in err
@@ -124,7 +124,7 @@ def test_steer_compact_writes_the_compaction_marker(
     d = _run_session(tmp_path, "tiny-run-GGGG77")
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "tiny-run-GGGG77", "/compact focus on test failures"]) == 0
+    assert entry.main(["steer", "tiny-run-GGGG77", "/compact focus on test failures"]) == 0
     out = capsys.readouterr().out
     assert "compaction requested" in out
     assert ipc.read_compact_request(d) == "focus on test failures"
@@ -152,7 +152,10 @@ def test_steer_btw_opens_a_side_ask_instead_of_queuing_the_directive(
     cfg = tmp_path / "worker.toml"
     cfg.write_text("", encoding="utf-8")
     assert (
-        main(["--config", str(cfg), "steer", "tiny-run-HHHH88", "/btw is the migration safe?"]) == 0
+        entry.main(
+            ["--config", str(cfg), "steer", "tiny-run-HHHH88", "/btw is the migration safe?"]
+        )
+        == 0
     )
     assert opened == [(d, "is the migration safe?", (cfg,))]
     assert "btw side-ask-IIII99 opened" in capsys.readouterr().out
@@ -177,7 +180,7 @@ def test_steer_stop_is_the_one_stop(
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-BBBB22")
     process.write_worker_pid(d, os.getpid())
-    assert main(["steer", "tiny-run", "/stop"]) == 0
+    assert entry.main(["steer", "tiny-run", "/stop"]) == 0
     assert calls == [d] and "tiny-run-BBBB22 stopped" in capsys.readouterr().out
     assert not ipc.steer_request_pending(d)
 
@@ -187,7 +190,7 @@ def test_steer_reports_an_unknown_id(
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
-    assert main(["steer", "nonesuch", "hello"]) == 2
+    assert entry.main(["steer", "nonesuch", "hello"]) == 2
     assert "ERROR" in capsys.readouterr().err
 
 
@@ -212,7 +215,7 @@ def test_steer_notes_an_unanswered_prompt_park(
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
-    assert main(["steer", "tiny-run-CCCC33", "hello"]) == 0
+    assert entry.main(["steer", "tiny-run-CCCC33", "hello"]) == 0
     out = capsys.readouterr().out
     assert "the run is waiting (approval" in out
     assert "agent6 attach tiny-run-CCCC33" in out
@@ -245,14 +248,14 @@ def test_steer_names_the_answer_verb_for_a_question(
 
     # No away-mode and no front-end: the run's own terminal prompt reads the
     # answer file, so the verb delivers there too.
-    assert main(["steer", "tiny-run-DDDD44", "hello"]) == 0
+    assert entry.main(["steer", "tiny-run-DDDD44", "hello"]) == 0
     out = capsys.readouterr().out
     assert "the run is waiting (question" in out
     assert "agent6 answer tiny-run-DDDD44" in out
 
     # Detached on "wait": the same verb.
     ipc.set_away_mode(d, "wait")
-    assert main(["steer", "tiny-run-DDDD44", "hello"]) == 0
+    assert entry.main(["steer", "tiny-run-DDDD44", "hello"]) == 0
     assert "agent6 answer tiny-run-DDDD44" in capsys.readouterr().out
 
 
@@ -265,7 +268,7 @@ def test_steer_refuses_a_view_only_word(
     d = _run_session(tmp_path, "tiny-run-AAAA11")
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "tiny-run", "/shells"]) == 2
+    assert entry.main(["steer", "tiny-run", "/shells"]) == 2
     err = capsys.readouterr().err
     assert "acts on a view of the run" in err
     # The surfaces that own a composer or menu, not the transcript reader `agent6 attach`.

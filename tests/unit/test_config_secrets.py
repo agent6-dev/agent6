@@ -13,12 +13,12 @@ import pytest
 
 from agent6 import paths
 from agent6.config import secret_store
-from agent6.ui.cli import completers, main
+from agent6.ui.cli import completers, entry
 
 
 def _run(argv: list[str]) -> int:
     try:
-        return main(argv)
+        return entry.main(argv)
     except SystemExit as exc:
         return int(exc.code or 0)
 
@@ -32,7 +32,7 @@ def test_secret_set_round_trips_without_touching_config_or_printing_the_value(
 ) -> None:
     """A secret is a literal string in a private file, not an effective-config leaf."""
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "telemetry.headers", '["Authorization"]']) == 0
+    assert entry.main(["config", "set", "telemetry.headers", '["Authorization"]']) == 0
     config = paths.global_config_path().read_bytes()
     capsys.readouterr()
     assert _run(["config", "set", "--secret", "telemetry.headers.Authorization", value]) == 0
@@ -47,7 +47,7 @@ def test_secret_set_round_trips_without_touching_config_or_printing_the_value(
     assert not paths.repo_config_path(tmp_path).exists()
     flags: list[str]
     for flags in ([], ["--json"]):
-        assert main(["config", "show", "telemetry", *flags]) == 0
+        assert entry.main(["config", "show", "telemetry", *flags]) == 0
         shown = capsys.readouterr()
         assert "Authorization" in shown.out
         assert value not in shown.out + shown.err

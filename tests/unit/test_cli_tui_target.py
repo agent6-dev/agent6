@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def test_tui_with_a_target_opens_it_and_without_one_opens_the_hub(
@@ -24,6 +24,6 @@ def test_tui_with_a_target_opens_it_and_without_one_opens_the_hub(
 
     monkeypatch.setattr("agent6.ui.cli.watch._cmd_watch_target", _watch)
     monkeypatch.setattr("agent6.ui.cli.plan_watch._cmd_tui", _hub)
-    assert main(["tui", "brisk-otter-AAAAAA"]) == 0
-    assert main(["tui"]) == 0
+    assert entry.main(["tui", "brisk-otter-AAAAAA"]) == 0
+    assert entry.main(["tui"]) == 0
     assert seen == [("watch", ("brisk-otter-AAAAAA", True)), ("hub", None)]

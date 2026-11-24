@@ -20,7 +20,7 @@ from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.providers import provider_types
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from agent6.vcs.git import read as git_read
 
 _CONFIG = """
@@ -133,7 +133,7 @@ def _play(monkeypatch: pytest.MonkeyPatch, argv: list[str], script: list[_Step])
         return prov
 
     monkeypatch.setattr(role_providers, "build_role_provider", _factory)
-    return cli_main(argv)
+    return entry.cli_main(argv)
 
 
 def _manifest(repo: pathlib.Path, session_id: str) -> sessions_manifest.SessionManifest:
@@ -162,7 +162,7 @@ def test_a_resume_after_a_squash_merge_continues_from_head(
     repo = _setup(tmp_path, monkeypatch)
     run = ["run", "--session-id", "merge-SQUASH", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    assert cli_main(["sessions", "merge", "merge-SQUASH"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-SQUASH"]) == 0
     _commit_on_main(repo, "r.md")
     head = _git(repo, "rev-parse", "HEAD")
     capfd.readouterr()
@@ -177,10 +177,10 @@ def test_a_resume_after_a_squash_merge_continues_from_head(
         repo, "rev-parse", f"{head}^{{tree}}"
     )
     assert _changed(repo, base, chain) == ["y.txt"]
-    assert cli_main(["sessions", "diff", "merge-SQUASH", "--stat"]) == 0
+    assert entry.cli_main(["sessions", "diff", "merge-SQUASH", "--stat"]) == 0
     shown = capfd.readouterr().out
     assert "y.txt" in shown and "r.md" not in shown and "z.txt" not in shown
-    assert cli_main(["sessions", "merge", "merge-SQUASH"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-SQUASH"]) == 0
     assert _changed(repo, head, "main") == ["y.txt"]
 
 
@@ -199,7 +199,7 @@ def test_a_resume_resolves_a_conflict_by_merging_the_target_branch_in(
     (repo / "a.py").write_text("x = 3\n", encoding="utf-8")
     _git(repo, "commit", "-qam", "main moved the same line")
     main_tip = _git(repo, "rev-parse", "HEAD")
-    assert cli_main(["sessions", "merge", "merge-MERGEIN"]) == 1
+    assert entry.cli_main(["sessions", "merge", "merge-MERGEIN"]) == 1
     err = capfd.readouterr().err
     assert "CONFLICT" in err and "    agent6 resume merge-MERGEIN --merge main" in err
 
@@ -209,7 +209,7 @@ def test_a_resume_resolves_a_conflict_by_merging_the_target_branch_in(
         return prov
 
     monkeypatch.setattr(role_providers, "build_role_provider", factory)
-    assert cli_main(["resume", "merge-MERGEIN", "--merge", "main"]) == 0
+    assert entry.cli_main(["resume", "merge-MERGEIN", "--merge", "main"]) == 0
     seen = prov.seen
     out = capfd.readouterr().err
     assert "merged main into the run's work" in out and "conflicts left in a.py" in out
@@ -220,7 +220,7 @@ def test_a_resume_resolves_a_conflict_by_merging_the_target_branch_in(
     log = _git(repo, "rev-list", "--parents", chain).splitlines()
     merge_commit = next(line for line in log if len(line.split()) == 3)
     assert main_tip in merge_commit.split()[1:]
-    assert cli_main(["sessions", "merge", "merge-MERGEIN"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-MERGEIN"]) == 0
     assert _git(repo, "show", "main:a.py") == "x = 23"
     assert _changed(repo, main_tip, "main") == ["a.py"]
 
@@ -236,9 +236,9 @@ def test_a_resumed_run_merges_cleanly_after_prune_delete_squashed(
     repo = _setup(tmp_path, monkeypatch)
     run = ["run", "--session-id", "merge-PRUNED", "t"]
     assert _play(monkeypatch, run, [_edit("a.py", "x = 2\n"), _finish()]) == 0
-    assert cli_main(["sessions", "merge", "merge-PRUNED"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-PRUNED"]) == 0
     _commit_on_main(repo, "r.md")
-    assert cli_main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert entry.cli_main(["sessions", "prune", "--delete-squashed"]) == 0
     assert git_read.chain_tip(repo, git_read.chain_ref_for("merge-PRUNED")) is None
     head = _git(repo, "rev-parse", "HEAD")
 
@@ -247,7 +247,7 @@ def test_a_resumed_run_merges_cleanly_after_prune_delete_squashed(
     capsys.readouterr()
 
     assert _manifest(repo, "merge-PRUNED").base_sha == head
-    assert cli_main(["sessions", "merge", "merge-PRUNED"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-PRUNED"]) == 0
     assert "CONFLICT" not in capsys.readouterr().err
     assert _changed(repo, head, "main") == ["a.py"]
     assert _git(repo, "show", "main:a.py") == "x = 3"
@@ -263,7 +263,7 @@ def test_a_resume_keeps_its_chain_when_the_checkout_lacks_the_merge_commit(
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
     base = _manifest(repo, "merge-OTHER1").base_sha
     tip = git_read.chain_tip(repo, git_read.chain_ref_for("merge-OTHER1"))
-    assert cli_main(["sessions", "merge", "merge-OTHER1", "--into", "other"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-OTHER1", "--into", "other"]) == 0
 
     resume = ["resume", "merge-OTHER1", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
@@ -322,7 +322,7 @@ def test_a_resume_after_merging_an_operator_commit_on_the_run_branch_continues_f
     run = ["run", "--session-id", "merge-BOTH01", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
     _commit_on_the_run_branch(repo, "merge-BOTH01")
-    assert cli_main(["sessions", "merge", "merge-BOTH01"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-BOTH01"]) == 0
     head = _git(repo, "rev-parse", "HEAD")
 
     resume = ["resume", "merge-BOTH01", "--steer", "more"]
@@ -331,7 +331,7 @@ def test_a_resume_after_merging_an_operator_commit_on_the_run_branch_continues_f
     chain = git_read.chain_ref_for("merge-BOTH01")
     assert _changed(repo, _manifest(repo, "merge-BOTH01").base_sha, chain) == ["y.txt"]
     assert git_read.branch_tip_sha(repo, "agent6/merge-BOTH01") == git_read.chain_tip(repo, chain)
-    assert cli_main(["sessions", "merge", "merge-BOTH01"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-BOTH01"]) == 0
     assert _changed(repo, head, "main") == ["y.txt"]
 
 
@@ -347,14 +347,14 @@ def test_a_fork_from_a_turn_before_the_source_merged_starts_at_that_turn(
     run = ["run", "--session-id", "merge-FORK01", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
     start = _manifest(repo, "merge-FORK01").base_sha
-    assert cli_main(["sessions", "merge", "merge-FORK01"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-FORK01"]) == 0
     _commit_on_main(repo, "r.md")
     resume = ["resume", "merge-FORK01", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
     assert _manifest(repo, "merge-FORK01").base_sha != start
 
     fork = ["fork", "merge-FORK01", "--at-turn", "1", "--no-run", "--session-id", "merge-FORK02"]
-    assert cli_main(fork) == 0
+    assert entry.cli_main(fork) == 0
 
     child = _manifest(repo, "merge-FORK02")
     assert child.base_sha == child.forked_from_sha == start
@@ -372,18 +372,18 @@ def test_a_resumed_fork_of_a_squash_merged_run_shows_only_its_own_work(
     run = ["run", "--session-id", "merge-SRC001", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
     fork = ["fork", "merge-SRC001", "--no-run", "--session-id", "merge-SRC002"]
-    assert cli_main(fork) == 0
-    assert cli_main(["sessions", "merge", "merge-SRC001"]) == 0
+    assert entry.cli_main(fork) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-SRC001"]) == 0
     merged_tip = _git(repo, "rev-parse", "main")
 
     resume = ["resume", "merge-SRC002", "--steer", "more"]
     assert _play(monkeypatch, resume, [_edit("y.txt", "1\n"), _finish()]) == 0
     capfd.readouterr()
 
-    assert cli_main(["sessions", "diff", "merge-SRC002", "--stat"]) == 0
+    assert entry.cli_main(["sessions", "diff", "merge-SRC002", "--stat"]) == 0
     shown = capfd.readouterr().out
     assert "y.txt" in shown and "z.txt" not in shown
-    assert cli_main(["sessions", "merge", "merge-SRC002"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-SRC002"]) == 0
     assert _changed(repo, merged_tip, "main") == ["y.txt"]
 
 
@@ -399,7 +399,7 @@ def test_a_run_merged_into_another_branch_continues_there_once_it_is_checked_out
     _git(repo, "branch", "other")
     run = ["run", "--session-id", "merge-INTO01", "t"]
     assert _play(monkeypatch, run, [_edit("z.txt", "1\n"), _finish()]) == 0
-    assert cli_main(["sessions", "merge", "merge-INTO01", "--into", "other"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-INTO01", "--into", "other"]) == 0
     (repo / "z.txt").unlink()
     _git(repo, "switch", "-q", "other")
 
@@ -410,7 +410,7 @@ def test_a_run_merged_into_another_branch_continues_there_once_it_is_checked_out
     assert manifest.base_branch == "other"
     assert _changed(repo, manifest.base_sha, git_read.chain_ref_for("merge-INTO01")) == ["y.txt"]
 
-    assert cli_main(["sessions", "merge", "merge-INTO01"]) == 0
+    assert entry.cli_main(["sessions", "merge", "merge-INTO01"]) == 0
     _git(repo, "switch", "-q", "-c", "side")
     assert _play(monkeypatch, resume, [_edit("x.txt", "1\n"), _finish()]) == 0
     manifest = _manifest(repo, "merge-INTO01")

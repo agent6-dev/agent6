@@ -17,7 +17,7 @@ from http import client
 import pytest
 
 from agent6 import paths, words
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.ui.web import auth, page
 from agent6.ui.web import server as web_server
 from tests.web import signin
@@ -266,7 +266,7 @@ def test_a_launch_prints_the_minted_secret_and_a_url_that_signs_in(
 ) -> None:
     """The secret reaches the operator on the terminal alone: once in the URL, once to type."""
     web_port = _free_port()
-    assert main(["web", "--port", str(web_port)]) == 0
+    assert entry.main(["web", "--port", str(web_port)]) == 0
     err = capsys.readouterr().err.splitlines()
     url = re.fullmatch(
         rf"agent6 web: serving on http://127\.0\.0\.1:{web_port}/#secret=(\S+)  \(Ctrl-C to stop\)",
@@ -290,7 +290,7 @@ def test_an_operator_secret_is_never_printed(
     """A secret the operator set stays off the terminal; a flag value gets the process-list note."""
     web_port = _free_port()
     monkeypatch.setenv(auth.SECRET_ENV, "Env Secret Value")
-    assert main(["web", "--port", str(web_port)]) == 0
+    assert entry.main(["web", "--port", str(web_port)]) == 0
     err = capsys.readouterr().err
     assert "env-secret-value" not in err.lower().replace(" ", "-")
     assert f"http://127.0.0.1:{web_port}  (Ctrl-C to stop)" in err
@@ -298,7 +298,7 @@ def test_an_operator_secret_is_never_printed(
     assert "AGENT6_WEB_SECRET" in err and "process list" not in err
     assert launch[0].session_token == auth.session_token("env-secret-value")
 
-    assert main(["web", "--port", str(web_port), "--secret", "Flag Secret Value"]) == 0
+    assert entry.main(["web", "--port", str(web_port), "--secret", "Flag Secret Value"]) == 0
     err = capsys.readouterr().err
     assert "flag-secret-value" not in err.lower().replace(" ", "-")
     assert "#secret" not in err
@@ -310,7 +310,7 @@ def test_a_short_operator_secret_refuses_to_start(
     launch: list[web_server.WebServer], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A guessable secret is refused before anything binds, naming the rule and not the value."""
-    assert main(["web", "--port", str(_free_port()), "--secret", "amber acorn"]) == 2
+    assert entry.main(["web", "--port", str(_free_port()), "--secret", "amber acorn"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("REFUSING:") and "12 characters" in err
     assert "amber" not in err

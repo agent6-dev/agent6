@@ -22,7 +22,7 @@ from agent6.harness import loop
 from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import directive_actions
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from tests.unit.test_task_queue_drain import (
     _take_requests,
     _workflow,
@@ -69,7 +69,7 @@ def test_agent6_steer_takes_it_too(
     (d / "logs.jsonl").write_text("", encoding="utf-8")
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "tiny-run", "/standing keep hunting defects"]) == 0
+    assert entry.main(["steer", "tiny-run", "/standing keep hunting defects"]) == 0
 
     assert "standing goal set" in capsys.readouterr().out
     assert next((r.text for r in ipc.drain_requests(d)), None) == "keep hunting defects"

@@ -42,11 +42,7 @@ from agent6.harness import (
 from agent6.sessions import attachments, event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
-from agent6.ui.cli import (
-    fork,
-    main,
-    resume,
-)
+from agent6.ui.cli import entry, fork, resume
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import view as state_view
@@ -1080,12 +1076,12 @@ def test_fork_without_id_and_no_runs_errors_cleanly(
 def test_resume_without_id_and_no_runs_errors_cleanly(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui import cli
+    from agent6.ui.cli import entry
 
     repo = tmp_path / "repo"
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    assert cli.main(["resume"]) == 2
+    assert entry.main(["resume"]) == 2
     assert "nothing to resume" in capsys.readouterr().err
 
 
@@ -1898,7 +1894,10 @@ def test_a_fork_from_a_forks_seed_says_so(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     _seed_source_run(state, "source11", head_sha=head, turns=(4,))
-    assert main(["fork", "source11", "--at-turn", "4", "--no-run", "--session-id", "parent11"]) == 0
+    assert (
+        entry.main(["fork", "source11", "--at-turn", "4", "--no-run", "--session-id", "parent11"])
+        == 0
+    )
     parent = sessions_layout.SessionLayout(state_dir=state, session_id="parent11")
     seeded = loop_snapshot.load_session_snapshot(parent.checkpoint_path(0))
     steered = seeded.model_copy(
@@ -1908,7 +1907,9 @@ def test_a_fork_from_a_forks_seed_says_so(
     capsys.readouterr()
 
     assert (
-        main(["fork", "parent11", "--at-turn", str(at_turn), "--no-run", "--session-id", "child11"])
+        entry.main(
+            ["fork", "parent11", "--at-turn", str(at_turn), "--no-run", "--session-id", "child11"]
+        )
         == 0
     )
 

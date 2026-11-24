@@ -30,7 +30,7 @@ from agent6.config import io, write
 from agent6.machine import journal as machine_journal
 from agent6.sessions import process, shells
 from agent6.ui import spawn
-from agent6.ui.cli import main
+from agent6.ui.cli import entry as cli_entry
 from agent6.ui.web import server as web_server
 from agent6.viewmodel import tail as viewmodel_tail
 from agent6.viewmodel import wire
@@ -180,7 +180,7 @@ def test_run_snapshot_matches_watch_json(
     from_web = json.loads(body)
 
     monkeypatch.chdir(tmp_path)
-    assert main(["attach", "willing-glen-001", "--json"]) == 0
+    assert cli_entry.main(["attach", "willing-glen-001", "--json"]) == 0
     from_cli = json.loads(capsys.readouterr().out)
     assert from_web == from_cli
     assert from_web["tool_calls"][0]["name"] == "grep"
@@ -252,14 +252,14 @@ def test_machine_snapshot_matches_watch_json(
     _srv, port = server
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    assert cli_entry.main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
 
     status, body, _ = _get(port, "/api/machine/tiny")
     assert status == 200
     from_web = json.loads(body)
 
-    assert main(["attach", "tiny", "--json"]) == 0
+    assert cli_entry.main(["attach", "tiny", "--json"]) == 0
     from_cli = json.loads(capsys.readouterr().out)
     assert from_web == from_cli
     assert from_web["machine"] == "tiny"
@@ -903,7 +903,7 @@ def test_web_refuses_non_loopback_host_without_optin(
 ) -> None:
     # `--host 0.0.0.0` must be refused before binding unless opted in.
     monkeypatch.chdir(tmp_path)
-    assert main(["web", "--host", "0.0.0.0"]) == 2
+    assert cli_entry.main(["web", "--host", "0.0.0.0"]) == 2
     assert "binding non-loopback host '0.0.0.0' requires opt-in" in capsys.readouterr().err
 
 
@@ -1521,7 +1521,7 @@ def test_sse_machine_frame_carries_the_idle_age(
     monkeypatch.setattr(sse, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    assert cli_entry.main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
     inst = paths.state_dir(tmp_path) / "machines" / "tiny"
     log = next(inst.glob("states/*/logs.jsonl"), None)
@@ -1569,7 +1569,7 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     monkeypatch.setattr(sse, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
-    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    assert cli_entry.main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
     inst = paths.state_dir(tmp_path) / "machines" / "tiny"
     # Dropping the MachineEnd line makes the machine read as mid-state with no worker.
@@ -2172,9 +2172,9 @@ def test_session_api_hub_and_attach_give_one_label(
     _srv, port = server
     assert json.loads(_get(port, f"/api/session/{sid}")[1])["status_label"] == expected
     assert json.loads(_get(port, "/api/hub")[1])["sessions"][0]["status_label"] == expected
-    assert main(["sessions", "--json"]) == 0
+    assert cli_entry.main(["sessions", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)[0]["status_label"] == expected
-    assert main(["attach", sid, "--json"]) == 0
+    assert cli_entry.main(["attach", sid, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["status_label"] == expected
 
 
@@ -2550,7 +2550,7 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
         first = _read_until(resp, lambda s: bool(s.get("finished")))
         assert "still running" in str(first["shells"])
         (shell / "result.json").write_text('{"stopped": true}', encoding="utf-8")
-        assert main(["attach", sid, "--json"]) == 0
+        assert cli_entry.main(["attach", sid, "--json"]) == 0
         expected = json.loads(capsys.readouterr().out)["shells"]
         assert expected == ["[bg1] stopped: sleep 60"]
         fresh = _read_until(resp, lambda s: s.get("shells") == expected, deadline_s=2)

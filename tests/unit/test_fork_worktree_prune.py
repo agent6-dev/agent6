@@ -10,7 +10,7 @@ from agent6 import paths
 from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
@@ -75,7 +75,7 @@ def merged_fork(
         ).model_dump_json(),
         encoding="utf-8",
     )
-    assert main(["fork", "source", "--at-turn", "1", "--no-run", "--session-id", "fork"]) == 0
+    assert entry.main(["fork", "source", "--at-turn", "1", "--no-run", "--session-id", "fork"]) == 0
     child = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "fork")
     child.logs_path.write_text(source.logs_path.read_text(encoding="utf-8"), encoding="utf-8")
     manifest = sessions_manifest.read_manifest(child.session_dir)
@@ -93,7 +93,7 @@ def merged_fork(
     )
     assert tip and _git(worktree, "rev-parse", "HEAD") == source_tip
     method: str = request.param
-    assert main(["sessions", "merge", "fork", "--method", method]) == 0
+    assert entry.main(["sessions", "merge", "fork", "--method", method]) == 0
     stamp = sessions_manifest.read_manifest(child.session_dir).merged
     assert stamp is not None and stamp.tip == tip and stamp.method == method
     assert _git(tmp_path, "show", "main:fork.txt") == "fork work"
@@ -117,7 +117,9 @@ def test_prune_removes_a_fork_covered_by_its_merge_stamp(
     worktree, _ = merged_fork
     capsys.readouterr()
 
-    assert main(["sessions", "prune", *(["--delete-squashed"] if delete_squashed else [])]) == 0
+    assert (
+        entry.main(["sessions", "prune", *(["--delete-squashed"] if delete_squashed else [])]) == 0
+    )
 
     out = capsys.readouterr().out
     assert not worktree.exists(), out
@@ -140,7 +142,7 @@ def test_prune_keeps_and_names_work_no_commit_has_after_a_merge(
 
     args: list[str]
     for args in ([], ["--delete-squashed"]):
-        assert main(["sessions", "prune", *args]) == 0
+        assert entry.main(["sessions", "prune", *args]) == 0
 
         out = capsys.readouterr().out
         assert (worktree / "README.md").read_text(encoding="utf-8") == "uncommitted edit\n"
@@ -174,7 +176,7 @@ def test_prune_keeps_work_committed_after_the_merge(
         )
     capsys.readouterr()
 
-    assert main(["sessions", "prune"]) == 0
+    assert entry.main(["sessions", "prune"]) == 0
 
     out = capsys.readouterr().out
     assert (worktree / "later.txt").read_text(encoding="utf-8") == "post-merge work\n"

@@ -19,7 +19,8 @@ import pytest
 
 from agent6 import errors, pack, paths, portable
 from agent6.sessions import lock
-from agent6.ui.cli import cli_main, steer_tty
+from agent6.ui.cli import entry as cli_entry
+from agent6.ui.cli import steer_tty
 
 _FORGED_CONFIG = """
 [sandbox]
@@ -92,7 +93,7 @@ def test_unpack_lists_every_file_and_setting_then_asks(
     state = paths.state_dir(repo, allow_pack=True)
     asked = _terminal(monkeypatch, "n")
 
-    assert cli_main(["unpack"]) == 0
+    assert cli_entry.cli_main(["unpack"]) == 0
     out, err = capsys.readouterr()
 
     assert out.splitlines() == [
@@ -118,7 +119,7 @@ def test_unpack_lists_every_file_and_setting_then_asks(
 
     asked[:] = []
     _terminal(monkeypatch, "y")
-    assert cli_main(["unpack"]) == 0
+    assert cli_entry.cli_main(["unpack"]) == 0
     assert (state / "config.toml").read_text(encoding="utf-8") == _FORGED_CONFIG
     assert "Unpacked: 2 moved, 0 kept." in capsys.readouterr().out
 
@@ -133,7 +134,7 @@ def test_unpack_without_a_terminal_refuses_and_names_yes(
     asked = _terminal(monkeypatch, None)
     monkeypatch.setattr("sys.stdin", None)  # a read of stdin would raise
 
-    assert cli_main(["unpack"]) == 2
+    assert cli_entry.cli_main(["unpack"]) == 2
     out, err = capsys.readouterr()
 
     assert "sandbox.isolation" in out and asked == []
@@ -157,7 +158,7 @@ def test_unpack_yes_installs_without_asking(
     state = paths.state_dir(repo, allow_pack=True)
     asked = _terminal(monkeypatch, None)
 
-    assert cli_main(["unpack", flag]) == 0
+    assert cli_entry.cli_main(["unpack", flag]) == 0
     out = capsys.readouterr().out
 
     assert asked == []
@@ -185,7 +186,7 @@ def test_an_installed_file_shares_nothing_with_the_workspace(
     packed.chmod(0o666)
     state = paths.state_dir(repo, allow_pack=True)
 
-    assert cli_main(["unpack", "--yes"]) == 0
+    assert cli_entry.cli_main(["unpack", "--yes"]) == 0
     capsys.readouterr()
 
     installed = state / "config.toml"
@@ -212,7 +213,7 @@ def test_a_manifest_cannot_name_state_a_pack_never_carries(
     (repo / ".agent6/pack.json").write_text(json.dumps(manifest), encoding="utf-8")
     _terminal(monkeypatch, None)
 
-    assert cli_main(["unpack", "--yes"]) == 2
+    assert cli_entry.cli_main(["unpack", "--yes"]) == 2
     assert "not locks, pack-base.json, worktrees" in capsys.readouterr().err
     assert not (paths.state_dir(repo, allow_pack=True) / "worktrees").exists()
 
@@ -227,7 +228,7 @@ def test_a_container_command_is_marked_operator_only(
     packed.write_text('[container]\nstart = ["sh", "-c", "echo up"]\n', encoding="utf-8")
     _terminal(monkeypatch, None)
 
-    assert cli_main(["unpack"]) == 2
+    assert cli_entry.cli_main(["unpack"]) == 2
     out = capsys.readouterr().out
     assert '      container.start = ["sh", "-c", "echo up"]  [operator-only]' in out.splitlines()
 
@@ -246,7 +247,7 @@ def test_unpack_refuses_while_the_checkouts_lease_is_held(
     _terminal(monkeypatch, None)
     assert lock.hold_workspace(repo)
 
-    assert cli_main(["unpack", "--yes"]) == 2
+    assert cli_entry.cli_main(["unpack", "--yes"]) == 2
     out, err = capsys.readouterr()
 
     assert out == "" and err.splitlines() == [
@@ -256,7 +257,7 @@ def test_unpack_refuses_while_the_checkouts_lease_is_held(
     assert not (state / "config.toml").exists() and (repo / ".agent6/pack.json").is_file()
 
     lock.release_workspaces()
-    assert cli_main(["unpack", "--yes"]) == 0
+    assert cli_entry.cli_main(["unpack", "--yes"]) == 0
     assert (state / "config.toml").read_text(encoding="utf-8") == _FORGED_CONFIG
 
 
@@ -285,12 +286,12 @@ def test_a_secret_is_listed_by_key_and_never_shown(
     paths.global_config_dir().mkdir(parents=True)
     paths.secrets_path().write_text('[providers.p]\napi_key = "sk-very-secret"\n')
     paths.secrets_path().chmod(0o600)
-    assert cli_main(["pack"]) == 0
+    assert cli_entry.cli_main(["pack"]) == 0
     paths.secrets_path().unlink()
     capsys.readouterr()
     _terminal(monkeypatch, None)
 
-    assert cli_main(["unpack", "--yes"]) == 0
+    assert cli_entry.cli_main(["unpack", "--yes"]) == 0
     out, err = capsys.readouterr()
 
     assert "      providers.p.api_key = (a secret, not shown)  [operator-only]" in out.splitlines()
@@ -313,7 +314,7 @@ def test_a_real_pack_round_trips_into_a_clean_home(
     note = paths.state_dir(repo) / "memory/note.md"
     note.parent.mkdir(parents=True)
     note.write_text("carried\n")
-    assert cli_main(["pack"]) == 0
+    assert cli_entry.cli_main(["pack"]) == 0
     packed = (repo / ".agent6/pack.json").read_bytes()
 
     for name in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"):
@@ -324,12 +325,12 @@ def test_a_real_pack_round_trips_into_a_clean_home(
     assert not paths.global_config_path().exists() and not there.exists()
     capsys.readouterr()
 
-    assert cli_main(["config", "show", "harness.max_turns"]) == 2
+    assert cli_entry.cli_main(["config", "show", "harness.max_turns"]) == 2
     assert _UNPACK_IT in capsys.readouterr().err
     assert (repo / ".agent6/pack.json").read_bytes() == packed
 
     asked = _terminal(monkeypatch, "n")
-    assert cli_main(["unpack"]) == 0
+    assert cli_entry.cli_main(["unpack"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert asked == ["Install them? [y/N]: "]
     assert out[1:7] == [
@@ -344,16 +345,16 @@ def test_a_real_pack_round_trips_into_a_clean_home(
     assert (repo / ".agent6/pack.json").read_bytes() == packed
 
     _terminal(monkeypatch, None)
-    assert cli_main(["unpack", "--yes"]) == 0
+    assert cli_entry.cli_main(["unpack", "--yes"]) == 0
     assert paths.global_config_path().read_text() == config
     assert (there / "memory/note.md").read_text() == "carried\n"
     assert not (repo / ".agent6").exists()
-    assert cli_main(["config", "show", "harness.max_turns"]) == 0
+    assert cli_entry.cli_main(["config", "show", "harness.max_turns"]) == 0
 
     # A pack this home already holds in full installs nothing, so nothing is asked.
-    assert cli_main(["pack"]) == 0
+    assert cli_entry.cli_main(["pack"]) == 0
     capsys.readouterr()
-    assert cli_main(["unpack"]) == 0
+    assert cli_entry.cli_main(["unpack"]) == 0
     assert capsys.readouterr().out.splitlines()[1:] == [
         "It would install 0 files into this home:",
         "It would keep 2 files this home already has.",

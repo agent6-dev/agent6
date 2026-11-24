@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def test_stop_help_names_the_children_wait_and_conditional_resume(
@@ -10,7 +10,7 @@ def test_stop_help_names_the_children_wait_and_conditional_resume(
 ) -> None:
     """Stop help names the wait for a run's children and promises no run a resume point it lacks."""
     with pytest.raises(SystemExit) as caught:
-        main(["stop", "--help"])
+        entry.main(["stop", "--help"])
     assert caught.value.code == 0
     text = " ".join(capsys.readouterr().out.split())
     assert "5 s (30 s while it drains children)" in text

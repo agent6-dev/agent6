@@ -24,7 +24,7 @@ from agent6.config import Config, layer
 from agent6.harness.parallel import merge as parallel_merge
 from agent6.sessions import child_dispatch
 from agent6.tools import schema
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from agent6.ui.web import server as web_server
 from tests import launch_env
 from tests.web import signin
@@ -232,7 +232,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
             first, second = (*_started(body), "", "")[:2]
             if turn == 2:
                 assert child_a_started.wait(120)
-                assert cli_main(["steer", first, "Use one line."]) == 0
+                assert entry.cli_main(["steer", first, "Use one line."]) == 0
                 parent_waits_for_a.set()
             return [
                 [
@@ -270,7 +270,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         config = tmp_path / "config.toml"
         config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
         monkeypatch.chdir(repo)
-        code = cli_main(
+        code = entry.cli_main(
             ["--config", str(config), "run", "--auto-approve", "PARENT: split the work in two"]
         )
 
@@ -367,7 +367,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
             for r in rows
             if r["type"] == "parallel.child_activity" and r["child"] == sid
         ] == (["started", "steered", "finished"] if sid == one else ["started", "finished"])
-    assert cli_main(["attach", session]) == 0
+    assert entry.cli_main(["attach", session]) == 0
     attached = capsys.readouterr().out
     for rendered in (out.out + out.err, attached):
         assert rendered.count(f"child {one} steered: Use one line.") == 1
@@ -449,7 +449,9 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
         config = tmp_path / "config.toml"
         config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
         monkeypatch.chdir(repo)
-        code = cli_main(["--config", str(config), "run", "--auto-approve", "PARENT: delegate"])
+        code = entry.cli_main(
+            ["--config", str(config), "run", "--auto-approve", "PARENT: delegate"]
+        )
 
     out = capsys.readouterr()
     assert code == 0, out.out[-3000:] + out.err[-3000:]
@@ -480,7 +482,7 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
     (steer,) = [row for row in rows if row["type"] == "steer.parent"]
     assert (steer["text"], steer["chars"]) == ("also write c.txt", 16)
     assert f"child {child} steered: also write c.txt" in out.out + out.err
-    assert cli_main(["attach", session_dir.name]) == 0
+    assert entry.cli_main(["attach", session_dir.name]) == 0
     assert f"child {child} steered: also write c.txt" in capsys.readouterr().out
     assert not [row for row in rows if row["type"] == "steer.injected"]
 
@@ -556,7 +558,9 @@ def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
         config = tmp_path / "config.toml"
         config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
         monkeypatch.chdir(repo)
-        code = cli_main(["--config", str(config), "run", "--auto-approve", "PARENT: try it twice"])
+        code = entry.cli_main(
+            ["--config", str(config), "run", "--auto-approve", "PARENT: try it twice"]
+        )
 
     out = capsys.readouterr()
     assert code == 0, out.out[-3000:] + out.err[-3000:]
@@ -582,7 +586,7 @@ def test_a_reviewer_ranks_real_attempts_under_both_git_settings(
     # The bill counts both attempts and the ranking reviewer, not just the parent's calls.
     parent_calls = sum(who == "PARENT" for who, _, _ in seen)
     child_calls = len(seen) - parent_calls
-    assert cli_main(["sessions", "receipt", session]) == 0
+    assert entry.cli_main(["sessions", "receipt", session]) == 0
     for surface in (out.err + out.out, capsys.readouterr().out):
         assert f"Parent: in={9 * parent_calls} out={3 * parent_calls}" in surface
         assert f"Children: in={9 * child_calls} out={3 * child_calls}" in surface

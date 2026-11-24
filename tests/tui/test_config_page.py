@@ -110,12 +110,12 @@ def test_config_page_view_search_filter_help(repo: pathlib.Path) -> None:
 def test_cli_changes_reach_the_tui_and_web_with_their_layer(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.ui.cli import cli_main
+    from agent6.ui.cli import entry as cli_entry
     from agent6.ui.web import model
 
     monkeypatch.chdir(repo)
-    assert cli_main(["config", "set", "review.interval_turns", "9"]) == 0
-    assert cli_main(["config", "set", "--repo", "review.interval_turns", "11"]) == 0
+    assert cli_entry.cli_main(["config", "set", "review.interval_turns", "9"]) == 0
+    assert cli_entry.cli_main(["config", "set", "--repo", "review.interval_turns", "11"]) == 0
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -135,7 +135,7 @@ def test_cli_changes_reach_the_tui_and_web_with_their_layer(
             assert web["review.interval_turns"]["value"] == 11
             assert web["review.interval_turns"]["source"] == "repo"
 
-            assert cli_main(["config", "unset", "--repo", "review.interval_turns"]) == 0
+            assert cli_entry.cli_main(["config", "unset", "--repo", "review.interval_turns"]) == 0
             screen.action_reload()
             await pilot.pause()
             table = screen.query_one("#tbl-review", widgets.DataTable)

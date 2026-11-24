@@ -25,7 +25,7 @@ from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import child_dispatch, event_log, ipc, journal, lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from tests import child_env, launch_env
 from tests.unit import test_children_background as background
 from tests.unit import test_children_cli as children_cli
@@ -122,7 +122,7 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
         config = tmp_path / "config.toml"
         config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
         monkeypatch.chdir(repo)
-        code = cli_main(
+        code = entry.cli_main(
             ["--config", str(config), "run", "--auto-approve", "PARENT: continue child"]
         )
     output = capsys.readouterr()
@@ -152,7 +152,7 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     assert (repo / "continued.txt").exists() is (control == "agent6")
     assert "continued" in background._git(repo, "show", f"{child.merge.branch}:continued.txt")
     assert "parallel.child_continued" in (parent / "logs.jsonl").read_text()
-    assert cli_main(["--config", str(config), "resume", child.session_id]) == 2
+    assert entry.cli_main(["--config", str(config), "resume", child.session_id]) == 2
     output = capsys.readouterr()
     assert "steer_child" in output.out + output.err
 

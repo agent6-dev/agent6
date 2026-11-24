@@ -9,7 +9,7 @@ import pytest
 
 from agent6 import kinds, paths
 from agent6.sessions import layout as sessions_layout
-from agent6.ui import cli
+from agent6.ui.cli import entry
 from agent6.viewmodel import format, listing
 from agent6.viewmodel.session import state
 from agent6.viewmodel.session import view as state_view
@@ -39,7 +39,7 @@ def test_stop_reason_on_public_views(
         if surface == "listing":
             payload = listing.summary_row(listing.summarize_session_dir(layout.session_dir))
         elif surface == "status":
-            assert cli.main(["sessions", "show", "shape", "--json"]) == 0
+            assert entry.main(["sessions", "show", "shape", "--json"]) == 0
             payload = json.loads(capsys.readouterr().out)
         else:
             folded = state.fold_session(journal)
@@ -73,7 +73,7 @@ def test_public_verification_word(
     if surface == "listing":
         payload = listing.summary_row(listing.summarize_session_dir(layout.session_dir))
     elif surface == "status":
-        assert cli.main(["sessions", "show", "shape", "--json"]) == 0
+        assert entry.main(["sessions", "show", "shape", "--json"]) == 0
         payload = json.loads(capsys.readouterr().out)
     else:
         payload = state_view.session_state_as_dict(state.fold_session(journal))

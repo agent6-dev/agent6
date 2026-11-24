@@ -20,7 +20,7 @@ from agent6.app.session import setup as session_setup
 from agent6.config import Config, OpenAIProviderEntry, load_config, secret_store
 from agent6.models import cache
 from agent6.providers import oauth, provider_types, transport
-from agent6.ui.cli import main
+from agent6.ui.cli import entry as cli_entry
 
 _CONFIG = """
 [providers.work]
@@ -105,7 +105,7 @@ def test_the_device_flow_signs_in_headless_and_binds_the_grant(
 
     monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(transport, "http_request", fake_get)
-    assert main(["connect", "work"]) == 0
+    assert cli_entry.main(["connect", "work"]) == 0
     out = capsys.readouterr().out
     assert "open  https://login.example/activate" in out and "enter the code:  ABCD-EFGH" in out
     assert "Sign-in validated: 2 models listed." in out
@@ -137,7 +137,7 @@ def test_the_paste_flow_sends_the_fixed_redirect_and_exchanges_the_code(
         return _Resp(200, {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600})
 
     monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
-    assert main(["connect", "work", "--flow", "paste", "--no-verify"]) == 0
+    assert cli_entry.main(["connect", "work", "--flow", "paste", "--no-verify"]) == 0
     out = capsys.readouterr().out
     url = next(line.strip() for line in out.splitlines() if line.strip().startswith("https://"))
     query = dict(parse.parse_qsl(parse.urlsplit(url).query))
@@ -163,7 +163,7 @@ def test_a_pasted_callback_with_another_state_stores_nothing(
         raise AssertionError("no token request may leave")
 
     monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", never)
-    assert main(["connect", "work", "--flow", "paste"]) == 2
+    assert cli_entry.main(["connect", "work", "--flow", "paste"]) == 2
     assert secret_store.load_oauth_grant("work") is None
 
 
@@ -197,7 +197,7 @@ def test_the_browser_flow_names_the_bound_port_in_the_redirect(
         return _Resp(200, {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600})
 
     monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
-    assert main(["connect", "work", "--no-verify"]) == 0
+    assert cli_entry.main(["connect", "work", "--no-verify"]) == 0
     redirect = parse.urlsplit(exchanges[0]["redirect_uri"])
     assert redirect.hostname == "127.0.0.1" and redirect.port not in (None, 0)
     assert redirect.path == "/auth/callback" and exchanges[0]["code"] == "C9"
@@ -237,7 +237,7 @@ def test_a_flow_the_issuer_settings_cannot_run_refuses_by_name(
 ) -> None:
     _write_config(config)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    assert main(["connect", "work", "--flow", flow]) == 2
+    assert cli_entry.main(["connect", "work", "--flow", flow]) == 2
     assert word in capsys.readouterr().err
     assert secret_store.load_oauth_grant("work") is None
 
@@ -267,7 +267,7 @@ def test_logout_revokes_at_the_configured_endpoint_and_removes_the_grant(
         return _Resp(200, {})
 
     monkeypatch.setattr(transport, "http_request", fake_request)
-    assert main(["connect", "work", "--logout"]) == 0
+    assert cli_entry.main(["connect", "work", "--logout"]) == 0
     assert revoked[0]["url"] == "https://login.example/revoke"
     body = dict(parse.parse_qsl(revoked[0]["content"].decode("ascii")))
     assert body == {"token": "RT1", "token_type_hint": "refresh_token", "client_id": "client-1"}
@@ -281,7 +281,7 @@ def test_logout_revokes_at_the_configured_endpoint_and_removes_the_grant(
     _write_config(_CONFIG.replace('revocation_endpoint = "https://login.example/revoke"\n', ""))
     secret_store.save_secret("work", "unused")
     revoked.clear()
-    assert main(["connect", "work", "--logout"]) == 0
+    assert cli_entry.main(["connect", "work", "--logout"]) == 0
     assert revoked == [] and secret_store.resolve_api_key("work", None) is None
 
 
@@ -338,7 +338,7 @@ def test_model_set_names_the_missing_or_rebound_sign_in(
         return ["m1"]
 
     monkeypatch.setattr(cache, "list_models", listed)
-    assert main(["model", "worker", "work/m1"]) == 0
+    assert cli_entry.main(["model", "worker", "work/m1"]) == 0
     err = capsys.readouterr().err
     cause = session_setup.check_provider_keys(load_config(gc))
     assert cause is not None and cause in err
@@ -355,13 +355,13 @@ def test_model_set_names_the_missing_or_rebound_sign_in(
         exchange_expires_at=None,
     )
     secret_store.save_oauth_grant("work", grant)
-    assert main(["model", "worker", "work/m1"]) == 0
+    assert cli_entry.main(["model", "worker", "work/m1"]) == 0
     assert "other provider settings" in capsys.readouterr().err
 
     secret_store.save_oauth_grant(
         "work", dataclasses.replace(grant, binding=oauth.binding_fingerprint(_entry(gc)))
     )
-    assert main(["model", "worker", "work/m1"]) == 0
+    assert cli_entry.main(["model", "worker", "work/m1"]) == 0
     assert "WARNING" not in capsys.readouterr().err
 
 
@@ -388,7 +388,7 @@ def test_logout_does_not_revoke_a_grant_made_under_other_settings(
         raise AssertionError("no token may leave")
 
     monkeypatch.setattr(transport, "http_request", never)
-    assert main(["connect", "work", "--logout"]) == 0
+    assert cli_entry.main(["connect", "work", "--logout"]) == 0
     output = capsys.readouterr()
     assert "other provider settings" in output.err and "locally only" in output.out
     assert secret_store.load_oauth_grant("work") is None
@@ -419,6 +419,6 @@ def test_logout_removes_the_grant_when_the_revocation_read_is_refused(
         )
 
     monkeypatch.setattr(transport, "http_request", oversized)
-    assert main(["connect", "work", "--logout"]) == 0
+    assert cli_entry.main(["connect", "work", "--logout"]) == 0
     assert "revocation failed" in capsys.readouterr().err
     assert secret_store.load_oauth_grant("work") is None

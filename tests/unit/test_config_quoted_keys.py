@@ -8,7 +8,7 @@ import pytest
 
 from agent6 import paths
 from agent6.config import ConfigError, io, layer, layer_data, notices, write
-from agent6.ui.cli import cli_main, completers
+from agent6.ui.cli import completers, entry
 from agent6.viewmodel import config_view
 
 
@@ -48,7 +48,7 @@ def test_quoted_mapping_keys_have_distinct_rows_and_sources(
     assert layer_data.flatten_leaves(io.read_toml_file(mapping_config))[literal] == "literal"
     assert notices.write_message(tmp_path, [literal], "Saved") == "Saved"
     assert nested in notices.write_message(tmp_path, [nested], "Saved")
-    assert cli_main(["config", "show", "--json"]) == 0
+    assert entry.cli_main(["config", "show", "--json"]) == 0
     rows = json.loads(capsys.readouterr().out)
     assert literal in rows and nested in rows
     assert 'skills.state."org.some.skill"' in rows
@@ -69,7 +69,7 @@ def test_cli_addresses_only_the_selected_mapping_path(
     """The quoted entry and nested path take independent get, set and unset commands."""
     key = 'providers.demo.extra_body."a.b"' if literal else "providers.demo.extra_body.a.b"
     args = ["config", command, key, *(['"changed"'] if command == "set" else [])]
-    assert cli_main(args) == 0, capsys.readouterr()
+    assert entry.cli_main(args) == 0, capsys.readouterr()
     if command == "get":
         assert f"{key} = " in capsys.readouterr().out
     expected: dict[str, object] = {"a.b": "literal", "a": {"b": "nested"}}
@@ -93,16 +93,16 @@ def test_cli_quoted_skill_round_trip(
     """A dotted skill name survives the CLI write, read, show and removal paths."""
     monkeypatch.chdir(tmp_path)
     rendered = 'skills.state."org.some.skill"'
-    assert cli_main(["config", "set", key, "enabled"]) == 0, capsys.readouterr()
+    assert entry.cli_main(["config", "set", key, "enabled"]) == 0, capsys.readouterr()
     capsys.readouterr()
-    assert cli_main(["config", "show"]) == 0
+    assert entry.cli_main(["config", "show"]) == 0
     assert rendered in capsys.readouterr().out
-    assert cli_main(["config", "get", key]) == 0
+    assert entry.cli_main(["config", "get", key]) == 0
     assert f'{rendered} = "enabled"  [global]' in capsys.readouterr().out
-    assert cli_main(["config", "show", key]) == 0
+    assert entry.cli_main(["config", "show", key]) == 0
     assert rendered in capsys.readouterr().out
     assert layer.load_effective(tmp_path).config.skills.state == {"org.some.skill": "enabled"}
-    assert cli_main(["config", "unset", key]) == 0, capsys.readouterr()
+    assert entry.cli_main(["config", "unset", key]) == 0, capsys.readouterr()
     assert not layer.load_effective(tmp_path).config.skills.state
 
 
@@ -120,7 +120,7 @@ def test_unquoted_skill_path_never_matches_a_literal_entry(
 ) -> None:
     """An unquoted nested path cannot read or remove a literal dotted skill name."""
     before = mapping_config.read_text()
-    assert cli_main(["config", command, "skills.state.org.some.skill"]) == 2
+    assert entry.cli_main(["config", command, "skills.state.org.some.skill"]) == 2
     assert "unknown config key" in capsys.readouterr().err
     assert mapping_config.read_text() == before
 

@@ -38,13 +38,13 @@ def test_history_graph_without_an_id_finds_a_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """History graph without an id finds a plan."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     state = paths.state_dir(tmp_path)
     _seed(state, "plans", "brave-oak-AAAAAA", mode="plan", marker="graph")
 
-    main(["sessions", "graph"])
+    entry.main(["sessions", "graph"])
     err = capsys.readouterr().err
     # It resolved the plan: an empty graph is a separate, honest complaint.
     assert "brave-oak-AAAAAA" in err
@@ -54,7 +54,7 @@ def test_history_graph_without_an_id_finds_a_plan(
 def test_history_transcript_without_an_id_finds_a_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     state = paths.state_dir(tmp_path)
@@ -63,7 +63,7 @@ def test_history_transcript_without_an_id_finds_a_plan(
         json.dumps({"seq": 1, "request": {}, "response": {}}), encoding="utf-8"
     )
 
-    assert main(["sessions", "transcript"]) == 0
+    assert entry.main(["sessions", "transcript"]) == 0
     assert "brave-oak-AAAAAA" in capsys.readouterr().err
 
 
@@ -71,7 +71,7 @@ def test_sessions_diff_names_the_real_problem_for_a_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Sessions diff on a plan says it has no branch, not that no session matches the id."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     monkeypatch.chdir(tmp_path)
     state = paths.state_dir(tmp_path)
@@ -79,7 +79,7 @@ def test_sessions_diff_names_the_real_problem_for_a_plan(
     # A populated runs/, so the resolver takes its real path instead of failing on a missing bucket.
     _seed(state, "runs", "quiet-fox-BBBBBB", mode="run")
 
-    main(["sessions", "diff", "brave-oak-AAAAAA"])
+    entry.main(["sessions", "diff", "brave-oak-AAAAAA"])
     err = capsys.readouterr().err
     assert "no session matches" not in err, err
 

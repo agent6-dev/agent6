@@ -187,12 +187,12 @@ class TestInstall:
 
         `ERROR:` at exit 2, one voice, no crash report; it had kept its own `SKILLS ERROR:` arm.
         """
-        from agent6.ui.cli import cli_main
+        from agent6.ui.cli import entry
 
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
         src.chmod(0o000)
         try:
-            assert cli_main(["skills", "install", str(src)]) == 2
+            assert entry.cli_main(["skills", "install", str(src)]) == 2
         finally:
             src.chmod(0o600)
         err = capsys.readouterr().err

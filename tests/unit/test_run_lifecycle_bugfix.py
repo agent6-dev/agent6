@@ -23,7 +23,7 @@ from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.models import cache
 from agent6.providers import provider_types
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry as cli_entry
 
 
 def _use(prov: _Scripted) -> Any:
@@ -189,7 +189,7 @@ def test_launch_reports_low_state_disk_space_without_refusing(
         ["run", "--session-id", "disk-test", "task"],
         ["resume", "disk-test", "--steer", "another task"],
     ):
-        assert cli_main(command) == 0
+        assert cli_entry.cli_main(command) == 0
         notice = capsys.readouterr().err
         assert state in seen
         expected: list[str] = (
@@ -230,18 +230,18 @@ def test_a_failed_first_start_keeps_the_parked_task(
         raise KeyboardInterrupt
 
     monkeypatch.setattr(role_providers, "build_role_provider", _interrupt)
-    assert cli_main(["resume", "pin-PARK01"]) == 130
+    assert cli_entry.cli_main(["resume", "pin-PARK01"]) == 130
     capsys.readouterr()
     assert json.loads((sd / "manifest.json").read_text())["parked_task"] == (
         "the operator's queued words"
     )
     # The run still reads "parked", not "crashed": nothing ran.
-    assert cli_main(["sessions", "show", "pin-PARK01"]) == 0
+    assert cli_entry.cli_main(["sessions", "show", "pin-PARK01"]) == 0
     assert "parked" in capsys.readouterr().out
 
     prov = _Scripted([_edit("z.txt", "1\n"), _finish("done at last")])
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
-    assert cli_main(["resume", "pin-PARK01"]) == 0
+    assert cli_entry.cli_main(["resume", "pin-PARK01"]) == 0
     assert (repo / "z.txt").exists()
     assert not json.loads((sd / "manifest.json").read_text())["parked_task"]
 
@@ -281,7 +281,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
         ),
         encoding="utf-8",
     )
-    assert cli_main(["resume", "pin-PARK02"]) == 2
+    assert cli_entry.cli_main(["resume", "pin-PARK02"]) == 2
     err = capsys.readouterr().err
     assert "agent6 connect" in err
     assert "crashed" not in err and "traceback" not in err
@@ -335,7 +335,7 @@ def test_a_execution_discards_a_stop_it_never_honored(
 
     prov = _Scripted([_edit("a.txt", "1\n"), _finish("done")], before_call=_stop_on_finish)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
-    assert cli_main(["run", "--session-id", "pin-STOP01", "task"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", "pin-STOP01", "task"]) == 0
     capsys.readouterr()
     assert not ipc.stop_request_pending(sd), (
         "a stop the execution never honored must not survive it"
@@ -356,7 +356,7 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
     repo = _setup(tmp_path, monkeypatch)
     prov = _Scripted([_plan("# Plan: p\n\n1. one\n")])
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
-    assert cli_main(["plan", "--session-id", "p-PLAN01", "figure it out"]) == 0
+    assert cli_entry.cli_main(["plan", "--session-id", "p-PLAN01", "figure it out"]) == 0
     capsys.readouterr()
 
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # tracked, modified between executions
@@ -364,7 +364,7 @@ def test_a_resumed_plan_execution_makes_no_commit_notes(
 
     prov2 = _Scripted([_plan("# Plan: p\n\n1. one\n2. two\n")])
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov2))
-    assert cli_main(["resume", "p-PLAN01", "--steer", "add a step"]) == 0
+    assert cli_entry.cli_main(["resume", "p-PLAN01", "--steer", "add a step"]) == 0
     err = capsys.readouterr().err
     assert "commit" not in err
     sd = paths.state_dir(repo) / "sessions" / "plans" / "p-PLAN01"
@@ -387,12 +387,12 @@ def test_an_ask_out_of_budget_exits_three(
 
     prov = _Scripted([("an answer", ())], before_call=_raise)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
-    assert cli_main(["ask", "query", "why is the sky blue?"]) == 3
+    assert cli_entry.cli_main(["ask", "query", "why is the sky blue?"]) == 3
     capsys.readouterr()
 
     prov2 = _Scripted([("the sky is blue", ())])
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov2))
-    assert cli_main(["ask", "query", "why is the sky blue?"]) == 0
+    assert cli_entry.cli_main(["ask", "query", "why is the sky blue?"]) == 0
 
 
 def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
@@ -467,7 +467,10 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
 
     monkeypatch.setattr(role_providers, "build_role_provider", build)
     assert (
-        cli_main(["run", "--auto-approve", "--max-plan-points", "1", "Add sixteen functions"]) == 3
+        cli_entry.cli_main(
+            ["run", "--auto-approve", "--max-plan-points", "1", "Add sixteen functions"]
+        )
+        == 3
     )
     out = capsys.readouterr().out
     assert "failed · budget exhausted" in out
@@ -490,7 +493,7 @@ def _resumed_config(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> Any:
         return execution.ExecutionEnd(0)
 
     monkeypatch.setattr(execution, "run_execution", _capture)
-    assert cli_main(argv) == 0
+    assert cli_entry.cli_main(argv) == 0
     return seen[0]
 
 
@@ -507,7 +510,7 @@ def test_a_bare_resume_replays_the_caps_the_run_was_started_with(
     repo = _setup(tmp_path, monkeypatch)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     argv = ["run", "--session-id", "cap-KEEP01", "--max-plan-points", "2", "--max-usd", "1.5", "t"]
-    assert cli_main(argv) == 0
+    assert cli_entry.cli_main(argv) == 0
     sd = paths.state_dir(repo) / "sessions" / "runs" / "cap-KEEP01"
     recorded = sessions_manifest.read_manifest(sd).budget
     assert (recorded.max_plan_points, recorded.max_usd, recorded.max_tokens_fallback) == (
@@ -532,7 +535,7 @@ def test_resume_applies_the_manifest_plan_points_cap(
     repo = _setup(tmp_path, monkeypatch)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     argv = ["run", "--session-id", "cap-POINTS01", "--max-plan-points", "2", "t"]
-    assert cli_main(argv) == 0
+    assert cli_entry.cli_main(argv) == 0
     sd = paths.state_dir(repo) / "sessions" / "runs" / "cap-POINTS01"
     recorded = json.loads((sd / "manifest.json").read_text(encoding="utf-8"))
     assert recorded["budget"] == {
@@ -564,7 +567,7 @@ def test_a_resume_budget_flag_outranks_the_recorded_cap_and_is_recorded(
     _setup(tmp_path, monkeypatch)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     argv = ["run", "--session-id", "cap-OVER01", "--max-plan-points", "2", "--max-usd", "1.5", "t"]
-    assert cli_main(argv) == 0
+    assert cli_entry.cli_main(argv) == 0
 
     flagged = ["resume", "cap-OVER01", "--steer", "more", "--max-plan-points", "5"]
     cfg = _resumed_config(monkeypatch, flagged)
@@ -581,7 +584,7 @@ def test_a_cap_set_in_config_is_read_from_config_on_resume(
 
     repo = _setup(tmp_path, monkeypatch)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
-    assert cli_main(["run", "--session-id", "cap-CONF01", "t"]) == 0
+    assert cli_entry.cli_main(["run", "--session-id", "cap-CONF01", "t"]) == 0
     sd = paths.state_dir(repo) / "sessions" / "runs" / "cap-CONF01"
     assert sessions_manifest.read_manifest(sd).budget == sessions_manifest.BudgetStamp()
     config = tmp_path / "cfg" / "agent6" / "config.toml"

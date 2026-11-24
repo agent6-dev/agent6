@@ -32,7 +32,7 @@ from agent6.sandbox import jail
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import cli_main, exec_cmds
+from agent6.ui.cli import entry, exec_cmds
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import log_line, transcript
 
@@ -458,7 +458,7 @@ def _quarantined(session_dir: pathlib.Path) -> list[dict[str, Any]]:
 
 def _next_start_is_not_refused(capsys: pytest.CaptureFixture[str]) -> None:
     capsys.readouterr()
-    assert cli_main(["config", "show", "sandbox.isolation"]) == 0
+    assert entry.cli_main(["config", "show", "sandbox.isolation"]) == 0
     out, err = capsys.readouterr()
     assert _UNPACK_IT not in out + err
 
@@ -487,7 +487,7 @@ def test_a_session_whose_model_forges_a_pack_ends_with_it_renamed(
     }[end]
     _script(monkeypatch, _FORGE, last)
 
-    assert cli_main(["run", "--session-id", "pk-ENDS01", "tidy the repo"]) == rc
+    assert entry.cli_main(["run", "--session-id", "pk-ENDS01", "tidy the repo"]) == rc
     out, err = capsys.readouterr()
 
     assert _names(repo / ".agent6") == ["pack.invalid"]
@@ -515,7 +515,7 @@ def test_a_runs_commits_leave_a_forged_pack_out(
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _FORGE, _create("made.txt", "by the run\n"), _FINISH)
 
-    assert cli_main(["run", "--session-id", "pk-TREE01", "tidy the repo"]) == 0
+    assert entry.cli_main(["run", "--session-id", "pk-TREE01", "tidy the repo"]) == 0
     out, err = capsys.readouterr()
 
     tip = git_read.chain_tip(repo, git_read.chain_ref_for("pk-TREE01"))
@@ -528,7 +528,7 @@ def test_a_runs_commits_leave_a_forged_pack_out(
     assert _names(repo / ".agent6") == ["pack.invalid"]  # the end check still sets it aside
 
     _script(monkeypatch, _FINISH)
-    assert cli_main(["run", "--session-id", "pk-TREE02", "tidy the repo"]) == 0
+    assert entry.cli_main(["run", "--session-id", "pk-TREE02", "tidy the repo"]) == 0
     assert "excluded .agent6/" not in "".join(capsys.readouterr())  # said once
 
 
@@ -542,7 +542,7 @@ def test_a_merge_that_writes_a_tracked_pack_json_leaves_it_renamed(
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _UNIGNORE, _FORGE, _FINISH)
-    assert cli_main(["run", "--session-id", "pk-MERG01", "tidy the repo"]) == 0
+    assert entry.cli_main(["run", "--session-id", "pk-MERG01", "tidy the repo"]) == 0
     ref = git_read.chain_ref_for("pk-MERG01")
     _commit_a_pack_onto(repo, ref)
     tip = git_read.chain_tip(repo, ref)
@@ -550,7 +550,7 @@ def test_a_merge_that_writes_a_tracked_pack_json_leaves_it_renamed(
     assert _names(repo / ".agent6") == ["pack.invalid"]
     capsys.readouterr()
 
-    assert cli_main(["sessions", "merge", "pk-MERG01"]) == 0
+    assert entry.cli_main(["sessions", "merge", "pk-MERG01"]) == 0
     out, err = capsys.readouterr()
 
     assert ".agent6/pack.json" in git_read.tree_paths(repo, "main")
@@ -574,7 +574,7 @@ def test_an_automatic_merge_from_a_worktree_run_writes_no_pack(
     repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\nauto_merge = true\n")
     _script(monkeypatch, _UNIGNORE, _FORGE, _FINISH)
 
-    assert cli_main(["run", "--worktree", "--session-id", "pk-AUTO01", "tidy the repo"]) == 0
+    assert entry.cli_main(["run", "--worktree", "--session-id", "pk-AUTO01", "tidy the repo"]) == 0
     out, err = capsys.readouterr()
 
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "pk-AUTO01")).worktree
@@ -598,7 +598,7 @@ def test_a_merge_leaves_a_pack_that_was_there_before_it(
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _create("new.txt", "made by the run\n"), _FINISH)
-    assert cli_main(["run", "--worktree", "--session-id", "pk-KEEP01", "add new.txt"]) == 0
+    assert entry.cli_main(["run", "--worktree", "--session-id", "pk-KEEP01", "add new.txt"]) == 0
     run_dir = _run_dir(repo, "pk-KEEP01")
     manifest = sessions_manifest.read_manifest(run_dir)
     cfg = layer.load_effective(repo).config
@@ -634,7 +634,7 @@ _WORKER = """
 import json, os, signal, sys, time
 from agent6.app import role_providers
 from agent6.providers import provider_types
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 
 session_id, ending, turns = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
 
@@ -657,7 +657,7 @@ class Scripted:
 
 provider = Scripted()
 role_providers.build_role_provider = lambda *a, **k: provider
-sys.exit(cli_main(["run", "--session-id", session_id, "tidy the repo"]))
+sys.exit(entry.cli_main(["run", "--session-id", session_id, "tidy the repo"]))
 """
 
 
@@ -743,7 +743,7 @@ def test_a_start_after_a_killed_session_sets_its_pack_aside_and_runs(
     with pytest.raises(errors.PackError, match=_UNPACK_IT):
         paths.project_root(repo)
 
-    assert cli_main(["config", "show", "sandbox.isolation"]) == 0
+    assert entry.cli_main(["config", "show", "sandbox.isolation"]) == 0
     out, err = capsys.readouterr()
 
     assert _names(repo / ".agent6") == ["pack.invalid"]
@@ -755,7 +755,7 @@ def test_a_start_after_a_killed_session_sets_its_pack_aside_and_runs(
     assert "sandbox.isolation" in out and _UNPACK_IT not in out + err
 
     _script(monkeypatch, _FINISH)
-    assert cli_main(["run", "--session-id", "pk-NEXT01", "tidy the repo"]) == 0
+    assert entry.cli_main(["run", "--session-id", "pk-NEXT01", "tidy the repo"]) == 0
     out, err = capsys.readouterr()
     assert _names(repo / "sub/.agent6") == ["pack.invalid"]
     assert (
@@ -777,7 +777,7 @@ def test_pack_refuses_beside_a_session_that_died_without_an_end(
     said = worker.communicate(timeout=120)[0]
     assert worker.returncode == -signal.SIGKILL, said
 
-    assert cli_main(["pack"]) == 2
+    assert entry.cli_main(["pack"]) == 2
     err = capsys.readouterr().err
     assert err.splitlines()[-1] == (
         f"ERROR: Session pk-KILL02 died in {repo} without an end, so that session would be"
@@ -785,9 +785,11 @@ def test_pack_refuses_beside_a_session_that_died_without_an_end(
     )
     assert not (repo / ".agent6/pack.json").exists()
 
-    assert cli_main(["sessions", "remove", "pk-KILL02"]) == 0
-    assert cli_main(["pack"]) == 0
-    assert cli_main(["config", "show", "sandbox.isolation"]) == 2  # a real pack is refused, kept
+    assert entry.cli_main(["sessions", "remove", "pk-KILL02"]) == 0
+    assert entry.cli_main(["pack"]) == 0
+    assert (
+        entry.cli_main(["config", "show", "sandbox.isolation"]) == 2
+    )  # a real pack is refused, kept
     assert _UNPACK_IT in capsys.readouterr().err
     assert pack_manifest.read(repo).origin.workspace == str(repo)
 
@@ -800,7 +802,7 @@ def test_a_start_beside_a_live_session_sets_its_pack_aside_and_runs(
     with pytest.raises(errors.PackError, match=_UNPACK_IT):
         paths.project_root(repo)
 
-    assert cli_main(["config", "show", "sandbox.isolation"]) == 0
+    assert entry.cli_main(["config", "show", "sandbox.isolation"]) == 0
     out, err = capsys.readouterr()
 
     assert worker.poll() is None
@@ -814,7 +816,7 @@ def test_a_start_beside_a_live_session_sets_its_pack_aside_and_runs(
 
     # `unpack` installed the forged config while the run was live.
     _forge(repo)
-    assert cli_main(["unpack", "--yes"]) == 2
+    assert entry.cli_main(["unpack", "--yes"]) == 2
     out, err = capsys.readouterr()
     assert _names(repo / ".agent6") == ["pack.invalid", "pack.invalid.1"]
     assert "Session pk-LIVE01 is live" in err and out == ""
@@ -835,14 +837,14 @@ def test_a_pack_beside_no_such_session_is_refused_in_the_checks_own_words(
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _FINISH)
-    assert cli_main(["run", "--session-id", "pk-DONE01", "tidy the repo"]) == 0
+    assert entry.cli_main(["run", "--session-id", "pk-DONE01", "tidy the repo"]) == 0
     forged = _forge(repo)
     said = json.loads(_MANIFEST)
     said["origin"]["host"] = "laptop\nERROR: nothing is wrong"
     forged.write_text(json.dumps(said), encoding="utf-8")
     capsys.readouterr()
 
-    assert cli_main(["config", "show", "sandbox.isolation"]) == 2
+    assert entry.cli_main(["config", "show", "sandbox.isolation"]) == 2
     out, err = capsys.readouterr()
 
     assert json.loads(forged.read_text(encoding="utf-8")) == said
@@ -866,7 +868,7 @@ def test_a_session_whose_model_forges_a_nested_pack_ends_with_it_set_aside(
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _create("sub/dir/.agent6/pack.json", _MANIFEST), _FORGE, _FINISH)
 
-    assert cli_main(["run", "--session-id", "pk-NEST01", "tidy the repo"]) == 0
+    assert entry.cli_main(["run", "--session-id", "pk-NEST01", "tidy the repo"]) == 0
     out, err = capsys.readouterr()
 
     assert _names(repo / ".agent6") == ["pack.invalid"]
@@ -973,17 +975,17 @@ def test_a_real_pack_is_never_renamed_and_unpack_accepts_it(
     note = paths.state_dir(repo) / "note"
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("carried", encoding="utf-8")
-    assert cli_main(["pack"]) == 0
+    assert entry.cli_main(["pack"]) == 0
     packed = (repo / ".agent6/pack.json").read_text(encoding="utf-8")
     capsys.readouterr()
 
     _script(monkeypatch, _FINISH)
-    assert cli_main(["run", "--session-id", "pk-REAL01", "tidy the repo"]) == 2
+    assert entry.cli_main(["run", "--session-id", "pk-REAL01", "tidy the repo"]) == 2
     assert _UNPACK_IT in capsys.readouterr().err  # the start check's own text, unchanged
     assert (repo / ".agent6/pack.json").read_text(encoding="utf-8") == packed
     assert not [name for name in _names(repo / ".agent6") if "invalid" in name]
 
     note.unlink()
-    assert cli_main(["unpack", "--yes"]) == 0
+    assert entry.cli_main(["unpack", "--yes"]) == 0
     assert note.read_text(encoding="utf-8") == "carried"
     assert "WARNING" not in capsys.readouterr().err

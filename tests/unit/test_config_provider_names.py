@@ -7,7 +7,7 @@ import pytest
 
 from agent6 import paths
 from agent6.config import Config, ConfigError, io, write
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 @pytest.mark.parametrize(
@@ -109,7 +109,7 @@ def test_cli_provider_names_use_the_schema_refusal(
         if command == "connect"
         else ["config", "set", 'providers."bad name".backend', "openai"]
     )
-    assert main(argv) == 2
+    assert entry.main(argv) == 2
     assert (
         "provider name 'bad name' is not a valid TOML bare key"
         " (use only ASCII letters, digits, '-', '_')."

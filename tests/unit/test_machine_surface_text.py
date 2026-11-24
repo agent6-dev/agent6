@@ -11,7 +11,7 @@ from agent6.config import Config, ConfigError, layer, sandbox_config, surface_co
 from agent6.machine import authoring
 from agent6.machine import schema as machine_schema
 from agent6.tools import schema
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 
 def test_authoring_guide_attributes_commits_to_the_harness() -> None:
@@ -73,7 +73,7 @@ def test_machine_test_help_names_recursive_script_discovery(
 ) -> None:
     """The mock-test glob in help includes nested scripts."""
     with pytest.raises(SystemExit) as exc:
-        main(["machine", "test", "--help"])
+        entry.main(["machine", "test", "--help"])
     assert exc.value.code == 0
     assert "scripts/**/*_test.py" in capsys.readouterr().out
 

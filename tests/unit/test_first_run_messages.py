@@ -13,7 +13,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 
 # Commands that can only answer "you have nothing yet" on a fresh state dir.
 _EMPTY_STATE = [
@@ -39,7 +39,7 @@ def test_it_does_not_read_as_a_broken_install(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    main(argv)
+    entry.main(argv)
     said = capsys.readouterr()
     text = said.out + said.err
 
@@ -59,7 +59,7 @@ def test_it_says_how_to_make_one(
 ) -> None:
     """Every dead end names the command that gets you out of it."""
     monkeypatch.chdir(tmp_path)
-    main(argv)
+    entry.main(argv)
     said = capsys.readouterr()
     assert "agent6 " in said.out + said.err, said.out + said.err
 
@@ -76,5 +76,5 @@ def test_a_run_verb_over_a_plan_alone_says_no_runs(
     (session / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "plan", "user_task": "t"}\n', encoding="utf-8"
     )
-    assert main(["sessions", "commits"]) == 2
+    assert entry.main(["sessions", "commits"]) == 2
     assert 'no runs yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err

@@ -14,8 +14,8 @@ import pytest
 from agent6 import errors, paths
 from agent6.app import preflight
 from agent6.config import Config, ConfigError
+from agent6.ui.cli import entry, init_wizard
 from agent6.ui.cli import init_cmds as ic
-from agent6.ui.cli import init_wizard, main
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
@@ -64,7 +64,7 @@ def test_run_surfaces_git_wall_before_provider_wall(
 ) -> None:
     # Non-git scratch dir with no provider: the not-a-git-repo error surfaces first.
     monkeypatch.chdir(fresh_dir)
-    rc = main(["run", "do a thing"])
+    rc = entry.main(["run", "do a thing"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "not a git repository" in err
@@ -246,7 +246,7 @@ def test_init_refuses_without_tty_or_yes(
     # `echo n | agent6 init` declines and writes nothing.
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    rc = main(["init"])
+    rc = entry.main(["init"])
     assert rc == 2
     assert "ERROR: no input" in capsys.readouterr().err
     assert not (tmp_path / "AGENTS.md").exists()
@@ -323,7 +323,7 @@ def test_an_unanswerable_run_creates_no_session(
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     monkeypatch.chdir(tmp_path)
 
-    rc = main(
+    rc = entry.main(
         [
             "--config",
             str(tmp_path / "agent6.toml"),
@@ -361,7 +361,7 @@ def test_init_never_commits_the_operators_own_edits(
 
     monkeypatch.chdir(repo)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    assert main(["init", "--yes"]) == 0
+    assert entry.main(["init", "--yes"]) == 0
 
     out = capsys.readouterr().out
     assert "committed the agent6 scaffold (.gitignore)" in out
@@ -394,7 +394,7 @@ def test_init_never_commits_a_gitignore_with_existing_edits(
 
     monkeypatch.chdir(repo)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    assert main(["init", "--yes"]) == 0
+    assert entry.main(["init", "--yes"]) == 0
 
     after = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
@@ -424,7 +424,7 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
 
     monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
     monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
-    assert main(["init"]) == 0
+    assert entry.main(["init"]) == 0
 
     head = subprocess.run(
         ["git", "show", "--name-only", "--format=", "HEAD"],
@@ -452,7 +452,7 @@ def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
 
     monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
     monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
-    assert main(["init"]) == 0
+    assert entry.main(["init"]) == 0
 
     head = subprocess.run(
         ["git", "rev-parse", "--verify", "HEAD"],
@@ -482,7 +482,7 @@ def test_init_does_not_call_a_committed_scaffold_uncommitted(
 
     monkeypatch.chdir(repo)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    assert main(["init", "--yes"]) == 0
+    assert entry.main(["init", "--yes"]) == 0
 
     out = capsys.readouterr().out
     assert "committed the agent6 scaffold (.gitignore)" in out

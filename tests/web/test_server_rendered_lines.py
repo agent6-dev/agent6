@@ -17,7 +17,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import layout
-from agent6.ui.cli import main
+from agent6.ui.cli import entry
 from agent6.ui.web import page
 from agent6.viewmodel import format, listing, wire
 from agent6.viewmodel.session import state
@@ -158,7 +158,7 @@ def test_machine_transitions_and_spend_arrive_rendered(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     f = tmp_path / "router.asm.toml"
     f.write_text(ROUTER, encoding="utf-8")
-    assert main(["machine", "run", str(f)]) == 0
+    assert entry.main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
     md = layout.machines_root(paths.state_dir(tmp_path)) / "router"
     snap = wire.machine_snapshot(md)

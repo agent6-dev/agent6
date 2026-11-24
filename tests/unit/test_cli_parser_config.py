@@ -74,10 +74,10 @@ def test_ask_has_one_verb() -> None:
 
 def test_a_bare_history_names_the_query_it_needs(capsys: pytest.CaptureFixture[str]) -> None:
     """A bare `history` names the query it needs, like a bare `plan` or `ask`."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import entry
 
     try:
-        rc = main(["history"])
+        rc = entry.main(["history"])
     except SystemExit as exc:  # argparse's own refusal
         rc = int(exc.code or 0)
     assert rc == 2
@@ -145,10 +145,12 @@ def test_get_completion_offers_no_key_get_rejects(
     """
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
-    from agent6.ui.cli import completers, main
+    from agent6.ui.cli import completers, entry
 
     for key in completers._complete_config_keys("models.", settable=False):
-        assert main(["config", "get", key]) == 0, f"completion offered {key!r}, which get rejects"
+        assert entry.main(["config", "get", key]) == 0, (
+            f"completion offered {key!r}, which get rejects"
+        )
 
 
 def _subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:

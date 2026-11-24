@@ -18,7 +18,7 @@ from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.providers import provider_types
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import cli_main
+from agent6.ui.cli import entry
 from agent6.vcs.git import read as git_read
 
 _CONFIG = """
@@ -120,7 +120,7 @@ def _run(monkeypatch: pytest.MonkeyPatch, session_id: str, script: list[_Step]) 
         return prov
 
     monkeypatch.setattr(role_providers, "build_role_provider", _factory)
-    assert cli_main(["run", "--session-id", session_id, "t"]) == 0
+    assert entry.cli_main(["run", "--session-id", session_id, "t"]) == 0
 
 
 def _manifest(repo: pathlib.Path, session_id: str) -> sessions_manifest.SessionManifest:
@@ -143,14 +143,14 @@ def test_merging_the_including_run_marks_the_absorbed_run_merged(
     included = _manifest(repo, "inc-SECOND").includes
     assert included is not None
     assert (included.session_id, included.tip) == ("inc-FIRST1", first_tip)
-    assert cli_main(["sessions", "merge", "inc-SECOND"]) == 0
+    assert entry.cli_main(["sessions", "merge", "inc-SECOND"]) == 0
     capsys.readouterr()
 
     stamp = _manifest(repo, "inc-FIRST1").merged
     assert stamp is not None
     assert (stamp.into, stamp.tip, stamp.via) == ("main", first_tip, "inc-SECOND")
     assert stamp.sha == _git(repo, "rev-parse", "main")
-    assert cli_main(["sessions", "merge", "inc-FIRST1"]) == 0
+    assert entry.cli_main(["sessions", "merge", "inc-FIRST1"]) == 0
     assert "CONFLICT" not in capsys.readouterr().err
     assert _git(repo, "show", "main:a.py").splitlines()[0] == "x = 3"
 
@@ -165,7 +165,7 @@ def test_include_records_nothing_when_the_tree_holds_more_than_the_runs_tip(
     _run(monkeypatch, "inc-THIRD1", [_edit("c.py", "c = 1\n"), _finish()])
 
     assert _manifest(repo, "inc-THIRD1").includes is None
-    assert cli_main(["sessions", "merge", "inc-THIRD1"]) == 0
+    assert entry.cli_main(["sessions", "merge", "inc-THIRD1"]) == 0
     assert _manifest(repo, "inc-FIRST2").merged is None
 
 
@@ -181,7 +181,7 @@ def test_an_included_run_that_committed_again_is_not_stamped(
     later = _git(repo, "commit-tree", f"{chain}^{{tree}}", "-p", chain, "-m", "a later step")
     _git(repo, "update-ref", chain, later)
 
-    assert cli_main(["sessions", "merge", "inc-FOURTH"]) == 0
+    assert entry.cli_main(["sessions", "merge", "inc-FOURTH"]) == 0
 
     assert _manifest(repo, "inc-FIRST3").merged is None
 
@@ -201,7 +201,7 @@ def test_a_merge_over_an_edited_file_prints_the_commands_that_reconcile_it(
     (repo / "a.py").write_text(_SEED.replace("y = 1", "y = 9  # mine"), encoding="utf-8")
     capsys.readouterr()
 
-    assert cli_main(["sessions", "merge", "edit-OVER01"]) == 0
+    assert entry.cli_main(["sessions", "merge", "edit-OVER01"]) == 0
 
     said = capsys.readouterr()
     lines = (said.out + said.err).splitlines()
