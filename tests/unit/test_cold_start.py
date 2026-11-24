@@ -11,10 +11,12 @@ from unittest import mock
 import pytest
 
 from agent6 import config, kinds, media
+from agent6.app import role_providers
 from agent6.harness import loop_conversation, operator_bridge
 from agent6.harness.compaction import window
-from agent6.providers import provider_types
+from agent6.providers import provider_types, request_headers
 from agent6.sessions import event_log
+from tests.unit import test_claude_code_provider as claude
 from tests.unit import test_cold_start_rule as rules
 from tests.unit import test_compaction_writers as writers
 from tests.unit import test_context_compaction as drops
@@ -182,3 +184,41 @@ def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None
     assert len(helper.calls) == 1 and "Old evidence." in sent
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
     assert row["action"] == "summary_failed" and row["chars_not_sent"] == 0
+
+
+def test_resume_from_a_process_worker_uses_its_last_issued_call(tmp_path: pathlib.Path) -> None:
+    binary, _ = claude._install(tmp_path, {"turns": [[{"text": "ok"}]]})
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    worker = role_providers.InstrumentedProvider(
+        inner=claude._provider(binary),
+        actor="worker",
+        model="claude-haiku-4-5",
+        provider_name="process",
+        events=sink,
+        budget=claude._budget(),
+    )
+    try:
+        worker.call(
+            system="s",
+            messages=_history().to_wire(),
+            tools=claude.TOOLS,
+            context=request_headers.RequestContext.initiated_by(
+                "user", call_context=kinds.CallContext(execution_id="previous")
+            ),
+        )
+    finally:
+        worker.close()
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    for call_id, actor, ok in (("side", "helper:summariser", True), ("not_sent", "worker", False)):
+        rows.extend(
+            [
+                rules.request(type="model.call", actor=actor, model_call_id=call_id),
+                rules.request(
+                    type="model.attempt", actor=actor, model_call_id=call_id, ok=ok, request_id=None
+                ),
+            ]
+        )
+    sent, rows, _, _ = _resume(tmp_path, "truncate", rows)
+    assert "Old evidence." not in sent and "earlier history was left out" in sent
+    (cold,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert (cold["previous_route"], cold["route"]) == ("process/claude-haiku-4-5", "p/m")

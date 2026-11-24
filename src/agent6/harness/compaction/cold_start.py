@@ -62,7 +62,7 @@ class Trigger:
 
 
 def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
-    """Find the driving role's last inference attempt, excluding summary calls.
+    """Find the last HTTP attempt or confirmed process call, excluding summary calls.
 
     Args:
         path: The session journal.
@@ -72,14 +72,21 @@ def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
         The last ordinary request row, or an empty dict.
     """
     last: dict[str, Any] = {}
+    opening: dict[str, Any] = {}
     summary_id: str | None = None
+    types = (
+        b'"provider.request"',
+        b'"model.call"',
+        b'"model.attempt"',
+        b'"compact.summarise.call"',
+    )
     try:
         stream = path.open("rb")
     except FileNotFoundError:
         return last
     with stream:
         for line in stream:
-            if b'"provider.request"' not in line and b'"compact.summarise.call"' not in line:
+            if not any(tag in line for tag in types):
                 continue
             try:
                 row = json.loads(line)
@@ -87,16 +94,29 @@ def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
                 continue
             if not isinstance(row, dict):
                 continue
-            if row.get("type") == "compact.summarise.call":
+            kind = row.get("type")
+            if kind == "compact.summarise.call":
                 summary_id = row.get("model_call_id")
-            elif (
-                row.get("type") == "provider.request"
-                and row.get("actor") == actor
-                and row.get("target") == "inference"
-                and row.get("execution_id")  # A commit subject runs outside a worker turn.
-                and row.get("model_call_id") != summary_id
-            ):
+                continue
+            if row.get("actor") != actor or not row.get("execution_id"):
+                continue  # A commit subject runs outside a worker turn.
+            call_id = row.get("model_call_id")
+            if not call_id or call_id == summary_id:
+                continue
+            if kind == "model.call":
+                opening = row
+            elif kind == "provider.request" and row.get("target") == "inference":
                 last = row
+                opening = {}
+            elif (
+                kind == "model.attempt"
+                and row.get("ok") is True
+                and row.get("request_id") is None
+                and call_id == opening.get("model_call_id")
+            ):
+                # A process has no HTTP row. Its reply confirms the call was issued at its opening.
+                last = opening
+                opening = {}
     return last
 
 

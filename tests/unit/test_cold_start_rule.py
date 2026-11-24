@@ -64,3 +64,21 @@ def test_unknown_facts_do_not_supply_a_trigger(
         log, actor="worker", route=kinds.ModelRoute("p", "m"), limit=10, now=20
     )
     assert (trigger.reason if trigger else None) == reason
+
+
+def test_a_process_reply_confirms_the_opening_time_not_the_reply_time(
+    tmp_path: pathlib.Path,
+) -> None:
+    log = tmp_path / "logs.jsonl"
+    rows = [
+        request(type="model.call", ts="1970-01-01T00:00:10Z"),
+        request(type="model.attempt", ts="1970-01-01T00:00:30Z", ok=True, request_id=None),
+        {"type": "compact.summarise.call", "model_call_id": "summary"},
+        request(type="model.call", model_call_id="summary", model="other"),
+        request(type="model.attempt", model_call_id="summary", ok=True, request_id=None),
+    ]
+    log.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    trigger = cold_start.detect(
+        log, actor="worker", route=kinds.ModelRoute("p", "m"), limit=20, now=30
+    )
+    assert trigger is not None and (trigger.reason, trigger.gap_s) == ("idle", 20)
