@@ -313,7 +313,409 @@ def _tree_left(wf: loop.Harness, mode: str) -> str:
         return ""
 
 
-def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and teardown in reading order
+def _start_header(
+    event: dict[str, Any],
+    *,
+    session_dir: pathlib.Path,
+    settings: tuple[journal.SettingObservation, ...],
+    mode: kinds.LoopMode,
+    log: Callable[[str], None],
+) -> None:
+    """Print a headless execution's settings, environment and gate when it starts.
+
+    Args:
+        event: One journal event.
+        session_dir: The session directory.
+        settings: The settings this execution runs under.
+        mode: The session mode; an ask has no gate to name.
+        log: Where the line goes.
+    """
+    if event.get("type") not in journal.SESSION_START_EVENTS:
+        return
+    facts = policy.session_policy(session_dir)
+    parts = [execution_settings.summary(settings), *facts.environment[:1]]
+    parts += [e for e in facts.environment if e == evidence.GIT_WRITABLE]
+    if mode != "ask":
+        parts.append(facts.gate())
+    if line := " · ".join(p for p in parts if p):
+        log(line)
+
+
+def build_harness(
+    cfg: Config,
+    layout: sessions_layout.SessionLayout,
+    inputs: ExecutionInputs,
+    *,
+    session: session_runtime.SessionProviders,
+    tools: session_runtime.SessionTools,
+    steer_state: app_frontend.SteerHooks,
+    spawner: app_children.GroupSpawner | None,
+    after_auto_commit: Callable[[int, str], kinds.AutoCommitDirective],
+    undo_outcome: list[tuple[str, str]],
+    untracked_at_start: frozenset[str],
+    hidden: frozenset[str],
+    mirror: run_chain.MirrorTarget | None,
+    loop_log: Callable[[str], None],
+    console_stream: bool,
+    events: event_log.EventSink,
+    reporter: app_reporter.Reporter,
+    cwd: pathlib.Path,
+    state_dir: pathlib.Path,
+) -> loop.Harness:
+    """Wire the Harness an execution drives: the one place a fresh and a resumed one meet.
+
+    Args:
+        cfg: The config the tools resolved.
+        layout: The session's directory layout.
+        inputs: What the lifecycle hands the body.
+        session: The run's providers.
+        tools: The curator and dispatcher pair and the compaction thresholds.
+        steer_state: The steer state the bridge polls.
+        spawner: The dispatch spawner, or None.
+        after_auto_commit: The hook a `run -i` calls after each commit.
+        undo_outcome: Takes each `/undo` fork's outcome, for the end block.
+        untracked_at_start: The operator's untracked files and the setup command's.
+        hidden: The run's hidden paths inside the repository.
+        mirror: The repository a session in a clone copies its commits into, or None.
+        loop_log: The loop's logger.
+        console_stream: Whether a console view prints the run's markers.
+        events: The run's event sink.
+        reporter: The output channels.
+        cwd: The workspace.
+        state_dir: The repo's state directory.
+
+    Returns:
+        The harness.
+    """
+    mode, role = inputs.mode, inputs.role
+
+    def undo_forker() -> tuple[str, str] | None:
+        """Return the `/undo` fork's outcome, kept for the end block.
+
+        Returns:
+            The fork's id and the text taken back, or None with the reason printed.
+        """
+        got = inputs.undo_forker()
+        if got is not None:
+            undo_outcome.append(got)
+        return got
+
+    def steer_requested() -> bool:
+        review_actions.drain(events, execution_id=wf.execution_id, resume_steer=inputs.resume_steer)
+        ipc.promote_queued_steer(layout.session_dir)
+        return steer_state.requested()
+
+    launch = child_launch.read()
+    settings = execution_settings.observations(cfg, inputs.effective)
+    if not inputs.tui_enabled:
+        events.subscribe(
+            functools.partial(
+                _start_header,
+                session_dir=layout.session_dir,
+                settings=settings,
+                mode=mode,
+                log=loop_log if console_stream else reporter.note,
+            )
+        )
+    wf = loop.Harness(
+        task_source=launch.task_source if launch is not None else "operator",
+        settings=settings,
+        media_input=role_providers.input_capabilities(cfg, session.rm_role),
+        chain=run_chain.RunChain(
+            cwd,
+            # `git.control = "model"` suspends the chain: the model's commits are the record.
+            ref=git_read.chain_ref_for(inputs.session_id)
+            if mode == "run" and cfg.git.control != "model"
+            else None,
+            branch=inputs.chain_branch,
+            fallback_parent=inputs.base_sha or None,
+            untracked_at_start=untracked_at_start,
+            hidden=hidden,
+            identity=run_chain.commit_identity(
+                cfg.git.commit,
+                commit_message.render_commit_trailer(
+                    cfg.git.commit.trailer, models=(session.rm_role.model,)
+                ),
+            ),
+            per_turn=cfg.git.commit_per_turn,
+            model_git=mode == "run" and cfg.git.control == "model",
+            base_sha=inputs.base_sha,
+            mirror_into=mirror,
+        ),
+        config=cfg,
+        base_rules=inputs.base_rules,
+        review_target=inputs.review_target,
+        standing_goal=inputs.standing_goal,
+        interactive=inputs.interactive and mode == "run",
+        web_search=cfg.offers_web_search(mode),
+        initial_pins=inputs.pins,
+        max_turns=cfg.harness.max_turns,
+        provider=session.provider,
+        dispatcher=tools.dispatcher,
+        prompts=inputs.prompts,
+        logger=loop_log,
+        events=events,
+        curator=tools.curator,
+        bridge=operator_bridge.OperatorBridge(
+            steer_requested=steer_requested,
+            steer_clear=steer_state.clear,
+            steer_prompt=steer_state.prompt,
+            steer_reset=steer_state.reset_stage,
+            compact_requested=lambda: ipc.read_compact_request(layout.session_dir),
+            compact_clear=lambda: ipc.clear_compact_request(layout.session_dir),
+            stop_requested=lambda: ipc.stop_request_pending(layout.session_dir),
+            stop_is_now=lambda: ipc.stop_request_is_now(layout.session_dir),
+            stop_clear=lambda: ipc.clear_stop_request(layout.session_dir),
+            should_abort=steer_state.abort_pending,
+            should_interrupt=steer_state.interrupt,
+            take_requests=lambda: ipc.drain_requests(layout.session_dir),
+            after_auto_commit=after_auto_commit,
+            undo_forker=undo_forker,
+            review_preparer=functools.partial(
+                review_directive.live, root=cwd, hide=cfg.sandbox.hide_paths
+            ),
+            child_authority=child_launch.dispatch_authority(
+                cfg, mode=mode, session_id=inputs.session_id, root=cwd
+            ),
+            child_spawner=spawner,
+            child_recoverable=functools.partial(
+                child_resume.recoverable,
+                cfg=cfg,
+                origin=cwd,
+                record_state=layout.state_dir,
+                parent=inputs.session_id,
+            ),
+            child_recoverer=app_children.build_child_recoverer(
+                cfg, cwd, layout.state_dir, mode=mode, reporter=reporter
+            ),
+            rank_recorder=app_children.build_rank_recorder(
+                cwd,
+                layout.state_dir,
+                parent_dir=layout.session_dir,
+                events=events,
+                reporter=reporter,
+            )
+            if mode == "run"
+            else None,
+        ),
+        budget=session.budget,
+        state_dir=state_dir,
+        resume_state_path=inputs.resume_state_path,
+        operator_edits=inputs.operator_edits,
+        merged_in=inputs.merged_in,
+        mode=mode,
+        contract=inputs.contract,
+        opening=inputs.opening,
+        plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
+        review=review_gate.ReviewSettings(
+            when=cfg.review.when,
+            interval_turns=cfg.review.interval_turns,
+            reviewers=session.reviewers,
+            block_on=cfg.review.block_on,
+            min_blocking_models=cfg.review.min_blocking_models,
+            max_rejections=cfg.review.max_rejections,
+            min_remaining_budget_fraction=cfg.review.min_remaining_budget_fraction,
+            concurrency=cfg.review.concurrency,
+            max_turns=cfg.review.max_turns,
+        ),
+        call=provider_call.CallSettings(temperature=role_providers.role_temperature(cfg, role)),
+        compaction=compaction_window.CompactionSettings(
+            cold_start=cfg.compaction.cold_start,
+            drop_at_chars=tools.compact_drop_at_chars,
+            summarize_at_chars=tools.compact_summarize_at_chars,
+            tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, role),
+            keep_recent_chars=tools.keep_recent_chars,
+            keep_operator_messages=cfg.compaction.keep_operator_messages,
+            keep_recent_turns=cfg.compaction.keep_recent_turns,
+            keep_thinking_turns=cfg.compaction.keep_thinking_turns,
+            elision_gists=cfg.compaction.elision_gists,
+            summary_max_tokens=cfg.compaction.summary_max_tokens,
+            summarizer=cfg.compaction.summarizer,
+            helper=session.summarizer_provider,
+            helper_context_tokens=role_providers.helper_context_window(cfg),
+            endpoint=role_providers.endpoint_compaction(cfg, session.rm_role),
+            idle=role_providers.idle_compaction(cfg, session.rm_role),
+        ),
+    )
+    return wf
+
+
+def finish_chain(
+    cfg: Config,
+    layout: sessions_layout.SessionLayout,
+    inputs: ExecutionInputs,
+    *,
+    wf: loop.Harness | None,
+    result: loop_snapshot.SessionResult | None,
+    interrupted: bool,
+    mirror: run_chain.MirrorTarget | None,
+    budget: agent6_budget.BudgetTracker,
+    events: event_log.EventSink,
+    reporter: app_reporter.Reporter,
+    cwd: pathlib.Path,
+) -> None:
+    """Copy a clone's last commits into its repository, then merge a run that finished.
+
+    Runs once every close succeeded: no merge runs on an execution whose teardown failed.
+
+    Args:
+        cfg: The config the tools resolved.
+        layout: The session's directory layout.
+        inputs: What the lifecycle hands the body.
+        wf: The harness, or None when the execution escaped before it was built.
+        result: How the run ended, or None when it escaped.
+        interrupted: Whether the operator interrupted the run.
+        mirror: The repository a session in a clone copies its commits into, or None.
+        budget: The run's budget, which the merge's message spends from.
+        events: The run's event sink.
+        reporter: The output channels.
+        cwd: The workspace.
+    """
+    mode = inputs.mode
+    if mirror is not None and mode == "run":
+        # Once more at the end: a merge taken in or an undo moves the chain with no commit;
+        # under `git.control = "model"` the model's own commits are the record.
+        try:
+            if cfg.git.control == "model":
+                git_ops.mirror_session(
+                    mirror.repository,
+                    cwd,
+                    git_read.chain_ref_for(inputs.session_id),
+                    None,
+                    sender=mirror.sender,
+                    head=True,
+                )
+            elif wf is not None:
+                wf.chain.mirror()
+        except errors.GitError as exc:
+            reporter.warn(
+                f"the run's commits could not be copied into {inputs.mirror_into}: {exc};"
+                f" they are in its worktree {cwd}"
+            )
+    # A child's base branch belongs to its throwaway clone. Its parent owns the merge.
+    auto_merge = cfg.git.auto_merge and mode == "run" and not child_launch.is_child()
+    if interrupted or result is None or not auto_merge:
+        return
+    if finalize.auto_merge_eligible(result):
+        finalize.finalize_auto_merge(
+            # The merge target is the repository's branch, not the clone's.
+            inputs.mirror_into or cwd,
+            layout=layout,
+            cfg=cfg,
+            reporter=reporter,
+            budget=budget,
+            events=events,
+            worker_lock_fd=inputs.worker_lock_fd,
+        )
+        return
+    if result.reason not in finalize.AUTO_MERGE_ENDS:
+        reason = f"the run ended on {result.reason}, not finish_session or children_ranked"
+    elif result.child_verification:
+        child_id = result.child_verification.session_id
+        reason = f"only child {child_id} verified the final tree"
+    else:
+        reason = f"the gate on the final tree is {result.verification}"
+    reporter.note(f"auto_merge skipped: {reason}")
+
+
+def report_end(
+    cfg: Config,
+    layout: sessions_layout.SessionLayout,
+    inputs: ExecutionInputs,
+    *,
+    result: loop_snapshot.SessionResult | None,
+    interrupted: bool,
+    undo_outcome: list[tuple[str, str]],
+    budget: agent6_budget.BudgetTracker,
+    console_stream: bool,
+    hidden: frozenset[str],
+    frontend: app_frontend.SessionFrontend,
+    reporter: app_reporter.Reporter,
+    events: event_log.EventSink,
+    cwd: pathlib.Path,
+) -> ExecutionEnd:
+    """Settle the budget and print the end an execution reached.
+
+    Args:
+        cfg: The config the tools resolved.
+        layout: The session's directory layout.
+        inputs: What the lifecycle hands the body.
+        result: How the run ended, or None when it escaped.
+        interrupted: Whether the operator interrupted the run.
+        undo_outcome: The `/undo` forks' outcomes, the last one named.
+        budget: The run's budget.
+        console_stream: Whether a console view showed the run.
+        hidden: The run's hidden paths inside the repository.
+        frontend: The injected front-end, which saves an ask's transcript.
+        reporter: The output channels.
+        events: The run's event sink.
+        cwd: The workspace.
+
+    Returns:
+        The exit code, and whether the operator detached.
+    """
+    mode = inputs.mode
+    finalize.settle_budget(budget, events)
+    if interrupted:
+        finalize.print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
+        return ExecutionEnd(finalize.EXIT_OPERATOR_STOP)
+    if result is None:
+        return ExecutionEnd(1)
+
+    # The operator's own ends come first: `/undo` and `/detach` end an ask as they end a run.
+    if result.reason == "undone" and undo_outcome:
+        new_id, undone_text = undo_outcome[-1]
+        reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
+        reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
+        return ExecutionEnd(0)
+    if result.reason == "detached":
+        # The caller releases the worker lock, then hands the run to `detach_to_background`.
+        return ExecutionEnd(0, detach_requested=True)
+
+    harness_gate = cfg.harness.verify.when != "never"
+    if mode == "ask":
+        # stdout gets the answer alone, for a pipe; when the stream (on stderr) and stdout are
+        # the one terminal, the stream showed it. The REPL already printed and saved each turn.
+        if inputs.ask_transcript_task is not None:
+            if not (console_stream and sys.stdout.isatty() and sys.stderr.isatty()):
+                reporter.out(result.summary)
+            frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
+            reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
+        reporter.err(budget.format_summary())
+        finalize.print_session_usage(
+            session_log.scan_session_log(layout.logs_path), emit=reporter.err
+        )
+        return ExecutionEnd(finalize.session_exit_code(result, harness_gate=harness_gate))
+
+    stranded = finalize.stranded_edits(result, layout, cwd, hidden=hidden)
+    if stranded:
+        # Journaled before the end block, whose headline and every listing read the journal.
+        events.emit(journal.SessionStranded())
+    finalize.print_session_end(
+        result,
+        layout=layout,
+        cwd=cwd,
+        budget=budget,
+        console_stream=console_stream,
+        reporter=reporter,
+        hidden=hidden,
+    )
+    if inputs.contract is None:
+        notify_hook.session_end(
+            cfg.notify,
+            session_id=layout.session_id,
+            session_dir=layout.session_dir,
+            ok=result.completed,
+            reason=result.reason,
+            verification=result.verification,
+            note=reporter.note,
+        )
+    return ExecutionEnd(
+        finalize.session_exit_code(result, harness_gate=harness_gate, stranded=stranded)
+    )
+
+
+def run_execution(  # noqa: C901, PLR0912, PLR0915  # setup, run and teardown in reading order
     cfg: Config,
     layout: sessions_layout.SessionLayout,
     inputs: ExecutionInputs,
@@ -491,7 +893,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             rm_role=session.rm_role,
             worktree_git_dir=inputs.worktree_git_dir,
         )
-        curator = tools.curator
         dispatcher = tools.dispatcher
         cfg = tools.cfg
 
@@ -521,30 +922,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     untracked_at_start |= git_read.untracked_paths(cwd) - before
                     sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
 
-        def _undo_forker() -> tuple[str, str] | None:
-            """Return the `/undo` fork's outcome, kept for the end block.
-
-            Returns:
-                The fork's id and the text taken back, or None with the reason printed.
-            """
-            got = inputs.undo_forker()
-            if got is not None:
-                undo_outcome.append(got)
-            return got
-
         after_auto_commit: Callable[[int, str], kinds.AutoCommitDirective] = (
             frontend.build_repl_hook(cwd, budget, inputs.session_id, mcp_manager)
             if inputs.interactive and mode == "run"
             else (lambda _i, _s: "continue")
         )
-
-        def _steer_requested() -> bool:
-            assert wf is not None
-            review_actions.drain(
-                events, execution_id=wf.execution_id, resume_steer=inputs.resume_steer
-            )
-            ipc.promote_queued_steer(layout.session_dir)
-            return steer_state.requested()
 
         # A child worker keeps only panel authority; a child's record goes where this one's does.
         spawner = frontend.build_parent_spawner(
@@ -561,140 +943,25 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             events,
             child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
         )
-        launch = child_launch.read()
-        settings = execution_settings.observations(cfg, inputs.effective)
-        if not inputs.tui_enabled:
-
-            def start_header(event: dict[str, Any]) -> None:
-                if event.get("type") in journal.SESSION_START_EVENTS:
-                    facts = policy.session_policy(layout.session_dir)
-                    parts = [execution_settings.summary(settings), *facts.environment[:1]]
-                    parts += [e for e in facts.environment if e == evidence.GIT_WRITABLE]
-                    if mode != "ask":
-                        parts.append(facts.gate())
-                    if line := " · ".join(p for p in parts if p):
-                        (loop_log if console_stream else reporter.note)(line)
-
-            events.subscribe(start_header)
-        wf = loop.Harness(
-            task_source=launch.task_source if launch is not None else "operator",
-            settings=settings,
-            media_input=role_providers.input_capabilities(cfg, session.rm_role),
-            chain=run_chain.RunChain(
-                cwd,
-                # `git.control = "model"` suspends the chain: the model's commits are the record.
-                ref=git_read.chain_ref_for(inputs.session_id)
-                if mode == "run" and cfg.git.control != "model"
-                else None,
-                branch=inputs.chain_branch,
-                fallback_parent=inputs.base_sha or None,
-                untracked_at_start=untracked_at_start,
-                hidden=hidden,
-                identity=run_chain.commit_identity(
-                    cfg.git.commit,
-                    commit_message.render_commit_trailer(
-                        cfg.git.commit.trailer, models=(session.rm_role.model,)
-                    ),
-                ),
-                per_turn=cfg.git.commit_per_turn,
-                model_git=mode == "run" and cfg.git.control == "model",
-                base_sha=inputs.base_sha,
-                mirror_into=mirror,
-            ),
-            config=cfg,
-            base_rules=inputs.base_rules,
-            review_target=inputs.review_target,
-            standing_goal=inputs.standing_goal,
-            interactive=inputs.interactive and mode == "run",
-            web_search=cfg.offers_web_search(mode),
-            initial_pins=inputs.pins,
-            max_turns=cfg.harness.max_turns,
-            provider=session.provider,
-            dispatcher=dispatcher,
-            prompts=inputs.prompts,
-            logger=loop_log,
+        wf = build_harness(
+            cfg,
+            layout,
+            inputs,
+            session=session,
+            tools=tools,
+            steer_state=steer_state,
+            spawner=spawner,
+            after_auto_commit=after_auto_commit,
+            undo_outcome=undo_outcome,
+            untracked_at_start=untracked_at_start,
+            hidden=hidden,
+            mirror=mirror,
+            loop_log=loop_log,
+            console_stream=console_stream,
             events=events,
-            curator=curator,
-            bridge=operator_bridge.OperatorBridge(
-                steer_requested=_steer_requested,
-                steer_clear=steer_state.clear,
-                steer_prompt=steer_state.prompt,
-                steer_reset=steer_state.reset_stage,
-                compact_requested=lambda: ipc.read_compact_request(layout.session_dir),
-                compact_clear=lambda: ipc.clear_compact_request(layout.session_dir),
-                stop_requested=lambda: ipc.stop_request_pending(layout.session_dir),
-                stop_is_now=lambda: ipc.stop_request_is_now(layout.session_dir),
-                stop_clear=lambda: ipc.clear_stop_request(layout.session_dir),
-                should_abort=steer_state.abort_pending,
-                should_interrupt=steer_state.interrupt,
-                take_requests=lambda: ipc.drain_requests(layout.session_dir),
-                after_auto_commit=after_auto_commit,
-                undo_forker=_undo_forker,
-                review_preparer=functools.partial(
-                    review_directive.live, root=cwd, hide=cfg.sandbox.hide_paths
-                ),
-                child_authority=child_launch.dispatch_authority(
-                    cfg, mode=mode, session_id=inputs.session_id, root=cwd
-                ),
-                child_spawner=spawner,
-                child_recoverable=functools.partial(
-                    child_resume.recoverable,
-                    cfg=cfg,
-                    origin=cwd,
-                    record_state=layout.state_dir,
-                    parent=inputs.session_id,
-                ),
-                child_recoverer=app_children.build_child_recoverer(
-                    cfg, cwd, layout.state_dir, mode=mode, reporter=reporter
-                ),
-                rank_recorder=app_children.build_rank_recorder(
-                    cwd,
-                    layout.state_dir,
-                    parent_dir=layout.session_dir,
-                    events=events,
-                    reporter=reporter,
-                )
-                if mode == "run"
-                else None,
-            ),
-            budget=budget,
+            reporter=reporter,
+            cwd=cwd,
             state_dir=state_dir,
-            resume_state_path=inputs.resume_state_path,
-            operator_edits=inputs.operator_edits,
-            merged_in=inputs.merged_in,
-            mode=mode,
-            contract=inputs.contract,
-            opening=inputs.opening,
-            plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
-            review=review_gate.ReviewSettings(
-                when=cfg.review.when,
-                interval_turns=cfg.review.interval_turns,
-                reviewers=session.reviewers,
-                block_on=cfg.review.block_on,
-                min_blocking_models=cfg.review.min_blocking_models,
-                max_rejections=cfg.review.max_rejections,
-                min_remaining_budget_fraction=cfg.review.min_remaining_budget_fraction,
-                concurrency=cfg.review.concurrency,
-                max_turns=cfg.review.max_turns,
-            ),
-            call=provider_call.CallSettings(temperature=role_providers.role_temperature(cfg, role)),
-            compaction=compaction_window.CompactionSettings(
-                cold_start=cfg.compaction.cold_start,
-                drop_at_chars=tools.compact_drop_at_chars,
-                summarize_at_chars=tools.compact_summarize_at_chars,
-                tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, role),
-                keep_recent_chars=tools.keep_recent_chars,
-                keep_operator_messages=cfg.compaction.keep_operator_messages,
-                keep_recent_turns=cfg.compaction.keep_recent_turns,
-                keep_thinking_turns=cfg.compaction.keep_thinking_turns,
-                elision_gists=cfg.compaction.elision_gists,
-                summary_max_tokens=cfg.compaction.summary_max_tokens,
-                summarizer=cfg.compaction.summarizer,
-                helper=session.summarizer_provider,
-                helper_context_tokens=role_providers.helper_context_window(cfg),
-                endpoint=role_providers.endpoint_compaction(cfg, session.rm_role),
-                idle=role_providers.idle_compaction(cfg, session.rm_role),
-            ),
         )
         if inputs.task is not None:
             stamps.unpark(layout.session_dir, run_branch=inputs.chain_branch)
@@ -798,113 +1065,37 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.
                 cleanup.callback(ipc.clear_stop_request, layout.session_dir)
-            if mirror is not None and mode == "run":
-                # Once more at the end: a merge taken in or an undo moves the chain with no commit;
-                # under `git.control = "model"` the model's own commits are the record.
-                try:
-                    if cfg.git.control == "model":
-                        git_ops.mirror_session(
-                            mirror.repository,
-                            cwd,
-                            git_read.chain_ref_for(inputs.session_id),
-                            None,
-                            sender=mirror.sender,
-                            head=True,
-                        )
-                    elif wf is not None:
-                        wf.chain.mirror()
-                except errors.GitError as exc:
-                    reporter.warn(
-                        f"the run's commits could not be copied into {inputs.mirror_into}: {exc};"
-                        f" they are in its worktree {cwd}"
-                    )
-            # A child's base branch belongs to its throwaway clone. Its parent owns the merge.
-            auto_merge = cfg.git.auto_merge and mode == "run" and not child_launch.is_child()
-            if not interrupted and result is not None and auto_merge:
-                if finalize.auto_merge_eligible(result):
-                    finalize.finalize_auto_merge(
-                        # The merge target is the repository's branch, not the clone's.
-                        inputs.mirror_into or cwd,
-                        layout=layout,
-                        cfg=cfg,
-                        reporter=reporter,
-                        budget=budget,
-                        events=events,
-                        worker_lock_fd=inputs.worker_lock_fd,
-                    )
-                else:
-                    if result.reason not in finalize.AUTO_MERGE_ENDS:
-                        reason = (
-                            f"the run ended on {result.reason}, not finish_session"
-                            " or children_ranked"
-                        )
-                    elif result.child_verification:
-                        child_id = result.child_verification.session_id
-                        reason = f"only child {child_id} verified the final tree"
-                    else:
-                        reason = f"the gate on the final tree is {result.verification}"
-                    reporter.note(f"auto_merge skipped: {reason}")
+            finish_chain(
+                cfg,
+                layout,
+                inputs,
+                wf=wf,
+                result=result,
+                interrupted=interrupted,
+                mirror=mirror,
+                budget=budget,
+                events=events,
+                reporter=reporter,
+                cwd=cwd,
+            )
         finally:
             # Never leave root-owned run state in the user's repo (the sudo case).
             paths.chown_to_real_user(state_dir)
             # On every end, after the run's commands close: a model's tools can write a pack.json.
             pack.quarantine_tree(paths.checkout_root(cwd), warn=reporter.warn, events=events)
 
-    finalize.settle_budget(budget, events)
-    if interrupted:
-        finalize.print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
-        return ExecutionEnd(finalize.EXIT_OPERATOR_STOP)
-    if result is None:
-        return ExecutionEnd(1)
-
-    # The operator's own ends come first: `/undo` and `/detach` end an ask as they end a run.
-    if result.reason == "undone" and undo_outcome:
-        new_id, undone_text = undo_outcome[-1]
-        reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
-        reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
-        return ExecutionEnd(0)
-    if result.reason == "detached":
-        # The caller releases the worker lock, then hands the run to `detach_to_background`.
-        return ExecutionEnd(0, detach_requested=True)
-
-    harness_gate = cfg.harness.verify.when != "never"
-    if mode == "ask":
-        # stdout gets the answer alone, for a pipe; when the stream (on stderr) and stdout are
-        # the one terminal, the stream showed it. The REPL already printed and saved each turn.
-        if inputs.ask_transcript_task is not None:
-            if not (console_stream and sys.stdout.isatty() and sys.stderr.isatty()):
-                reporter.out(result.summary)
-            frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
-            reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
-        reporter.err(budget.format_summary())
-        finalize.print_session_usage(
-            session_log.scan_session_log(layout.logs_path), emit=reporter.err
-        )
-        return ExecutionEnd(finalize.session_exit_code(result, harness_gate=harness_gate))
-
-    stranded = finalize.stranded_edits(result, layout, cwd, hidden=hidden)
-    if stranded:
-        # Journaled before the end block, whose headline and every listing read the journal.
-        events.emit(journal.SessionStranded())
-    finalize.print_session_end(
-        result,
-        layout=layout,
-        cwd=cwd,
+    return report_end(
+        cfg,
+        layout,
+        inputs,
+        result=result,
+        interrupted=interrupted,
+        undo_outcome=undo_outcome,
         budget=budget,
         console_stream=console_stream,
-        reporter=reporter,
         hidden=hidden,
-    )
-    if inputs.contract is None:
-        notify_hook.session_end(
-            cfg.notify,
-            session_id=layout.session_id,
-            session_dir=layout.session_dir,
-            ok=result.completed,
-            reason=result.reason,
-            verification=result.verification,
-            note=reporter.note,
-        )
-    return ExecutionEnd(
-        finalize.session_exit_code(result, harness_gate=harness_gate, stranded=stranded)
+        frontend=frontend,
+        reporter=reporter,
+        events=events,
+        cwd=cwd,
     )
