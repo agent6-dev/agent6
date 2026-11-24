@@ -750,8 +750,8 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_merges(
     assert "group:" not in out
     assert "children:      2" in out
     assert "co-p1 attempt 1" in out and "co-p1-l1" in out and "openai/child-1" in out
-    assert "merged into co's chain at bbbbbbbbbbbb" in out
-    assert "co-p1 attempt 2" in out and "no changes" in out
+    assert "passed · merged into co's chain at bbbbbbbbbbbb" in out
+    assert "co-p1 attempt 2" in out and "passed · no changes" in out
 
 
 def test_show_on_a_child_of_an_ordinary_parent_names_it(
@@ -894,7 +894,7 @@ def test_cli_child_roster_json(
     assert len(rows) == 7
     merged, _, live, stopped, held, absent, reviewer = rows
     assert (merged["status"], merged["outcome"], merged["merged_into_parent"]) == (
-        "merged",
+        "passed",
         "merged",
         "co",
     )

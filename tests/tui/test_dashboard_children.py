@@ -81,11 +81,17 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
                 if panel or number > 1:
                     _events(
                         child.session_dir,
-                        {"type": "session.stop", "reason": "finish_session", "ts": start + 12},
+                        {
+                            "type": "session.stop",
+                            "reason": "answered" if panel else "finish_session",
+                            "verification": "passed",
+                            "ts": start + 12,
+                        },
                     )
                 else:
                     process.write_worker_pid(child.session_dir, os.getpid())
                 if panel:
+                    merge = child_dispatch.MergeRecord(status="no_changes")
                     completion.write_completion(
                         child.session_dir,
                         completion.CompletionRecord(
@@ -153,9 +159,12 @@ def test_dashboard_child_rows(family: pathlib.Path, size: tuple[int, int]) -> No
             assert any(s.endswith("s") and s[:-1].isdigit() and int(s[:-1]) >= 50 for s in live)
             for sid, words in (
                 ("atlas-p1-l2", ("stopped", "1 commit", "agent6/atlas-p1-l2", "12s")),
-                ("atlas-p1-l3", ("retained", "2 commits", "agent6/atlas-p1-l3")),
+                ("atlas-p1-l3", ("passed · retained", "2 commits", "agent6/atlas-p1-l3")),
                 ("atlas-p1-l4", ("failed", "not started", "no matching provider", "alternate")),
-                ("atlas-rpanel-l1", ("reviewer 1", "B > A", "B checks both flags")),
+                (
+                    "atlas-rpanel-l1",
+                    ("reviewer 1", "answered · no changes", "B > A", "B checks both flags"),
+                ),
             ):
                 row = " ".join(map(str, table.get_row(sid)))
                 assert all(word in row for word in words), row

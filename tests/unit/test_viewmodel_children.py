@@ -9,6 +9,8 @@ import os
 import pathlib
 import time
 
+import pytest
+
 from agent6.sessions import child_dispatch, completion, process
 from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import listing, receipt, wire
@@ -121,7 +123,7 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
     )
     assert (
         first.launched
-        and first.status == "merged"
+        and first.status == "finished"
         and first.merged_into_parent == "run-abc"
         and first.outcome == "merged"
         and first.parent_merge_sha == "b" * 40
@@ -137,6 +139,48 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
     assert [d.identity for d in dispatches] == ["run-abc-p1", "run-abc-p2"]
     assert dispatches[0].state == "complete" and dispatches[1].turn == 5
     assert len(dispatches[0].children) == 2
+
+
+@pytest.mark.parametrize(
+    ("stop", "verify", "outcome", "detail", "word", "label"),
+    [
+        ("gate_stale", "failed", "retained", "", "finished", "finished · gate stale · retained"),
+        ("finish_session", "failed", "retained", "", "finished", "finished · gate red · retained"),
+        (
+            "finish_session",
+            "unverified",
+            "retained",
+            "",
+            "finished",
+            "finished · unverified · retained",
+        ),
+        ("finish_session", "passed", "ranked", "2 of 2", "passed", "passed · ranked 2 of 2"),
+        ("finish_session", "passed", "conflict", "a.py", "passed", "passed · conflict"),
+        ("answered", None, "no_changes", "", "answered", "answered · no changes"),
+        ("provider_error", None, "failed", "no import", "failed", "failed · provider error"),
+    ],
+)
+def test_parent_outcome_does_not_replace_the_childs_gate_or_stop_reason(
+    tmp_path: pathlib.Path,
+    stop: str,
+    verify: str | None,
+    outcome: str,
+    detail: str,
+    word: str,
+    label: str,
+) -> None:
+    parent = _session(tmp_path, "root")
+    child = _session(tmp_path, "root-p1-l1", parent="root", finished=False)
+    with (child / "logs.jsonl").open("a") as log:
+        log.write(
+            json.dumps({"type": "session.stop", "reason": stop, "verification": verify}) + "\n"
+        )
+    merge = child_dispatch.MergeRecord.model_validate({"status": outcome, "detail": detail})
+    child_dispatch.write_record(parent, _record("root-p1", [(child.name, merge, 0.0)]), now=1)
+    (row,) = wire.manifest_header(parent)["children"]
+    assert (row["status"], row["outcome"], row["status_label"]) == (word, outcome, label)
+    assert row["error"] == (detail if outcome in ("conflict", "failed") else "")
+    assert label in receipt.render(receipt.read_receipt(parent, tmp_path))
 
 
 def test_a_group_without_records_reads_its_children_from_lineage(tmp_path: pathlib.Path) -> None:
@@ -230,7 +274,7 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
     assert "Children" in text.splitlines()
     assert (
         "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): "
-        "merged into run-abc's chain at bbbbbbbbbbbb, $0.50" in text
+        "finished · unverified · merged into run-abc's chain at bbbbbbbbbbbb, $0.50" in text
     )
     assert "run-abc-p1 attempt 2: run-abc-p1-l2: failed: never started" in text
     assert "spend includes the children's $0.50" in text
@@ -257,11 +301,11 @@ def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib
     text = receipt.render(receipt.read_receipt(parent, tmp_path))
     assert (
         "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): "
-        "merged into run-abc's chain at bbbbbbbbbbbb, $?" in text
+        "finished · unverified · merged into run-abc's chain at bbbbbbbbbbbb, $?" in text
     )
     assert (
-        "run-abc-p1 attempt 2: run-abc-p1-l2: merged into run-abc's chain at bbbbbbbbbbbb, $0.20"
-        in text
+        "run-abc-p1 attempt 2: run-abc-p1-l2: finished · unverified · "
+        "merged into run-abc's chain at bbbbbbbbbbbb, $0.20" in text
     )
     assert "spend includes the children's ~$0.20" in text
 
@@ -430,7 +474,7 @@ def test_the_parent_header_reads_a_live_tool_and_usage_from_the_child(
         )
     child_dispatch.write_record(parent, rec.advanced("ranking"), now=start + 12)
     (ended,) = vm_children.children_of(parent)
-    assert (ended.status, ended.elapsed_s, ended.current_tool) == ("being ranked", 12, "")
+    assert (ended.status, ended.elapsed_s, ended.current_tool) == ("finished", 12, "")
 
 
 def test_stopped_and_never_started_children_stay_in_the_header(tmp_path: pathlib.Path) -> None:
@@ -445,5 +489,6 @@ def test_stopped_and_never_started_children_stay_in_the_header(tmp_path: pathlib
     )
     child_dispatch.write_record(parent, refused, now=2)
     held, absent = wire.manifest_header(parent)["children"]
-    assert (held["status"], held["commits"], held["imported_ref"]) == ("stopped", 2, "agent6/child")
+    assert (held["status"], held["outcome"], held["commits"]) == ("finished", "stopped", 2)
+    assert held["imported_ref"] == "agent6/child"
     assert not absent["launched"] and absent["status"] == "failed" and "no route" in absent["error"]

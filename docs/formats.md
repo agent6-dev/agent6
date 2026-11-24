@@ -1671,6 +1671,9 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 `sessions show --json` emits one `_cmd_status` object.
 `ps --json` emits an array of `_Row` records, including nested children.
 
+In the session commands and the web API, `children[].status` is the child's own state, not its dispatch outcome.
+Use `children[].outcome` to tell whether its work merged. See [ChildView](#childview) for both fields.
+
 ### `sessions list --json` row
 
 **Support: public.** Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
@@ -2989,11 +2992,12 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `task` | `str` | Its task text; "" when unknown. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
-| `status` | `str` | Where the child stands in its task, including a chain merge or a ranking. |
+| `status` | `str` | The child's own session or launch status. Read `outcome` for a parent merge. |
+| `status_label` | `str` | The child's status and reason, followed by the parent's outcome when known. |
 | `outcome` | `str` | The recorded dispatch outcome, including `stopped`, `ranked` and `retained`. An empty string means the parent has recorded no outcome. |
 | `parent_merge_sha` | `str` | The merge commit on the parent's chain, "" when none. |
 | `imported_ref` | `str` | The branch the merge read, "" when none. |
-| `error` | `str` | The status detail or the reason a child failed to start or merge. |
+| `error` | `str` | A launch, verdict or merge diagnostic, or an empty string. |
 | `spend_usd` | `float` | The cumulative child spend. |
 | `usd_partial` | `bool` | Whether unpriced calls make the spend a lower bound. |
 | `settled` | `bool` | Whether the parent charged its usage; False while it is unknown. |

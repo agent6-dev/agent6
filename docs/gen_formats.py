@@ -671,7 +671,11 @@ def build_markdown() -> str:
     sections.append(
         "`sessions list --json` emits `summary_row` objects with `row_json` additions.\n"
         "`sessions show --json` emits one `_cmd_status` object.\n"
-        "`ps --json` emits an array of `_Row` records, including nested children."
+        "`ps --json` emits an array of `_Row` records, including nested children.\n\n"
+        "In the session commands and the web API, `children[].status` is the child's own state, "
+        "not its dispatch outcome.\n"
+        "Use `children[].outcome` to tell whether its work merged. "
+        "See [ChildView](#childview) for both fields."
     )
     sections.extend(p.render() for p in CLI)
     summary = _node(module_path("budget"), "BudgetTracker.format_summary")

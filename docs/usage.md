@@ -190,6 +190,7 @@ The child gets its config, task and remaining budget from its parent; its approv
 Inspect the parent with `agent6 sessions list --children`, `agent6 sessions show <parent>` or `agent6 attach <parent>`.
 The children list labels each work child by its attempt number within its task: two separate tasks each start with `attempt 1`.
 It gives each child's task, model, status, current tool, turn, tokens, spend and elapsed time.
+The child's status comes first, then the parent's outcome, such as `passed · ranked 2 of 2`.
 The parent reports when a child starts, reads an operator message, stops or finishes.
 `merged into parent chain` in the transcript means the child's commits are on the parent's chain, not necessarily on the checkout branch.
 `sessions show <child>` reports `parent merge: merged into PARENT's chain at <sha>` and shows the checkout merge separately.
@@ -239,7 +240,9 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 A live run starts the children and goes on: its model keeps taking turns while they work.
 When a child ends, the model reads a notice with the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
 A task completes at the run's next turn boundary once its children have ended; a task still running holds no other.
-Attempts are ranked first: their judges start when the last attempt ends and run in the background while the run takes its turns, the roster shows the attempts as `being ranked`, and the task completes at the boundary after the judges end.
+The judges start when the last attempt ends and run in the background while the run takes its turns.
+The model's roster shows the attempts as `being ranked`.
+The task completes at the boundary after the judges end.
 While a child's own reviewers are working, the child is `in review` and still holds the parent's finish.
 Under agent6-owned git, tasks that finish before the same boundary merge in the order written, so when two touch the same lines the later one to merge gets the conflict.
 Before an automatic merge, the run's uncommitted work is committed first.

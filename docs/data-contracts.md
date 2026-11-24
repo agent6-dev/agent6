@@ -20,6 +20,10 @@ These levels describe serialized formats, not Python imports.
 Formats are not stable until 1.0.
 From 1.0, changes will be backwards compatible, and deprecations will carry a warning for a period before removal.
 
+**Child rows in CLI JSON and the web API:** `children[].status` reports the child's own state.
+Consumers that used `status` as a merge result must read `children[].outcome` instead.
+An empty `outcome` means the parent has recorded none.
+
 ## CLI listing rows
 
 [`agent6.viewmodel.listing`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py) &middot; mutable container + 2 frozen turn types

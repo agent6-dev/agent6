@@ -35,19 +35,13 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
     Returns:
         One line per cell, in column order.
     """
-    status = child.status
     result: list[str] = []
-    if child.outcome == "merged":
-        result.append(child.parent_merge_label)
     if not child.launched and child.status == "failed":
         result.append("not started")
     if child.commit_count_text:
         result.append(child.commit_count_text)
-    if child.outcome in ("stopped", "retained"):
-        if child.outcome != child.status:
-            status += f" · {child.outcome}"
-        if child.imported_ref:
-            result.append(child.imported_ref)
+    if child.outcome in ("stopped", "retained") and child.imported_ref:
+        result.append(child.imported_ref)
     if child.error:
         result.append(child.error)
     if child.verdict_order:
@@ -57,7 +51,7 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
     return (
         text.Text(child.number_label),
         text.Text(child.session_id),
-        text.Text(status, style=theme.status_style(child.status)),
+        text.Text(child.status_label, style=theme.status_style(child.status)),
         text.Text(session_status.task_snippet(child.task, max_chars=28)),
         text.Text(child.current_tool),
         text.Text(str(child.turn) if child.turn is not None else ""),

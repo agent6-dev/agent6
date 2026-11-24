@@ -53,14 +53,10 @@ class ChildRow:
         route = c.route or c.model or "?"
         if c.model and c.route and c.model != c.route:
             route += f" ({c.model})"
-        state = self.lineage["status_label"] if self.lineage is not None else c.status
-        if not c.launched and c.status == "failed":
+        state = self.lineage["status_label"] if self.lineage is not None else c.status_label
+        if not c.launched and c.status == "failed" and c.error != "never started":
             state += " (never started)"
-        if c.outcome == "merged":
-            state = c.parent_merge_label
-        elif c.outcome and c.outcome != state:
-            state += f" · {c.outcome.replace('_', ' ')}"
-        if c.error and c.error not in state:
+        if c.error:
             state += f": {' '.join(c.error.split())}"
         lines = [f"{heading}  {state}  {route}"]
         indent = "  " * (max(1, depth) + 1)
