@@ -5,13 +5,10 @@ function childFacts(c) {
   const model = [c.model, c.route !== c.model && c.route].filter(Boolean).join(' · ');
   const usage = c.launched || c.settled
     ? (c.usd_partial && !c.spend_usd ? '$?' : `${c.usd_partial ? '~' : ''}$${c.spend_usd}`) : '';
-  const outcome = c.outcome === 'merged'
-    ? `merged into ${c.merged_into_parent}'s chain` + (c.parent_merge_sha ? ` at ${c.parent_merge_sha.slice(0, 12)}` : '')
-    : c.outcome.replaceAll('_', ' ');
   return [
     [model, c.current_tool, c.turn != null && `turn ${c.turn}`, c.tokens != null && `${c.tokens.toLocaleString()} tokens`,
      usage, c.elapsed_s != null && `${c.elapsed_s}s elapsed`],
-    [!c.launched && c.status === 'failed' && 'never started', outcome && outcome !== c.status && outcome,
+    [!c.launched && c.status === 'failed' && c.error !== 'never started' && 'never started',
      c.commits != null && `${c.commits} commit${c.commits === 1 ? '' : 's'} beyond start`, c.imported_ref, c.error],
     [c.verdict_order.length && `verdict: ${c.verdict_order.join(', ')}`, c.verdict_summary],
   ].map(line => line.filter(Boolean).join(' · ')).filter(Boolean).join('\n');
@@ -70,7 +67,7 @@ function childRow(sid, card, readOnly) {
     child = c;
     const kind = c.source === 'panel' ? 'reviewer' : 'attempt';
     const place = c.number > 0 ? `${kind} ${c.number}` : kind;
-    const title = `${place} · ${c.status} · ${firstLine(c.task, 60) || sid}`;
+    const title = `${place} · ${c.status_label} · ${firstLine(c.task, 60) || sid}`;
     if (headline.textContent !== title) headline.textContent = title;
     const meta = childFacts(c);
     if (facts.textContent !== meta) facts.textContent = meta;
@@ -120,7 +117,10 @@ function childrenCard(drawer, readOnly) {
   return children => {
     card.style.display = children.length ? '' : 'none';
     const counts = new Map();
-    for (const c of children) counts.set(c.status, (counts.get(c.status) || 0) + 1);
+    for (const c of children) {
+      const word = (c.outcome || c.status).replaceAll('_', ' ');
+      counts.set(word, (counts.get(word) || 0) + 1);
+    }
     const label = 'children: ' + [...counts].map(([word, count]) => `${count} ${word}`).join(', ');
     if (countsText.textContent !== label) countsText.textContent = summary.title = label;
     // Keep each disclosure and its input. patchRows moves existing rows without taking focus.

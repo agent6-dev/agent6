@@ -39,7 +39,7 @@ def test_group_children_refresh_and_link(
     block = page.locator(".card-children")
     expect(block).to_be_visible()
     summary = block.locator(":scope > summary")
-    expect(summary).to_have_text("children: 2 finished")
+    expect(summary).to_have_text("children: 2 passed")
     summary.focus()
     summary.press("Enter")
     expect(block.locator("details")).to_have_count(2)
@@ -115,10 +115,10 @@ def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
     block = page.locator(".card-children")
     expect(block).to_be_visible()
     summary = block.locator(":scope > summary")
-    expect(summary).to_have_text("children: 1 merged, 1 finished")
+    expect(summary).to_have_text("children: 1 merged, 1 no changes")
     summary.click()
-    expect(block).to_contain_text("merged into co's chain at bbbbbbbbbbbb")
-    expect(block).to_contain_text("no changes")
+    expect(block).to_contain_text("passed · merged into co's chain at bbbbbbbbbbbb")
+    expect(block).to_contain_text("passed · no changes")
     expect(page.get_by_role("button", name="Fork", exact=True)).to_be_enabled()
     parent = layout.SessionLayout(state_dir=paths.state_dir(ordinary_parent), session_id="co")
     failed = child_dispatch.ChildRecord(session_id="co-p2-l1", number=1, task="Check dates")
@@ -133,7 +133,7 @@ def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
         message="no model route",
     )
     child_dispatch.write_record(parent.session_dir, record, now=2.0)
-    expect(summary).to_have_text("children: 1 merged, 1 finished, 1 failed")
+    expect(summary).to_have_text("children: 1 merged, 1 no changes, 1 failed")
     last = block.locator("details").last
     last.locator("summary").click()
     expect(last).to_contain_text("never started")
@@ -145,8 +145,37 @@ def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
     receipt = page.locator(".receipt")
     expect(receipt).to_contain_text("Children")
     expect(receipt).to_contain_text(
-        "co-p1 attempt 1: co-p1-l1: merged into co's chain at bbbbbbbbbbbb, $0.50"
+        "co-p1 attempt 1: co-p1-l1: passed · merged into co's chain at bbbbbbbbbbbb, $0.50"
     )
     receipt.get_by_role("link", name="co-p1-l1", exact=True).click()
     expect(page).to_have_url(f"http://127.0.0.1:{parent_port}/#/session/co-p1-l1")
+    assert not errors
+
+
+def test_a_conflict_counts_the_parent_outcome_not_the_child_gate(
+    ordinary_parent: pathlib.Path,
+    parent_port: int,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """A child whose gate passed counts as a conflict if its work did not merge."""
+    from playwright.sync_api import expect
+
+    parent = layout.SessionLayout(state_dir=paths.state_dir(ordinary_parent), session_id="co")
+    (record,) = child_dispatch.read_records(parent.session_dir)
+    first, second = record.children
+    conflict = child_dispatch.MergeRecord(
+        status="conflict", branch="agent6/work", detail="dates.py"
+    )
+    second = second.model_copy(update={"merge": conflict})
+    child_dispatch.write_record(
+        parent.session_dir, record.model_copy(update={"children": (first, second)}), now=2.0
+    )
+    page, errors = open_page(parent_port)
+    page.goto(f"http://127.0.0.1:{parent_port}/#/session/co")
+    card = page.locator(".card-children")
+    fold = card.locator(":scope > summary")
+    expect(fold).to_have_text("children: 1 merged, 1 conflict")
+    fold.click()
+    expect(card.locator(".child-row").last.locator("summary")).to_contain_text("passed · conflict")
+    expect(card).to_contain_text("dates.py")
     assert not errors

@@ -37,7 +37,7 @@
 .card-children { overflow-wrap: anywhere; }
 .card-children summary { list-style: none; cursor: pointer; }
 .card-children > summary { display: flex; align-items: center; gap: 0.375rem; }
-.card-children:not([open]) > summary > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-children > summary > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .child-row > summary::before { vertical-align: 0.15em; }
 .child-row > summary > strong { margin-inline-start: 0.25rem; }
 .child-row { margin-top: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.5rem; }
@@ -151,6 +151,7 @@
     overflow: auto; border-right: 1px solid var(--border); flex: none;
   }
   .run-app .drawer.closed { display: none; }
+  .run-app .drawer:has(.child-row) { width: var(--drawer-w, 26rem); }
   /* The drawer's key-value blocks share one key column: 5.5rem holds the longest key, "forked from", up to a 15px minimum font size. */
   .run-app .drawer .kv { grid-template-columns: minmax(5.5rem, auto) 1fr; }
   /* One scroll surface: the drawer itself; its cards lose their own caps
