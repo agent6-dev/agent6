@@ -227,6 +227,7 @@ def record_billed_usage(
     budget: agent6_budget.BudgetTracker | None,
     route: kinds.ModelRoute,
     *,
+    serving: kinds.Serving = kinds.UNREPORTED,
     input_tokens: int,
     output_tokens: int,
     cache_read_tokens: int = 0,
@@ -244,6 +245,7 @@ def record_billed_usage(
     Args:
         budget: The run's tracker; None records nothing.
         route: The provider and model billed.
+        serving: Facts the endpoint reported before the stream ended.
         input_tokens: Prompt tokens reported.
         output_tokens: Completion tokens reported.
         cache_read_tokens: Cache-read tokens reported.
@@ -261,6 +263,7 @@ def record_billed_usage(
         return
     budget.record(
         route=route,
+        serving=serving,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,

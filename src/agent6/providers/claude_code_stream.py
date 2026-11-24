@@ -9,6 +9,7 @@ import dataclasses
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from agent6 import kinds
 from agent6.providers import claude_code_session, claude_code_wire, stream_lifecycle
 
 EMAIL_PLACEHOLDER = "<operator-email>"
@@ -36,6 +37,7 @@ class Round:
     blocks: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     usage: dict[str, Any] = dataclasses.field(default_factory=dict)
     stop_reason: str = ""
+    serving: kinds.Serving = kinds.UNREPORTED
     message_id: str = ""
     ended: bool = False
     cb: Callable[[str], None] | None = None
@@ -54,6 +56,7 @@ def stream_event(
     kind = event.get("type")
     if kind == "message_start":
         message = event.get("message") or {}
+        r.serving = r.serving.observe(message)
         r.message_id = str(message.get("id", ""))
         r.usage.update(message.get("usage") or {})
         watch.limit = stream_lifecycle.STREAM_IDLE_TIMEOUT_S

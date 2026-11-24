@@ -461,6 +461,7 @@ class ChatGPTProvider:
             stream_lifecycle.record_billed_usage(
                 self.budget,
                 kinds.ModelRoute(self.provider_name, self.model),
+                serving=call.transcript.serving,
                 input_tokens=billed.input_tokens,
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
@@ -495,6 +496,7 @@ class ChatGPTProvider:
                     )
                 self.budget.record(
                     route=kinds.ModelRoute(self.provider_name, self.model),
+                    serving=parsed.serving,
                     input_tokens=parsed.input_tokens,
                     output_tokens=parsed.output_tokens,
                     cache_read_tokens=parsed.cache_read_tokens,

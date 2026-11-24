@@ -107,6 +107,7 @@ class ProviderError(Exception):
         self.status_code = status_code
         self.retry_after_s = retry_after_s
         self.provider = provider
+        self.serving = kinds.UNREPORTED
         self.fatal = fatal
         self.attempts = attempts
         self.usage = usage
@@ -253,6 +254,7 @@ class TranscriptAttempt:
     response_headers: dict[str, str] = dataclasses.field(default_factory=dict)
     response_body: dict[str, Any] | str = ""
     usage: ProviderUsage | None = None
+    serving: kinds.Serving = kinds.UNREPORTED
     error: str = ""
 
     def write(self, outcome: TranscriptOutcome) -> None:
@@ -270,6 +272,7 @@ class TranscriptAttempt:
             request.headers: The request headers, with secret-bearing values redacted.
             request.body: The redacted body, with message and prompt references into objects/.
             response: What the attempt received before it ended.
+            response.model: The model that served the call, when reported.
             response.status: The HTTP status, or 0 when no response opened.
             response.headers: The response headers, with secret-bearing values redacted.
             response.body: The parsed response body or raw error text.
@@ -294,6 +297,7 @@ class TranscriptAttempt:
                 "body": self.request_body,
             },
             "response": {
+                **self.serving.wire_fields(),
                 "status": self.response_status,
                 "headers": _redact_headers(self.response_headers),
                 "body": self.response_body,
@@ -331,6 +335,7 @@ class TranscriptAttempt:
             if not self.response_body:
                 self.response_body = self.error
             if isinstance(exc, ProviderError):
+                exc.serving = self.serving
                 self.response_status = self.response_status or exc.status_code or 0
                 if exc.usage is not None:
                     self.usage = exc.usage
@@ -545,6 +550,7 @@ class TranscriptSink:
         )
         attempt.response_status = response_status
         attempt.response_body = response_body
+        attempt.serving = attempt.serving.observe(response_body)
         attempt.write("completed" if 200 <= response_status < 300 else "failed")
         assert attempt.path is not None
         return attempt.path
@@ -611,6 +617,7 @@ class ProviderResponse:
         cost_usd: The gateway-reported cost of this call (OpenRouter's `usage.cost`);
             None means unreported, so the price table estimates instead; zero means a free call.
         raw: The response body as received.
+        serving: The serving facts the backend reported.
         summary_block: The block to replay verbatim after an endpoint summary.
         thinking_blocks_dropped: The number of thinking blocks the endpoint dropped.
         tool_results_cleared: The number of tool results the endpoint cleared.
@@ -632,6 +639,7 @@ class ProviderResponse:
     summary_block: dict[str, Any] | None = None
     thinking_blocks_dropped: int = 0
     tool_results_cleared: int = 0
+    serving: kinds.Serving = kinds.UNREPORTED
 
     @property
     def usage(self) -> ProviderUsage:

@@ -616,6 +616,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `model` | `str` | Model identifier. |
+| `served_model` | `str, optional` | Model that served this attempt, when reported. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the attempt with its model call. |
 | `reviewer_index` | `int, optional` | Zero-based reviewer index. |
@@ -667,6 +668,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `actor` | `str` | The calling role, optionally followed by a colon and detail. |
 | `model` | `str` | Model identifier. |
+| `served_model` | `str, optional` | Model that served this attempt, when reported. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the model call with its result. |
 | `reviewer_index` | `int, optional` | Zero-based reviewer index. |

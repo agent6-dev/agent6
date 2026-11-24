@@ -352,9 +352,9 @@ class ClaudeCodeProvider:
             while True:
                 line = claude_code_protocol.next_line(s, watch, model=self.model)
                 if line.get("type") == "system" and line.get("subtype") == "init":
-                    claude_code_protocol.audit_init(s, line, model=self.model)
+                    claude_code_protocol.audit_init(s, line)
                     return s
-                claude_code_protocol.absorb(s, line, model=self.model)
+                claude_code_protocol.absorb(s, line)
         except BaseException:
             s.reap()
             raise
@@ -379,7 +379,7 @@ class ClaudeCodeProvider:
         Returns:
             The round's response.
         """
-        r = claude_code_stream.Round()
+        r = claude_code_stream.Round(serving=kinds.Serving(model=s.resolved_model or None))
         plan_before = s.plan
         watch.limit = stream_lifecycle.STREAM_FIRST_DATA_TIMEOUT_S
         while not r.ended:
@@ -390,6 +390,7 @@ class ClaudeCodeProvider:
                     s, r, line.get("event") or {}, watch, text_cb, thinking_cb
                 )
             elif kind == "assistant":
+                r.serving = r.serving.observe(line.get("message"))
                 r.blocks.extend(
                     claude_code_stream.block(s, b)
                     for b in claude_code_wire.message_blocks(line.get("message") or {})
@@ -400,7 +401,7 @@ class ClaudeCodeProvider:
                 r.stop_reason = r.stop_reason or str(line.get("stop_reason") or "end_turn")
                 r.ended = True
             else:
-                claude_code_protocol.absorb(s, line, model=self.model)
+                claude_code_protocol.absorb(s, line)
         ids = tuple(str(b.get("id", "")) for b in r.blocks if b.get("type") == "tool_use")
         if not ids:
             self._read_to_result(s, watch)
@@ -425,7 +426,7 @@ class ClaudeCodeProvider:
         cache_read = _int(r.usage.get("cache_read_input_tokens"))
         cache_write = _int(r.usage.get("cache_creation_input_tokens"))
         output_tokens = _int(r.usage.get("output_tokens"))
-        self._record(s, input_tokens, output_tokens, cache_read, cache_write)
+        self._record(s, input_tokens, output_tokens, cache_read, cache_write, r.serving)
         live_context = input_tokens + cache_read + cache_write
         if self.context_tokens and live_context > self.context_tokens - _CONTEXT_RESERVE_TOKENS:
             s.restart_next = True  # the next call replays the compacted mirror
@@ -441,9 +442,10 @@ class ClaudeCodeProvider:
             output_tokens=output_tokens,
             cache_read_tokens=cache_read,
             cache_write_tokens=cache_write,
+            serving=r.serving,
             raw={
+                **r.serving.wire_fields(),
                 "content": r.blocks,
-                "model": s.resolved_model,
                 "id": r.message_id,
                 "usage": r.usage,
             },
@@ -472,7 +474,7 @@ class ClaudeCodeProvider:
                 raise provider_types.ProviderError(
                     "claude started another round before reporting the turn's result"
                 )
-            claude_code_protocol.absorb(s, line, model=self.model)
+            claude_code_protocol.absorb(s, line)
 
     def _drain_after_round(
         self,
@@ -513,7 +515,7 @@ class ClaudeCodeProvider:
             ):
                 s.pushback.append(line)
                 return
-            claude_code_protocol.absorb(s, line, model=self.model)
+            claude_code_protocol.absorb(s, line)
 
     def _record(
         self,
@@ -522,6 +524,7 @@ class ClaudeCodeProvider:
         out: int,
         cache_read: int,
         cache_write: int,
+        serving: kinds.Serving,
     ) -> None:
         """Record the round's spend against the plan window.
 
@@ -531,6 +534,7 @@ class ClaudeCodeProvider:
             out: Output tokens.
             cache_read: Cache-read tokens.
             cache_write: Cache-write tokens.
+            serving: The model reported by the process.
 
         Raises:
             ProviderError: No plan reading (fatal: a retry would bill another round
@@ -547,6 +551,7 @@ class ClaudeCodeProvider:
         # The round was generated and the plan window moved, whatever the input side reported.
         self.budget.record(
             route=kinds.ModelRoute(self.provider_name, self.model),
+            serving=serving,
             input_tokens=inp,
             output_tokens=out,
             cache_read_tokens=cache_read,
@@ -575,12 +580,17 @@ class ClaudeCodeProvider:
             url=f"claude-code://{s.session_id}",
             call_context=call_context,
             request_headers={},
-            request_body={"system": system, "messages": messages, "stdin": list(s.stdin_log)},
+            request_body={
+                "model": self.model,
+                "system": system,
+                "messages": messages,
+                "stdin": list(s.stdin_log),
+            },
             response_status=200,
             response_body={
                 "id": resp.raw.get("id", ""),
                 "role": "assistant",
-                "model": s.resolved_model,
+                **resp.serving.wire_fields(),
                 "content": resp.raw.get("content", []),
                 "stop_reason": resp.stop_reason,
                 "usage": resp.raw.get("usage", {}),

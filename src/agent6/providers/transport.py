@@ -242,6 +242,7 @@ def meter_completion(
     if budget is not None:
         budget.record(
             route=route,
+            serving=parsed.serving,
             input_tokens=parsed.input_tokens,
             output_tokens=parsed.output_tokens,
             cache_read_tokens=parsed.cache_read_tokens,
@@ -505,6 +506,7 @@ class ProviderCall:
                 f"(status {resp.status_code}): "
                 f"{self._safe_text(resp.text, headers)[:500]}"
             )
+        transcript.serving = transcript.serving.observe(data)
         transcript.response_body = data
         # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
         err = data.get("error")
@@ -525,6 +527,7 @@ class ProviderCall:
             raise provider_types.ProviderError(
                 f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
             ) from exc
+        parsed = dataclasses.replace(parsed, serving=transcript.serving)
         transcript.usage = parsed.usage if data.get("usage") else None
         meter_completion(self.budget, self.route, parsed, self.api_label)
         self._observe_recovery(recovery_pending, resp.status_code)

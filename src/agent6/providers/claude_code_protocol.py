@@ -19,13 +19,12 @@ from agent6.providers import (
 )
 
 
-def audit_init(s: claude_code_session.Session, line: Mapping[str, Any], *, model: str) -> None:
+def audit_init(s: claude_code_session.Session, line: Mapping[str, Any]) -> None:
     """Check every `system/init`: the tool set is exactly what agent6 offered.
 
     Args:
         s: The session; the line's model and session id are stored on it.
         line: The `system/init` line.
-        model: The configured model, used when init reports none.
 
     Raises:
         ProviderError: The child exposed another tool set, or resolved an API key
@@ -49,7 +48,7 @@ def audit_init(s: claude_code_session.Session, line: Mapping[str, Any], *, model
             " config dir. Remove it there, or sign in with `claude auth login`.",
             fatal=True,
         )
-    s.resolved_model = str(line.get("model") or model)
+    s.resolved_model = str(line.get("model") or "")
     s.session_id = str(line.get("session_id") or "")
 
 
@@ -66,7 +65,7 @@ def continue_session(
         s: The live session.
         tail: The results and texts the new history adds.
         watch: The wait loop's checks.
-        model: The configured model, used when init reports none.
+        model: The requested model.
 
     Raises:
         ProviderError: A result with its notices is over the CLI's persist threshold
@@ -146,11 +145,11 @@ def await_call(
                 f"claude moved on while tool call {tool_use_id} was unanswered"
                 f" ({line.get('type')} arrived)"
             )
-        absorb(s, line, model=model)
+        absorb(s, line)
     return s.calls.pop(tool_use_id)
 
 
-def absorb(s: claude_code_session.Session, line: Mapping[str, Any], *, model: str) -> None:
+def absorb(s: claude_code_session.Session, line: Mapping[str, Any]) -> None:
     """Handle a line outside a round's stream.
 
     A tools/call is stashed, a stray can_use_tool denied, any other control
@@ -160,7 +159,6 @@ def absorb(s: claude_code_session.Session, line: Mapping[str, Any], *, model: st
     Args:
         s: The session.
         line: A stdout line of any `type`.
-        model: The configured model, used when init reports none.
     """
     kind = line.get("type")
     if kind == "control_request":
@@ -172,7 +170,7 @@ def absorb(s: claude_code_session.Session, line: Mapping[str, Any], *, model: st
             claude_code_wire.plan_usage_from_rate_limit(line.get("rate_limit_info") or {}) or s.plan
         )
     elif kind == "system" and line.get("subtype") == "init":
-        audit_init(s, line, model=model)
+        audit_init(s, line)
     elif kind == "result":
         check_result(s, line)
 
@@ -302,7 +300,7 @@ def next_line(
             raise provider_types.ProviderError(str(line.get("text")))
         if kind == "rate_limit_event":
             # The CLI repeats a reading while it waits out a window; it is not progress.
-            absorb(s, line, model=model)
+            absorb(s, line)
             watch.tick()
             continue
         event = line.get("event")

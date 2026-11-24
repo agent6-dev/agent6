@@ -451,6 +451,7 @@ def consume_stream(  # noqa: PLR0912
             evt: dict[str, Any] = json.loads(data_str)
         except json.JSONDecodeError:
             continue
+        call.transcript.serving = call.transcript.serving.observe(evt.get("response"))
         kind = str(evt.get("type", ""))
         if kind == "response.output_text.delta":
             piece = str(evt.get("delta", ""))
@@ -557,6 +558,7 @@ def finish_stream(
     parsed = parse_output_items(
         state.items, usage=state.usage, stop_reason=state.stop_reason, label=label, route=route
     )
+    parsed = dataclasses.replace(parsed, serving=call.transcript.serving)
     if not parsed.text and state.delta_text:
         # Text deltas without a final message item keep what the operator watched arrive.
         text = "".join(state.delta_text)
@@ -568,6 +570,7 @@ def finish_stream(
     call.record(
         status=200,
         response={
+            **parsed.serving.wire_fields(),
             "output": parsed.raw.get("output", []),
             "usage": state.usage,
             "status": state.stop_reason,

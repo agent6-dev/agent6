@@ -572,6 +572,37 @@ class ToolCallOrigin:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class Serving:
+    """The serving facts the endpoint reported for this attempt."""
+
+    model: str | None = None
+
+    def observe(self, response: object) -> Serving:
+        """Read serving facts from a response or stream frame.
+
+        Args:
+            response: The response object, or None for a frame without one.
+
+        Returns:
+            The reported facts, retaining fields absent in this frame.
+        """
+        if isinstance(response, dict) and isinstance(model := response.get("model"), str) and model:
+            return dataclasses.replace(self, model=model)
+        return self
+
+    def wire_fields(self) -> dict[str, str]:
+        """Return the observed fields for a reconstructed response."""
+        return {"model": self.model} if self.model is not None else {}
+
+    def event_fields(self) -> dict[str, str]:
+        """Return the observed fields for this call's journal rows."""
+        return {"served_model": self.model} if self.model is not None else {}
+
+
+UNREPORTED = Serving()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ModelRoute:
     """A provider and a model on it, the pair every model choice resolves to.
 

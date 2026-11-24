@@ -579,6 +579,7 @@ class InstrumentedProvider:
                 request_ids,
                 {
                     "ok": False,
+                    **(exc.serving.event_fields() if isinstance(exc, ProviderError) else {}),
                     "error": str(exc)[:200],
                     **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
                 },
@@ -591,7 +592,12 @@ class InstrumentedProvider:
             call_context,
             context,
             request_ids,
-            {"ok": True, "stop_reason": resp.stop_reason, **_usage_fields(resp.usage)},
+            {
+                "ok": True,
+                "stop_reason": resp.stop_reason,
+                **resp.serving.event_fields(),
+                **_usage_fields(resp.usage),
+            },
             ends_call=isinstance(compaction, provider_types.Summarise)
             or provider_call.settles_call(resp, context),
             # The settled prose: a headless run streams no deltas, so this is its only text.

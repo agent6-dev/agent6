@@ -690,6 +690,7 @@ class AnthropicProvider:
                         raise provider_types.ProviderError(
                             "Anthropic response message_start.message was not an object"
                         )
+                    call.transcript.serving = call.transcript.serving.observe(msg)
                     for key in ("input_transformations", "context_management"):
                         if key in msg:
                             history_fields[key] = msg[key]
@@ -923,6 +924,7 @@ class AnthropicProvider:
             stream_lifecycle.record_billed_usage(
                 self.budget,
                 kinds.ModelRoute(self.provider_name, self.model),
+                serving=call.transcript.serving,
                 input_tokens=counts.get("input_tokens", 0),
                 output_tokens=counts.get("output_tokens", 0),
                 cache_read_tokens=counts.get(read, 0),
@@ -959,6 +961,7 @@ class AnthropicProvider:
                 )
 
             synthesised: dict[str, Any] = {
+                **call.transcript.serving.wire_fields(),
                 "type": "message",
                 "role": "assistant",
                 "content": content_blocks,
@@ -990,6 +993,7 @@ class AnthropicProvider:
             except provider_types.ProviderError as exc:
                 exc.usage = _record_billed()
                 raise
+            parsed = dataclasses.replace(parsed, serving=call.transcript.serving)
             transport.meter_completion(
                 self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, "Anthropic"
             )

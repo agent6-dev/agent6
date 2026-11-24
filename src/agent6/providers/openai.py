@@ -490,6 +490,7 @@ class OpenAIProvider:
                     evt: dict[str, Any] = json.loads(data_str)
                 except json.JSONDecodeError:
                     continue
+                call.transcript.serving = call.transcript.serving.observe(evt)
                 # A gateway delivers an upstream error as a frame; its status keeps the retry class.
                 err = evt.get("error")
                 if isinstance(err, dict):
@@ -609,6 +610,7 @@ class OpenAIProvider:
             stream_lifecycle.record_billed_usage(
                 self.budget,
                 kinds.ModelRoute(self.provider_name, self.model),
+                serving=call.transcript.serving,
                 input_tokens=billed.input_tokens,
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
@@ -657,6 +659,7 @@ class OpenAIProvider:
                 message["tool_calls"] = final_tool_calls
 
             synthesised: dict[str, Any] = {
+                **call.transcript.serving.wire_fields(),
                 "choices": [
                     {
                         "index": 0,
@@ -687,6 +690,7 @@ class OpenAIProvider:
                 with contextlib.suppress(provider_types.ProviderError):
                     exc.usage = _record_billed()
                 raise
+            parsed = dataclasses.replace(parsed, serving=call.transcript.serving)
             transport.meter_completion(
                 self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, "OpenAI"
             )

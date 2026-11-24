@@ -699,6 +699,9 @@ class ModelAttempt(Event):
         description="The calling role, optionally followed by a colon and detail."
     )
     model: str = pydantic.Field(description="Model identifier.")
+    served_model: str | None = pydantic.Field(
+        default=None, description="Model that served this attempt, when reported."
+    )
     provider: str = pydantic.Field(description="Configured provider name.")
     model_call_id: str = pydantic.Field(
         description="Identifier pairing the attempt with its model call.",
@@ -795,6 +798,9 @@ class ModelResult(Event):
         description="The calling role, optionally followed by a colon and detail."
     )
     model: str = pydantic.Field(description="Model identifier.")
+    served_model: str | None = pydantic.Field(
+        default=None, description="Model that served this attempt, when reported."
+    )
     provider: str = pydantic.Field(description="Configured provider name.")
     model_call_id: str = pydantic.Field(
         description="Identifier pairing the model call with its result.",

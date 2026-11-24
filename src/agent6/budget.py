@@ -182,6 +182,7 @@ class ModelUsage:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    served_models: frozenset[str] = frozenset()
     calls: int = 0
     reported_cost_usd: float = 0.0
     reported_calls: int = 0
@@ -507,12 +508,14 @@ class BudgetTracker:
         cache_read_tokens: int,
         cache_write_tokens: int,
         cost_usd: float | None = None,
+        serving: kinds.Serving = kinds.UNREPORTED,
         plan_usage: PlanUsage | None = None,
     ) -> None:
         """Add one provider response's usage to the running totals.
 
         Args:
-            route: The provider and model billed.
+            route: The requested provider and model.
+            serving: The serving facts the backend reported.
             input_tokens: The call's input tokens.
             output_tokens: The call's output tokens.
             cache_read_tokens: The call's cache-read tokens.
@@ -541,6 +544,8 @@ class BudgetTracker:
             totals.cache_read_tokens += cache_read_tokens
             totals.cache_write_tokens += cache_write_tokens
             totals.calls += 1
+            if serving.model and serving.model != route.model:
+                totals.served_models |= {serving.model}
             if plan_usage is not None:
                 totals.reported_calls += 1
                 totals.percent_metered = True
@@ -1046,8 +1051,12 @@ class BudgetTracker:
                 if cost.cache_assumed:
                     note += " (cache rates assumed: 0.1x read, 1.25x write)"
                 cost_str = f"{format_usd(cost.usd, partial=cost.partial)}{note}"
+            name = route.spec
+            if totals.served_models:
+                served = ", ".join(terminal.printable_name(m) for m in sorted(totals.served_models))
+                name = f"{route.provider}: asked {route.model}, served {served}"
             lines.append(
-                f"  {route.spec}: "
+                f"  {name}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
                 f"cache_r={totals.cache_read_tokens} "
                 f"cache_w={totals.cache_write_tokens} "
