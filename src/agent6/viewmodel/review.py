@@ -158,7 +158,7 @@ class MergeReviewGuard:
     """Report open grounded blocks and unreadable evidence without enforcing a merge.
 
     Attributes:
-        open_block_ids: The open grounded findings that block a merge.
+        open_block_ids: The IDs of open grounded block findings.
         read_failure: The evidence-read diagnostic that blocks a merge, or null.
     """
 
@@ -573,8 +573,10 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
             panel = review_records.ReviewPanel.model_validate(event_log.payload(event))
             lines = [panel_text(panel)]
             lines.extend(
-                f"Finding {o.finding_id} · {o.finding.severity} · {o.finding.location}\n"
+                f"Finding {o.finding_id} · {o.finding.severity} · {o.finding.category} · "
+                f"{o.finding.location}\n"
                 f"{o.finding.title}\n{o.finding.detail}"
+                + (f"\nSuggestion: {o.finding.suggestion}" if o.finding.suggestion else "")
                 for o in panel.findings
             )
             return tuple(lines)

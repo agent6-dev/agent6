@@ -247,11 +247,14 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             finding_id=finding.finding_id,
             status=finding.status,
             severity=report.severity,
+            category=report.category,
             location=report.location,
             title=report.title,
             detail=report.detail,
             fix_state=finding.fix_state,
         )
+        if report.suggestion:
+            body += f"\nSuggestion: {report.suggestion}"
         origin = finding.line_origin
         if origin.kind == "pre_existing":
             body += "\n" + keymap.REVIEW_TEXT["pre_existing"].format(

@@ -106,8 +106,12 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
     for finding in view.findings:
         if all_findings or finding.status == "open":
             brief = review_actions.finding_brief(finding)
-            print(f"{brief.id}  {brief.status}  {brief.severity}  {brief.location}: {brief.title}")
-            print(f"  {brief.detail}")
+            print(
+                f"{brief.id}  {brief.status}  {brief.severity}  {brief.category}  "
+                f"{brief.location}: {brief.title}"
+            )
+            suggestion = f"\n  Suggestion: {brief.suggestion}" if brief.suggestion else ""
+            print(f"  {brief.detail}{suggestion}")
             if brief.pre_existing:
                 print(f"  Pre-existing line: {brief.pre_existing}")
                 print(f"  Blame: {', '.join(finding.line_origin.commits)}")

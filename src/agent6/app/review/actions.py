@@ -150,6 +150,7 @@ def finding_brief(finding: review.FindingView) -> results.FindingBrief:
         location=str(report.location),
         title=report.title,
         detail=report.detail,
+        suggestion=report.suggestion or "",
         pre_existing=(
             f"{origin.base_location}. {origin.reason}" if origin.kind == "pre_existing" else ""
         ),
@@ -248,7 +249,9 @@ def _finding_text(view: review.ReviewView, finding: review.FindingView) -> str:
         f"head {target.head_commit or '(worktree)'} ({target.head_tree}); "
         f"snapshot {target.snapshot_commit}; paths {target.paths or ('all',)}\n"
         f"Location: {report.location} ({report.location.side})\n"
-        f"Severity: {report.severity}\nTitle: {report.title}\nDetail: {report.detail}"
+        f"Severity: {report.severity}\nCategory: {report.category}\n"
+        f"Title: {report.title}\nDetail: {report.detail}"
+        + (f"\nSuggestion: {report.suggestion}" if report.suggestion else "")
     )
 
 

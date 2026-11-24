@@ -44,8 +44,9 @@ function findingCard(entry, card = el('span', 'finding')) {
   if (titleId) title.id = titleId;
   const range = loc.start_line == null ? ' (file)' : ':' + loc.start_line
     + (loc.end_line !== loc.start_line ? '-' + loc.end_line : '');
-  record.appendChild(el('span', 'muted', entry.finding.finding_id + ' · ' + loc.side + ' · ' + loc.path + range));
+  record.appendChild(el('span', 'muted', entry.finding.finding_id + ' · ' + f.category + ' · ' + loc.side + ' · ' + loc.path + range));
   record.appendChild(el('span', 'finding-detail', f.detail));
+  if (f.suggestion) record.appendChild(el('span', 'finding-detail', 'Suggestion: ' + f.suggestion));
   const links = el('span', 'row wrap'); record.appendChild(links);
   const origin = entry.observation.line_origin;
   if (origin?.kind === 'pre_existing') {

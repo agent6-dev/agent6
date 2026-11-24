@@ -382,7 +382,7 @@ class ListFindingsInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "list_findings"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "List this session's review findings: id, status, severity, category,"
-        " location, title, detail, and a pre-existing tag when the cited lines"
+        " location, title, detail, optional suggestion, and a pre-existing tag when the cited lines"
         " exist at the reviewed base; `all` adds resolved findings with their"
         " disposition, and `session_id` names this session. Read-only: the operator"
         " resolves, reopens or fixes a finding with `agent6 sessions resolve <session_id>"

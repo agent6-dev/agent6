@@ -103,7 +103,8 @@ REVIEW_TEXT = {
     "empty": "No recorded findings.",
     "summary": "Open: {block} block, {warn} warn, {nit} nit. Review: {completion}.",
     "detail": (
-        "{finding_id} · {status} · {severity}\n{location}\n{title}\n{detail}\nFix: {fix_state}"
+        "{finding_id} · {status} · {severity} · {category}\n"
+        "{location}\n{title}\n{detail}\nFix: {fix_state}"
     ),
     "pre_existing": "  Pre-existing line: {base_location}. {reason}\n  Blame: {commits}",
     "history": "{action}: {reason}",

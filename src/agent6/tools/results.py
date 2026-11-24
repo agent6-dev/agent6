@@ -879,6 +879,7 @@ class FindingBrief:
         location: The cited path and lines, with the side when it is the base.
         title: The finding's title.
         detail: The finding's detail.
+        suggestion: The reviewer's proposed fix, when supplied.
         pre_existing: The base location and reason when the cited line bytes predate the run.
         resolution: A resolved finding's disposition and reason.
         fix_state: A requested fix's delivery state; "" when none was requested.
@@ -891,6 +892,7 @@ class FindingBrief:
     location: str
     title: str
     detail: str
+    suggestion: str = ""
     pre_existing: str = ""
     resolution: str = ""
     fix_state: str = ""

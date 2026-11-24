@@ -124,6 +124,20 @@ assert.ok(view.querySelector('dialog').textContent.includes('Receipt run'));
 """)
 
 
+def test_card_shows_the_reviewers_label_and_optional_patch_as_text() -> None:
+    _run(r"""
+const e = entry(), f = e.observation.finding;
+f.category = 'Bounds';
+f.suggestion = '- upper\n+ upper + 1 <limit>';
+const card = findingCard(e);
+assert.ok(card.textContent.includes('Bounds'));
+assert.ok(card.textContent.includes(f.suggestion));
+assert.equal(card.querySelector('limit'), null);
+delete f.suggestion;
+assert.ok(!findingCard(e).textContent.includes('Suggestion:'));
+""")
+
+
 def test_line_origin_badge_uses_the_observation_and_links_immutable_base_evidence() -> None:
     _run("""
 const e = entry('head', 8, 'new.txt');

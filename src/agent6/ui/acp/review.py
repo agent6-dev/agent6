@@ -54,9 +54,12 @@ def _findings_text(view: review.ReviewView, *, include_resolved: bool) -> str:
             continue
         brief = review_actions.finding_brief(finding)
         body = (
-            f"{brief.id} · {brief.status} · {brief.severity} · {brief.location}\n"
+            f"{brief.id} · {brief.status} · {brief.severity} · {brief.category} · "
+            f"{brief.location}\n"
             f"{brief.title}\n{brief.detail}\nFix: {finding.fix_state}"
         )
+        if brief.suggestion:
+            body += f"\nSuggestion: {brief.suggestion}"
         if brief.pre_existing:
             body += (
                 f"\n  Pre-existing line: {brief.pre_existing}"
