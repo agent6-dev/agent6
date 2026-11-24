@@ -35,7 +35,6 @@ from agent6.ui.cli import (
     task_refs,
 )
 from agent6.ui.cli import parallel as cli_parallel
-from agent6.viewmodel import session_policy
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
@@ -111,7 +110,6 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         # The sink's path names the session dir, so the layout need not cross the protocol.
         view = console_render.ConsoleView(
             sys.stderr,
-            policy=lambda: session_policy(events.path.parent).line(),
             session_id=events.path.parent.name,
         )
         console_cell[0] = view

@@ -11,12 +11,49 @@ from typing import Any, get_args
 import pydantic
 import pydantic_core
 
+from agent6 import terminal
 from agent6.config import Config, io, layer_data
 from agent6.sessions import journal
 from agent6.viewmodel import config_view
 
 _Value = str | float | int | bool | None
 _SOURCES = frozenset((*get_args(layer_data.LayerName), "execution", "mode"))
+
+
+def summary(rows: tuple[journal.SettingObservation, ...]) -> str:
+    """Summarize non-default settings for the CLI.
+
+    Args:
+        rows: The settings observed at one start.
+
+    Returns:
+        One line, with the full values and sources available in JSON.
+    """
+    defaults = {
+        r.key.removeprefix("models.default."): r.value
+        for r in rows
+        if r.key.startswith("models.default.")
+    }
+    distinct = [
+        r
+        for r in rows
+        if not (
+            r.key.startswith("models.")
+            and not r.key.startswith("models.default.")
+            and defaults.get(r.key.rpartition(".")[2]) == r.value
+        )
+    ]
+    parts: list[str] = []
+    for row in sorted(distinct, key=lambda row: (not row.key.startswith("models."), row.key)):
+        # Provider setup can include token commands. It belongs in the requested detail.
+        if row.key.startswith("providers."):
+            continue
+        part = " ".join(terminal.scrub_terminal_controls(f"{row.key}={row.value}").split())
+        if len(", ".join([*parts, part])) <= 96:
+            parts.append(part)
+    if omitted := len(distinct) - len(parts):
+        parts.append(f"{omitted} more in sessions show --json")
+    return ", ".join(parts)
 
 
 def _recorded_value(schema: config_view.FieldSchema, value: object) -> _Value:

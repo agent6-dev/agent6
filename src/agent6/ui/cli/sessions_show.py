@@ -25,11 +25,11 @@ from agent6.viewmodel import (
     LogScan,
     SessionSummary,
     comparison,
+    execution_settings,
     existing_run_branch,
     format,
     listing,
     merges,
-    policy,
     receipt,
     scan_session_log,
     summarize_session_dir,
@@ -510,19 +510,14 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     _print_lineage(manifest)
     _print_parallel_compare(manifest, target)
     sessions_children.print_children(children)
-    print(
-        f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
-        f"preset:     {manifest.harness.preset or '-'}"
-        + "".join(f"\nmodels:     {line}" for line in policy.model_lines(manifest))
-    )
+    settings = execution_settings.summary(scan.settings[-1].settings) if scan.settings else ""
     print(
         terminal.scrub_terminal_controls(
-            "\n".join(
-                [
-                    receipt.environment_summary(scan, live=alive and not scan.finished),
-                    *receipt.settings_lines(scan.settings),
-                ]
-            )
+            f"model:      {model}{' (from --model)' if model_from_flag else ''}"
+            + (f"\npreset:     {manifest.harness.preset}" if manifest.harness.preset else "")
+            + "\n"
+            + receipt.environment_summary(scan, live=alive and not scan.finished)
+            + (f"\nsettings:   {settings}" if settings else "")
         )
     )
     if mode_display == "plan" and (target / "plan.md").is_file():

@@ -93,11 +93,12 @@ def test_sessions_show_json_exposes_recorded_effort(
     assert payload["models"]["reviewer"]["effort"] == "xhigh"
 
 
-def test_sessions_show_prints_recorded_effort(
+def test_sessions_show_names_the_driver_without_repeating_the_roles(
     recorded_run: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert sessions_show._cmd_status(recorded_run.name) == 0
-    _assert_efforts(capsys.readouterr().out)
+    text = capsys.readouterr().out
+    assert "model:      chatgpt/gpt-6-astra" in text and "helper chatgpt/" not in text
 
 
 def test_web_start_policy_reads_recorded_effort(recorded_run: pathlib.Path) -> None:
@@ -155,9 +156,11 @@ def test_headless_launch_prints_effort_without_a_console_view(
     assert run._cmd_run((), "Check effort", mode="ask") == 0
     assert requests and "reasoning" not in requests[-1]
     output = capsys.readouterr().err
-    assert "worker local/gpt-6-astra effort provider default" in output
-    assert "reviewer local/gpt-6-astra effort xhigh (repo)" in output
-    assert "helper local/gpt-6-astra effort provider default" in output
+    (line,) = [
+        row for row in output.splitlines() if "models.default.model=local/gpt-6-astra" in row
+    ]
+    assert "models.reviewer.effort=xhigh" in line
+    assert "helper local/" not in output and "Launcher:" not in output
 
 
 @pytest.mark.parametrize("mode, role", [("run", "worker"), ("plan", "planner")])
@@ -253,3 +256,28 @@ def test_old_model_facts_do_not_claim_provider_default(recorded_run: pathlib.Pat
     assert policy.model_lines(manifest.read_manifest(recorded_run)) == (
         "worker p/m effort not recorded",
     )
+
+
+def test_show_prints_one_settings_summary_from_the_latest_execution(
+    recorded_run: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The text summary names deviations; JSON keeps every execution and source."""
+    with (recorded_run / "logs.jsonl").open("a") as log:
+        for eid, cap in (("one", 2), ("two", 3)):
+            log.write(
+                json.dumps(
+                    {
+                        "type": "execution.settings",
+                        "execution_id": eid,
+                        "settings": [{"key": "budget.max_usd", "value": cap, "source": "repo"}],
+                    }
+                )
+                + "\n"
+            )
+    assert sessions_show._cmd_status(recorded_run.name) == 0
+    text = capsys.readouterr().out
+    assert "settings:   budget.max_usd=3" in text
+    assert "Settings for one:" not in text and "helper chatgpt/" not in text
+    assert sessions_show._cmd_status(recorded_run.name, as_json=True) == 0
+    settings = json.loads(capsys.readouterr().out)["settings"]
+    assert [record["settings"][0]["value"] for record in settings] == [2, 3]

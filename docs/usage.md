@@ -84,11 +84,11 @@ Your branch, HEAD and index stay untouched until you merge the work with `sessio
 - `agent6 resume <id> --steer "<what to do next>"` continues a run that ended by `finish_session`
     - an answer saved for one of its questions (`agent6 answer`) is new work, so a bare resume delivers it
 
-The start block names each role's provider/model route and effective effort, including the helper and each reviewer.
-It names the effort's config layer and any inheritance; `effort provider default` means no effort value is sent.
-For example: `worker chatgpt/gpt-6-astra effort provider default · reviewer chatgpt/gpt-6-astra effort xhigh (repo)`.
-`sessions show` and the web run page read these recorded model facts, not the live config; a resume records its execution's values.
-`sessions show --json` exposes them under `models`; an empty `effort_source` means an older record did not capture effort.
+The CLI start line summarizes non-default settings, the execution target and the verify gate.
+`sessions show` summarizes the latest execution's non-default settings.
+`sessions show <id> --json` lists every execution's settings and their sources under `settings`.
+It gives each role's recorded route and effort under `models`; an empty `effort_source` means the record did not capture effort.
+The web run page also reads the recorded roles, not the live config.
 
 ## Follow and steer a run
 

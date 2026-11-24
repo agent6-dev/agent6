@@ -439,9 +439,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     mcp_manager = None
     try:
         reporter.note(f"{'resume ' if inputs.resuming else ''}session id: {inputs.session_id}")
-        if not console_stream and not inputs.tui_enabled:
-            for line in policy.session_policy(layout.session_dir).models:
-                reporter.note(line)
 
         # A bounded conversation starts no server: its tool surface is the contract's.
         if inputs.contract is None:
@@ -488,9 +485,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         curator = tools.curator
         dispatcher = tools.dispatcher
         cfg = tools.cfg
-        if not console_stream and not inputs.tui_enabled:
-            for line in policy.session_policy(layout.session_dir).environment:
-                reporter.note(line)
 
         # Before the chain exists: what the setup command leaves untracked is the workspace's
         # environment, so every commit leaves it out as it does the operator's files.
@@ -559,9 +553,22 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
         )
         launch = child_launch.read()
+        settings = execution_settings.observations(cfg, inputs.effective)
+        if not inputs.tui_enabled:
+
+            def start_header(event: dict[str, Any]) -> None:
+                if event.get("type") in journal.SESSION_START_EVENTS:
+                    facts = policy.session_policy(layout.session_dir)
+                    parts = [execution_settings.summary(settings), *facts.environment[:1]]
+                    if mode != "ask":
+                        parts.append(facts.gate())
+                    if line := " · ".join(p for p in parts if p):
+                        (loop_log if console_stream else reporter.note)(line)
+
+            events.subscribe(start_header)
         wf = loop.Harness(
             task_source=launch.task_source if launch is not None else "operator",
-            settings=execution_settings.observations(cfg, inputs.effective),
+            settings=settings,
             media_input=role_providers.input_capabilities(cfg, session.rm_role),
             chain=run_chain.RunChain(
                 cwd,
