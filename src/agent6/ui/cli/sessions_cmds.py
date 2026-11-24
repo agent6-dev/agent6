@@ -233,7 +233,7 @@ def _pruned_branch_note(
     Returns:
         The note, separating the ways to get here: a merged-then-pruned branch (the stamp
         covering every commit), a branch deleted past its stamp or with no merge recorded
-        (the chain ref keeps the commits), a child's commits its parent has not imported,
+        (the chain ref keeps the commits), a child with no local refs,
         and a run that committed nothing.
     """
     if git_read.branch_exists(cwd, run_branch):
@@ -244,8 +244,8 @@ def _pruned_branch_note(
         if stamp.commit:
             note += f"\n  see: git show {stamp.commit}"
         return note
-    if held := patches.clone_held(cwd, session_dir, manifest):
-        return f"[agent6] {run_branch} is not in this repository: {held}."
+    if note := patches.child_commit_note(cwd, session_dir, manifest):
+        return f"[agent6] {note}."
     if _committed_nothing(cwd, manifest.session_id):
         return f"[agent6] this run committed nothing, so {run_branch} was never cut."
     chain = git_read.chain_ref_for(manifest.session_id)

@@ -1211,14 +1211,22 @@ def test_status_says_where_the_changes_are(
     assert "is gone; the commits are kept); merge with: agent6 sessions merge" in out
 
 
-def test_a_childs_commits_in_its_clone_are_not_read_as_no_commit(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("count", "measure"),
+    [
+        (None, "commit count unknown"),
+        (0, "last measured: 0 commits"),
+        (2, "last measured: 2 commits"),
+    ],
+)
+def test_a_missing_child_ref_reports_only_the_measured_count(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    count: int | None,
+    measure: str,
 ) -> None:
-    """A child that committed read `the run made no commit` until its parent imported it.
-
-    Its commits are in its clone, so the repository holds neither its branch nor its chain;
-    `show`, `diff` and `commits` took that absence for a run that committed nothing.
-    """
+    """The clone can be gone even when the last measurement counted two commits."""
     sid = "winsome-dawn-YWH5ZS"
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=pathlib.Path.cwd(), check=True)
@@ -1226,21 +1234,15 @@ def test_a_childs_commits_in_its_clone_are_not_read_as_no_commit(
     _stamp_manifest(
         d, session_id=sid, run_branch=f"agent6/{sid}", base_sha="1" * 40, parallel=lineage
     )
-    held = "2 commits in this child's clone, not yet imported by bold-reef-AAA111"
-
-    def said() -> list[str]:
-        assert sessions_show._cmd_status(sid) == 0
-        assert sessions_cmds._cmd_diff(session_id=sid, stat=False, paths=()) == 0
-        assert sessions_cmds._cmd_commits(session_id=sid) == 0
-        return capsys.readouterr().out.splitlines()
-
-    # No measurement yet: the absence still reads as no commit.
-    assert "changes:    none (the run made no commit)" in said()
-    (d / "commits_beyond_start").write_text("2\n")
-    lines = said()
-    assert f"changes:    {held}" in lines
-    assert lines.count(f"[agent6] agent6/{sid} is not in this repository: {held}.") == 2
-    assert not [line for line in lines if "no commit" in line or "committed nothing" in line]
+    if count is not None:
+        (d / "commits_beyond_start").write_text(f"{count}\n")
+    note = f"no child branch or chain in this repository; {measure}"
+    assert sessions_show._cmd_status(sid) == 0
+    assert f"changes:    {note}" in capsys.readouterr().out.splitlines()
+    assert sessions_cmds._cmd_diff(session_id=sid, stat=False, paths=()) == 0
+    assert note in capsys.readouterr().out
+    assert sessions_cmds._cmd_commits(session_id=sid) == 0
+    assert note in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("advance", [False, True], ids=["covered", "advanced"])

@@ -21,8 +21,10 @@ class RecordedPatch:
     note: str
 
 
-def clone_held(repo: pathlib.Path, session_dir: pathlib.Path, run: manifest.SessionManifest) -> str:
-    """Say where a child's commits are while its parent has not imported them.
+def child_commit_note(
+    repo: pathlib.Path, session_dir: pathlib.Path, run: manifest.SessionManifest
+) -> str:
+    """Return the last measurement for a child with no refs in this repository.
 
     Args:
         repo: The parent's repository.
@@ -30,9 +32,7 @@ def clone_held(repo: pathlib.Path, session_dir: pathlib.Path, run: manifest.Sess
         run: The session's manifest.
 
     Returns:
-        The count its parent last measured and where those commits are, or "" for a session
-        that is no child, one whose branch or chain the repository holds, and one with no
-        commit measured.
+        The measured count or an explicit unknown, or "" for a non-child or an existing ref.
     """
     if run.parallel is None or not run.parallel.parent:
         return ""
@@ -41,10 +41,10 @@ def clone_held(repo: pathlib.Path, session_dir: pathlib.Path, run: manifest.Sess
     if git_read.chain_tip(repo, git_read.chain_ref_for(run.session_id)) is not None:
         return ""
     count = child_dispatch.read_commit_count(session_dir)
-    if not count:
-        return ""
-    commits = "1 commit" if count == 1 else f"{count} commits"
-    return f"{commits} in this child's clone, not yet imported by {run.parallel.parent}"
+    measure = "commit count unknown"
+    if count is not None:
+        measure = f"last measured: {count} {'commit' if count == 1 else 'commits'}"
+    return f"no child branch or chain in this repository; {measure}"
 
 
 def child_patch(
