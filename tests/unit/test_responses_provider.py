@@ -309,6 +309,40 @@ def test_a_cut_stream_is_truncated_and_books_what_it_cost() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("code", "message", "refused"),
+    [
+        ("invalid_request_error", "The flex service tier is not enabled for this project", True),
+        ("rate_limit_exceeded", "Rate limit exceeded for the flex service tier", False),
+    ],
+)
+def test_a_failed_stream_distinguishes_tier_refusal_from_rate_limit(
+    code: str, message: str, refused: bool
+) -> None:
+    """The request error names the setting even without a param; the rate limit retries."""
+    lines = _evt(
+        {
+            "type": "response.failed",
+            "response": {"status": "failed", "error": {"code": code, "message": message}},
+        }
+    )
+    with (
+        mock.patch(
+            "agent6.providers.stream_lifecycle.http_stream",
+            return_value=_FakeStreamResponse(lines=lines),
+        ),
+        pytest.raises(ProviderError, match=message) as exc,
+    ):
+        _provider(provider_name="work", service_tier="flex").call(
+            system="s", messages=[], text_delta_callback=print
+        )
+    assert (exc.value.fatal, "providers.work.service_tier" in str(exc.value)) == (refused, refused)
+    if refused:
+        assert exc.value.status_code == 400
+    else:
+        assert exc.value.status_code in (None, 429)
+
+
 def test_a_failed_stream_books_the_usage_it_reports() -> None:
     lines: list[str] = []
     lines += _evt({"type": "response.output_text.delta", "delta": "hel"})

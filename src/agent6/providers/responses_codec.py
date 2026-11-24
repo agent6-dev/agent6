@@ -381,8 +381,12 @@ def stream_error(
     code = str(err.get("code") or "")
     status = 429 if code in usage_limit_codes else None
     detail = str(err.get("message") or code or "unknown error")
-    if err.get("param") == "service_tier":
+    tier_refused = provider_types.refuses_service_tier(
+        err, 400 if code == "invalid_request_error" else status
+    )
+    if tier_refused:
         status = 400
+    if err.get("param") == "service_tier":
         detail += ' (param: "service_tier")'
     if code == "unsupported_value" and err.get("param") == "reasoning.effort":
         status = 400
@@ -393,7 +397,7 @@ def stream_error(
     return provider_types.ProviderError(
         f"{label} stream error: {code or 'error'}: {detail}",
         status_code=status,
-        tier_refused=provider_types.refuses_service_tier(err, status),
+        tier_refused=tier_refused,
     )
 
 
