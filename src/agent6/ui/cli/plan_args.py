@@ -128,10 +128,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="append",
         default=[],
         metavar="PATH",
-        help=(
-            "Include PATH's contents in the question. Repeat for more files; this is the same"
-            " as putting @PATH in the question."
-        ),
+        help="Include PATH's contents in the question. Repeat for more files.",
     )
     ask_profile = ask_query.add_argument(
         "--preset",

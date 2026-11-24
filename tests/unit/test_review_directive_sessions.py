@@ -289,7 +289,7 @@ def test_live_review_prepares_its_own_tree_or_refuses_with_a_fresh_ask_command(
     text = f"/review {target}".strip()
 
     def steer() -> None:
-        ok, _ = directive_actions.submit_composer_line(session(repo, "ask"), text, repo=repo)
+        ok, _ = directive_actions.submit_composer_line(session(repo, "ask"), text)
         assert ok
 
     provider = ScriptedReview(steer)

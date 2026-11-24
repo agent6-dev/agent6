@@ -25,7 +25,7 @@ from textual import app, containers, geometry, screen, timer, widgets
 from textual.css import query
 
 from agent6.sessions import journal
-from agent6.ui import parallel_preview, task_refs
+from agent6.ui import parallel_preview, path_completion
 from agent6.ui.tui import clipboard, composer, logview, menubar, screen_chrome, settings
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import (
@@ -313,7 +313,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         )  # while resuming
         yield composer.SteerInput(
             id="conv-input",
-            workspace=lambda: task_refs.session_workspace(
+            workspace=lambda: path_completion.session_workspace(
                 pathlib.Path.cwd(), self._host.config_paths, self._logs_path.parent
             ),
         )

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Web completion offers the registered commands and only the files a composer can read."""
+"""Web completion offers the registered commands and matching workspace paths."""
 
 from __future__ import annotations
 
@@ -78,6 +78,6 @@ def test_the_refs_route_lists_the_files_of_the_workspace_a_composer_writes_to(
         srv.server_close()
 
 
-def test_the_client_reads_a_reference_as_the_expander_does() -> None:
+def test_the_client_matches_the_shared_fragment_syntax() -> None:
     """The client's fragment and the Python one accept the same characters before and after `@`."""
     assert "/(?<![\\p{L}\\p{N}_@/])@([A-Za-z0-9_./-]*)$/u" in page.CLIENT_JS

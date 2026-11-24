@@ -149,10 +149,11 @@ def test_agent6_steer_acts_on_the_directive_instead_of_sending_it(
     assert not ipc.steer_request_pending(d)
 
 
-def test_agent6_steer_takes_now_as_the_composers_spell_it(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("prefix", ["", "/now "])
+def test_agent6_steer_sends_the_typed_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, prefix: str
 ) -> None:
-    """`/now <text>` is what `--now` spells, so both reach the same marker."""
+    """An ordinary or urgent steer carries the filename without the file contents."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "tiny-run-BBBB22"
@@ -160,10 +161,11 @@ def test_agent6_steer_takes_now_as_the_composers_spell_it(
     (d / "logs.jsonl").write_text("", encoding="utf-8")
     process.write_worker_pid(d, os.getpid())
 
-    assert main(["steer", "tiny-run", "/now wrap up"]) == 0
+    (tmp_path / "notes.md").write_text("from disk", encoding="utf-8")
+    assert main(["steer", "tiny-run", prefix + "read @notes.md"]) == 0
 
-    assert ipc.steer_interrupt_pending(d)
-    assert ipc.take_steer_answer(d) == "wrap up"
+    assert ipc.steer_interrupt_pending(d) == bool(prefix)
+    assert ipc.take_steer_answer(d) == "read @notes.md"
 
 
 def test_now_acts_the_same_wherever_it_is_typed(
@@ -176,7 +178,7 @@ def test_now_acts_the_same_wherever_it_is_typed(
     for text, flag in (("/now wrap up", False), ("wrap up", True)):
         d = _live_run(tmp_path / text.replace("/", "").replace(" ", "-"))
 
-        did, said = directive_actions.submit_composer_line(d, text, repo=tmp_path, now=flag)
+        did, said = directive_actions.submit_composer_line(d, text, now=flag)
 
         assert did and "interrupting the call in flight" in said
         assert ipc.steer_interrupt_pending(d)
@@ -186,7 +188,7 @@ def test_now_acts_the_same_wherever_it_is_typed(
 def test_a_bare_now_refuses_everywhere(tmp_path: pathlib.Path) -> None:
     from agent6.ui import directive_actions
 
-    did, said = directive_actions.submit_composer_line(tmp_path, "/now", repo=tmp_path)
+    did, said = directive_actions.submit_composer_line(tmp_path, "/now")
 
     assert not did and "/now needs the instruction" in said
 
@@ -197,9 +199,7 @@ def test_a_directive_typed_mid_line_is_named_in_the_reply(tmp_path: pathlib.Path
 
     d = _live_run(tmp_path)
 
-    did, said = directive_actions.submit_composer_line(
-        d, "carry on, then /task add a --json flag", repo=tmp_path
-    )
+    did, said = directive_actions.submit_composer_line(d, "carry on, then /task add a --json flag")
 
     assert did and "`/task` mid-line is text" in said
     assert ipc.take_steer_answer(d) == "carry on, then /task add a --json flag"
@@ -211,7 +211,7 @@ def test_a_directive_behind_leading_space_is_not_called_text(tmp_path: pathlib.P
 
     d = _live_run(tmp_path)
 
-    did, said = directive_actions.submit_composer_line(d, "  /now hurry", repo=tmp_path)
+    did, said = directive_actions.submit_composer_line(d, "  /now hurry")
 
     assert did and "mid-line" not in said
     assert ipc.steer_interrupt_pending(d)
@@ -222,13 +222,13 @@ def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: pathl
     from agent6.ui import directive_actions
 
     d = _live_run(tmp_path / "plain")
-    assert directive_actions.submit_composer_line(d, "focus on the parser", repo=tmp_path) == (
+    assert directive_actions.submit_composer_line(d, "focus on the parser") == (
         True,
         "steer queued, not yet delivered",
     )
     # `/parallel` separates tasks by design, so a later one is meant; it waits in the inbox.
     assert (
-        directive_actions.submit_composer_line(d, "/parallel a /parallel b", repo=tmp_path)[1]
+        directive_actions.submit_composer_line(d, "/parallel a /parallel b")[1]
         == "steer queued behind 1 other; not yet delivered"
     )
 

@@ -22,7 +22,7 @@ from textual.css import query
 
 from agent6 import config, directive
 from agent6.sessions import ipc
-from agent6.ui import keymap, parallel_preview, task_refs
+from agent6.ui import keymap, parallel_preview, path_completion
 from agent6.ui.tui import forms, menubar, modals
 from agent6.viewmodel import ApprovalPrompt, SessionState, approval_parts, tail, transcript
 from agent6.viewmodel.session import state as viewmodel_state
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from agent6.ui.tui import prompts as tui_prompts
 
 ComposerMode = Literal["steer", "resume", "start", "plan/ask", "draft"]
-# Resolves the root and hidden paths an `@path` completes against, as `task_refs.session_workspace`.
+# The workspace root and the hidden paths for completion.
 WorkspaceSource = Callable[[], tuple[pathlib.Path, tuple[str, ...]]]
 
 
@@ -101,11 +101,11 @@ def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
         return None
     if len(rows) == 1:
         return rows[0][0] + " "
-    lcp = task_refs.common_prefix([c for c, _h in rows])
+    lcp = path_completion.common_prefix([c for c, _h in rows])
     return lcp if len(lcp) > len(text) else text
 
 
-def ref_suggestion_line(found: task_refs.RefSuggestions) -> rich_text.Text:
+def ref_suggestion_line(found: path_completion.RefSuggestions) -> rich_text.Text:
     """Return the hint line for the files an `@path` under the caret completes to.
 
     Args:
@@ -135,7 +135,7 @@ class SteerSuggest(widgets.Static):
         *,
         mode: ComposerMode,
         preview: parallel_preview.ParallelPreview | None = None,
-        refs: task_refs.RefSuggestions | None = None,
+        refs: path_completion.RefSuggestions | None = None,
     ) -> None:
         """Show the rows matching the composer's text, or hide the line."""
         if preview is not None:
@@ -440,23 +440,23 @@ class SteerInput(widgets.TextArea):
         super().__init__(**kwargs)
         self._workspace = workspace
 
-    def ref_suggestions(self) -> task_refs.RefSuggestions | None:
+    def ref_suggestions(self) -> path_completion.RefSuggestions | None:
         """Return the files the `@path` under the caret completes to; None outside one."""
         if self._workspace is None:
             return None
-        fragment = task_refs.ref_fragment(self.get_text_range((0, 0), self.cursor_location))
+        fragment = path_completion.ref_fragment(self.get_text_range((0, 0), self.cursor_location))
         if fragment is None:
             return None
         try:
             root, hide = self._workspace()
         except config.ConfigError:
             return None  # the hidden paths are unknown, so nothing is offered
-        return task_refs.suggest_refs(root, hide, fragment)
+        return path_completion.suggest_refs(root, hide, fragment)
 
-    def _complete_ref(self, found: task_refs.RefSuggestions) -> None:
+    def _complete_ref(self, found: path_completion.RefSuggestions) -> None:
         """Replace the fragment under the caret with the only match, else the shared prefix."""
         row, column = self.cursor_location
-        fragment = task_refs.ref_fragment(self.get_text_range((0, 0), (row, column))) or ""
+        fragment = path_completion.ref_fragment(self.get_text_range((0, 0), (row, column))) or ""
         only = len(found.paths) == 1 and not found.more
         completed = f"{found.paths[0]} " if only else found.common
         if only or len(completed) > len(fragment):

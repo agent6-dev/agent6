@@ -92,16 +92,8 @@ The web run page also reads the recorded roles, not the live config.
 
 ## File references
 
-An `@path` in a task or a steer you type inlines that file after the reference: `agent6 run "fix the parser in @src/parse.py"`.
-
-- the path is relative to the session's workspace: the repository, or the run's own worktree
-- at most 64 KiB of a file is inlined; a longer one ends with the count of bytes left out, which the model reads with `read_file`
-- a path that is missing, a directory, outside the workspace, inside `.git` or under [`sandbox.hide_paths`](config.md#sandbox) stays as typed
-- it works in the task of `agent6 run`, `plan` and `ask`, started from the command line, the TUI or the web
-- it works in a steer sent to a live session with `agent6 steer`, the TUI or the web, and after `/now`
-- the web and TUI composers complete a path after `@`
-- sent as typed: the text of any other directive (`/pin`, `/task`, `/parallel`), an instruction that resumes an ended session (`resume --steer`), and a line typed at a foreground run's pause menu
-- text a model wrote is never searched: a plan run with `--from`, a seeded session, a parent's `steer_child` message
+An `@path` in a message stays as typed.
+The web and TUI composers offer matching workspace paths after `@`.
 
 ## Images with a message
 
@@ -640,7 +632,7 @@ A pinned instruction is stated in the pinned block, so its `/pin` message is nei
 A `/<skill>` message is reserved as the instruction that names the skill and its arguments, without the skill's text; `use_skill` loads the text again.
 Older reserved messages appear in time order before the pins and any summary, including answers without their tool calls.
 The restart notice leaves out a verify fact or metric notice that a kept message already states word for word, as a resume's own notices do.
-The task is the whole task the worker received: the typed words with any inlined file, a plan's body, a parent's task for a child, or a machine state's prompt.
+The task is the whole task the worker received: the typed words, a plan's body, a parent's task for a child, or a machine state's prompt.
 Every restart counts it as the oldest message and charges it to the cap like the others.
 A restart states it once, under `TASK (the goal, verbatim)` when no kept turn holds it.
 The local helper reads operator answers in the replaced history, including full answers to capped `ask_user` calls, but no other tool output.

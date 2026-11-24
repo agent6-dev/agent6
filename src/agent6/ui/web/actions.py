@@ -200,7 +200,7 @@ def steer(
     if isinstance(session_dir, tuple):
         return session_dir
     return directive_actions.submit_composer_line(
-        session_dir, text, repo=cwd, config_paths=config_paths, images=images
+        session_dir, text, config_paths=config_paths, images=images
     )
 
 

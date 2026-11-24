@@ -28,7 +28,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import terminal
 from agent6.graph import order
-from agent6.ui import keymap, task_refs
+from agent6.ui import keymap, path_completion
 from agent6.ui.tui import (
     clipboard,
     composer,
@@ -292,7 +292,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         )  # while resuming
         yield composer.SteerInput(
             id="dash-input",
-            workspace=lambda: task_refs.session_workspace(
+            workspace=lambda: path_completion.session_workspace(
                 pathlib.Path.cwd(), self._tui.config_paths, self._tui.session_dir
             ),
         )

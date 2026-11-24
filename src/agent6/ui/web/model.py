@@ -20,7 +20,7 @@ from agent6.app import confine, merge_plan, worktrees
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
-from agent6.ui import task_refs
+from agent6.ui import path_completion
 from agent6.ui.web import diff_highlight
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import read as git_read
@@ -617,13 +617,13 @@ def ref_suggestions(
         session_dir: The session the composer writes to; None for new work.
 
     Returns:
-        The suggestions, as `task_refs.RefSuggestions`.
+        The suggestions, as `path_completion.RefSuggestions`.
 
     Raises:
         ConfigError: The config does not load, so the hidden paths are unknown.
     """
-    root, hide = task_refs.session_workspace(cwd, config_paths, session_dir)
-    return dataclasses.asdict(task_refs.suggest_refs(root, hide, fragment))
+    root, hide = path_completion.session_workspace(cwd, config_paths, session_dir)
+    return dataclasses.asdict(path_completion.suggest_refs(root, hide, fragment))
 
 
 def config_suggestions(

@@ -190,7 +190,7 @@ function attachImages(ta, root, onChange = () => {}) {
   };
 }
 
-// The fragment mirrors agent6.ui.task_refs; the server lists the files an `@path` can read.
+// The fragment matches agent6.ui.path_completion.ref_fragment.
 function attachRefSuggest(ta, root, session = () => '') {
   let box = null, items = [], more = 0, active = -1, timer, generation = 0;
   ta.setAttribute('aria-autocomplete', 'list');

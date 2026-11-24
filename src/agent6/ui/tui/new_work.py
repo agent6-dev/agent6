@@ -24,7 +24,7 @@ from textual.css import query
 
 from agent6 import directive, kinds
 from agent6.models import choices
-from agent6.ui import parallel_preview, spawn, task_refs
+from agent6.ui import parallel_preview, path_completion, spawn
 from agent6.ui.tui import composer, forms, menubar, screen_chrome
 from agent6.viewmodel import LIVE_STATUS_WORDS, listing
 
@@ -228,7 +228,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             )
         yield composer.SteerInput(
             id="draft-input",
-            workspace=lambda: task_refs.session_workspace(self.repo_cwd, self.config_paths),
+            workspace=lambda: path_completion.session_workspace(self.repo_cwd, self.config_paths),
         )
         yield widgets.Footer()
 

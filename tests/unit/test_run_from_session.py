@@ -202,17 +202,19 @@ def test_journal_keeps_operator_words_before_composition(
     capsys: pytest.CaptureFixture[str],
     continuation: str,
 ) -> None:
-    """File expansion and a literal file example never replace or clip the journal's words."""
+    """The worker gets the seed and literal task. The journal keeps the task alone."""
     repo, _provider = _setup(tmp_path, monkeypatch)
     (repo / "notes.md").write_text("context from disk")
     words = "Read @notes.md and keep this literal <file>example</file>.\n" + "detail " * 800
     session_id = "whole-prompt-AAA111"
-    assert cli_main(["run", "--session-id", session_id, words]) == 0
+    source = "source-plan-AAA111"
+    _seed_source(repo, "plans", source)
+    assert cli_main(["run", "--session-id", session_id, "--from", source, words]) == 0
     session = paths.state_dir(repo) / "sessions" / "runs" / session_id
     rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
     assert next(row for row in rows if row["type"] == "session.start")["user_task"] == words
     snapshot = json.loads((session / "loop_state.json").read_text())
-    assert "context from disk" in snapshot["original_task"]
+    assert snapshot["original_task"].endswith("\n\n" + words)
     assert snapshot["operator_task"] == words
     steer = "Keep <file>this example</file> too.\n" + "follow-up " * 600
     args = [continuation, session_id, "--steer", steer]
@@ -234,7 +236,7 @@ def test_journal_keeps_operator_words_before_composition(
         assert words in shown
 
 
-def test_parked_submission_keeps_words_before_file_expansion(
+def test_parked_submission_keeps_the_typed_task(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A submission parked before its first journal event retains the original prompt."""

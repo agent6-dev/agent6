@@ -22,7 +22,7 @@ from agent6.config import (
 )
 from agent6.sessions import event_log
 from agent6.tools import operator_prompts, skill_tools
-from agent6.ui import btw, spawn, steer, task_refs
+from agent6.ui import btw, spawn, steer
 from agent6.ui.cli import (
     ask,
     common,
@@ -220,9 +220,7 @@ def _compose_task(
     """Assemble the prompt the session starts from.
 
     In order: another session's context when `--from` seeds this one, the skills prefix, the
-    caller's context, then the typed task with its `@path` files inlined. Only the typed task
-    is searched for `@path`: a reference in text the operator did not type would read a file
-    they did not name.
+    caller's context, then the task as typed.
     `--from` starts a new session and leaves the source untouched; `fork` keeps a session's
     mode, while this takes the mode from the command the operator typed.
 
@@ -240,7 +238,6 @@ def _compose_task(
     Raises:
         OperatorError: A skill or the seed cannot be resolved.
     """
-    task = task_refs.expand_task_file_refs(task, pathlib.Path.cwd(), cfg.sandbox.hide_paths)
     task = "\n\n".join(part for part in (context, task) if part)
     if skills:
         prefix, skills_err = _skills_task_prefix(cfg, skills)
@@ -281,9 +278,8 @@ def _cmd_run(
 ) -> int:
     """Adapt `agent6 run`, `plan` and `ask` argv and drive the lifecycle.
 
-    Builds the effective config, applies the flag overrides, resolves skills and `@file`
-    references, routes `--parallel`, then hands off to `app.run.run_task` with the
-    injected seam.
+    Builds the effective config, applies the flag overrides, resolves skills, routes
+    `--parallel`, then hands off to `app.run.run_task` with the injected seam.
 
     Args:
         config_paths: The `--config` files in command-line order, if any.
