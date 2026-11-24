@@ -84,7 +84,10 @@ def test_configured_call_budget_reaches_the_reviewer(
     assert reviewer.calls == 2
     (verdict,) = aggregate.call_args.args[0]
     assert verdict.error == "no verdict within 2 turns"
-    assert "at most 2 replies" in reviewer_call.call_args_list[0].kwargs["system"]
+    assert (
+        "You have 2 replies, tool calls included."
+        in reviewer_call.call_args_list[0].kwargs["system"]
+    )
     assert "x = 2" in json.dumps(reviewer_call.call_args_list[1].kwargs["messages"])
     session = paths.state_dir(repo) / "sessions" / "runs" / "review-TURNS1"
     snapshot = (session / "loop_state.json").read_text(encoding="utf-8")
