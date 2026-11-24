@@ -26,8 +26,8 @@ try:
     import termios
     import tty
 except ImportError:  # pragma: no cover  # Windows callers gate on menu_capable()
-    termios = None  # type: ignore[assignment]
-    tty = None  # type: ignore[assignment]
+    termios = None
+    tty = None
 
 _CSI_FINAL = {
     b"A": "up",

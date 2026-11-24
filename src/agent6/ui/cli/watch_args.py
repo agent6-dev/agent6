@@ -29,7 +29,7 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default="",
         help=f"{common.SESSION_ID} or machine id; omit for the newest.",
     )
-    watch_target.completer = completers._complete_watch_targets  # type: ignore[attr-defined]
+    common.bind_completer(watch_target, completers._complete_watch_targets)
     # One presentation at a time; argparse refuses the combination instead of picking one.
     watch_mode = watch_p.add_mutually_exclusive_group()
     watch_mode.add_argument(
@@ -73,7 +73,7 @@ def _add_tui_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=f"{common.SESSION_ID} or machine id to open (what `attach --tui` opens); "
         "omit for the hub.",
     )
-    tui_target.completer = completers._complete_watch_targets  # type: ignore[attr-defined]
+    common.bind_completer(tui_target, completers._complete_watch_targets)
 
 
 def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -96,7 +96,7 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " omit for the hub."
         ),
     )
-    web_target.completer = completers._complete_watch_targets  # type: ignore[attr-defined]
+    common.bind_completer(web_target, completers._complete_watch_targets)
     web_p.add_argument(
         "--host",
         default=None,
@@ -147,7 +147,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         ),
     )
     steer_target = steer_p.add_argument("target", help=f"{common.SESSION_ID}.")
-    steer_target.completer = completers.complete_steer_ids  # type: ignore[attr-defined]
+    common.bind_completer(steer_target, completers.complete_steer_ids)
     instruction = steer_p.add_mutually_exclusive_group(required=True)
     instruction.add_argument(
         "text",
@@ -163,7 +163,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         action="append",
         help="Submit Fix for a stored finding ID; repeat it to fix several in one steer.",
     )
-    finding.completer = completers.complete_finding_ids  # type: ignore[attr-defined]
+    common.bind_completer(finding, completers.complete_finding_ids)
     instruction.add_argument(
         "--all-findings",
         action="store_true",
@@ -226,7 +226,7 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     answer_target = answer_p.add_argument("target", help=f"{common.SESSION_ID}.")
-    answer_target.completer = completers._complete_answerable_ids  # type: ignore[attr-defined]
+    common.bind_completer(answer_target, completers._complete_answerable_ids)
     answer_p.add_argument(
         "--question",
         metavar="ID",
@@ -279,7 +279,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         nargs=argparse.REMAINDER,
         help="[SESSION --] CMD... The command rides verbatim.",
     )
-    exec_rest.completer = completers._complete_exec_rest  # type: ignore[attr-defined]
+    common.bind_completer(exec_rest, completers._complete_exec_rest)
 
     fwd_p = common._sub(
         sub,
@@ -300,11 +300,11 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " session by giving both arguments)."
         ),
     )
-    fwd_target.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
+    common.bind_completer(fwd_target, completers._complete_live_session_ids)
     fwd_port = fwd_p.add_argument(
         "port", nargs="?", type=int, help="The port inside the session. Omit to list them."
     )
-    fwd_port.completer = completers._complete_session_ports  # type: ignore[attr-defined]
+    common.bind_completer(fwd_port, completers._complete_session_ports)
     fwd_p.add_argument(
         "--local-port",
         type=int,

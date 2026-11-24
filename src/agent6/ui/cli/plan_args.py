@@ -46,7 +46,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " `agent6 config presets` lists the choices."
         ),
     )
-    plan_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
+    common.bind_completer(plan_profile, completers._complete_presets)
     run_args._add_model_flag(plan_run)
     common._add_config_flag(plan_run)
     plan_run.add_argument(
@@ -115,7 +115,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " its plan or ask transcript."
         ),
     )
-    ask_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+    common.bind_completer(ask_session, completers._complete_session_ids)
     seed.add_argument(
         "--from-latest",
         dest="ask_session_latest",
@@ -139,7 +139,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " `agent6 config presets` lists the choices."
         ),
     )
-    ask_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
+    common.bind_completer(ask_profile, completers._complete_presets)
     run_args._add_model_flag(ask_query)
     common._add_config_flag(ask_query)
     ask_query.add_argument(

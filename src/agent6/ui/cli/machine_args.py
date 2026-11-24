@@ -15,7 +15,7 @@ _MACHINE_FILE_HELP = "The .asm.toml machine file, or the name `agent6 machine` l
 def _add_file(parser: argparse.ArgumentParser) -> None:
     """Add the positional a file-taking machine verb reads: a path, or a listed name."""
     arg = parser.add_argument("file", type=pathlib.Path, help=_MACHINE_FILE_HELP)
-    arg.completer = completers._complete_machine_targets  # type: ignore[attr-defined]
+    common.bind_completer(arg, completers._complete_machine_targets)
 
 
 def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -106,14 +106,14 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         help="Report a machine instance's current state, spend, and next wake. Read-only.",
     )
     machine_status_id = machine_status.add_argument("machine_id", help=common.MACHINE_ID_HELP)
-    machine_status_id.completer = completers._complete_machine_ids  # type: ignore[attr-defined]
+    common.bind_completer(machine_status_id, completers._complete_machine_ids)
     machine_poke = common._sub(
         machine_sub,
         "poke",
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
     )
     machine_poke_id = machine_poke.add_argument("machine_id", help=common.MACHINE_ID_HELP)
-    machine_poke_id.completer = completers._complete_pokable_machine_ids  # type: ignore[attr-defined]
+    common.bind_completer(machine_poke_id, completers._complete_pokable_machine_ids)
     machine_poke_payload = machine_poke.add_mutually_exclusive_group()
     machine_poke_payload.add_argument(
         "--data",
@@ -135,14 +135,14 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         ),
     )
     machine_stop_id = machine_stop.add_argument("machine_id", help=common.MACHINE_ID_HELP)
-    machine_stop_id.completer = completers._complete_stoppable_machine_ids  # type: ignore[attr-defined]
+    common.bind_completer(machine_stop_id, completers._complete_stoppable_machine_ids)
     machine_replay = common._sub(
         machine_sub,
         "replay",
         help="Deterministically replay a machine's journal offline (no world I/O).",
     )
     machine_replay_id = machine_replay.add_argument("machine_id", help=common.MACHINE_ID_HELP)
-    machine_replay_id.completer = completers._complete_machine_ids  # type: ignore[attr-defined]
+    common.bind_completer(machine_replay_id, completers._complete_machine_ids)
 
     machine_create = common._sub(
         machine_sub,

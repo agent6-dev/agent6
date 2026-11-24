@@ -81,7 +81,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         help="Remove an MCP server from a config file. Default: global config file.",
     )
     remove_name = remove.add_argument("name", help="Server name shown by `agent6 mcp list`.")
-    remove_name.completer = completers._complete_mcp_servers  # type: ignore[attr-defined]
+    common.bind_completer(remove_name, completers._complete_mcp_servers)
     remove.add_argument(
         "--repo",
         dest="to_repo",

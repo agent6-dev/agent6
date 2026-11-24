@@ -11,6 +11,7 @@ import os
 import pathlib
 import shlex
 import sys
+from collections.abc import Callable
 
 try:
     import termios
@@ -55,8 +56,21 @@ SESSION_ID = "Session id or unambiguous prefix"
 SESSION_ID_HELP = f"{SESSION_ID}; omit for the newest."
 
 
+def bind_completer(action: argparse.Action, completer: Callable[..., list[str]]) -> None:
+    """Set the callback argcomplete looks up on the argparse action.
+
+    Args:
+        action: The argument to complete.
+        completer: Offers values for the prefix.
+    """
+    action.completer = completer  # pyrefly: ignore[missing-attribute]
+
+
 def _add_session_id(
-    parser: argparse.ArgumentParser, completer: object, *, help_text: str = SESSION_ID_HELP
+    parser: argparse.ArgumentParser,
+    completer: Callable[..., list[str]],
+    *,
+    help_text: str = SESSION_ID_HELP,
 ) -> None:
     """Add the session positional: an id or prefix, omitted for the newest.
 
@@ -66,7 +80,7 @@ def _add_session_id(
         help_text: The argument's help.
     """
     arg = parser.add_argument("session_id", nargs="?", default="", help=help_text)
-    arg.completer = completer  # type: ignore[attr-defined]
+    bind_completer(arg, completer)
 
 
 def _add_config_flag(parser: argparse.ArgumentParser) -> None:

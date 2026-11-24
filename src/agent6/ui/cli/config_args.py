@@ -25,7 +25,7 @@ def _add_machine_file(
         metavar="FILE",
         help=help_text,
     )
-    arg.completer = completers._complete_machine_files  # type: ignore[attr-defined]
+    common.bind_completer(arg, completers._complete_machine_files)
 
 
 def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -59,8 +59,9 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " Default: all settings."
         ),
     )
-    show_keys.completer = functools.partial(  # type: ignore[attr-defined]
-        completers._complete_config_keys, settable=False, sections=True
+    common.bind_completer(
+        show_keys,
+        functools.partial(completers._complete_config_keys, settable=False, sections=True),
     )
     config_show.add_argument(
         "--json", action="store_true", dest="as_json", help="Print JSON instead of a table."
@@ -103,8 +104,8 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     config_get_key = config_get.add_argument("key", help="Setting name, such as sandbox.network.")
     # `get` reads effective leaves; `[presets.*]` are stripped before validation, so not offered.
-    config_get_key.completer = functools.partial(  # type: ignore[attr-defined]
-        completers._complete_config_keys, settable=False
+    common.bind_completer(
+        config_get_key, functools.partial(completers._complete_config_keys, settable=False)
     )
     _add_machine_file(config_get, "Apply the [config] section in FILE when reading the setting.")
     for verb, blurb in (
@@ -119,7 +120,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     ):
         p = common._sub(config_sub, verb, help=blurb)
         key_arg = p.add_argument("key", help="Setting name, such as sandbox.network.")
-        key_arg.completer = completers._complete_config_keys  # type: ignore[attr-defined]
+        common.bind_completer(key_arg, completers._complete_config_keys)
         if verb != "unset":
             action = "save" if verb == "set" else verb
             val_arg = p.add_argument(
@@ -130,7 +131,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
                     + (" With --secret, the value is a literal string." if verb == "set" else "")
                 ),
             )
-            val_arg.completer = completers._complete_config_values  # type: ignore[attr-defined]
+            common.bind_completer(val_arg, completers._complete_config_values)
         target = p.add_mutually_exclusive_group()
         target.add_argument(
             "--repo",
@@ -192,7 +193,7 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " or list all configured providers with --status."
         ),
     )
-    connect_provider.completer = completers._complete_providers  # type: ignore[attr-defined]
+    common.bind_completer(connect_provider, completers._complete_providers)
     connect_p.add_argument(
         "--logout",
         action="store_true",
@@ -271,7 +272,7 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         ),
     )
     # Role-gated, so the routes do not bleed into the first positional.
-    model_route.completer = completers._complete_model_verb_values  # type: ignore[attr-defined]
+    common.bind_completer(model_route, completers._complete_model_verb_values)
     model_p.add_argument(
         "--effort",
         choices=get_args(EffortLevel),

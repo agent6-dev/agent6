@@ -43,7 +43,7 @@ def _add_model_flag(parser: argparse.ArgumentParser) -> None:
         metavar="PROVIDER/MODEL",
         help="Use this provider/model for the session, over every config file.",
     )
-    arg.completer = completers._complete_model_routes  # type: ignore[attr-defined]
+    common.bind_completer(arg, completers._complete_model_routes)
 
 
 def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -71,7 +71,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " plan. With no TASK, a plan source becomes the task."
         ),
     )
-    run_from.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+    common.bind_completer(run_from, completers._complete_session_ids)
     run_p.add_argument(
         "--pin",
         dest="pins",
@@ -90,7 +90,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="NAME",
         help="Add an installed skill's instructions before the task. Repeatable.",
     )
-    run_skill.completer = completers._complete_skills  # type: ignore[attr-defined]
+    common.bind_completer(run_skill, completers._complete_skills)
     run_p.add_argument(
         "--decompose",
         action="store_true",
@@ -131,7 +131,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " SELECTOR (a role name or provider/model)."
         ),
     )
-    run_parallel_flag.completer = completers._complete_parallel_models  # type: ignore[attr-defined]
+    common.bind_completer(run_parallel_flag, completers._complete_parallel_models)
     run_p.add_argument(
         "--worktree",
         action="store_true",
@@ -151,7 +151,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " Use none to select no preset."
         ),
     )
-    run_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
+    common.bind_completer(run_profile, completers._complete_presets)
     _add_model_flag(run_p)
     common._add_config_flag(run_p)
     run_p.add_argument(
@@ -209,7 +209,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         type=model.preset_name,
         help=("Use another strategy preset from this resume on. Use none to select no preset."),
     )
-    resume_preset.completer = completers._complete_presets  # type: ignore[attr-defined]
+    common.bind_completer(resume_preset, completers._complete_presets)
     _add_model_flag(resume_p)
     common._add_config_flag(resume_p)
     resume_p.add_argument(

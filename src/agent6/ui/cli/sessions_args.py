@@ -151,7 +151,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         metavar="PROVIDER/MODEL",
         help="Use this provider/model for the review, over every config file.",
     )
-    review_model.completer = completers._complete_model_routes  # type: ignore[attr-defined]
+    common.bind_completer(review_model, completers._complete_model_routes)
 
     sessions_compare = common._sub(
         sessions_sub,
@@ -181,7 +181,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " compare its children."
         ),
     )
-    sessions_compare_ids.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+    common.bind_completer(sessions_compare_ids, completers._complete_session_ids)
 
     sessions_commits = common._sub(
         sessions_sub,

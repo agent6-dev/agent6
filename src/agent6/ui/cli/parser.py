@@ -338,7 +338,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="SESSION_ID",
         help="Restrict to a single session id (default: every session of this repository).",
     )
-    hist_search_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+    common.bind_completer(hist_search_session, completers._complete_session_ids)
 
     tele_p = common._sub(
         sub,
@@ -363,7 +363,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="SESSION_ID",
         help="One session to export (default: every session with a journal).",
     )
-    tele_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+    common.bind_completer(tele_session, completers._complete_session_ids)
     tele_export.add_argument(
         "--follow",
         action="store_true",

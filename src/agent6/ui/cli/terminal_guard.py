@@ -58,7 +58,7 @@ def guarded_terminal() -> Generator[None]:
     out, err = sys.stdout, sys.stderr
     if isinstance(out, io.TextIOWrapper):
         out.reconfigure(line_buffering=True)
-    sys.stdout, sys.stderr = ScrubbedStream(out), ScrubbedStream(err)  # type: ignore[assignment]
+    sys.stdout, sys.stderr = ScrubbedStream(out), ScrubbedStream(err)
     try:
         yield
     finally:

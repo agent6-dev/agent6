@@ -42,9 +42,9 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
             sub, verb, help=f"{verb.capitalize()} a finding with an operator reason."
         )
         session = parser.add_argument("session_id", help=common.SESSION_ID)
-        session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
+        common.bind_completer(session, completers._complete_session_ids)
         finding = parser.add_argument("finding_id", help="The finding ID from sessions findings.")
-        finding.completer = completers.complete_finding_ids  # type: ignore[attr-defined]
+        common.bind_completer(finding, completers.complete_finding_ids)
         parser.add_argument(
             "--reason", required=True, help="A nonblank reason, at most 2,000 characters."
         )
@@ -65,7 +65,7 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
             duplicate = parser.add_argument(
                 "--duplicate-of", default=None, help="Another finding in this session."
             )
-            duplicate.completer = completers.complete_finding_ids  # type: ignore[attr-defined]
+            common.bind_completer(duplicate, completers.complete_finding_ids)
         add_action_options(parser)
 
 
