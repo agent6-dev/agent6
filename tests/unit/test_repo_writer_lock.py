@@ -12,6 +12,7 @@ verbatim task) so the typed prompt is never dropped.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import time
@@ -617,6 +618,58 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     session_fd = lock.acquire_single_writer(layout.session_dir)
     assert session_fd is not None
     lock.release_single_writer(session_fd)
+
+
+@pytest.mark.parametrize("lifecycle", ["run", "resume"])
+def test_a_start_refused_by_a_live_sessions_lock_leaves_that_workers_pid(
+    repo: pathlib.Path, capsys: pytest.CaptureFixture[str], lifecycle: str
+) -> None:
+    """A refusal that ran the session's teardown cleared the live worker's pid.
+
+    Every surface then read the session as dead while its worker ran on. The refused start
+    holds nothing of the session, so it closes no console view either.
+    """
+    from agent6.app import resume as resume_mod
+    from agent6.sessions import process
+
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-LIVE")
+    layout.ensure()
+    stamps.write_session_manifest(
+        layout,
+        session_id="run-LIVE",
+        user_task="do the saved thing",
+        base_sha="",
+        base_branch="main",
+        run_branch=None,
+        cfg=_load_cfg(),
+        mode="run",
+    )
+    stamps.stamp_parked(layout.session_dir, task="do the saved thing", reason="checkout busy")
+    # The live worker: it holds the session's writer lock and has written its pid.
+    live_fd = lock.acquire_single_writer(layout.session_dir)
+    assert live_fd is not None
+    process.write_worker_pid(layout.session_dir, os.getpid())
+    frontend = mock.MagicMock()
+    try:
+        if lifecycle == "run":
+            rc = app_run.run_task(
+                _load_cfg(),
+                "do the saved thing",
+                started_at=time.time(),
+                frontend=frontend,
+                session_id="run-LIVE",
+                mode="run",
+            )
+        else:
+            rc = resume_mod.resume_task(
+                (), "run-LIVE", started_at=time.time(), frontend=frontend, force=False
+            )
+    finally:
+        lock.release_single_writer(live_fd)
+    assert rc == 2
+    assert "already being driven by another agent6 process" in capsys.readouterr().err
+    assert process.read_worker_pid(layout.session_dir) == os.getpid()
+    frontend.close_console_view.assert_not_called()
 
 
 def test_resume_drops_a_stop_written_between_executions(
