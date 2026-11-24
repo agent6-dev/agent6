@@ -81,6 +81,8 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
             resumed.account_id,
             budget.UsageSettlement(
                 usd=child.usage.usd,
+                usd_observed_credits=child.usage.usd_observed_credits,
+                credit_readings=child.usage.credit_readings,
                 usd_partial=child.usage.usd_partial,
                 tokens=child.usage.tokens,
                 model_tokens=child.usage.model_tokens,

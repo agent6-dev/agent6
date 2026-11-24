@@ -186,7 +186,8 @@ extra_query = { "api-version" = "2024-06-01" }
 ### Responses API endpoint (`backend = "responses"`)
 
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
-A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it; usage meters tokens like any keyed endpoint, priced from the catalog when the model is known.
+A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it.
+The [budget](#budget) prices its tokens from its own listing or the provider named by `price_from`.
 
 ```toml
 [providers.work]
@@ -438,7 +439,12 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 
 `--max-usd` / `--max-tokens-fallback` / `--max-plan-points` override per run.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
-Purchased-credit spend and API cost share the USD ceiling.
+Priced calls and observed credit declines share the USD ceiling.
+The cap counts each call once, including calls made by children.
+Parent and child readings of the same credit balance form one series in observation order.
+The account ID identifies that series, or the provider entry if the backend gives no ID.
+A top-up raises the balance for the next reading.
+The declines include other users of the account; they are not attributed to calls.
 Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
 For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default reference is the configured `openrouter` entry.
 A reference listing matches the exact model id first, then its vendor-prefixed id (for example, `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`).

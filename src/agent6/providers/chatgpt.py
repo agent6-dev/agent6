@@ -170,11 +170,12 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> agent6_budget.PlanUsa
         return None
     credits = body.get("credits")
     credits = credits if isinstance(credits, Mapping) else {}
+    balance = credits.get("balance")
     return agent6_budget.PlanUsage(
         windows=tuple(sorted(windows, key=lambda w: _window_order(w.name))),
         has_credits=credits.get("has_credits") is True,
         credits_unlimited=credits.get("unlimited") is True,
-        credits_balance=str(credits.get("balance") or "").strip(),
+        credits_balance=str(balance).strip() if balance is not None else "",
         limit_reached=limits.get("limit_reached") is True,
     )
 
@@ -248,7 +249,8 @@ class ChatGPTProvider:
             body = resp.json()
         except (provider_types.ProviderError, httpx2.HTTPError, ValueError, OSError):
             return None
-        return plan_usage_from_usage_body(body) if isinstance(body, dict) else None
+        plan = plan_usage_from_usage_body(body) if isinstance(body, dict) else None
+        return dataclasses.replace(plan, account_id=self.account_id) if plan is not None else None
 
     def _adapt_effort_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
         """Resend at the lowest effort the served model accepts, and keep that floor.
@@ -450,7 +452,10 @@ class ChatGPTProvider:
         def observe_headers(response_headers: Mapping[str, str]) -> None:
             """Read the plan windows off the response headers."""
             nonlocal plan_usage
-            plan_usage = _plan_usage_of(response_headers)
+            plan = _plan_usage_of(response_headers)
+            plan_usage = (
+                dataclasses.replace(plan, account_id=self.account_id) if plan is not None else None
+            )
 
         call = stream_lifecycle.SseCall(
             api_label="ChatGPT",

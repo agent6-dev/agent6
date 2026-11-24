@@ -15,9 +15,9 @@ from typing import Literal
 
 import pydantic
 
-from agent6 import child_records, portable, token_usage
+from agent6 import child_records, credit_usage, portable, token_usage
 
-RECORD_VERSION = 14
+RECORD_VERSION = 15
 DIR_NAME = "dispatch"
 _COMMIT_COUNT = "commits_beyond_start"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "merging", "complete"]
@@ -98,13 +98,17 @@ class UsageRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     """What a child used, as settled against the parent.
 
     Attributes:
-        usd: The child's metered spend.
+        usd: The child's USD cap reading.
+        usd_observed_credits: Balance declines inside that reading.
+        credit_readings: Account balances folded into the parent's reading.
         usd_partial: Whether unpriced calls make it a lower bound.
         tokens: Its fallback-ledger tokens.
         model_tokens: Its cumulative fresh input and output, including settled descendants.
     """
 
     usd: float
+    usd_observed_credits: float = 0.0
+    credit_readings: tuple[credit_usage.Reading, ...] = ()
     usd_partial: bool = False
     tokens: int = 0
     model_tokens: token_usage.TokenCounts = token_usage.UNKNOWN

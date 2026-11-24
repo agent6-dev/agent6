@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from agent6 import budget, evidence, kinds, token_usage
+from agent6 import budget, credit_usage, evidence, kinds, token_usage
 from agent6.viewmodel import format, review
 from agent6.viewmodel.session import status as session_status
 
@@ -149,11 +149,12 @@ class ExecutionUsage:
         child_model_tokens: Fresh input and output charged through child settlement.
         cache_read_tokens: The cached side of the input; None when the row lacked it.
         cache_write_tokens: Cache-write tokens; None when the row lacked it.
-        usd: The metered spend.
+        usd_observed_credits: The account balance declines inside the USD cap reading.
+        usd: The USD cap reading.
         usd_partial: Some model had no price, so `usd` is a lower bound.
         unmetered_tokens: Input and output tokens of calls the meter could not price.
-        usd_running_children: What the children still running have spent so far: inside the cap,
-            outside `usd` until each settles.
+        usd_running_children: Running children's USD outside the credit series. It counts
+            against the cap and moves into `usd` at settlement.
         tokens_running_children: Their unpriced tokens so far, outside `unmetered_tokens`.
         plan_observed_points: The plan movement observed, in points.
         usd_cap: `[budget].max_usd`.
@@ -165,6 +166,7 @@ class ExecutionUsage:
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_write_tokens: int | None = None
+    usd_observed_credits: float = 0.0
     usd: float = 0.0
     usd_partial: bool = False
     unmetered_tokens: int = 0
@@ -182,13 +184,17 @@ class SessionUsage:
     """The session's usage across every execution, what the listings' usage cell shows.
 
     Attributes:
-        usd: The spend across every execution.
+        usd: The USD cap readings banked across executions.
+        usd_observed_credits: The account balance declines inside those readings.
+        credit_readings: Balance observations from the subtree, with their original times.
         usd_partial: Some execution's model had no price, so `usd` is a lower bound.
         plan_observed_points: The plan movement observed across every execution, in points.
         unmetered_tokens: Fallback tokens across every execution, including settled descendants.
         settled_children: Child sessions whose spend is durably included in the journal.
     """
 
+    credit_readings: tuple[credit_usage.Reading, ...] = ()
+    usd_observed_credits: float = 0.0
     usd: float = 0.0
     usd_partial: bool = False
     plan_observed_points: float = 0.0

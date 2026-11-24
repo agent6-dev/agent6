@@ -695,8 +695,8 @@ def child_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | No
         session_dir: The child's imported session dir.
 
     Returns:
-        The inclusive spend and per-provider plan observations; None when descendant
-        records are incomplete or unreadable, which leaves the child unsettled.
+        The inclusive cap reading, account balances and per-provider plan readings.
+        Incomplete or unreadable descendant records leave the child unsettled (None).
     """
     try:
         records = child_dispatch.read_records(session_dir)
@@ -728,7 +728,7 @@ def child_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | No
             provider = account.provider or _child_provider(directory)
             if not provider or not account.windows:
                 continue
-            # Credits are already in the inclusive USD total; only replay plan windows.
+            # Balance readings have their own account and observation time.
             plan = agent6_budget.PlanUsage(
                 windows=tuple(
                     agent6_budget.PlanWindow(w.name, w.used_percent, w.window_minutes, w.resets_at)
@@ -738,6 +738,8 @@ def child_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | No
             readings.append((events.event_epoch(raw.get("ts")) or 0.0, provider, plan))
     return agent6_budget.UsageSettlement(
         usd=scan.budget.session.usd,
+        usd_observed_credits=scan.budget.session.usd_observed_credits,
+        credit_readings=scan.budget.session.credit_readings,
         usd_partial=scan.budget.session.usd_partial,
         tokens=scan.budget.session.unmetered_tokens,
         model_tokens=scan.budget.model_tokens.total,

@@ -120,7 +120,7 @@ class ChildWatch:
         self._emit = emit
         self._thread = _WatchThread()
         self._row_lock = threading.Lock()
-        self._journaled: tuple[float, int, float] = (0.0, 0, 0.0)
+        self._journaled: tuple[float, int, float, int] = (0.0, 0, 0.0, 0)
         self._journaled_at = 0.0
 
     def __call__(
@@ -176,7 +176,12 @@ class ChildWatch:
         if self._emit is None:
             return
         snap = budget.snapshot()
-        moved = (snap.usd_running_children, snap.tokens_running_children, snap.plan_observed_points)
+        moved = (
+            snap.usd_running_children,
+            snap.tokens_running_children,
+            snap.plan_observed_points,
+            snap.credit_reading_count,
+        )
         at = time.monotonic()
         with self._row_lock:
             if moved == self._journaled or (not now and at - self._journaled_at < ROW_INTERVAL_S):
@@ -250,8 +255,8 @@ def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
         child_dir: The child's session dir.
 
     Returns:
-        Its spend across its executions with its own running children's, its fallback
-        tokens the same way, and its account's latest plan reading.
+        Its cumulative cap reading including running children, the balance observations,
+        its fallback tokens and its latest plan reading.
     """
     usage = session_log.scan_session_log(child_dir / layout.LOGS_NAME).budget
     account = usage.account
@@ -260,6 +265,8 @@ def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
         readings = ((account.provider, agent6_budget.PlanUsage(windows=account.windows)),)
     return agent6_budget.UsageSettlement(
         usd=usage.usd_so_far,
+        usd_observed_credits=usage.session.usd_observed_credits,
+        credit_readings=usage.session.credit_readings,
         usd_partial=usage.session.usd_partial,
         tokens=usage.session.unmetered_tokens + usage.execution.tokens_running_children,
         plan_readings=readings,

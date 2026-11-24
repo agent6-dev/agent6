@@ -111,6 +111,7 @@ def _emit_end(
         state=state,
         transitions=transitions,
         usd=unbooked.usd if unbooked is not None else 0.0,
+        usd_own_calls=unbooked.usd_own_calls if unbooked is not None else None,
         usd_partial=unbooked.usd_partial if unbooked is not None else False,
         input_tokens=unbooked.input_tokens if unbooked is not None else 0,
         output_tokens=unbooked.output_tokens if unbooked is not None else 0,

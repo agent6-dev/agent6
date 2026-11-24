@@ -131,6 +131,7 @@ class Spend:
             across folds and the render adds the shared "~" marker.
         cache_read_tokens: The cached side of the input; 0 where never recorded.
         cache_write_tokens: Cache-write tokens; 0 where never recorded.
+        usd_own_calls: Cost of the slice's own priced calls, when recorded.
     """
 
     usd: float = 0.0
@@ -139,6 +140,7 @@ class Spend:
     partial: bool = False
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    usd_own_calls: float | None = None
 
     def __add__(self, other: Spend) -> Spend:
         """Return the field-wise sum, `partial` ORed."""
@@ -149,6 +151,9 @@ class Spend:
             self.partial or other.partial,
             self.cache_read_tokens + other.cache_read_tokens,
             self.cache_write_tokens + other.cache_write_tokens,
+            (self.usd_own_calls or 0.0) + (other.usd_own_calls or 0.0)
+            if self.usd_own_calls is not None or other.usd_own_calls is not None
+            else None,
         )
 
 
@@ -169,6 +174,7 @@ def read_budget_totals(log_path: pathlib.Path, *, from_offset: int = 0) -> Spend
     Returns:
         The totals, or an empty `Spend` when there are none or the log is unreadable.
     """
+    own: float | None = None
     usd, tin, tout, cr, cc = 0.0, 0, 0, 0, 0
     partial = False
     with contextlib.suppress(OSError):
@@ -183,12 +189,13 @@ def read_budget_totals(log_path: pathlib.Path, *, from_offset: int = 0) -> Spend
                 continue
             if e.get("type") == "budget.update":
                 usd = float(e.get("usd_total", usd) or 0.0)
+                own = e.get("usd_own_calls")
                 tin = int(e.get("input_total", tin) or 0)
                 tout = int(e.get("output_total", tout) or 0)
                 cr = int(e.get("cache_read_total", cr) or 0)
                 cc = int(e.get("cache_write_total", cc) or 0)
                 partial = partial or bool(e.get("usd_partial", False))
-    return Spend(usd, tin, tout, partial, cr, cc)
+    return Spend(usd, tin, tout, partial, cr, cc, own)
 
 
 def state_dir_seq(dir_name: str) -> int | None:
@@ -225,12 +232,25 @@ def machine_spend(
                     event.fact.input_tokens,
                     event.fact.output_tokens,
                     event.fact.usd_partial,
+                    usd_own_calls=event.fact.usd_own_calls,
                 )
         elif isinstance(event, journal.AttemptSpend):
-            total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
+            total += Spend(
+                event.usd,
+                event.input_tokens,
+                event.output_tokens,
+                event.usd_partial,
+                usd_own_calls=event.usd_own_calls,
+            )
         elif isinstance(event, journal.MachineEnd):
             # An unbooked slice rides on the end; gating on its usd would drop an unpriced one.
-            total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
+            total += Spend(
+                event.usd,
+                event.input_tokens,
+                event.output_tokens,
+                event.usd_partial,
+                usd_own_calls=event.usd_own_calls,
+            )
     inflight_state = ""
     newest = newest_state_log(root) if alive else None
     if newest is not None:

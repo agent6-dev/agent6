@@ -27,7 +27,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from agent6 import config, kinds, token_usage
+from agent6 import config, credit_usage, kinds, token_usage
 from agent6.models import pricing
 
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
@@ -75,6 +75,8 @@ class PlanUsage:
             window: real money.
         credits_unlimited: The credits are unlimited.
         credits_balance: The balance as the backend sent it.
+        account_id: The account that owns the balance; empty when the backend names none.
+        observed_ns: When the observer received the reading, in Unix nanoseconds.
         limit_reached: The backend's own verdict that a window is exhausted.
     """
 
@@ -83,6 +85,8 @@ class PlanUsage:
     credits_unlimited: bool = False
     credits_balance: str = ""
     limit_reached: bool = False
+    account_id: str = ""
+    observed_ns: int = dataclasses.field(default_factory=time.time_ns, compare=False)
 
     @classmethod
     def single(
@@ -310,7 +314,9 @@ class UsageSettlement:
     """What a child used, as its parent charges it.
 
     Attributes:
-        usd: The child's metered spend, charged whole.
+        usd: The child's cumulative USD cap reading, including observed credit movement.
+        usd_observed_credits: The part of `usd` that the parent folds from balances instead.
+        credit_readings: Balances observed in the subtree, with their original times.
         usd_partial: Some of the child's calls were unpriced, so `usd` is a lower bound.
         tokens: The child's fallback-ledger tokens.
         plan_readings: The provider entry and reading of each plan observation the child
@@ -323,6 +329,13 @@ class UsageSettlement:
     tokens: int
     plan_readings: tuple[tuple[str, PlanUsage], ...] = ()
     model_tokens: token_usage.TokenCounts = token_usage.UNKNOWN
+    usd_observed_credits: float = 0.0
+    credit_readings: tuple[credit_usage.Reading, ...] = ()
+
+    @property
+    def additive_usd(self) -> float:
+        """The dollars charged whole, excluding movement the parent observes itself."""
+        return max(0.0, self.usd - self.usd_observed_credits)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -369,8 +382,13 @@ class BudgetSnapshot:
         exhausted: A ledger crossed its cap.
         exhausted_reason: Why, or "".
         per_model: The usage totals by provider/model route.
-        usd_running_children: What the children still running have spent so far; outside every
-            total here until each settles.
+        usd_own_calls: The cost of this execution's priced calls, excluding children and balances.
+        usd_partial: Unpriced calls make the USD reading a lower bound.
+        usd_observed_credits: The sum of balance declines, once per account.
+        credit_readings: The balance observations to include when writing a budget row.
+        credit_reading_count: How many distinct balances the subtree has observed.
+        usd_running_children: The running children's USD outside the credit series. The cap
+            holds it until settlement.
         tokens_running_children: Their fallback tokens so far, the same way.
         usd_settled_children: What the settled children spent, inside the USD total.
         available: What is left to spend in each currency, running children taken out, with the
@@ -391,12 +409,22 @@ class BudgetSnapshot:
     exhausted: bool
     exhausted_reason: str
     per_model: dict[kinds.ModelRoute, ModelUsage]
+    usd_own_calls: float
+    usd_partial: bool
+    usd_observed_credits: float
+    credit_readings: tuple[credit_usage.Reading, ...]
+    credit_reading_count: int
     usd_running_children: float
     tokens_running_children: int
     usd_settled_children: float
     available: BudgetAllowance
     settled_children: frozenset[str] = frozenset()
     child_model_tokens: token_usage.TokenCounts = token_usage.ZERO
+
+    @property
+    def usd_total(self) -> float:
+        """The USD cap reading, outside the running child hold."""
+        return self.usd_own_calls + self.usd_settled_children + self.usd_observed_credits
 
     @property
     def plan_latest(self) -> PlanUsage | None:
@@ -426,6 +454,7 @@ class BudgetTracker:
         max_usd: The USD cap; required, so the tracker never carries its own default.
         max_tokens_fallback: The fallback token cap.
         max_plan_points: The plan percentage-point cap.
+        providers: The entries whose listings price the configured routes.
         allow_plan_overage: Whether a call may use purchased credits or extra usage after
             the included plan window is spent; an omitted value is the safe one.
     """
@@ -454,10 +483,10 @@ class BudgetTracker:
     )
     _settled: bool = False
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
-    _credits_last_usd: dict[str, float] = dataclasses.field(default_factory=dict)
-    _credits_spent_usd: float = 0.0
+    _credits: credit_usage.Ledger = dataclasses.field(default_factory=credit_usage.Ledger)
     # The spend the settled children's usage charged, and each running child's last reading.
     _children_usd: float = 0.0
+    _children_partial: bool = False
     _children_io: token_usage.TokenCounts = token_usage.ZERO
     _charged_children: set[str] = dataclasses.field(default_factory=set)
     _running: dict[str, UsageSettlement] = dataclasses.field(default_factory=dict)
@@ -550,7 +579,7 @@ class BudgetTracker:
 
     def _running_usd_locked(self) -> float:
         """Return what the running children have spent so far, with the lock held."""
-        return math.fsum(max(usage.usd, 0.0) for usage in self._running.values())
+        return math.fsum(usage.additive_usd for usage in self._running.values())
 
     def _running_tokens_locked(self) -> int:
         """Return the running children's fallback tokens so far, with the lock held."""
@@ -605,9 +634,14 @@ class BudgetTracker:
         account = self._child_executions.get(child)
         if account is None:
             return child, usage
+        prior_readings = set(account.prior.credit_readings)
         return account.key, dataclasses.replace(
             usage,
             usd=max(0.0, usage.usd - account.prior.usd),
+            usd_observed_credits=max(
+                0.0, usage.usd_observed_credits - account.prior.usd_observed_credits
+            ),
+            credit_readings=tuple(r for r in usage.credit_readings if r not in prior_readings),
             tokens=max(0, usage.tokens - account.prior.tokens),
             model_tokens=usage.model_tokens.since(account.prior.model_tokens),
         )
@@ -628,6 +662,7 @@ class BudgetTracker:
             if child in self._charged_children:
                 return
             self._running[child] = usage
+            self._credits.observe(usage.credit_readings)
             provider = ""
             for provider, plan in usage.plan_readings:
                 self._note_plan_usage(provider, plan)
@@ -663,10 +698,12 @@ class BudgetTracker:
             if child in self._charged_children:
                 return
             self._running.pop(child, None)
-            self._children_usd += max(usage.usd, 0.0)
+            self._children_usd += usage.additive_usd
+            self._children_partial |= usage.usd_partial
             self._children_io += usage.model_tokens
             self._unmetered_tokens += max(usage.tokens, 0)
             self._charged_children.add(child)
+            self._credits.observe(usage.credit_readings)
             provider = ""
             for provider, plan in usage.plan_readings:
                 self._note_plan_usage(provider, plan)
@@ -695,8 +732,8 @@ class BudgetTracker:
         A window's first reading is its baseline. A rise within the window is movement. A
         reset time later by more than `RESET_SLACK_S` is a new window, whose reading counts
         whole. A reading out of order (another reviewer read the account first) counts nothing:
-        a lower percent on the same window, or any reading from a window already left. A
-        credit balance that fell is money spent. The lock is held.
+        a lower percent on the same window, or any reading from a window already left.
+        The USD cap counts credit declines in observation order. The lock is held.
 
         Args:
             route: The provider entry the reading came from.
@@ -720,10 +757,8 @@ class BudgetTracker:
             self._plan_last_window[key] = w
         balance = plan.credits_usd
         if balance is not None:
-            previous = self._credits_last_usd.get(route)
-            if previous is not None and balance < previous:
-                self._credits_spent_usd += previous - balance
-            self._credits_last_usd[route] = balance
+            account = f"account:{plan.account_id}" if plan.account_id else f"provider:{route}"
+            self._credits.observe((credit_usage.Reading(account, plan.observed_ns, balance),))
         self._plans.pop(route, None)
         self._plans[route] = plan
 
@@ -869,14 +904,27 @@ class BudgetTracker:
                 used = max(used, self._plan_observed_points() / self.max_plan_points)
         return max(0.0, 1.0 - used)
 
-    def snapshot(self) -> BudgetSnapshot:
-        """Return a point-in-time copy of every counter."""
+    def snapshot(self, *, for_journal: bool = False) -> BudgetSnapshot:
+        """Return a point-in-time copy of every counter.
+
+        Args:
+            for_journal: Take the new balance observations for the next budget row.
+
+        Returns:
+            The counters read under one lock.
+        """
         with self._lock:
             per_model = {
                 route: dataclasses.replace(t)
                 for route, t in sorted(self._per_model.items(), key=lambda row: row[0].spec)
             }
+            own_usd, partial = self._own_cost_locked()
             return BudgetSnapshot(
+                credit_reading_count=len(self._credits),
+                usd_own_calls=own_usd,
+                usd_partial=partial or self._children_partial,
+                usd_observed_credits=self._credits.spent_usd,
+                credit_readings=self._credits.take_readings() if for_journal else (),
                 input_total=self._input_total,
                 output_total=self._output_total,
                 cache_read_total=self._cache_read_total,
@@ -913,12 +961,11 @@ class BudgetTracker:
             return self._estimate_usd_locked()
 
     def _estimate_usd_locked(self) -> tuple[float, bool]:
-        """Estimate the USD spend with the lock held.
+        own, partial = self._own_cost_locked()
+        return own + self._children_usd + self._credits.spent_usd, partial or self._children_partial
 
-        Returns:
-            The total, and whether any call could not be priced.
-        """
-        total_usd = self._credits_spent_usd + self._children_usd
+    def _own_cost_locked(self) -> tuple[float, bool]:
+        total_usd = 0.0
         any_unknown = False
         for t in self._per_model.values():
             cost = _model_cost_usd(t)
@@ -994,7 +1041,7 @@ class BudgetTracker:
             cache_w: Cache-write tokens for the route.
             calls: Calls recorded for the route.
             cost: USD spend, reported or estimated from that route's prices.
-                The TOTAL includes purchased credits spent.
+                The TOTAL includes the observed decline in account credits.
                 `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls;
                 a TOTAL of unpriced calls over nothing priced is `$?`.
             of: The USD cap when a route is USD-metered; `unlimited` means no cap.
@@ -1006,8 +1053,7 @@ class BudgetTracker:
         """
         snap = self.snapshot()
         lines = ["Token + cost summary:"]
-        # The total is the figure the ceiling enforces, so it carries purchased credits spent.
-        total_usd, any_unknown = self.estimate_usd()
+        total_usd, any_unknown = snap.usd_total, snap.usd_partial
         model_lines, priced, metered, any_estimated = self._model_lines(snap)
         lines.extend(model_lines)
         any_unknown = any_unknown or priced < len(snap.per_model)
@@ -1020,7 +1066,7 @@ class BudgetTracker:
             note = " (some models unpriced; figure is a lower bound)" if any_unknown else ""
         # `of <cap>` names what meters this spend; with nothing USD-metered, max_usd meters none.
         cap = ""
-        if metered:
+        if metered or snap.usd_observed_credits:
             usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
             cap = f" of {usd_cap}"
         own = token_usage.TokenCounts(snap.input_total, snap.output_total)
@@ -1034,6 +1080,10 @@ class BudgetTracker:
                 else f"{snap.max_tokens_fallback:,}"  # as the preflight NOTE prints it
             )
             budget_line += f" (unmetered: {snap.unmetered_tokens}/{fb_cap} fallback tokens)"
+        if snap.usd_observed_credits:
+            note += (
+                f" (includes {format_usd(snap.usd_observed_credits)} in observed credit declines)"
+            )
         lines.append(budget_line + note)
         if snap.usd_running_children or snap.tokens_running_children:
             parts = [format_usd(snap.usd_running_children)] if snap.usd_running_children else []

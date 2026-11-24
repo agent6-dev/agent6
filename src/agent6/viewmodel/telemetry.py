@@ -579,12 +579,10 @@ class TelemetryFold:
 
     def _budget_update(self, step: telemetry_records.Step) -> None:
         event = step.event
-        usd = telemetry_records.as_number(event.get("usd_total"))
-        # A settled child's spend is in the total, and counts in the child's own journal.
-        settled = telemetry_records.as_number(event.get("usd_settled_children")) or 0.0
-        if usd is not None and usd - settled > self._usd_seen:
-            self.meter.count("agent6_cost_usd_total", usd - settled - self._usd_seen)
-            self._usd_seen = usd - settled
+        usd = telemetry_records.as_number(event.get("usd_own_calls"))
+        if usd is not None and usd > self._usd_seen:
+            self.meter.count("agent6_cost_usd_total", usd - self._usd_seen)
+            self._usd_seen = usd
         self.meter.gauge("agent6_cost_partial", 1.0 if event.get("usd_partial") is True else 0.0)
         plan = telemetry_records.as_number(
             event.get("plan_observed_points", event.get("plan_consumed"))  # the older key

@@ -115,6 +115,8 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
                         child.account_id,
                         agent6_budget.UsageSettlement(
                             usd=prior.usd,
+                            usd_observed_credits=prior.usd_observed_credits,
+                            credit_readings=prior.credit_readings,
                             usd_partial=prior.usd_partial,
                             tokens=prior.tokens,
                             model_tokens=prior.model_tokens,

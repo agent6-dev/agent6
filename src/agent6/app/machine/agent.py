@@ -198,18 +198,19 @@ def _result(
     Returns:
         The result.
     """
-    usd = 0.0
+    usd = own = 0.0
     partial = False
     inp = out = 0
     plan = 0.0
     if budget is not None:
-        usd, partial = budget.estimate_usd()
         snap = budget.snapshot()
+        usd, own, partial = snap.usd_total, snap.usd_own_calls, snap.usd_partial
         inp, out, plan = snap.input_total, snap.output_total, snap.plan_observed_points
     return AgentExecResult(
         reason=reason,
         payload=payload,
         usd=usd,
+        usd_own_calls=own,
         usd_partial=partial,
         input_tokens=inp,
         output_tokens=out,
@@ -714,6 +715,7 @@ def build_machine_agent_runner(
                 reason=reason,
                 payload=None,
                 usd=spend.usd,
+                usd_own_calls=spend.usd_own_calls,
                 usd_partial=spend.partial,
                 input_tokens=spend.input_tokens,
                 output_tokens=spend.output_tokens,

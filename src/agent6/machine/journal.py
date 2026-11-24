@@ -148,6 +148,7 @@ class AgentFact(pydantic.BaseModel):
         reason: The loop's stop reason.
         payload: The validated `finish_session` payload, or None.
         usd: The slice's spend.
+        usd_own_calls: Cost of the slice's own priced calls, when recorded.
         usd_partial: `usd` is a known under-estimate (an unpriced model); status renders it
             with the `~` marker.
         input_tokens: The slice's input tokens.
@@ -161,6 +162,7 @@ class AgentFact(pydantic.BaseModel):
     reason: str
     payload: dict[str, Any] | None = None
     usd: float = 0.0
+    usd_own_calls: float | None = None
     usd_partial: bool = False
     input_tokens: int = pydantic.Field(default=0, ge=0)
     output_tokens: int = pydantic.Field(default=0, ge=0)
@@ -232,6 +234,7 @@ class MachineEnd(pydantic.BaseModel):
         transitions: The transitions taken.
         usd: The spend of an agent slice that ended with no StepEvent to book it (a capture
             that could not be reduced).
+        usd_own_calls: Cost of the slice's own priced calls, when recorded.
         usd_partial: That spend is a known under-estimate.
         input_tokens: That slice's input tokens.
         output_tokens: That slice's output tokens.
@@ -246,6 +249,7 @@ class MachineEnd(pydantic.BaseModel):
     state: str
     transitions: int = pydantic.Field(ge=0)
     usd: float = 0.0
+    usd_own_calls: float | None = None
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
@@ -265,6 +269,7 @@ class AttemptSpend(pydantic.BaseModel):
     seq: int = pydantic.Field(ge=0)
     state: str
     usd: float = 0.0
+    usd_own_calls: float | None = None
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0

@@ -425,6 +425,7 @@ def execute(
                 reason=result.reason,
                 payload=payload,
                 usd=result.usd,
+                usd_own_calls=result.usd_own_calls,
                 usd_partial=result.usd_partial,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,

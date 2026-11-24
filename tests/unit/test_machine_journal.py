@@ -74,6 +74,7 @@ def _golden_events() -> list[object]:
                 reason="finish_session",
                 payload={"approved": True},
                 usd=0.25,
+                usd_own_calls=0.25,
                 input_tokens=1000,
                 output_tokens=200,
             ),

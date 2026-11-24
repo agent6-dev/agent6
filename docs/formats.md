@@ -101,7 +101,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `input_tokens` | `int` | Input tokens consumed so far. |
 | `output_tokens` | `int` | Output token count. |
 | `cache_read_tokens` | `int` | Cached input tokens consumed so far. |
-| `cost_usd` | `float` | Estimated spend in USD. |
+| `cost_usd` | `float` | USD cap reading before this turn's call. |
 
 ### budget.update
 
@@ -110,7 +110,13 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `settled_children` | `list, optional` | Child session IDs included in this execution's cumulative spend. |
-| `usd_total` | `float` | Cumulative USD spend across provider/model routes, including purchased credits. |
+| `usd_own_calls` | `float, optional` | Cost of this execution's priced calls, excluding children and credits. |
+| `usd_observed_credits` | `float, optional` | Account credit declines inside the USD cap reading, counted once per account. |
+| `credit_readings` | `list, optional` | New account balances observed in the subtree, with their observation times. |
+| `credit_readings[].account` | `str` | The issuing account, or the provider entry when the backend names none. |
+| `credit_readings[].observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
+| `credit_readings[].balance_usd` | `float` | The balance in dollars. |
+| `usd_total` | `float` | USD cap reading: own calls, settled children and observed credit declines. |
 | `input_total` | `int, optional` | This tracker's own fresh input tokens. |
 | `output_total` | `int, optional` | This tracker's own output tokens. |
 | `input_settled_children` | `int, optional` | Fresh input tokens charged through child settlement. |
@@ -119,8 +125,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `cache_write_total` | `int, optional` | Cumulative cache-write tokens. |
 | `usd_partial` | `bool, optional` | Whether unpriced usage makes spend a lower bound. |
 | `usd_cap` | `float, optional` | Spend cap in USD; -1 means unlimited. |
-| `usd_running_children` | `float, optional` | USD the children still running have spent so far; outside `usd_total` until each settles, inside the cap. |
-| `usd_settled_children` | `float, optional` | USD the settled children spent; inside `usd_total`. |
+| `usd_running_children` | `float, optional` | Running children's USD excluding observed credit declines. Inside the cap, but outside `usd_total` until settlement. |
+| `usd_settled_children` | `float, optional` | Settled children's USD outside the credit series; inside `usd_total`. |
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
 | `tokens_running_children` | `int, optional` | Unpriced tokens of the children still running; outside `tokens_unmetered`. |
 | `tokens_fallback_cap` | `int, optional` | Token cap used for unpriced usage. |
@@ -1799,7 +1805,7 @@ Source: [`budget.BudgetTracker.format_summary`](https://github.com/agent6-dev/ag
 | `cache_r` | `text` | Cache-read tokens for the route. |
 | `cache_w` | `text` | Cache-write tokens for the route. |
 | `calls` | `text` | Calls recorded for the route. |
-| `cost` | `text` | USD spend, reported or estimated from that route's prices. The TOTAL includes purchased credits spent. `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls; a TOTAL of unpriced calls over nothing priced is `$?`. |
+| `cost` | `text` | USD spend, reported or estimated from that route's prices. The TOTAL includes the observed decline in account credits. `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls; a TOTAL of unpriced calls over nothing priced is `$?`. |
 | `of` | `text` | The USD cap when a route is USD-metered; `unlimited` means no cap. |
 | `unmetered` | `text` | Tokens counted against the fallback cap, followed by that cap. |
 | `plan` | `text` | One plan usage line per provider, with its binding window's used percent, observed window movement in points, optional cap, reset time and credit balance. Account-wide movement includes other consumers. |
@@ -4078,7 +4084,9 @@ Source: [`agent6.sessions.child_dispatch.UsageRecord`](https://github.com/agent6
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `usd` | `float` | The child's metered spend. |
+| `usd` | `float` | The child's USD cap reading. |
+| `usd_observed_credits` | `float` | Balance declines inside that reading. |
+| `credit_readings` | `tuple[Reading, ...]` | Account balances folded into the parent's reading. |
 | `usd_partial` | `bool` | Whether unpriced calls make it a lower bound. |
 | `tokens` | `int` | Its fallback-ledger tokens. |
 | `model_tokens` | `TokenCounts` | Its cumulative fresh input and output, including settled descendants. |
@@ -4243,7 +4251,9 @@ Source: [`agent6.viewmodel.session.records.SessionUsage`](https://github.com/age
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `usd` | `float` | The spend across every execution. |
+| `credit_readings` | `tuple[Reading, ...]` | Balance observations from the subtree, with their original times. |
+| `usd_observed_credits` | `float` | The account balance declines inside those readings. |
+| `usd` | `float` | The USD cap readings banked across executions. |
 | `usd_partial` | `bool` | Some execution's model had no price, so `usd` is a lower bound. |
 | `plan_observed_points` | `float` | The plan movement observed across every execution, in points. |
 | `unmetered_tokens` | `int` | Fallback tokens across every execution, including settled descendants. |
@@ -4261,10 +4271,11 @@ Source: [`agent6.viewmodel.session.records.ExecutionUsage`](https://github.com/a
 | `output_tokens` | `int \| None` | Output tokens; None until a budget row carries the counters. |
 | `cache_read_tokens` | `int \| None` | The cached side of the input; None when the row lacked it. |
 | `cache_write_tokens` | `int \| None` | Cache-write tokens; None when the row lacked it. |
-| `usd` | `float` | The metered spend. |
+| `usd_observed_credits` | `float` | The account balance declines inside the USD cap reading. |
+| `usd` | `float` | The USD cap reading. |
 | `usd_partial` | `bool` | Some model had no price, so `usd` is a lower bound. |
 | `unmetered_tokens` | `int` | Input and output tokens of calls the meter could not price. |
-| `usd_running_children` | `float` | What the children still running have spent so far: inside the cap, outside `usd` until each settles. |
+| `usd_running_children` | `float` | Running children's USD outside the credit series. It counts against the cap and moves into `usd` at settlement. |
 | `tokens_running_children` | `int` | Their unpriced tokens so far, outside `unmetered_tokens`. |
 | `plan_observed_points` | `float` | The plan movement observed, in points. |
 | `usd_cap` | `float \| None` | `[budget].max_usd`. |
@@ -4334,6 +4345,18 @@ Source: [`agent6.child_records.ChildContext`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `tokens` | `int \| None` | Full provider input at its last measured call; None when unknown. |
 | `last_run_at` | `float \| None` | Epoch of its last journal activity when it ended; None when unknown. |
+
+### Reading
+
+**Support: public.** A purchased-credit balance when it was observed, before any child settlement.
+
+Source: [`agent6.credit_usage.Reading`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/credit_usage.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `account` | `str` | The issuing account, or the provider entry when the backend names none. |
+| `observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
+| `balance_usd` | `float` | The balance in dollars. |
 
 ### ReviewerAssignment
 

@@ -49,6 +49,7 @@ def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
                 seq=seq,
                 state=state,
                 usd=spend.usd,
+                usd_own_calls=spend.usd_own_calls,
                 usd_partial=spend.partial,
                 input_tokens=spend.input_tokens,
                 output_tokens=spend.output_tokens,

@@ -104,7 +104,7 @@ class MachineFold:
     def _book(self, seq: int, fact: Mapping[str, Any]) -> None:
         meter = self._spend.setdefault(seq, telemetry_metrics.Meter())
         for name, field, labels in (
-            ("agent6_cost_usd_total", "usd", {}),
+            ("agent6_cost_usd_total", "usd_own_calls", {}),
             ("agent6_tokens_total", "input_tokens", {"type": "input"}),
             ("agent6_tokens_total", "output_tokens", {"type": "output"}),
         ):

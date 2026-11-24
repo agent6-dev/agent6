@@ -237,6 +237,7 @@ def _usage(
         cache_read_tokens=row.cache_read_total,
         cache_write_tokens=row.cache_write_total,
         usd=row.usd_total,
+        usd_observed_credits=row.usd_observed_credits,
         usd_partial=bool(row.usd_partial),
         unmetered_tokens=row.tokens_unmetered or 0,
         usd_running_children=row.usd_running_children,
@@ -256,6 +257,12 @@ def _usage(
             + execution.unmetered_tokens
         ),
         usd=banked_usd + row.usd_total,
+        usd_observed_credits=(
+            prior.session.usd_observed_credits
+            - prior.execution.usd_observed_credits
+            + row.usd_observed_credits
+        ),
+        credit_readings=prior.session.credit_readings + row.credit_readings,
         usd_partial=bool(row.usd_partial) or prior.session.usd_partial,
         plan_observed_points=banked_points + (row.plan_observed_points or 0.0),
     )

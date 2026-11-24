@@ -14,6 +14,8 @@ from typing import Any, ClassVar, Literal
 
 import pydantic
 
+from agent6 import credit_usage
+
 
 class Event(pydantic.BaseModel):
     """One journal event; `TYPE` is the row's `type`."""
@@ -109,7 +111,7 @@ class BudgetTurn(Event):
     input_tokens: int = pydantic.Field(description="Input tokens consumed so far.")
     output_tokens: int = pydantic.Field(description="Output token count.")
     cache_read_tokens: int = pydantic.Field(description="Cached input tokens consumed so far.")
-    cost_usd: float = pydantic.Field(description="Estimated spend in USD.")
+    cost_usd: float = pydantic.Field(description="USD cap reading before this turn's call.")
 
 
 class BudgetUpdate(Event):
@@ -119,10 +121,20 @@ class BudgetUpdate(Event):
     settled_children: tuple[str, ...] = pydantic.Field(
         default=(), description="Child session IDs included in this execution's cumulative spend."
     )
+    usd_own_calls: float | None = pydantic.Field(
+        default=None,
+        description="Cost of this execution's priced calls, excluding children and credits.",
+    )
+    usd_observed_credits: float = pydantic.Field(
+        default=0.0,
+        description="Account credit declines inside the USD cap reading, counted once per account.",
+    )
+    credit_readings: tuple[credit_usage.Reading, ...] = pydantic.Field(
+        default=(),
+        description="New account balances observed in the subtree, with their observation times.",
+    )
     usd_total: float = pydantic.Field(
-        description=(
-            "Cumulative USD spend across provider/model routes, including purchased credits."
-        ),
+        description="USD cap reading: own calls, settled children and observed credit declines.",
     )
     input_total: int | None = pydantic.Field(
         default=None, description="This tracker's own fresh input tokens."
@@ -155,13 +167,13 @@ class BudgetUpdate(Event):
     usd_running_children: float = pydantic.Field(
         default=0.0,
         description=(
-            "USD the children still running have spent so far; outside `usd_total` until each "
-            "settles, inside the cap."
+            "Running children's USD excluding observed credit declines. Inside the cap, "
+            "but outside `usd_total` until settlement."
         ),
     )
     usd_settled_children: float = pydantic.Field(
         default=0.0,
-        description="USD the settled children spent; inside `usd_total`.",
+        description="Settled children's USD outside the credit series; inside `usd_total`.",
     )
     tokens_unmetered: int | None = pydantic.Field(
         default=None,

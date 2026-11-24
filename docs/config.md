@@ -238,7 +238,8 @@ extra_query = { "api-version" = "2024-06-01" }
 ### Responses API endpoint (`backend = "responses"`)
 
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
-A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it; usage meters tokens like any keyed endpoint, priced from the catalog when the model is known.
+A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it.
+The [budget](#budget) prices its tokens from its own listing or the provider named by `price_from`.
 
 ```toml
 [providers.work]
@@ -590,14 +591,19 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_usd` | `10.0` | cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware); at the cap: resumable end (`budget_exhausted`); fresh budget per resumed execution; `budget.max_usd = -1`: unlimited; `budget.max_usd = 0`: every metered call refused; per-run override: `--max-usd` |
+| `max_usd` | `10.0` | cap on the metered spend of one run (provider-reported cost, else price times tokens at the route's rates, including cache tokens), plus observed account credit declines; at the cap: resumable end (`budget_exhausted`); fresh budget per resumed execution; `budget.max_usd = -1`: unlimited; `budget.max_usd = 0`: every metered call refused; per-run override: `--max-usd` |
 | `max_tokens_fallback` | `2000000` | input-plus-output token cap for unpriceable calls (local models, models without price data); `budget.max_tokens_fallback = -1`: unlimited; `budget.max_tokens_fallback = 0`: unmeterable models refused; per-run override: `--max-tokens-fallback` |
 | `max_plan_points` | `-1.0` | subscription-plan percentage-point cap per run; rise in the account's reported used-percent, summed across window resets (values above 100 meaningful), largest movement across multiple windows; a window counts as reset when its reported reset time moves later by more than a minute; a lower reading whose reset time has not moved counts nothing; one more reading at the end of the run; whole-percent readings, each tick counted as a full point; early stop at the cap, never late; in-flight call still completed; `budget.max_plan_points = -1`: unlimited; `budget.max_plan_points = 0`: plan-metered calls refused; per-run override: `--max-plan-points`; each concurrent run counts the whole account-window increase toward its own cap, not just its own share of the spend. |
 | `allow_plan_overage` | `false` | plan overage for `backend = "chatgpt"` or `"claude_code"`: purchased credits or extra usage after the included window, possible auto top-up through the saved payment method; `budget.allow_plan_overage = false`: circuit breaker, not a guarantee; account windows and credit state read at chatgpt preflight and from every response's headers, or from every claude_code round's rate-limit event; with `budget.allow_plan_overage = false`, exhausted window and credits present: stop at the next boundary, in-flight call still completed; `budget.allow_plan_overage = true`: chatgpt credit-balance drop read as dollars against `budget.max_usd`; no claude_code credit-balance reading, extra usage not metered by `budget.max_usd`; included-plan usage unaffected |
 
 `--max-usd` / `--max-tokens-fallback` / `--max-plan-points` override per run.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
-Purchased-credit spend and API cost share the USD ceiling.
+Priced calls and observed credit declines share the USD ceiling.
+The cap counts each call once, including calls made by children.
+Parent and child readings of the same credit balance form one series in observation order.
+The account ID identifies that series, or the provider entry if the backend gives no ID.
+A top-up raises the balance for the next reading.
+The declines include other users of the account; they are not attributed to calls.
 Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
 For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default reference is the configured `openrouter` entry.
 A reference listing matches the exact model id first, then its vendor-prefixed id (for example, `anthropic/claude-haiku-4.5` for `claude-haiku-4-5-20251001`).

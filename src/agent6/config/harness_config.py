@@ -741,7 +741,8 @@ class BudgetConfig(pydantic.BaseModel):
         default=10.0,
         description=(
             "cap on the metered spend of one run (provider-reported cost, else price times "
-            "tokens at the model's fetched rates, cache-aware); at the cap: resumable end "
+            "tokens at the route's rates, including cache tokens), plus observed account credit "
+            "declines; at the cap: resumable end "
             "(`budget_exhausted`); fresh budget per resumed execution; `budget.max_usd = -1`: "
             "unlimited; `budget.max_usd = 0`: every metered call refused; per-run override: "
             "`--max-usd`"

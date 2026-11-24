@@ -13,20 +13,18 @@ from agent6.sessions import journal
 def budget_turn(budget: agent6_budget.BudgetTracker, turn: int) -> journal.BudgetTurn:
     """Return a `budget.turn` event: the tracker's cumulative tokens and cost at a turn."""
     snap = budget.snapshot()
-    cost, _ = budget.estimate_usd()
     return journal.BudgetTurn(
         turn=turn,
         input_tokens=snap.input_total,
         output_tokens=snap.output_total,
         cache_read_tokens=snap.cache_read_total,
-        cost_usd=round(cost, 6),
+        cost_usd=round(snap.usd_total, 6),
     )
 
 
 def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
     """Return a `budget.update` event's fields: the tracker's cumulative spend and plan reading."""
-    snap = budget.snapshot()
-    usd_total, usd_partial = budget.estimate_usd()
+    snap = budget.snapshot(for_journal=True)
     account = None
     latest = next(reversed(snap.plans.items()), None)  # the last reading any provider gave
     if latest is not None:
@@ -57,8 +55,11 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
         output_total=snap.output_total,
         cache_read_total=snap.cache_read_total,
         cache_write_total=snap.cache_write_total,
-        usd_total=usd_total,
-        usd_partial=usd_partial,
+        usd_total=snap.usd_total,
+        usd_partial=snap.usd_partial,
+        usd_own_calls=snap.usd_own_calls,
+        usd_observed_credits=snap.usd_observed_credits,
+        credit_readings=snap.credit_readings,
         usd_cap=snap.max_usd,
         usd_running_children=snap.usd_running_children,
         usd_settled_children=snap.usd_settled_children,

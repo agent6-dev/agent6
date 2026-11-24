@@ -92,6 +92,7 @@ def _journal() -> list[dict[str, Any]]:
             "type": "budget.update",
             "ts": _ts(50),
             "usd_total": 0.25,
+            "usd_own_calls": 0.25,
             "usd_partial": False,
             "plan_observed_points": 3,
             "plan_used_percent": 12,
@@ -315,7 +316,13 @@ def test_what_follows_an_end_still_folds_against_it() -> None:
     start, panel = review_helpers.panel_rows(block=1)
     rows = [
         *_journal(),
-        {"type": "budget.update", "ts": _ts(61), "usd_total": 0.40, "plan_observed_points": 5},
+        {
+            "type": "budget.update",
+            "ts": _ts(61),
+            "usd_total": 0.40,
+            "usd_own_calls": 0.40,
+            "plan_observed_points": 5,
+        },
         {"type": "session.stranded", "ts": _ts(62)},
         {
             "type": "review.finding.resolved",
@@ -350,6 +357,7 @@ def test_each_providers_plan_reading_is_its_own_series() -> None:
                 "type": "budget.update",
                 "ts": _ts(second),
                 "usd_total": 0.0,
+                "usd_own_calls": 0.0,
                 "account": {"provider": provider, "used_percent": used},
             }
             for second, (provider, used) in enumerate((("a", 10), ("b", 70), ("a", 40)), start=1)
@@ -365,10 +373,10 @@ def test_the_ask_repls_repeated_starts_share_one_cumulative_tracker() -> None:
     """A second `session.start` on one journal restarts nothing: only a resume banks the spend."""
     rows = [
         {"type": "session.start", "ts": _ts(0), "mode": "ask", "execution_id": "q1"},
-        {"type": "budget.update", "ts": _ts(1), "usd_total": 0.10},
+        {"type": "budget.update", "ts": _ts(1), "usd_total": 0.10, "usd_own_calls": 0.10},
         {"type": "session.stop", "ts": _ts(2), "reason": "answered"},
         {"type": "session.start", "ts": _ts(3), "mode": "ask", "execution_id": "q2"},
-        {"type": "budget.update", "ts": _ts(4), "usd_total": 0.15},
+        {"type": "budget.update", "ts": _ts(4), "usd_total": 0.15, "usd_own_calls": 0.15},
         {"type": "session.stop", "ts": _ts(5), "reason": "answered"},
     ]
     fold, spans, _logs = _run(rows)
@@ -381,7 +389,13 @@ def test_a_resume_opens_a_second_trace_and_restarts_the_spend_baseline() -> None
     rows = [
         *_journal(),
         {"type": "session.resume", "ts": _ts(100), "execution_id": "e2", "turn": 2},
-        {"type": "budget.update", "ts": _ts(110), "usd_total": 0.10, "usd_partial": True},
+        {
+            "type": "budget.update",
+            "ts": _ts(110),
+            "usd_total": 0.10,
+            "usd_own_calls": 0.10,
+            "usd_partial": True,
+        },
         {
             "type": "session.stop",
             "ts": _ts(120),
@@ -687,3 +701,14 @@ def test_model_and_tool_spans_follow_the_genai_conventions() -> None:
     assert _attr(failed_call, "gen_ai.usage.input_tokens") is None
     (failure,) = (log for log in logs if log.body == "model call failed")
     assert dict(failure.attributes) == {"gen_ai.request.model": "m", "gen_ai.provider.name": "p"}
+
+
+def test_an_old_mixed_total_is_not_attributed_to_the_sessions_calls() -> None:
+    fold, _, _ = _run(
+        [
+            {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
+            {"type": "budget.update", "ts": _ts(1), "usd_total": 9, "usd_settled_children": 2},
+            {"type": "budget.update", "ts": _ts(2), "usd_total": 20, "usd_own_calls": 0.25},
+        ]
+    )
+    assert _counter(fold, "agent6_cost_usd_total") == 0.25

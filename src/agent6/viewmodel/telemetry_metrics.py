@@ -64,7 +64,7 @@ METRICS: tuple[MetricDef, ...] = (
     MetricDef(
         "agent6_cost_usd_total",
         "counter",
-        "Each session's own priced spend, from its journal's cumulative budget readings.",
+        "Priced calls made by each session, excluding account credit movement.",
         "USD",
     ),
     MetricDef(

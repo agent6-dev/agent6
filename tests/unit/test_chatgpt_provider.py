@@ -728,6 +728,7 @@ def test_plan_usage_headers_feed_the_percent_budget(
     assert provider.budget is not None
     snap = provider.budget.snapshot()
     assert snap.plan_latest is not None
+    assert snap.plan_latest.account_id == "acct-1"
     assert snap.plan_latest.used_percent == 37.0
     assert snap.plan_latest.window_minutes == 10080
     assert snap.unmetered_tokens == 0
@@ -1055,6 +1056,9 @@ def test_usage_body_parses_both_windows_and_the_credit_family() -> None:
     assert plan.binding.name == "secondary" and plan.used_percent == 100.0
     assert plan.limit_reached and plan.has_credits and plan.credits_balance == "$12.50"
     assert plan.credits_usd == 12.5
+    body["credits"]["balance"] = 0
+    empty = chatgpt.plan_usage_from_usage_body(body)
+    assert empty is not None and empty.credits_usd == 0
     assert plan.window_exhausted
     assert chatgpt.plan_usage_from_usage_body({"credits": {}}) is None
 
@@ -1192,7 +1196,9 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert urls == ["https://chatgpt.com/backend-api/codex/usage"] and streamed == []
-    assert provider.budget is not None and provider.budget.snapshot().plan_latest is not None
+    assert provider.budget is not None
+    preflight = provider.budget.snapshot().plan_latest
+    assert preflight is not None and preflight.account_id == "acct-1"
 
     allowed = _provider(
         signed_in,

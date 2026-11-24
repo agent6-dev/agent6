@@ -33,7 +33,12 @@ def worker() -> list[dict[str, Any]]:
             "input_tokens": 1000,
             "output_tokens": 200,
         },
-        {"type": "budget.update", "ts": "2026-07-16T00:00:04+00:00", "usd_total": 0.25},
+        {
+            "type": "budget.update",
+            "ts": "2026-07-16T00:00:04+00:00",
+            "usd_total": 0.25,
+            "usd_own_calls": 0.25,
+        },
         {
             "type": "session.stop",
             "ts": "2026-07-16T00:00:04+00:00",
@@ -80,3 +85,15 @@ def test_machine_states_waits_and_spend_survive_without_worker_logs() -> None:
     assert counts[("agent6_cost_usd_total", ())] == 0.25
     assert sum(n for (name, _), n in counts.items() if name == "agent6_tokens_total") == 1200
     assert counts[("agent6_tool_calls_total", (("outcome", "ok"), ("tool", "run_command")))] == 1
+
+
+def test_a_pruned_worker_does_not_turn_a_mixed_machine_total_into_call_cost() -> None:
+    fold = telemetry.TelemetryFold("demo")
+    for event in journal():
+        if event.get("fact", {}).get("kind") == "agent":
+            del event["fact"]["usd_own_calls"]
+        fold.feed(event)
+    fold.close()
+    counts = fold.metrics().counters
+    assert ("agent6_cost_usd_total", ()) not in counts
+    assert sum(n for (name, _), n in counts.items() if name == "agent6_tokens_total") == 1200

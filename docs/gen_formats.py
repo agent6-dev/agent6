@@ -533,6 +533,8 @@ _RECORD_KINDS = {
 
 def _record_fields(record: type[Any], prefix: str) -> list[Field]:
     """Return a record's rows, a nested record's fields under dotted names."""
+    if dataclasses.is_dataclass(record):
+        return [dataclasses.replace(f, name=prefix + f.name) for f in model_fields(record)]
     rows: list[Field] = []
     for name, info in record.model_fields.items():
         optional = "" if info.is_required() else ", optional"
@@ -547,12 +549,11 @@ def _record_fields(record: type[Any], prefix: str) -> list[Field]:
 
 def _nested_record(annotation: Any) -> tuple[type[Any] | None, str]:
     """Return the record an annotation nests (bare, optional or listed) and its JSON kind."""
-    for t in _types(annotation):
-        if issubclass(t, pydantic.BaseModel):
-            text = _type_text(annotation)
-            return t, "list" if text.startswith(
-                ("collections.abc.Sequence", "tuple[")
-            ) else "object"
+    for record in _types(annotation):
+        text = _type_text(annotation)
+        return record, "list" if text.startswith(
+            ("collections.abc.Sequence", "tuple[")
+        ) else "object"
     return None, _record_kind(annotation)
 
 

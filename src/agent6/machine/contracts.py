@@ -80,6 +80,7 @@ class AgentExecResult(pydantic.BaseModel):
             `max_turns`.
         payload: The structured object passed to `finish_session`, or None.
         usd: The slice's spend, summed into the machine's.
+        usd_own_calls: Cost of the slice's own priced calls, when recorded.
         usd_partial: `usd` is a known under-estimate (an unpriced model).
         input_tokens: The slice's input tokens.
         output_tokens: The slice's output tokens.
@@ -91,6 +92,7 @@ class AgentExecResult(pydantic.BaseModel):
     reason: str
     payload: dict[str, Any] | None
     usd: float = 0.0
+    usd_own_calls: float | None = None
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0

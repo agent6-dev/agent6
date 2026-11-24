@@ -636,6 +636,8 @@ class ParallelDispatcher:
                         "usage": (
                             child_dispatch.UsageRecord(
                                 usd=usage.usd,
+                                usd_observed_credits=usage.usd_observed_credits,
+                                credit_readings=usage.credit_readings,
                                 usd_partial=usage.usd_partial,
                                 tokens=usage.tokens,
                                 model_tokens=usage.model_tokens,

@@ -627,6 +627,40 @@ def test_a_settled_childs_spend_is_exported_once(repo: pathlib.Path) -> None:
     assert float(cost.split()[1]) == pytest.approx(0.50)
 
 
+def test_observers_of_one_credit_drop_do_not_export_or_settle_two_dollars(
+    repo: pathlib.Path,
+) -> None:
+    """Parent and child see the same $10 to $9 drop, without any priced calls."""
+    runs = paths.state_dir(repo) / "sessions" / "runs"
+    trackers = [
+        agent6_budget.BudgetTracker(max_usd=2, max_tokens_fallback=-1, max_plan_points=-1)
+        for _ in range(2)
+    ]
+    parent, child = trackers
+    sinks = [event_log.EventSink(runs / name / "logs.jsonl") for name in ("parent", "child")]
+    for sink in sinks:
+        sink.emit(journal.SessionStart(user_task="t", mode="run", execution_id="e1"))
+    for balance in ("$10", "$9"):
+        for tracker, sink in zip(trackers, sinks, strict=True):
+            tracker.record_plan_preflight(
+                "p",
+                agent6_budget.PlanUsage.single(
+                    20, 300, 0, has_credits=True, credits_balance=balance
+                ),
+            )
+            sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+    assert child.estimate_usd()[0] == 1
+    usage = children.child_usage(runs / "child")
+    assert usage is not None
+    parent.settle_child("child", usage)
+    sinks[0].emit(journal.BudgetUpdate(**budget_events.budget_update_fields(parent)))
+    assert parent.available().usd == 1
+    parent.check()
+    lines = export.prometheus_text(repo).splitlines()
+    costs = [float(line.split()[1]) for line in lines if line.startswith("agent6_cost_usd_total ")]
+    assert sum(costs) == 0
+
+
 def test_machine_follow_discovers_workers_before_the_next_transition(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
