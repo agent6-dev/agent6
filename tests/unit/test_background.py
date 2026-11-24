@@ -171,9 +171,9 @@ def test_a_one_line_read_keeps_the_exit_and_not_the_shell_script(
     )
     try:
         job.running = False
-        out = command_tools.read_background(
+        out = command_tools.read_background_command(
             schema.ReadBackgroundInput(id=view.id, tail_lines=1),
-            get_background=lambda: shells,
+            shells=shells,
             wait_s=0,
             interrupted=lambda: False,
         ).to_wire()

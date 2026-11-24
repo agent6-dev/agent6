@@ -263,9 +263,9 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
     sibling = background.ShellView("bg2", "sleep 60", "running", None, "", 1.0, True)
     shells.read.return_value = (selected, "output")
     shells.roster.return_value = [selected, sibling]
-    outcome = command_tools.read_background(
+    outcome = command_tools.read_background_command(
         schema.ReadBackgroundInput(id="bg1" if selected_state else "", wait_s=wait_s),
-        get_background=lambda: shells,
+        shells=shells,
         wait_s=wait_s,
         interrupted=lambda: False,
     )

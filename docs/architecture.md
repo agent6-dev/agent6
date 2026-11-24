@@ -570,8 +570,8 @@ Read, status and stop responses carry capture failures separately from the exit 
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
 Commands and verify run jailed; file tools resolve through the workspace boundary.
-`tools/command_tools.py` holds jailed execution, command check-ins, and background read and stop handlers.
-`tools/dispatch.py` owns routing, approvals, verify and metric events, and the jail-session lifecycle.
+`tools/command_tools.py` holds the command handlers, including metric sampling and background reads and stops.
+`tools/dispatch.py` owns routing, approvals, verification evidence and the jail session lifecycle.
 Under `partial` and `none`, `prepare_local_execution` gives commands a shared `TMPDIR` in a private `agent6-<session>-*` (the id's first 12 characters) directory in the system temp dir, falling back to `/tmp` when that root exceeds 32 bytes to leave room for Unix socket names.
 Under `full` the jail's own tmpfs `/tmp` is the run's.
 The start gate, verify tool, foreground commands and background commands use this directory; the dispatcher removes it after stopping commands at teardown.

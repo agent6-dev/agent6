@@ -6,13 +6,26 @@ from __future__ import annotations
 
 import dataclasses
 import tempfile
+import time
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import journal
-from agent6.tools import background, policy, result_format, results, schema, tool_errors, waits
+from agent6.tools import (
+    background,
+    child_tools,
+    policy,
+    result_format,
+    results,
+    schema,
+    tool_errors,
+    waits,
+)
+
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -179,10 +192,10 @@ def run_model_command(
     )
 
 
-def read_background(
+def read_background_command(
     args: schema.ReadBackgroundInput,
     *,
-    get_background: Callable[[], background.BackgroundShells],
+    shells: background.BackgroundShells,
     wait_s: float,
     interrupted: Callable[[], bool],
 ) -> results.BackgroundResult:
@@ -190,7 +203,7 @@ def read_background(
 
     Args:
         args: The tool call's validated arguments.
-        get_background: Returns the run's background roster.
+        shells: The run's command roster.
         wait_s: The resolved maximum seconds to wait for the command to end.
         interrupted: Cuts the wait short.
 
@@ -198,9 +211,8 @@ def read_background(
         The roster, or the selected command's fields and output tail.
 
     Raises:
-        ToolError: No session directory was wired, or the id is unknown.
+        ToolError: The command id is unknown.
     """
-    shells = get_background()
     if not args.id:
         return results.BackgroundRosterResult(shells=tuple(v.line() for v in shells.roster()))
     try:
@@ -214,31 +226,6 @@ def read_background(
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
     return results.BackgroundReadResult(view, output)
-
-
-def stop_background(
-    raw: dict[str, Any],
-    *,
-    get_background: Callable[[], background.BackgroundShells],
-) -> results.BackgroundRosterResult:
-    """Stop a background command.
-
-    Args:
-        raw: The tool call's arguments.
-        get_background: Returns the run's background roster.
-
-    Returns:
-        The command's row after the stop.
-
-    Raises:
-        ToolError: No session directory was wired, or the id is unknown.
-    """
-    args = schema.StopBackgroundInput.model_validate(raw)
-    try:
-        view = get_background().stop(args.id)
-    except background.BackgroundError as exc:
-        raise tool_errors.ToolError(str(exc)) from exc
-    return results.BackgroundRosterResult(shells=(view.line(),))
 
 
 def run_argv_raw(
@@ -295,3 +282,166 @@ def run_argv_in_jail(
         access=access,
     )
     return result_format.exec_result(outcome, timeout_s=timeout)
+
+
+def run_command(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ExecResult:
+    """Return the outcome of a command the model chose, or its handle when detached."""
+    args = schema.RunCommandInput.model_validate(raw)
+    ctx.approve_command("run_command", args.argv)
+    if args.background:
+        return start_detached(
+            args.argv,
+            get_background=ctx.get_background,
+            access=ctx.jail_access("run_command"),
+        )
+    with waits.during():
+        return run_model_command(
+            args.argv,
+            shells=ctx.shells,
+            checkin=ctx.config.harness.command_checkin_s,
+            interrupted=ctx.operator_wants_out_now,
+            emit=ctx.emit,
+            access=ctx.jail_access("run_command"),
+        )
+
+
+def run_verify_command(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.ExecResult:
+    """Return the gate's outcome, run at the model's asking."""
+    schema.RunVerifyInput.model_validate(raw)
+    return ctx.run_verify()
+
+
+def run_metric_command(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.MetricResult:
+    """Run the configured metric command in the jail and parse its score.
+
+    Args:
+        ctx: The session metric and command gates.
+        raw: The tool call's arguments; the tool takes none.
+
+    Returns:
+        The outcome plus the score: the pattern's first capture group as a float, or None
+        when it does not match or parse.
+
+    Raises:
+        ToolError: No metric is configured, or the jail is unavailable.
+        ToolDeniedError: The operator did not approve.
+        OperatorCommandUnexecutableError: The command cannot run in the jail.
+    """
+    schema.RunMetricInput.model_validate(raw)
+    metric = ctx.metric
+    if metric is None:
+        raise tool_errors.ToolError(
+            "no session metric; the operator can set one with --metric or /metric"
+        )
+    argv = metric.command
+    ctx.approve_command("run_metric_command", argv)
+    ctx.emit(journal.MetricStart(command=list(argv)))
+    outcome, timeout_s = run_argv_raw(
+        argv,
+        label="metric_command",
+        timeout_s=ctx.config.harness.verify.timeout_s,
+        access=ctx.jail_access("metric_command"),
+    )
+    if outcome.exec_failed:
+        raise tool_errors.OperatorCommandUnexecutableError(
+            f"metric_command {list(argv)} could not be executed in the sandbox: "
+            f"{outcome.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
+            "plus the standard bin dirs; install the tool into one of those on the "
+            "host, use a path inside the workspace, or grant its real directory "
+            "via sandbox.extra_read_paths."
+        )
+    # Scored from the unclipped outcome: the display clip's marker matches a loose pattern.
+    score = result_format.parse_metric_score(outcome.stdout, outcome.stderr, pattern=metric.pattern)
+    res = result_format.exec_result(outcome, timeout_s=timeout_s)
+    ctx.emit(
+        journal.MetricEnd(
+            command=list(argv),
+            exit_code=res.returncode,
+            duration_s=res.duration_s,
+            stdout_tail=res.stdout[-2000:],
+            stderr_tail=res.stderr[-2000:],
+            score=score,
+        )
+    )
+    return results.MetricResult.from_exec(res, score)
+
+
+def read_background(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.BackgroundResult:
+    """Return background output with the run's check-in, stop and steer policy.
+
+    An `id` the run's children hold reads that child; any other is a command's.
+
+    Args:
+        ctx: The session's background work and wait policy.
+        raw: The tool call's arguments.
+
+    Returns:
+        The rosters, or the selected job's fields and its output or transcript tail.
+    """
+    args = schema.ReadBackgroundInput.model_validate(raw)
+    checkin = ctx.config.harness.command_checkin_s
+    wait_s = checkin if args.wait_s is None else args.wait_s
+    limited = checkin > 0 and wait_s >= checkin
+    if limited:
+        wait_s = checkin
+    started = time.monotonic()
+    roster = ctx.children.roster() if ctx.children is not None else ()
+    if ctx.children is not None and child_tools.addressed(args, roster):
+        result = child_tools.read(
+            args,
+            ctx.children,
+            shells=() if args.id else tuple(view.line() for view in ctx.get_background().roster()),
+            wait_s=wait_s,
+            interrupted=ctx.background_wait_interrupted,
+            state_dir=ctx.state_dir,
+        )
+    else:
+        result = read_background_command(
+            args,
+            shells=ctx.get_background(),
+            wait_s=wait_s,
+            interrupted=ctx.background_wait_interrupted,
+        )
+        if isinstance(result, results.BackgroundRosterResult):
+            lines = tuple(child.line() for child in roster)
+            result = dataclasses.replace(result, children=lines)
+    if (
+        limited
+        and result.running
+        and time.monotonic() - started >= checkin
+        and not ctx.background_wait_interrupted()
+    ):
+        note = f"Wait ended at harness.command_checkin_s = {checkin:g}s."
+        result = dataclasses.replace(
+            result, output=f"{result.output}\n\n{note}" if result.output else note
+        )
+    return result
+
+
+def stop_background(
+    ctx: dispatch.ToolContext, raw: dict[str, Any]
+) -> results.BackgroundRosterResult:
+    """Stop a command or a child.
+
+    Args:
+        ctx: The session's background work and command policy.
+        raw: The tool call's arguments, naming the command or the child by its `id`.
+
+    Returns:
+        The row of the command or the child after the stop.
+
+    Raises:
+        ToolError: A command stop is refused, no session directory was wired or the id is unknown.
+    """
+    args = schema.StopBackgroundInput.model_validate(raw)
+    if ctx.children is not None and any(c.id == args.id for c in ctx.children.roster()):
+        ctx.children.stop(args.id)
+        rows = tuple(c.line() for c in ctx.children.roster() if c.id == args.id)
+        return results.BackgroundRosterResult(shells=(), children=rows)
+    if refusal := ctx.policy_refusal(schema.RunCommandInput.TOOL_NAME):
+        raise tool_errors.ToolError(f"command stop {refusal}")
+    try:
+        view = ctx.get_background().stop(args.id)
+    except background.BackgroundError as exc:
+        raise tool_errors.ToolError(str(exc)) from exc
+    return results.BackgroundRosterResult(shells=(view.line(),))

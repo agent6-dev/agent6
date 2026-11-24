@@ -50,7 +50,6 @@ from agent6.tools import (
     skill_tools,
     target_policy,
     tool_errors,
-    waits,
 )
 from agent6.tools import policy as tools_policy
 from agent6.vcs.git import read as git_read
@@ -237,13 +236,13 @@ class ToolDispatcher:
             schema.FindReferencesInput.TOOL_NAME: nav_tools.find_references,
             schema.ApplyEditInput.TOOL_NAME: fs_tools.apply_edit,
             schema.ApplyPatchInput.TOOL_NAME: fs_tools.apply_patch,
-            schema.RunVerifyInput.TOOL_NAME: lambda ctx, raw: self._run_verify(raw),
-            schema.RunCommandInput.TOOL_NAME: lambda ctx, raw: self._run_command(raw),
+            schema.RunVerifyInput.TOOL_NAME: command_tools.run_verify_command,
+            schema.RunCommandInput.TOOL_NAME: command_tools.run_command,
             schema.ReadSessionInput.TOOL_NAME: lambda ctx, raw: self._read_session(raw),
             schema.FetchInput.TOOL_NAME: lambda ctx, raw: self._fetch(raw),
-            schema.ReadBackgroundInput.TOOL_NAME: lambda ctx, raw: self._read_background(raw),
-            schema.StopBackgroundInput.TOOL_NAME: lambda ctx, raw: self._stop_background(raw),
-            schema.RunMetricInput.TOOL_NAME: lambda ctx, raw: self._run_metric(raw),
+            schema.ReadBackgroundInput.TOOL_NAME: command_tools.read_background,
+            schema.StopBackgroundInput.TOOL_NAME: command_tools.stop_background,
+            schema.RunMetricInput.TOOL_NAME: command_tools.run_metric_command,
             schema.FinishSessionInput.TOOL_NAME: control_tools.finish_session,
             schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
             schema.AskUserInput.TOOL_NAME: control_tools.ask_user,
@@ -778,11 +777,6 @@ class ToolDispatcher:
             )
         return tool_errors.ToolDeniedError(f"{name} not approved (sandbox.run_commands='ask')")
 
-    def _run_verify(self, raw: dict[str, Any]) -> results.ExecResult:
-        """Return the gate's outcome, run at the model's asking."""
-        schema.RunVerifyInput.model_validate(raw)
-        return self.run_verify()
-
     def run_verify(self, extra_argv: tuple[str, ...] = ()) -> results.ExecResult:
         """Run the gate; the model's `run_verify_command` and the harness share this path.
 
@@ -964,26 +958,6 @@ class ToolDispatcher:
         ):
             raise self._not_approved(name)
 
-    def _run_command(self, raw: dict[str, Any]) -> results.ExecResult:
-        """Return the outcome of a command the model chose, or its handle when detached."""
-        args = schema.RunCommandInput.model_validate(raw)
-        self._approve_command("run_command", args.argv)
-        if args.background:
-            return command_tools.start_detached(
-                args.argv,
-                get_background=self._background,
-                access=self._jail_access("run_command"),
-            )
-        with waits.during():
-            return command_tools.run_model_command(
-                args.argv,
-                shells=self._shells,
-                checkin=self._config.harness.command_checkin_s,
-                interrupted=self._operator_wants_out_now,
-                emit=self._emit,
-                access=self._jail_access("run_command"),
-            )
-
     def _background_wait_interrupted(self) -> bool:
         """Return whether a pending stop or steer should end a background wait.
 
@@ -1014,79 +988,6 @@ class ToolDispatcher:
         return ipc.stop_request_is_now(self._session_dir) or ipc.steer_answer_is_abort(
             self._session_dir
         )
-
-    def _read_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Return background output with the run's check-in, stop and steer policy.
-
-        An `id` the run's children hold reads that child; any other is a command's.
-
-        Args:
-            raw: The tool call's arguments.
-
-        Returns:
-            The rosters, or the selected job's fields and its output or transcript tail.
-        """
-        args = schema.ReadBackgroundInput.model_validate(raw)
-        checkin = self._config.harness.command_checkin_s
-        wait_s = checkin if args.wait_s is None else args.wait_s
-        limited = checkin > 0 and wait_s >= checkin
-        if limited:
-            wait_s = checkin
-        started = time.monotonic()
-        roster = self.children.roster() if self.children is not None else ()
-        if self.children is not None and child_tools.addressed(args, roster):
-            result = child_tools.read(
-                args,
-                self.children,
-                shells=()
-                if args.id
-                else tuple(view.line() for view in self._background().roster()),
-                wait_s=wait_s,
-                interrupted=self._background_wait_interrupted,
-                state_dir=self._state_dir,
-            )
-        else:
-            result = command_tools.read_background(
-                args,
-                get_background=self._background,
-                wait_s=wait_s,
-                interrupted=self._background_wait_interrupted,
-            )
-            if isinstance(result, results.BackgroundRosterResult):
-                lines = tuple(child.line() for child in roster)
-                result = dataclasses.replace(result, children=lines)
-        if (
-            limited
-            and result.running
-            and time.monotonic() - started >= checkin
-            and not self._background_wait_interrupted()
-        ):
-            note = f"Wait ended at harness.command_checkin_s = {checkin:g}s."
-            result = dataclasses.replace(
-                result, output=f"{result.output}\n\n{note}" if result.output else note
-            )
-        return result
-
-    def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundRosterResult:
-        """Stop a command or a child.
-
-        Args:
-            raw: The tool call's arguments, naming the command or the child by its `id`.
-
-        Returns:
-            The row of the command or the child after the stop.
-
-        Raises:
-            ToolError: The session may stop children but not commands.
-        """
-        args = schema.StopBackgroundInput.model_validate(raw)
-        if self.children is not None and any(c.id == args.id for c in self.children.roster()):
-            self.children.stop(args.id)
-            rows = tuple(c.line() for c in self.children.roster() if c.id == args.id)
-            return results.BackgroundRosterResult(shells=(), children=rows)
-        if refusal := self._policy_refusal(schema.RunCommandInput.TOOL_NAME):
-            raise tool_errors.ToolError(f"command stop {refusal}")
-        return command_tools.stop_background(raw, get_background=self._background)
 
     def _background(self) -> background.BackgroundShells:
         """Return the background roster.
@@ -1260,61 +1161,6 @@ class ToolDispatcher:
         """Return whether at least one enabled or always skill exists."""
         resolved = self.resolved_skills()
         return bool(resolved.enabled or resolved.always)
-
-    def _run_metric(self, raw: dict[str, Any]) -> results.MetricResult:
-        """Run the configured metric command in the jail and parse its score.
-
-        Args:
-            raw: The tool call's arguments; the tool takes none.
-
-        Returns:
-            The outcome plus the score: the pattern's first capture group as a float, or None
-            when it does not match or parse.
-
-        Raises:
-            ToolError: No metric is configured, or the jail is unavailable.
-            ToolDeniedError: The operator did not approve.
-            OperatorCommandUnexecutableError: The command cannot run in the jail.
-        """
-        schema.RunMetricInput.model_validate(raw)
-        metric = self.metric
-        if metric is None:
-            raise tool_errors.ToolError(
-                "no session metric; the operator can set one with --metric or /metric"
-            )
-        argv = metric.command
-        self._approve_command("run_metric_command", argv)
-        self._emit(journal.MetricStart(command=list(argv)))
-        outcome, timeout_s = command_tools.run_argv_raw(
-            argv,
-            label="metric_command",
-            timeout_s=self._config.harness.verify.timeout_s,
-            access=self._jail_access("metric_command"),
-        )
-        if outcome.exec_failed:
-            raise tool_errors.OperatorCommandUnexecutableError(
-                f"metric_command {list(argv)} could not be executed in the sandbox: "
-                f"{outcome.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
-                "plus the standard bin dirs; install the tool into one of those on the "
-                "host, use a path inside the workspace, or grant its real directory "
-                "via sandbox.extra_read_paths."
-            )
-        # Scored from the unclipped outcome: the display clip's marker matches a loose pattern.
-        score = result_format.parse_metric_score(
-            outcome.stdout, outcome.stderr, pattern=metric.pattern
-        )
-        res = result_format.exec_result(outcome, timeout_s=timeout_s)
-        self._emit(
-            journal.MetricEnd(
-                command=list(argv),
-                exit_code=res.returncode,
-                duration_s=res.duration_s,
-                stdout_tail=res.stdout[-2000:],
-                stderr_tail=res.stderr[-2000:],
-                score=score,
-            )
-        )
-        return results.MetricResult.from_exec(res, score)
 
     def _jail_access(self, label: str) -> command_tools.JailAccess:
         """Return the prepared command session, the one transport every command uses.
