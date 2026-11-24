@@ -8,6 +8,7 @@ With the panel on, reviewers record findings on the target before the worker ans
 
 [Recorded review replay](replay.md) compares a panel reviewer's first reply under two system prompts.
 [Lean review category counts](categories.md) compares labels for repeated defects.
+[Later fixes on reviewed lines](later-fixes.md) counts defects the replies reported or missed.
 
 The measurements below used the prompt with a reviewer vote and fixed categories.
 They do not measure the prompt with free labels and no vote.
