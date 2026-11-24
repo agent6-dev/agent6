@@ -2630,7 +2630,7 @@ Source: [`ui.web.git_model.grep_payload`](https://github.com/agent6-dev/agent6/b
 | --- | --- | --- |
 | `rev` | `JSON` | The resolved commit or WORKTREE. |
 | `hits` | `JSON` | Matching lines as path, one-based line number and text. |
-| `truncated` | `JSON` | Whether the hit or output byte limit cut the results. |
+| `truncated` | `JSON` | Whether the hit limit, the output byte limit or a git warning cut the results. |
 
 ### `/api/git/tree` payload
 

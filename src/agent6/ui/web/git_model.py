@@ -1072,7 +1072,7 @@ def grep_payload(repo: pathlib.Path, rev: str, query: str) -> dict[str, Any]:
     Attributes:
         rev: The resolved commit or WORKTREE.
         hits: Matching lines as path, one-based line number and text.
-        truncated: Whether the hit or output byte limit cut the results.
+        truncated: Whether the hit limit, the output byte limit or a git warning cut the results.
 
     Args:
         repo: The checkout directory.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import signal
 import subprocess
@@ -104,6 +105,25 @@ def test_grep_marks_only_incomplete_results_and_skips_ignored_and_binary_files(
     (checkout / "notes").write_text("match" + "x" * (512 * 1024))
     large = test_web_git._ok(port, route)
     assert large["truncated"] and len(json.dumps(large)) < 300_000
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every directory")
+def test_grep_keeps_its_hits_when_git_warns_about_an_unreadable_directory(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A warning on a good exit failed the search and dropped every hit."""
+    test_git_history.build_history(tmp_path)
+    (tmp_path / "notes.txt").write_text("needle here\n")
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (locked / "x.txt").write_text("needle\n")
+    locked.chmod(0)
+    try:
+        payload = git_model.grep_payload(tmp_path, "WORKTREE", "needle")
+    finally:
+        locked.chmod(0o755)
+    assert payload["hits"] == [{"path": "notes.txt", "line": 1, "text": "needle here"}]
+    assert payload["truncated"]
 
 
 @pytest.mark.parametrize(

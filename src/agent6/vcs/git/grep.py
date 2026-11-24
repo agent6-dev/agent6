@@ -44,10 +44,10 @@ def _collect(proc: subprocess.Popen[bytes], prefix: bytes) -> tuple[list[Hit], b
         prefix: Git's commit prefix on each path, empty for the working tree.
 
     Returns:
-        Complete matching lines and whether the search was cut.
+        Complete matching lines and whether a limit or a git warning cut the search.
 
     Raises:
-        GitError: Git reported an error or returned an incomplete row.
+        GitError: Git exited with an error or returned an incomplete row.
         TimeoutExpired: The reader reached its deadline.
     """
     assert proc.stdout is not None and proc.stderr is not None
@@ -83,11 +83,12 @@ def _collect(proc: subprocess.Popen[bytes], prefix: bytes) -> tuple[list[Hit], b
                 if len(out) > MAX_BYTES:
                     return hits, True
     code = proc.wait(timeout=max(0, deadline - time.monotonic()))
-    if code not in (0, 1) or err:
+    if code not in (0, 1):
         raise errors.GitError(f"git grep: {err.decode(errors='replace').strip() or f'exit {code}'}")
     if pos != len(out):
         raise errors.GitError("git grep returned an incomplete match")
-    return hits, False
+    # A warning on a good exit names what git could not read: the hits are partial.
+    return hits, bool(err)
 
 
 def search(repo: pathlib.Path, rev: str, pattern: str) -> tuple[list[Hit], bool]:
@@ -99,7 +100,7 @@ def search(repo: pathlib.Path, rev: str, pattern: str) -> tuple[list[Hit], bool]
         pattern: The operator's single line of literal text.
 
     Returns:
-        Complete hits and whether the row or byte limit cut the search.
+        Complete hits and whether the row limit, the byte limit or a git warning cut the search.
 
     Raises:
         GitError: Git failed or the search timed out.

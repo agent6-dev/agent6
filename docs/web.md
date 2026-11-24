@@ -274,7 +274,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - `/api/git/worktree` lists uncommitted files against HEAD: tracked changes first, then untracked files, with `.gitignore` honoured
     - `/api/git/tree?rev=` lists files at a revision or in the working tree, capped at 20000 files; the working tree includes the index and untracked files `.gitignore` does not exclude, omitting tracked files gone from disk; only mode `160000` entries are submodules, including unpopulated gitlinks
     - `/api/git/grep?rev=&q=` searches nonbinary files for one nonempty line of literal text (up to 4096 UTF-8 bytes, no NUL).
-      The [result](formats.md#apigitgrep-payload) marks truncation at 100 hits or 256 KiB of git output.
+      The [result](formats.md#apigitgrep-payload) marks truncation at 100 hits or 256 KiB of git output, and when git warns that it could not read part of the tree.
       A grep that takes over three seconds is killed and answers `422`.
     - `/api/git/text?rev=&path=` returns highlighted file text, cut at 1 MiB on a line boundary unless `whole=1`; binary content has no text, and a file over 20 MiB answers `413`
     - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
