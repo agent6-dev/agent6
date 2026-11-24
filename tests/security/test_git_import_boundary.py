@@ -18,7 +18,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
+from collections.abc import Iterator
 
 import pytest
 
@@ -29,6 +31,8 @@ from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
 _jailed = pytest.mark.needs_namespaces
+# `partial` needs no namespaces: Landlock and seccomp bind without them.
+_LEVELS = [pytest.param("full", marks=_jailed), "partial"]
 
 _SESSION = "kid1"
 _BRANCH = "agent6/kid1"
@@ -74,10 +78,23 @@ def _has(repo: pathlib.Path, sha: str) -> bool:
     return found.returncode == 0
 
 
-def _config(control: str) -> Config:
-    """Return a `full` config under which the child's commands can write its `.git`."""
+def _config(control: str, isolation: str = "full") -> Config:
+    """Return a config under which the child's commands can write its `.git`."""
     own = {"git": {"control": "model"}} if control == "model" else {}
-    return Config.model_validate({"sandbox": {"isolation": "full", "protect_git": "off"}, **own})
+    return Config.model_validate({"sandbox": {"isolation": isolation, "protect_git": "off"}, **own})
+
+
+@pytest.fixture
+def elsewhere() -> Iterator[pathlib.Path]:
+    """A directory no isolation level grants: `partial` grants the host's /tmp wholesale."""
+    base = pathlib.Path("/var/tmp")
+    if not (base.is_dir() and os.access(base, os.W_OK)):
+        pytest.skip("/var/tmp is not writable here")
+    made = pathlib.Path(tempfile.mkdtemp(prefix="agent6-import-", dir=base)).resolve()
+    try:
+        yield made
+    finally:
+        shutil.rmtree(made, ignore_errors=True)
 
 
 def _child(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
@@ -114,20 +131,20 @@ def _rig(rigging: str, child: pathlib.Path, other: pathlib.Path) -> None:
         (git_dir / "commondir").write_text(f"{other_git}\n", encoding="utf-8")
 
 
-@_jailed
+@pytest.mark.parametrize("isolation", _LEVELS)
 @pytest.mark.parametrize("control", ["agent6", "model"])
 @pytest.mark.parametrize("rigging", ["alternates", "symlinked-ref", "gitdir", "commondir"])
 def test_a_rigged_clone_imports_nothing_of_another_repository(
-    tmp_path: pathlib.Path, rigging: str, control: str
+    tmp_path: pathlib.Path, elsewhere: pathlib.Path, rigging: str, control: str, isolation: str
 ) -> None:
     """The import ran the clone's `git upload-pack` on the host, which followed its `.git`.
 
     Another repository's commit then reached the origin, where the parent's jailed git reads
     it. The other repository holds a branch of the child's name, so every rigging has a ref
-    to send under both controls.
+    to send under both controls. It lies where neither level's commands can read.
     """
     origin, child, session = _child(tmp_path)
-    other = _repo(tmp_path / "other", "notes.txt", "another repository's file\n")
+    other = _repo(elsewhere / "other", "notes.txt", "another repository's file\n")
     _git(other, "branch", _BRANCH)
     theirs = _git(other, "rev-list", "--objects", "--all").split("\n")
     theirs = [line.split(" ", 1)[0] for line in theirs]
@@ -144,7 +161,12 @@ def test_a_rigged_clone_imports_nothing_of_another_repository(
     refused = False
     try:
         child_repo.import_run(
-            origin, child, _BRANCH, session, _config(control), model_control=control == "model"
+            origin,
+            child,
+            _BRANCH,
+            session,
+            _config(control, isolation),
+            model_control=control == "model",
         )
     except child_repo.ChildRepoError:
         refused = True
@@ -185,15 +207,22 @@ def test_an_import_refuses_a_weaker_level_than_the_child_ran_under(
     assert not git_read.branch_exists(origin, _BRANCH)
 
 
-@_jailed
+@pytest.mark.parametrize("isolation", _LEVELS)
 @pytest.mark.parametrize("control", ["agent6", "model"])
-def test_a_clean_clone_still_imports_under_its_jail(tmp_path: pathlib.Path, control: str) -> None:
+def test_a_clean_clone_still_imports_under_its_jail(
+    tmp_path: pathlib.Path, control: str, isolation: str
+) -> None:
     """A jail that hides the clone's own `.git` from its `git upload-pack` imports nothing."""
     origin, child, session = _child(tmp_path)
     tip = _git(child, "rev-parse", "HEAD")
 
     imported = child_repo.import_run(
-        origin, child, _BRANCH, session, _config(control), model_control=control == "model"
+        origin,
+        child,
+        _BRANCH,
+        session,
+        _config(control, isolation),
+        model_control=control == "model",
     )
 
     ref = git_read.chain_ref_for(_SESSION) if control == "model" else _BRANCH
