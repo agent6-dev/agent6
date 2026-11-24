@@ -756,7 +756,8 @@ def test_a_small_buttons_label_stays_on_one_line_inside_its_card(
     run = paths.state_dir(tmp_path) / "sessions" / "runs" / "narrow-AAA111"
     run.mkdir(parents=True)
     start = {"type": "session.start", "mode": "run", "user_task": "Look"}
-    (run / "logs.jsonl").write_text(json.dumps(start) + "\n")
+    call = {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}}
+    (run / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in [start, call]))
     page, errors = open_page(port)
     page.add_init_script("""localStorage.setItem('a6-drawer', 'open');
       localStorage.setItem('a6-drawer-w', '390px');""")

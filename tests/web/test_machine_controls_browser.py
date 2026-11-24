@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -7,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from agent6 import paths
-from tests.web import test_files_preview_browser, test_web_browser
+from tests.web import test_files_preview_browser, test_machine_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -53,4 +54,36 @@ def test_machine_description_survives_navigation_until_create(
     page.go_back()
     sync_api.expect(field).to_be_empty()
     sync_api.expect(create).to_be_disabled()
+    assert not errors
+
+
+def test_machine_detail_waits_for_something_to_toggle(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """An empty conversation has no detail button. Live thinking alone makes it useful."""
+    from playwright import sync_api
+
+    machine = test_machine_browser._machine(
+        tmp_path, "working", test_machine_browser.LOOP, [], [], alive=True
+    )
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/machine/working")
+    card = page.locator(".conv-card")
+    sync_api.expect(card.locator(".conv-empty")).to_be_visible()
+    button = card.locator(".card-head-row button")
+    sync_api.expect(button).to_be_hidden()
+    call = {"actor": "worker", "model_call_id": "c1"}
+    with (machine / "states/0000-work/logs.jsonl").open("a") as log:
+        for row in [
+            {"type": "session.start", "mode": "run", "user_task": "Do the work."},
+            {"type": "model.call", "model": "m", **call},
+            {"type": "model.thinking_delta", "text": "Look up the next state.", **call},
+        ]:
+            log.write(json.dumps(row) + "\n")
+    sync_api.expect(card.locator(".conv-live")).to_contain_text("thinking…")
+    button.click()
+    sync_api.expect(card.locator(".conv-live")).to_contain_text("Look up the next state.")
+    button.click()
+    sync_api.expect(button).to_have_accessible_name("detail: hidden")
+    sync_api.expect(button).to_be_visible()
     assert not errors

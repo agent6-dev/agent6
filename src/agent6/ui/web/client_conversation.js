@@ -12,6 +12,11 @@ function makeConv(url, box, body, empty = {}) {
   };
   const itemsHost = el('div', 'conv');
   const liveHost = el('div', 'conv conv-live');
+  const button = el('button', 'mini');
+  conv.detailButton = button;
+  let recordedDetail = false, liveThinking = false, liveState = null;
+  const showControl = () => { button.hidden = !recordedDetail && !liveThinking; };
+  showControl();
   liveHost.style.display = 'none';
   conv.prompts = el('div', 'prompts'); // paintPrompts' boxes, after the last line, so new lines land above them
   body.append(itemsHost, liveHost, conv.prompts);
@@ -110,6 +115,8 @@ function makeConv(url, box, body, empty = {}) {
     if (key === conv.itemsKey) return;
     conv.itemsKey = key;
     conv.items = data.items || [];
+    recordedDetail = conv.items.some(it => it.full || it.kind === 'thinking' || it.kind === 'tool');
+    showControl();
     paintItems();
   };
   conv.poke = () => {
@@ -118,8 +125,11 @@ function makeConv(url, box, body, empty = {}) {
   };
   conv.close = () => { conv.closed = true; if (conv.timer) { clearTimeout(conv.timer); conv.timer = null; } };
   conv.setLive = (s) => {
+    liveState = s;
     conv.finished = notLive(s);
     const r = s.last_model_call;
+    liveThinking = !conv.finished && !s.operator_blocked && !!r?.streamed_thinking;
+    showControl();
     liveHost.innerHTML = '';
     const note = itemsHost.querySelector('.conv-empty');
     if (notLive(s)) {
@@ -157,22 +167,19 @@ function makeConv(url, box, body, empty = {}) {
       const hb = el('div', 'muted'); hb.id = 'hb-line'; liveHost.appendChild(hb); hbTick();
     }
   };
-  conv.detailButton = () => {
-    // Reserve room for all three labels so the detail control stays still.
-    const b = el('button', 'mini');
-    const cycle = b.appendChild(el('span', 'cycle'));
-    const labels = {};
-    for (const level in DETAIL_CYCLE) labels[level] = cycle.appendChild(el('span', null, 'detail: ' + level));
-    const show = () => { for (const level in labels) labels[level].classList.toggle('on', level === conv.detail); };
+  // Reserve room for all three labels so the detail control stays still.
+  const cycle = button.appendChild(el('span', 'cycle'));
+  const labels = {};
+  for (const level in DETAIL_CYCLE) labels[level] = cycle.appendChild(el('span', null, 'detail: ' + level));
+  const show = () => { for (const level in labels) labels[level].classList.toggle('on', level === conv.detail); };
+  show();
+  button.onclick = () => {
+    conv.detail = DETAIL_CYCLE[conv.detail];
+    remember('a6-detail', conv.detail);
     show();
-    b.onclick = () => {
-      conv.detail = DETAIL_CYCLE[conv.detail];
-      remember('a6-detail', conv.detail);
-      show();
-      conv.open.clear();
-      paintItems();
-    };
-    return b;
+    conv.open.clear();
+    paintItems();
+    if (liveThinking) conv.setLive(liveState);
   };
   return conv;
 }
@@ -185,7 +192,7 @@ function convCard(url, title, cls, empty) {
   const body = el('div');
   box.appendChild(body);
   const conv = makeConv(url, box, body, empty);
-  hrow.appendChild(conv.detailButton());
+  hrow.appendChild(conv.detailButton);
   card.appendChild(hrow); card.appendChild(box);
   return { card, conv, box };
 }
