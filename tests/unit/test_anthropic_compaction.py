@@ -54,7 +54,7 @@ def test_request_keeps_messages_and_merges_required_betas(
     messages = SAMPLES["adopt-strict" if sample == "adopt-strict" else "turn3"]["messages"]
     options: dict[str, Any] = {}
     if sample == "compact":
-        options["compaction"] = provider_types.Summarise("Keep the goal.")
+        options["compaction"] = provider_types.Summarize("Keep the goal.")
     elif sample == "clearing-strict":
         options["compaction"] = provider_types.ClearToolResults(3, exclude_tools=("ask_user",))
     response = provider.call(system="system", messages=messages, **options)
@@ -164,7 +164,7 @@ def test_a_summary_stream_cut_before_its_end_is_billed(monkeypatch: pytest.Monke
             system="s",
             messages=SAMPLES["turn3"]["messages"],
             text_delta_callback=lambda _: None,
-            compaction=provider_types.Summarise("Keep the goal."),
+            compaction=provider_types.Summarize("Keep the goal."),
         )
     assert cut.value.usage == provider_types.ProviderUsage(60, 434, 33050, 0)
     assert (tracker._input_total, tracker._output_total, tracker._cache_read_total) == (

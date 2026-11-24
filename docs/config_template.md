@@ -38,7 +38,7 @@ It can be empty or absent when the global config supplies a provider and model.
   `get` accepts a whole mapping or one entry and prints each entry with its own origin.
   `set` and `unset` accept a whole mapping or one entry, such as `skills.state.alpha`.
   Every edit is validated before it is written; a refused edit leaves the file untouched.
-  A sibling pair that must move together is set as one inline table: `agent6 config set compaction '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
+  A sibling pair that must move together is set as one inline table: `agent6 config set compaction '{ drop_at_chars = 200000, summarize_at_chars = 400000 }'`.
 - Writes are atomic; failure to take the config lock does not block the write, but concurrent edits can lose updates.
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - The [TUI config page](terminal.md#configuration) adds and removes named provider, MCP server and skill state entries through forms.
@@ -422,7 +422,7 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 ## `[compaction]`
 
 Both writers use the size thresholds (about four characters per token).
-Only local compaction uses `summariser`, `elision_gists` and the `keep_` settings.
+Only local compaction uses `summarizer`, `elision_gists` and the `keep_` settings.
 The [usage guide](usage.md#compaction) explains which messages survive a summary restart.
 
 <!-- config-table: compaction -->

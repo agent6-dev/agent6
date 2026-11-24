@@ -757,7 +757,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - `git stash push` (the auto-stash) leaves them out the same way, and no stash moves a nested checkout
     - git refuses an empty commit by printing a status, which runs git there: agent6 refuses an empty commit itself, and tells git to allow one (`--allow-empty`).
       Undoing the change between that check and the commit produces an empty commit
-- `submodule.recurse`, `diff.submodule` and `status.submoduleSummary` are off on every call: no checkout recurses into a submodule, no diff renders inside one, no status summarises one.
+- `submodule.recurse`, `diff.submodule` and `status.submoduleSummary` are off on every call: no checkout recurses into a submodule, no diff renders inside one, no status summarizes one.
 - A directory laid out as a git dir is a repository only as a `.git` (`safe.bareRepository=explicit`): agent6 started below any other finds no repository.
 - Review asks each selected submodule for its status with that submodule's hooks and drivers off, whatever `git.run_repo_hooks` and `git.run_repo_drivers` say.
     - that is two steps, a listing of the submodule's drivers and then the status: a jailed command that rewrites the submodule's config between them can make the status run a program on the host

@@ -147,7 +147,7 @@ class CacheUsageFold:
             (kind in ("compact.dropped", "compact.deduped") and _count(row, "count"))
             or (kind == "compact.thinking_dropped" and _count(row, "messages"))
             or (kind == "compact.gist.done" and _count(row, "demoted"))
-            or kind == "compact.summarise.done"
+            or kind == "compact.summarize.done"
             or (kind == "compact.cold_start" and row.get("action") == "truncate")
         ):
             self.pending = True
@@ -189,7 +189,7 @@ class CacheUsageFold:
         """
         kind = row.get("type")
         attempts = self.usage.summaries
-        if kind == "compact.summarise.call" and row.get("writer"):
+        if kind == "compact.summarize.call" and row.get("writer"):
             self.summary_call_id = str(row.get("model_call_id", ""))
             attempt = SummaryAttempt(
                 str(row["writer"]), self.summary_call_id, str(row.get("fallback_reason", ""))
@@ -197,10 +197,10 @@ class CacheUsageFold:
             self.usage = dataclasses.replace(self.usage, summaries=(*attempts, attempt))
         elif self.summary_call_id:
             last = attempts[-1]
-            if kind in ("compact.summarise.done", "compact.summarise.failed"):
+            if kind in ("compact.summarize.done", "compact.summarize.failed"):
                 outcome = (
                     "accepted"
-                    if kind == "compact.summarise.done"
+                    if kind == "compact.summarize.done"
                     else f"rejected: {row.get('error')}"
                 )
                 last = dataclasses.replace(last, outcome=outcome)

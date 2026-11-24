@@ -51,7 +51,7 @@ def record_review(
     child = layout.SessionLayout(state, session_id, "reviewers")
     sink = provider_types.TranscriptSink(child.transcripts_dir, objects_dir=child.objects_dir)
     for actor, request in (
-        ("helper:summariser", {"messages": []}),
+        ("helper:summarizer", {"messages": []}),
         (f"reviewer:{focus}", body),
         (f"reviewer:{focus}", {"input": [{"type": "function_call_output", "output": "later"}]}),
     ):

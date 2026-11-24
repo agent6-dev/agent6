@@ -292,7 +292,7 @@ def test_thinking_is_not_stripped_without_a_tool_result_rewrite(tmp_path: pathli
         logger=lambda _m: None,
         compaction=compaction_window.CompactionSettings(
             drop_at_chars=3000,
-            summarise_at_chars=10**9,
+            summarize_at_chars=10**9,
             keep_thinking_turns=1,
             elision_gists=False,
         ),
@@ -843,7 +843,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
         logger=lambda _m: None,
         compaction=compaction_window.CompactionSettings(
             drop_at_chars=1500,
-            summarise_at_chars=10**9,
+            summarize_at_chars=10**9,
             keep_thinking_turns=cfg.compaction.keep_thinking_turns,
             elision_gists=False,
         ),

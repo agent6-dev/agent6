@@ -52,7 +52,7 @@ class Context:
         pins: Operator instructions that survive a restart.
         endpoint_notice: Build the notice that follows a signed summary and its reply.
         restart_notice: Build the restart header with the task, operator quotes, pins and facts.
-        call_endpoint: Ask the endpoint to summarise the given request.
+        call_endpoint: Ask the endpoint to summarize the given request.
         call_worker: Append one instruction to the worker request using the supplied call id.
         call_helper: Send system and user text to the helper using the supplied call id.
         check_stop: Raise on a pending stop or steer.

@@ -425,10 +425,10 @@ def test_an_unclosed_function_ends_at_its_last_closed_parameter() -> None:
     A `<function=` block missing its closer must not run to the end of the text and swallow the
     prose after it; a truncated last parameter still runs to the end.
     """
-    text = "<function=read_file><parameter=path>a.py</parameter>\nAfter that I summarise."
+    text = "<function=read_file><parameter=path>a.py</parameter>\nAfter that I summarize."
     calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
-    assert remaining == "After that I summarise."
+    assert remaining == "After that I summarize."
     truncated = "<function=apply_edit><parameter=path>x</parameter><parameter=new_string>abc"
     calls, remaining = openai_recovery.coerce_text_tool_calls(truncated, _TOOLS | {"apply_edit"})
     assert calls == [{"name": "apply_edit", "input": {"path": "x", "new_string": "abc"}}]

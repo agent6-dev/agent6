@@ -64,10 +64,10 @@ def test_claude_minor_versions_size_compaction_from_family(
     )
     logs: list[str] = []
     assert models_registry.context_window("claude", model + suffix) == 1_000_000
-    drop, summarise, _ = role_providers.resolve_compaction_thresholds(
+    drop, summarize, _ = role_providers.resolve_compaction_thresholds(
         cfg, cfg.models.resolve("worker"), log=logs.append
     )
-    assert (drop, summarise) == (1_800_000, 3_934_464)
+    assert (drop, summarize) == (1_800_000, 3_934_464)
     assert any(f"family fallback from {model.rsplit('-', 1)[0]}" in line for line in logs)
 
 
@@ -99,19 +99,19 @@ def test_family_fallback_does_not_guess_unknown_windows(
 
 def test_compaction_thresholds_explicit_override_wins(cache_home: pathlib.Path) -> None:
     assert models_registry.compaction_thresholds(
-        "openrouter", "moonshotai/kimi-k2.6", drop_override=111, summarise_override=222
+        "openrouter", "moonshotai/kimi-k2.6", drop_override=111, summarize_override=222
     ) == (111, 222)
 
 
 def test_compaction_thresholds_adaptive_from_window(cache_home: pathlib.Path) -> None:
-    drop, summarise = models_registry.compaction_thresholds(
-        "openrouter", "moonshotai/kimi-k2.6", drop_override=None, summarise_override=None
+    drop, summarize = models_registry.compaction_thresholds(
+        "openrouter", "moonshotai/kimi-k2.6", drop_override=None, summarize_override=None
     )
     assert drop == int(262_144 * 4 * 0.45)
     # Tier-2 is a near-edge valve: the window minus a 16k-token reserve
     # (pi's reserveTokens shape), not a mid-window fraction.
-    assert summarise == (262_144 - 16_384) * 4
-    assert drop < summarise  # tier-2 escalates above tier-1
+    assert summarize == (262_144 - 16_384) * 4
+    assert drop < summarize  # tier-2 escalates above tier-1
 
 
 def _window(tokens: int) -> Callable[[str, str], int]:
@@ -136,12 +136,12 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     monkeypatch.setattr(models_registry, "context_window", _window(32_768))
     logs: list[str] = []
 
-    drop, summarise, keep = role_providers.resolve_compaction_thresholds(
+    drop, summarize, keep = role_providers.resolve_compaction_thresholds(
         Config(), RoleModel(provider="p", model="m"), log=logs.append
     )
 
-    assert drop < summarise
-    assert keep == summarise // 2, "the tail must leave room for the restart to shrink"
+    assert drop < summarize
+    assert keep == summarize // 2, "the tail must leave room for the restart to shrink"
     assert any("keep_recent_chars 80,000 ->" in line for line in logs), logs
 
     # A window the default already fits inside keeps the operator's number.
@@ -157,7 +157,7 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
 def test_compaction_thresholds_fixed_fallback_when_unknown(cache_home: pathlib.Path) -> None:
     # No bundled entry, empty cache -> historical 256k/768k (behaviour preserved).
     assert models_registry.compaction_thresholds(
-        "openrouter", "vendor/totally-unknown", drop_override=None, summarise_override=None
+        "openrouter", "vendor/totally-unknown", drop_override=None, summarize_override=None
     ) == (256_000, 768_000)
 
 

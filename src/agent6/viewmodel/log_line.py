@@ -225,9 +225,9 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
                 dem = ", ".join(str(p) for p in _as_list(event.get("demoted_paths")))
                 parts.append(f"{event.get('demoted')} demoted ({_cut(dem, 120)})")
             salient = "; ".join(parts)
-        case "compact.summarise.done":
+        case "compact.summarize.done":
             salient = f"restarted on a {event.get('summary_chars')}-char progress summary"
-        case "compact.summarise.failed" | "compact.gist.failed":
+        case "compact.summarize.failed" | "compact.gist.failed":
             salient = _cut(str(event.get("error", "")), 160)
         case "compact.requested":
             focus = str(event.get("focus", ""))

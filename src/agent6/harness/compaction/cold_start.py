@@ -78,7 +78,7 @@ def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
         b'"provider.request"',
         b'"model.call"',
         b'"model.attempt"',
-        b'"compact.summarise.call"',
+        b'"compact.summarize.call"',
     )
     with_deltas = (*types, b'"model.text_delta"', b'"model.thinking_delta"')
     try:
@@ -96,7 +96,7 @@ def _last_request(path: pathlib.Path, actor: str) -> dict[str, Any]:
             if not isinstance(row, dict):
                 continue
             kind = row.get("type")
-            if kind == "compact.summarise.call":
+            if kind == "compact.summarize.call":
                 summary_id = row.get("model_call_id")
                 continue
             if row.get("actor") != actor or not row.get("execution_id"):

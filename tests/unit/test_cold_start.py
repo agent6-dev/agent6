@@ -98,8 +98,8 @@ def _resume(
             idle=window.IdleCompaction("p", limit, 10**9),
             endpoint=provider_types.EndpointCompaction(writes_summary=endpoint),
             drop_at_chars=drop_at,
-            summarise_at_chars=summarize_at,
-            summariser="helper",
+            summarize_at_chars=summarize_at,
+            summarizer="helper",
             elision_gists=False,
             helper=helper,
             helper_context_tokens=200000,
@@ -131,10 +131,10 @@ def test_first_cold_worker_request(
         mode,
         [
             rules.request(**fields),
-            {"type": "compact.summarise.call", "model_call_id": "summary", "writer": "worker"},
+            {"type": "compact.summarize.call", "model_call_id": "summary", "writer": "worker"},
             rules.request(ts=now, model_call_id="summary"),
             rules.request(ts=now, target="listing"),
-            rules.request(ts=now, actor="helper:summariser"),
+            rules.request(ts=now, actor="helper:summarizer"),
             rules.request(ts=now, type="model.result"),
         ],
         limit=5 if cause == "idle" else -1,
@@ -150,7 +150,7 @@ def test_first_cold_worker_request(
     if mode == "summarize":
         assert "Helper handoff." in sent and "Old dialogue." in str(helper.calls[0]["messages"])
         assert "Old evidence." not in str(helper.calls[0]["messages"])
-        assert [r["reason"] for r in rows if r["type"] == "compact.summarise.done"] == [
+        assert [r["reason"] for r in rows if r["type"] == "compact.summarize.done"] == [
             "cold_start"
         ]
     if mode == "truncate":
@@ -278,7 +278,7 @@ def test_a_cold_drop_takes_the_ordinary_checks_of_a_resend(tmp_path: pathlib.Pat
     assert window.context_chars(loop_conversation.Conversation.from_wire(sent)) < 100_000
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
     assert (row["action"], row["chars_not_sent"]) == ("drop", 0)
-    assert [r["reason"] for r in rows if r["type"] == "compact.summarise.done"] == ["size"]
+    assert [r["reason"] for r in rows if r["type"] == "compact.summarize.done"] == ["size"]
 
     # The drop bound follows too: it takes the edited read a cold drop alone leaves whole.
     previous = [rules.request(model="other")]
@@ -322,7 +322,7 @@ def test_a_planner_restart_without_plan_md_keeps_the_checkpoint_plan(
     sent, rows, _, helper = _resume(
         tmp_path, "resend", previous, plan=tmp_path / "plan.md", saved=saved, summarize_at=100
     )
-    assert len(helper.calls) == 1 and any(r["type"] == "compact.summarise.done" for r in rows)
+    assert len(helper.calls) == 1 and any(r["type"] == "compact.summarize.done" for r in rows)
     snapshot = json.loads((tmp_path / "loop_state.json").read_text())
     for messages in (sent, snapshot["messages"]):
         assert [
@@ -479,7 +479,7 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(
     if error:
         (attempt,) = [r for r in rows if r["type"] == "model.attempt"]
         assert attempt["process_reply"] is True and attempt["ok"] is False
-    for call_id, actor, ok in (("side", "helper:summariser", True), ("not_sent", "worker", False)):
+    for call_id, actor, ok in (("side", "helper:summarizer", True), ("not_sent", "worker", False)):
         rows.extend(
             [
                 rules.request(type="model.call", actor=actor, model_call_id=call_id),

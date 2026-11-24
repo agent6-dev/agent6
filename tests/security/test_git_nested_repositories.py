@@ -196,7 +196,7 @@ def test_a_diff_never_renders_inside_a_submodule(tmp_path: pathlib.Path) -> None
     assert not marker.exists(), "the submodule's own textconv ran on the host"
 
 
-def test_a_status_summarises_no_submodule(
+def test_a_status_summarizes_no_submodule(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Under `status.submoduleSummary`, a status ran `git log` inside each moved submodule."""

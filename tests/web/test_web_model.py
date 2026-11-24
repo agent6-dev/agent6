@@ -525,7 +525,7 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: path
     for key in (
         "harness.prompt.decompose",
         "compaction.drop_at_chars",
-        "compaction.summarise_at_chars",
+        "compaction.summarize_at_chars",
     ):
         shared = {name: value for name, value in payload[key].items() if name != "input"}
         assert shared == shown[key]

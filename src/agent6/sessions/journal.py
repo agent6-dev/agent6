@@ -324,10 +324,10 @@ class CompactRestored(Event):
     gists: int = pydantic.Field(description="Number of restored file summaries.")
 
 
-class CompactSummariseCall(Event):
+class CompactSummarizeCall(Event):
     """The model was asked to summarize the conversation."""
 
-    TYPE: ClassVar[str] = "compact.summarise.call"
+    TYPE: ClassVar[str] = "compact.summarize.call"
     writer: Literal["worker", "helper", "endpoint"] = pydantic.Field(
         default="helper", description="The summary writer."
     )
@@ -338,10 +338,10 @@ class CompactSummariseCall(Event):
     messages: int = pydantic.Field(description="Number of conversation messages.")
 
 
-class CompactSummariseDone(Event):
+class CompactSummarizeDone(Event):
     """A summary replaced the conversation history."""
 
-    TYPE: ClassVar[str] = "compact.summarise.done"
+    TYPE: ClassVar[str] = "compact.summarize.done"
     reason: Literal["size", "requested", "idle", "cold_start", ""] = pydantic.Field(
         default="", description="What triggered the restart, empty when not recorded."
     )
@@ -395,10 +395,10 @@ class CompactIdleCacheCold(Event):
     message: str = pydantic.Field(description="The notice printed in the log and receipt.")
 
 
-class CompactSummariseFailed(Event):
+class CompactSummarizeFailed(Event):
     """The conversation-summary call failed."""
 
-    TYPE: ClassVar[str] = "compact.summarise.failed"
+    TYPE: ClassVar[str] = "compact.summarize.failed"
     writer: Literal["worker", "helper", "endpoint"] = pydantic.Field(
         default="helper", description="The summary writer."
     )
@@ -2155,9 +2155,9 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "compact.refused": CompactRefused,
     "compact.requested": CompactRequested,
     "compact.restored": CompactRestored,
-    "compact.summarise.call": CompactSummariseCall,
-    "compact.summarise.done": CompactSummariseDone,
-    "compact.summarise.failed": CompactSummariseFailed,
+    "compact.summarize.call": CompactSummarizeCall,
+    "compact.summarize.done": CompactSummarizeDone,
+    "compact.summarize.failed": CompactSummarizeFailed,
     "compact.thinking_dropped": CompactThinkingDropped,
     "decision.recorded": DecisionRecorded,
     "decision.unrecorded": DecisionUnrecorded,

@@ -39,7 +39,7 @@ It can be empty or absent when the global config supplies a provider and model.
   `get` accepts a whole mapping or one entry and prints each entry with its own origin.
   `set` and `unset` accept a whole mapping or one entry, such as `skills.state.alpha`.
   Every edit is validated before it is written; a refused edit leaves the file untouched.
-  A sibling pair that must move together is set as one inline table: `agent6 config set compaction '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
+  A sibling pair that must move together is set as one inline table: `agent6 config set compaction '{ drop_at_chars = 200000, summarize_at_chars = 400000 }'`.
 - Writes are atomic; failure to take the config lock does not block the write, but concurrent edits can lose updates.
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - The [TUI config page](terminal.md#configuration) adds and removes named provider, MCP server and skill state entries through forms.
@@ -358,7 +358,7 @@ Role routing:
 | Field | Default | Meaning |
 |---|---|---|
 | `default` | none | required route for every model call; set with `agent6 model default PROVIDER/MODEL`; the only fallback for each role's unset model, effort and temperature |
-| `helper` | none | model for helper summaries (`compaction.summariser`), gisting (`compaction.elision_gists`), and verify-command inference; unset fields take `models.default` |
+| `helper` | none | model for helper summaries (`compaction.summarizer`), gisting (`compaction.elision_gists`), and verify-command inference; unset fields take `models.default` |
 | `worker` | none | model for `agent6 run`, `agent6 ask`, their resumes, machine agent states and the model-written squash message; unset fields take `models.default` |
 | `reviewer` | none | model for in-loop reviewers without a route, the `sessions compare` and `--parallel` judge, and `sessions review`; unset fields take `models.default` |
 | `planner` | none | model for `agent6 plan` and plan resumes; unset fields take `models.default` |
@@ -564,18 +564,18 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 ## `[compaction]`
 
 Both writers use the size thresholds (about four characters per token).
-Only local compaction uses `summariser`, `elision_gists` and the `keep_` settings.
+Only local compaction uses `summarizer`, `elision_gists` and the `keep_` settings.
 The [usage guide](usage.md#compaction) explains which messages survive a summary restart.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `cold_start` | `"drop"` | local history on resume when the route changes or the provider's idle limit is reached (not used when the endpoint writes summaries)<ul><li><code>resend</code>: Send history without a cold-start rewrite</li><li><code>drop</code>: Replace all eligible old tool results</li><li><code>summarize</code>: Restart with a helper summary and the selected history</li><li><code>truncate</code>: Restart with the selected history and no summary</li></ul> |
-| `summariser` | `"worker"` | Local compaction only: tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history including operator answers but not other tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back<ul><li><code>worker</code>: Worker continues its own request</li><li><code>helper</code>: Replaced history with operator answers, without other tool output</li></ul> |
-| `drop_at_chars` | _adaptive_ | Accumulated tool-result characters before the endpoint clears old results or agent6 replaces them with short, re-fetchable placeholders down to half the threshold where result protections allow; unset: about 45% of the model's context window; explicit thresholds: both `compaction.drop_at_chars` and `compaction.summarise_at_chars` required |
-| `summarise_at_chars` | _adaptive_ | Whole-context character threshold for a summary by the endpoint or agent6; an accepted summary restarts the conversation and preserves the task DAG; unset: model's window minus a 16k-token reserve; explicit value must exceed `compaction.drop_at_chars` and `compaction.keep_recent_chars` |
+| `summarizer` | `"worker"` | Local compaction only: tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history including operator answers but not other tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back<ul><li><code>worker</code>: Worker continues its own request</li><li><code>helper</code>: Replaced history with operator answers, without other tool output</li></ul> |
+| `drop_at_chars` | _adaptive_ | Accumulated tool-result characters before the endpoint clears old results or agent6 replaces them with short, re-fetchable placeholders down to half the threshold where result protections allow; unset: about 45% of the model's context window; explicit thresholds: both `compaction.drop_at_chars` and `compaction.summarize_at_chars` required |
+| `summarize_at_chars` | _adaptive_ | Whole-context character threshold for a summary by the endpoint or agent6; an accepted summary restarts the conversation and preserves the task DAG; unset: model's window minus a 16k-token reserve; explicit value must exceed `compaction.drop_at_chars` and `compaction.keep_recent_chars` |
 | `keep_operator_messages` | `-1` | Local restart: reserve the newest N messages given to the run, word for word, before selecting turns: operator steers and answers, and the whole task as the oldest; -1: no count limit; 0: reserve none outside kept turns |
 | `keep_recent_turns` | `-1` | Local restart: keep up to N consecutive replies with their inputs and paired results, newest first; -1: no count limit; 0: keep no optional turns |
-| `keep_recent_chars` | `80000` | Local restart: shared character cap on reserved messages and recent turns; the newest optional turn stays whole even if it exceeds the space left; 0: keep nothing optional; adaptive thresholds limit the cap to half of `compaction.summarise_at_chars` |
+| `keep_recent_chars` | `80000` | Local restart: shared character cap on reserved messages and recent turns; the newest optional turn stays whole even if it exceeds the space left; 0: keep nothing optional; adaptive thresholds limit the cap to half of `compaction.summarize_at_chars` |
 | `keep_thinking_turns` | `-1` | Local compaction: keep thinking on the newest N assistant turns when rewriting results, at a cold drop or restarting; -1: keep all; minimum otherwise: 1, to keep signed thinking with an in-flight tool call |
 | `summary_max_tokens` | `2048` | Output-token cap for either summary writer and for gist distillation; smaller caps overridden by a reasoning model's per-call floor for reasoning tokens; no cap accepted by the chatgpt backend |
 | `elision_gists` | `true` | Local compaction only: large `read_file` results replaced at tier 1 by model-written gists before bare placeholders; gists also dropped under continued pressure to keep the byte bound; `compaction.elision_gists = false`: bare placeholders directly |

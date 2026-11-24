@@ -1,6 +1,6 @@
 # bench/sweep: cross-model benchmark for agent6
 
-A reproducible, statistically-summarised comparison of agent6 driven by
+A reproducible, statistically-summarized comparison of agent6 driven by
 different worker models on a fixed task suite. The question is narrow and
 measurable: **given the same task and the same agent, how do models differ in
 success rate and cost?**
@@ -55,7 +55,7 @@ python3 bench/sweep/run_sweep.py --out /tmp/a6sweep --conc 6
 # a single model / task while iterating
 python3 bench/sweep/run_sweep.py --models kimi-k2.6 --tasks werkzeug-safe-join --reps 3
 
-# summarise into a scientific-style report
+# summarize into a scientific-style report
 python3 bench/sweep/stats.py /tmp/a6sweep/samples --ref sonnet-4-6 --out bench/sweep/report.md
 ```
 

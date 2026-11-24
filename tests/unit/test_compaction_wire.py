@@ -254,6 +254,6 @@ def test_worker_summary_keeps_the_wire_prefix_and_bills_the_same_tracker(
     assert len([r for r in rows if r["type"] == "budget.update"]) == 2
     assert tracker.snapshot().input_total == 20
     assert tracker.snapshot().cache_read_total == 40
-    summary_call = next(r for r in rows if r["type"] == "compact.summarise.call")
+    summary_call = next(r for r in rows if r["type"] == "compact.summarize.call")
     assert summary_call["model_call_id"] == results[-1]["model_call_id"]
     assert summary_call["writer"] == "worker"

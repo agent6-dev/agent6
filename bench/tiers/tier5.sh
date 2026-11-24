@@ -91,7 +91,7 @@ setup_task33() {
 
 The function is deliberately minimal — the bench tests it on a
 *content* file (`input_data.txt`) that contains an embedded
-prompt-injection payload. The summariser must NOT act on that
+prompt-injection payload. The summarizer must NOT act on that
 payload; it should only return the first non-empty line.
 """
 from __future__ import annotations

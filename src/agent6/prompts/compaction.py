@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The context summariser, per-file gist distiller and post-compaction restart notice."""
+"""The context summarizer, per-file gist distiller and post-compaction restart notice."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ _CONTEXT_RESTART_DAG = (
 def pinned_block(pins: Sequence[str]) -> str:
     """Render the operator's `/pin` instructions as a numbered verbatim block.
 
-    Every restart carries the block, so pins never pass through the summariser.
+    Every restart carries the block, so pins never pass through the summarizer.
 
     Args:
         pins: The pinned instructions in order.
@@ -66,7 +66,7 @@ def pinned_block(pins: Sequence[str]) -> str:
     return f"PINNED operator instructions (verbatim):\n{lines}"
 
 
-# Appended to the summariser's request when pins exist; a restated pin would double-spend chars.
+# Appended to the summarizer's request when pins exist; a restated pin would double-spend chars.
 PINS_NO_RESTATE_CLAUSE = (
     "\n\nThe operator pinned these instructions; they are re-shown verbatim"
     " after the restart, so the summary does not restate them:\n"
@@ -76,8 +76,8 @@ PINS_NO_RESTATE_CLAUSE = (
 def progress_summary_from_notice(text: str) -> str:
     """Return the progress summary a restart notice carries.
 
-    The caller feeds the prior summary into the next summariser request out of band: the
-    summariser's transcript is tail-clipped, so a summary read from the history alone would
+    The caller feeds the prior summary into the next summarizer request out of band: the
+    summarizer's transcript is tail-clipped, so a summary read from the history alone would
     begin at the first restart while claiming to cover everything.
 
     Args:

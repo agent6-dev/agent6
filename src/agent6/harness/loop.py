@@ -128,7 +128,7 @@ class Harness:
         settings: The non-default settings written at each execution start.
         call: The worker call's knobs: retries, temperature, output caps.
         compactor: The in-process compaction strategy.
-        compaction: The compaction tiers' thresholds, the tail kept, the summariser.
+        compaction: The compaction tiers' thresholds, the tail kept, the summarizer.
         review: The in-loop review panel's trigger, reviewers and decision rule.
         initial_pins: Pins seeded before the first turn (a child inherits the parent's);
             fresh runs only, a resume restores pins from the snapshot.
@@ -606,7 +606,7 @@ class Harness:
             ended = self._contract_turn(state, got, assistant, turn=turn)
             if ended is not None:
                 return ended
-            if not state.request_summarised and isinstance(self.compactor, strategy.IdleStrategy):
+            if not state.request_summarized and isinstance(self.compactor, strategy.IdleStrategy):
                 state.idle_deadline = self.compactor.idle(
                     self.compaction_context(conversation, state, tools),
                     self.caller.counter.request_started,
@@ -1025,8 +1025,8 @@ class Harness:
                 summary_context = dataclasses.replace(
                     self.compaction_context(conversation, state, tools), awaiting_reply=True
                 )
-                state.request_summarised = self.compactor.compact(summary_context)
-                if state.request_summarised:
+                state.request_summarized = self.compactor.compact(summary_context)
+                if state.request_summarized:
                     state.focus.surfaced_task_id = None
             return response
         except agent6_budget.BudgetExceededError as exc:

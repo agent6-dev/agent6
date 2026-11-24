@@ -128,12 +128,12 @@ def test_role_builders_stamp_actors_and_review_resolution_stays_pure() -> None:
     sink = mock.MagicMock()
     role_providers.helper_actor_provider(
         cfg,
-        "helper:summariser",
+        "helper:summarizer",
         transcript_sink=sink,
         budget=mock.MagicMock(),
         events=mock.MagicMock(),
     )
-    assert sink.for_actor.call_args == mock.call("helper:summariser")
+    assert sink.for_actor.call_args == mock.call("helper:summarizer")
 
     reviewers = role_providers.resolve_reviewers(cfg)
     assert [(r.focus, r.model) for r in reviewers] == [("security", "o/m")]

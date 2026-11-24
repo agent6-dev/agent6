@@ -218,7 +218,7 @@ def test_a_restart_states_the_rendered_prompt_as_the_task(
             "keep_recent_turns": 0,
             "keep_recent_chars": 500,
             "drop_at_chars": 1000,
-            "summarise_at_chars": 2000,
+            "summarize_at_chars": 2000,
         },
     )
     (notice,) = restarts

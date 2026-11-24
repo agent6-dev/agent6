@@ -600,7 +600,7 @@ def test_compaction_defaults(tmp_path: pathlib.Path) -> None:
     # The default None means adaptive, sized from the worker model's context window.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.compaction.drop_at_chars is None
-    assert cfg.compaction.summarise_at_chars is None
+    assert cfg.compaction.summarize_at_chars is None
     assert cfg.compaction.summary_max_tokens == 2048
 
 
@@ -617,12 +617,12 @@ def test_compaction_thresholds_overridable(tmp_path: pathlib.Path) -> None:
         _VALID_TOML
         + "\n[compaction]\n"
         + "drop_at_chars = 100000\n"
-        + "summarise_at_chars = 300000\n"
+        + "summarize_at_chars = 300000\n"
         + "summary_max_tokens = 1024\n"
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.compaction.drop_at_chars == 100000
-    assert cfg.compaction.summarise_at_chars == 300000
+    assert cfg.compaction.summarize_at_chars == 300000
     assert cfg.compaction.summary_max_tokens == 1024
 
 
@@ -661,20 +661,20 @@ def test_compaction_count_accepts_zero_but_not_negative_two_or_a_bool(
             load_config(_write(tmp_path, body + invalid))
 
 
-def test_compaction_summarise_must_exceed_drop(tmp_path: pathlib.Path) -> None:
+def test_compaction_summarize_must_exceed_drop(tmp_path: pathlib.Path) -> None:
     # Inverted ordering (tier-2 <= tier-1) makes tier-2 unreachable; the loader rejects it.
-    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 300000\nsummarise_at_chars = 200000\n"
+    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 300000\nsummarize_at_chars = 200000\n"
     with pytest.raises(ConfigError) as exc:
         load_config(_write(tmp_path, body))
     assert "must be greater than" in str(exc.value)
 
 
-def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: pathlib.Path) -> None:
+def test_compaction_summarize_must_exceed_the_verbatim_tail(tmp_path: pathlib.Path) -> None:
     """A tier-2 threshold at or under keep_recent_chars is rejected.
 
     The tail alone would re-trigger it.
     """
-    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 20000\nsummarise_at_chars = 40000\n"
+    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 20000\nsummarize_at_chars = 40000\n"
     with pytest.raises(ConfigError, match="keep_recent_chars"):
         load_config(_write(tmp_path, body))
 

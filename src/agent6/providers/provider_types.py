@@ -35,7 +35,7 @@ class EndpointCompaction:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Summarise:
+class Summarize:
     """Ask for a replayable summary of the request's messages."""
 
     instructions: str
@@ -54,7 +54,7 @@ class ClearToolResults:
     exclude_tools: tuple[str, ...]
 
 
-type CompactionRequest = Summarise | ClearToolResults
+type CompactionRequest = Summarize | ClearToolResults
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarise n samples of bench/perf JSON results.
+"""Summarize n samples of bench/perf JSON results.
 
 Usage: summarize_samples.py <label> [<label>...]
   Each label is the prefix of files under $BENCH_ROOT/_samples/<label>_s*.json
@@ -44,7 +44,7 @@ def gmean(xs: list[float]) -> float:
     return math.exp(sum(math.log(x) for x in xs) / len(xs))
 
 
-def summarise(label: str, rows: list[dict[str, float]]) -> None:
+def summarize(label: str, rows: list[dict[str, float]]) -> None:
     print(f"\n=== {label} (n={len(rows)}) ===")
     for r in rows:
         print(
@@ -78,7 +78,7 @@ def main() -> int:
         return 2
     root = Path(os.environ.get("BENCH_ROOT", "/tmp/agent6-perf")) / "_samples"
     for label in sys.argv[1:]:
-        summarise(label, load(label, root))
+        summarize(label, load(label, root))
     return 0
 
 

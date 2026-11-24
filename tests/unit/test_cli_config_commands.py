@@ -48,7 +48,7 @@ def _global_toml(tmp_path: pathlib.Path) -> dict[str, object]:
     [
         ("git.worktree.setup_command", '["sh", "-c", "echo hi"]'),
         ("git.commit.name", r'"A \"quoted\" name"'),
-        ("compaction", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"),
+        ("compaction", "{ drop_at_chars = 200000, summarize_at_chars = 400000 }"),
     ],
 )
 def test_config_set_echo_keeps_the_written_toml(
@@ -766,11 +766,11 @@ def test_coauthor_is_gone(iso: pathlib.Path, capsys: pytest.CaptureFixture[str])
 
 def test_the_paired_compaction_thresholds_are_settable_together(iso: pathlib.Path) -> None:
     """The paired compaction thresholds move together in one validated inline-table upsert."""
-    inline = "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
+    inline = "{ drop_at_chars = 200000, summarize_at_chars = 400000 }"
     assert _run(["config", "set", "compaction", inline]) == 0
     ctx = _global_toml(iso)["compaction"]
     assert isinstance(ctx, dict)
-    assert ctx == {"drop_at_chars": 200000, "summarise_at_chars": 400000}
+    assert ctx == {"drop_at_chars": 200000, "summarize_at_chars": 400000}
 
 
 def test_setting_one_threshold_names_the_command_that_works(
@@ -780,7 +780,7 @@ def test_setting_one_threshold_names_the_command_that_works(
     assert _refuse(["config", "set", "compaction.drop_at_chars", "200000"]) == 2
     err = capsys.readouterr().err
     assert "config set compaction '{ drop_at_chars =" in err
-    assert "summarise_at_chars =" in err
+    assert "summarize_at_chars =" in err
 
 
 def _fill_and_read(iso: pathlib.Path) -> dict[str, object]:
@@ -863,7 +863,7 @@ def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: pathlib.Path) ->
     config = iso / "g" / "agent6" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        "[presets.demo.compaction]\ndrop_at_chars = 100000\nsummarise_at_chars = 200000\n",
+        "[presets.demo.compaction]\ndrop_at_chars = 100000\nsummarize_at_chars = 200000\n",
         encoding="utf-8",
     )
 
@@ -872,7 +872,7 @@ def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: pathlib.Path) ->
     assert isinstance(presets, dict)
     assert presets["demo"]["compaction"] == {  # type: ignore[index]
         "drop_at_chars": 120000,
-        "summarise_at_chars": 200000,
+        "summarize_at_chars": 200000,
     }
 
 

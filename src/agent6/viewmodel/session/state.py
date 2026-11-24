@@ -309,7 +309,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             live = max(0, state.compact_gists_live + gisted - demoted)
             return dataclasses.replace(state, compact_gists_live=live)
 
-        case journal.CompactSummariseDone():
+        case journal.CompactSummarizeDone():
             return dataclasses.replace(state, compact_elided=0, compact_gists_live=0)
 
         case journal.SteerSignalled():

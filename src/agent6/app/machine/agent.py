@@ -353,7 +353,7 @@ def _build_agent_providers(
     budget: agent6_budget.BudgetTracker,
     attach_console: Callable[[event_log.EventSink], None],
 ) -> tuple[role_providers.InstrumentedProvider, Provider, event_log.EventSink | None]:
-    """Build the state's worker provider, its summariser and its event sink.
+    """Build the state's worker provider, its summarizer and its event sink.
 
     The worker always streams: machine agents run headless and generate long, and
     a gateway's SSE heartbeats corrupt a non-streaming body mid-read.
@@ -365,7 +365,7 @@ def _build_agent_providers(
         attach_console: Given the event sink, attaches the live view.
 
     Returns:
-        The instrumented worker, the summariser, and the sink or None without a log.
+        The instrumented worker, the summarizer, and the sink or None without a log.
     """
     transcript_sink = TranscriptSink(
         req.transcript_dir, objects_dir=req.transcript_dir.parent / "objects"
@@ -386,10 +386,10 @@ def _build_agent_providers(
         budget=budget,
         stream_text=True,
     )
-    summariser_provider = role_providers.helper_actor_provider(
-        cfg, "helper:summariser", transcript_sink=transcript_sink, budget=budget, events=events_sink
+    summarizer_provider = role_providers.helper_actor_provider(
+        cfg, "helper:summarizer", transcript_sink=transcript_sink, budget=budget, events=events_sink
     )
-    return provider, summariser_provider, events_sink
+    return provider, summarizer_provider, events_sink
 
 
 def run_one(
@@ -443,7 +443,7 @@ def run_one(
         reporter.refuse(hide_err)
         return _result("error", None, None)
     budget = session_setup.budget_tracker(cfg)
-    provider, summariser_provider, events_sink = _build_agent_providers(
+    provider, summarizer_provider, events_sink = _build_agent_providers(
         cfg, req, budget=budget, attach_console=attach_console
     )
     # Re-confirm the containment invariant at the subprocess boundary.
@@ -500,7 +500,7 @@ def run_one(
             prompts=prompts,
             bridges=bridges,
             provider=provider,
-            summariser_provider=summariser_provider,
+            summarizer_provider=summarizer_provider,
             budget=budget,
             reporter=reporter,
             # The authoring agent's draft log is `machine create`'s, which opens and closes it.
@@ -520,7 +520,7 @@ def _drive_state(
     prompts: operator_prompts.OperatorPrompts,
     bridges: _MachineBridges | None,
     provider: Provider,
-    summariser_provider: Provider | None,
+    summarizer_provider: Provider | None,
     budget: agent6_budget.BudgetTracker,
     reporter: app_reporter.Reporter,
     events: event_log.EventSink | None,
@@ -536,7 +536,7 @@ def _drive_state(
         prompts: The operator prompt gate.
         bridges: The front-end bridges, when the state has a log.
         provider: The worker.
-        summariser_provider: The compaction summariser.
+        summarizer_provider: The compaction summarizer.
         budget: The tracker both providers bill.
         reporter: Where status and refusals go.
         events: The state's log, which the harness opens with `session.start` and closes
@@ -560,7 +560,7 @@ def _drive_state(
             setup_left = git_read.untracked_paths(req.root)
     rm = cfg.models.resolve("worker")
     assert rm is not None
-    compact_drop, compact_summarise, keep_recent = role_providers.resolve_compaction_thresholds(
+    compact_drop, compact_summarize, keep_recent = role_providers.resolve_compaction_thresholds(
         cfg, rm, log=reporter.err
     )
     cfg = role_providers.resolve_decompose(cfg, rm, log=reporter.err)
@@ -595,7 +595,7 @@ def _drive_state(
         compaction=compaction_window.CompactionSettings(
             cold_start=cfg.compaction.cold_start,
             drop_at_chars=compact_drop,
-            summarise_at_chars=compact_summarise,
+            summarize_at_chars=compact_summarize,
             tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, "worker"),
             keep_recent_chars=keep_recent,
             keep_operator_messages=cfg.compaction.keep_operator_messages,
@@ -603,8 +603,8 @@ def _drive_state(
             keep_thinking_turns=cfg.compaction.keep_thinking_turns,
             elision_gists=cfg.compaction.elision_gists,
             summary_max_tokens=cfg.compaction.summary_max_tokens,
-            summariser=cfg.compaction.summariser,
-            helper=summariser_provider,
+            summarizer=cfg.compaction.summarizer,
+            helper=summarizer_provider,
             helper_context_tokens=role_providers.helper_context_window(cfg),
             endpoint=role_providers.endpoint_compaction(cfg, rm),
             idle=role_providers.idle_compaction(cfg, rm),

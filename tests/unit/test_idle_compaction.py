@@ -47,7 +47,7 @@ def test_worker_clock_uses_the_start_of_the_successful_attempt() -> None:
 
 
 def test_parked_wait_covers_the_complete_prose_turn() -> None:
-    """A parked run summarises the prose reply before reading the next steer."""
+    """A parked run summarizes the prose reply before reading the next steer."""
     conv = writers.history()
     conv.assistant([{"type": "text", "text": "work complete"}])
     complete = conv.to_wire()
@@ -98,7 +98,7 @@ def test_idle_summary_uses_the_cached_request_then_keeps_only_the_pending_reply(
 
     def emit(event: journal.Event) -> None:
         events.append(event)
-        if isinstance(event, journal.CompactSummariseDone):
+        if isinstance(event, journal.CompactSummarizeDone):
             accepted.set()
 
     worker = writers.Writer(writers.response())
@@ -242,7 +242,7 @@ def test_cold_notice_uses_only_reported_worker_usage(
     log: list[str] = []
     compactor = driver.Tiered()
     base = writers.context(
-        provider, provider, events, summariser=writer, idle=window.IdleCompaction("p", 2, 0)
+        provider, provider, events, summarizer=writer, idle=window.IdleCompaction("p", 2, 0)
     )
     turn = dataclasses.replace(base, log=log.append)
     for _ in range(2):

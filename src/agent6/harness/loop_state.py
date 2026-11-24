@@ -110,7 +110,7 @@ class LoopState:
     call_context: kinds.CallContext | None = None
     idle_deadline: waits.Deadline | None = None
     cold_start: cold_start.Trigger | None = None
-    request_summarised: bool = False
+    request_summarized: bool = False
     review_panels: tuple[review_records.ReviewPanel, ...] = ()
     budget_nudges: guards.BudgetNudges = dataclasses.field(default_factory=guards.BudgetNudges)
 

@@ -512,7 +512,7 @@ class CompactionConfig(pydantic.BaseModel):
         },
     )
 
-    summariser: Literal["worker", "helper"] = pydantic.Field(
+    summarizer: Literal["worker", "helper"] = pydantic.Field(
         json_schema_extra={
             "choice_meanings": {
                 "worker": "Worker continues its own request",
@@ -539,10 +539,10 @@ class CompactionConfig(pydantic.BaseModel):
             "agent6 replaces them with short, re-fetchable placeholders down to half "
             "the threshold where result protections allow; unset: about 45% "
             "of the model's context window; explicit thresholds: both `compaction.drop_at_chars` "
-            "and `compaction.summarise_at_chars` required"
+            "and `compaction.summarize_at_chars` required"
         ),
     )
-    summarise_at_chars: int | None = pydantic.Field(
+    summarize_at_chars: int | None = pydantic.Field(
         default=None,
         gt=0,
         description=(
@@ -578,7 +578,7 @@ class CompactionConfig(pydantic.BaseModel):
             "Local restart: shared character cap on reserved messages and recent "
             "turns; the newest optional turn stays whole even if it exceeds the space left; "
             "0: keep nothing optional; adaptive thresholds limit the cap to half of "
-            "`compaction.summarise_at_chars`"
+            "`compaction.summarize_at_chars`"
         ),
     )
     keep_thinking_turns: validation.NoLimitOrPositive = pydantic.Field(
@@ -621,25 +621,25 @@ class CompactionConfig(pydantic.BaseModel):
             ValueError: One threshold set without the other, tier 2 at or below tier 1, or tier 2
                 at or below the verbatim tail.
         """
-        drop, summarise = self.drop_at_chars, self.summarise_at_chars
-        if (drop is None) != (summarise is None):
+        drop, summarize = self.drop_at_chars, self.summarize_at_chars
+        if (drop is None) != (summarize is None):
             raise ValueError(
                 "set both compaction.drop_at_chars and"
-                " summarise_at_chars, or NEITHER (neither == adaptive,"
+                " summarize_at_chars, or NEITHER (neither == adaptive,"
                 " sized from the worker model's context window). Both at once:"
                 " agent6 config set compaction"
-                " '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'"
+                " '{ drop_at_chars = 200000, summarize_at_chars = 400000 }'"
             )
-        if drop is not None and summarise is not None and summarise <= drop:
+        if drop is not None and summarize is not None and summarize <= drop:
             raise ValueError(
-                "compaction.summarise_at_chars"
-                f" ({summarise}) must be greater than"
+                "compaction.summarize_at_chars"
+                f" ({summarize}) must be greater than"
                 f" drop_at_chars ({drop}): tier-2"
-                " summarise must escalate above tier-1 elision."
+                " summarize must escalate above tier-1 elision."
             )
-        if summarise is not None and summarise <= self.keep_recent_chars:
+        if summarize is not None and summarize <= self.keep_recent_chars:
             raise ValueError(
-                f"compaction.summarise_at_chars ({summarise}) must be greater than"
+                f"compaction.summarize_at_chars ({summarize}) must be greater than"
                 f" keep_recent_chars ({self.keep_recent_chars}): the verbatim tail"
                 " alone would re-trigger tier 2 after every restart."
             )

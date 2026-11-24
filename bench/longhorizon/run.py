@@ -276,19 +276,19 @@ class Condition:
 CONDITIONS: dict[str, Condition] = {
     "baseline": Condition(),
     "window16k": Condition(
-        toml="[compaction]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\nkeep_recent_chars = 26000\n"
+        toml="[compaction]\ndrop_at_chars = 29000\nsummarize_at_chars = 52000\nkeep_recent_chars = 26000\n"
     ),
     "window32k": Condition(
-        toml="[compaction]\ndrop_at_chars = 58000\nsummarise_at_chars = 104000\nkeep_recent_chars = 52000\n"
+        toml="[compaction]\ndrop_at_chars = 58000\nsummarize_at_chars = 104000\nkeep_recent_chars = 52000\n"
     ),
     "window64k": Condition(
-        toml="[compaction]\ndrop_at_chars = 115000\nsummarise_at_chars = 205000\nkeep_recent_chars = 102000\n"
+        toml="[compaction]\ndrop_at_chars = 115000\nsummarize_at_chars = 205000\nkeep_recent_chars = 102000\n"
     ),
     # The gist A/B arm: window16k thresholds with tier-1 gist elision off
     # (bare markers only, the pre-gist behavior).
     "window16k_nogist": Condition(
         toml=(
-            "[compaction]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\n"
+            "[compaction]\ndrop_at_chars = 29000\nsummarize_at_chars = 52000\n"
             "keep_recent_chars = 26000\nelision_gists = false\n"
         )
     ),
@@ -355,7 +355,7 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
         "deps_in_graph": 0,
         "surfaced": 0,
         "tool_calls": 0,
-        # Tier-2 (summarise+restart) and tier-1 (oldest tool_results elided).
+        # Tier-2 (summarize+restart) and tier-1 (oldest tool_results elided).
         "compactions": 0,
         "drop_events": 0,
         "drops_total": 0,
@@ -403,7 +403,7 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
             # Recorded benchmark rows keep their schema; live events use turns.
             m["iterations"] = e.get("turns")
             m["verification"] = e.get("verification")
-        elif t == "compact.summarise.done":
+        elif t == "compact.summarize.done":
             m["compactions"] += 1
             compacted = True
         elif t == "compact.dropped":

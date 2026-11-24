@@ -354,7 +354,7 @@ def test_a_result_a_forks_first_request_inherits_reads_under_that_request() -> N
 def test_provider_retry_does_not_duplicate_history() -> None:
     """A retry after a transient 5xx re-sending the identical message list is not a restart.
 
-    It printed a false 'context summarised' marker and the entire history twice.
+    It printed a false 'context summarized' marker and the entire history twice.
     """
     error_attempt = {
         "seq": 2,
@@ -368,7 +368,7 @@ def test_provider_retry_does_not_duplicate_history() -> None:
 
 
 def test_compaction_restart_shows_marker() -> None:
-    # seq 3's request is SHORTER than the prior history -> a summarise/restart.
+    # seq 3's request is SHORTER than the prior history -> a summarize/restart.
     transcripts = [
         *_OPENAI,
         {
@@ -758,8 +758,8 @@ def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
 def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.Path) -> None:
     """A compaction request does not restart the worker's conversation.
 
-    The gist distiller and the tier-2 summariser share the sink; the fold printed a phantom
-    "context summarised" marker and rendered the scratch prompt as a user message.
+    The gist distiller and the tier-2 summarizer share the sink; the fold printed a phantom
+    "context summarized" marker and rendered the scratch prompt as a user message.
     """
     import json
 
@@ -789,7 +789,7 @@ def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.
         return {"role": "assistant", "content": [{"type": "text", "text": text}]}
 
     rec(1, "worker", [u("TASK: fix the parser"), a("reading"), u("tool result")], "on it")
-    rec(2, "helper:summariser", [u("=== FILE a.py ===")], "a.py: the parser")  # the distiller
+    rec(2, "helper:summarizer", [u("=== FILE a.py ===")], "a.py: the parser")  # the distiller
     rec(
         3,
         "worker",
@@ -799,7 +799,7 @@ def test_a_compaction_side_call_is_not_a_conversation_message(tmp_path: pathlib.
 
     messages = transcript_render.fold_conversation(transcript_render.load_transcripts(d))
     body = "\n".join(f"{t.role}:{t.text}" for t in messages)
-    assert "context summarised" not in body, "a restart that never happened"
+    assert "context summarized" not in body, "a restart that never happened"
     assert "=== FILE a.py ===" not in body, "the side-call's scratch prompt became a message"
     assert body.count("reading") == 1, "the history was re-emitted behind the side-call"
 

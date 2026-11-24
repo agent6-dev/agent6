@@ -474,7 +474,7 @@ def fold_conversation(transcripts: list[dict[str, Any]], *, mode: str = "") -> l
                 )
             )
         if len(msgs) < prev_len:
-            messages.append(Message(role="marker", text="context summarised / restarted", seq=seq))
+            messages.append(Message(role="marker", text="context summarized / restarted", seq=seq))
             prev_len = 0
             pending_response = False
         elif marker := _elision_marker(prev_msgs, msgs, prev_len):

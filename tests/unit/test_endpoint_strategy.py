@@ -157,7 +157,7 @@ def test_size_summary_uses_all_messages_then_repeats_task_and_pins() -> None:
     worker, helper = fixtures.Writer(response), fixtures.Writer(fixtures.response())
     events: list[Any] = []
     turn = fixtures.context(
-        worker, helper, events, summariser="helper", pins=("a pin",), task="exact task"
+        worker, helper, events, summarizer="helper", pins=("a pin",), task="exact task"
     )
     turn = dataclasses.replace(turn, compact_requested=lambda: "the tests")
     before = turn.conversation.to_wire()
@@ -217,7 +217,7 @@ def test_no_summary_block_records_the_reason_and_tries_only_the_helper(reason: s
     before = turn.conversation.to_wire()
     assert not driver.Endpoint().compact(turn)
     assert len(worker.calls) == len(helper.calls) == 1 and before == turn.conversation.to_wire()
-    failure = next(e for e in events if e.TYPE == "compact.summarise.failed")
+    failure = next(e for e in events if e.TYPE == "compact.summarize.failed")
     assert failure.writer == "endpoint" and reason in failure.error
 
 
@@ -243,7 +243,7 @@ def test_size_repeats_the_successful_worker_request_before_adopting_its_reply() 
         def call(self, **kw: Any) -> provider_types.ProviderResponse:
             calls.append(kw)
             sample = (
-                "compact" if isinstance(kw.get("compaction"), provider_types.Summarise) else "turn3"
+                "compact" if isinstance(kw.get("compaction"), provider_types.Summarize) else "turn3"
             )
             return anthropic_parse.parse_response(captured.SAMPLES[sample]["response"])
 
@@ -261,7 +261,7 @@ def test_size_repeats_the_successful_worker_request_before_adopting_its_reply() 
     assert isinstance(got, provider_types.ProviderResponse)
     assert len(calls) == 2
     assert calls[0]["compaction"] == provider_types.ClearToolResults(2, ("ask_user",))
-    assert isinstance(calls[1]["compaction"], provider_types.Summarise)
+    assert isinstance(calls[1]["compaction"], provider_types.Summarize)
     assert all(calls[0][key] == calls[1][key] for key in ("system", "tools", "messages"))
     # The cache mark moves to the newest user block on this route too.
     assert "cache_control" in calls[0]["messages"][-1]["content"][-1]
@@ -306,7 +306,7 @@ def test_idle_floor_counts_the_notice_waiting_for_a_tool_result() -> None:
     assert len(worker.calls) == 1
 
 
-def test_quiet_reply_to_a_summarised_request_never_enters_the_next_request() -> None:
+def test_quiet_reply_to_a_summarized_request_never_enters_the_next_request() -> None:
     conv = fixtures.history()
     block = captured.SAMPLES["compact"]["response"]["content"][0]
     conv.adopt(block, [], "task and pins", awaiting_reply=True)
@@ -348,7 +348,7 @@ def test_restored_signed_summary_does_not_change_the_task_author(
         endpoint=provider_types.EndpointCompaction(True, True),
         helper=helper,
         helper_context_tokens=200000,
-        summarise_at_chars=10,
+        summarize_at_chars=10,
     )
     wf = test_harness._wf(
         root=tmp_path,
@@ -360,7 +360,7 @@ def test_restored_signed_summary_does_not_change_the_task_author(
     system, conv, _ = wf._open_task(original)
     state = loop_state.LoopState(original, 0, system=system, operator_task=words)
     ctx = wf.compaction_context(conv, state, [])
-    assert driver.Endpoint().summarise_and_restart(ctx)
+    assert driver.Endpoint().summarize_and_restart(ctx)
     assert conv.to_wire()[0]["content"] == [signed.summary_block]
     _with_reads(conv, 1)
     loop_resume.save_resume_snapshot(wf, state, conv.to_wire(snapshot=True), next_turn=3)
@@ -428,7 +428,7 @@ def test_summary_retry_keeps_the_call_id_and_worker_clock() -> None:
     ]
     caller = test_harness._caller(provider, retry_count=1)
     caller.counter.request_started = 42
-    option = provider_types.Summarise("Keep the task.")
+    option = provider_types.Summarize("Keep the task.")
     assert (
         caller.call("s", [], [], 4096, call_context=kinds.CallContext("summary"), compaction=option)
         is response
@@ -466,6 +466,6 @@ def test_endpoint_fallback_only_sends_the_question_to_the_helper() -> None:
             )
         ]
     )
-    assert driver.Endpoint().summarise_and_restart(ctx)
+    assert driver.Endpoint().summarize_and_restart(ctx)
     transcript = helper.calls[0]["messages"][0]["content"]
     assert "Which parser?" in transcript and "private parser reference" not in transcript

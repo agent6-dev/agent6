@@ -82,7 +82,7 @@ _ADAPTIVE_THINKING_MARKERS = (
     "sonnet-5",
 )
 # Of those, the models whose thinking display defaults to omitted; a summary streams progress.
-_SUMMARISE_DISPLAY_MARKERS = (
+_SUMMARIZE_DISPLAY_MARKERS = (
     "fable-5",
     "haiku-5",
     "mythos-5",
@@ -139,7 +139,7 @@ def _history_options(
         Required beta headers, including the beta for replaying a summary.
     """
     betas: list[str] = []
-    if isinstance(operation, provider_types.Summarise):
+    if isinstance(operation, provider_types.Summarize):
         body.pop("context_management", None)
         body["compaction"] = {"type": "summarize", "instructions": operation.instructions}
     elif isinstance(operation, provider_types.ClearToolResults):
@@ -156,7 +156,7 @@ def _history_options(
         }
         betas.append("context-management-2025-06-27")
     first = body["messages"][0].get("content")
-    if isinstance(operation, provider_types.Summarise) or (
+    if isinstance(operation, provider_types.Summarize) or (
         isinstance(first, list) and first and first[0].get("type") == "compaction"
     ):
         betas.append("compact-2026-09-04")
@@ -179,9 +179,9 @@ def _is_adaptive_thinking(model: str) -> bool:
     return any(m in model for m in _ADAPTIVE_THINKING_MARKERS)
 
 
-def _summarise_thinking_display(model: str) -> bool:
+def _summarize_thinking_display(model: str) -> bool:
     """Return whether the model's thinking display defaults to omitted."""
-    return any(m in model for m in _SUMMARISE_DISPLAY_MARKERS)
+    return any(m in model for m in _SUMMARIZE_DISPLAY_MARKERS)
 
 
 def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -549,7 +549,7 @@ class AnthropicProvider:
             body["anthropic_version"] = version_value
         if adaptive_thinking:
             thinking_cfg: dict[str, Any] = {"type": "adaptive"}
-            if _summarise_thinking_display(self.model):
+            if _summarize_thinking_display(self.model):
                 thinking_cfg["display"] = "summarized"
             body["thinking"] = thinking_cfg
             body["output_config"] = {"effort": level}

@@ -48,7 +48,7 @@ class Calls:
         Args:
             instruction: The summary instruction outside the messages.
             call_id: The summary attempt's identity.
-            count: The number of messages in the request being summarised.
+            count: The number of messages in the request being summarized.
 
         Returns:
             The metered response after the caller's retry policy.
@@ -61,7 +61,7 @@ class Calls:
             self.settings.summary_max_tokens,
             initiator=self.conversation.initiator,
             call_context=dataclasses.replace(identity, model_call_id=call_id),
-            compaction=provider_types.Summarise(instruction),
+            compaction=provider_types.Summarize(instruction),
         )
 
     def call_worker(self, instruction: str, call_id: str) -> provider_types.ProviderResponse:

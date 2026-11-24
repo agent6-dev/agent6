@@ -30,11 +30,11 @@ def test_receipt_reports_cache_share_and_only_the_next_worker_call(tmp_path: pat
     """Helper calls and several compaction events cannot multiply a cold worker call."""
     rows = _call("one", input_tokens=100, cache_read_tokens=900)
     rows += [{"type": "compact.dropped", "count": 4}]
-    rows += _call("helper", actor="helper:summariser", input_tokens=5000, cache_read_tokens=0)
+    rows += _call("helper", actor="helper:summarizer", input_tokens=5000, cache_read_tokens=0)
     rows += [{"type": "compact.thinking_dropped", "messages": 2}]
     rows += _call("two", input_tokens=800, cache_read_tokens=200, cache_write_tokens=100)
     rows += _call("three", input_tokens=100, cache_read_tokens=900)
-    rows += [{"type": "compact.summarise.failed", "error": "no summary"}]
+    rows += [{"type": "compact.summarize.failed", "error": "no summary"}]
     rows += _call("four", input_tokens=100, cache_read_tokens=900)
     _write(tmp_path / "logs.jsonl", rows)
     view = receipt.read_receipt(tmp_path, tmp_path)
@@ -50,7 +50,7 @@ def test_receipt_reports_cache_share_and_only_the_next_worker_call(tmp_path: pat
         {"type": "compact.deduped", "count": 1},
         {"type": "compact.gist.done", "gisted": 0, "demoted": 1},
         {"type": "compact.thinking_dropped", "messages": 1},
-        {"type": "compact.summarise.done", "summary_chars": 5},
+        {"type": "compact.summarize.done", "summary_chars": 5},
         {"type": "compact.cold_start", "action": "truncate"},
     ],
 )
@@ -107,22 +107,22 @@ def test_run_end_uses_the_same_journal_summary(tmp_path: pathlib.Path) -> None:
 
 def test_receipt_names_both_summary_attempts_and_their_usage(tmp_path: pathlib.Path) -> None:
     rows = [
-        {"type": "compact.summarise.call", "writer": "worker", "model_call_id": "summary1"},
+        {"type": "compact.summarize.call", "writer": "worker", "model_call_id": "summary1"},
         *_call("summary1", input_tokens=50, cache_read_tokens=950, cache_write_tokens=10),
         {
-            "type": "compact.summarise.failed",
+            "type": "compact.summarize.failed",
             "writer": "worker",
             "error": "summary contains a tool call",
         },
         {
-            "type": "compact.summarise.call",
+            "type": "compact.summarize.call",
             "writer": "helper",
             "model_call_id": "summary2",
             "fallback_reason": "summary contains a tool call",
         },
-        *_call("summary2", actor="helper:summariser", input_tokens=300, cache_read_tokens=0),
+        *_call("summary2", actor="helper:summarizer", input_tokens=300, cache_read_tokens=0),
         {
-            "type": "compact.summarise.done",
+            "type": "compact.summarize.done",
             "writer": "helper",
             "summary_chars": 10,
             "fallback_reason": "summary contains a tool call",
@@ -149,9 +149,9 @@ def test_unreported_summary_usage_stays_unknown(tmp_path: pathlib.Path) -> None:
     _write(
         tmp_path / "logs.jsonl",
         [
-            {"type": "compact.summarise.call", "writer": "worker", "model_call_id": "s"},
+            {"type": "compact.summarize.call", "writer": "worker", "model_call_id": "s"},
             *_call("s", input_tokens=10),
-            {"type": "compact.summarise.done", "writer": "worker", "summary_chars": 10},
+            {"type": "compact.summarize.done", "writer": "worker", "summary_chars": 10},
         ],
     )
     text = receipt.render(receipt.read_receipt(tmp_path, tmp_path))
@@ -209,9 +209,9 @@ def test_receipt_counts_endpoint_changes_on_ordinary_and_summary_results(
     tmp_path: pathlib.Path,
 ) -> None:
     rows = [
-        {"type": "compact.summarise.call", "writer": "endpoint", "model_call_id": "s"},
+        {"type": "compact.summarize.call", "writer": "endpoint", "model_call_id": "s"},
         *_call("s", input_tokens=60, cache_read_tokens=33050, thinking_blocks_dropped=1),
-        {"type": "compact.summarise.done", "writer": "endpoint", "summary_chars": 18},
+        {"type": "compact.summarize.done", "writer": "endpoint", "summary_chars": 18},
         *_call("w", thinking_blocks_dropped=1, tool_results_cleared=3),
         *_call("x", thinking_blocks_dropped=1, tool_results_cleared=3),
     ]

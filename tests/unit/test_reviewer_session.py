@@ -265,20 +265,20 @@ def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path, char_
     )
     small = compaction_window.CompactionSettings(
         drop_at_chars=2_000,
-        summarise_at_chars=4_000,
+        summarize_at_chars=4_000,
         keep_recent_chars=char_cap,
         elision_gists=False,
     )
     wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract, compaction=small)
     result = wf.run("review")
     assert result.reason == "answered" and result.summary == '{"verdict": "pass"}'
-    summarise, final = (
+    summarize, final = (
         provider.call.call_args_list[1].kwargs,
         provider.call.call_args_list[2].kwargs,
     )
     # The reviewer writes its own summary: the request keeps its tools and ends on the instruction.
-    assert [tool.name for tool in summarise["tools"]] == ["read_file"]
-    assert summarise["messages"][-1]["content"].startswith("Write the summary now.")
+    assert [tool.name for tool in summarize["tools"]] == ["read_file"]
+    assert summarize["messages"][-1]["content"].startswith("Write the summary now.")
     sent = json.dumps(final["messages"])
     assert "SUMMARY: read big.txt" in sent and sent.count(opening) == 1
     assert "Operator message:" not in sent

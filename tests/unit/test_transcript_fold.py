@@ -1101,27 +1101,27 @@ def test_restate_names_a_call_still_running() -> None:
 def test_compaction_renders_as_markers_on_the_conversation() -> None:
     """Every `compact.*` event produces a conversation item.
 
-    The surfaces showed nothing when tier 2 replaced the history, the summariser failed, or a
+    The surfaces showed nothing when tier 2 replaced the history, the summarizer failed, or a
     promised `/compact` was refused; only the log pane said so.
     """
     items = fold_transcript(
         [
             {"type": "compact.requested", "focus": "the parser"},
-            {"type": "compact.refused", "reason": "too little history to summarise"},
+            {"type": "compact.refused", "reason": "too little history to summarize"},
             {"type": "compact.requested", "focus": ""},
             {
-                "type": "compact.summarise.done",
+                "type": "compact.summarize.done",
                 "summary_chars": 1200,
                 "summary": "...",
                 "kept_messages": 3,
             },
-            {"type": "compact.summarise.failed", "error": "429 rate limited"},
+            {"type": "compact.summarize.failed", "error": "429 rate limited"},
             {"type": "compact.cold_start", "message": "Cold start: route changed."},
         ]
     )
     assert [it.kind for it in items] == ["marker"] * 6
     assert items[0].body == "compaction requested: the parser"
-    assert items[1].body == "compaction refused: too little history to summarise"
+    assert items[1].body == "compaction refused: too little history to summarize"
     assert items[2].body == "compaction requested"
     assert items[3].body == "context compacted: 1,200-char summary, 3 recent messages kept verbatim"
     assert items[4].body == "compaction failed: 429 rate limited"

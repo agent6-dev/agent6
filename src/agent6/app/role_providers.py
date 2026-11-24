@@ -69,17 +69,17 @@ def resolve_compaction_thresholds(
         log: Receives one line per adaptive choice.
 
     Returns:
-        The `(drop_at_chars, summarise_at_chars, keep_recent_chars)` triple.
+        The `(drop_at_chars, summarize_at_chars, keep_recent_chars)` triple.
     """
     drop_override = cfg.compaction.drop_at_chars
-    summarise_override = cfg.compaction.summarise_at_chars
+    summarize_override = cfg.compaction.summarize_at_chars
     provider = rm.provider if rm is not None else ""
     model = rm.model if rm is not None else ""
-    drop, summarise = models_registry.compaction_thresholds(
+    drop, summarize = models_registry.compaction_thresholds(
         provider,
         model,
         drop_override=drop_override,
-        summarise_override=summarise_override,
+        summarize_override=summarize_override,
     )
     endpoint = endpoint_compaction(cfg, rm)
     if log is not None:
@@ -96,18 +96,18 @@ def resolve_compaction_thresholds(
         source = src if drop_override is None else "configured"
         log(
             f"compaction thresholds: {writer} drops at {drop:,} chars, "
-            f"summarises at {summarise:,} [{source}]"
+            f"summarizes at {summarize:,} [{source}]"
         )
     keep = cfg.compaction.keep_recent_chars
-    if not endpoint.writes_summary and summarise_override is None and keep > summarise // 2:
-        keep = summarise // 2
+    if not endpoint.writes_summary and summarize_override is None and keep > summarize // 2:
+        keep = summarize // 2
         if log is not None:
             log(
                 f"compaction.keep_recent_chars {cfg.compaction.keep_recent_chars:,} ->"
                 f" {keep:,} chars: half this model's tier-2 threshold, so a restart"
                 " shrinks the context instead of re-triggering on its own tail"
             )
-    return drop, summarise, keep
+    return drop, summarize, keep
 
 
 def helper_context_window(cfg: Config) -> int | None:
@@ -616,7 +616,7 @@ class InstrumentedProvider:
                 **resp.serving.event_fields(),
                 **_usage_fields(resp.usage),
             },
-            ends_call=isinstance(compaction, provider_types.Summarise)
+            ends_call=isinstance(compaction, provider_types.Summarize)
             or provider_call.settles_call(resp, context),
             # The settled prose: a headless run streams no deltas, so this is its only text.
             response=resp,

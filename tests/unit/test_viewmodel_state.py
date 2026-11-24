@@ -171,11 +171,11 @@ def test_a_log_line_is_one_line() -> None:
 def test_format_log_line_keeps_the_compaction_reason() -> None:
     """A failed compaction's reason and the operator's /compact focus reach the log view.
 
-    With no case for these types the view printed the bare event name, so a 429'd summariser
+    With no case for these types the view printed the bare event name, so a 429'd summarizer
     read as nothing having happened.
     """
     failed = log_line.format_log_line(
-        {"type": "compact.summarise.failed", "error": "provider 429: rate limited"}
+        {"type": "compact.summarize.failed", "error": "provider 429: rate limited"}
     )
     assert "429" in failed
     gist = log_line.format_log_line({"type": "compact.gist.failed", "error": "boom"})
@@ -441,25 +441,25 @@ def test_last_model_call_keeps_the_actor_when_the_call_ends() -> None:
         viewmodel_state.initial_state(),
         {
             "type": "model.call",
-            "actor": "helper:summariser",
+            "actor": "helper:summarizer",
             "model": "gpt-5",
             "provider": "openai",
         },
     )
     assert s.last_model_call is not None
-    assert s.last_model_call.actor == "helper:summariser"
+    assert s.last_model_call.actor == "helper:summarizer"
     assert s.last_model_call.in_flight is True
     s = viewmodel_state.apply_event(
         s,
         {
             "type": "model.result",
-            "actor": "helper:summariser",
+            "actor": "helper:summarizer",
             "input_tokens": 10,
             "output_tokens": 20,
         },
     )
     assert s.last_model_call is not None
-    assert session_state_as_dict(s)["last_model_call"]["actor"] == "helper:summariser"
+    assert session_state_as_dict(s)["last_model_call"]["actor"] == "helper:summarizer"
     assert s.last_model_call.in_flight is False
 
 
@@ -1019,7 +1019,7 @@ def test_format_log_line_compaction_identities() -> None:
     )
     assert "1 distilled (a.py)" in gists and "1 demoted (b.py)" in gists
     done = log_line.format_log_line(
-        {"type": "compact.summarise.done", "summary_chars": 2341, "summary": "did things"}
+        {"type": "compact.summarize.done", "summary_chars": 2341, "summary": "did things"}
     )
     assert "2341-char progress summary" in done
 
@@ -1036,7 +1036,7 @@ def test_pin_added_events_accumulate() -> None:
 
 
 def test_tier2_restart_resets_elision_counters() -> None:
-    """A summarise-and-restart resets the /status elision counters with the context it wiped."""
+    """A summarize-and-restart resets the /status elision counters with the context it wiped."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
         s, {"type": "compact.dropped", "count": 9, "calls": ["read_file a.py"]}
@@ -1052,7 +1052,7 @@ def test_tier2_restart_resets_elision_counters() -> None:
         },
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "compact.summarise.done", "summary_chars": 900, "summary": "s"}
+        s, {"type": "compact.summarize.done", "summary_chars": 900, "summary": "s"}
     )
     assert s.compact_elided == 0
     assert s.compact_gists_live == 0

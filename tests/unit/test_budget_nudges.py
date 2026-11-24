@@ -215,7 +215,7 @@ def test_a_restart_that_replaced_the_budget_line_shows_it_again(tmp_path: pathli
     tracker.record_plan_preflight(_PLAN_ROUTE.provider, _plan_reading(10))
     armed = [False]
 
-    class Summariser:
+    class Summarizer:
         def call(self, **kwargs: Any) -> ProviderResponse:
             del kwargs
             return test_harness._resp("PROGRESS: listed two directories.")
@@ -236,8 +236,8 @@ def test_a_restart_that_replaced_the_budget_line_shows_it_again(tmp_path: pathli
         [10, 10, 10],
         dispatcher=ArmingDispatcher(),
         compaction=compaction_window.CompactionSettings(
-            summariser="helper",
-            helper=Summariser(),  # type: ignore[arg-type]
+            summarizer="helper",
+            helper=Summarizer(),  # type: ignore[arg-type]
             helper_context_tokens=200_000,
             keep_recent_turns=0,
         ),

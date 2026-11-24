@@ -228,7 +228,7 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Summarising, gist distillation, revision and verify inference use the helper route."""
+    """Summarizing, gist distillation, revision and verify inference use the helper route."""
     cfg = model.Config.model_validate(
         {
             "providers": {"p": {"backend": "openai"}},
@@ -265,11 +265,11 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
     session = session_runtime.build_session_providers(
         cfg, role="worker", events=events, transcript_sink=sink, stream_text=False
     )
-    assert session.summariser_provider is not None
+    assert session.summarizer_provider is not None
     harness = test_harness._wf(
         provider=session.provider,
         compaction=compaction_window.CompactionSettings(
-            summariser="helper", helper_context_tokens=200000, helper=session.summariser_provider
+            summarizer="helper", helper_context_tokens=200000, helper=session.summarizer_provider
         ),
     )
     ctx = harness.compaction_context(
@@ -286,6 +286,6 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
     assert built == [("worker", "base"), ("helper", "help"), ("helper", "help")]
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     assert [row["actor"] for row in rows if row["type"] == "model.call"] == [
-        "helper:summariser",
+        "helper:summarizer",
         "helper:verify_inferer",
     ]

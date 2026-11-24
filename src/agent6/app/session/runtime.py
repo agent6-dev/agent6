@@ -200,21 +200,21 @@ class SessionProviders:
         budget: The run's tracker.
         rm_role: The driving role's resolved model.
         provider: The driving role's instrumented provider.
-        summariser_provider: The summariser provider, when one is configured.
+        summarizer_provider: The summarizer provider, when one is configured.
         reviewers: The in-loop review panel.
     """
 
     budget: agent6_budget.BudgetTracker
     rm_role: RoleModel
     provider: Provider
-    summariser_provider: Provider | None
+    summarizer_provider: Provider | None
     reviewers: list[review_gate.Reviewer]
 
     def close(self) -> None:
         """Release every provider's held process (a `claude_code` session)."""
         role_providers.close_provider(self.provider)
-        if self.summariser_provider is not None:
-            role_providers.close_provider(self.summariser_provider)
+        if self.summarizer_provider is not None:
+            role_providers.close_provider(self.summarizer_provider)
 
 
 def build_session_providers(
@@ -228,7 +228,7 @@ def build_session_providers(
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     conversations: conversation_state.Conversations | None = None,
 ) -> SessionProviders:
-    """Build the driving role's provider and the summariser and reviewers.
+    """Build the driving role's provider and the summarizer and reviewers.
 
     Args:
         cfg: The resolved config.
@@ -262,9 +262,9 @@ def build_session_providers(
         stream_text=stream_text,
         conversations=conversations,
     )
-    summariser_provider = role_providers.helper_actor_provider(
+    summarizer_provider = role_providers.helper_actor_provider(
         cfg,
-        "helper:summariser",
+        "helper:summarizer",
         transcript_sink=transcript_sink,
         budget=budget,
         events=events,
@@ -276,7 +276,7 @@ def build_session_providers(
         budget=budget,
         rm_role=rm_role,
         provider=provider,
-        summariser_provider=summariser_provider,
+        summarizer_provider=summarizer_provider,
         reviewers=reviewers,
     )
 
@@ -289,7 +289,7 @@ class SessionTools:
         curator: The run's DAG curator.
         dispatcher: The run's tool dispatcher.
         compact_drop_at_chars: The compactor's drop threshold.
-        compact_summarise_at_chars: The compactor's summarise threshold.
+        compact_summarize_at_chars: The compactor's summarize threshold.
         keep_recent_chars: How much recent context the compactor keeps.
         cfg: The decompose-resolved config the Harness is built with.
     """
@@ -297,7 +297,7 @@ class SessionTools:
     curator: graph_curator.GraphCurator
     dispatcher: dispatch.ToolDispatcher
     compact_drop_at_chars: int
-    compact_summarise_at_chars: int
+    compact_summarize_at_chars: int
     keep_recent_chars: int
     cfg: Config
 
@@ -625,7 +625,7 @@ def build_session_tools(
     """
     # The curator runs in-process: the run's worker.lock already makes this the sole writer.
     curator = graph_curator.GraphCurator(layout)
-    compact_drop, compact_summarise, keep_recent = role_providers.resolve_compaction_thresholds(
+    compact_drop, compact_summarize, keep_recent = role_providers.resolve_compaction_thresholds(
         cfg, rm_role, log=loop_log
     )
     cfg = role_providers.resolve_decompose(cfg, rm_role, log=loop_log)
@@ -662,7 +662,7 @@ def build_session_tools(
         curator=curator,
         dispatcher=dispatcher,
         compact_drop_at_chars=compact_drop,
-        compact_summarise_at_chars=compact_summarise,
+        compact_summarize_at_chars=compact_summarize,
         keep_recent_chars=keep_recent,
         cfg=cfg,
     )

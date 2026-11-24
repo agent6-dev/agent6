@@ -381,7 +381,7 @@ class Conversation:
         Args:
             block: The unmodified summary block.
             keep: Messages after the request the block covers.
-            awaiting_reply: The response to the summarised request has yet to enter history.
+            awaiting_reply: The response to the summarized request has yet to enter history.
             notice: The task and restart instructions to repeat after the last complete turn.
         """
         self._messages.clear()
@@ -986,7 +986,7 @@ def _parse_result_content(content: Any, call: ToolUse) -> tuple[str, kinds.Media
 def format_transcript_tail(
     messages: Sequence[Message], *, max_messages: int = 6, max_chars: int = 6000
 ) -> str:
-    """Render the last few messages as a plain-text transcript for a summariser call.
+    """Render the last few messages as a plain-text transcript for a summarizer call.
 
     Tool calls and results are clipped, and thinking blocks are skipped.
 

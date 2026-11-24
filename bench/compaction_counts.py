@@ -115,7 +115,7 @@ def measure(prefix: Sequence[Row], rows: Sequence[Row], arm: str, recall: str | 
         for r in rows[rows.index(resumes[0]) : rows.index(stop) + 1]
         if r.get("execution_id") in (None, execution)
     ]
-    calls = {r["model_call_id"] for r in rows if r["type"] == "compact.summarise.call"}
+    calls = {r["model_call_id"] for r in rows if r["type"] == "compact.summarize.call"}
     requests: list[Row] = []
     ordinary: list[Row] = []
     turns: set[int] = set()
@@ -142,7 +142,7 @@ def measure(prefix: Sequence[Row], rows: Sequence[Row], arm: str, recall: str | 
         ):
             raise ValueError(f"cold start did not apply {mode} before the first worker request")
     elif not any(
-        r["type"] == "compact.summarise.done"
+        r["type"] == "compact.summarize.done"
         and r.get("writer") == "worker"
         and r.get("reason") == "requested"
         for r in before
@@ -156,7 +156,7 @@ def measure(prefix: Sequence[Row], rows: Sequence[Row], arm: str, recall: str | 
         "turns": len(turns),
         "rereads_6_calls": six,
         "rereads_10_turns": ten,
-        "second_restart": any(r["type"] == "compact.summarise.done" for r in rows[boundary:]),
+        "second_restart": any(r["type"] == "compact.summarize.done" for r in rows[boundary:]),
         "stop_reason": stop.get("reason"),
         "verification": stop.get("verification"),
         "passed": finished and verification == "passed"

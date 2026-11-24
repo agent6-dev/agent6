@@ -139,7 +139,7 @@ def test_steer_request_and_answer_bridge(tmp_path: pathlib.Path) -> None:
     assert b.steer_requested() is False
 
 
-def test_machine_agent_wires_the_summariser_actor(
+def test_machine_agent_wires_the_summarizer_actor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The machine worker and helper share a recorder, not an actor label."""
@@ -159,7 +159,7 @@ def test_machine_agent_wires_the_summariser_actor(
 
     wf_kwargs: dict[str, Any] = {}
     sinks: dict[str, Any] = {}
-    summariser = object()
+    summarizer = object()
 
     class _FakeWf:
         def __init__(self, **kw: Any) -> None:
@@ -176,13 +176,13 @@ def test_machine_agent_wires_the_summariser_actor(
         sinks["worker"] = k.get("transcript_sink")
         return object()
 
-    def _fake_summariser(_cfg: Any, actor: str, **k: Any) -> object:
+    def _fake_summarizer(_cfg: Any, actor: str, **k: Any) -> object:
         sinks[actor] = k.get("transcript_sink")
-        return summariser
+        return summarizer
 
     monkeypatch.setattr(loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _fake_role)
-    monkeypatch.setattr(role_providers, "helper_actor_provider", _fake_summariser)
+    monkeypatch.setattr(role_providers, "helper_actor_provider", _fake_summarizer)
 
     def _fake_dispatcher(**_k: Any) -> object:
         return types.SimpleNamespace(close=lambda: None)  # the state closes its dispatcher
@@ -199,8 +199,8 @@ def test_machine_agent_wires_the_summariser_actor(
     )
     out = agent.run_one(req)
     assert out.reason == "finish_session"
-    assert wf_kwargs["compaction"].helper is summariser
-    assert sinks["worker"] is sinks["helper:summariser"]  # one sink, one seq counter
+    assert wf_kwargs["compaction"].helper is summarizer
+    assert sinks["worker"] is sinks["helper:summarizer"]  # one sink, one seq counter
 
 
 def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: pathlib.Path) -> None:
@@ -274,7 +274,7 @@ def test_the_machine_loop_journals_under_a_driving_actor(
         transcript_dir=tmp_path / "transcripts",
         request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
-    provider, _summariser, _events = agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
+    provider, _summarizer, _events = agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
         Config(),
         req,
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),

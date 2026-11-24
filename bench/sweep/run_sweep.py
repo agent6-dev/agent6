@@ -6,7 +6,7 @@
 Runs the bench/realworld task set (restore a stubbed function in a pinned OSS
 repo until its upstream tests pass) across several models, with N independent
 repetitions per (model, task) cell, and writes one sample JSON per run for
-bench/sweep/stats.py to summarise.
+bench/sweep/stats.py to summarize.
 
 Design notes:
 - Execution reuses the proven bench/realworld/run_realworld.sh (it clones, sets

@@ -450,7 +450,7 @@ class ProviderCaller:
             context = dataclasses.replace(context, attempt=attempt, attempts=attempts)
             self.counter.attempts += 1
             try:
-                if not isinstance(compaction, provider_types.Summarise):
+                if not isinstance(compaction, provider_types.Summarize):
                     self.counter.request_started = time.monotonic()
                 resp = self.provider.call(
                     system=system,
@@ -486,7 +486,7 @@ class ProviderCaller:
                 self.emit(journal.ProviderRetry(attempt=attempt, error=str(exc)[:200]))
             else:
                 self.counter.output_tokens += resp.output_tokens
-                if isinstance(compaction, provider_types.Summarise) or settles_call(resp, context):
+                if isinstance(compaction, provider_types.Summarize) or settles_call(resp, context):
                     return resp
                 # Model flakiness, not rate limiting: a short fixed delay.
                 delay = min(self.retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311

@@ -43,14 +43,14 @@ decompose = "off"
 when = "never"
 [compaction]
 drop_at_chars = 6000
-summarise_at_chars = 52000
+summarize_at_chars = 52000
 keep_recent_chars = 1200
 elision_gists = false
-summariser = "worker"
+summarizer = "worker"
 ```
 
 ```sh
-sed 's/^summariser = "worker"/summariser = "helper"/' "$work/worker.toml" > "$work/helper.toml"
+sed 's/^summarizer = "worker"/summarizer = "helper"/' "$work/worker.toml" > "$work/helper.toml"
 task='Read a.txt through h.txt in order, then z.txt. Use read_file once per turn, one whole file per call. Do not edit files or run commands. Finish with the letters you read.'
 for writer in worker helper; do
     agent6 run --no-commands --session-id "$writer" --config "$work/$writer.toml" "$task"
@@ -61,10 +61,10 @@ done
 ```
 
 - `compact.dropped.count` counts old tool results replaced before the final read.
-- `compact.summarise.call` names the `writer` and `model_call_id`.
+- `compact.summarize.call` names the `writer` and `model_call_id`.
   Match that id to `model.result`: uncached input is `input_tokens` plus any `cache_write_tokens`; cached input is `cache_read_tokens`.
-- `compact.summarise.done` names the accepted `writer` and `fallback_reason`.
-  A rejected attempt has `compact.summarise.failed.error`.
+- `compact.summarize.done` names the accepted `writer` and `fallback_reason`.
+  A rejected attempt has `compact.summarize.failed.error`.
 - The receipt prints `Summary attempt N: WRITER; U uncached, C cached input tokens; accepted` for the summary itself.
   `After compaction (session)` measures a different call.
   A helper fallback adds `; fallback: REASON` to its attempt line.
@@ -100,7 +100,7 @@ Each run made 11 model calls, dropped four results in one step, accepted its fir
 - One call in each run read nothing from the cache although its system text and tool definitions matched the previous request.
 
 **Limits:** n = 1 per setting on a nine-file read task; the last result is 48,000 characters by construction, so the repeated uncached input is at its largest.
-Recall on real work is unmeasured: read `compact.summarise.done.summary` in ordinary runs.
+Recall on real work is unmeasured: read `compact.summarize.done.summary` in ordinary runs.
 
 ## Idle compaction findings
 
@@ -114,7 +114,7 @@ The endpoint supplied the cache counts.
 | 100 uncached, 900 cached input tokens | 2.01 s | exit 0, `command-finished` after 6.09 s | none |
 | 1,000 uncached, 0 cached input tokens | 2.00 s | exit 0, `command-finished` after 6.24 s | once in each of the log, journal and receipt |
 
-- Both journals recorded `tool.call`, `compact.summarise.done` with `reason: idle`, then `tool.result`.
+- Both journals recorded `tool.call`, `compact.summarize.done` with `reason: idle`, then `tool.result`.
 - Each summary request contained the previous request's messages plus the summary instruction and the same tools.
 - Each run made four model calls, including the summary.
 - The cold receipt said: `Idle summary 2.0s after the last request began: 1,000 uncached, 0 cached input tokens. providers.test.idle_compact_s = 2 may be longer than the cache lasts.`
@@ -146,7 +146,7 @@ One run used `chatgpt/gpt-5.6-luna` at `low` effort with `providers.chatgpt.idle
 | `run_command` result, exit 0 | 31.6 | |
 | Next worker call | 31.8 | 438 / 3,072 |
 
-- The journal order was `tool.call`, `compact.summarise.done` with `reason: idle` and `kept_messages: 1`, then `tool.result`.
+- The journal order was `tool.call`, `compact.summarize.done` with `reason: idle` and `kept_messages: 1`, then `tool.result`.
 - The summary request had the previous request's cache key, instructions and tools, and read nothing from the cache 12 seconds after a request that read 3,072 tokens from it.
 - The cold-cache notice appeared once in the log, the journal and the receipt.
 
@@ -168,14 +168,14 @@ Both runs used `drop_at_chars = 1000`.
 - Neither asked for clearing: one result was in the history, and the newest two always stay whole.
 - The stand-in checked the system text, tools and messages against the preceding ordinary request.
 - It checked the block and the kept reply for exact equality on adoption.
-- The idle journal orders `tool.call`, `compact.summarise.done` with `kept_messages: 1`, then `tool.result`.
+- The idle journal orders `tool.call`, `compact.summarize.done` with `kept_messages: 1`, then `tool.result`.
   The foreground `sleep 4` returned exit 0 after 4.07 seconds under partial isolation.
 - Both receipts reported 60 uncached and 33,050 cached input tokens on the summary.
   These counts come from the captured replies, not a measurement of cache performance or signature verification.
 
 **Host smoke with a live key.** Use the throwaway read targets from the first smoke and an Anthropic direct entry with no custom URL.
 Select a supported model such as `anthropic/claude-haiku-5-5` at `effort = "high"`.
-Use `drop_at_chars = 1000` and `summarise_at_chars = 25000` for size.
+Use `drop_at_chars = 1000` and `summarize_at_chars = 25000` for size.
 For idle, raise the size limit to `300000` and set `idle_compact_s = 2` and `idle_compact_min_chars = 8000` on the provider entry.
 Run the commands below with the corresponding config files and the host's ordinary command isolation.
 
@@ -186,7 +186,7 @@ agent6 run --config "$work/idle.toml" --session-id signed-idle \
     'Read z.txt. Run sleep 6 in the foreground. Report the return code.'
 for id in signed-size signed-idle; do
     agent6 sessions receipt "$id"
-    jq -c 'select(.type == "compact.summarise.done" or .type == "model.result") | del(.summary,.text)' \
+    jq -c 'select(.type == "compact.summarize.done" or .type == "model.result") | del(.summary,.text)' \
         "$(agent6 sessions dir "$id")/logs.jsonl"
 done
 ```
@@ -199,7 +199,7 @@ Three runs used `anthropic/claude-haiku-5-5` at `high` effort on the direct API,
 Each set `extra_body.thinking.block_binding.prefix_mismatch_behavior = "error"`, so the API refuses a request whose replayed thinking fails its prefix check.
 No request was refused and no reply reported a dropped thinking block.
 
-**Clearing in one step, then a size summary** (`drop_at_chars = 16000`, `summarise_at_chars = 52000`, 19 calls):
+**Clearing in one step, then a size summary** (`drop_at_chars = 16000`, `summarize_at_chars = 52000`, 19 calls):
 
 | Request | Clearing edit | Results cleared by the endpoint | Input (uncached / cached) |
 | --- | --- | ---: | ---: |
@@ -227,7 +227,7 @@ The endpoint's `cleared_tool_uses` equalled agent6's count on every request.
 | `run_command` result, exit 0 | 47.7 | |
 | Next worker call, block first | 48.1 | 1,394 / 6,145 |
 
-- The journal order was `tool.call`, `compact.summarise.done` with `reason: idle` and `kept_messages: 1`, then `tool.result`.
+- The journal order was `tool.call`, `compact.summarize.done` with `reason: idle` and `kept_messages: 1`, then `tool.result`.
 - The request after adoption carried the block, the waiting reply with its thinking, the command result and the task.
 
 A comparison of each consecutive pair of request bodies in the three runs (40 pairs) found the earlier system text, tools and messages unchanged in every later request.
@@ -238,7 +238,7 @@ A comparison of each consecutive pair of request bodies in the three runs (40 pa
 
 Ten headless runs used `chatgpt/gpt-6.2-sol` at `medium` effort, five per arm, interleaved two at a time.
 The task extends six small modules in a fixed order, with one test per rule and a test run after each module.
-`drop_at_chars = 8000` and `summarise_at_chars = 34000` forced restarts, and the worker wrote each summary.
+`drop_at_chars = 8000` and `summarize_at_chars = 34000` forced restarts, and the worker wrote each summary.
 A separate check of the twelve new functions and their error rules, in six groups, ran on each final tree.
 
 | | `keep_recent_chars = 0` | `keep_recent_chars = 6000` |

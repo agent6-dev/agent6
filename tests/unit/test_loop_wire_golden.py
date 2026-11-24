@@ -128,8 +128,8 @@ class _WorkerScript:
         return self._responses[len(self.captured) - 1]
 
 
-class _SummariserScript:
-    """Scripted summariser: the gist distiller first, then the tier-2 restart summary.
+class _SummarizerScript:
+    """Scripted summarizer: the gist distiller first, then the tier-2 restart summary.
 
     Both requests embed the transcript-tail renderer's output, pinning that renderer too.
     """
@@ -251,7 +251,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
     snap_path = tmp_dir / "loop_state.json"
     compact_flag = [False]
     worker = _WorkerScript(list(_RESPONSES), snap_path)
-    summariser = _SummariserScript()
+    summarizer = _SummarizerScript()
     steer = _SteerOnce()
     pre_restart_state: list[str] = []
 
@@ -271,9 +271,9 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
         logger=lambda _msg: None,
         compaction=compaction_window.CompactionSettings(
-            summariser="helper",
+            summarizer="helper",
             helper_context_tokens=200000,
-            helper=summariser,  # type: ignore[arg-type]
+            helper=summarizer,  # type: ignore[arg-type]
             drop_at_chars=2_000,
             keep_recent_turns=0,
         ),
@@ -297,7 +297,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
     )
     assert result.completed is True and result.reason == "finish_session"
     assert len(worker.captured) == len(_RESPONSES)
-    assert len(summariser.captured) == 2
+    assert len(summarizer.captured) == 2
     assert len(pre_restart_state) == 1
 
     # Resume from the richest snapshot: save -> load -> save must be stable.
@@ -326,7 +326,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
 
     return {
         "worker_calls": worker.captured,
-        "summariser_calls": summariser.captured,
+        "summarizer_calls": summarizer.captured,
         "pre_restart_loop_state": pre_restart_state[0],
         "final_loop_state": snap_path.read_text(encoding="utf-8"),
         "resume_call": resume_worker.captured[0],
@@ -337,7 +337,7 @@ def test_loop_wire_matches_golden(tmp_path: pathlib.Path) -> None:
     got = _run_scenario(tmp_path)
     want = json.loads(_GOLDEN.read_text(encoding="utf-8"))
     # Compare piecewise so a mismatch names the drifted surface, not a wall.
-    assert got["summariser_calls"] == want["summariser_calls"]
+    assert got["summarizer_calls"] == want["summarizer_calls"]
     for i, (g, w) in enumerate(zip(got["worker_calls"], want["worker_calls"], strict=True)):
         assert g["messages"] == w["messages"], f"worker call {i + 1} messages drifted"
         assert g["loop_state"] == w["loop_state"], f"worker call {i + 1} loop_state drifted"

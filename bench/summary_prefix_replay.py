@@ -288,7 +288,7 @@ def replay(session: pathlib.Path) -> bool:
                 pins.append(row["text"])
             case "pin.restored":
                 pins = row["pins"]
-            case "compact.summarise.call":
+            case "compact.summarize.call":
                 try:
                     prev = frame(next(r for r in reversed(rows[:i]) if worker(r)))
                     after = frame(next(r for r in rows[i + 1 :] if worker(r)))

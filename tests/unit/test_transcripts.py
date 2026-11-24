@@ -170,7 +170,7 @@ def test_seq_continues_across_resume_executions(tmp_path: pathlib.Path) -> None:
     """Seq is per run: a new sink continues from the highest seq present.
 
     Restarting at 1 produced duplicate seqs that interleaved the executions, a scrambled
-    conversation with a false 'context summarised' marker.
+    conversation with a false 'context summarized' marker.
     """
     d = tmp_path / "transcripts"
     leg1 = TranscriptSink(d, objects_dir=tmp_path / "objects")

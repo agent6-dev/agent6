@@ -18,7 +18,7 @@ qwen3-coder-30b, n=3 per cell, bare tier-1 placeholders:
 - window16k is a spiral on retention work: the first drop lands mid-reading, elision causes re-reads, re-reads cause more pressure; every rule scores at most 0.67 and the early-read rules die first.
 - relay is score-immune in the same regime: code on disk is cheaply re-readable, spec nuance is not; compaction taxes retention tasks in correctness and implementation tasks in efficiency.
 
-Tier-1 gists (`[compaction].elision_gists`, default on): a large read result decays to a model-written gist before the bare marker, one batched summariser call per drop event.
+Tier-1 gists (`[compaction].elision_gists`, default on): a large read result decays to a model-written gist before the bare marker, one batched summarizer call per drop event.
 
 | stylebook under window16k | qwen gists on | qwen gists off | kimi-k2.6 baseline | kimi gists on | kimi gists off |
 |---|---|---|---|---|---|
@@ -29,7 +29,7 @@ Tier-1 gists (`[compaction].elision_gists`, default on): a large read result dec
 | cost per session | $0.069 | $0.128 | $0.29 | $0.37 | $0.82 |
 
 - Gists remove the re-read spiral: qwen's window16k stylebook rises from 0.425 with bare markers to 0.825 against the 0.921 uncompacted baseline, with 6 of 12 components at or above 0.90 and the spread collapsed; kimi with gists sits within noise of its uncompacted baseline on every axis.
-- Cost halves for qwen even with the summariser calls (58 gists written across the wave, 10 demoted to bare markers, 0 distiller failures).
+- Cost halves for qwen even with the summarizer calls (58 gists written across the wave, 10 demoted to bare markers, 0 distiller failures).
 - relay never engages the gist path (0 gists across 6 sessions) and stays flat: no harm outside the engaged regime.
 
 gpt-5.6-sol, n=3 per cell, window16k pinned with keep-recent at half the tier-2 threshold (`results/r38-compaction.jsonl` for baseline, `r38-w16k.jsonl` for the rung):

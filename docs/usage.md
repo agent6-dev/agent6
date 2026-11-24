@@ -52,7 +52,7 @@ For example, `models.planner.effort = "max"` changes only the planner's effort.
 | `worker` | `[models.worker]` | `agent6 run`, `agent6 ask`, their resumes, machine agent states, and model-written squash messages |
 | `planner` | `[models.planner]` | `agent6 plan` and plan resumes |
 | `reviewer` | `[models.reviewer]` | in-loop reviewers without a route, the default judge of `sessions compare` and `--parallel` ([`harness.parallel.judges`](config.md#harnessparallel)), and `sessions review` |
-| `helper` | `[models.helper]` | helper summaries (`compaction.summariser`), gisting (`compaction.elision_gists`), and verify-command inference |
+| `helper` | `[models.helper]` | helper summaries (`compaction.summarizer`), gisting (`compaction.elision_gists`), and verify-command inference |
 
 ```sh
 agent6 model default anthropic/claude-sonnet-5
@@ -741,7 +741,7 @@ A role selects model settings; `actor` tells you who made a call with them.
 The actor is the calling role, optionally followed by `:` and a detail:
 
 - `worker` runs the coding turn; `worker:squash` drafts a squash commit message.
-- `helper:verify_inferer` infers a verification command; `helper:summariser` writes helper summaries and gists.
+- `helper:verify_inferer` infers a verification command; `helper:summarizer` writes helper summaries and gists.
 - A panel review child calls as `reviewer:<focus>`; a review child with no actor specified calls as `reviewer`.
 - `reviewer:recap` reviews a finished session's record for `agent6 sessions review <id>`.
 

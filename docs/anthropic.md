@@ -16,7 +16,7 @@ The newest two results, every result the model has yet to read, and operator ans
 A step causes one cache miss from the first newly cleared result onward.
 With `prompt_caching = true`, the cache marks move through the messages as they do under agent6's own compaction: the API does not count a moved mark as a change to the history.
 
-**Summary.** At `compaction.summarise_at_chars`, on `/compact [focus]` or during an eligible wait, agent6 asks the endpoint to summarise the request it already received.
+**Summary.** At `compaction.summarize_at_chars`, on `/compact [focus]` or during an eligible wait, agent6 asks the endpoint to summarize the request it already received.
 The summary request has the same messages, system text and tools.
 It has no clearing edit, so the summary writer reads the uncleared history.
 Later requests start with the returned block, including its signature.

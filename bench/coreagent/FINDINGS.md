@@ -66,7 +66,7 @@ The task set is ad hoc; its scripts and raw rows are outside the tree.
 
 ## Compaction
 
-- agent6 compacts in two tiers: tier 1 elides the oldest tool results and keeps the context bounded; tier 2 summarises and restarts.
+- agent6 compacts in two tiers: tier 1 elides the oldest tool results and keeps the context bounded; tier 2 summarizes and restarts.
 - A keep-last-K-verbatim tail for tier 2 measured inert on these tasks: under forced 18k/36k thresholds on the `needle` task (kimi, n=6 per condition) tier 2 fired 0 times in 18 runs, because tier 1 keeps the context below the tier-2 trigger; the 0.91 vs 0.96 score gap was noise.
 - The measurable compaction cost is tier 1: tight elision dropped the reference files and the model re-read them 12 to 43 times per run (kimi 1.00 -> 0.91); at the shipped adaptive thresholds neither tier fires on tasks this size.
 - State: a tier-2 restart keeps the last 80,000 characters verbatim (`[compaction].keep_recent_chars`); tier-1 gists are measured in `bench/longhorizon/FINDINGS.md`.

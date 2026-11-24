@@ -6,7 +6,7 @@ Tier 1 (`compact_old_tool_results`) replaces the oldest tool_result blocks
 with placeholders at `compaction_window.DROP_BLOCKS_AT_CHARS`; a large read_file result decays
 through a distilled-gist placeholder first when the caller provides a
 `gister`. Tier 2 compares `compaction_window.context_chars` against
-`compaction_window.SUMMARISE_AT_CHARS` for the restart `compaction_driver` runs.
+`compaction_window.SUMMARIZE_AT_CHARS` for the restart `compaction_driver` runs.
 `compaction_elision.cap_tool_result`
 bounds a single tool_result on the turn it arrives. The loop owns when to
 call these and supplies the one impure seam, the `gister`.

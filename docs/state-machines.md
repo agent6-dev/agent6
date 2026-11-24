@@ -305,7 +305,7 @@ The state's `config` table tunes how that loop runs.
 - `[states.<name>.config.models.default]` supplies the required baseline (`model = "provider/model"`, `effort`, `temperature`).
 - `[states.<name>.config.models.<role>]` overrides any of `worker`, `planner`, `reviewer` or `helper`, field by field.
   Agent states run the worker role.
-  They use `compaction.summariser` only when the endpoint does not write summaries.
+  They use `compaction.summarizer` only when the endpoint does not write summaries.
 - Legacy state-level `model`, `effort` and `temperature` keys refuse with a remedy pointing to `config.models.default`.
 - `[states.<name>.config.budget]` sets `max_tokens_fallback`; most other config keys work the same way.
 - a key the table leaves out falls back through the effective config ([Machine config overlay](#machine-config-overlay-config))

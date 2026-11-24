@@ -232,7 +232,7 @@ def _stub_execution_internals(
         ),
         rm_role=types.SimpleNamespace(model="fake/model", provider="fake"),
         provider=None,
-        summariser_provider=None,
+        summarizer_provider=None,
         reviewers=[],
         close=lambda: None,
     )
@@ -240,7 +240,7 @@ def _stub_execution_internals(
         curator=None,
         dispatcher=types.SimpleNamespace(settle_background=lambda: None, close=lambda: None),
         compact_drop_at_chars=1,
-        compact_summarise_at_chars=1,
+        compact_summarize_at_chars=1,
         keep_recent_chars=1,
         cfg=Config(),
     )

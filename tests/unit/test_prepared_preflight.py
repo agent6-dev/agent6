@@ -53,7 +53,7 @@ def test_initial_inference_uses_the_prepared_target_through_run_task(
         budget=session_setup.budget_tracker(cfg),
         rm_role=RoleModel(provider="test", model="test"),
         provider=mock.Mock(),
-        summariser_provider=None,
+        summarizer_provider=None,
         reviewers=[],
     )
     monkeypatch.setattr(

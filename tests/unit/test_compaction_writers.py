@@ -95,7 +95,7 @@ def context(
             helper_context_tokens=helper_context_tokens,
             keep_recent_chars=0,
             drop_at_chars=1000,
-            summarise_at_chars=2000,
+            summarize_at_chars=2000,
             **settings,
         ),
     )
@@ -108,7 +108,7 @@ def context(
 
 
 def test_worker_is_the_default() -> None:
-    assert harness_config.CompactionConfig().summariser == "worker"
+    assert harness_config.CompactionConfig().summarizer == "worker"
 
 
 def test_the_cold_helper_reads_the_pending_focus_once() -> None:
@@ -125,7 +125,7 @@ def test_the_cold_helper_reads_the_pending_focus_once() -> None:
     assert "Keep the rollback conditions." in str(helper.calls[0]["messages"])
     assert not pending and not any(e.TYPE == "compact.refused" for e in events)
     kinds = [e.TYPE for e in events]
-    assert kinds.index("compact.requested") < kinds.index("compact.summarise.call")
+    assert kinds.index("compact.requested") < kinds.index("compact.summarize.call")
 
 
 def test_a_cold_drop_makes_no_model_call_before_the_ordinary_size_check() -> None:
@@ -145,7 +145,7 @@ def test_restart_names_its_readable_journal(tmp_path: pathlib.Path, offered: boo
         provider=Writer(response("short summary")),
         events=event_log.EventSink(layout.logs_path),
         state_dir=tmp_path,
-        compaction=window.CompactionSettings(keep_recent_chars=0, summarise_at_chars=2000),
+        compaction=window.CompactionSettings(keep_recent_chars=0, summarize_at_chars=2000),
     )
     conv = history()
     tools = [provider_types.ToolDefinition("read_session", "Read entries", {})] if offered else []
@@ -237,7 +237,7 @@ def test_both_rejections_leave_history_unchanged() -> None:
 
 def test_helper_reads_full_text_without_tool_output() -> None:
     worker, helper = Writer(response()), Writer(response())
-    turn = context(worker, helper, [], summariser="helper")
+    turn = context(worker, helper, [], summarizer="helper")
     assert driver.Tiered().compact(turn)
     sent = helper.calls[0]["messages"][0]["content"]
     assert "EARLY " + "a" * 80000 in sent
@@ -248,7 +248,7 @@ def test_helper_reads_full_text_without_tool_output() -> None:
 
 def test_helper_bounds_input_and_marks_missing_beginning() -> None:
     worker, helper = Writer(response()), Writer(response())
-    turn = context(worker, helper, [], summariser="helper")
+    turn = context(worker, helper, [], summarizer="helper")
     turn = dataclasses.replace(
         turn, settings=dataclasses.replace(turn.settings, helper_context_tokens=40000)
     )

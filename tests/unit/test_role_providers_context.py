@@ -177,15 +177,15 @@ def test_review_requests_belong_to_real_distinct_reviewer_sessions(
         assert repeated.n_abstain == 2 and len(calls) == 2
 
 
-def test_summariser_call_keeps_its_actor_on_the_shared_model_route(
+def test_summarizer_call_keeps_its_actor_on_the_shared_model_route(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The journal and transcript distinguish a summary from a reply on the worker's route."""
     _mock_http(monkeypatch)
     providers = _session(tmp_path)
-    assert providers.summariser_provider is not None
-    providers.summariser_provider.call(
-        system="summarise", messages=[], text_delta_callback=lambda _: None
+    assert providers.summarizer_provider is not None
+    providers.summarizer_provider.call(
+        system="summarize", messages=[], text_delta_callback=lambda _: None
     )
     providers.close()
 
@@ -198,9 +198,9 @@ def test_summariser_call_keeps_its_actor_on_the_shared_model_route(
         "model.result",
     ):
         (row,) = _events(tmp_path, kind)
-        assert row.get("actor") == "helper:summariser", row
+        assert row.get("actor") == "helper:summarizer", row
         assert row["model_call_id"] == transcript["model_call_id"]
-    assert transcript["actor"] == "helper:summariser"
+    assert transcript["actor"] == "helper:summarizer"
 
 
 @pytest.mark.parametrize("streaming", [False, True])

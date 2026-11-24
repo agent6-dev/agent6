@@ -819,9 +819,9 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
     """
     out = registry.resolved_adaptive_values(cfg)
     if (worker := cfg.models.resolve("worker")) is not None:
-        drop, summarise, keep = role_providers.resolve_compaction_thresholds(cfg, worker)
+        drop, summarize, keep = role_providers.resolve_compaction_thresholds(cfg, worker)
         out["compaction.drop_at_chars"] = drop
-        out["compaction.summarise_at_chars"] = summarise
+        out["compaction.summarize_at_chars"] = summarize
         out["compaction.keep_recent_chars"] = keep
     if cfg.sandbox.isolation == "container":
         return out  # nothing is probed or started for a listing; the start block says what runs

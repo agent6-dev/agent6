@@ -77,7 +77,7 @@ def unsupported_note() -> str:
 
 # A nested repository (a submodule, a repository a command made in the workspace) has a config,
 # attributes and hooks of its own, all workspace content, and git runs its commands inside one
-# under them. These keep git out: no diff renders inside one, no status summarises one, no
+# under them. These keep git out: no diff renders inside one, no status summarizes one, no
 # checkout recurses, and a directory laid out as a git dir is a repository only as a `.git`.
 _NESTED_REPOSITORY_HARDENING: tuple[str, ...] = (
     "-c",

@@ -3,7 +3,7 @@
 [agent6] DANGER: the sandbox is DISABLED and run_command is AUTO-APPROVED. The agent can run ANY command on this host with no confinement and no prompt.
 [agent6] proceeding (non-interactive).
 [agent6] session id: lush-crow-CN5PV5
-compaction thresholds: drop at 1,887,436 chars, summarise at 3,355,443 [adaptive from moonshotai/kimi-k3 (context 1,048,576 tok)]
+compaction thresholds: drop at 1,887,436 chars, summarize at 3,355,443 [adaptive from moonshotai/kimi-k3 (context 1,048,576 tok)]
 ● Support defining specific `:private-members:` for autodoc **Is your feature request related to a problem? Please describe.** Currently, if I'm using autodoc, the `:private-members:` option does not al
   moonshotai/kimi-k3 · none · commands yes · /opt/miniconda3/envs/testbed/bin/python -m pytest -q (unknown origin)
   · Let me look at the autodoc code for private-members handling.

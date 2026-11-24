@@ -87,7 +87,7 @@ class _Scheduled:
         sent_count = len(context.conversation.complete(keep_reply=True)) if self.endpoint else None
         return waits.Deadline(
             request_started + idle.seconds,
-            lambda: self.summarise_and_restart(
+            lambda: self.summarize_and_restart(
                 context, idle_gap_s=time.monotonic() - request_started, sent_count=sent_count
             ),
         )
@@ -109,19 +109,19 @@ class _Scheduled:
         total = compaction_window.context_chars(conversation) + context.prefix_chars
         # Below four messages a restart loses more than it saves; a forced compaction skips
         # the growth floor.
-        over = total > context.settings.summarise_at_chars and total >= self.tier2_floor_chars
+        over = total > context.settings.summarize_at_chars and total >= self.tier2_floor_chars
         if (forced is not None or over) and len(conversation) > 3:
-            return self.summarise_and_restart(context, focus=forced)
+            return self.summarize_and_restart(context, focus=forced)
         if forced is not None:
             # The request was consumed above, so the refusal is said, not silent.
-            context.log("LOOP: manual compaction skipped: too little history to summarise")
-            context.emit(journal.CompactRefused(reason="too little history to summarise"))
+            context.log("LOOP: manual compaction skipped: too little history to summarize")
+            context.emit(journal.CompactRefused(reason="too little history to summarize"))
 
         if drop is not None:
             drop(context)
         return False
 
-    def summarise_and_restart(
+    def summarize_and_restart(
         self,
         context: strategy.Context,
         *,
@@ -160,7 +160,7 @@ class _Scheduled:
             if self.endpoint
             else "helper"
             if cold
-            else context.settings.summariser,
+            else context.settings.summarizer,
             open_tasks=open_tasks,
             focus=focus or "",
         )
@@ -188,7 +188,7 @@ class _Scheduled:
             )
         self._set_restart_floor(context)
         context.emit(
-            journal.CompactSummariseDone(
+            journal.CompactSummarizeDone(
                 reason="cold_start" if cold else reason,
                 gap_s=idle_gap_s,
                 writer=written.writer,
@@ -354,7 +354,7 @@ class Tiered(_Scheduled):
                 quotes=replay.quotes,
             )
             self._set_restart_floor(context)
-        elif not self.summarise_and_restart(context, cold=True, focus=_take_focus(context)):
+        elif not self.summarize_and_restart(context, cold=True, focus=_take_focus(context)):
             return "summary_failed"
         elided, gists = compaction_rules.count_elisions(conversation)
         context.emit(journal.CompactRestored(elided=elided, gists=gists))
@@ -413,7 +413,7 @@ def distill_gists(
 ) -> dict[str, str]:
     """Distill about-to-be-elided file reads into one-line gists.
 
-    The summariser makes the call. A provider error returns {} and every
+    The summarizer makes the call. A provider error returns {} and every
     victim gets the bare placeholder, so gisting never breaks a drop.
 
     Args:
@@ -472,7 +472,7 @@ def write_summary(
         context.check_stop()
         call_id = uuid.uuid4().hex
         context.emit(
-            journal.CompactSummariseCall(
+            journal.CompactSummarizeCall(
                 messages=sent_count if writer == "endpoint" else len(messages),
                 writer=writer,
                 fallback_reason=fallback_reason,
@@ -519,7 +519,7 @@ def write_summary(
         if not failure:
             break
         context.log(f"LOOP: {writer} summary failed: {failure}")
-        context.emit(journal.CompactSummariseFailed(error=failure, writer=writer))
+        context.emit(journal.CompactSummarizeFailed(error=failure, writer=writer))
         if writer == "helper":
             return None
         writer = "helper"
@@ -536,14 +536,14 @@ def write_summary(
 
 
 def apply_checkoff(context: strategy.Context, summary_text: str, *, valid_ids: set[str]) -> None:
-    """Apply the summariser's checkoff block to the curator, best-effort.
+    """Apply the summarizer's checkoff block to the curator, best-effort.
 
     Completed tasks are marked passed, discovered ones queued under the run's
     root; a curator refusal skips that item.
 
     Args:
-        summary_text: The summariser's raw reply.
-        valid_ids: The open task ids the summariser was shown.
+        summary_text: The summarizer's raw reply.
+        valid_ids: The open task ids the summarizer was shown.
         context: The prepared turn.
     """
     if context.curator is None:

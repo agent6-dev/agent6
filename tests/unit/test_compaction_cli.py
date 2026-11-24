@@ -56,7 +56,7 @@ def test_cli_compaction_cost_matches_the_receipt(
             '[git]\ncontrol = "model"\n[review]\nwhen = "never"\n'
             '[harness.verify]\nwhen = "never"\nat_start = false\n'
             '[harness.prompt]\ndecompose = "off"\n'
-            "[compaction]\ndrop_at_chars = 6000\nsummarise_at_chars = 1000000\n"
+            "[compaction]\ndrop_at_chars = 6000\nsummarize_at_chars = 1000000\n"
             "elision_gists = false\n"
         )
         proc = run(str(binary), mode, "Read a.txt through h.txt, then finish.")

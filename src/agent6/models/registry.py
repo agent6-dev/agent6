@@ -52,14 +52,14 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 # Adaptive sizing: tokens ~= chars/4 (the loop's `context_chars` approximation); tier 1 elides
-# old tool results past 45% of the window, tier 2 summarises within a reserve of the window
+# old tool results past 45% of the window, tier 2 summarizes within a reserve of the window
 # that leaves room for the next turn's output and the summary call.
 _CHARS_PER_TOKEN = 4
 _DROP_FRACTION = 0.45
 _RESERVE_TOKENS = 16_384
-# Unknown-window fallback mirrors harness.compaction.window's drop and summarise thresholds.
+# Unknown-window fallback mirrors harness.compaction.window's drop and summarize thresholds.
 _FALLBACK_DROP_CHARS = 256_000
-_FALLBACK_SUMMARISE_CHARS = 768_000
+_FALLBACK_SUMMARIZE_CHARS = 768_000
 
 
 def normalize_model_id(model_id: str) -> str:
@@ -112,9 +112,9 @@ def compaction_thresholds(
     model_id: str,
     *,
     drop_override: int | None,
-    summarise_override: int | None,
+    summarize_override: int | None,
 ) -> tuple[int, int]:
-    """Return the effective (drop_at_chars, summarise_at_chars) thresholds.
+    """Return the effective (drop_at_chars, summarize_at_chars) thresholds.
 
     Explicit config wins (the validator requires both or neither); otherwise the model's
     window sizes them, and an unknown window takes the fixed defaults.
@@ -123,19 +123,19 @@ def compaction_thresholds(
         provider_name: The provider's config name.
         model_id: The model id.
         drop_override: The configured `compaction.drop_at_chars`, or None.
-        summarise_override: The configured `compaction.summarise_at_chars`, or None.
+        summarize_override: The configured `compaction.summarize_at_chars`, or None.
 
     Returns:
         The two thresholds in chars.
     """
-    if drop_override is not None and summarise_override is not None:
-        return drop_override, summarise_override
+    if drop_override is not None and summarize_override is not None:
+        return drop_override, summarize_override
     ctx = context_window(provider_name, model_id)
     if ctx is None or ctx <= 0:
-        return _FALLBACK_DROP_CHARS, _FALLBACK_SUMMARISE_CHARS
+        return _FALLBACK_DROP_CHARS, _FALLBACK_SUMMARIZE_CHARS
     drop = int(ctx * _CHARS_PER_TOKEN * _DROP_FRACTION)
-    summarise = max(drop + 1, (ctx - _RESERVE_TOKENS) * _CHARS_PER_TOKEN)
-    return drop, summarise
+    summarize = max(drop + 1, (ctx - _RESERVE_TOKENS) * _CHARS_PER_TOKEN)
+    return drop, summarize
 
 
 # Families with a measured decompose-first win (bench/coreagent/FINDINGS.md: mistral-small-3.2-24b

@@ -44,11 +44,11 @@ def _restart(
         [],
         conversation=conv,
         pins=("Standing rule.",),
-        summariser="helper",
+        summarizer="helper",
         task=task,
     )
     ctx = dataclasses.replace(ctx, settings=dataclasses.replace(ctx.settings, **settings))
-    assert driver.Tiered().summarise_and_restart(ctx, idle_gap_s=2 if idle else None)
+    assert driver.Tiered().summarize_and_restart(ctx, idle_gap_s=2 if idle else None)
     return helper.calls[0]["messages"][0]["content"]
 
 
@@ -164,10 +164,10 @@ def _restart_run(wf: Any, conv: history.Conversation, state: Any, **settings: in
     """Restart a conversation with the pins and facts of its own run."""
     helper = writers.Writer(writers.response("Ready."))
     wf.compaction = dataclasses.replace(
-        window.CompactionSettings(helper=helper, helper_context_tokens=200000, summariser="helper"),
+        window.CompactionSettings(helper=helper, helper_context_tokens=200000, summarizer="helper"),
         **settings,
     )
-    assert driver.Tiered().summarise_and_restart(wf.compaction_context(conv, state, []))
+    assert driver.Tiered().summarize_and_restart(wf.compaction_context(conv, state, []))
     return _notice(conv)
 
 
@@ -553,7 +553,7 @@ def test_endpoint_fallback_omits_the_answer_notice_from_a_kept_turn() -> None:
         writers.Writer(writers.response("Ready.")),
     )
     ctx = writers.context(worker, helper, [], conversation=conv)
-    assert driver.Endpoint().summarise_and_restart(ctx)
+    assert driver.Endpoint().summarize_and_restart(ctx)
     prompt = helper.calls[0]["messages"][0]["content"]
     assert "Which file?" in prompt and "Check the parser." in prompt
     assert "capped ending" not in prompt and "short answer" not in prompt
@@ -567,7 +567,7 @@ def test_endpoint_fallback_omits_the_answer_notice_from_a_kept_turn() -> None:
     [("A" * 600 + " first", "second answer"), ("first answer", "B" * 600 + " second")],
     ids=["capped-first", "capped-second"],
 )
-def test_mixed_answers_are_reserved_and_summarised_in_call_order(
+def test_mixed_answers_are_reserved_and_summarized_in_call_order(
     operators: int, after_replay: bool, call_ids: tuple[str, str], answers: tuple[str, str]
 ) -> None:
     first, second = answers

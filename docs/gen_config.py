@@ -40,7 +40,7 @@ _PRESETS_MARKER = "<!-- presets-table -->"
 # Fields whose default is resolved at runtime, so only the page can say what it becomes.
 _RUNTIME_DEFAULTS = {
     "compaction.drop_at_chars": "_adaptive_",
-    "compaction.summarise_at_chars": "_adaptive_",
+    "compaction.summarize_at_chars": "_adaptive_",
     "providers.<name>.price_from": "per endpoint",
     "providers.<name>.base_url": "per (format, deployment)",
     "providers.<name>.idle_compact_s": "per backend",

@@ -15,7 +15,7 @@ All seven preserve the system instructions, tool definitions, reasoning settings
 | web-followups | 19:32:08 | 317 items match |
 
 `cache-review` has no tier-2 point.
-The recorded thresholds were `drop_at_chars = 489600` and `summarise_at_chars = 1022464`.
+The recorded thresholds were `drop_at_chars = 489600` and `summarize_at_chars = 1022464`.
 The replay uses every journaled summary point rather than predicting when a new run would compact.
 
 ## Reproduction
@@ -25,7 +25,7 @@ uv run python bench/summary_prefix_replay.py RECORDINGS
 ```
 
 Each session under `RECORDINGS` supplies `logs.jsonl`, `transcripts/` and `objects/`.
-On either side of `compact.summarise.call`, the replay selects `model.result` rows and transcripts with `actor` set to `worker` and joins them by `model_call_id`.
+On either side of `compact.summarize.call`, the replay selects `model.result` rows and transcripts with `actor` set to `worker` and joins them by `model_call_id`.
 It rebuilds the conversation from the previous request, its reply and the tool results and notices in the retained tail.
 It takes the worker settings and conversation key from the following request.
 It passes the conversation through the worker summary call builder and the ChatGPT adapter without sending the request.

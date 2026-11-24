@@ -298,10 +298,10 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
   `summarize` gives any pending manual focus to the helper; `truncate` uses no writer.
   Either one that would replace nothing leaves the history alone and reports `resend`.
   The ordinary size and manual checks follow on that same request unless the step restarted the conversation or its summary failed.
-- Outside the cold step, tier 2 checks `summarise_at_chars` before tier 1 rewrites any messages.
-- With `summariser = "worker"` (default), the driving model receives its prepared conversation and tools with a final instruction to write the summary.
+- Outside the cold step, tier 2 checks `summarize_at_chars` before tier 1 rewrites any messages.
+- With `summarizer = "worker"` (default), the driving model receives its prepared conversation and tools with a final instruction to write the summary.
   A summary tool call is never run.
-- With `summariser = "helper"`, the helper reads the part being replaced, including operator answers but not other tool output.
+- With `summarizer = "helper"`, the helper reads the part being replaced, including operator answers but not other tool output.
   When that history exceeds the helper's known window, it reads the newest end with a notice that the beginning is missing.
 - A rejected worker request or unusable reply gives the helper one attempt.
   The `claude_code` backend uses the helper directly because its worker process owns the session.
@@ -321,7 +321,7 @@ See [Anthropic Messages](anthropic.md) for the supported models and wire behavio
   The restart keeps that reply after the summary, with its signed reasoning and tool call ids intact.
   A parked interactive run has no open call, so the summary covers the complete turn.
   A later idle restart must also meet the tier-2 growth floor.
-- the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
+- the DAG survives the restart: the current task re-surfaces, the summarizer reports finished/new tasks (finished marked `passed`, new queued)
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
 
@@ -1068,7 +1068,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
-| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (templates and reviewer renderers the loop, review, ranking, and machine assemble; `compaction.py` holds the summariser, gist and restart-notice prompts) |
+| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (templates and reviewer renderers the loop, review, ranking, and machine assemble; `compaction.py` holds the summarizer, gist and restart-notice prompts) |
 | Review panel | `harness/review/panel.py`, `harness/review/verdict.py` and `harness/review/gate.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |

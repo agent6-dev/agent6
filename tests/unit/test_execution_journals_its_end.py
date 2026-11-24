@@ -132,7 +132,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
         budget=mock.MagicMock(),
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
-        summariser_provider=None,
+        summarizer_provider=None,
         reviewers=[],
         close=lambda: closed.append("session"),
     )
@@ -190,7 +190,7 @@ def test_mcp_setup_failure_journals_session_end(
         budget=mock.MagicMock(),
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
-        summariser_provider=None,
+        summarizer_provider=None,
         reviewers=[],
         close=lambda: None,
     )
@@ -272,7 +272,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         budget=mock.MagicMock(),
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
-        summariser_provider=None,
+        summarizer_provider=None,
         reviewers=[],
         close=_session_close,
     )
@@ -284,7 +284,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         curator=None,
         dispatcher=dispatcher,
         compact_drop_at_chars=1,
-        compact_summarise_at_chars=1,
+        compact_summarize_at_chars=1,
         keep_recent_chars=1,
         cfg=Config(),
     )
@@ -445,7 +445,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         budget=mock.MagicMock(),
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
-        summariser_provider=None,
+        summarizer_provider=None,
         reviewers=[],
         close=lambda: None,
     )
@@ -455,7 +455,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
             last_verification=None, verify_withheld=False, execution_id="test-execution"
         ),
         compact_drop_at_chars=1,
-        compact_summarise_at_chars=1,
+        compact_summarize_at_chars=1,
         keep_recent_chars=1,
         cfg=Config(),
     )
@@ -517,7 +517,7 @@ def _wired_frontend(
         budget=session_setup.budget_tracker(cfg),
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
-        summariser_provider=None,
+        summarizer_provider=None,
         reviewers=[],
         close=lambda: order.append("session"),
     )
@@ -528,7 +528,7 @@ def _wired_frontend(
         curator=None,
         dispatcher=dispatcher,
         compact_drop_at_chars=1,
-        compact_summarise_at_chars=1,
+        compact_summarize_at_chars=1,
         keep_recent_chars=1,
         cfg=cfg,
     )

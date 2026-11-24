@@ -137,7 +137,7 @@ def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     lines.append(json.dumps({"type": "model.result", "actor": "worker", "text": "use ffmpeg"}))
-    side = ("reviewer:security", "helper:verify_inferer", "worker:squash", "helper:summariser")
+    side = ("reviewer:security", "helper:verify_inferer", "worker:squash", "helper:summarizer")
     for actor in side:
         lines.append(json.dumps({"type": "model.result", "actor": actor, "text": f"FROM {actor}"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -233,7 +233,7 @@ def test_filtered_entries_keep_their_journal_number_and_time(tmp_path: pathlib.P
                 "user_task": "Keep [a].",
             },
             {"type": "model.text_delta", "text": "not a second copy"},
-            {"type": "model.result", "actor": "helper:summariser", "text": "side call"},
+            {"type": "model.result", "actor": "helper:summarizer", "text": "side call"},
             {"ts": "2026-07-31T12:32:18+00:00", "type": "model.result", "text": "Check [a]."},
             {"ts": "2026-07-31T12:31:59+00:00", "type": "steer.injected", "text": "Use [A]."},
             {"type": "steer.parent", "text": "Also [a]."},

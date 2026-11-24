@@ -19,21 +19,21 @@ from agent6.providers import Provider, provider_types
 DROP_BLOCKS_AT_CHARS = 256_000  # ~64k tokens of tool_result content
 
 
-SUMMARISE_AT_CHARS = 768_000  # ~192k tokens: full context restart
+SUMMARIZE_AT_CHARS = 768_000  # ~192k tokens: full context restart
 
 
 CHECKOFF_FENCE_RE = re.compile(r"```checkoff\s*\n(.*?)\n```", re.DOTALL)
 
 
 def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
-    """Extract the tier-2 check-off block from the summariser's reply.
+    """Extract the tier-2 check-off block from the summarizer's reply.
 
-    The summariser appends a fenced checkoff block holding `completed_ids` and
+    The summarizer appends a fenced checkoff block holding `completed_ids` and
     `new_tasks`, so the DAG stays accurate without the worker calling
     update_task.
 
     Args:
-        text: The summariser's reply.
+        text: The summarizer's reply.
 
     Returns:
         (completed ids, new task titles); ([], []) for a missing or malformed
@@ -56,7 +56,7 @@ def nonempty_strs(value: object) -> list[str]:
 
     Args:
         value: The parsed field; `null`, a number or a bool are natural
-            summariser output.
+            summarizer output.
 
     Returns:
         The strings, [] when the value is not a list.
@@ -70,7 +70,7 @@ def strip_checkoff(text: str) -> str:
     """Remove the checkoff block from a summary before it re-enters context.
 
     Args:
-        text: The summariser's reply.
+        text: The summarizer's reply.
 
     Returns:
         The narrative alone, stripped.
@@ -153,7 +153,7 @@ class CompactionSettings:
         cold_start: What to do with older local history on a cold resume.
         drop_at_chars: Tier 1 turns the oldest tool results into placeholders
             past this, aiming for half the threshold where protections allow.
-        summarise_at_chars: Tier 2 summarises and restarts past this.
+        summarize_at_chars: Tier 2 summarizes and restarts past this.
         tool_result_cap_bytes: The bound on one result before it enters the
             conversation.
         keep_operator_messages: How many recent operator messages to reserve, -1 for all.
@@ -161,8 +161,8 @@ class CompactionSettings:
         keep_recent_chars: The shared character cap on local replay.
         keep_thinking_turns: How many recent turns keep thinking during a rewrite, -1 for all.
         elision_gists: A large read decays through a model-written gist first.
-        summary_max_tokens: The summariser's output cap.
-        summariser: The writer selected for tier 2.
+        summary_max_tokens: The summarizer's output cap.
+        summarizer: The writer selected for tier 2.
         helper: The helper role's provider; the worker's when None.
         helper_context_tokens: The helper's known window; None refuses a helper summary.
         endpoint: The history operations of the driving route.
@@ -170,7 +170,7 @@ class CompactionSettings:
     """
 
     drop_at_chars: int = DROP_BLOCKS_AT_CHARS
-    summarise_at_chars: int = SUMMARISE_AT_CHARS
+    summarize_at_chars: int = SUMMARIZE_AT_CHARS
     tool_result_cap_bytes: int = compaction_elision.TOOL_RESULT_CAP_BYTES
     keep_operator_messages: int = -1
     keep_recent_turns: int = -1
@@ -178,7 +178,7 @@ class CompactionSettings:
     keep_thinking_turns: int = -1
     elision_gists: bool = True
     summary_max_tokens: int = 2048
-    summariser: Literal["worker", "helper"] = "worker"
+    summarizer: Literal["worker", "helper"] = "worker"
     helper: Provider | None = None
     helper_context_tokens: int | None = None
     endpoint: provider_types.EndpointCompaction = dataclasses.field(

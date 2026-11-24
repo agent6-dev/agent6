@@ -131,11 +131,11 @@ def overlay(
         '[review]\nwhen = "never"\n[harness]\nmax_turns = 100\nparallel.tool = false\n'
         'verify.infer = false\nverify.at_start = false\nverify.when = "finish"\n'
         f"verify.command = {json.dumps(gate)}\n"
-        '[compaction]\nsummariser = "worker"\nelision_gists = false\n'
+        '[compaction]\nsummarizer = "worker"\nelision_gists = false\n'
         + (
-            "drop_at_chars = 8000\nsummarise_at_chars = 100000\n"
+            "drop_at_chars = 8000\nsummarize_at_chars = 100000\n"
             if small
-            else "drop_at_chars = 489600\nsummarise_at_chars = 1000000\n"
+            else "drop_at_chars = 489600\nsummarize_at_chars = 1000000\n"
         )
         + f"keep_operator_messages = {arm.operator}\nkeep_recent_turns = {arm.turns}\n"
         f'keep_recent_chars = {arm.chars}\nkeep_thinking_turns = {arm.thinking}\ncold_start = "{arm.cold}"\n'

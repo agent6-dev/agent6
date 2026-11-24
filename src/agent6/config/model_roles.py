@@ -29,7 +29,7 @@ class ModelsConfig(pydantic.BaseModel):
     helper: harness_config.RoleModel | None = pydantic.Field(
         default=None,
         description=(
-            "model for helper summaries (`compaction.summariser`), gisting "
+            "model for helper summaries (`compaction.summarizer`), gisting "
             "(`compaction.elision_gists`), and "
             "verify-command inference; unset fields take `models.default`"
         ),

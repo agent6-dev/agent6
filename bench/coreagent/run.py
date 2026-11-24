@@ -103,7 +103,7 @@ CONDITIONS: dict[str, str] = {
     "decompose": '[harness.prompt]\ndecompose = "on"\n',
     # The tail must fit below the tier-2 trigger; zero selects a hard restart.
     "compact_tight": (
-        "[compaction]\ndrop_at_chars = 18000\nsummarise_at_chars = 36000\nkeep_recent_chars = 0\n"
+        "[compaction]\ndrop_at_chars = 18000\nsummarize_at_chars = 36000\nkeep_recent_chars = 0\n"
     ),
     # Skills/prompt-style thrust: conditions swap the static base prompt for a
     # rendered file under prompts/ ({ROOT} is filled with this directory at run
@@ -258,7 +258,7 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
             m["verification"] = e.get("verification")
         elif t == "loop.prompt_revision.result":
             m["task_rewritten"] = True
-        elif t == "compact.summarise.done":
+        elif t == "compact.summarize.done":
             m["compactions"] += 1
             compacted = True
         elif t == "compact.dropped":

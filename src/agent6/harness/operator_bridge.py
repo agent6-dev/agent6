@@ -106,7 +106,7 @@ class OperatorBridge:
         steer_reset: Called at each execution entry; disarms a SIGINT stage the prior execution
             never consumed, leaving the steer marker files alone.
         compact_requested: Polled at the pre-call boundary; a positive forces the tier-2
-            summarise-and-restart. The marker travels the same file bridge as steer.
+            summarize-and-restart. The marker travels the same file bridge as steer.
         compact_clear: Consumes the compact request.
         stop_requested: Polled at each completed-turn boundary; a positive ends the run
             cleanly there. The mid-turn immediate stop is the steer "abort" answer.

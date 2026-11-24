@@ -42,9 +42,9 @@ def test_counts_only_resumed_attempts_and_completed_reads() -> None:
     rows = [
         dict(type="session.resume", turn=12, execution_id="e"),
         dict(type="budget.turn", turn=12),
-        dict(type="compact.summarise.call", model_call_id="m1"),
+        dict(type="compact.summarize.call", model_call_id="m1"),
         *_request("helper", 1, 20, 3),
-        dict(type="compact.summarise.done", writer="helper", reason="cold_start"),
+        dict(type="compact.summarize.done", writer="helper", reason="cold_start"),
         dict(type="compact.cold_start", mode="summarize", action="summarize"),
         *_request("worker", 2, 40, 2),
         *_read(1, "./old", 12),
@@ -55,7 +55,7 @@ def test_counts_only_resumed_attempts_and_completed_reads() -> None:
         *_read(6, "fresh", 12),
         *_read(7, "old", 12),
         dict(type="budget.turn", turn=22),
-        dict(type="compact.summarise.done", reason="size"),
+        dict(type="compact.summarize.done", reason="size"),
         *_request("worker", 3, 4, 1),
         *_read(8, "old", 22),
         dict(

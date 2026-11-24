@@ -442,7 +442,7 @@ def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
 
 
 def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
-    """The summariser's plain-text tail shows every role's text and tool calls, never thinking."""
+    """The summarizer's plain-text tail shows every role's text and tool calls, never thinking."""
     conversation = loop_conversation.Conversation.from_wire(
         [
             {"role": "user", "content": [{"type": "text", "text": "hello"}]},

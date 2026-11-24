@@ -556,8 +556,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 paths=_strings(raw.get("paths", ()) or ()),
                 demoted_paths=_strings(raw.get("demoted_paths", ()) or ()),
             )
-        case "compact.summarise.done":
-            return journal.CompactSummariseDone(
+        case "compact.summarize.done":
+            return journal.CompactSummarizeDone(
                 writer="worker" if raw.get("writer") == "worker" else "helper",
                 fallback_reason=_text(raw, "fallback_reason"),
                 summary_chars=as_int(raw.get("summary_chars")),

@@ -288,7 +288,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `elided` | `int` | Number of restored elision markers. |
 | `gists` | `int` | Number of restored file summaries. |
 
-### compact.summarise.call
+### compact.summarize.call
 
 **Support: public.** The model was asked to summarize the conversation.
 
@@ -299,7 +299,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model_call_id` | `str, optional` | The summary attempt identity. |
 | `messages` | `int` | Number of conversation messages. |
 
-### compact.summarise.done
+### compact.summarize.done
 
 **Support: public.** A summary replaced the conversation history.
 
@@ -313,7 +313,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `summary` | `str` | The result or outcome in words. |
 | `kept_messages` | `int` | Number of recent messages kept after the summary. |
 
-### compact.summarise.failed
+### compact.summarize.failed
 
 **Support: public.** The conversation-summary call failed.
 

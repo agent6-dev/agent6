@@ -462,7 +462,7 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     repo_root.mkdir()
 
     err = write.set_config_value(
-        repo_root, "compaction", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
+        repo_root, "compaction", "{ drop_at_chars = 200000, summarize_at_chars = 400000 }"
     )
 
     assert err is None, err
@@ -471,7 +471,7 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     assert "keep_recent_chars = 50000" in text
     assert "summary_max_tokens = 4096" in text
     # Both halves land under one revalidation, so the spanning rule sees its sibling.
-    assert "drop_at_chars = 200000" in text and "summarise_at_chars = 400000" in text
+    assert "drop_at_chars = 200000" in text and "summarize_at_chars = 400000" in text
 
 
 def test_a_dict_typed_leaf_is_replaced_whole(

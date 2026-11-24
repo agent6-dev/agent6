@@ -110,9 +110,9 @@ def test_a_summary_call_and_a_reviewer_are_never_offered_search() -> None:
         should_abort=lambda: False,
         should_interrupt=lambda: False,
     )
-    calls.call_worker("Summarise.", "c1")
-    calls.call_endpoint("Summarise.", "c2", 1)
-    calls.call_helper("s", "Summarise.", "c3")
+    calls.call_worker("Summarize.", "c1")
+    calls.call_endpoint("Summarize.", "c2", 1)
+    calls.call_helper("s", "Summarize.", "c3")
     review_session.review_digest(worker, digest="the record")
     assert len(worker.calls) == 4
     assert not any("web_search" in call for call in worker.calls)
