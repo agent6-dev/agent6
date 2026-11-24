@@ -71,7 +71,6 @@ from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as harness_review_gate
 from agent6.harness.review import history as review_history
-from agent6.harness.review import panel as review_panel
 from agent6.harness.verify import child as child_verify
 from agent6.harness.verify import gate as verify_gate
 from agent6.harness.verify import verdict as verify_verdict
@@ -518,16 +517,6 @@ class Harness:
 
     # ---- the turn pipeline ---------------------------------------------------
 
-    def _sit_review_target(
-        self, state: loop_state.LoopState, conversation: loop_conversation.Conversation
-    ) -> None:
-        """Sit the panel on a `/review` session's range before the worker reads it."""
-        if self.review_target is None or not self.review_gate.available():
-            return
-        critique = self.review_gate.review_target(state, *self.review_target)
-        if critique is not None:
-            conversation.notice(review_panel.review_notice(critique.text))
-
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
         *,
@@ -691,7 +680,8 @@ class Harness:
                 return self.unexecutable_abort(exc, turn=start_turn, state=state)
         # The start gate is the harness's time: the stagnation window opens at the first turn.
         state.stagnation = guards.StagnationGuard(wait_at_start=self.dispatcher.operator_wait_s)
-        self._sit_review_target(state, conversation)
+        if notice := self.review_gate.target_notice(state, self.review_target):
+            conversation.notice(notice)
         return None
 
     def _turn_after_tools(
@@ -1367,11 +1357,8 @@ class Harness:
             state: The execution's state.
             turn: This turn's state.
         """
-        if turn.review_text:
-            turn.tool_results.append(
-                loop_conversation.Notice(review_panel.review_notice(turn.review_text))
-            )
-            turn.review_text = None
+        if notice := harness_review_gate.take_notice(turn):
+            turn.tool_results.append(loop_conversation.Notice(notice))
         if turn.metric_feedback:
             turn.tool_results.append(loop_conversation.Notice(turn.metric_feedback))
 
@@ -1455,12 +1442,9 @@ class Harness:
         for gate in gates:
             if self._refuse(state, turn, gate(turn, state, ctx)):
                 break
-        if turn.review_text:
+        if notice := harness_review_gate.take_notice(turn):
             # The turn's notices went out before these gates, so the panel's findings go here.
-            turn.tool_results.append(
-                loop_conversation.Notice(review_panel.review_notice(turn.review_text))
-            )
-            turn.review_text = None
+            turn.tool_results.append(loop_conversation.Notice(notice))
         return None
 
     # ---- the advisors --------------------------------------------------------

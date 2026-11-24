@@ -269,6 +269,12 @@ REVIEW_REJECTED = {
 }
 
 
+def take_notice(turn: loop_state.TurnState) -> str | None:
+    """Return the turn's findings as its `[review]` notice, once; None when it has none."""
+    text, turn.review_text = turn.review_text, None
+    return review_panel.review_notice(text) if text else None
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewInput:
     """Bind parent-owned panel identity, immutable target and complete reviewer context."""
@@ -561,6 +567,25 @@ class ReviewGate:
         return self._sit(
             state, identity, target, diff, block_on="none", turn=0, trigger="review_target"
         )
+
+    def target_notice(
+        self,
+        state: loop_state.LoopState,
+        target: tuple[review_records.ReviewTarget, str] | None,
+    ) -> str | None:
+        """Sit the panel on a `/review` session's range before the worker reads it.
+
+        Args:
+            state: The execution's state.
+            target: The reviewed comparison and its diff; None outside a review session.
+
+        Returns:
+            The `[review]` notice of the findings; None when no panel sat.
+        """
+        if target is None or not self.available():
+            return None
+        critique = self.review_target(state, *target)
+        return None if critique is None else review_panel.review_notice(critique.text)
 
     def _sit(
         self,
