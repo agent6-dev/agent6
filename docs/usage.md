@@ -600,6 +600,7 @@ Both counts default to `-1` (no count limit).
 Set either to `0` to reserve no messages or keep no optional turns, respectively.
 A kept turn still includes the operator text it received.
 A pinned instruction is stated in the pinned block, so its `/pin` message is neither reserved nor counted.
+A `/<skill>` message is reserved as the instruction that names the skill and its arguments, without the skill's text; `use_skill` loads the text again.
 Older reserved messages appear in time order before the pins and any summary, including answers without their tool calls.
 The task is the whole task the worker received: the typed words with any inlined file, a plan's body, a parent's task for a child, or a machine state's prompt.
 Every restart counts it as the oldest message and charges it to the cap like the others.

@@ -335,7 +335,8 @@ class Steering:
             "OPERATOR STEERING (a mid-run instruction from the operator):\n"
             + skills.skill_steer_payload(skill.name, skill.text, args),
             origin="operator",
-            operator_words=(steer_text,),
+            # A restart quotes the skill by name: `use_skill` loads its text again.
+            operator_words=(skills.skill_steer_instruction(skill.name, args),),
         )
         return True
 

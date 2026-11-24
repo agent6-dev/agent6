@@ -12,6 +12,7 @@ from unittest import mock
 
 import pytest
 
+from agent6.context import skills
 from agent6.harness import loop_conversation as history
 from agent6.harness import loop_resume, loop_snapshot, tool_effects
 from agent6.harness.compaction import driver, window
@@ -182,6 +183,24 @@ def test_a_pinned_steer_is_stated_once_by_the_pinned_block() -> None:
     assert notice.count("Never touch vendor/.") == 1
     assert "PINNED operator instructions (verbatim):\n1. Never touch vendor/." in notice
     assert "Operator message:\nfirst steer" in notice and notice.count("Operator message:") == 1
+
+
+def test_a_steered_skill_is_quoted_by_name_without_its_text(tmp_path: pathlib.Path) -> None:
+    """A skill steer was quoted as `/release v2`, which names no skill to load again."""
+    skill = skills.Skill("release", "Use when releasing.", tmp_path, "SKILL-BODY")
+    dispatcher = mock.MagicMock(last_verification=None, execution_id="e", verify_withheld=False)
+    dispatcher.resolved_skills.return_value = skills.ResolvedSkills((skill,), (), ())
+    wf, state = test_harness._wf(dispatcher=dispatcher), test_harness._state(original_task="")
+    conv = history.Conversation()
+    wf.steering.operator_steer(conv, 1, state, "/release v2", heading="OPERATOR STEERING:")
+    assert "SKILL-BODY" in str(conv.to_wire())
+    _reply(conv, "ok")
+    notice = _restart_run(wf, conv, state, keep_recent_turns=0)
+    assert (
+        "Operator message:\nApply the operator-installed skill 'release' for the rest of this"
+        " run.\nSkill arguments: v2\n\n"
+    ) in notice
+    assert "SKILL-BODY" not in notice and "/release" not in notice
 
 
 def test_first_turn_that_does_not_fit_ends_replay() -> None:

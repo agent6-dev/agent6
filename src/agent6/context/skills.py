@@ -298,13 +298,16 @@ def operator_skills(
     )
 
 
+def skill_steer_instruction(name: str, args: str) -> str:
+    """Return what a `/<skill> [args]` steer asks for, without the skill's text."""
+    args_line = f"\nSkill arguments: {args}" if args else ""
+    return f"Apply the operator-installed skill {name!r} for the rest of this run.{args_line}"
+
+
 def skill_steer_payload(name: str, text: str, args: str) -> str:
     """Return the instruction a `/<skill> [args]` steer injects, the skill's text inline."""
-    args_line = f"\nSkill arguments: {args}" if args else ""
     return (
-        f"Apply the operator-installed skill {name!r} for the rest of this run."
-        f"{args_line}\n\n"
-        f'<skill name="{name}">\n{text.rstrip()}\n</skill>'
+        f'{skill_steer_instruction(name, args)}\n\n<skill name="{name}">\n{text.rstrip()}\n</skill>'
     )
 
 
