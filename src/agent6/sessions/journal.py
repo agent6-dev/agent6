@@ -1915,6 +1915,15 @@ class ToolResult(Event):
         default=None,
         description="Affected repository-relative paths.",
     )
+    changes: Sequence[Any] | None = pydantic.Field(
+        default=None,
+        description=(
+            "Each file an edit or patch wrote: its `path`, and `before` and `after` as "
+            "references to the `objects/` values holding its text. `before` is null for a "
+            "created file and `after` for a deleted one. Absent when the texts exceed 64 KiB "
+            "together, and in a journal written before the field."
+        ),
+    )
     stdout_tail: str | None = pydantic.Field(
         default=None,
         description="Capped standard-output tail.",

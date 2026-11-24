@@ -17,6 +17,42 @@ ItemKind = Literal[
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class StoredChange:
+    """One file a tool call wrote, naming the session objects that hold its text.
+
+    Attributes:
+        path: The workspace-relative path.
+        before: The object holding the text before the call; None for a created file.
+        after: The object holding the text after the call; None for a deleted file.
+    """
+
+    path: str
+    before: str | None
+    after: str | None
+
+
+def stored_changes(raw: Any) -> tuple[StoredChange, ...]:
+    """Return the file changes a `tool.result` journaled.
+
+    Args:
+        raw: The event's `changes`.
+
+    Returns:
+        One entry per well-formed change; none for a journal written before the field.
+    """
+    out: list[StoredChange] = []
+    for entry in raw if isinstance(raw, list) else ():
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            continue
+        sides = [entry.get("before"), entry.get("after")]
+        ids = [side.get("$object") if isinstance(side, dict) else None for side in sides]
+        # A side that is neither null nor a reference would read as a create or a delete.
+        if all(side is None or isinstance(ref, str) for side, ref in zip(sides, ids, strict=True)):
+            out.append(StoredChange(entry["path"], ids[0], ids[1]))
+    return tuple(out)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class TranscriptItem:
     """One rendered conversation step; only the fields its `kind` needs are set.
 
@@ -33,6 +69,7 @@ class TranscriptItem:
             metadata; for a call in flight, why it waits ("awaiting approval").
         tail: A tool's captured output tail.
         call_id: The tool call or verification attempt identity, retained through its result.
+        changes: The files a settled edit or patch wrote, with references to their text.
     """
 
     kind: ItemKind
@@ -44,6 +81,7 @@ class TranscriptItem:
     tail: str = ""
     call_id: str = ""
     args_detail: str = ""
+    changes: tuple[StoredChange, ...] = ()
 
 
 def _pending_key(event: dict[str, Any], name: str) -> int | str:
@@ -264,6 +302,7 @@ class PendingItems:
                 ok=ok,
                 detail=terminal.scrub_terminal_controls(detail),
                 tail=terminal.scrub_terminal_controls(tail),
+                changes=stored_changes(event.get("changes")),
             )
         ]
 

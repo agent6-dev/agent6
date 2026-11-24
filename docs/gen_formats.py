@@ -642,6 +642,8 @@ def build_markdown() -> str:
         'A transcript\'s request holds a reference, `{"$object": "<sha256 hex>"}`, in place of '
         "each message (a Responses `input` item) and of its `system`, `instructions` and "
         "`tools` values; a numbered checkpoint references its messages the same way.\n"
+        "A `tool.result` of an edit or a patch references each file's text before and after "
+        "the call in `changes`.\n"
         "An object is written before any record that references it, the pre-send record "
         "included, so an unchanged retry writes nothing new.\n"
         "`loop_state.json` and `turn_in_flight.json` stay full: they are recovery state.\n"
@@ -653,6 +655,8 @@ def build_markdown() -> str:
         "`objects/` together from finished sessions whose last execution ended more than DAYS "
         "ago, writing `pruned.json` first so an interrupted prune cannot reuse a sequence.\n"
         "The manifest, journal, receipt, recovery state and graph store stay.\n"
+        "After a prune the journal's `changes` name removed objects, so a reader shows no "
+        "diff.\n"
         "`sessions transcript` reports the prune, a fork at a removed checkpoint refuses with "
         "the same notice, and a resumed session continues its transcript sequence above the "
         "saved one.\n"

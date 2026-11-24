@@ -99,7 +99,7 @@ class SessionLayout:
 
     @property
     def objects_dir(self) -> pathlib.Path:
-        """The sanitized values shared by transcripts and checkpoints."""
+        """The values transcripts, checkpoints and the journal's edit changes reference."""
         return self.session_dir / "objects"
 
     @property

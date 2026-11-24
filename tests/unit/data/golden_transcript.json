@@ -8,7 +8,8 @@
     "detail": "",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "thinking",
@@ -19,7 +20,8 @@
     "detail": "",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "text",
@@ -30,7 +32,8 @@
     "detail": "",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "tool",
@@ -41,7 +44,8 @@
     "detail": "4773 bytes",
     "tail": "",
     "call_id": "read_file",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "tool",
@@ -52,7 +56,8 @@
     "detail": "exit=2",
     "tail": "ls: /nope: No such file",
     "call_id": "run_command",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "tool",
@@ -63,7 +68,8 @@
     "detail": "applied=1",
     "tail": "",
     "call_id": "apply_patch",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "verify",
@@ -74,7 +80,8 @@
     "detail": "✗ exit 1 · 1.7s",
     "tail": "1 failed",
     "call_id": "verify:1",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "commit",
@@ -85,7 +92,8 @@
     "detail": "29251c4be62e · 3 lines",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "operator",
@@ -96,7 +104,8 @@
     "detail": "",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "marker",
@@ -107,7 +116,8 @@
     "detail": "",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "marker",
@@ -118,7 +128,8 @@
     "detail": "",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   },
   {
     "kind": "done",
@@ -129,6 +140,7 @@
     "detail": "$0 · 2s · 0 tools · 0 commits",
     "tail": "",
     "call_id": "",
-    "args_detail": ""
+    "args_detail": "",
+    "changes": []
   }
 ]

@@ -1531,6 +1531,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `exec_failed` | `bool, optional` | Whether the command could not be started. |
 | `background_id` | `str, optional` | The background job the command continues as, when handed back. |
 | `paths` | `list, optional` | Affected repository-relative paths. |
+| `changes` | `list, optional` | Each file an edit or patch wrote: its `path`, and `before` and `after` as references to the `objects/` values holding its text. `before` is null for a created file and `after` for a deleted one. Absent when the texts exceed 64 KiB together, and in a journal written before the field. |
 | `stdout_tail` | `str, optional` | Capped standard-output tail. |
 | `stderr_tail` | `str, optional` | Capped standard-error tail. |
 | `stdout_truncated` | `bool, optional` | Whether stdout_tail is a cut of the output; null when its end is unknown. |
@@ -1669,6 +1670,7 @@ Secret-bearing request and response headers are redacted, and their credential v
 [Attachment payloads are omitted](security.md#media-retention) and replaced with metadata, so these files cannot replay the attachment bytes.
 Each session keeps an `objects/` store: one file per distinct JSON value, named by the SHA-256 of its canonical JSON (`sort_keys=True`, compact separators) after redaction and media omission.
 A transcript's request holds a reference, `{"$object": "<sha256 hex>"}`, in place of each message (a Responses `input` item) and of its `system`, `instructions` and `tools` values; a numbered checkpoint references its messages the same way.
+A `tool.result` of an edit or a patch references each file's text before and after the call in `changes`.
 An object is written before any record that references it, the pre-send record included, so an unchanged retry writes nothing new.
 `loop_state.json` and `turn_in_flight.json` stay full: they are recovery state.
 Readers materialize references, accept older full records, and raise `ObjectStoreError` naming a missing object and its record; `sessions transcript --json` prints materialized records.
@@ -1677,6 +1679,7 @@ Readers materialize references, accept older full records, and raise `ObjectStor
 
 `sessions prune --older-than DAYS` removes `transcripts/`, `checkpoints/` and `objects/` together from finished sessions whose last execution ended more than DAYS ago, writing `pruned.json` first so an interrupted prune cannot reuse a sequence.
 The manifest, journal, receipt, recovery state and graph store stay.
+After a prune the journal's `changes` name removed objects, so a reader shows no diff.
 `sessions transcript` reports the prune, a fork at a removed checkpoint refuses with the same notice, and a resumed session continues its transcript sequence above the saved one.
 Nothing is deleted automatically and nothing is compressed.
 

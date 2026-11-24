@@ -467,13 +467,14 @@ class ToolDispatcher:
             raise tool_errors.ToolError(f"failed: {exc}") from exc
         finally:
             self._gating.call_id = outer
+        objects_dir = self._session_dir / "objects" if self._session_dir is not None else None
         self._emit(
             journal.ToolResult(
                 name=name,
                 ok=True,
                 summary=result.summary(),
                 **identity,
-                **result_format.tool_result_fields(name, result),
+                **result_format.tool_result_fields(name, result, objects_dir),
             )
         )
         return result

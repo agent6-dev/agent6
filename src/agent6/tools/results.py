@@ -46,6 +46,41 @@ def _trunc(truncated: bool) -> str:
     return " (truncated)" if truncated else ""
 
 
+# The most UTF-8 a call's recorded diff holds: both sides of all its files together.
+DIFF_BUDGET_BYTES = 64 * 1024
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class FileChange:
+    """One file's text before and after a write.
+
+    Attributes:
+        path: The workspace-relative path.
+        before: The text before the write; None for a file the write created.
+        after: The text after the write; None for a file the write deleted.
+    """
+
+    path: str
+    before: str | None
+    after: str | None
+
+
+def within_diff_budget(changes: tuple[FileChange, ...]) -> bool:
+    """Return whether both sides of every file fit `DIFF_BUDGET_BYTES` together."""
+    size = 0
+    for change in changes:
+        for text in (change.before, change.after):
+            # A character is at least one byte, so an oversized text is never encoded.
+            if text and len(text) > DIFF_BUDGET_BYTES:
+                return False
+            size += len(text.encode("utf-8")) if text else 0
+    return size <= DIFF_BUDGET_BYTES
+
+
+def _diff_note(omitted: bool) -> str:
+    return " (diff omitted for size)" if omitted else ""
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class DocsIndexResult(ToolResult):
     """agent6_docs with no name: the list of available docs."""
@@ -230,11 +265,15 @@ class EditResult(ToolResult):
         applied: The kind of each edit applied, in order.
         path: The workspace-relative path.
         created: The write made the file; off the wire, read by the memory use record.
+        changes: The file's text before and after; off the wire, journaled as the call's diff.
+        diff_omitted: The text was over `DIFF_BUDGET_BYTES`, so `changes` holds none.
     """
 
     applied: tuple[str, ...]
     path: str
     created: bool = False
+    changes: tuple[FileChange, ...] = ()
+    diff_omitted: bool = False
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
@@ -242,7 +281,7 @@ class EditResult(ToolResult):
 
     def summary(self) -> str:
         """Return the one-line summary."""
-        return f"applied={list(self.applied)} path={self.path}"
+        return f"applied={list(self.applied)} path={self.path}{_diff_note(self.diff_omitted)}"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -256,6 +295,8 @@ class PatchResult(ToolResult):
         deleted: The paths the patch deleted, disjoint from `files`.
         healed: The hunks the matcher healed rather than matched exactly (`~rstrip`, `~indent`,
             `~moved`), so the model knows its context was off.
+        changes: Each file's text before and after; off the wire, journaled as the call's diff.
+        diff_omitted: The texts were over `DIFF_BUDGET_BYTES`, so `changes` holds none.
     """
 
     path: str
@@ -263,6 +304,8 @@ class PatchResult(ToolResult):
     files: tuple[tuple[str, int], ...] = ()
     deleted: tuple[str, ...] = ()
     healed: tuple[str, ...] = ()
+    changes: tuple[FileChange, ...] = ()
+    diff_omitted: bool = False
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
@@ -277,6 +320,9 @@ class PatchResult(ToolResult):
 
     def summary(self) -> str:
         """Return the one-line summary."""
+        return self._outcome() + _diff_note(self.diff_omitted)
+
+    def _outcome(self) -> str:
         if not self.deleted:
             if self.files:
                 return f"patched {len(self.files)} files bytes={self.bytes_written}"

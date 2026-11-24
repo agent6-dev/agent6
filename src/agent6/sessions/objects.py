@@ -1,4 +1,4 @@
-"""Store sanitized session values once and materialize their references for readers."""
+"""Store session values once and materialize their references for readers."""
 
 from __future__ import annotations
 
@@ -20,10 +20,11 @@ class ObjectStoreError(ValueError):
 
 
 def put(value: Any, objects_dir: pathlib.Path) -> dict[str, str]:
-    """Publish a sanitized JSON value once and return its reference.
+    """Publish a JSON value once and return its reference.
 
     Args:
-        value: The value after credential redaction and media omission.
+        value: A transcript's or a snapshot's value after credential redaction and media
+            omission, or a file's text as an edit read or wrote it.
         objects_dir: The session's object directory.
 
     Returns:

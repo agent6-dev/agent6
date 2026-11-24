@@ -925,7 +925,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
 | `plan.md` | the plan itself, in plan sessions |
 | `transcripts/<timestamp>-<seq>.json` | provider attempt records with redacted request references, outcomes and response evidence |
-| `objects/<sha256 hex>.json` | distinct sanitized JSON values shared by transcripts and numbered checkpoints |
+| `objects/<sha256 hex>.json` | distinct sanitized JSON values shared by transcripts and numbered checkpoints, and each file's text before and after an edit, referenced by its `tool.result` |
 | `pruned.json` | explicit artifact pruning time, file counts and last transcript sequence |
 | `worker.pid` | the live worker's pid and start time; every surface reads liveness here |
 | `approvals/`, `questions/` | one `<id>.answer` file per prompt, whichever front-end answers; `approvals/` also holds the session-wide allow and deny marker per scope |

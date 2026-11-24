@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import math
 import os
+import pathlib
 import re
 from typing import Any
 
 from agent6 import kinds, terminal
+from agent6.sessions import objects
 from agent6.tools import results, schema
 
 PASSTHROUGH_ENV_KEYS = ("LANG", "LC_ALL", "TERM", "CI")
@@ -116,7 +118,9 @@ _READ_HEAD_LINES = 6
 _READ_HEAD_CHARS = 300
 
 
-def tool_result_fields(name: str, result: results.ToolResult) -> dict[str, Any]:
+def tool_result_fields(
+    name: str, result: results.ToolResult, objects_dir: pathlib.Path | None = None
+) -> dict[str, Any]:
     """Return what a tool's result adds to its tool.result event, else {}.
 
     The written paths let a resume tell the run's own untracked files from the operator's.
@@ -124,16 +128,21 @@ def tool_result_fields(name: str, result: results.ToolResult) -> dict[str, Any]:
     Args:
         name: The tool's name.
         result: The tool's result.
+        objects_dir: The session's object directory, where an edit's texts are published;
+            None journals no file change.
 
     Returns:
         A command's outcome, read_file's head preview and line count, or the paths an edit or
-        patch wrote.
+        patch wrote with each file's change.
     """
     if isinstance(result, results.EditResult):
-        return {"paths": [result.path]}
+        return {"paths": [result.path], **_changes(result.changes, objects_dir)}
     if isinstance(result, results.PatchResult):
         written = [p for p, _ in result.files] or [result.path]
-        return {"paths": [p for p in written if p not in result.deleted]}
+        return {
+            "paths": [p for p in written if p not in result.deleted],
+            **_changes(result.changes, objects_dir),
+        }
     if isinstance(result, results.ExecResult | results.MetricResult):
         return command_outcome(name, result)
     if result.attachment is not None:
@@ -145,6 +154,24 @@ def tool_result_fields(name: str, result: results.ToolResult) -> dict[str, Any]:
             "lines_total": result.lines_total,
         }
     return {}
+
+
+def _changes(
+    changes: tuple[results.FileChange, ...], objects_dir: pathlib.Path | None
+) -> dict[str, Any]:
+    """Return the event's `changes`, each side published as a session object, else {}."""
+    if objects_dir is None or not changes:
+        return {}
+
+    def ref(text: str | None) -> dict[str, str] | None:
+        return None if text is None else objects.put(text, objects_dir)
+
+    return {
+        "changes": [
+            {"path": change.path, "before": ref(change.before), "after": ref(change.after)}
+            for change in changes
+        ]
+    }
 
 
 def command_outcome(name: str, result: results.ExecResult | results.MetricResult) -> dict[str, Any]:

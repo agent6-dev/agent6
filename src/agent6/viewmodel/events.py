@@ -180,6 +180,7 @@ _OUTCOME_KEYS = (
     "exec_failed",
     "background_id",
     "paths",
+    "changes",
     "stdout_tail",
     "stderr_tail",
     "stdout_truncated",
