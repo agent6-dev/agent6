@@ -532,8 +532,7 @@ class InstrumentedProvider:
             attempt=attempt,
             attempts=attempts,
         )
-        # One lifecycle per logical call: the first attempt opens it, the one that settles or
-        # closes it ends it, and every attempt leaves its own row beneath.
+        # Retries share the first attempt's model.call.
         if self.events is not None and context.attempt == 1:
             self.events.emit(journal.ModelCall(**self._identity(call_context)))
         # Every live view subscribes to the delta events; a caller callback chains through.
@@ -683,6 +682,32 @@ class InstrumentedProvider:
                 if response.tool_results_cleared:
                     settled["tool_results_cleared"] = response.tool_results_cleared
             self.events.emit(journal.ModelResult(**identity, **outcome, **settled))
+
+    def record_stopped_call(
+        self,
+        call_context: kinds.CallContext,
+        reason: ProviderError,
+        serving: kinds.Serving,
+        usage: provider_types.ProviderUsage | None,
+    ) -> None:
+        """Close a call stopped between attempts without charging another attempt.
+
+        Args:
+            call_context: The logical call's identity.
+            reason: The stop or steer that ended the wait.
+            serving: The last attempt's serving facts.
+            usage: The last attempt's reported usage, if any.
+        """
+        if self.events is not None:
+            self.events.emit(
+                journal.ModelResult(
+                    **self._identity(call_context),
+                    ok=False,
+                    error=str(reason)[:200],
+                    **serving.event_fields(),
+                    **_usage_fields(usage),
+                )
+            )
 
     def _identity(self, call_context: kinds.CallContext) -> dict[str, Any]:
         """Return the fields that pair a `model.call` with its `model.result`."""

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 from typing import Any
 from unittest import mock
@@ -12,7 +13,16 @@ import pytest
 
 from agent6 import kinds
 from agent6.harness import loop_conversation, loop_snapshot, provider_call
-from agent6.providers import ProviderError, ProviderResponse, request_headers
+from agent6.providers import (
+    ProviderAborted,
+    ProviderError,
+    ProviderInterrupted,
+    ProviderResponse,
+    openai,
+    request_headers,
+)
+from agent6.sessions import journal
+from tests import launch_env
 from tests.unit import test_harness
 
 
@@ -228,6 +238,42 @@ def test_a_retried_call_is_one_lifecycle_with_an_attempt_row_each(tmp_path: path
     assert rows[3]["ok"] is True and calls == [1, 2]
 
 
+@pytest.mark.parametrize("steer", [False, True], ids=["stop", "steer"])
+def test_an_interrupted_retry_wait_closes_the_call(tmp_path: pathlib.Path, steer: bool) -> None:
+    """A stop or steer after a 503 closes the call without a second request or attempt."""
+    waiting = False
+
+    def on_event(event: object) -> None:
+        nonlocal waiting
+        if isinstance(event, journal.ProviderRetry):
+            waiting = True
+
+    with launch_env.scripted_provider(reply_for=lambda _body: 503) as (url, requests):
+        inner = openai.OpenAIProvider(api_key="", model="m", base_url=url)
+        caller = dataclasses.replace(
+            _caller(_wrapped(inner, tmp_path), retry_count=1),
+            emit=on_event,
+            should_abort=lambda: waiting and not steer,
+            should_interrupt=lambda: waiting and steer,
+        )
+        context = kinds.CallContext(execution_id="exec-1")
+        with pytest.raises(ProviderInterrupted if steer else ProviderAborted) as stopped:
+            caller.call("s", [], [], 10, call_context=context)
+        assert len(requests) == 1
+
+    events = _rows(tmp_path)
+    assert sum(r["type"] == "budget.update" for r in events) == 1
+    rows = [r for r in events if r["type"].startswith("model.")]
+    assert [r["type"] for r in rows] == ["model.call", "model.attempt", "model.result"]
+    assert {(r["model_call_id"], r["execution_id"]) for r in rows} == {
+        (context.model_call_id, "exec-1")
+    }
+    attempt, result = rows[1:]
+    assert attempt["ok"] is False and "503" in attempt["error"]
+    assert result["ok"] is False and result["error"] == str(stopped.value)
+    assert "input_tokens" not in result
+
+
 def test_a_permanent_error_closes_the_call_on_its_first_attempt(tmp_path: pathlib.Path) -> None:
     """A status no retry recovers ends the lifecycle at once: one attempt, one failed result."""
 
@@ -273,6 +319,25 @@ def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
         "model.result",
     ]
     assert rows[1]["ok"] is True and rows[3]["text"] == "ok"
+
+
+def test_a_stopped_empty_tool_retry_keeps_the_last_attempts_usage(tmp_path: pathlib.Path) -> None:
+    inner = mock.Mock()
+    inner.call.return_value = dataclasses.replace(
+        _ok(), text="", stop_reason="tool_use", cost_usd=0.25, serving=kinds.Serving(model="served")
+    )
+    caller = dataclasses.replace(
+        _caller(_wrapped(inner, tmp_path), retry_count=1), should_abort=lambda: inner.call.called
+    )
+    with pytest.raises(ProviderAborted):
+        caller.call("s", [], [], 10)
+    attempt, result = [r for r in _rows(tmp_path) if r["type"] in ("model.attempt", "model.result")]
+    assert attempt["ok"] is True and result["ok"] is False
+    assert (result["served_model"], result["input_tokens"], result["cost_usd"]) == (
+        "served",
+        1,
+        0.25,
+    )
 
 
 def test_a_model_assignment_is_the_task_and_not_an_operator_quote() -> None:

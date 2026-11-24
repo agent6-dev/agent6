@@ -454,9 +454,8 @@ class ProviderCaller:
         attempts = max(1, self.retry_count + 1)
         attempt = 1
         # One logical call: its retries share the call id, each attempt with its own request id.
-        context = request_headers.RequestContext.initiated_by(
-            initiator, call_context=call_context or kinds.CallContext()
-        )
+        call_context = call_context or kinds.CallContext()
+        context = request_headers.RequestContext.initiated_by(initiator, call_context=call_context)
         while True:
             context = dataclasses.replace(context, attempt=attempt, attempts=attempts)
             self.counter.attempts += 1
@@ -495,6 +494,7 @@ class ProviderCaller:
                     f" - retrying in {delay:.2f}s"
                 )
                 self.emit(journal.ProviderRetry(attempt=attempt, error=str(exc)[:200]))
+                serving, usage = exc.serving, exc.usage
             else:
                 self.counter.output_tokens += resp.output_tokens
                 if isinstance(compaction, provider_types.Summarize) or settles_call(resp, context):
@@ -513,7 +513,14 @@ class ProviderCaller:
                         stop_reason=resp.stop_reason,
                     )
                 )
-            self._wait(delay)
+                serving, usage = resp.serving, resp.usage
+            try:
+                self._wait(delay)
+            except (ProviderAborted, ProviderInterrupted) as stopped:
+                record = getattr(self.provider, "record_stopped_call", None)
+                if callable(record):
+                    record(call_context, stopped, serving, usage)
+                raise
             attempt += 1
 
     def _wait(self, delay: float) -> None:
