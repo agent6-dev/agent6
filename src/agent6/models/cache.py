@@ -366,7 +366,7 @@ def _fetch(
     *,
     refresh: bool = True,
 ) -> Listing:
-    """Fetch the entry's listing; raises on any failure.
+    """Fetch the entry's listing.
 
     Args:
         provider_name: The provider's config name.
@@ -376,7 +376,10 @@ def _fetch(
         refresh: False reads a configured issuer's bound bearer without renewing it.
 
     Returns:
-        The ids, the pricing and the context windows.
+        The model ids and their listing facts.
+
+    Raises:
+        ProviderError: A credential is unavailable to a listing request.
     """
     if isinstance(entry, ClaudeCodeProviderEntry):
         return Listing([], {}, {}, {})  # No endpoint: the binary resolves names itself.
