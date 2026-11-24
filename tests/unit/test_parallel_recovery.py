@@ -412,6 +412,37 @@ def test_recovery_settles_each_work_child_in_its_parent_execution(short_repo: pa
     assert (usage.usd, fresh.available().usd) == (4, 6)
 
 
+def test_a_budget_row_keeps_live_and_recovered_balances_apart(short_repo: pathlib.Path) -> None:
+    """The same append can confirm a live preflight and an interrupted child's balance."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    sink = event_log.EventSink(parent / "logs.jsonl")
+    _resume(parent, "first")
+    first = _tracker()
+    _balance(first, 10, 10)
+    budget_events.emit_budget_update(first, sink.emit)
+    for group, at, dollars in (("parent-r1", 20, 8), ("parent-r2", 30, 7)):
+        child = _running_child(repo, parent, group)
+        meter = _tracker()
+        _balance(meter, at, dollars)
+        budget_events.emit_budget_update(meter, event_log.EventSink(child / "logs.jsonl").emit)
+
+    _resume(parent, "second")
+    second = _tracker()
+    _balance(second, 40, 5)
+    with pytest.raises(_Crash):
+        _reconcile(repo, parent, second, stop_at="parent-r2")
+    assert second.available().usd == 8
+
+    _resume(parent, "third")
+    fresh = _tracker()
+    _reconcile(repo, parent, fresh)
+    usage = children.child_usage(parent)
+    assert usage is not None
+    assert (usage.usd, fresh.available().usd) == (3, 9)
+
+
 @pytest.mark.parametrize(("provider", "cap", "baseline"), [("p", 2.0, 5), ("q", 0.05, 0.05)])
 def test_fresh_credit_cap_starts_at_the_first_live_balance(
     short_repo: pathlib.Path, provider: str, cap: float, baseline: float
