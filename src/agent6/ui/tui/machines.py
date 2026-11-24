@@ -722,9 +722,17 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         table.add_columns("machine", "status", "state", "updated", "states", "spec", "file")
         self._reload()
 
+    def on_screen_resume(self) -> None:
+        """Reload on return from a pushed screen: a machine started from here has a new row."""
+        self._reload()
+
     def _reload(self) -> None:
-        """Fill the table with the rows `agent6 machine` lists and count them in the title."""
+        """Fill the table with the rows `agent6 machine` lists and count them in the title.
+
+        The cursor stays on the machine it was on, wherever its row moved.
+        """
         table = self.query_one("#machines", textual_widgets.DataTable)
+        selected = self._selected_row()
         table.clear()
         self._machines = listing.machine_rows(self.repo_cwd, self.agent6_dir)
         for row in self._machines:
@@ -746,6 +754,9 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                 rich_text.Text(row.file.name if row.file is not None else "-"),
             )
         table.show_cursor = table.row_count > 0
+        names = [row.name for row in self._machines]
+        if selected is not None and selected.name in names:
+            table.move_cursor(row=names.index(selected.name))
         # An empty table alone reads as still loading, so the title says none exist.
         n = len(self._machines)
         tally = (

@@ -604,6 +604,46 @@ def test_stopped_machine_offers_resume_and_confirms_restart(
     asyncio.run(scenario())
 
 
+def test_the_list_shows_a_machine_started_while_another_screen_was_open(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Back from a started machine's watch, its row still read as never run and offered Run.
+
+    The rows were read when the page opened and at Refresh alone; the reload keeps the cursor
+    on the machine it was on.
+    """
+    _write(tmp_path / "tiny.asm.toml", TINY)
+    _write(tmp_path / "waiter.asm.toml")
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test(size=(130, 35)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, machmod.MachinesScreen)
+            table = screen.query_one("#machines", widgets.DataTable)
+            table.move_cursor(row=[row.name for row in screen._machines].index("waiter_demo"))
+            await pilot.pause()
+            assert screen.check_action("run", ()) is True
+            instance = tmp_path / ".agent6" / "machines" / "waiter_demo"
+            instance.mkdir(parents=True)
+            _write(instance / "machine.asm.toml")
+            (instance / "journal.jsonl").write_text(
+                '{"type":"machine.begin","machine":"waiter_demo","version":1,"ts":"t"}\n'
+            )
+            await pilot.press("v", "escape")
+            await pilot.pause()
+            assert app.screen is screen
+            selected = screen._selected_row()
+            assert selected is not None and selected.name == "waiter_demo"
+            assert [a for a in ("run", "resume", "restart") if screen.check_action(a, ())] == [
+                "resume",
+                "restart",
+            ]
+
+    asyncio.run(scenario())
+
+
 def test_machine_run_refusal_notifies_and_skips_watch(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
