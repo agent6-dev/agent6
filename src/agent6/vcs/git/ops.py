@@ -18,7 +18,7 @@ import shutil
 import tempfile
 from collections.abc import Collection, Sequence
 
-from agent6 import errors
+from agent6 import errors, kinds
 from agent6.vcs.git import command as git_command
 from agent6.vcs.git import fetch as git_fetch
 from agent6.vcs.git import read as git_read
@@ -850,7 +850,13 @@ class MergeResult:
 
 
 def mirror_session(
-    path: pathlib.Path, clone: pathlib.Path, ref: str, branch: str | None, *, head: bool = False
+    path: pathlib.Path,
+    clone: pathlib.Path,
+    ref: str,
+    branch: str | None,
+    *,
+    sender: kinds.JailPolicy | None,
+    head: bool = False,
 ) -> None:
     """Copy a session's refs from its clone into the repository, as the clone holds them now.
 
@@ -862,22 +868,43 @@ def mirror_session(
         clone: The session's clone.
         ref: The session's chain ref; every ref beside it is copied with it.
         branch: The session's run branch, copied when the clone has it; None for none.
+        sender: The clone's jail policy, as `fetch_branch` takes it.
         head: Copy the clone's HEAD onto the chain ref, for a model that commits itself.
     """
     space = ref.rsplit("/", 1)[0]
     specs = [f"+HEAD:{ref}"] if head else [f"+{space}/*:{space}/*"]
     if branch and git_read.branch_exists(clone, branch):
         specs.append(f"+refs/heads/{branch}:refs/heads/{branch}")
-    _fetch_local(path, clone, specs, update_head_ok=True)
+    _fetch_local(path, clone, specs, sender=sender, update_head_ok=True)
 
 
-def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) -> None:
-    """Fetch a refspec from another repository's path, without adding a remote."""
-    _fetch_local(path, remote_path, [refspec])
+def fetch_branch(
+    path: pathlib.Path,
+    remote_path: pathlib.Path,
+    refspec: str,
+    *,
+    sender: kinds.JailPolicy | None,
+) -> None:
+    """Fetch a refspec from another repository's path, without adding a remote.
+
+    Args:
+        path: The repository fetched into.
+        remote_path: The repository fetched from.
+        refspec: What to fetch.
+        sender: The policy the commands of the workspace at `remote_path` run under: its side
+            of the fetch runs under it. None runs that side on the host, for the repository
+            a clone was made from: the clone step read it there already.
+    """
+    _fetch_local(path, remote_path, [refspec], sender=sender)
 
 
 def _fetch_local(
-    path: pathlib.Path, source: pathlib.Path, refspecs: list[str], *, update_head_ok: bool = False
+    path: pathlib.Path,
+    source: pathlib.Path,
+    refspecs: list[str],
+    *,
+    sender: kinds.JailPolicy | None,
+    update_head_ok: bool = False,
 ) -> None:
     """Fetch from a repository on this machine, reading no key of the receiving config.
 
@@ -890,6 +917,7 @@ def _fetch_local(
         path: The repository fetched into.
         source: The repository fetched from.
         refspecs: What to fetch; a refspec with no destination brings objects alone.
+        sender: The source's jail policy, as `fetch_branch` takes it.
         update_head_ok: Move a branch that is checked out.
 
     Raises:
@@ -897,7 +925,12 @@ def _fetch_local(
     """
     # Absolute, and local only: git refuses every other transport a global URL rewrite yields.
     fetched = git_fetch.scratch_fetch(
-        path, str(source.absolute()), refspecs, protocols="file", source=str(source)
+        path,
+        str(source.absolute()),
+        refspecs,
+        protocols="file",
+        source=str(source),
+        sender=sender,
     )
     forced = all(spec.startswith("+") for spec in refspecs)
     held = git_fetch.refs(path, *fetched) if fetched else {}

@@ -175,7 +175,7 @@ def adopt_orphan_child(
     clone = child_worktree_root(cfg, origin, lineage.group) / f"child-{lineage.number}"
     if not (clone / ".git").exists() or not git_read.branch_exists(clone, manifest.run_branch):
         return None
-    child_repo.import_run(origin, clone, manifest.run_branch, layout.session_dir)
+    child_repo.import_run(origin, clone, manifest.run_branch, layout.session_dir, cfg)
     return f"imported orphaned child branch {manifest.run_branch} from {clone}"
 
 

@@ -276,7 +276,7 @@ def test_session_panel_retains_cloneable_bytes_without_checkpointing(
     git(repo, "gc", "--prune=now")
     clone = tmp_path / "clone"
     git_ops.clone_repo(repo, clone)
-    git_ops.fetch_branch(clone, repo, target.snapshot_ref)
+    git_ops.fetch_branch(clone, repo, target.snapshot_ref, sender=None)
     git_ops.checkout_detached(clone, target.snapshot_commit)
     assert (clone / "foo.py").read_text() == "reviewed\n"
     assert (clone / "new.py").read_text() == "model-created\n"
@@ -363,7 +363,7 @@ def test_review_session_retains_its_supplied_target_not_the_checkout(
     git(repo, "gc", "--prune=now")
     clone = tmp_path / "clone"
     git_ops.clone_repo(repo, clone)
-    git_ops.fetch_branch(clone, repo, target.snapshot_ref)
+    git_ops.fetch_branch(clone, repo, target.snapshot_ref, sender=None)
     git_ops.checkout_detached(clone, target.snapshot_commit)
     assert (clone / "foo.py").read_text() == "head\n"
     assert git_read.read_file_at(clone, target.base_tree, "foo.py") == "base\n"

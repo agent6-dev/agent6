@@ -46,6 +46,7 @@ from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.tools import dispatch, operator_prompts
+from agent6.tools import policy as tools_policy
 from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -799,7 +800,13 @@ def build_machine_agent_runner(
                             result = salvaged("error")
         if clone is not None and chain is not None and machine_id is not None:
             result = _import_machine_clone(
-                cwd, clone, chain, git_read.machine_branch_for(machine_id), result
+                cwd,
+                clone,
+                chain,
+                git_read.machine_branch_for(machine_id),
+                result,
+                resolved,
+                shared_writes,
             )
         return result
 
@@ -827,17 +834,25 @@ def clone_at_machine_chain(origin: pathlib.Path, dest: pathlib.Path, chain_ref: 
     child_repo.clone_worktree(origin, dest)
     tip = git_read.chain_tip(origin, chain_ref)
     if tip is not None:
-        git_ops.fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}")
+        # The checkout is the sender: the clone step above read it on the host already.
+        git_ops.fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}", sender=None)
         git_ops.checkout_detached(dest, tip)
 
 
 def _import_machine_clone(
-    origin: pathlib.Path, clone: pathlib.Path, chain_ref: str, branch: str, result: AgentExecResult
+    origin: pathlib.Path,
+    clone: pathlib.Path,
+    chain_ref: str,
+    branch: str,
+    result: AgentExecResult,
+    state: StateOverlay,
+    shared_writes: tuple[pathlib.Path, ...],
 ) -> AgentExecResult:
     """Import the state's commits into the origin on every outcome, then drop the clone.
 
     Serial states make both ref updates fast-forwards. An import failure keeps the
-    clone, the only copy, and routes the state as failed with no payload.
+    clone, the only copy, and routes the state as failed with no payload. The clone's side
+    of each fetch runs under the jail the state's commands ran under.
 
     Args:
         origin: The repository that receives the commits.
@@ -845,6 +860,8 @@ def _import_machine_clone(
         chain_ref: The machine's chain ref.
         branch: The visible machine branch.
         result: The state's result.
+        state: The config and isolation level the state ran under.
+        shared_writes: The regions any state of the machine may write.
 
     Returns:
         The result, or a failed one when the import failed.
@@ -854,9 +871,17 @@ def _import_machine_clone(
         _drop_clone(clone)
         return result
     try:
-        git_ops.fetch_branch(origin, clone, f"{chain_ref}:{chain_ref}")
-        git_ops.fetch_branch(origin, clone, f"{chain_ref}:refs/heads/{branch}")
-    except errors.GitError as exc:
+        cfg = Config.model_validate(state.overlay)
+        sender = tools_policy.jail_policy(
+            clone,
+            cfg,
+            state.isolation,
+            (),
+            grants=tools_policy.resolve_grants(cfg, clone, shared_writes=shared_writes),
+        )
+        git_ops.fetch_branch(origin, clone, f"{chain_ref}:{chain_ref}", sender=sender)
+        git_ops.fetch_branch(origin, clone, f"{chain_ref}:refs/heads/{branch}", sender=sender)
+    except (errors.GitError, jail.JailUnavailableError) as exc:
         return result.model_copy(
             update={"reason": f"import of machine work failed: {exc}", "payload": None}
         )

@@ -8,6 +8,8 @@ in agent6's state base, which no jail reaches. There git reads the operator's gl
 system config alone: no key of the project's `.git/config` names a transport command, a
 proxy, a credential helper or a URL rewrite. The project lends its objects (an alternate, so
 only new history travels). The new pack is then copied in, and the caller writes the refs.
+The sending side of a fetch from a workspace's clone runs under that workspace's jail
+(`upload_pack`): a jailed command can write the clone's `.git` too.
 """
 
 from __future__ import annotations
@@ -19,8 +21,9 @@ import re
 import shutil
 import tempfile
 
-from agent6 import errors, paths, terminal
+from agent6 import errors, kinds, paths, terminal
 from agent6.vcs.git import command as git_command
+from agent6.vcs.git import upload_pack
 
 # The transports a fetch may use; `ext::`, `fd::`, `git://`, plain http and every remote
 # helper are refused by git itself under this list, whatever a URL rewrite yields.
@@ -157,7 +160,10 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
         else f"+refs/pull/{pull}/head:{tracking}pr/{pull}"
     )
     before = refs(path, tracking)
-    after = scratch_fetch(path, url, [refspec], protocols=ALLOWED_PROTOCOLS, source=name)
+    # The remote's side is the remote's own, on its host or at the local path the page shows.
+    after = scratch_fetch(
+        path, url, [refspec], protocols=ALLOWED_PROTOCOLS, source=name, sender=None
+    )
     if any(not ref.startswith(tracking) for ref in before.keys() | after.keys()):
         raise errors.GitError(f"ref outside {tracking}; no refs changed")
     if pull is not None and set(after) != {f"{tracking}pr/{pull}"}:
@@ -202,7 +208,13 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
 
 
 def scratch_fetch(
-    path: pathlib.Path, url: str, refspecs: list[str], *, protocols: str, source: str
+    path: pathlib.Path,
+    url: str,
+    refspecs: list[str],
+    *,
+    protocols: str,
+    source: str,
+    sender: kinds.JailPolicy | None,
 ) -> dict[str, str]:
     """Fetch from a URL in a scratch repository and copy the new objects into the repository.
 
@@ -214,6 +226,8 @@ def scratch_fetch(
         refspecs: What to fetch; a destination names a ref returned.
         protocols: The transports git may use, as `GIT_ALLOW_PROTOCOL` lists them.
         source: What a failure calls the other side.
+        sender: The policy the commands of the workspace at `url` run under: its
+            `git upload-pack` runs under it. None leaves the sending side to git.
 
     Returns:
         The full name and sha of each ref the fetch wrote in the scratch repository.
@@ -253,6 +267,14 @@ def scratch_fetch(
         if shallow.is_file():
             # A shallow clone's boundary: without it git walks into history the clone lacks.
             shutil.copyfile(shallow, scratch / "shallow")
+        serving = (
+            ()
+            if sender is None
+            else (
+                "--upload-pack="
+                + upload_pack.command(sender, pathlib.Path(url), scratch / "sender.json"),
+            )
+        )
         try:
             # unpackLimit 1 keeps every fetch as one pack, the unit copied in below; git checks
             # the pack's objects first, and refuses a tree holding a `..` or `.git` entry.
@@ -268,6 +290,7 @@ def scratch_fetch(
                 "--no-recurse-submodules",
                 "--no-write-fetch-head",
                 "--no-auto-maintenance",
+                *serving,
                 "--end-of-options",
                 url,
                 *refspecs,

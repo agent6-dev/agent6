@@ -135,6 +135,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             ),
             repo,
             None,
+            cfg,
         )
         worktrees.cleanup(
             [spec],
@@ -476,7 +477,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
         True,
         "",
     )
-    imported = parallel_results.import_child(res, repo, None)
+    imported = parallel_results.import_child(res, repo, None, child_env.config())
     shutil.rmtree(clone)
     dest = layout.bucket_dir(paths.state_dir(repo), "reviewers") / leaf.name
     assert dest.is_dir() and not dest.is_symlink()

@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6 import errors, review_records
+from agent6 import errors, kinds, review_records
 from agent6.config import GitCommitConfig
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -40,6 +40,20 @@ def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_read.Co
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class MirrorTarget:
+    """The repository a session in a clone copies its commits into.
+
+    Attributes:
+        repository: The repository the clone belongs to.
+        sender: The policy the session's commands run under: the clone's side of each copy
+            runs under it.
+    """
+
+    repository: pathlib.Path
+    sender: kinds.JailPolicy
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class RunChain:
     """The run's commit line in the repository at `root`.
 
@@ -66,8 +80,8 @@ class RunChain:
             from a changed tree degrade.
         base_sha: Where the run's unmerged work starts, the base of the review diff and
             the gate's scope; "" when unknown.
-        mirror_into: The repository a session in a clone copies each commit into; None in
-            the repository itself or a linked worktree of it.
+        mirror_into: Where a session in a clone copies each commit; None in the repository
+            itself or a linked worktree of it.
         model_git: Whether the model's index determines which working files are tracked.
     """
 
@@ -80,7 +94,7 @@ class RunChain:
     identity: git_read.CommitIdentity | None = None
     per_turn: bool = True
     base_sha: str = ""
-    mirror_into: pathlib.Path | None = None
+    mirror_into: MirrorTarget | None = None
     model_git: bool = False
 
     @property
@@ -122,7 +136,13 @@ class RunChain:
     def mirror(self) -> None:
         """Copy the chain's refs into the repository a session's clone belongs to, if any."""
         if self.mirror_into is not None and self.ref is not None:
-            git_ops.mirror_session(self.mirror_into, self.root, self.ref, self.branch)
+            git_ops.mirror_session(
+                self.mirror_into.repository,
+                self.root,
+                self.ref,
+                self.branch,
+                sender=self.mirror_into.sender,
+            )
 
     def left_out(self, paths: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Return the given paths the chain's commits leave out, by reason.

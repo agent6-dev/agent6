@@ -25,6 +25,7 @@ from agent6.vcs import commit_graph
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
+from tests import jail_env
 
 
 def _git(root: pathlib.Path, *args: str, stdin: str | None = None) -> str:
@@ -167,8 +168,9 @@ def test_a_local_fetch_runs_no_program_the_receiving_config_names(
     for key, value in config.items():
         _git(root, "config", key, value)
 
-    git_ops.mirror_session(root, source, ref, None)
-    git_ops.fetch_branch(root, source, f"{ref}:refs/agent6/s2/head")
+    sender = jail_env.clone_jail(clone)
+    git_ops.mirror_session(root, source, ref, None, sender=sender)
+    git_ops.fetch_branch(root, source, f"{ref}:refs/agent6/s2/head", sender=sender)
     assert not marker.exists(), f"the {route} program of the receiving config ran on the host"
     tip = _git(clone, "rev-parse", ref)
     assert git_read.chain_tip(root, ref) == tip
@@ -189,8 +191,9 @@ def test_a_local_fetch_follows_no_url_rewrite_to_another_repository(
     secret = _git(private, "rev-parse", "HEAD")
     _git(root, "config", f"url.{private}.insteadOf", str(clone))
 
-    git_ops.mirror_session(root, clone, ref, None, head=True)
-    git_ops.fetch_branch(root, clone, "HEAD:refs/agent6/s2/head")
+    sender = jail_env.clone_jail(clone)
+    git_ops.mirror_session(root, clone, ref, None, sender=sender, head=True)
+    git_ops.fetch_branch(root, clone, "HEAD:refs/agent6/s2/head", sender=sender)
     assert git_read.chain_tip(root, ref) == _git(clone, "rev-parse", "HEAD")
     assert git_read.chain_tip(root, "refs/agent6/s2/head") == _git(clone, "rev-parse", "HEAD")
     assert not git_read.object_exists(root, secret), "another repository's commit was imported"
@@ -211,7 +214,7 @@ def test_a_local_fetch_refuses_a_tree_git_would_not_check_out(
     _git(clone, "update-ref", ref, bad)
 
     with pytest.raises(errors.GitError, match=r"fetch from .* failed"):
-        git_ops.mirror_session(root, clone, ref, None)
+        git_ops.mirror_session(root, clone, ref, None, sender=jail_env.clone_jail(clone))
     assert git_read.chain_tip(root, ref) is None
     assert not git_read.object_exists(root, bad)
 
@@ -240,7 +243,7 @@ def test_a_local_fetch_downloads_no_bundle(tmp_path: pathlib.Path) -> None:
         program, marker = _program(tmp_path)
         _git(root, "config", "fetch.bundleURI", f"http://127.0.0.1:{server.server_port}/b")
         _git(root, "config", "credential.helper", program)
-        git_ops.mirror_session(root, clone, ref, None)
+        git_ops.mirror_session(root, clone, ref, None, sender=jail_env.clone_jail(clone))
     finally:
         server.shutdown()
         server.server_close()
@@ -269,7 +272,7 @@ def test_a_local_fetch_enters_no_submodule(tmp_path: pathlib.Path) -> None:
     _git(root / "sub-source", "config", "remote.origin.url", f"ext::{program} x")
     _git(root / "sub-source", "config", "protocol.ext.allow", "always")
 
-    git_ops.mirror_session(root, clone, ref, None)
+    git_ops.mirror_session(root, clone, ref, None, sender=jail_env.clone_jail(clone))
     assert git_read.chain_tip(root, ref) is not None
     assert not marker.exists(), "the submodule's remote program ran on the host"
 

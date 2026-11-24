@@ -1512,6 +1512,7 @@ def test_run_child_to_completion_imports_under_the_group_lock(
         child_worktree: pathlib.Path,
         branch: str,
         child_session_dir: pathlib.Path,
+        config: Config,
         *,
         model_control: bool = False,
         continuing: bool = False,
@@ -1522,6 +1523,7 @@ def test_run_child_to_completion_imports_under_the_group_lock(
             child_worktree,
             branch,
             child_session_dir,
+            config,
             model_control=model_control,
             continuing=continuing,
         )
@@ -2145,7 +2147,7 @@ def test_child_sampling_notes_survive_import_and_reach_both_reports(
     assert result.ok, result.error
     completed = app_children.finish_import(
         result,
-        parallel_results.import_child(result, origin, None),
+        parallel_results.import_child(result, origin, None, cfg),
         cfg=cfg,
         origin=origin,
         group="notes",

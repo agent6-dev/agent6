@@ -13,6 +13,7 @@ from agent6.app import compare as app_compare
 from agent6.app import finalize, stamps
 from agent6.app import reporter as app_reporter
 from agent6.app.parallel import wait as child_wait
+from agent6.config import Config
 from agent6.context import memory
 from agent6.harness.parallel import repo as child_repo
 from agent6.sessions import manifest as sessions_manifest
@@ -140,6 +141,7 @@ def import_child(
     res: child_records.ChildResult,
     origin: pathlib.Path,
     lock: threading.Lock | None,
+    cfg: Config,
     *,
     continuing: bool = False,
 ) -> child_records.Imported:
@@ -149,6 +151,7 @@ def import_child(
         res: The child's result.
         origin: The repository.
         lock: Serializes the import across a group, when one is shared.
+        cfg: The origin's effective config.
         continuing: The existing child ref may advance by fast-forward.
 
     Returns:
@@ -167,6 +170,7 @@ def import_child(
             res.spec.worktree,
             res.branch,
             res.session_dir,
+            cfg,
             model_control=model_control,
             continuing=continuing,
         )

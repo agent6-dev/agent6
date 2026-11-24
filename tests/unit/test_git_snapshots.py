@@ -39,7 +39,7 @@ def test_snapshot_is_idempotent_cloneable_and_not_a_run_tip(tmp_path: pathlib.Pa
     assert (repo / "a").read_text() == "later\n"
     clone = tmp_path / "clone"
     git_ops.clone_repo(repo, clone)
-    git_ops.fetch_branch(clone, repo, ref)
+    git_ops.fetch_branch(clone, repo, ref, sender=None)
     git_ops.checkout_detached(clone, sha)
     assert (clone / "a").read_text() == "reviewed\n"
     with pytest.raises(errors.GitError, match="snapshot"):

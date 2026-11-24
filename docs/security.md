@@ -716,6 +716,14 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `git.control = "agent6"` is enforced where `.git` is read-only to jailed commands; under `sandbox.isolation = "none"` the run warns that `git commit` run by the model commits directly to the checkout's branch.
 - Where a jailed command can write `.git` (`partial` `sandbox.isolation`, `sandbox.protect_git = "off"`, `git.control = "model"`), it can make agent6's own git run a program on the host.
   agent6 lists the repository's content drivers and then runs its git command: a driver written into `.git/config` between the two steps is not blanked.
+- A `.git` a jailed command can write is as untrusted as a script the model wrote: it can name another repository's objects (an alternate, a `gitdir:` file, a `commondir`, a symlinked ref).
+  agent6 runs the sending side of an import under the sender's own jail, so an import brings only what the sender's commands could read.
+  Your own `git` in such a checkout is your act: it follows that `.git` as git does.
+    - an import copies a clone's commits into its repository: a child's, a fork's, a `run --worktree` run's, a machine state's.
+      The clone's `git upload-pack` runs through `spawn_in_jail` under the policy a command in that clone gets; under `full` its network is its own and empty
+    - a sender that gives no answer in 120 s ends with its fetch, and the import fails
+    - under `none` `sandbox.isolation` nothing confines it; under `container` it runs on the host, outside the container
+    - seeding reads the repository on the host: the `git clone` that makes a clone, and a fetch from the repository into its clone
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
     - a nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file
 
@@ -928,6 +936,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - the parent writes each child's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)
     - the child reads the same `secrets.toml` or provider env var as any other run
 - Child git plumbing (clone, fetch, merge) goes through `vcs/git/ops.py` and its private runner; child spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
+    - the clone's side of a child's import runs under the child's jail ([Git](#7-git))
 - A child starts from committed state only
     - a dispatch cuts children at the run's chain tip after chain-committing changes, and a merge first chain-commits the parent's own changes
     - `run --parallel` settles uncommitted tracked changes first, as every run does (`git.dirty_tree`)
@@ -1074,6 +1083,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Model argv travels only through the prepared `JailSession` channel, never through a host subprocess argv.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `sandbox.isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` `sandbox.isolation` level.
+  The sending side of an import spawns through it too (`vcs/git/upload_pack.py`, which git starts as `python -P -E -m`).
 - `sandbox/jail_session.py`: the serving launcher transport at every local isolation level; `sandbox/jail_jobs.py` persists its responses without spawning command processes.
 - `sandbox/jail_protocol.py`: process type annotations match the audit; a separate pin forbids process-spawning references outside annotations and calls even inside annotations.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.

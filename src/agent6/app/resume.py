@@ -299,8 +299,13 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     if fork_worktrees.mirror_origin(repo, cwd) is not None:
         # The repository's refs are the record between executions: a fork's seed, a merge.
         try:
+            # The repository is the sender, as it was when the clone was made.
             git_ops.mirror_session(
-                cwd, repo, git_read.chain_ref_for(session_id), manifest.run_branch or None
+                cwd,
+                repo,
+                git_read.chain_ref_for(session_id),
+                manifest.run_branch or None,
+                sender=None,
             )
         except errors.GitError as exc:
             reporter.error(
@@ -770,7 +775,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if merge_from and fork_worktrees.mirror_origin(repo, cwd) is not None:
             # The branch is the repository's; a clone's copy of it is as old as the clone.
             with contextlib.suppress(errors.GitError):
-                git_ops.fetch_branch(cwd, repo, f"+refs/heads/{merge_from}:refs/heads/{merge_from}")
+                git_ops.fetch_branch(
+                    cwd, repo, f"+refs/heads/{merge_from}:refs/heads/{merge_from}", sender=None
+                )
         if merge_from:
             if mode != "run":
                 reporter.refuse(f"--merge continues a run's work; {session_id} is a {mode}")

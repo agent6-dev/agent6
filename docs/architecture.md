@@ -174,12 +174,12 @@ Each entry is the package's docstring.
     - The package re-exports nothing: import the submodules directly.
     - Main modules: `id`, `layout`, `manifest`, `journal`, `event_log`, `lock`, `ipc`, `process`.
 - **[`vcs`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/vcs)**: Version control for agent6's own commits, refs and merges.
-    - A shared package: any layer may import it, and it imports no layer.
+    - A shared package: it imports `sandbox` and no layer above it.
     - Git lives in the `git` sub-package, and only this package's modules import its runner.
     - The package spells no push, `--force`, history rewrite or `reset --hard`.
     - Main modules: `commit_message`, `commit_graph`, `review`, `review_rule_reader`.
 - **[`vcs/git`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/vcs/git)**: agent6's own git: the hardened runner, its policy, reads, writes, diffs and snapshots.
-    - Part of `vcs`: it imports no layer.
+    - Part of `vcs`: it imports `sandbox` and no layer above it.
     - Main modules: `command`, `policy`, `ops`, `read`, `history`, `files`, `fetch`, `snapshots`.
 - **[`viewmodel`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)**: Fold the JSONL event stream into the render-ready state every front-end paints.
     - A shared package: any layer may import it, and it imports no layer.

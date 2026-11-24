@@ -574,3 +574,23 @@ def jail_policy(
         memory_limit_mib=config.sandbox.memory_limit_mib,
         **policy_kwargs,
     )
+
+
+def workspace_jail(root: pathlib.Path, config: Config) -> kinds.JailPolicy:
+    """Return the policy a command gets in a workspace, at the level its config resolves to.
+
+    For a caller that runs no command there itself: a parent, about a child's clone.
+
+    Args:
+        root: The workspace root.
+        config: The config the workspace's run loads.
+
+    Returns:
+        The policy, naming no command.
+
+    Raises:
+        IsolationUnavailableError: The host cannot provide the configured level.
+        JailUnavailableError: The launcher cannot be executed, or `jail_policy` refused.
+    """
+    isolation = detect.resolve_isolation(config.sandbox.isolation, detect.probed_environment())
+    return jail_policy(root, config, isolation, ())

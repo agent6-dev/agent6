@@ -85,7 +85,7 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                 assert stopped.ok, stopped.message
                 supervisor.wait(timeout=10)
                 assert all(not process.worker_is_alive(d) for d in (parent, worker, leaf))
-                imported = parallel_results.import_child(result, repo, None)
+                imported = parallel_results.import_child(result, repo, None, cfg)
                 assert imported.session_dir == parent.parent / worker.name
                 persisted = child_dispatch.read_records(imported.session_dir)[0]
                 assert persisted.identity == record.identity

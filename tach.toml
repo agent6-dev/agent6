@@ -662,7 +662,7 @@ depends_on = ["agent6.errors", "agent6.vcs.git.files", "agent6.vcs.git.history"]
 
 [[modules]]
 path = "agent6.vcs.git.fetch"
-depends_on = ["agent6.errors", "agent6.paths", "agent6.terminal", "agent6.vcs.git.command"]
+depends_on = ["agent6.errors", "agent6.kinds", "agent6.paths", "agent6.terminal", "agent6.vcs.git.command", "agent6.vcs.git.upload_pack"]
 
 [[modules]]
 path = "agent6.vcs.git.files"
@@ -678,7 +678,7 @@ depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git.command", "
 
 [[modules]]
 path = "agent6.vcs.git.ops"
-depends_on = ["agent6.errors", "agent6.vcs.git.command", "agent6.vcs.git.fetch", "agent6.vcs.git.read"]
+depends_on = ["agent6.errors", "agent6.kinds", "agent6.vcs.git.command", "agent6.vcs.git.fetch", "agent6.vcs.git.read"]
 
 [[modules]]
 path = "agent6.vcs.git.snapshots"
@@ -691,6 +691,11 @@ depends_on = ["agent6.errors", "agent6.paths", "agent6.vcs.commit_message", "age
 [[modules]]
 path = "agent6.vcs.git.policy"
 depends_on = ["agent6.child_env", "agent6.errors"]
+
+[[modules]]
+# The sending side of a local fetch runs in the jail of the workspace fetched from.
+path = "agent6.vcs.git.upload_pack"
+depends_on = ["agent6.kinds", "agent6.sandbox"]
 
 [[modules]]
 path = "agent6.vcs.review"

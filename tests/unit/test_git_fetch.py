@@ -310,7 +310,7 @@ def test_the_scratch_repository_is_out_of_a_jailed_commands_reach(
 
     monkeypatch.setattr(git_command.subprocess, "Popen", spy)
     git_fetch.fetch_remote(work, "origin")
-    git_ops.fetch_branch(work, upstream, "refs/heads/main:refs/agent6/s/head")
+    git_ops.fetch_branch(work, upstream, "refs/heads/main:refs/agent6/s/head", sender=None)
 
     for scratch in scratches:
         assert not scratch.is_relative_to(work)

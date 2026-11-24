@@ -51,6 +51,7 @@ from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import command_tools, dispatch, operator_prompts, schema, target_policy
+from agent6.tools import policy as tools_policy
 from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -352,6 +353,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     session: session_runtime.SessionProviders | None = None
     access: command_tools.JailAccess | None = None
     session_net: jail.SessionNetwork | None = None
+    mirror: run_chain.MirrorTarget | None = None
     hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
     try:
         stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
@@ -401,6 +403,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 worktree_git_dir=inputs.worktree_git_dir,
             )
         cfg = inputs.gate(cfg, budget, access.session.executable_available)
+        if inputs.mirror_into is not None:
+            # The clone's side of each copy into the repository runs under the run's own jail.
+            mirror = run_chain.MirrorTarget(
+                inputs.mirror_into, tools_policy.jail_policy(cwd, cfg, inputs.isolation, ())
+            )
 
         steer_state = frontend.make_steer_state(
             events,
@@ -591,7 +598,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 per_turn=cfg.git.commit_per_turn,
                 model_git=mode == "run" and cfg.git.control == "model",
                 base_sha=inputs.base_sha,
-                mirror_into=inputs.mirror_into,
+                mirror_into=mirror,
             ),
             config=cfg,
             base_rules=inputs.base_rules,
@@ -790,16 +797,17 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.
                 cleanup.callback(ipc.clear_stop_request, layout.session_dir)
-            if inputs.mirror_into is not None and mode == "run":
+            if mirror is not None and mode == "run":
                 # Once more at the end: a merge taken in or an undo moves the chain with no commit;
                 # under `git.control = "model"` the model's own commits are the record.
                 try:
                     if cfg.git.control == "model":
                         git_ops.mirror_session(
-                            inputs.mirror_into,
+                            mirror.repository,
                             cwd,
                             git_read.chain_ref_for(inputs.session_id),
                             None,
+                            sender=mirror.sender,
                             head=True,
                         )
                     elif wf is not None:

@@ -326,7 +326,8 @@ def prepare(
             tip = end.tip
             chain = git_read.chain_ref_for(spec.session_id)
             ref = git_read.run_branch_for(spec.session_id)
-            git_ops.fetch_branch(spec.worktree, origin, f"{tip}:{chain}")
+            # The parent's repository is the sender: the clone step read it on the host already.
+            git_ops.fetch_branch(spec.worktree, origin, f"{tip}:{chain}", sender=None)
             git_ops.create_branch_at(spec.worktree, ref, tip)
         if end.end_tree:
             git_ops.restore_child_trees(spec.worktree, end.end_tree, end.index_tree)

@@ -537,7 +537,7 @@ def run_child_to_completion(
             )
     try:
         imported = parallel_results.import_child(
-            res, origin, import_lock, continuing=bool(continuation)
+            res, origin, import_lock, cfg, continuing=bool(continuation)
         )
     except child_repo.ChildRepoError as exc:
         # The clone holds the only copy of the child's work: say where it is.
@@ -800,7 +800,7 @@ def recover_children(
         if (spec.worktree / ".git").exists():
             res = child_records.ChildResult(spec, child_dir, branch, True, "")
             try:
-                imported = parallel_results.import_child(res, origin, None, continuing=True)
+                imported = parallel_results.import_child(res, origin, None, cfg, continuing=True)
             except child_repo.ChildRepoError as exc:
                 results.append(dataclasses.replace(res, ok=False, error=str(exc)))
                 continue

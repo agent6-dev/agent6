@@ -8,9 +8,11 @@ import re
 
 from agent6 import errors
 from agent6.config import Config
+from agent6.sandbox import detect, jail
 from agent6.sessions import child_dispatch
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import policy as tools_policy
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
@@ -73,7 +75,8 @@ def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cf
         origin: The parent's repository.
         clone: The child's checkout, with no live worker.
         record: Its session directory.
-        cfg: Supplies the same hidden-path exclusions as the end measurement.
+        cfg: Supplies the same hidden-path exclusions as the end measurement, and the jail
+            the clone's side of each fetch runs under.
 
     Returns:
         Why cleanup cannot proceed. A lost measurement does not prove the clone clean.
@@ -83,7 +86,8 @@ def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cf
         for kind, tree in (("end", scan.end_tree), ("index", scan.index_tree)):
             if tree:
                 ref = pin(record.name, tree)
-                git_ops.fetch_branch(origin, clone, f"{tree}:{ref}")
+                sender = tools_policy.workspace_jail(clone, cfg)
+                git_ops.fetch_branch(origin, clone, f"{tree}:{ref}", sender=sender)
                 verify_pin(origin, record.name, kind, tree)
         head = git_read.tree_sha(clone, "HEAD")
         index = git_read.index_tree(clone)
@@ -112,6 +116,11 @@ def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cf
             for path, commit in git_read.tree_gitlinks(clone, tree).items():
                 if known.get(path) != commit or os.path.lexists(clone / path / ".git"):
                     return "a gitlink records a nested commit, not the nested checkout's files"
-    except (errors.GitError, OSError) as exc:
+    except (
+        errors.GitError,
+        OSError,
+        detect.IsolationUnavailableError,
+        jail.JailUnavailableError,
+    ) as exc:
         return f"could not preserve the child's files: {exc}"
     return ""

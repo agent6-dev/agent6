@@ -13,11 +13,15 @@ failure into an explicit skip for machines the operator cannot change.
 from __future__ import annotations
 
 import os
+import pathlib
 import sys
 
 import pytest
 
+from agent6 import kinds
+from agent6.config import Config
 from agent6.sandbox import detect
+from agent6.tools import policy
 
 
 def require_userns_jail() -> None:
@@ -36,3 +40,8 @@ def require_userns_jail() -> None:
         " Fix the policy, or set AGENT6_TEST_SKIP_JAIL=1 to skip explicitly.",
         pytrace=False,
     )
+
+
+def clone_jail(clone: pathlib.Path) -> kinds.JailPolicy:
+    """Return the policy a command in a clone gets under the default config on this host."""
+    return policy.workspace_jail(clone, Config())
