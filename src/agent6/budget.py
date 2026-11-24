@@ -387,6 +387,7 @@ class BudgetSnapshot:
         usd_partial: Unpriced calls make the USD reading a lower bound.
         usd_observed_credits: The sum of balance declines, once per account.
         credit_readings: The balance observations to include when writing a budget row.
+        credit_origins: The parent executions whose account series this tracker restored.
         credit_reading_count: How many distinct balances the subtree has observed.
         usd_running_children: The running children's USD outside the credit series. The cap
             holds it until settlement.
@@ -415,6 +416,7 @@ class BudgetSnapshot:
     usd_observed_credits: float
     credit_readings: tuple[credit_usage.Reading, ...]
     credit_reading_count: int
+    credit_origins: dict[str, int]
     usd_running_children: float
     tokens_running_children: int
     usd_settled_children: float
@@ -489,6 +491,7 @@ class BudgetTracker:
     _settled: bool = False
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
     _credits: credit_usage.Ledger = dataclasses.field(default_factory=credit_usage.Ledger)
+    _credit_origins: dict[str, int] = dataclasses.field(default_factory=dict)
     # The spend the settled children's usage charged, and each running child's last reading.
     _children_usd: float = 0.0
     _children_partial: bool = False
@@ -675,17 +678,18 @@ class BudgetTracker:
             self._check_ceilings(provider)
 
     def restore_child_credits(
-        self, journaled: Iterable[credit_usage.Reading], recovered: Iterable[UsageSettlement]
+        self, account: str, origin: int, readings: Iterable[credit_usage.Reading]
     ) -> None:
-        """Restore the account series needed to settle interrupted children.
+        """Restore one account series before settling the child that observed it.
 
         Args:
-            journaled: Balance observations already recorded by the parent.
-            recovered: Usage to replay. Other accounts start with a fresh baseline.
+            account: The account key from the child's readings.
+            origin: The parent execution that began this series.
+            readings: The balances journaled in that series, including earlier recoveries.
         """
-        accounts = {r.account for usage in recovered for r in usage.credit_readings}
         with self._lock:
-            self._credits.observe((r for r in journaled if r.account in accounts), banked=True)
+            self._credit_origins[account] = origin
+            self._credits.observe(readings, banked=True)
 
     def mark_settled(self, children: Iterable[str]) -> None:
         """Take children an earlier execution of the session charged as settled.
@@ -946,6 +950,7 @@ class BudgetTracker:
             own_usd, partial = self._own_cost_locked()
             return BudgetSnapshot(
                 credit_reading_count=len(self._credits),
+                credit_origins=dict(self._credit_origins) if for_journal else {},
                 usd_own_calls=own_usd,
                 usd_partial=partial or self._children_partial,
                 usd_observed_credits=self._credits.spent_usd,

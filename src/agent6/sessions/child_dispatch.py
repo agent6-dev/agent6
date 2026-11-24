@@ -137,11 +137,13 @@ class ContinuationRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     Attributes:
         sequence: The continuation number, starting at 1.
+        owner: The parent execution that started the continuation.
         instruction: The parent's next instruction.
         usage_before: The cumulative child usage charged before this continuation.
     """
 
     sequence: int = pydantic.Field(ge=1)
+    owner: str = ""
     instruction: str
     usage_before: UsageRecord
 

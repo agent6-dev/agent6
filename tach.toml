@@ -190,6 +190,7 @@ depends_on = [
   "agent6.context.memory",  # cross-run memories injected into the system prompt
   # the agent's own scratchpad, injected beside them
   "agent6.context.skills",  # operator-installed skills indexed in the system prompt
+  "agent6.credit_usage",
   "agent6.directive",
   "agent6.errors",
   "agent6.evidence",

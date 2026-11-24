@@ -5,15 +5,17 @@
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import pathlib
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, token_usage
+from agent6 import child_records, credit_usage, token_usage
 from agent6.harness import parallel_dispatch, parallel_merge
-from agent6.sessions import child_dispatch
+from agent6.sessions import child_dispatch, journal
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import events, tail
 from agent6.viewmodel.session import log as session_log
 
 if TYPE_CHECKING:
@@ -50,6 +52,62 @@ def reopened(
     return parallel_dispatch.OpenDispatch(record, children)
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _CreditHistory:
+    """The journaled balance series, kept apart by account and originating execution."""
+
+    executions: dict[str, int]
+    interrupted: int
+    origins: dict[tuple[int, str], int]
+    readings: dict[tuple[int, str], set[credit_usage.Reading]]
+
+    @classmethod
+    def read(cls, logs: pathlib.Path) -> _CreditHistory:
+        """Read each balance into the series its parent meter counted.
+
+        Args:
+            logs: The resumed parent's journal.
+
+        Returns:
+            The readings by series and the executions that used them.
+        """
+        execution = 0
+        executions: dict[str, int] = {}
+        origins: dict[tuple[int, str], int] = {}
+        readings: dict[tuple[int, str], set[credit_usage.Reading]] = {}
+        for raw in tail.tail_events(logs, follow=False):
+            if raw.get("type") in ("session.start", "session.resume"):
+                execution += 1
+                owner = raw.get("execution_id")
+                if isinstance(owner, str) and owner:
+                    executions[owner] = execution
+            elif raw.get("type") == "budget.update":
+                row = events.parse_event(raw)
+                if isinstance(row, journal.BudgetUpdate):
+                    for account, origin in row.credit_origins.items():
+                        origins[execution, account] = origin
+                    for reading in row.credit_readings:
+                        origin = row.credit_origins.get(reading.account, execution)
+                        readings.setdefault((origin, reading.account), set()).add(reading)
+        return cls(executions, max(0, execution - 1), origins, readings)
+
+    def restore(
+        self,
+        meter: agent6_budget.BudgetTracker,
+        owner: str,
+        continuation: child_dispatch.ContinuationRecord | None,
+        usage: agent6_budget.UsageSettlement,
+    ) -> None:
+        """Bank the balances from the execution that started or continued this child."""
+        execution = self.executions.get(
+            continuation.owner if continuation else owner, self.interrupted
+        )
+        prior = set(continuation.usage_before.credit_readings) if continuation else set()
+        for account in {r.account for r in usage.credit_readings if r not in prior}:
+            origin = self.origins.get((execution, account), execution)
+            meter.restore_child_credits(account, origin, self.readings.get((origin, account), ()))
+
+
 def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery path
     dispatcher: parallel_dispatch.ParallelDispatcher,
     state: loop_state.LoopState,
@@ -74,9 +132,11 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
     """
     if dispatcher.session_dir is None:
         return
+    logs = dispatcher.session_dir / "logs.jsonl"
+    history = None
     for found in child_dispatch.read_records(dispatcher.session_dir):
         record = found
-        scan = session_log.scan_session_log(dispatcher.session_dir / "logs.jsonl")
+        scan = session_log.scan_session_log(logs)
         accounted = scan.budget.session.settled_children
         if record.source == "panel":
             record = record.model_copy(
@@ -128,15 +188,17 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
             else []
         )
         if dispatcher.budget is not None:
-            unsettled = {c.session_id for c in record.children if c.account_id not in accounted}
-            dispatcher.budget.restore_child_credits(
-                scan.budget.session.credit_readings,
-                (
-                    r.usage
-                    for r in results
-                    if r.spec.session_id in unsettled and r.usage is not None
-                ),
-            )
+            for result in results:
+                child = record.child(result.spec.session_id)
+                if (
+                    child.account_id not in accounted
+                    and result.usage
+                    and result.usage.credit_readings
+                ):
+                    history = history or _CreditHistory.read(logs)
+                    history.restore(
+                        dispatcher.budget, record.owner, child.continuation, result.usage
+                    )
         if (
             record.state in ("prepared", "running")
             and dispatcher.child_recoverer is not None

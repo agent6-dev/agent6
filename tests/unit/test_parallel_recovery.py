@@ -214,19 +214,33 @@ def _tracker() -> agent6_budget.BudgetTracker:
     return agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
 
 
-@pytest.mark.parametrize(("extra_reading", "new_charge"), [(None, 0), ((30, 7), 1), ((15, 12), 2)])
-def test_resume_settles_only_credit_movement_missing_from_the_parent_journal(
-    short_repo: pathlib.Path, extra_reading: tuple[int, int] | None, new_charge: int
-) -> None:
-    """A watch can journal a decline before the parent settles the child that observed it."""
-    repo = short_repo / "repo"
-    child_env.init_repo(repo)
-    parent = child_env.create_record(repo, "parent")
-    child = child_env.create_record(repo, "parent-r1-l1", parent=parent.name, mode="reviewer")
+def _resume(parent: pathlib.Path, execution: str) -> None:
+    event_log.EventSink(parent / "logs.jsonl").emit(
+        journal.SessionResume(
+            session_id=parent.name,
+            user_task="t",
+            steer="",
+            mode="run",
+            turn=1,
+            messages=0,
+            execution_id=execution,
+        )
+    )
+
+
+def _balance(meter: agent6_budget.BudgetTracker, at: int, dollars: int) -> None:
+    meter.record_plan_preflight(
+        "p",
+        agent6_budget.PlanUsage.single(0, 300, 0, observed_ns=at, credits_balance=f"${dollars}"),
+    )
+
+
+def _running_panel(repo: pathlib.Path, parent: pathlib.Path, group: str) -> pathlib.Path:
+    child = child_env.create_record(repo, f"{group}-l1", parent=parent.name, mode="reviewer")
     child_dispatch.write_record(
         parent,
         child_dispatch.DispatchRecord(
-            identity="parent-r1",
+            identity=group,
             source="panel",
             merge_policy="record_only",
             owner="first",
@@ -237,16 +251,61 @@ def test_resume_settles_only_credit_movement_missing_from_the_parent_journal(
         ),
         now=1,
     )
+    return child
+
+
+def _reconcile(
+    repo: pathlib.Path,
+    parent: pathlib.Path,
+    meter: agent6_budget.BudgetTracker,
+    *,
+    stop_at: str = "",
+) -> None:
+    cfg = child_env.config()
+    dispatcher = child_env.dispatcher(repo, parent, cfg, meter)
+    recover = children.build_child_recoverer(cfg, repo, paths.state_dir(repo), mode="run")
+    assert recover is not None
+
+    def recover_until(group: str, children: Sequence[str]) -> list[child_records.ChildResult]:
+        if group == stop_at:
+            raise _Crash
+        return recover(group, children)
+
+    dispatcher.child_recoverer = recover_until
+    parallel_recovery.reconcile(
+        dispatcher,
+        loop_state.LoopState(original_task="t", tool_calls=0),
+        loop_conversation.Conversation(),
+        turn=1,
+    )
+
+
+@pytest.mark.parametrize(
+    ("split_baseline", "extra_reading", "new_charge"),
+    [(False, None, 0), (False, (30, 7), 1), (False, (15, 12), 2), (True, None, 2)],
+)
+def test_resume_settles_only_credit_movement_missing_from_the_parent_journal(
+    short_repo: pathlib.Path,
+    split_baseline: bool,
+    extra_reading: tuple[int, int] | None,
+    new_charge: int,
+) -> None:
+    """A watch can journal a decline before the parent settles the child that observed it."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    parent_sink = event_log.EventSink(parent / "logs.jsonl")
+    if split_baseline:
+        before = _tracker()
+        _balance(before, 10, 10)
+        budget_events.emit_budget_update(before, parent_sink.emit)
+        _resume(parent, "first")
+    child = _running_panel(repo, parent, "parent-r1")
     meter = _tracker()
     child_sink = event_log.EventSink(child / "logs.jsonl")
 
     def balance(at: int, dollars: int) -> None:
-        meter.record_plan_preflight(
-            "p",
-            agent6_budget.PlanUsage.single(
-                0, 300, 0, observed_ns=at, credits_balance=f"${dollars}"
-            ),
-        )
+        _balance(meter, at, dollars)
         budget_events.emit_budget_update(meter, child_sink.emit)
 
     balance(10, 10)
@@ -255,47 +314,67 @@ def test_resume_settles_only_credit_movement_missing_from_the_parent_journal(
     first.record_plan_preflight(
         "other", agent6_budget.PlanUsage.single(0, 300, 0, credits_balance="$5")
     )
-    first.note_running(child.name, child_watch.running_usage(child))
-    parent_sink = event_log.EventSink(parent / "logs.jsonl")
+    if split_baseline:
+        _balance(first, 20, 8)
+    else:
+        first.note_running(child.name, child_watch.running_usage(child))
     budget_events.emit_budget_update(first, parent_sink.emit)
-    assert first.estimate_usd()[0] == 2
+    prior_charge = first.estimate_usd()[0]
+    assert prior_charge == (0 if split_baseline else 2)
     if extra_reading is not None:
         balance(*extra_reading)
-    parent_sink.emit(
-        journal.SessionResume(
-            session_id=parent.name,
-            user_task="t",
-            steer="",
-            mode="run",
-            turn=1,
-            messages=0,
-            execution_id="next",
-        )
-    )
+    direct = children.child_usage(child)
+    assert direct is not None
+    first.settle_child(child.name, direct)
+    _resume(parent, "next")
     fresh = _tracker()
-    cfg = child_env.config()
-    dispatcher = child_env.dispatcher(repo, parent, cfg, fresh)
-    dispatcher.child_recoverer = children.build_child_recoverer(
-        cfg, repo, paths.state_dir(repo), mode="run"
-    )
-    parallel_recovery.reconcile(
-        dispatcher,
-        loop_state.LoopState(original_task="t", tool_calls=0),
-        loop_conversation.Conversation(),
-        turn=1,
-    )
+    _reconcile(repo, parent, fresh)
     usage = children.child_usage(parent)
     assert usage is not None
-    assert (usage.usd, fresh.available().usd) == (2 + new_charge, 10 - new_charge)
+    assert (usage.usd, fresh.available().usd) == (prior_charge + new_charge, 10 - new_charge)
+    assert usage.usd == first.estimate_usd()[0]
     rows = [json.loads(line) for line in parent_sink.path.read_text().splitlines()]
     settled = next(row for row in rows if child.name in row.get("settled_children", ()))
-    assert [(r["observed_ns"], r["balance_usd"]) for r in settled["credit_readings"]] == (
-        [extra_reading] if extra_reading else []
-    )
+    if not split_baseline:
+        assert [(r["observed_ns"], r["balance_usd"]) for r in settled["credit_readings"]] == (
+            [extra_reading] if extra_reading else []
+        )
     fresh.record_plan_preflight(
         "other", agent6_budget.PlanUsage.single(0, 300, 0, credits_balance="$1")
     )
     assert fresh.available().usd == 10 - new_charge
+
+
+def test_interrupted_recovery_counts_only_what_the_remaining_child_adds(
+    short_repo: pathlib.Path,
+) -> None:
+    """One recovery settles $10 to $8. The next child adds $8 to $7 in the same series."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    _resume(parent, "first")
+    first = _tracker()
+    _balance(first, 10, 10)
+    budget_events.emit_budget_update(first, event_log.EventSink(parent / "logs.jsonl").emit)
+    for group, final in [("parent-r1", 8), ("parent-r2", 7)]:
+        child = _running_panel(repo, parent, group)
+        meter = _tracker()
+        _balance(meter, 10, 10)
+        _balance(meter, 20, 8)
+        _balance(meter, 30, final)
+        budget_events.emit_budget_update(meter, event_log.EventSink(child / "logs.jsonl").emit)
+
+    _resume(parent, "second")
+    second = _tracker()
+    with pytest.raises(_Crash):
+        _reconcile(repo, parent, second, stop_at="parent-r2")
+    assert second.available().usd == 8
+    _resume(parent, "third")
+    fresh = _tracker()
+    _reconcile(repo, parent, fresh)
+    usage = children.child_usage(parent)
+    assert usage is not None
+    assert (usage.usd, fresh.available().usd) == (3, 9)
 
 
 def test_a_failed_record_write_launches_nothing(

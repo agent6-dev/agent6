@@ -133,6 +133,10 @@ class BudgetUpdate(Event):
         default=(),
         description="Balances observed in the subtree. A retried append can repeat a reading.",
     )
+    credit_origins: dict[str, int] = pydantic.Field(
+        default_factory=dict,
+        description="The execution number that began each restored account's series (start is 1).",
+    )
     usd_total: float = pydantic.Field(
         description="USD cap reading: own calls, settled children and observed credit declines.",
     )

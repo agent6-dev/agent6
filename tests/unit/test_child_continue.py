@@ -38,11 +38,16 @@ def test_a_parent_continues_its_stopped_child(tmp_path: pathlib.Path, control: s
         children: list[child_records.ChildTask], group: str, *, at: str | None = None
     ) -> list[child_records.StartedChild]:
         continued.extend(children)
+        (running,) = child_dispatch.read_records(tmp_path / "parent")
+        continuation = running.child(sid).continuation
+        assert continuation is not None
+        assert continuation.owner == "continuing-parent"
         assert group == "p1"
         assert at is None
         return [child_records.StartedChild(sid, future)]
 
     dispatcher.child_spawner = start
+    dispatcher.execution_id = "continuing-parent"
     answer = child_work.steer(dispatcher, sid, "finish the test")
     assert "continues" in answer
     assert continued[0].task == "work"

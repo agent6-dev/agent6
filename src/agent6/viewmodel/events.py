@@ -450,6 +450,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 usd_own_calls=_cap(raw.get("usd_own_calls")),
                 usd_observed_credits=_amount(raw.get("usd_observed_credits", 0.0)),
                 credit_readings=raw.get("credit_readings", ()),
+                credit_origins=raw.get("credit_origins", {}),
                 usd_partial=bool(raw.get("usd_partial", False)),
                 # A row without a cap leaves it unknown; a recorded 0 (refuse) or -1 stays.
                 usd_cap=_cap(raw.get("usd_cap")),

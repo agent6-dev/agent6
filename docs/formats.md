@@ -116,6 +116,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `credit_readings[].account` | `str` | A fingerprint of the account ID, or the provider entry if the ID is absent. |
 | `credit_readings[].observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
 | `credit_readings[].balance_usd` | `float` | The balance in dollars. |
+| `credit_origins` | `object, optional` | The execution number that began each restored account's series (start is 1). |
 | `usd_total` | `float` | USD cap reading: own calls, settled children and observed credit declines. |
 | `input_total` | `int, optional` | This tracker's own fresh input tokens. |
 | `output_total` | `int, optional` | This tracker's own output tokens. |
@@ -4111,6 +4112,7 @@ Source: [`agent6.sessions.child_dispatch.ContinuationRecord`](https://github.com
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `sequence` | `int` | The continuation number, starting at 1. |
+| `owner` | `str` | The parent execution that started the continuation. |
 | `instruction` | `str` | The parent's next instruction. |
 | `usage_before` | `UsageRecord` | The cumulative child usage charged before this continuation. |
 

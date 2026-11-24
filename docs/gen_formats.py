@@ -527,6 +527,7 @@ _RECORD_KINDS = {
     "bool": "bool",
     "collections.abc.Sequence[Any]": "list",
     "dict[str, Any]": "object",
+    "dict[str, int]": "object",
     "tuple[str, ...]": "list",
 }
 

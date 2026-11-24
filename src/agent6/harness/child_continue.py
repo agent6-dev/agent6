@@ -58,6 +58,7 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         raise tool_errors.ToolError("the run's budget is exhausted; nothing continued")
     continuation = child_dispatch.ContinuationRecord(
         sequence=child.continuation.sequence + 1 if child.continuation is not None else 1,
+        owner=dispatcher.execution_id,
         instruction=instruction,
         usage_before=child.usage,
     )

@@ -60,6 +60,7 @@ def budget_update(budget: agent6_budget.BudgetTracker) -> journal.BudgetUpdate:
         usd_own_calls=snap.usd_own_calls,
         usd_observed_credits=snap.usd_observed_credits,
         credit_readings=snap.credit_readings,
+        credit_origins=snap.credit_origins,
         usd_cap=snap.max_usd,
         usd_running_children=snap.usd_running_children,
         usd_settled_children=snap.usd_settled_children,
