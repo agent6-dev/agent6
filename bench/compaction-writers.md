@@ -1,5 +1,7 @@
 # Compaction writers
 
+Compare replicated keep settings on the [six-module task](compaction-settings.md).
+
 ## Host smoke
 
 Use the cheapest model on the connected plan at its lowest supported effort for both roles.

@@ -9,6 +9,7 @@ import select
 import selectors
 import subprocess
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from bench.tools import journals
@@ -122,26 +123,44 @@ def grade(
     grants.write_text(
         f"[sandbox]\nextra_read_paths = {json.dumps([str(repo)])}\n", encoding="utf-8"
     )
-    pending = memoryview(scorer.read_bytes())
+    report = bounded_report(
+        [
+            binary,
+            "--config",
+            config,
+            "--config",
+            grants,
+            "exec",
+            "--new",
+            "python3",
+            "-I",
+            "-",
+            repo,
+        ],
+        workspace,
+        env,
+        scorer.read_bytes(),
+        trial / "grader.stderr",
+    )
+    return score(scorer.parent.name, report)
+
+
+def bounded_report(
+    argv: Sequence[str | pathlib.Path],
+    cwd: pathlib.Path,
+    env: dict[str, str],
+    payload: bytes,
+    stderr: pathlib.Path,
+) -> bytes:
+    """Bound the input wait, report and diagnostic stream of a scorer process."""
+    pending = memoryview(payload)
     report = bytearray()
     deadline = time.monotonic() + 120
     with (
-        (trial / "grader.stderr").open("xb") as log,
+        stderr.open("xb") as log,
         subprocess.Popen(
-            [
-                binary,
-                "--config",
-                config,
-                "--config",
-                grants,
-                "exec",
-                "--new",
-                "python3",
-                "-I",
-                "-",
-                repo,
-            ],
-            cwd=workspace,
+            argv,
+            cwd=cwd,
             env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -192,4 +211,4 @@ def grade(
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-    return score(scorer.parent.name, bytes(report))
+    return bytes(report)

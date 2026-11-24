@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import http.server
+import itertools
 import json
 import pathlib
+import threading
+from collections.abc import Callable, Iterator
 from typing import Any, ClassVar
 
 SAMPLES = json.loads(
@@ -83,6 +87,39 @@ class Messages(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+
+@contextlib.contextmanager
+def scripted(reply: Callable[[dict[str, Any]], str | tuple[str, dict[str, Any]]]) -> Iterator[str]:
+    """Serve scripted local-compaction turns using the captured Messages response shape."""
+    ids = itertools.count(1)
+
+    class Local(Messages):
+        def do_GET(self) -> None:
+            self._send({"data": [{"id": "claude-sonnet-4-5", "type": "model"}]})
+
+        def do_POST(self) -> None:
+            answer = reply(json.loads(self.rfile.read(int(self.headers["content-length"]))))
+            response = copy.deepcopy(SAMPLES["turn3"]["response"])
+            if isinstance(answer, str):
+                response.update(content=[{"type": "text", "text": answer}], stop_reason="end_turn")
+            else:
+                response["content"][-1].update(
+                    id=f"script-{next(ids)}", name=answer[0], input=answer[1]
+                )
+            self._send(response)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    with http.server.HTTPServer(("127.0.0.1", 0), Local) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}"
+        finally:
+            server.shutdown()
+            thread.join()
 
 
 if __name__ == "__main__":
