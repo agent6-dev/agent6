@@ -15,7 +15,25 @@ from agent6.sessions import objects
 
 
 class ReplayError(ValueError):
-    """The recording cannot supply complete tool-result sizes."""
+    """The recording lacks an input the replay needs."""
+
+
+def journal_prefix(journal: pathlib.Path, turn: int) -> bytes:
+    """Cut the journal before the selected worker turn, not after its reply."""
+    with journal.open("rb") as stream:
+        cut = None
+        for line in stream:
+            if b'"budget.turn"' not in line:
+                continue
+            row = json.loads(line)
+            if row.get("type") == "budget.turn" and row.get("turn") == turn:
+                if cut is not None:
+                    raise ReplayError(f"{journal}: ambiguous journal boundary for turn {turn}")
+                cut = stream.tell() - len(line)
+        if cut is None:
+            raise ReplayError(f"{journal}: no journal boundary for turn {turn}")
+        stream.seek(0)
+        return stream.read(cut)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
