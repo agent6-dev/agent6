@@ -579,6 +579,51 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
     assert f"status:     failed · provider error ({error})\n" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("summary", "detail"),
+    [
+        ("provider error at turn 1 (HTTP 400)", "API error 400: the model is not available"),
+        ("provider error at turn 1: API error 400: the model is not available", ""),
+    ],
+)
+def test_status_keeps_the_providers_error_beside_a_recorded_end_sentence(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    summary: str,
+    detail: str,
+) -> None:
+    """A refused request ended with `(HTTP 400)` and no reason: the end sentence hid the error.
+
+    Every end the loop records carries a sentence, and one with a status leaves the
+    provider's text out; a sentence that already holds the text is not repeated.
+    """
+    error = "API error 400: the model is not available"
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
+            {"ts": _ts(4), "type": "model.call", "actor": "worker", "model": "m"},
+            {"ts": _ts(3), "type": "model.result", "actor": "worker", "ok": False, "error": error},
+            {
+                "ts": _ts(1),
+                "type": "session.stop",
+                "reason": "provider_error",
+                "turns": 1,
+                "summary": summary,
+                "verification": "unverified",
+            },
+        ],
+    )
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["status_detail"] == detail
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert f"ended:      {summary}\n" in out
+    assert out.count(error) == 1
+
+
 def test_status_shows_compare_outcome(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -113,13 +113,14 @@ def _status_state(
         # The record, not the journal, decides: a newer or corrupt manifest names itself.
         return word, cell, format.dead_run_note(word, reason)[0]
     if scan.finished:
+        if scan.stop_reason == "provider_error":
+            # The label names the failure; the provider's own text, on one clean line, says why.
+            error = " ".join(terminal.scrub_terminal_controls(scan.provider_error).split())
+            # An end sentence that names a status leaves the provider's text out.
+            return word, cell, "" if error in " ".join(scan.end_summary.split()) else error
         if scan.end_summary:
             # The `ended:` line carries the run's own sentence; the raw reason would repeat it.
             return word, cell, ""
-        if scan.stop_reason == "provider_error":
-            # The label names the failure; the provider's own text, on one clean line, says why.
-            error = terminal.scrub_terminal_controls(scan.provider_error)
-            return word, cell, " ".join(error.split())
         # The raw end reason is the diagnostic, unless the label already carries it.
         end = (
             ""
