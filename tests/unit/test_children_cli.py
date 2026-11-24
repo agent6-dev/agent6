@@ -175,13 +175,21 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         f"[parallel] group {session}-p1 complete (1 child(ren)):",
     ]
     assert "summary: wrote a.txt" in json.dumps(parent[3])
-    # The read of the ended child returned its line and transcript while the other still ran.
+    # One task still ran when the read returned the other child's fields and transcript.
     read_b = json.loads(
         _text(next(m for m in reversed(parent[2]["messages"]) if m["role"] == "tool"))
     )
+    transcript = read_b.pop("output").splitlines()
+    assert read_b == {
+        "id": two,
+        "attempt": 1,
+        "state": "ended, task pending",
+        "task": "CHILD-B: write b.txt",
+        "running": False,
+        "mergeable": False,
+        "commits": 1,
+    }
     expected_read = [
-        f"[{two}] attempt 1 · ended, task pending · 1 commit beyond start: CHILD-B: write b.txt",
-        "",
         "user: CHILD-B: write b.txt",
         "",
         r"[tool] apply_edit path=b.txt old_string= new_string=CHILD-B\n",
@@ -189,15 +197,14 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         "[tool] apply_edit result: applied=['create'] path=b.txt",
     ]
     if control == "model":
-        command, _, result = read_b["output"].splitlines()[8:11]
+        command, _, result = transcript[6:9]
         assert command.startswith('[tool] run_command argv=["sh", "-c", "git add')
         assert result.startswith("[tool] run_command result: exit=0 in ")
         expected_read.extend(["", command, "", result])
     expected_read.extend(
         ["", "[tool] finish_session summary=wrote b.txt", "", "[tool] finish_session result: ok"]
     )
-    assert read_b["output"].splitlines() == expected_read
-    assert read_b["children"] == [expected_read[0]]
+    assert transcript == expected_read
     # Agent6-owned git merges; model-owned git retains each ref without changing the checkout.
     assert (repo / "a.txt").exists() is (control == "agent6")
     assert (repo / "b.txt").exists() is (control == "agent6")
