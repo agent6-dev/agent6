@@ -64,6 +64,29 @@ def test_an_urgent_steer_takes_the_slot_and_the_displaced_one_goes_first(
     assert [entry.text for entry in ipc.queued_steers(tmp_path)] == ["first", "second"]
 
 
+def test_a_demoted_steer_goes_back_to_the_head_of_the_inbox(tmp_path: pathlib.Path) -> None:
+    """A parked start left its steer in the slot, which the next start clears as stale."""
+    assert ipc.submit_steer(tmp_path, "first", now=True)
+    assert ipc.submit_steer(tmp_path, "second")
+    ipc.demote_steer(tmp_path)
+    assert _slot(tmp_path) is None and not ipc.steer_request_pending(tmp_path)
+    assert [(entry.text, entry.now) for entry in ipc.queued_steers(tmp_path)] == [
+        ("first", True),
+        ("second", False),
+    ]
+    # Nothing in the slot: nothing moves.
+    ipc.demote_steer(tmp_path)
+    assert [entry.text for entry in ipc.queued_steers(tmp_path)] == ["first", "second"]
+
+
+def test_a_demotion_leaves_a_verb_in_the_slot(tmp_path: pathlib.Path) -> None:
+    """A Stop that ended a start is for that worker: the next start must not read it."""
+    assert ipc.submit_steer(tmp_path, "abort", now=True)
+    ipc.demote_steer(tmp_path)
+    assert _slot(tmp_path) == "abort" and ipc.steer_request_pending(tmp_path)
+    assert ipc.queued_steers(tmp_path) == ()
+
+
 def test_the_bridge_acts_on_the_words_the_inbox_lets_through(tmp_path: pathlib.Path) -> None:
     """The verbs the loop acts on and the verbs that preempt the inbox are one set."""
     assert set(operator_bridge.STEER_VERBS) == set(ipc.STEER_VERBS)

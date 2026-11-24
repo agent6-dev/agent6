@@ -573,7 +573,53 @@ def test_a_parked_resume_queues_its_steer_with_the_images_sent_with_it(
     assert (queued.text, queued.images) == (message.text, (image,))
 
 
-def test_run_task_seeds_initial_steer_on_the_bridge(repo: pathlib.Path) -> None:
+def test_a_steer_survives_a_resume_that_parks_again(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume that parked again lost its steer at the next resume.
+
+    `run_task` seeded the steer and then parked on the busy checkout. The next start's
+    stale-state clear took the slot for the last execution's and dropped it, though no loop
+    had read it.
+    """
+    from agent6.app import resume as resume_mod
+    from agent6.sessions import ipc
+
+    layout = _parked_run(repo, "run-PAGAIN")
+    monkeypatch.setattr(session_runtime, "select_isolation", _full_isolation)
+    monkeypatch.setattr(execution, "run_execution", _ended)
+
+    def resume(steer: str, *, later: float) -> int:
+        # Each start begins after the files the one before it wrote.
+        return resume_mod.resume_task(
+            (),
+            "run-PAGAIN",
+            started_at=time.time() + later,
+            frontend=mock.MagicMock(),
+            force=False,
+            steer=steer,
+        )
+
+    holder_fd = lock.acquire_repo_writer(paths.state_dir(repo), repo, "run-LIVE")
+    try:
+        assert resume("also update the docs", later=0.0) == 2
+        assert resume("and the changelog", later=60.0) == 2
+    finally:
+        lock.release_single_writer(holder_fd)
+    assert manifest.read_manifest(layout.session_dir).parked_reason == "checkout busy"
+
+    assert resume("", later=120.0) == 0
+    # The order the parked starts would have read them in: each start's own steer first.
+    assert [queued.text for queued in ipc.queued_steers(layout.session_dir)] == [
+        "and the changelog",
+        "also update the docs",
+    ]
+    assert not ipc.steer_request_pending(layout.session_dir)
+
+
+def test_run_task_seeds_initial_steer_on_the_bridge(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """run_task's initial_steer lands on the bridge before the loop starts.
 
     Its first boundary poll finds it.
@@ -581,24 +627,28 @@ def test_run_task_seeds_initial_steer_on_the_bridge(repo: pathlib.Path) -> None:
     from agent6.app import run
     from agent6.sessions import ipc
 
-    state = paths.state_dir(repo)
-    holder_fd = lock.acquire_repo_writer(state, repo, "run-LIVE")
-    try:
-        rc = run.run_task(
-            _load_cfg(),
-            "do the thing",
-            started_at=time.time(),
-            frontend=mock.MagicMock(),
-            session_id="run-STEERSEED",
-            mode="run",
-            initial_steer="focus on tests",
-        )
-    finally:
-        lock.release_single_writer(holder_fd)
-    assert rc == 2  # parked (checkout busy), but the steer already landed
-    d = sessions_layout.SessionLayout(state_dir=state, session_id="run-STEERSEED").session_dir
-    assert ipc.steer_request_pending(d)
-    assert ipc.read_steer_answer(d) == "focus on tests"
+    d = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(repo), session_id="run-STEERSEED"
+    ).session_dir
+    slot: list[tuple[bool, str | None]] = []
+
+    def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
+        slot.append((ipc.steer_request_pending(d), ipc.take_steer_answer(d)))
+        return execution.ExecutionEnd(0)
+
+    monkeypatch.setattr(session_runtime, "select_isolation", _full_isolation)
+    monkeypatch.setattr(execution, "run_execution", _execution)
+    rc = run.run_task(
+        _load_cfg(),
+        "do the thing",
+        started_at=time.time(),
+        frontend=mock.MagicMock(),
+        session_id="run-STEERSEED",
+        mode="run",
+        initial_steer="focus on tests",
+    )
+    assert rc == 0
+    assert slot == [(True, "focus on tests")]
 
 
 def test_teardown_raise_still_releases_both_writer_locks(

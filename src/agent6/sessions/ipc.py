@@ -1166,16 +1166,7 @@ def submit_steer(
         if text.strip().lower() in STEER_VERBS:
             write_steer_answer(session_dir, text)
         elif now and steer_request_pending(session_dir):
-            displaced = _consume_answer(answer)
-            if displaced is not None and not _queue_steer_first(
-                session_dir,
-                QueuedSteer(
-                    text=displaced,
-                    now=steer_interrupt_pending(session_dir),
-                    images=take_steer_images(session_dir),
-                    message_id=take_steer_message_id(session_dir),
-                ),
-            ):
+            if not _displace_slot(session_dir):
                 return False
             write_steer_answer(session_dir, text)
         elif steer_request_pending(session_dir) or not _publish_answer(answer, text):
@@ -1230,6 +1221,45 @@ def _queue_steer_first(session_dir: pathlib.Path, entry: QueuedSteer) -> bool:
     except (OSError, ValueError):
         return False
     return True
+
+
+def _displace_slot(session_dir: pathlib.Path) -> bool:
+    """Move the slot's answer to the head of the inbox, with its urgency, images and id.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        Whether the slot holds no answer: none was there, or it moved.
+    """
+    displaced = _consume_answer(session_dir / STEER_ANSWER_FILE)
+    return displaced is None or _queue_steer_first(
+        session_dir,
+        QueuedSteer(
+            text=displaced,
+            now=steer_interrupt_pending(session_dir),
+            images=take_steer_images(session_dir),
+            message_id=take_steer_message_id(session_dir),
+        ),
+    )
+
+
+def demote_steer(session_dir: pathlib.Path) -> None:
+    """Move the instruction in the slot back to the inbox's head; best-effort.
+
+    A start that parks calls this. The next start's stale-state clear drops the slot and
+    leaves the inbox, so that start reads the steers in the order this one would have. A
+    verb stays in the slot: it was for the worker that parked.
+
+    Args:
+        session_dir: The session directory.
+    """
+    try:
+        text = (session_dir / STEER_ANSWER_FILE).read_text(encoding="utf-8")
+    except (OSError, ValueError):  # no answer in the slot, or an unreadable one
+        return
+    if text.strip().lower() not in STEER_VERBS and _displace_slot(session_dir):
+        clear_steer_request(session_dir)
 
 
 def queued_steer_files(session_dir: pathlib.Path) -> list[tuple[pathlib.Path, QueuedSteer]]:

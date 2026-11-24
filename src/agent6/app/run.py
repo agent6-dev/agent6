@@ -774,6 +774,8 @@ def park(
         reason=reason,
         operator_task=start.operator_task,
     )
+    # No loop read the steer this start was given: it waits with the task, in the inbox.
+    ipc.demote_steer(start.layout.session_dir)
     reporter.err(
         f"PARKED: {detail}. Your task is saved as run {session_id!r}:\n"
         f"    agent6 resume {session_id}    (starts it)" + (f"\n{hint}" if hint else "")

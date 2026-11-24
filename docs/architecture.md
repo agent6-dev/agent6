@@ -332,6 +332,7 @@ flowchart TD
 - A per-mutation flock on the session dir guards a concurrent `fork`'s read of the graph.
 - One live run-mode worker per checkout is the level above: a flock on `<state-dir>/locks/<checkout-id>.lock` (`sessions/lock.py`).
 - A second `agent6 run` parks: the manifest keeps its task (`parked_task`, `parked_reason`), and `agent6 resume <id>` starts it once the checkout is free.
+- A start that parks moves the steer it was given into `steers/`, where the next start finds it.
 - Plan and ask expose no edit tools and spawn freely.
 - A run's children work in isolated clones.
 
