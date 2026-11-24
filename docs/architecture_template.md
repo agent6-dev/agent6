@@ -220,6 +220,7 @@ A cap of `-1` or `0` has no meter, and a reviewer reads its reply count instead.
 The harness selects `Endpoint` or `Tiered` once from those facts.
 Both strategies use the same size, manual and idle triggers and the same growth floor.
 On resume, `compaction.cold_start` compares the last ordinary worker request's journal route and timestamp with the current route and its idle limit.
+A fork with no request of its own reads its source's journal.
 An HTTP request records its own start.
 A process-backed worker's streamed output or successful attempt confirms its `model.call` opening.
 On a failed attempt, `model.attempt.process_reply` records that output began even when live text is off.

@@ -9,7 +9,7 @@ import pathlib
 from typing import Any, Literal
 
 from agent6 import kinds
-from agent6.sessions import journal
+from agent6.sessions import journal, lineage
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -128,6 +128,8 @@ def detect(
 ) -> Trigger | None:
     """Check the last request's route and age, never inferring a missing fact.
 
+    A fork that has made no request reads its source's journal.
+
     Args:
         path: The resumed session's journal.
         actor: The role driving this conversation.
@@ -139,6 +141,12 @@ def detect(
         The rule that fired, or None to leave the start alone.
     """
     row = _last_request(path, actor)
+    session, seen = path.parent, {path.parent}
+    # A fork that has made no request continues the cache of its source's last one.
+    while not row and (source := lineage.fork_source(session)) and source not in seen:
+        row = _last_request(source / path.name, actor)
+        session = source
+        seen.add(source)
     provider, model = row.get("provider"), row.get("model")
     previous = f"{provider}/{model}" if provider and model else ""
     gap = None

@@ -561,6 +561,7 @@ The cold-start mode, summary writer, gists and history retention settings apply 
 **Resume with a cold cache.** A resume is cold if the provider or model differs from the last ordinary worker request in the journal.
 It is also cold if the time since that request began reaches the current provider's `idle_compact_s`.
 A helper call, summary or session stop does not reset that clock.
+A fork that has made no request of its own takes the route and time from its source's last request.
 For a process-backed provider, streamed output or a successful attempt confirms the route and start time of its worker call.
 This also applies when live text is off.
 Set the limit to `-1` to disable the age rule but still detect a route change; `0` is not valid.

@@ -191,6 +191,26 @@ def test_a_cold_restart_with_nothing_to_replace_resends(
     assert "resend history" in row["message"]
 
 
+@pytest.mark.parametrize("forks", [1, 2])
+def test_a_fork_reads_the_last_request_of_its_source(tmp_path: pathlib.Path, forks: int) -> None:
+    """A fork's own journal holds no worker request, so its first request resent everything."""
+    session = tmp_path / "source"
+    session.mkdir()
+    (session / "logs.jsonl").write_text(json.dumps(rules.request(model="other")) + "\n")
+    for n in range(forks):
+        parent, session = session.name, tmp_path / f"fork-{n}"
+        session.mkdir()
+        (session / "manifest.json").write_text(json.dumps({"parent_session_id": parent}))
+    sent, rows, _, _ = _resume(session, "truncate", [])
+    assert "Old evidence." not in str(sent)
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert (row["reason"], row["previous_route"], row["action"]) == (
+        "route_changed",
+        "p/other",
+        "truncate",
+    )
+
+
 @pytest.mark.parametrize(
     "rows", [[], [rules.request()], [rules.request(type="model.call", model="other")]]
 )

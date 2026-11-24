@@ -10,6 +10,22 @@ from collections.abc import Collection
 from agent6.sessions import layout, manifest
 
 
+def fork_source(session_dir: pathlib.Path) -> pathlib.Path | None:
+    """Find the session a fork was cut from, in the same bucket.
+
+    Args:
+        session_dir: The session's directory.
+
+    Returns:
+        The source's directory, or None when the manifest names no fork source.
+    """
+    try:
+        parent = manifest.read_manifest(session_dir).parent_session_id
+    except manifest.ManifestError:
+        return None
+    return session_dir.parent / parent if parent else None
+
+
 def children_of(session_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
     """Find the sessions a session dispatched: every record lives in one repository's state.
 
