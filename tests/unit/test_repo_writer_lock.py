@@ -98,6 +98,28 @@ def test_repo_writer_probe_does_not_hold(tmp_path: pathlib.Path) -> None:
     lock.release_single_writer(fd2)
 
 
+def test_a_holder_name_that_cannot_be_written_leaves_the_checkout_free(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed write of the holder's name left the checkout locked with no fd to release.
+
+    The lock is taken before the name is stamped. A caller that got an error, never the fd,
+    could release nothing, so an in-process front-end refused every later run on the checkout.
+    """
+
+    def _disk_full(_fd: int, _length: int) -> None:
+        raise OSError(28, "No space left on device")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(os, "ftruncate", _disk_full)
+        with pytest.raises(OSError, match="No space left"):
+            lock.acquire_repo_writer(tmp_path, tmp_path, "run-A")
+
+    fd = lock.acquire_repo_writer(tmp_path, tmp_path, "run-B")
+    assert fd is not None
+    lock.release_single_writer(fd)
+
+
 def _init_repo(path: pathlib.Path) -> None:
     subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
     subprocess.run(["git", "-C", str(path), "config", "user.email", "t@t"], check=True)

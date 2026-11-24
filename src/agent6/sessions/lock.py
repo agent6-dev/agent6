@@ -98,6 +98,9 @@ def acquire_repo_writer(
     Returns:
         The held fd, passed to `release_single_writer` at teardown; None when another live
         process holds the lock.
+
+    Raises:
+        OSError: The id could not be stamped; the lock is released.
     """
     lock_path = checkout_lock_path(state_dir, checkout)
     paths.mkdir_for_real_user(lock_path.parent)
@@ -107,8 +110,13 @@ def acquire_repo_writer(
     except OSError:
         os.close(fd)
         return None
-    os.ftruncate(fd, 0)
-    os.write(fd, f"{session_id}\n".encode())
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{session_id}\n".encode())
+    except OSError:
+        # The caller gets no fd to release, so the lock goes here.
+        release_single_writer(fd)
+        raise
     return fd
 
 
