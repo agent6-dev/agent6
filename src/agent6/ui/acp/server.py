@@ -15,14 +15,13 @@ import sys
 import threading
 import time
 import traceback
-import uuid
 from collections.abc import Callable
 from typing import Any, BinaryIO
 
 from agent6 import __version__
 from agent6.app import frontend
 from agent6.ui import operator_images
-from agent6.ui.acp import model, review, rpc, updates, wire
+from agent6.ui.acp import model, prompt, review, rpc, updates, wire
 from agent6.ui.acp import session as acp_session
 
 # The protocol versions served, lowest first; `initialize` selects one for the connection.
@@ -47,73 +46,6 @@ class _Pending:
 
     arrived: threading.Event = dataclasses.field(default_factory=threading.Event)
     answer: dict[str, Any] | None = None
-
-
-@dataclasses.dataclass
-class _PromptAnswer:
-    """Answer one `session/prompt` as the connection's version orders it.
-
-    v1 answers when the turn's work ends, with its stop reason or its error. v2 answers
-    once the prompt's message is in the conversation, with the message's id; an error
-    answers only a prompt whose message never got in. A retry that arrives before the
-    answer shares it.
-
-    Attributes:
-        server: The connection.
-        session: The session the prompt came on.
-        message_id: The id of the prompt's message.
-        request_ids: The requests the answer goes to: the prompt's, then each retry's.
-    """
-
-    server: ACPServer
-    session: acp_session.Session
-    message_id: str
-    request_ids: list[object]
-    _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    _answered: bool = False
-
-    def inserted(self) -> None:
-        """Record the prompt's message as in the conversation, and answer a v2 prompt."""
-        self.session.inserted.add(self.message_id)
-        if self.server.protocol_version >= 2:
-            self._once(result={"messageId": self.message_id})
-
-    def ended(self, end: acp_session.TurnEnd) -> None:
-        """Answer a v1 prompt for its turn's end, or a v2 prompt whose message never got in."""
-        if isinstance(end, rpc.RpcError):
-            self._once(error=end)
-        elif self.server.protocol_version == 1:
-            self._once(result={"stopReason": end})
-        elif end == "cancelled":
-            why = "the prompt was cancelled before its message was added"
-            self._once(error=rpc.RpcError(rpc.REQUEST_CANCELLED, why))
-        else:
-            self.inserted()
-
-    def join(self, request_id: object) -> bool:
-        """Add a retry's request to the answer.
-
-        Args:
-            request_id: The retry's request.
-
-        Returns:
-            False when the answer already went out.
-        """
-        with self._lock:
-            if not self._answered:
-                self.request_ids.append(request_id)
-            return not self._answered
-
-    def _once(
-        self, *, result: dict[str, Any] | None = None, error: rpc.RpcError | None = None
-    ) -> None:
-        with self._lock:
-            if self._answered:
-                return
-            self._answered = True
-        self.server.unanswered.pop((self.session.acp_id, self.message_id), None)
-        for request_id in self.request_ids:
-            self.server.reply(request_id, result=result, error=error)
 
 
 def capabilities_from(_client: dict[str, Any]) -> frontend.FrontendCapabilities:
@@ -147,7 +79,7 @@ class ACPServer:
     client_capabilities: frontend.FrontendCapabilities | None = None
     sessions: acp_session.Sessions | None = None
     protocol_version: int = 1
-    unanswered: dict[tuple[str, str], _PromptAnswer] = dataclasses.field(default_factory=dict)
+    unanswered: dict[tuple[str, str], prompt.Answer] = dataclasses.field(default_factory=dict)
     _handlers: dict[str, Any] = dataclasses.field(default_factory=dict)
     # One writer at a time: a reply and a worker's update interleaved is a line no editor parses.
     _write_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
@@ -505,9 +437,9 @@ class ACPServer:
             )
         sessions = self._sessions()
         session = sessions.get(params)
-        images = acp_session.prompt_images(params)
+        images = prompt.image_blocks(params)
         strict = self.protocol_version >= 2
-        text = acp_session.prompt_text(params, allow_empty=bool(images), strict=strict)
+        text = prompt.words(params, allow_empty=bool(images), strict=strict)
         if images:
             # Checked before the worker starts, so a refused image answers this request.
             if text.startswith("/"):
@@ -519,17 +451,25 @@ class ACPServer:
             except operator_images.ImageRefusedError as exc:
                 raise rpc.RpcError(rpc.INVALID_PARAMS, str(exc)) from exc
 
-        message_id = self._prompt_id(session, params)
+        # v1 has no idempotency key.
+        key = params.get("idempotencyKey") if self.protocol_version >= 2 else None
+        message_id = prompt.message_id(session.acp_id, key)
         waiting = self.unanswered.get((session.acp_id, message_id))
         if waiting is not None and waiting.join(req_id):
             return DEFERRED  # a retry of a prompt not answered yet shares its answer
         # Only a keyed prompt can repeat a message, so only it reads the run's record.
-        keyed = self.protocol_version >= 2 and params.get("idempotencyKey") is not None
-        if keyed and sessions.has_message(session, message_id):
+        if key is not None and prompt.holds(session, sessions.state_dir_for, message_id):
             return {"messageId": message_id}
-        answer = _PromptAnswer(self, session, message_id, [req_id])
+        answer = prompt.Answer(
+            version=self.protocol_version,
+            session=session,
+            message_id=message_id,
+            request_ids=[req_id],
+            reply=self.reply,
+            answered=lambda: self.unanswered.pop((session.acp_id, message_id), None),
+        )
         self.unanswered[session.acp_id, message_id] = answer
-        turn = acp_session.Turn(
+        turn = prompt.Turn(
             finish=answer.ended,
             inserted=answer.inserted,
             notify=functools.partial(self.update, session.acp_id),
@@ -540,37 +480,13 @@ class ACPServer:
                 return DEFERRED
             if self.protocol_version >= 2 and session.is_running():
                 # v2 takes a prompt during a run; v1 refuses it as busy.
-                sessions.steer(session, text, turn=turn, images=images)
+                state_dir = sessions.state_dir_for(session.cwd)
+                prompt.steer(session, state_dir, text, turn=turn, images=images)
             else:
                 sessions.start_execution(session, text, turn=turn, images=images)
         except rpc.RpcError as exc:
             answer.ended(exc)  # refused before its message was added: its retries hear it too
         return DEFERRED
-
-    def _prompt_id(self, session: acp_session.Session, params: dict[str, Any]) -> str:
-        """Return the id of the prompt's message, derived from its idempotency key when it has one.
-
-        The same key on the same session names the same message, across restarts too, and
-        the key itself is never stored.
-
-        Args:
-            session: The session the prompt came on.
-            params: The `session/prompt` params.
-
-        Returns:
-            A fresh id for a prompt without a key; v1 has no key.
-
-        Raises:
-            RpcError: The key is not a string of 1 to 255 characters.
-        """
-        key = params.get("idempotencyKey") if self.protocol_version >= 2 else None
-        if key is None:
-            return uuid.uuid4().hex
-        if not isinstance(key, str) or not 1 <= len(key) <= 255:
-            raise rpc.RpcError(
-                rpc.INVALID_PARAMS, "idempotencyKey must be a string of 1 to 255 characters"
-            )
-        return uuid.uuid5(uuid.NAMESPACE_OID, f"agent6.acp.prompt\n{session.acp_id}\n{key}").hex
 
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Serve `session/cancel`, a notification.

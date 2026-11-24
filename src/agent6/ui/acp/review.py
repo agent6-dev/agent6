@@ -12,7 +12,7 @@ from typing import NoReturn, override
 from agent6 import review_records
 from agent6.app.review import actions as review_actions
 from agent6.sessions import ipc, process
-from agent6.ui.acp import model, rpc, session, updates
+from agent6.ui.acp import model, prompt, rpc, session, updates
 from agent6.viewmodel import pending_questions, receipt, review, tail, transcript
 
 
@@ -195,7 +195,7 @@ def _recorded_updates(
 
 
 def _answered(
-    current: session.Session, turn: session.Turn, text: str, said: Iterable[model.Update]
+    current: session.Session, turn: prompt.Turn, text: str, said: Iterable[model.Update]
 ) -> None:
     """Report a command answered here: its message, what it said, and its end.
 
@@ -223,7 +223,7 @@ def handle_command(
     current: session.Session,
     text: str,
     *,
-    turn: session.Turn,
+    turn: prompt.Turn,
 ) -> bool:
     """Handle an advertised review command before the prompt reaches the worker.
 

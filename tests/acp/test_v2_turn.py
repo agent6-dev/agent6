@@ -19,7 +19,7 @@ from agent6.app import run, stop
 from agent6.app.session import setup as session_setup
 from agent6.sessions import event_log, ipc, journal
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.acp import model, runner
+from agent6.ui.acp import model, prompt, runner
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from tests.acp import schema_check, test_runner, test_session_lifecycle
@@ -202,7 +202,7 @@ def test_a_command_answered_during_a_run_leaves_the_runs_state_alone() -> None:
     current = acp_session.Session(acp_id="s", cwd=pathlib.Path("/x"), execution_live=True)
     from agent6.ui.acp import review, updates
 
-    turn = acp_session.Turn(ended.append, notify=sent.append, message_id="m1")
+    turn = prompt.Turn(ended.append, notify=sent.append, message_id="m1")
     review._answered(current, turn, "/answer q1 yes", [updates.notice("answered q1: yes")])
     assert not [update for update in sent if isinstance(update, model.StateUpdate)]
     assert ended == ["end_turn"]
@@ -373,10 +373,11 @@ def test_a_keyed_prompt_is_found_again_in_the_journal_and_in_the_steer_queue(
     sink = event_log.EventSink(saved / "logs.jsonl")
     sink.emit(journal.SteerInjected(chars=2, text="hi", message_id="a" * 32))
     ipc.submit_steer(saved, "queued", message_id="b" * 32)
-    sessions = acp_session.Sessions(run=lambda _s, _t: "end_turn", state_dir_for=paths.state_dir)
     opened = acp_session.Session(acp_id=saved.name, cwd=cwd, session_id=saved.name)
-    assert sessions.has_message(opened, "a" * 32)
-    assert sessions.has_message(opened, "b" * 32)
-    assert not sessions.has_message(opened, "c" * 32)
+    assert prompt.holds(opened, paths.state_dir, "a" * 32)
+    assert prompt.holds(opened, paths.state_dir, "b" * 32)
+    assert not prompt.holds(opened, paths.state_dir, "c" * 32)
     ipc.promote_queued_steer(saved)
-    assert sessions.has_message(opened, "b" * 32), "promoted to the slot, it is still waiting"
+    assert prompt.holds(opened, paths.state_dir, "b" * 32), (
+        "promoted to the slot, it is still waiting"
+    )

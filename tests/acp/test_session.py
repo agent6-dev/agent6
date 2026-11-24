@@ -22,7 +22,7 @@ import pytest
 from agent6.app import stop
 from agent6.sandbox import jail
 from agent6.sessions import ipc, process
-from agent6.ui.acp import rpc
+from agent6.ui.acp import prompt, rpc
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 
@@ -115,9 +115,9 @@ def test_a_resource_link_rides_as_its_uri() -> None:
         {"type": "text", "text": "fix this"},
         {"type": "resource_link", "uri": "file:///w/x.py", "name": "x.py"},
     ]
-    assert acp_session.prompt_text({"prompt": blocks}) == "fix this\n\nAttached: file:///w/x.py"
+    assert prompt.words({"prompt": blocks}) == "fix this\n\nAttached: file:///w/x.py"
     only_link = [{"type": "resource_link", "uri": "file:///w/x.py"}]
-    assert acp_session.prompt_text({"prompt": only_link}) == "Attached: file:///w/x.py"
+    assert prompt.words({"prompt": only_link}) == "Attached: file:///w/x.py"
 
 
 def test_a_malformed_prompt_block_names_its_bad_field() -> None:
@@ -126,9 +126,9 @@ def test_a_malformed_prompt_block_names_its_bad_field() -> None:
         ([{"type": "text", "text": 42}], "text"),
         ([{"type": "resource_link", "uri": 42}], "uri"),
     )
-    for prompt, cause in malformed:
+    for blocks, cause in malformed:
         with pytest.raises(Exception, match=cause):
-            acp_session.prompt_text({"prompt": prompt})
+            prompt.words({"prompt": blocks})
 
 
 def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
@@ -212,7 +212,7 @@ def test_an_execution_cancelled_while_it_runs_reports_itself_as_cancelled() -> N
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[acp_session.TurnEnd] = []
-    sessions.start_execution(session, "go", turn=acp_session.Turn(seen.append))
+    sessions.start_execution(session, "go", turn=prompt.Turn(seen.append))
     assert started.wait(timeout=5)
     sessions.cancel(session)
     release.set()
@@ -229,7 +229,7 @@ def test_a_stale_cancel_does_not_kill_the_next_execution() -> None:
     sessions = _sessions(_ends)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"), cancelled=True)
     seen: list[acp_session.TurnEnd] = []
-    sessions.start_execution(session, "go", turn=acp_session.Turn(seen.append))
+    sessions.start_execution(session, "go", turn=prompt.Turn(seen.append))
     if session.thread is not None:
         session.thread.join(timeout=5)
     assert seen == ["end_turn"]
@@ -314,7 +314,7 @@ def test_a_run_that_dies_still_ends_the_execution() -> None:
     sessions = _sessions(_boom)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[acp_session.TurnEnd] = []
-    sessions.start_execution(session, "go", turn=acp_session.Turn(seen.append))
+    sessions.start_execution(session, "go", turn=prompt.Turn(seen.append))
     if session.thread is not None:
         session.thread.join(timeout=5)
     (end,) = seen
@@ -333,9 +333,9 @@ def test_a_second_prompt_on_a_busy_session_is_refused() -> None:
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     try:
-        sessions.start_execution(session, "one", turn=acp_session.Turn(lambda _r: None))
+        sessions.start_execution(session, "one", turn=prompt.Turn(lambda _r: None))
         with pytest.raises(Exception, match="already has a prompt"):
-            sessions.start_execution(session, "two", turn=acp_session.Turn(lambda _r: None))
+            sessions.start_execution(session, "two", turn=prompt.Turn(lambda _r: None))
     finally:
         release.set()
         if session.thread is not None:
@@ -351,13 +351,13 @@ def test_a_second_prompt_on_a_busy_session_is_refused() -> None:
 )
 def test_only_text_blocks_become_the_task(blocks: list[Any], expected: str) -> None:
     """A placeholder for an image is something the model would try to read."""
-    assert acp_session.prompt_text({"prompt": blocks}) == expected
+    assert prompt.words({"prompt": blocks}) == expected
 
 
 @pytest.mark.parametrize("blocks", [[], [{"type": "image", "data": "x"}], "not a list"])
 def test_a_prompt_with_no_text_is_refused(blocks: Any) -> None:
     with pytest.raises(Exception, match="prompt"):
-        acp_session.prompt_text({"prompt": blocks})
+        prompt.words({"prompt": blocks})
 
 
 def _pipe() -> tuple[Any, Any]:
@@ -379,7 +379,7 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
     def _finish(_end: acp_session.TurnEnd) -> None:
         seen.append(session.is_running())
 
-    sessions.start_execution(session, "one", turn=acp_session.Turn(_finish))
+    sessions.start_execution(session, "one", turn=prompt.Turn(_finish))
     if session.thread is not None:
         session.thread.join(timeout=5)
     assert seen == [False], "the execution was still 'in flight' as it answered"
@@ -456,7 +456,7 @@ def test_eof_grace_is_one_deadline_across_sessions() -> None:
     for i in range(3):
         s = acp_session.Session(acp_id=f"s{i}", cwd=pathlib.Path("/repo"))
         held._by_id[s.acp_id] = s
-        held.start_execution(s, "go", turn=acp_session.Turn(lambda _r: None))
+        held.start_execution(s, "go", turn=prompt.Turn(lambda _r: None))
     start = time.monotonic()
     try:
         held.wait_for_executions(timeout_s=0.5)

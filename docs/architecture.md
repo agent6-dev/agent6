@@ -50,7 +50,7 @@ Each entry is the package's docstring.
     - ACP's `initialize` is a capability exchange, so it maps onto `FrontendCapabilities`.
     - Every path is absolute and line numbers are 1-based, as the spec states.
     - ACP's client-owned `fs/*` and `terminal/*` are not adopted: the operator's jail does that work.
-    - Main modules: `server`, `session`, `runner`, `updates`, `model`, `wire`, `frontend`.
+    - Main modules: `server`, `session`, `prompt`, `runner`, `updates`, `model`, `wire`, `frontend`.
 - **[`ui/cli`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/cli)**: The agent6 command-line interface.
     - The entry point that wires a run: it imports every other `ui` package, and none imports it.
     - `entry` parses argv and dispatches to one module per command family.

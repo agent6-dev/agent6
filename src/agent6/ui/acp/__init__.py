@@ -7,7 +7,7 @@ It reports through the viewmodel fold and acts through `SessionFrontend`, like t
 ACP's `initialize` is a capability exchange, so it maps onto `FrontendCapabilities`.
 Every path is absolute and line numbers are 1-based, as the spec states.
 ACP's client-owned `fs/*` and `terminal/*` are not adopted: the operator's jail does that work.
-Main modules: `server`, `session`, `runner`, `updates`, `model`, `wire`, `frontend`.
+Main modules: `server`, `session`, `prompt`, `runner`, `updates`, `model`, `wire`, `frontend`.
 """
 
 from __future__ import annotations
