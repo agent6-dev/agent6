@@ -341,7 +341,7 @@ def test_only_a_fetch_out_of_a_repository_runs_its_sender_on_the_host() -> None:
     assert found == [
         "app/machine/agent.py",  # a state's clone, seeded from the checkout
         "app/parallel/resume.py",  # a child's clone, restored from its parent's repository
-        "app/resume.py",  # a session's clone, brought up to its repository
-        "app/resume.py",  # and the branch a resume merges
+        "app/resume_record.py",  # a session's clone, brought up to its repository
+        "app/resume_setup.py",  # the branch a resume merges
         "vcs/git/fetch.py",  # the Git page's Fetch of a remote
     ]
