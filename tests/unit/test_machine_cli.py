@@ -955,7 +955,10 @@ def test_restart_archives_a_stopped_wait_and_starts_fresh(
     assert MachineJournal(root).read_pending_wait() == armed
     with machine_lock(root):
         assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 1
-    assert "already running" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "waiter_delayed is already running" in err
+    # The refusal named the lock file and no next step.
+    assert "`agent6 machine stop waiter_delayed`" in err
     assert not list(state_dir.glob("waiter_delayed.archived-*"))
 
     before = datetime.datetime.now(datetime.UTC)

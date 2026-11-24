@@ -662,7 +662,10 @@ def machine_lock(root: pathlib.Path) -> Generator[None]:
         try:
             portable.lock_exclusive(fd, blocking=False)
         except OSError as exc:
-            raise JournalError(f"machine is already running (lock held): {lock_path}") from exc
+            raise JournalError(
+                f"machine {root.name} is already running (it holds {lock_path}): stop it with"
+                f" `agent6 machine stop {root.name}`, or watch it with `agent6 attach {root.name}`"
+            ) from exc
         try:
             yield
         finally:

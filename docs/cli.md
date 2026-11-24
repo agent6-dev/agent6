@@ -218,7 +218,7 @@ The same start as a crontab line, which keeps the output in a file:
 0 * * * * cd /home/you/project && /home/you/.local/bin/agent6 machine run triage.asm.toml --exit-on-wait >> /home/you/agent6-triage.log 2>&1
 ```
 
-- A start while another still runs the machine exits 1 (`machine is already running`).
+- A start while another still runs the machine exits 1 (`machine <id> is already running`) and names the command that stops it.
 - A machine that reached a terminal state refuses a later start with exit 2.
 - `--restart` [archives any stopped instance](state-machines.md#persistence-layout) and starts from the initial state.
   Leave it out of a timer that should continue a waiting machine.
