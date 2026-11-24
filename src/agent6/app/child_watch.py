@@ -119,7 +119,6 @@ class ChildWatch:
         self._budget = budget
         self._emit = emit
         self._thread = _WatchThread()
-        self._row_lock = threading.Lock()
         self._journaled: tuple[float, int, float, int] = (0.0, 0, 0.0, 0)
         self._journaled_at = 0.0
 
@@ -175,15 +174,15 @@ class ChildWatch:
         """
         if self._emit is None:
             return
-        snap = budget.snapshot()
-        moved = (
-            snap.usd_running_children,
-            snap.tokens_running_children,
-            snap.plan_observed_points,
-            snap.credit_reading_count,
-        )
-        at = time.monotonic()
-        with self._row_lock:
+        with budget.journal_lock:
+            snap = budget.snapshot()
+            moved = (
+                snap.usd_running_children,
+                snap.tokens_running_children,
+                snap.plan_observed_points,
+                snap.credit_reading_count,
+            )
+            at = time.monotonic()
             if moved == self._journaled or (not now and at - self._journaled_at < ROW_INTERVAL_S):
                 return
             budget_events.emit_budget_update(budget, self._emit)

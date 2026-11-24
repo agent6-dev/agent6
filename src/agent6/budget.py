@@ -456,6 +456,7 @@ class BudgetTracker:
         max_tokens_fallback: The fallback token cap.
         max_plan_points: The plan percentage-point cap.
         providers: The entries whose listings price the configured routes.
+        journal_lock: Orders cumulative meter snapshots and their appends across writers.
         allow_plan_overage: Whether a call may use purchased credits or extra usage after
             the included plan window is spent; an omitted value is the safe one.
     """
@@ -465,6 +466,9 @@ class BudgetTracker:
     max_plan_points: float
     allow_plan_overage: bool = False
     providers: Mapping[str, config.ProviderEntry] = dataclasses.field(default_factory=dict)
+    journal_lock: threading.RLock = dataclasses.field(
+        default_factory=threading.RLock, init=False, repr=False
+    )
     _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _per_model: dict[kinds.ModelRoute, ModelUsage] = dataclasses.field(default_factory=dict)
     _input_total: int = 0

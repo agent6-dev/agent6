@@ -76,6 +76,7 @@ def emit_budget_update(
     budget: agent6_budget.BudgetTracker, emit: Callable[[journal.BudgetUpdate], None]
 ) -> None:
     """Journal the meter and confirm its balance readings after the append succeeds."""
-    row = budget_update(budget)
-    emit(row)
-    budget.credit_readings_published(row.credit_readings)
+    with budget.journal_lock:
+        row = budget_update(budget)
+        emit(row)
+        budget.credit_readings_published(row.credit_readings)

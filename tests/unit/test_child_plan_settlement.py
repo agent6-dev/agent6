@@ -2,9 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import pathlib
+import threading
 
 import pytest
 
@@ -127,6 +129,37 @@ def test_failed_budget_append_keeps_the_balance_for_child_settlement(
     parent.note_running("child", child_watch.running_usage(tmp_path))
     parent.settle_child("child", usage)
     assert parent.snapshot().usd_observed_credits == 1
+
+
+def test_two_writers_cannot_append_an_older_budget_snapshot_last(tmp_path: pathlib.Path) -> None:
+    """The meter a parent recovers must include a decline recorded during another write."""
+    meter = budget.BudgetTracker(max_usd=2, max_tokens_fallback=-1, max_plan_points=-1)
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    _balance(meter, "p", "shared", 10, 10)
+    paused, competing, written = threading.Event(), threading.Event(), threading.Event()
+
+    def first(row: journal.BudgetUpdate) -> None:
+        paused.set()
+        assert competing.wait(5)
+        written.wait(0.25)  # Give the newer write a chance to overtake this one.
+        sink.emit(row)
+
+    def concurrent_write() -> None:
+        assert paused.wait(5)
+        _balance(meter, "p", "shared", 20, 8)
+        competing.set()
+        budget_events.emit_budget_update(meter, sink.emit)
+        written.set()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as writers:
+        older = writers.submit(budget_events.emit_budget_update, meter, first)
+        newer = writers.submit(concurrent_write)
+        older.result(timeout=10)
+        newer.result(timeout=10)
+    usage = children.child_usage(tmp_path)
+    assert usage is not None and usage.usd == usage.usd_observed_credits == 2
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert [row["usd_total"] for row in rows] == [0, 2]
 
 
 def test_a_retried_append_confirms_only_its_own_readings(
