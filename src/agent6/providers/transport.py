@@ -245,6 +245,7 @@ def _book_response(
             cache_read_tokens=parsed.cache_read_tokens,
             cache_write_tokens=parsed.cache_write_tokens,
             cost_usd=parsed.cost_usd,
+            web_searches=parsed.web_searches_billed,
         )
 
 

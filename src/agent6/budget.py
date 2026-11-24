@@ -175,6 +175,8 @@ class ModelUsage:
         cache_assumed: Cache tokens used the fallback cache rates.
         served_models: Reported models that differed from the requested id.
         percent_metered: A plan reading metered a call under this route.
+        web_searches: Hosted web searches the provider billed over every call.
+        search_fee_unpriced: A search ran on a priced call whose listing gave no search rate.
     """
 
     input_tokens: int = 0
@@ -190,6 +192,8 @@ class ModelUsage:
     price_source: kinds.ModelRoute | None = None
     cache_assumed: bool = False
     percent_metered: bool = False
+    web_searches: int = 0
+    search_fee_unpriced: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -202,6 +206,8 @@ class _ModelCost:
         estimated: A price-table estimate fed it.
         partial: Some calls were priced by neither, so the figure is a lower bound.
         cache_assumed: Cache tokens were priced by the multipliers, not a listed rate.
+        search_unpriced: A hosted search's fee was priced by nothing, which also makes the
+            figure a lower bound.
     """
 
     usd: float
@@ -209,6 +215,7 @@ class _ModelCost:
     estimated: bool
     partial: bool = False
     cache_assumed: bool = False
+    search_unpriced: bool = False
 
 
 def format_usd(usd: float, *, partial: bool = False) -> str:
@@ -253,6 +260,7 @@ def _model_cost_usd(t: ModelUsage) -> _ModelCost | None:
         estimated=t.estimated_calls > 0,
         partial=priced < t.calls,
         cache_assumed=t.cache_assumed,
+        search_unpriced=t.search_fee_unpriced,
     )
 
 
@@ -345,7 +353,8 @@ class BudgetSnapshot:
         exhausted_reason: Why, or "".
         per_model: The usage totals by provider/model route.
         usd_own_calls: The cost of this execution's priced calls, excluding children and balances.
-        usd_partial: Unpriced calls make the USD reading a lower bound.
+        usd_partial: Unpriced calls or search fees make the USD reading a lower bound.
+        search_fee_unpriced: A hosted search's fee is among what `usd_partial` leaves out.
         usd_observed_credits: The credit declines charged to this execution's cap.
         credits: The unpublished balance observations and their parent executions.
         credit_reading_count: How many balance readings the credit ledger keeps.
@@ -373,6 +382,7 @@ class BudgetSnapshot:
     per_model: dict[kinds.ModelRoute, ModelUsage]
     usd_own_calls: float
     usd_partial: bool
+    search_fee_unpriced: bool
     usd_observed_credits: float
     credits: credit_usage.Batch
     credit_reading_count: int
@@ -387,6 +397,11 @@ class BudgetSnapshot:
     def usd_total(self) -> float:
         """The USD cap reading, outside the running child hold."""
         return self.usd_own_calls + self.usd_settled_children + self.usd_observed_credits
+
+    @property
+    def web_searches(self) -> int:
+        """The hosted web searches billed on this tracker's own calls."""
+        return sum(usage.web_searches for usage in self.per_model.values())
 
     @property
     def plan_latest(self) -> PlanUsage | None:
@@ -474,6 +489,7 @@ class BudgetTracker:
         cost_usd: float | None = None,
         serving: kinds.Serving = kinds.UNREPORTED,
         plan_usage: PlanUsage | None = None,
+        web_searches: int = 0,
     ) -> None:
         """Add one provider response's usage to the running totals.
 
@@ -489,6 +505,9 @@ class BudgetTracker:
             plan_usage: A plan reading, which meters the call in percentage points at an
                 authoritative $0; a call that would use purchased credits or extra usage
                 refuses unless `allow_plan_overage` is set.
+            web_searches: The hosted web searches the provider billed for the call. A
+                reported cost or a plan reading already covers their fee; a table price adds
+                the listing's search rate, and without one the fee stays unpriced.
         """
         with self._lock:
             # A negative count from a gateway would subtract from the ledger, so signs are clamped.
@@ -505,6 +524,7 @@ class BudgetTracker:
             totals.cache_read_tokens += cache_read_tokens
             totals.cache_write_tokens += cache_write_tokens
             totals.calls += 1
+            totals.web_searches += max(web_searches, 0)
             if serving.model and serving.model != route.model:
                 totals.served_models |= {serving.model}
             if plan_usage is not None:
@@ -527,6 +547,10 @@ class BudgetTracker:
                         (cache_read_tokens and quote.rates.cache_read is None)
                         or (cache_write_tokens and quote.rates.cache_write is None)
                     )
+                    if quote.web_search_usd is not None:
+                        totals.estimated_cost_usd += max(web_searches, 0) * quote.web_search_usd
+                    elif web_searches > 0:
+                        totals.search_fee_unpriced = True
             self._input_total += input_tokens
             self._output_total += output_tokens
             self._cache_read_total += cache_read_tokens
@@ -940,6 +964,7 @@ class BudgetTracker:
                 credits=self._credits.unpublished if for_journal else credit_usage.Batch((), {}),
                 usd_own_calls=own_usd,
                 usd_partial=partial or self._children_partial,
+                search_fee_unpriced=any(t.search_fee_unpriced for t in per_model.values()),
                 usd_observed_credits=self._credits.spent_usd,
                 input_total=self._input_total,
                 output_total=self._output_total,
@@ -988,7 +1013,7 @@ class BudgetTracker:
             if cost is None:
                 any_unknown = True
                 continue
-            any_unknown = any_unknown or cost.partial
+            any_unknown = any_unknown or cost.partial or cost.search_unpriced
             total_usd += cost.usd
         return total_usd, any_unknown
 
@@ -1036,17 +1061,21 @@ class BudgetTracker:
                     note += f" (price from {terminal.printable_name(totals.price_source.spec)})"
                 if cost.cache_assumed:
                     note += " (cache rates assumed: 0.1x read, 1.25x write)"
-                cost_str = f"{format_usd(cost.usd, partial=cost.partial)}{note}"
+                if cost.search_unpriced:
+                    note += " (search fee unpriced)"
+                lower_bound = cost.partial or cost.search_unpriced
+                cost_str = f"{format_usd(cost.usd, partial=lower_bound)}{note}"
             name = route.spec
             if totals.served_models:
                 served = ", ".join(terminal.printable_name(m) for m in sorted(totals.served_models))
                 name = f"{route.provider}: asked {route.model}, served {served}"
+            searches = f"searches={totals.web_searches} " if totals.web_searches else ""
             lines.append(
                 f"  {name}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
                 f"cache_r={totals.cache_read_tokens} "
                 f"cache_w={totals.cache_write_tokens} "
-                f"calls={totals.calls} {cost_str}"
+                f"calls={totals.calls} {searches}{cost_str}"
             )
         return lines, priced, metered, any_estimated
 
@@ -1067,10 +1096,11 @@ class BudgetTracker:
             cache_r: Cache-read tokens for the route.
             cache_w: Cache-write tokens for the route.
             calls: Calls recorded for the route.
+            searches: Hosted web searches billed on the route; printed when above zero.
             cost: USD spend, reported or estimated from that route's prices.
                 The TOTAL includes the observed decline in account credits.
-                `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls;
-                a TOTAL of unpriced calls over nothing priced is `$?`.
+                `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls
+                or search fees; a TOTAL of unpriced calls over nothing priced is `$?`.
             of: The USD cap when a route is USD-metered; `unlimited` means no cap.
             unmetered: Tokens counted against the fallback cap, followed by that cap.
             plan: One plan usage line per provider, with its binding window's used percent,
@@ -1085,12 +1115,17 @@ class BudgetTracker:
         lines.extend(model_lines)
         any_unknown = any_unknown or priced < len(snap.per_model)
         approx = "~" if any_unknown or any_estimated else "="
+        # A search fee is the one cause the snapshot names apart from an unpriced model.
+        causes = ["search fee unpriced"] if snap.search_fee_unpriced else []
+        costs = [_model_cost_usd(usage) for usage in snap.per_model.values()]
+        if not causes or any(cost is None or cost.partial for cost in costs):
+            causes.insert(0, "some models unpriced")
         if any_unknown and not total_usd:
             # Unpriced calls over nothing priced: no figure to bound.
-            total, note = format_usd(total_usd, partial=True), " (some models unpriced)"
+            total, note = format_usd(total_usd, partial=True), f" ({'; '.join(causes)})"
         else:
             total = format_usd(total_usd) + ("+" if any_unknown else "")
-            note = " (some models unpriced; figure is a lower bound)" if any_unknown else ""
+            note = f" ({'; '.join(causes)}; figure is a lower bound)" if any_unknown else ""
         # `of <cap>` names what meters this spend; with nothing USD-metered, max_usd meters none.
         cap = ""
         if metered or snap.usd_observed_credits:

@@ -234,13 +234,14 @@ def record_billed_usage(
     cache_write_tokens: int = 0,
     cost_usd: float | None = None,
     plan_usage: agent6_budget.PlanUsage | None = None,
+    web_searches: int = 0,
 ) -> None:
     """Record what a call that did not complete already cost.
 
     A stream that dies after the provider reported usage has been billed, and every
     retry is billed again; counting only completed calls would hide that spend from
     `max_usd`. Nothing is recorded when the provider reported nothing; a reported
-    plan window counts as a report even without token counts.
+    plan window or a hosted search counts as a report even without token counts.
 
     Args:
         budget: The run's tracker; None records nothing.
@@ -252,12 +253,14 @@ def record_billed_usage(
         cache_write_tokens: Cache-write tokens reported.
         cost_usd: The gateway-reported cost, including zero; None means unreported.
         plan_usage: The plan window the response reported.
+        web_searches: The hosted web searches the stream ran before it ended.
     """
     if budget is None:
         return
     if (
         plan_usage is None
         and cost_usd is None
+        and not web_searches
         and not (input_tokens or output_tokens or cache_read_tokens or cache_write_tokens)
     ):
         return
@@ -270,6 +273,7 @@ def record_billed_usage(
         cache_write_tokens=cache_write_tokens,
         cost_usd=cost_usd,
         plan_usage=plan_usage,
+        web_searches=web_searches,
     )
 
 

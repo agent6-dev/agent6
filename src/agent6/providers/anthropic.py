@@ -42,10 +42,6 @@ WEB_SEARCH_TOOL: dict[str, Any] = {
 }
 
 
-# Usage fields outside the token counts that the synthesised reply keeps.
-_USAGE_EXTRAS = ("iterations", "server_tool_use")
-
-
 def _anthropic_version(deployment: str) -> tuple[str, str]:
     """Return where the protocol version goes and its value.
 
@@ -670,7 +666,9 @@ class AnthropicProvider:
         usage_output = 0
         reported_cache: dict[str, int] = {}
         history_fields: dict[str, Any] = {}
-        usage_extras: dict[str, Any] = {}
+        iteration_usage: dict[str, Any] = {}
+        # The hosted tools' request counts, which the synthesised usage keeps.
+        search_usage: dict[str, Any] = {}
         saw_usage = False
         saw_input_usage = False
         saw_output_usage = False
@@ -727,7 +725,10 @@ class AnthropicProvider:
                         if key in msg:
                             history_fields[key] = msg[key]
                     u = anthropic_parse.usage_mapping(msg.get("usage"))
-                    usage_extras.update({k: u[k] for k in _USAGE_EXTRAS if k in u})
+                    if "iterations" in u:
+                        iteration_usage["iterations"] = u["iterations"]
+                    if "server_tool_use" in u:
+                        search_usage["server_tool_use"] = u["server_tool_use"]
                     saw_usage = saw_usage or bool(u)
                     if "input_tokens" in u and u.get("input_tokens") is not None:
                         saw_input_usage = True
@@ -909,7 +910,10 @@ class AnthropicProvider:
                         if key in d or key in evt:
                             history_fields[key] = d.get(key, evt.get(key))
                     u = anthropic_parse.usage_mapping(evt.get("usage"))
-                    usage_extras.update({k: u[k] for k in _USAGE_EXTRAS if k in u})
+                    if "iterations" in u:
+                        iteration_usage["iterations"] = u["iterations"]
+                    if "server_tool_use" in u:
+                        search_usage["server_tool_use"] = u["server_tool_use"]
                     saw_usage = saw_usage or bool(u)
                     if u.get("output_tokens") is not None:
                         saw_output_usage = True
@@ -952,7 +956,7 @@ class AnthropicProvider:
                     "input_tokens": usage_input,
                     "output_tokens": usage_output,
                     **reported_cache,
-                    **usage_extras,
+                    **iteration_usage,
                 }
             )
             read, write = "cache_read_input_tokens", "cache_creation_input_tokens"
@@ -965,6 +969,7 @@ class AnthropicProvider:
                 output_tokens=counts.get("output_tokens", 0),
                 cache_read_tokens=counts.get(read, 0),
                 cache_write_tokens=counts.get(write, 0),
+                web_searches=anthropic_parse.billed_searches(search_usage, content_blocks),
             )
             if not saw_usage:
                 return None
@@ -1007,7 +1012,8 @@ class AnthropicProvider:
                     "input_tokens": usage_input,
                     "output_tokens": usage_output,
                     **reported_cache,
-                    **usage_extras,
+                    **iteration_usage,
+                    **search_usage,
                 },
             }
             call.record(status=200, response=synthesised)

@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import math
 import pathlib
 import time
 from collections.abc import Callable
@@ -52,6 +53,8 @@ class Listing:
     tier_pricing: dict[str, dict[str, models_pricing.Price]] = dataclasses.field(
         default_factory=dict
     )
+    # USD per hosted web search, by model id.
+    search_pricing: dict[str, float] = dataclasses.field(default_factory=dict)
 
 
 def _write_cache(path: pathlib.Path | None, listing: Listing, entry: ProviderEntry) -> None:
@@ -71,6 +74,8 @@ def _write_cache(path: pathlib.Path | None, listing: Listing, entry: ProviderEnt
                 tier: {model: price.as_list() for model, price in rates.items()}
                 for tier, rates in listing.tier_pricing.items()
             }
+        if listing.search_pricing:
+            body["search_pricing"] = listing.search_pricing
         if listing.context:
             body["context"] = listing.context
         if listing.modalities:
@@ -202,6 +207,34 @@ def _parse_pricing(payload: object, *, tier: str | None = None) -> dict[str, mod
             out[mid] = models_pricing.Price(in_mtok, out_mtok)
         else:
             out[mid] = models_pricing.Price(in_mtok, out_mtok, read, write)
+    return out
+
+
+def _parse_search_pricing(payload: object) -> dict[str, float]:
+    """Return per-model web search rates from an OpenRouter-style `{"data": [...]}` body.
+
+    A model without a positive `pricing.web_search` is absent: a listed zero reads as no
+    rate, since unknown beats wrong.
+
+    Args:
+        payload: The decoded JSON of a `/models` response.
+
+    Returns:
+        The rates in USD per search, keyed by model id.
+    """
+    data = payload.get("data") if isinstance(payload, dict) else None
+    out: dict[str, float] = {}
+    for item in data if isinstance(data, list) else ():
+        pricing = item.get("pricing") if isinstance(item, dict) else None
+        raw = pricing.get("web_search") if isinstance(pricing, dict) else None
+        if raw is None or isinstance(raw, bool) or not isinstance(item.get("id"), str):
+            continue
+        try:
+            rate = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if rate > 0 and math.isfinite(rate):
+            out.setdefault(item["id"], rate)
     return out
 
 
@@ -401,6 +434,7 @@ def _fetch(
             for tier in ("default", "flex", "priority")
             if (rates := _parse_pricing(payload, tier=tier))
         },
+        _parse_search_pricing(payload),
     )
 
 

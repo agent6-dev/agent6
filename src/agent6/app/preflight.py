@@ -160,6 +160,34 @@ def budget_preflight(
     return None
 
 
+def note_unpriced_search(
+    cfg: Config, mode: str, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
+) -> None:
+    """Say once that the hosted web search's fee is unpriced, when the mode offers the search.
+
+    A plan covers its searches and a listed per-search rate prices them; without either the
+    searches are counted and the USD total is a lower bound.
+
+    Args:
+        cfg: The run's config.
+        mode: The session mode.
+        reporter: Receives the notice.
+    """
+    worker = cfg.models.resolve("worker")
+    if worker is None or not cfg.offers_web_search(mode):
+        return
+    route = kinds.ModelRoute(worker.provider, worker.model)
+    quote = pricing.lookup_price(route, cfg.providers)
+    if plan_metered(cfg.providers[worker.provider]) or (
+        quote is not None and quote.web_search_usd is not None
+    ):
+        return
+    reporter.note(
+        f"providers.{worker.provider}.web_search: no per-search price for {route.spec!r}."
+        " Searches are counted; their fee is not, so the USD total is a lower bound."
+    )
+
+
 def warn_if_prompt_override_incomplete(
     cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
 ) -> None:

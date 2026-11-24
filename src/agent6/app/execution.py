@@ -29,6 +29,7 @@ from agent6.app import (
     conversation_state,
     finalize,
     notify_hook,
+    preflight,
     role_providers,
     stamps,
     worktree_setup,
@@ -346,6 +347,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     execution_id = uuid.uuid4().hex
     session_runtime.note_state_disk_space(state_dir, reporter=reporter)
     mode, role = inputs.mode, inputs.role
+    preflight.note_unpriced_search(cfg, mode, reporter=reporter)
     label = "resume" if inputs.resuming else "run"
     session: session_runtime.SessionProviders | None = None
     access: command_tools.JailAccess | None = None

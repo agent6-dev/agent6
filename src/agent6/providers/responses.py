@@ -345,8 +345,6 @@ class ResponsesProvider:
             Returns:
                 The parsed usage; None when the stream reported none.
             """
-            if not state.usage:
-                return None
             billed = responses_codec.parse_output_items(
                 [], usage=state.usage, stop_reason="", label=_LABEL, route=self._route
             )
@@ -359,7 +357,10 @@ class ResponsesProvider:
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
                 cost_usd=cost,
+                web_searches=len(responses_codec.web_searches(state.items)),
             )
+            if not state.usage:
+                return None
             call.transcript.usage = dataclasses.replace(billed.usage, cost_usd=cost)
             return call.transcript.usage
 

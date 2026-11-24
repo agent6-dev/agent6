@@ -69,10 +69,17 @@ class Price:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Quote:
-    """Token rates and the provider/model listing that published them."""
+    """Token rates and the provider/model listing that published them.
+
+    Attributes:
+        rates: The token rates.
+        source: The listing route.
+        web_search_usd: The listed fee of one hosted web search in USD; None when unlisted.
+    """
 
     rates: Price
     source: kinds.ModelRoute
+    web_search_usd: float | None = None
 
 
 def _reference_id(model: str, entry: config.PricedProviderEntry, models: set[str]) -> str | None:
@@ -154,4 +161,11 @@ def lookup_price(
         )
     ):
         return None
-    return Quote(Price(*row), kinds.ModelRoute(source, model))
+    search = data.get("search_pricing")
+    fee = search.get(model) if isinstance(search, dict) else None
+    listed = isinstance(fee, (int, float)) and not isinstance(fee, bool) and fee > 0
+    return Quote(
+        Price(*row),
+        kinds.ModelRoute(source, model),
+        web_search_usd=float(fee) if listed and math.isfinite(fee) else None,
+    )

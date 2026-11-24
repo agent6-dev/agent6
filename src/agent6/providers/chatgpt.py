@@ -469,6 +469,7 @@ class ChatGPTProvider:
                 cache_read_tokens=billed.cache_read_tokens,
                 cache_write_tokens=0,
                 plan_usage=plan_usage,
+                web_searches=len(responses_codec.web_searches(state.items)),
             )
             call.transcript.usage = billed.usage if state.usage else None
             return call.transcript.usage
@@ -504,6 +505,7 @@ class ChatGPTProvider:
                     cache_read_tokens=parsed.cache_read_tokens,
                     cache_write_tokens=0,
                     plan_usage=plan_usage,
+                    web_searches=parsed.web_searches_billed,
                 )
             call.transcript.usage = parsed.usage if state.usage else None
             return parsed
