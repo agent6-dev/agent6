@@ -2,7 +2,10 @@
 
 The six-module task measures what a worker keeps after a requested summary.
 For a measurement that opens only a journal and never starts a worker, use the [offline counter](compaction-offline.md).
-Recorded sessions are not live inputs.
+The harness refuses supplied sessions as worker inputs, including sessions from disposable checkouts.
+A saved session does not establish which files a new worker or its commands could access.
+There is no command to register or relocate a recording.
+Neither the keep comparison nor the cold-start comparison runs on recorded sessions.
 Neither experiment changes a product setting.
 
 ## Six-module task
@@ -14,7 +17,7 @@ Each trial resumes at turn 4 with the same checkout, state and conversation from
 It uses the same absolute workspace path and a new conversation cache key.
 There is no session-directory input to `small`.
 
-For a smoke with **no model or credentials**, run this from the bench source checkout with an installed agent6:
+For a smoke with **no model or credentials**, run this from the bench source checkout with an installed agent6 and its `agent6-jail` launcher:
 
 ```sh
 umask 077
@@ -29,8 +32,14 @@ bench table "$work/smoke/runs.jsonl"
 ```
 
 The loopback worker edits one module and adds a passing unittest.
-The expected external score is **1/6** and the task does not pass.
-Its token counts come from scripted responses.
+In six scripted pilots (one per keep arm), all six worker gates passed and all six external scores were **1/6**, so no task passed.
+Each pilot took three resumed turns, repeated the label exactly, made no rereads in either window and had no second restart.
+The scripted responses reported 33,052 input tokens on the first ordinary worker request, 960 uncached input tokens through stop and 132,664 total tokens.
+These fixed replies test counting and grading, not which setting works best.
+
+The [request test](../tests/unit/test_compaction_arm_requests.py) uses a generated checkpoint with six long tool results.
+It checks what reaches the first ordinary loopback worker request under all six keep and five cold settings.
+It does not measure a cold provider cache.
 
 For model measurements, use a fresh private directory on a real disk and a separate profile.
 Run `uv run agent6 connect chatgpt` there. Use this `$XDG_CONFIG_HOME/agent6/config.toml` for the trials:

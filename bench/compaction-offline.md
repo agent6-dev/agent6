@@ -20,6 +20,26 @@ Add it to `kept_chars` for the resulting size.
 These are journal-preview characters, **not** reconstructed wire sizes or tokens.
 Each `budget.turn` groups settled worker text, call arguments and result previews.
 Task, steer and answer text stand for operator inputs.
+A steer after a tool result belongs to the next reply that reads it, not to the turn that produced the result.
 A result contributes its summary and any journalled read or command tails, even if those repeat a detail.
 The journal need not contain the original results, reasoning, media, notices or cache state.
 The counter does not infer those, replay earlier compactions or predict correctness, re-reads or spend.
+
+## Fixture counts
+
+The [cut fixture](../tests/unit/test_compaction_offline.py) has the task `Goal`, the steer `Label` and five `read_file` calls on `a` with 25,000-character result summaries.
+`--turn 5` includes the first four calls and results, for **100,101 source characters**.
+
+| Arm | Kept original | Dropped original | Of kept, quoted | Added pointer text |
+| --- | ---: | ---: | ---: | ---: |
+| `baseline` | 75,078 | 25,023 | 9 | 0 |
+| `no-operator` | 75,069 | 25,032 | 0 | 0 |
+| `chars-20000` | 25,032 | 75,069 | 9 | 0 |
+| `turns-1` | 25,032 | 75,069 | 9 | 0 |
+| `operator-only` | 25,032 | 75,069 | 9 | 0 |
+| `pointers` | 78 | 100,023 | 9 | 819 |
+
+Even `operator-only` keeps the final call and result because no later reply has read the result.
+The steer-order fixture puts a seven-character steer between two 50,000-character results.
+With `no-operator`, only the second turn fits: 50,019 characters kept, including the steer, and 50,012 dropped.
+None of the seven characters requires a separate quote.
