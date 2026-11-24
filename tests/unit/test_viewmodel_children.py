@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from agent6 import token_usage
+from agent6 import credit_usage, token_usage
 from agent6.sessions import child_dispatch, completion, process
 from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import listing, receipt, wire
@@ -184,17 +184,20 @@ def test_parent_outcome_does_not_replace_the_childs_gate_or_stop_reason(
     assert label in receipt.render(receipt.read_receipt(parent, tmp_path))
 
 
+@pytest.mark.parametrize("usd", [0.5, None])
 def test_a_missing_session_does_not_turn_a_failed_merge_into_a_launch_refusal(
     tmp_path: pathlib.Path,
+    usd: float | None,
 ) -> None:
-    """The parent recorded the charge and the merge failure, not the child's exit status."""
+    """A failed merge does not establish the child's exit status, even with unknown usage."""
     parent = _session(tmp_path, "root")
     merge = child_dispatch.MergeRecord(
-        branch="agent6/root-p1-l1", status="failed", detail="could not lock parent ref"
+        branch="agent6/root-p1-l1", status="failed", detail="could not lock parent ref", commits=1
     )
-    child_dispatch.write_record(parent, _record("root-p1", [("root-p1-l1", merge, 0.5)]), now=1)
+    child_dispatch.write_record(parent, _record("root-p1", [("root-p1-l1", merge, usd)]), now=1)
     (row,) = wire.manifest_header(parent)["children"]
-    assert not row["launched"] and row["settled"] and row["spend_usd"] == 0.5
+    assert not row["launched"] and row["settled"] is (usd is not None)
+    assert row["spend_usd"] == (usd or 0.0)
     assert (row["status"], row["outcome"], row["status_label"]) == (
         "unreported",
         "failed",
@@ -217,8 +220,19 @@ def test_a_missing_session_does_not_turn_a_failed_merge_into_a_launch_refusal(
             "unreported",
         ),
         (child_dispatch.UsageRecord(usd=0, usd_partial=True), "unreported"),
+        (
+            child_dispatch.UsageRecord(usd=0, credit_readings=(credit_usage.Reading("p", 2, 8),)),
+            "unreported",
+        ),
     ],
-    ids=["nothing-ran", "fallback-tokens", "input-tokens", "output-tokens", "unpriced-call"],
+    ids=[
+        "nothing-ran",
+        "fallback-tokens",
+        "input-tokens",
+        "output-tokens",
+        "unpriced-call",
+        "credit-reading",
+    ],
 )
 def test_a_child_can_record_usage_without_a_dollar_charge(
     tmp_path: pathlib.Path, usage: child_dispatch.UsageRecord, status: str

@@ -315,6 +315,7 @@ def _recorded_child(
                 (
                     usage.usd,
                     usage.usd_partial,
+                    usage.credit_readings,
                     usage.tokens,
                     usage.model_tokens.input_tokens,
                     usage.model_tokens.output_tokens,
@@ -331,8 +332,8 @@ def _recorded_child(
             return row.with_status("unreported" if child.reported else "starting")
         return row
     if not row.launched:
-        # A settled child's merge can fail even when its own status is unavailable.
-        launch_failed = merge.status == "failed" and not child.settled
+        # A failed merge records the outcome, not the child's exit status.
+        launch_failed = merge.status == "failed" and merge.detail == "never started"
         row = row.with_status("failed" if launch_failed else "unreported")
     label = row.status_label
     if merge.status != row.status:
