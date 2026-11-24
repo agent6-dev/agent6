@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import child_records, credit_usage, portable, token_usage
 
-RECORD_VERSION = 15
+RECORD_VERSION = 16
 DIR_NAME = "dispatch"
 _COMMIT_COUNT = "commits_beyond_start"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "merging", "complete"]
@@ -165,6 +165,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         settled: Whether its usage was charged; False while it is unknown.
         merge_request: The explicit request to merge retained work; None before one.
         continuation: The latest continuation, or None for the initial execution.
+        detached: Whether this child's follow-up leaves the dispatch's final task alone.
     """
 
     session_id: str
@@ -179,6 +180,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     settled: bool = False
     merge_request: MergeRequest | None = None
     continuation: ContinuationRecord | None = None
+    detached: bool = False
 
     @property
     def account_id(self) -> str:
@@ -206,7 +208,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         parent_node: The DAG node the task was dispatched under; None without a graph and
             for a panel.
         node_id: The listed task held before launch, or the node added for a text task's
-            outcome. None for a panel, without a graph or for work detached from a final task.
+            outcome. None for a panel or without a task node.
         children: The children, in child order.
         state: How far the dispatch got; `ranking` while a task's judges run.
         message: The notice of what merged, "" until complete.
@@ -239,8 +241,11 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         return tuple(
             c.session_id
             for c in self.children
-            if (self.state != "complete" and c.merge is None)
-            or (c.merge_request is not None and c.merge_request.result is None)
+            if not c.detached
+            and (
+                (self.state != "complete" and c.merge is None)
+                or (c.merge_request is not None and c.merge_request.result is None)
+            )
         )
 
     def child(self, session_id: str) -> ChildRecord:

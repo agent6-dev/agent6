@@ -677,7 +677,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
   A numeric origin identifies the series the writing execution used for the whole account.
   If the journal identifies conflicting series for a child's account, resume stops before settling it.
   Live readings start a separate series at the first observed balance.
-- Before launching children, `sessions/child_dispatch.py` writes `<session_dir>/dispatch/<group>.json` atomically (version 15); a failed write refuses the dispatch.
+- Before launching children, `sessions/child_dispatch.py` writes `<session_dir>/dispatch/<group>.json` atomically (version 16); a failed write refuses the dispatch.
     - A work record holds one task: its identity, source, `merge_policy`, owner execution, base, spec, parent DAG node, and each child's limits and whether its end was reported.
     - The state advances from `prepared` to `running` across the parent's turns, then `settling` as each child's usage is charged once or marked outstanding, and `ranking` while a task's judges run.
     - In `merging`, each child's `merge` field records the outcome and the parent chain tip before and after; `merged` means its commits are on that chain, and `stopped` records its ref, commit count and measured context instead.

@@ -1211,6 +1211,33 @@ def test_a_requested_merge_records_the_sha_only_on_the_task_its_result_passed(
         assert after.status == "passed" and after.commit_sha == wf.parallel.chain.tip()
 
 
+def test_merging_a_stopped_attempt_preserves_its_siblings_task(tmp_path: pathlib.Path) -> None:
+    """Only the merge of the result that passed the task supplies its commit."""
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+    assert wf.tool_turn
+    conversation = wf.tool_turn[0]
+    first, second = work.start("", "2", task_id="0002").children
+    children.stop(first, path="")
+    children.stop(second, path="basket")
+    wf.parallel.settle(conversation, 2)
+    assert graph.get("0002").status == "failed"
+    work.steer(first, "Count the pears")
+    children.end(first, path="pears")
+    wf.parallel.settle(conversation, 3)
+    passed = graph.nodes()["0002"]
+    assert passed.status == "passed" and not passed.commit_sha
+
+    work.merge(second)
+    assert graph.nodes()["0002"] == passed
+    wf.parallel.settle(conversation, 4)
+    assert (children.repo / "basket").is_file() and graph.nodes()["0002"] == passed
+    work.merge(first)
+    wf.parallel.settle(conversation, 5)
+    assert (children.repo / "pears").is_file()
+    assert graph.get("0002").commit_sha == wf.parallel.chain.tip()
+
+
 def test_close_reports_only_children_whose_tasks_await_resume(tmp_path: pathlib.Path) -> None:
     wf, children, graph = _listed_task(tmp_path)
     (sid,) = child_work.ChildWork(wf).start("", "", task_id="0002").children

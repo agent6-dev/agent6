@@ -65,7 +65,7 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         instruction=instruction,
         usage_before=child.usage,
     )
-    resumed = child.model_copy(
+    resumed = child_tasks.followup(dispatcher, record, child).model_copy(
         update={
             "continuation": continuation,
             "merge": None,
@@ -75,10 +75,8 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
             "settled": False,
         }
     )
-    running = (
-        child_tasks.followup(dispatcher, record)
-        .with_child(resumed)
-        .model_copy(update={"state": "running", "message": "", "delivered": False})
+    running = record.with_child(resumed).model_copy(
+        update={"state": "running", "message": "", "delivered": False}
     )
     dispatcher.write(running)
     if dispatcher.budget is not None:

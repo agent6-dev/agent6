@@ -62,13 +62,13 @@ def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> 
             if dispatcher.chain.dirty() and not dispatcher.chain.per_turn:
                 raise tool_errors.ToolError("commit the working tree before requesting a merge")
             if not pending(child):
-                target = child_tasks.followup(dispatcher, record, merging=child.merge)
+                target = child_tasks.followup(dispatcher, record, child, merging=True)
                 dispatcher.write(
-                    target.with_child(
-                        child.model_copy(update={"merge_request": child_dispatch.MergeRequest()})
+                    record.with_child(
+                        target.model_copy(update={"merge_request": child_dispatch.MergeRequest()})
                     )
                 )
-                if target.node_id:
+                if record.node_id and not target.detached:
                     dispatcher.emit_graph_snapshot()
             return f"[parallel] child {child_id} will be merged at the next turn boundary."
     raise tool_errors.ToolError(f"no child {child_id} in this run")
@@ -119,12 +119,13 @@ def settle(
                     child = child.model_copy(update={"merge": outcome})
                 record = record.with_child(child)
                 dispatcher.write(record)
-            parallel_merge.stamp_segment_node(
-                dispatcher.curator,
-                record.node_id,
-                [parallel_merge.merge_of(c) for c in record.children],
-                log=dispatcher.log,
-            )
+            if not child.detached:
+                parallel_merge.stamp_segment_node(
+                    dispatcher.curator,
+                    record.node_id,
+                    [parallel_merge.merge_of(child)],
+                    log=dispatcher.log,
+                )
             dispatcher.emit_graph_snapshot()
             dispatcher.emit(
                 journal.ParallelChildMerged(

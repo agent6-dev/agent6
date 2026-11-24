@@ -573,7 +573,9 @@ class ParallelDispatcher:
             # Its id is on the record before its stamp: a resume never adds a second node.
             record = self.noded(record)
             self.write(record)
-        parallel_merge.stamp_segment_node(self.curator, record.node_id, merges, log=self.log)
+        # A detached attempt can run only after the dispatch's task is final.
+        if not any(child.detached for child in record.children):
+            parallel_merge.stamp_segment_node(self.curator, record.node_id, merges, log=self.log)
         message = parallel_merge.summary_text(record.identity, merges, record.ranking)
         self.record_return(record, message, merges)
         return child_records.DispatchResult(

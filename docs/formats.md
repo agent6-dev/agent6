@@ -2886,7 +2886,7 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `base` | `str` | The chain tip the children were cut from. |
 | `spec` | `str` | The task's child spec as given; "" for one default child and for a panel. |
 | `parent_node` | `str \| None` | The DAG node the task was dispatched under; None without a graph and for a panel. |
-| `node_id` | `str \| None` | The listed task held before launch, or the node added for a text task's outcome. None for a panel, without a graph or for work detached from a final task. |
+| `node_id` | `str \| None` | The listed task held before launch, or the node added for a text task's outcome. None for a panel or without a task node. |
 | `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
 | `state` | `Literal['prepared', 'running', 'settling', 'ranking', 'merging', 'complete']` | How far the dispatch got; `ranking` while a task's judges run. |
 | `message` | `str` | The notice of what merged, "" until complete. |
@@ -3522,6 +3522,7 @@ Source: [`agent6.sessions.child_dispatch.ChildRecord`](https://github.com/agent6
 | `settled` | `bool` | Whether its usage was charged; False while it is unknown. |
 | `merge_request` | `MergeRequest \| None` | The explicit request to merge retained work; None before one. |
 | `continuation` | `ContinuationRecord \| None` | The latest continuation, or None for the initial execution. |
+| `detached` | `bool` | Whether this child's follow-up leaves the dispatch's final task alone. |
 
 ### ModelsBrief
 
