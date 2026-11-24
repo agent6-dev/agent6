@@ -156,6 +156,41 @@ Both marked the missing file passed despite its failed report.
 Both refused the parent’s attempt to change passed to failed.
 The final summaries named that failure.
 
+### Parent marks after a child returns
+
+One detached run repeated the six tasks on `chatgpt/gpt-6.2-sol` at medium with the same prompt, files and three-child limit.
+Three tasks arrived before startup and three by `/task` while children ran.
+Match each original `task.queued` ID to its dispatch, child report, parent `update_task` result and final `graph.update`.
+Count parent turns from `session.stop` and parent tool calls from `tool.call`, including refusals.
+Token counts come from the parent's `model.result` events, excluding the children.
+
+| Task | Queued | Child | Child report | Parent mark (turn) |
+|---|---|---|---|---|
+| 0002: Choose a file | Before start | queue-p1-l1 | blue-491 | passed (10) |
+| 0003: Ash | Before start | queue-p2-l1 | ash-497 | passed (6) |
+| 0004: Birch | Before start | queue-p3-l1 | birch-500 | passed (7) |
+| 0005: Cedar | During children | queue-p4-l1 | cedar-503 | passed (13) |
+| 0006: Oak | During children | queue-p5-l1 | oak-506 | passed (15) |
+| 0007: Missing file | During children | queue-p6-l1 | lost.txt was not found | failed (17) |
+
+Each original task was open and awaiting a mark after its child returned.
+The parent marked five passed and the missing file failed.
+No files changed.
+The root journal recorded the child's question after 1.27 s.
+`sessions show` displayed `waiting · question` at +4.32 s and `attach --json` showed an unanswered blocking question at +6.06 s.
+The child received the CLI answer at +7.62 s and reported blue-491.
+These read times include polling and CLI startup.
+
+| Task verdict | Run | Correct / 6 | Parent turns | Parent tool calls | Mark calls (accepted) | Fresh input | Cache read | Output |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Import status | 1 | 5 | 15 | 15 | 2 (0) | 35,338 | 55,296 | 446 |
+| Import status | 2 | 5 | 15 | 15 | 2 (0) | 34,837 | 53,504 | 447 |
+| Parent mark | 3 | 6 | 18 | 18 | 6 (6) | 37,199 | 77,056 | 517 |
+
+The parent-mark run used three more turns and three more tool calls than either import-status run.
+The parent made four more mark calls and one fewer other tool call.
+One run confirms the missing-file verdict on this job but cannot establish the usual cost per mark.
+
 ## Questions in a recorded parent queue
 
 Count one row per question in `question.prompt` in 56 child run journals, checked against `ask_user` tool calls.
