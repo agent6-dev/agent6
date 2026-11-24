@@ -6,7 +6,7 @@ import json
 import os
 import pathlib
 from collections.abc import Callable
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -382,6 +382,7 @@ def test_review_can_run_an_approved_check_in_the_reviewed_tree(
     config.write_text(config.read_text().replace('run_commands = "deny"', 'run_commands = "ask"'))
 
     class CheckProvider(ScriptedReview):
+        @override
         def call(self, **kwargs: Any) -> providers.ProviderResponse:
             response = super().call(**kwargs)
             if len(self.calls) != 1:
@@ -461,6 +462,7 @@ def test_a_hidden_path_stays_hidden_in_the_review_worktree(
     )
 
     class ReadSecret(ScriptedReview):
+        @override
         def call(self, **kwargs: Any) -> providers.ProviderResponse:
             response = super().call(**kwargs)
             if len(self.calls) != 1:

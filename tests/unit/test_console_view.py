@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime
 import io
 import time
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -274,6 +274,7 @@ class _CountingTTY(_FakeTTY):
         super().__init__()
         self.flushes = 0
 
+    @override
     def flush(self) -> None:
         self.flushes += 1
 

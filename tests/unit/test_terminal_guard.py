@@ -12,6 +12,7 @@ import pty
 import select
 import sys
 import tempfile
+from typing import override
 
 import pytest
 
@@ -22,6 +23,7 @@ OSC52 = "\x1b]52;c;aGVsbG8=\x07"
 
 
 class _Tty(io.StringIO):
+    @override
     def isatty(self) -> bool:
         return True
 

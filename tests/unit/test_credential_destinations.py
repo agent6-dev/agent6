@@ -8,7 +8,7 @@ import http.server
 import pathlib
 import threading
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, override
 
 import httpx2
 import pytest
@@ -61,6 +61,7 @@ def loopback_server() -> Iterator[str]:
         do_POST = _answer  # noqa: N815  # BaseHTTPRequestHandler API names
         do_GET = _answer  # noqa: N815
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             del format, args
 

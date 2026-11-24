@@ -12,7 +12,7 @@ import json
 import os
 import pathlib
 import subprocess
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -93,6 +93,7 @@ class _SteeredOnce(_Finishes):
         self.state = state
         self.seen: list[str] = []
 
+    @override
     def call(self, **kw: Any) -> ProviderResponse:
         self.seen.append(json.dumps(kw["messages"]))
         if len(self.seen) > 1:
@@ -183,6 +184,7 @@ def test_a_restart_states_the_rendered_prompt_as_the_task(
     class Compacts(_Finishes):
         turns = 0
 
+        @override
         def call(self, **kw: Any) -> ProviderResponse:
             messages = kw["messages"]
             if isinstance(messages[-1]["content"], str):

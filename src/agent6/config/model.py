@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 import tomllib
 from collections.abc import Callable
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, override
 
 import pydantic
 
@@ -208,6 +208,7 @@ class Config(pydantic.BaseModel):
                 raise ValueError(refusal)
         return entries
 
+    @override
     def model_post_init(self, context: Any, /) -> None:
         """Register this config's provider-key variable names with `child_env`.
 

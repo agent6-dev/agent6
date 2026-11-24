@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, cast, override
 
 try:
     import textual
@@ -286,6 +286,7 @@ class ThinScrollBarRender(ScrollBarRender):
     """
 
     @classmethod
+    @override
     def render_bar(
         cls,
         size: int = 25,
@@ -460,6 +461,7 @@ class ThemePicker(screen.ModalScreen[None]):
         """Focus the list without scrolling it, so it opens at the top."""
         self.query_one(forms.ChoiceField).focus(scroll_visible=False)
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the picker over every registered theme, sorted.
 

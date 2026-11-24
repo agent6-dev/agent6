@@ -10,7 +10,7 @@ import subprocess
 import threading
 from collections.abc import Iterator
 from http import server
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -561,6 +561,7 @@ def _serve_bytes(body: bytes) -> tuple[str, dict[str, str], server.ThreadingHTTP
             with contextlib.suppress(BrokenPipeError, ConnectionResetError):
                 self.wfile.write(body)
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             return
 

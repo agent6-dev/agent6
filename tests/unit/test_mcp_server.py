@@ -8,7 +8,7 @@ import datetime
 import io
 import json
 import pathlib
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -759,6 +759,7 @@ def test_serve_bounds_every_stdin_read(tmp_path: pathlib.Path) -> None:
     sizes: list[int | None] = []
 
     class _RecordingStdin(io.BytesIO):
+        @override
         def readline(self, size: int | None = -1) -> bytes:
             sizes.append(size)
             return super().readline(size)

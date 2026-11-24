@@ -5,7 +5,7 @@ import http.server
 import json
 import threading
 from collections.abc import Generator
-from typing import Any
+from typing import Any, override
 
 PASS = '{"verdict":"pass","summary":"ok","findings":[]}'
 BLOCK = json.dumps(
@@ -137,6 +137,7 @@ def server(case: str) -> Generator[tuple[str, list[dict[str, Any]]]]:
                 chunk["choices"] = [{"index": 0, "message": delta, "finish_reason": stop}]
                 self.wfile.write(json.dumps(chunk).encode())
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             del format, args
 

@@ -12,7 +12,7 @@ import contextlib
 import os
 import pathlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast, override
 
 from rich import markup
 from rich import text as rich_text
@@ -208,6 +208,7 @@ class ResumeOptions(forms.PickerRow):
         self._labels = ("", "")
         self._labelled: str | None = None  # the preset pick the labels name; None when stale
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the two labelled pickers."""
         host = self._host()
@@ -475,6 +476,7 @@ class SteerInput(widgets.TextArea):
         if only or len(completed) > len(fragment):
             self.replace(completed, (row, column - len(fragment)), (row, column))
 
+    @override
     def on_mount(self) -> None:
         """Label for the mode and size to the content."""
         self.set_mode(mode=self.mode)
@@ -684,6 +686,7 @@ class ApprovalRow(containers.Vertical):
         self._prompt = prompt
         self._hint = hint
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the command, when carried, and the answers the prompt offers."""
         if self._prompt:

@@ -18,7 +18,7 @@ import pathlib
 import threading
 import time
 from collections.abc import Iterable
-from typing import ClassVar
+from typing import ClassVar, override
 
 from agent6.config import layer_presets
 from agent6.viewmodel.session import status as session_status
@@ -775,6 +775,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             return
         self.notify(f"run started: {new_dir.name} (follow it: agent6 attach {new_dir.name})")
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Hide loop actions on groups; disable a refused fork or resume.
 
@@ -928,6 +929,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.detached = True
         self.exit(TuiExit())
 
+    @override
     def get_system_commands(
         self, screen: textual_screen.Screen[object]
     ) -> Iterable[textual_app.SystemCommand]:

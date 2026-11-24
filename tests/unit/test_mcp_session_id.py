@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.server
 import json
 import threading
+from typing import override
 
 import pytest
 
@@ -46,6 +47,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    @override
     def log_message(self, format: str, *args: object) -> None:
         return
 

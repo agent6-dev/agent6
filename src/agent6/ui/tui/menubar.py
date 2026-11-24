@@ -15,7 +15,7 @@ import dataclasses
 import inspect
 import itertools
 from collections.abc import Callable
-from typing import ClassVar
+from typing import ClassVar, override
 
 try:
     import textual
@@ -361,6 +361,7 @@ class HelpScreen(textual_screen.Screen[None]):
             out.append(lines)
         return out
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the page.
 
@@ -513,6 +514,7 @@ class MenuBar(containers.Horizontal):
         # widget and auto-scrolls its container to reveal it.
         self._restore_focus: Widget | None = None
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the bar.
 

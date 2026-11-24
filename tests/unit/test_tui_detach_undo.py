@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+from typing import override
 
 from textual import app as textual_app
 
@@ -44,6 +45,7 @@ def test_ctrl_z_detaches_and_says_so(tmp_path: pathlib.Path) -> None:
 
 def test_ctrl_underscore_undoes_composer_typing(tmp_path: pathlib.Path) -> None:
     class _Harness(textual_app.App[None]):
+        @override
         def compose(self) -> textual_app.ComposeResult:
             yield composer.SteerInput(id="conv-input")
 

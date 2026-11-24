@@ -8,7 +8,7 @@ import pathlib
 import re
 import threading
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import pytest
 
@@ -96,6 +96,7 @@ class _NoReasonPhrase(http.server.BaseHTTPRequestHandler):
         self.rfile.read(int(self.headers["Content-Length"]))
         self.do_GET()
 
+    @override
     def log_message(self, format: str, *args: object) -> None:
         del format, args
 

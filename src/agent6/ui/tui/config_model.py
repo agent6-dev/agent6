@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import ClassVar
+from typing import ClassVar, override
 
 from textual import app, binding, containers, widgets
 
@@ -50,6 +50,7 @@ class ModelModal(config_forms.FormModal[None]):
         route = eff.config.models.configured().get(role)
         self._model = f"{route.provider}/{route.model}" if route else ""
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the qualified model, target and save control."""
         with containers.VerticalScroll(id="model-box"):

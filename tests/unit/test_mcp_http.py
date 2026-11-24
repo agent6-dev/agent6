@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import threading
 from http import server
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -43,6 +43,7 @@ def _serve(
             raw = json.dumps(answer).encode()
             self.wfile.write(b"event: message\ndata: " + raw + b"\n\n" if sse else raw)
 
+        @override
         def log_message(self, format: str, *args: Any) -> None:
             return  # a test server must not print to stderr
 
@@ -313,6 +314,7 @@ def test_a_redirect_is_an_error_not_a_silent_accept() -> None:
             self.send_header("location", "https://evil.example/mcp")
             self.end_headers()
 
+        @override
         def log_message(self, format: str, *args: Any) -> None:
             return
 

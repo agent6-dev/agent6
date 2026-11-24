@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pathlib
 from collections.abc import Callable, Iterable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 from agent6.config import layer_presets
 
@@ -204,6 +204,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self._groups: dict[str, viewmodel_listing.ListingRow] = {}
         self._expanded: set[str] = set()
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the hub.
 
@@ -422,6 +423,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
         )
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Grey unavailable actions and hide Children without a group.
 
@@ -729,6 +731,7 @@ class Agent6HomeApp(theme.PlainNotify, theme.MuxPointerShapes, app.App[pathlib.P
         theme.setup_theme(self)
         self.push_screen(HomeScreen(self.agent6_dir, self.repo_cwd, self.config_paths))
 
+    @override
     def get_system_commands(
         self, screen: textual_screen.Screen[object]
     ) -> Iterable[app.SystemCommand]:

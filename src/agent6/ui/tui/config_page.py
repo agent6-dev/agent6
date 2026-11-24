@@ -12,7 +12,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 from collections.abc import Iterable, Iterator
-from typing import ClassVar
+from typing import ClassVar, override
 
 import textual
 from rich import markup, text
@@ -105,6 +105,7 @@ class _NavTable(textual_widgets.DataTable[str]):
     With the headers arrow-navigable too, the whole config reads as one list.
     """
 
+    @override
     def action_cursor_down(self) -> None:
         """Move down, or hand off to the next section's header at the bottom row."""
         if self.cursor_row >= self.row_count - 1:
@@ -113,6 +114,7 @@ class _NavTable(textual_widgets.DataTable[str]):
             super().action_cursor_down()
             self._keep_in_view()
 
+    @override
     def action_cursor_up(self) -> None:
         """Move up, or hand off to this section's header at the top row."""
         if self.cursor_row <= 0:
@@ -240,6 +242,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         ] = {}  # per section, in row order
         self._modified_only = False
 
+    @override
     def palette_commands(self) -> Iterator[screen_chrome.PaletteCommand]:
         """Yield the menu actions with the registry's descriptions as their help."""
         descriptions = {a.id: a.description for a in CONFIG_ACTIONS}
@@ -247,6 +250,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             action = next((i.action for m in self.MENUS for i in m.items if i.label == label), "")
             yield label, handler, descriptions.get(action, menu_title)
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the menu bar, the filter row, the pinned header and one table per section.
 

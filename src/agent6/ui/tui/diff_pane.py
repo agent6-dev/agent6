@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 import re
+from typing import override
 
 from rich import text
 from textual import app, message, widgets
@@ -53,6 +54,7 @@ class DiffPane(forms.ScrollPane):
         self._nav_commits = -1  # how many commits the selector lists
         self._rendered: tuple[object, ...] | None = None  # the inputs last painted
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the pane.
 

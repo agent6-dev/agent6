@@ -7,7 +7,7 @@ import json
 import pathlib
 import threading
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, override
 from unittest import mock
 
 import httpx2
@@ -36,6 +36,7 @@ class _AttemptStream(httpx2.SyncByteStream):
         self.stop = threading.Event()
         self.closed = threading.Event()
 
+    @override
     def __iter__(self) -> Iterator[bytes]:
         yield _chunk(
             {
@@ -82,6 +83,7 @@ class _AttemptStream(httpx2.SyncByteStream):
         yield _chunk({"choices": [{"delta": {}, "finish_reason": "stop"}]})
         yield b"data: [DONE]\n\n"
 
+    @override
     def close(self) -> None:
         self.closed.set()
 

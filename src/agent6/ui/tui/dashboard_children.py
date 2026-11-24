@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast, override
 
 from rich import text
 from textual import widgets
@@ -84,6 +84,7 @@ class ChildTable(widgets.DataTable[text.Text]):
         self.session_dir = session_dir
         self._views: dict[str, children.ChildView] = {}
 
+    @override
     def on_mount(self) -> None:
         """Start polling for children, including the first dispatch after mount."""
         self.add_columns(

@@ -4,7 +4,7 @@ import pathlib
 import threading
 from collections.abc import Callable, Iterator
 from http import server
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import pytest
 
@@ -39,6 +39,7 @@ def outside_media(tmp_path: pathlib.Path) -> Iterator[tuple[str, list[tuple[str,
             self.end_headers()
             self.wfile.write(data)
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             pass
 

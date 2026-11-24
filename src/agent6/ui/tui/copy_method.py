@@ -9,7 +9,7 @@ persists at once.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 
 import textual
 from rich import text
@@ -50,6 +50,7 @@ class CopyMethodPicker(screen.ModalScreen[None]):
         """Focus the choice list."""
         self.query_one(forms.ChoiceField).focus(scroll_visible=False)
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the picker.
 

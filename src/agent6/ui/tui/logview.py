@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pathlib
 from collections.abc import Callable
-from typing import ClassVar
+from typing import ClassVar, override
 
 from rich import text
 from textual import app, containers, screen, widgets
@@ -57,6 +57,7 @@ class LogScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self._tail = tail.LogTail(logs_path)
         self._text = text.Text()
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the screen.
 
@@ -111,10 +112,12 @@ class LogScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         """Re-read the file from the start."""
         self._reload()
 
+    @override
     def action_page_up(self) -> None:
         """Scroll a page up; instant, since animation reads as lag."""
         self._scroll().scroll_page_up(animate=False)
 
+    @override
     def action_page_down(self) -> None:
         """Scroll a page down."""
         self._scroll().scroll_page_down(animate=False)

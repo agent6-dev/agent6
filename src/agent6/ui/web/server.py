@@ -21,7 +21,7 @@ import socket
 import sys
 import threading
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, override
 from urllib import parse
 
 import pydantic
@@ -466,6 +466,7 @@ class WebServer(http.server.ThreadingHTTPServer):
         self._pid_lock = threading.Lock()
         self._watch_counts: dict[str, int] = {}
 
+    @override
     def handle_error(self, request: Any, client_address: Any) -> None:
         """Keep the stdlib traceback for every error but a client vanishing mid-request."""
         exc = sys.exc_info()[1]
@@ -564,6 +565,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     timeout = 60.0
     server: WebServer  # type: ignore[assignment]
 
+    @override
     def log_message(self, format: str, *args: Any) -> None:
         """Log nothing; the signature is the stdlib's."""
 
@@ -576,6 +578,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         """Encode the warning for the signed-in viewer's response header."""
         self._pack_warning = parse.quote(message)
 
+    @override
     def end_headers(self) -> None:
         """Return the pack warning once on the read that found it."""
         if self._pack_warning:
@@ -608,6 +611,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._body_length = int(raw)
         return True
 
+    @override
     def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
         """Keep preview refusals sandboxed even for unsupported HTTP methods."""
         if parse.unquote(parse.urlsplit(getattr(self, "path", "")).path).startswith("/preview/"):

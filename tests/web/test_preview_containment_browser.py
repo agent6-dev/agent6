@@ -7,7 +7,7 @@ import socket
 import socketserver
 import threading
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 from urllib import parse
 
 import pytest
@@ -30,6 +30,7 @@ def outside_listener() -> Iterator[tuple[str, threading.Event]]:
     connected = threading.Event()
 
     class Connection(socketserver.BaseRequestHandler):
+        @override
         def handle(self) -> None:
             connected.set()
 

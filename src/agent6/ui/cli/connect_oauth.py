@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import override
 from urllib import parse
 
 from agent6 import child_env
@@ -107,6 +108,7 @@ class CallbackServer:
                 self.wfile.write(body)
                 outer._settle(code, refusal)
 
+            @override
             def log_message(self, format: str, *args: object) -> None:
                 """Log nothing: the code must not reach the terminal."""
                 del format, args  # silent: the code must not reach the terminal

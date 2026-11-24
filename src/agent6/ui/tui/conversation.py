@@ -18,7 +18,7 @@ import pathlib
 import shlex
 import subprocess
 from collections.abc import Callable
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar, cast, override
 
 from rich import text as rich_text
 from textual import app, containers, geometry, screen, timer, widgets
@@ -232,6 +232,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         "Ctrl-J or Shift+Enter inserts a newline",
     )
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Use the run's policy for the shared Compact, Fork and Resume actions.
 
@@ -296,6 +297,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         """The app that mounts this screen; its fold and dir status are the one record."""
         return cast("tui_app.Agent6TUI", self.app)
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the menu bar, the transcript with its live pane, the composer and the footer."""
         yield menubar.MenuBar(self.MENUS)
@@ -447,14 +449,17 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
                 self._note_answered("allowed" if answered.approved else "denied")
         return self.open_approval(state)
 
+    @override
     def approval_dir(self) -> pathlib.Path:
         """Return the session dir the answer file is written under."""
         return self._logs_path.parent
 
+    @override
     def approval_live(self) -> bool:
         """Return whether the run can read an answer."""
         return self._host_live()
 
+    @override
     def approval_answered(self, verdict: str) -> None:
         """Collapse the answered approval and repaint it."""
         self._note_answered(verdict)
@@ -736,6 +741,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
                 parts.append(grabbed[0])
         return "\n".join(parts) if parts else None
 
+    @override
     def get_selected_text(self) -> str | None:
         """Return the selection for textual's copy, restricted to the transcript body."""
         return self._body_selection()
@@ -850,10 +856,12 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         """Scroll to the live tail."""
         self._scroll().scroll_end(animate=False)
 
+    @override
     def action_page_up(self) -> None:
         """Scroll one page up; instant, since animation reads as lag."""
         self._scroll().scroll_page_up(animate=False)
 
+    @override
     def action_page_down(self) -> None:
         """Scroll one page down."""
         self._scroll().scroll_page_down(animate=False)

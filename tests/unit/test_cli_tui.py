@@ -13,7 +13,7 @@ import pathlib
 import re
 import threading
 from collections.abc import Callable
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -670,9 +670,11 @@ def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
     class _Left(_Dead):
         returncode = 0
 
+        @override
         def poll(self) -> int:
             return 0
 
+        @override
         def wait(self, timeout: float | None = None) -> int:
             return 0
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+from typing import override
 
 from agent6 import __version__, paths
 from agent6.ui.cli import (
@@ -216,6 +217,7 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 class _GroupedCommandsHelp(argparse.RawDescriptionHelpFormatter):
     """Render the top-level command list by `COMMAND_GROUPS`, each group a titled block."""
 
+    @override
     def _format_action(self, action: argparse.Action) -> str:
         """Return the grouped rendering for the subparsers action, argparse's for every other."""
         if not isinstance(action, argparse._SubParsersAction) or action.dest != "command":

@@ -12,7 +12,7 @@ import gzip
 import pathlib
 import socket
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, override
 
 import httpx2
 import pytest
@@ -29,6 +29,7 @@ class _Body(httpx2.SyncByteStream):
     def __init__(self, data: bytes) -> None:
         self._data = data
 
+    @override
     def __iter__(self) -> Iterator[bytes]:
         yield self._data
 

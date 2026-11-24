@@ -7,7 +7,7 @@ import mimetypes
 import pathlib
 import stat
 from collections.abc import Iterable
-from typing import ClassVar
+from typing import ClassVar, override
 
 from rich import syntax
 from textual import app, containers, screen, widgets
@@ -27,6 +27,7 @@ class RepositoryTree(widgets.DirectoryTree):
         super().__init__(root, id="files-tree")
         self._ignored = ignored
 
+    @override
     def filter_paths(self, paths: Iterable[pathlib.Path]) -> Iterable[pathlib.Path]:
         """Return entries that are neither .git nor ignored by Git."""
         return (path for path in paths if path.name != ".git" and path not in self._ignored)
@@ -35,6 +36,7 @@ class RepositoryTree(widgets.DirectoryTree):
 class PreviewMarkdown(widgets.MarkdownViewer):
     """Keep file selection in the tree so links cannot bypass the bounded reader."""
 
+    @override
     async def go(self, location: str | pathlib.PurePath) -> None:
         """Leave navigation to the file tree and the built-in table of contents."""
         self.notify("Select files in the tree.")
@@ -83,6 +85,7 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self._is_markdown = False
         self._show_source = False
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the tree beside the file preview, with the shared screen chrome."""
         yield menubar.MenuBar(self.MENUS)
@@ -174,6 +177,7 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         )
         self.refresh_bindings()
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Return None to grey out Markdown controls that do not apply to the preview."""
         if action == "toggle_source":

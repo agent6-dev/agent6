@@ -16,6 +16,7 @@ import os
 import pathlib
 import subprocess
 import threading
+from typing import override
 
 import pytest
 
@@ -226,6 +227,7 @@ def test_a_local_fetch_downloads_no_bundle(tmp_path: pathlib.Path) -> None:
             self.send_header("WWW-Authenticate", 'Basic realm="x"')
             self.end_headers()
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             pass
 

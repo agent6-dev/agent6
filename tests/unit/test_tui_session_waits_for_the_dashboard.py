@@ -13,6 +13,7 @@ import os
 import pathlib
 import threading
 import time
+from typing import override
 
 import pytest
 
@@ -75,6 +76,7 @@ def test_a_dashboard_that_never_registers_does_not_hold_the_run(
         def __init__(self, _session_dir: pathlib.Path) -> None:
             self.returncode = 1
 
+        @override
         def _register(self) -> None:
             pass
 

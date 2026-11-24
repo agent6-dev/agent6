@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import pathlib
+from typing import override
 
 from textual import app as textual_app
 from textual import widgets
@@ -1183,6 +1184,7 @@ reason = "done"
     (root / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
 
     class WatchApp(textual_app.App[int]):
+        @override
         def compose(self) -> textual_app.ComposeResult:
             return iter(())
 

@@ -12,7 +12,7 @@ import select
 import subprocess
 import sys
 import threading
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -54,6 +54,7 @@ class _Finisher(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    @override
     def log_message(self, *args: object, **kwargs: object) -> None:
         pass
 

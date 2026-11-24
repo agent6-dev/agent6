@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from http import client
+from typing import override
 
 # The secret a test server starts with unless the test names its own.
 SECRET = "amber-acorn-agile-alder-alert-arrow"
@@ -46,6 +47,7 @@ class SignedIn(client.HTTPConnection):
         super().__init__("127.0.0.1", port, timeout=timeout)
         self._bearer = bearer(port, secret)
 
+    @override
     def putrequest(
         self, method: str, url: str, skip_host: bool = False, skip_accept_encoding: bool = False
     ) -> None:

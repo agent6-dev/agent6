@@ -9,7 +9,7 @@ click, so an accidental click cannot answer it.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, override
 
 from rich import text as rich_text
 from textual import app, binding, containers, events, screen, widgets
@@ -63,6 +63,7 @@ class ConfirmModal(screen.ModalScreen[bool]):
         self._body = body
         self._confirm_label = confirm_label
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the dialog.
 
@@ -125,6 +126,7 @@ class SteerModal(screen.ModalScreen[str]):
         ),  # the composer's undo key
     ]
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the dialog.
 
@@ -200,6 +202,7 @@ class ToolCallDetailModal(screen.ModalScreen[None]):
         self._args = args or "(no args)"
         self._summary = summary or "(no summary)"
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the view.
 
@@ -258,6 +261,7 @@ class TextModal(screen.ModalScreen[None]):
         self._title = title
         self._text = text
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the view.
 
@@ -302,6 +306,7 @@ class TextInputModal(screen.ModalScreen[str | None]):
         self._title = title
         self._placeholder = placeholder
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the prompt.
 
@@ -353,6 +358,7 @@ class HistorySearchModal(screen.ModalScreen[str | None]):
         super().__init__()
         self._entries = entries
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the search.
 
@@ -471,6 +477,7 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
         if self._answered_elsewhere:
             self.dismiss(None)
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Lay out the prompt.
 

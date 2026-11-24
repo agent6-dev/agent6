@@ -14,7 +14,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 from collections.abc import Callable, Iterable
-from typing import ClassVar
+from typing import ClassVar, override
 
 import textual
 from rich import text as rich_text
@@ -170,6 +170,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self._initial_task = task
         self._on_started = on_started
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the screen.
 

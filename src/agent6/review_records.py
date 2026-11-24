@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 from collections.abc import Iterable
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, override
 
 import pydantic
 
@@ -130,6 +130,7 @@ class ReviewLocation(pydantic.BaseModel):
             raise ValueError("review end_line must not precede start_line")
         return self
 
+    @override
     def __str__(self) -> str:
         suffix = " (base)" if self.side == "base" else ""
         if self.start_line is None:

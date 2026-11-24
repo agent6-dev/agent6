@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import uuid
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, override
 
 import pydantic
 from rich import text
@@ -40,6 +40,7 @@ class DispositionModal(screen.ModalScreen[review_records.FindingAction]):
         self._action: Literal["resolve", "reopen"] = action
         self._version = version
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the disposition, reason and submit controls."""
         with containers.VerticalScroll(id="review-form"):
@@ -156,6 +157,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self._view = review.ReviewView()
         self._busy = False
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the findings table, selected report and read-only diff."""
         yield menubar.MenuBar(self.MENUS)
@@ -281,6 +283,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         detail.update(body)
         self.query_one(diff_pane.DiffPane).show_review(self._cwd, panel.target, report.location)
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Offer only actions that fit the selected finding's state.
 
@@ -425,6 +428,7 @@ class ReceiptScreen(screen.Screen[None]):
         self._config_paths = config_paths
         self._receipt = receipt.read_receipt(session_dir, cwd)
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the evidence, expandable streams and new-work action."""
         with containers.VerticalScroll():

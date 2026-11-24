@@ -7,7 +7,7 @@ import pathlib
 import shlex
 import uuid
 from collections.abc import Callable, Iterator
-from typing import Any, NoReturn
+from typing import Any, NoReturn, override
 
 from agent6 import review_records
 from agent6.app.review import actions as review_actions
@@ -17,6 +17,7 @@ from agent6.viewmodel import pending_questions, receipt, review, tail, transcrip
 
 
 class _CommandParser(argparse.ArgumentParser):
+    @override
     def error(self, message: str) -> NoReturn:
         raise rpc.RpcError(rpc.INVALID_PARAMS, f"{self.prog}: {message}")
 

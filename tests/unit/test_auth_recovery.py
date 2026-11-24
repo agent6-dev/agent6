@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-from typing import Any
+from typing import Any, override
 
 import httpx2
 import pytest
@@ -183,6 +183,7 @@ def test_a_403_that_the_credential_cannot_mend_is_final(monkeypatch: pytest.Monk
         return _Forbidden()
 
     class _Fixed(_AlwaysRefreshing):
+        @override
         def invalidate(self, status: int, rejected_bearer: str) -> bool:
             self.invalidated.append((status, rejected_bearer))
             return False

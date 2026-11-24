@@ -10,7 +10,7 @@ arrow-navigable controls.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Literal
+from typing import Any, Literal, override
 
 from rich import text as rich_text
 from rich.color import Color
@@ -176,6 +176,7 @@ class ChoiceField(Widget, can_focus=True):
             self._sel = self._cursor = self._options.index(value)
             self.refresh(layout=True)
 
+    @override
     def render(self) -> rich_text.Text:
         """Render the rows: the highlight, the hover bar and the chosen mark.
 
@@ -396,6 +397,7 @@ class TypeaheadField(Widget, can_focus=True):
             return matches[self._index]
         return self._text
 
+    @override
     def render(self) -> rich_text.Text:
         """Render the text line and, while focused, the suggestions.
 
@@ -623,6 +625,7 @@ class Picker(widgets.Select[str]):
             overlay.styles.min_width = field.outer_size.width + 2
             overlay.styles.offset = (-1, -(rows + 1) if self._opens == "up" else 0)
 
+    @override
     def set_options(self, options: Iterable[tuple[RenderableType, str]]) -> None:
         """Replace the options, repainting an entry relabelled under the same value."""
         super().set_options(options)

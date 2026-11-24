@@ -4,7 +4,7 @@ import pathlib
 import threading
 from collections.abc import Callable, Iterator
 from http import server
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import pytest
 
@@ -39,6 +39,7 @@ def outside() -> Iterator[tuple[str, list[tuple[str, str]]]]:
             self.end_headers()
             self.wfile.write(test_web_git.PNG_RED_1X1)
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             pass
 

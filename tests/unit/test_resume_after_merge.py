@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -75,6 +75,7 @@ class _Recording(_Scripted):
         super().__init__(script)
         self.seen: list[str] = []
 
+    @override
     def call(self, **kw: Any) -> ProviderResponse:
         self.seen.append(json.dumps(kw["messages"]))
         return super().call(**kw)

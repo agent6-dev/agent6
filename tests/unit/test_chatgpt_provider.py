@@ -10,7 +10,7 @@ import json
 import pathlib
 import time
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, override
 from unittest import mock
 
 import httpx2
@@ -1328,6 +1328,7 @@ class _FlakyCredential(oauth.OAuthCredential):
         super().__init__("chatgpt", ChatGPTProviderEntry(backend="chatgpt"))
         self.faults = 1
 
+    @override
     def token(self, *, refresh: bool = True) -> str:
         if self.faults:
             self.faults -= 1

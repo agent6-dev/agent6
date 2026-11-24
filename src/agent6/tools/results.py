@@ -14,7 +14,7 @@ from __future__ import annotations
 import abc
 import dataclasses
 import shlex
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 from agent6 import evidence, kinds
 from agent6.tools import operator_prompts
@@ -153,6 +153,7 @@ class ReadFileResult(ToolResult):
             out["truncated"] = True
         return out
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{self.size} bytes{' (truncated)' if self.truncated else ''}"
@@ -165,6 +166,7 @@ class ReadMediaResult(ToolResult):
     media: kinds.MediaAttachment
 
     @property
+    @override
     def attachment(self) -> kinds.MediaAttachment:
         """The attachment delivered separately from the text result."""
         return self.media
@@ -174,6 +176,7 @@ class ReadMediaResult(ToolResult):
         # A size, hash or omission marker here makes a model answer from the text, not the image.
         return {"content": f"{self.summary()}; the {self.media.modality} is attached below"}
 
+    @override
     def summary(self) -> str:
         """Return the shared media label."""
         return self.media.summary()
@@ -202,6 +205,7 @@ class ListDirResult(ToolResult):
             out["truncated"] = True
         return out
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         extra = f", {self.hidden} hidden" if self.hidden else ""
@@ -220,6 +224,7 @@ class OutlineResult(ToolResult):
         """Return the wire dict."""
         return {"symbols": list(self.symbols), "truncated": self.truncated}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{len(self.symbols)} symbols{_trunc(self.truncated)}"
@@ -236,6 +241,7 @@ class DefinitionsResult(ToolResult):
         """Return the wire dict."""
         return {"definitions": list(self.definitions), "truncated": self.truncated}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{len(self.definitions)} definitions{_trunc(self.truncated)}"
@@ -252,6 +258,7 @@ class ReferencesResult(ToolResult):
         """Return the wire dict."""
         return {"references": list(self.references), "truncated": self.truncated}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{len(self.references)} references{_trunc(self.truncated)}"
@@ -279,6 +286,7 @@ class EditResult(ToolResult):
         """Return the wire dict."""
         return {"applied": list(self.applied), "path": self.path}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"applied={list(self.applied)} path={self.path}{_diff_note(self.diff_omitted)}"
@@ -318,6 +326,7 @@ class PatchResult(ToolResult):
             wire["healed"] = list(self.healed)
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return self._outcome() + _diff_note(self.diff_omitted)
@@ -406,6 +415,7 @@ class FetchResult(ToolResult):
             wire["note"] = "redirects are not followed; fetch this URL if you still want it"
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{self.status} · {len(self.body)} bytes"
@@ -472,6 +482,7 @@ class ExecResult(ToolResult):
             wire["background_id"] = self.background_id
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         if self.stopped_by_operator:
@@ -542,6 +553,7 @@ class MetricResult(ToolResult):
             wire["timeout_s"] = self.timeout_s
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         if self.timed_out:
@@ -620,6 +632,7 @@ class AnswersResult(ToolResult):
             wire["note"] = self.note
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         if self.answers is None:
@@ -648,6 +661,7 @@ class AddTaskResult(ToolResult):
             "status": self.status,
         }
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{self.status}: {str(self.title)[:60]}"
@@ -683,6 +697,7 @@ class UpdateTaskResult(ToolResult):
             wire["note"] = self.note
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{self.status}: {str(self.title)[:60]}"
@@ -699,6 +714,7 @@ class ListTasksResult(ToolResult):
         """Return the wire dict."""
         return {"tasks": list(self.tasks), "count": self.count}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{self.count} tasks"
@@ -716,6 +732,7 @@ class SkillResult(ToolResult):
         """Return the wire dict."""
         return {"skill": self.skill, "file": self.file, "content": self.content}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"skill {self.skill}/{self.file} ({len(self.content)} chars)"
@@ -752,6 +769,7 @@ class StartedResult(ToolResult):
             "message": self.message,
         }
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"started {len(self.children)}" if self.children else "nothing started"
@@ -773,6 +791,7 @@ class SteeredResult(ToolResult):
         """Return the wire dict."""
         return {"steered": self.child, "message": self.message}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return self.message
@@ -803,6 +822,7 @@ class BackgroundRosterResult(ToolResult):
             wire["output"] = self.output
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         lines = (*self.shells, *self.children)
@@ -825,6 +845,7 @@ class BackgroundReadResult(ToolResult):
         """Return the job's fields beside its text."""
         return {**self.job.to_wire(), "output": self.output}
 
+    @override
     def summary(self) -> str:
         """Return the job's roster line."""
         return self.job.line()
@@ -843,6 +864,7 @@ class SessionsResult(ToolResult):
         """Return the wire dict."""
         return {"sessions": list(self.sessions)}
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{len(self.sessions)} session{'' if len(self.sessions) == 1 else 's'}"
@@ -862,6 +884,7 @@ class SessionEntriesResult(ToolResult):
             wire["next_start"] = self.next_start
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         return "1 session"
@@ -926,6 +949,7 @@ class FindingsResult(ToolResult):
             wire["session_id"] = self.session_id
         return wire
 
+    @override
     def summary(self) -> str:
         """Return the one-line summary."""
         open_count = sum(1 for f in self.findings if f.status == "open")

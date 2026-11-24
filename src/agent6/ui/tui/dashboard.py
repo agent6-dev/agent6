@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 import subprocess
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar, cast, override
 
 try:
     from rich import markup
@@ -213,6 +213,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         at = self._commit_state[1]
         return at, f" · as of turn {at.commits[-1].turn}"
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Enable child actions for a live row and use the run's policy for shared actions.
 
@@ -261,6 +262,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         """The app; only Agent6TUI pushes this screen."""
         return cast("tui_app.Agent6TUI", self.app)
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the menu bar, the header, the three pane rows, the composer and the footer."""
         yield menubar.MenuBar(self.MENUS)
@@ -305,14 +307,17 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         """Unfold the focused pane's row when compact."""
         self._show_pane_row()
 
+    @override
     def approval_dir(self) -> pathlib.Path:
         """Return the session dir."""
         return self._tui.session_dir
 
+    @override
     def approval_live(self) -> bool:
         """Return whether the run takes an answer."""
         return self._tui.session_controllable()
 
+    @override
     def approval_answered(self, verdict: str) -> None:
         """Repaint the row after an answer."""
         self._render_approval()
@@ -405,10 +410,12 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             return focused
         return self.query_one("#log", textual_widgets.RichLog)
 
+    @override
     def action_page_up(self) -> None:
         """Scroll the target pane one page up; instant, like the viewers."""
         self._scroll_target().scroll_page_up(animate=False)
 
+    @override
     def action_page_down(self) -> None:
         """Scroll the target pane one page down."""
         self._scroll_target().scroll_page_down(animate=False)

@@ -10,7 +10,7 @@ import json
 import pathlib
 import threading
 from collections.abc import Callable, Generator, Sequence
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -119,6 +119,7 @@ def scripted_provider(
                     (f"data: {sent}\n\ndata: [DONE]\n\n" if streamed else sent).encode()
                 )
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             del format, args
 

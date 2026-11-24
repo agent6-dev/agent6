@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import ClassVar
+from typing import ClassVar, override
 
 import textual
 from rich import text
@@ -88,6 +88,7 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
         """Focus the value field."""
         self.query_one("#edit-value").focus()
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the title, the description, the value field, the target and the actions."""
         s = self._setting
@@ -233,6 +234,7 @@ class ReviewerModal(FormModal[None]):
         self._config_paths = config_paths
         self._preset = preset
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the reviewer fields and the save target."""
         choices = write.reviewer_choices()
@@ -322,6 +324,7 @@ class RemoveReviewerModal(FormModal[None]):
         self._to_repo = to_repo
         self._preset = preset
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the positional chooser and removal action."""
         with containers.VerticalScroll(classes="reviewer-box"):
@@ -416,6 +419,7 @@ class EntryModal(FormModal[None]):
         """Focus the name field."""
         self.query_one("#entry-name", textual_widgets.Input).focus()
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the title, the fields, the target and the actions."""
         choices = write.entry_choices(self._table)
@@ -565,6 +569,7 @@ class AddPresetModal(FormModal[str | None]):
         """Focus the name field."""
         self.query_one("#addpreset-name", textual_widgets.Input).focus()
 
+    @override
     def compose(self) -> app.ComposeResult:
         """Yield the title, the name field, the target and the actions."""
         with containers.VerticalScroll(id="addpreset-box"):

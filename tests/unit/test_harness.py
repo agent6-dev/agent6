@@ -15,7 +15,7 @@ import json
 import pathlib
 import subprocess
 import types
-from typing import Any, Literal
+from typing import Any, Literal, override
 from unittest import mock
 
 import pytest
@@ -132,6 +132,7 @@ def _knobs(cfg: Any, **knobs: Any) -> Any:
 class _NoRepoChain(run_chain.RunChain):
     """A chain with no repository: its commits are patched out and no tree holds a delta."""
 
+    @override
     def name_status(self) -> tuple[tuple[str, str], ...]:
         return ()
 
@@ -9489,6 +9490,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="f1")
 
     class DispatcherStub(_StubDispatcher):
+        @override
         def command_policy(self) -> str:
             return "deny"
 

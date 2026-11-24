@@ -10,7 +10,7 @@ what the execution has used of each cap, before each worker call, when it change
 from __future__ import annotations
 
 import pathlib
-from typing import Any
+from typing import Any, override
 
 from agent6 import budget, directive, kinds
 from agent6.harness import guards, loop_conversation, loop_state, nudges, operator_bridge
@@ -221,6 +221,7 @@ def test_a_restart_that_replaced_the_budget_line_shows_it_again(tmp_path: pathli
             return test_harness._resp("PROGRESS: listed two directories.")
 
     class ArmingDispatcher(_Dispatcher):
+        @override
         def dispatch(
             self, name: str, raw_input: dict[str, Any], *, origin: object = None
         ) -> results.ToolResult:

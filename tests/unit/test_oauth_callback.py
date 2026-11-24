@@ -18,6 +18,7 @@ import time
 import tty
 import urllib.error
 import urllib.request
+from typing import override
 from unittest import mock
 
 import pytest
@@ -236,6 +237,7 @@ def test_callback_paste_cancels_on_interrupt_off_a_terminal(
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
 
     class _Interrupting(io.StringIO):
+        @override
         def readline(self, size: int = -1) -> str:
             raise KeyboardInterrupt
 
@@ -247,9 +249,11 @@ def test_callback_paste_cancels_on_interrupt_off_a_terminal(
 
 
 class _TerminalInput(io.StringIO):
+    @override
     def isatty(self) -> bool:
         return True
 
+    @override
     def fileno(self) -> int:
         return 99
 

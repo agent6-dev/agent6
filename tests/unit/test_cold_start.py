@@ -6,7 +6,7 @@ import contextlib
 import datetime
 import json
 import pathlib
-from typing import Any
+from typing import Any, override
 from unittest import mock
 
 import pytest
@@ -345,6 +345,7 @@ def test_cold_helper_plan_edit_reaches_the_worker_or_parks_it(
     resend, _, _, _ = _resume(tmp_path, "resend", previous, plan=plan)
 
     class EditingHelper(writers.Writer):
+        @override
         def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
             if edit is None:
                 plan.rename(tmp_path / "withdrawn.md")

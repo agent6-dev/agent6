@@ -12,7 +12,7 @@ import json
 import os
 import pathlib
 from collections.abc import Callable
-from typing import ClassVar
+from typing import ClassVar, override
 
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import watch as machine_watch
@@ -181,6 +181,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         self._end_notified = False
         self._steer_open = False
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Yield the menu bar, the header, the state table beside the log, and the footer."""
         yield menubar.MenuBar(self.MENUS)
@@ -229,6 +230,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         else:
             self.app.exit()
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Return None to dim a verb's footer key where the viewmodel gate refuses it."""
         del parameters
@@ -468,11 +470,13 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         if prompts is not None:
             prompts.dispatch(state_log.parent, self._execution_fold.state)
 
+    @override
     def approval_dir(self) -> pathlib.Path:
         """Return the newest agent state's dir."""
         state_log = self._execution_fold.log
         return state_log.parent if state_log is not None else self._root
 
+    @override
     def approval_live(self) -> bool:
         """Return whether an answer reaches the worker, read fresh at the answer."""
         return self._answerable()
@@ -558,6 +562,7 @@ class MachineDetailScreen(screen.Screen[None]):
         super().__init__()
         self._path = path
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Yield the title, the scrollable text and the footer."""
         yield textual_widgets.Static(f"machine · {self._path.name}", id="machine-detail-title")
@@ -596,6 +601,7 @@ class CreateMachineModal(screen.ModalScreen[str]):
 
     BINDINGS: ClassVar = [textual_binding.Binding("escape", "cancel", "Cancel", show=False)]
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Yield the box: the heading, the composer and the hint."""
         with containers.Container(id="create-box"):
@@ -698,6 +704,7 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self.config_paths = config_paths
         self._machines: list[listing.MachineRow] = []
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         """Yield the menu bar, the table and the footer."""
         yield menubar.MenuBar(self.MENUS)
@@ -754,6 +761,7 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         row = self._selected_row()
         return row.file if row is not None else None
 
+    @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Return None to dim a row action with no fitting row; False would hide the key.
 

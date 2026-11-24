@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+from typing import override
 
 import pytest
 from rich import style as rich_style
@@ -24,6 +25,7 @@ def cfg(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
 
 
 class _Host(textual_app.App[None]):
+    @override
     def compose(self) -> textual_app.ComposeResult:
         yield widgets.Static("host")
 

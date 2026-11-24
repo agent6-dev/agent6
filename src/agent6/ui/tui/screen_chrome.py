@@ -9,7 +9,7 @@ menu by mnemonic, the help page, the theme and copy-method pickers.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, cast, override
 
 from textual import command, widgets
 from textual import screen as textual_screen
@@ -58,6 +58,7 @@ class MenuCommands(command.Provider):
             return iter(())
         return iter(cast(Iterator[PaletteCommand], source()))
 
+    @override
     async def discover(self) -> command.Hits:
         """Yield every command for the empty query."""
         for name, runnable, help_text in self._commands():

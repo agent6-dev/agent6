@@ -9,7 +9,7 @@ import http.server
 import json
 import threading
 from collections.abc import Generator
-from typing import Any
+from typing import Any, override
 
 
 @contextlib.contextmanager
@@ -40,6 +40,7 @@ def serve(
             )
             self.wfile.write(body.encode())
 
+        @override
         def log_message(self, format: str, *args: object) -> None:
             del format, args
 

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import override
 
 from textual import app as textual_app
 from textual import containers, widgets
@@ -16,6 +17,7 @@ from agent6.ui.tui import forms
 class _ChoiceScrollHost(textual_app.App[None]):
     CSS = "#scroll { height: 6; width: 40; } #before { height: 10; }"
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         with containers.VerticalScroll(id="scroll"):
             yield widgets.Static("before", id="before")
@@ -47,6 +49,7 @@ def test_choice_cursor_stays_visible_below_prior_content() -> None:
 class _ChoiceWidthHost(textual_app.App[None]):
     CSS = "ChoiceField { width: 12; }"
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         yield forms.ChoiceField(
             ("abcdefghijklmnopqrstuvwxyz", "second"), "abcdefghijklmnopqrstuvwxyz"
@@ -69,6 +72,7 @@ class _ChoiceChangeHost(textual_app.App[None]):
         super().__init__()
         self.changes = 0
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         yield forms.ChoiceField(("first", "second"), "first")
 
@@ -96,6 +100,7 @@ def test_choice_posts_changed_only_when_the_selection_changes() -> None:
 
 
 class _ChoiceCustomHost(textual_app.App[None]):
+    @override
     def compose(self) -> textual_app.ComposeResult:
         yield forms.ChoiceField(("fixed",), "abc", allow_custom=True)
 
@@ -126,6 +131,7 @@ def test_choice_custom_caret_follows_left_and_right() -> None:
 class _TypeaheadScrollHost(textual_app.App[None]):
     CSS = "#scroll { height: 6; width: 40; } #before { height: 10; }"
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         with containers.VerticalScroll(id="scroll"):
             yield widgets.Static("before", id="before")
@@ -157,6 +163,7 @@ def test_typeahead_highlight_stays_visible_when_suggestions_expand() -> None:
 class _TypeaheadWidthHost(textual_app.App[None]):
     CSS = "TypeaheadField { width: 12; }"
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         yield forms.TypeaheadField("abcdefghijklmnopqrstuvwxyz", ["one"])
 
@@ -192,6 +199,7 @@ def test_typeahead_caret_follows_left_and_right() -> None:
 
 
 class _TypeaheadRefreshHost(textual_app.App[None]):
+    @override
     def compose(self) -> textual_app.ComposeResult:
         yield forms.TypeaheadField("current", ["alpha", "beta"])
 
@@ -225,6 +233,7 @@ def test_a_value_longer_than_the_row_scrolls_under_the_caret() -> None:
     class Host(textual_app.App[None]):
         CSS = "TypeaheadField { width: 16; }"
 
+        @override
         def compose(self) -> textual_app.ComposeResult:
             yield forms.TypeaheadField(value, ["one"])
 
@@ -247,6 +256,7 @@ def test_a_value_longer_than_the_row_scrolls_under_the_caret() -> None:
 
 
 class _TypeaheadRowsHost(textual_app.App[None]):
+    @override
     def compose(self) -> textual_app.ComposeResult:
         yield forms.TypeaheadField("gpt", ["gpt-5", "gpt-6"])
 
@@ -272,6 +282,7 @@ def test_typeahead_rows_sit_under_the_text_line() -> None:
 class _PickerRowHost(textual_app.App[None]):
     CSS = "#row { dock: bottom; height: 1; margin-bottom: 3; padding: 0 1; }"
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         modes = [("run", "run"), ("plan", "plan"), ("ask", "ask")]
         with containers.Horizontal(id="row"):
@@ -323,6 +334,7 @@ def test_the_last_picker_in_a_row_ends_its_value_in_an_ellipsis() -> None:
 class _PickerTopHost(textual_app.App[None]):
     CSS = "#row { dock: top; height: 1; margin-top: 2; padding: 0 1; }"
 
+    @override
     def compose(self) -> textual_app.ComposeResult:
         modes = [("run", "run"), ("plan", "plan"), ("ask", "ask")]
         with containers.Horizontal(id="row"):

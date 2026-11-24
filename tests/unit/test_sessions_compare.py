@@ -19,7 +19,7 @@ import threading
 import time
 import types
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, cast, override
 
 import pytest
 
@@ -545,6 +545,7 @@ class _CostingFakeProvider(_FakeProvider):
 
     budget: agent6_budget.BudgetTracker | None = None
 
+    @override
     def call(self, **kw: Any) -> Any:
         assert self.budget is not None
         self.budget.record(
@@ -806,6 +807,7 @@ class _UnpricedFakeProvider(_FakeProvider):
 
     budget: agent6_budget.BudgetTracker | None = None
 
+    @override
     def call(self, **kw: Any) -> Any:
         assert self.budget is not None
         self.budget.record(
@@ -922,6 +924,7 @@ _HEARTBEAT_TICK_S = 0.5
 class _FakeTTYOut(io.StringIO):
     """A tty-like stdout stand-in: isatty() True so the judging status animates."""
 
+    @override
     def isatty(self) -> bool:
         return True
 

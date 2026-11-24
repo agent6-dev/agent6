@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Any
+from typing import Any, override
 from unittest import mock
 
 import httpx2
@@ -40,6 +40,7 @@ class _CutAfter(FakeStreamResponse):
 
     cut_at: int = 0
 
+    @override
     def iter_lines(self) -> Any:
         for i, line in enumerate(self._lines):
             if i >= self.cut_at:

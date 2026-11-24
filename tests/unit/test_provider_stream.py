@@ -14,7 +14,7 @@ import json
 import pathlib
 import threading
 from collections.abc import Callable, Iterator
-from typing import Any, ClassVar
+from typing import Any, ClassVar, override
 from unittest import mock
 
 import httpx2
@@ -91,6 +91,7 @@ class _ParkedResponse:
 class _CleanlyClosedResponse(_ParkedResponse):
     """A stream whose iterator treats a concurrent close as clean EOF."""
 
+    @override
     def iter_lines(self) -> Iterator[str]:
         yield from self._lead
         if not self._closed.wait(timeout=10.0):
@@ -121,9 +122,11 @@ class _ChunkedErrorResponse(_ErrorResponse):
         super().__init__(status_code=500, body="", headers={})
         self.chunks_read = 0
 
+    @override
     def read(self) -> bytes:
         raise AssertionError("the streaming error path buffered the whole body")
 
+    @override
     def iter_bytes(self) -> Iterator[bytes]:
         for chunk in (b"a" * 4096, b"b" * 4096, b"c" * 4096):
             self.chunks_read += 1
