@@ -82,7 +82,7 @@ def forwarding_reporter(
         else:
             server.update(acp_session_id, updates.notice(text.removeprefix("[agent6] ")))
 
-    return app_reporter.Reporter(out=_say, err=_say, receipt=_stderr)
+    return app_reporter.Reporter(out=_say, err=_say, receipt=_stderr, end_in_transcript=True)
 
 
 # What each answer of a scoped approval grants, as ACP's option kinds name it.

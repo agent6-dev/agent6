@@ -404,6 +404,30 @@ def print_child_config_notes(
                 reporter.out(f"  {prefix}config note: {note}")
 
 
+def _print_outcome(
+    result: loop_snapshot.SessionResult,
+    summary: listing.SessionSummary,
+    *,
+    console_stream: bool,
+    reporter: app_reporter.Reporter,
+) -> None:
+    word, reason = summary.status, summary.detail
+    if not console_stream:
+        # Headless: this block is the only end output.
+        headline = format.status_label(word, reason)
+        reporter.out(f"\n{headline}")
+        if result.summary:
+            reporter.out(f"  {result.summary}")
+    elif result.reason == "silent_finish":
+        # The stream showed the model's closing text; the open-task note is the harness's own.
+        if note := advice.open_tasks_note(result.summary):
+            reporter.out(f"  {note}")
+    elif result.summary and result.reason not in ("finish_session", "finish_planning"):
+        # The stream's done line carries a clean finish's summary only; a failure's reason
+        # reaches the operator here alone.
+        reporter.out(f"  {result.summary}")
+
+
 def print_session_end(
     result: loop_snapshot.SessionResult,
     *,
@@ -426,23 +450,9 @@ def print_session_end(
         console_stream: Whether a live console view already rendered the done line.
         reporter: Receives the lines.
     """
-    # The outcome comes from the fold `agent6 sessions` reads, so the two cannot diverge.
     summary = listing.summarize_session_dir(layout.session_dir)
-    word, reason = summary.status, summary.detail
-    if not console_stream:
-        # Headless: this block is the only end output.
-        headline = format.status_label(word, reason)
-        reporter.out(f"\n{headline}")
-        if result.summary:
-            reporter.out(f"  {result.summary}")
-    elif result.reason == "silent_finish":
-        # The stream showed the model's closing text; the open-task note is the harness's own.
-        if note := advice.open_tasks_note(result.summary):
-            reporter.out(f"  {note}")
-    elif result.summary and result.reason not in ("finish_session", "finish_planning"):
-        # The stream's done line carries a clean finish's summary only; a failure's reason
-        # reaches the operator here alone.
-        reporter.out(f"  {result.summary}")
+    if not reporter.end_in_transcript:
+        _print_outcome(result, summary, console_stream=console_stream, reporter=reporter)
     if result.child_verification:
         reporter.out(f"  final tree {result.child_verification.label}")
     if unreachable := _sandbox_unreachable_tools(layout):

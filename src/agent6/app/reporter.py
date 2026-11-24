@@ -20,12 +20,15 @@ class Reporter:
     Attributes:
         out: Stdout, the piped result the operator captures.
         err: Stderr, for status, warnings and refusals.
+        end_in_transcript: The journal reader presents the stop sentence itself.
         receipt: Where the cost receipt goes when a live view renders it; None means `out`.
     """
 
     out: Callable[[str], None]
     err: Callable[[str], None]
     receipt: Callable[[str], None] | None = None
+
+    end_in_transcript: bool = False
 
     def cost(self, msg: str) -> None:
         """Write the cost receipt."""

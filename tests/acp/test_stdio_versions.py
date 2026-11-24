@@ -284,6 +284,11 @@ def test_a_v1_editor_drives_a_run_to_each_of_its_ends(
     assert "configOptions" in replayed[-1]["result"]
     said = [u["content"]["text"] for u in _updates(replayed, "user_message_chunk")]
     assert said[:2] == ["Finish.", "Wait here."]
+    for frames in (replayed, editor.frames):
+        words = "".join(u["content"]["text"] for u in _updates(frames, "agent_message_chunk"))
+        assert words.count("The recorded model summary.") == 1, words
+        assert words.count("model call was cut short") == 1, words
+        assert words.count("(HTTP 400)") == 1, words
 
 
 def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
