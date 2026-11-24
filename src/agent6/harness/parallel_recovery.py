@@ -46,6 +46,7 @@ def reopened(
                 branch=git_read.run_branch_for(child.session_id),
                 ok=False,
                 error="never started",
+                started=False,
             )
         )
         children.append(child_records.StartedChild(child.session_id, ended))

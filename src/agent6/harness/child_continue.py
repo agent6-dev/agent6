@@ -115,7 +115,9 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
             child.stop()
         dispatcher.write(record)
         raise tool_errors.ToolError(f"child {session_id} could not continue: {exc}") from exc
-    dispatcher.open[record.identity] = parallel_dispatch.OpenDispatch(running, started)
+    dispatcher.open[record.identity] = parallel_dispatch.OpenDispatch(
+        running, started, completed=record
+    )
     dispatcher.emit_graph_snapshot()
     dispatcher.stopping.discard(session_id)
     dispatcher.emit(

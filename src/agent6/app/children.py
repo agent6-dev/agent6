@@ -10,6 +10,7 @@ import dataclasses
 import functools
 import os
 import pathlib
+import shutil
 import threading
 import time
 from collections.abc import Callable, Generator, Sequence
@@ -480,7 +481,10 @@ def run_child_to_completion(
         )
     res = spawner(spec, task)
     if not res.ok:
-        return res
+        if workspace is not None and workspace.fresh:
+            # No worker started in the clone made for this continuation.
+            shutil.rmtree(spec.worktree, ignore_errors=True)
+        return dataclasses.replace(res, started=False)
     if parent_events is not None:
         parent_events.emit(
             journal.ParallelChildActivity(

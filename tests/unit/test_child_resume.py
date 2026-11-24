@@ -348,6 +348,35 @@ def test_parent_does_not_rebind_a_continuation_to_a_replaced_clone(
     assert private.read_bytes() == before
 
 
+@pytest.mark.parametrize("fresh", [True, False], ids=["fresh", "kept"])
+def test_a_continuation_that_never_starts_removes_only_a_fresh_clone(
+    tmp_path: pathlib.Path, retained_child: child_records.ChildSpec, fresh: bool
+) -> None:
+    """A continuation stopped before its start left the clone made for it."""
+    repo = tmp_path / "repo"
+    receipt = child_launch.CloneReceipt.capture(retained_child.worktree)
+
+    def never_reports(*_args: object, **_kwargs: object) -> tuple[None, int, str]:
+        return None, 4242, "stopped by its parent before reporting its start; its process stopped"
+
+    result = app_children.run_child_to_completion(
+        retained_child,
+        "work",
+        cfg=Config(),
+        explicit_leaves=frozenset(),
+        origin=repo,
+        record_state=paths.state_dir(repo),
+        group="root-p1",
+        parent="root",
+        runtime=app_children.ChildRuntime(spawn=never_reports),
+        continuation="finish",
+        workspace=child_resume.Workspace(receipt, "a clone", fresh=fresh),
+    )
+    assert not result.ok and not result.started
+    assert "before reporting its start" in result.error
+    assert retained_child.worktree.exists() is not fresh
+
+
 def test_a_continuation_skips_complete_history_with_bounded_reads(
     tmp_path: pathlib.Path, retained_child: child_records.ChildSpec
 ) -> None:

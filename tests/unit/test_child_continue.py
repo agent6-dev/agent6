@@ -188,3 +188,52 @@ def test_a_refused_restart_preserves_the_stopped_record(tmp_path: pathlib.Path) 
     assert after.children == before.children
     assert after.state == "complete"
     assert child_work.roster(dispatcher)[0].mergeable
+
+
+@pytest.mark.parametrize("boundary", ["turn", "end"])
+def test_a_continuation_that_never_starts_leaves_the_completed_record(
+    tmp_path: pathlib.Path, boundary: str
+) -> None:
+    """A continuation stopped before its start replaced the child's merge and usage."""
+    repo = tmp_path / "repo"
+    background._init_repo(repo)
+    children = background._Children(repo, "parent")
+    harness = background._harness(repo, tmp_path / "parent", None, children, max_turns=10)
+    dispatcher = harness.parallel
+    conversation = loop_conversation.Conversation()
+    state = loop_state.LoopState(original_task="work", tool_calls=0)
+    (sid,) = dispatcher.dispatch(
+        conversation, 1, state, [directive.Segment(task="work", spec="")]
+    ).children
+    children.stop(sid)
+    dispatcher.settle(conversation, 2)
+    before = child_dispatch.read_records(tmp_path / "parent")[0]
+    ended = children.results[sid].result()
+    # The second round continues the restored record: its usage is known and its number free.
+    for turn in (3, 4):
+        child_work.steer(dispatcher, sid, "continue")
+        continuation = child_dispatch.read_records(tmp_path / "parent")[0].child(sid).continuation
+        assert continuation is not None and continuation.sequence == 1
+        children.results[sid].set_result(
+            child_records.ChildResult(
+                spec=ended.spec,
+                session_dir=ended.session_dir,
+                branch=ended.branch,
+                ok=False,
+                error="stopped by its parent before reporting its start; its process stopped",
+                pid=4242,
+                started=False,
+            )
+        )
+        if boundary == "turn":
+            assert dispatcher.settle(conversation, turn)
+            assert f"child {sid} could not continue: stopped by its parent" in str(
+                conversation.to_wire()
+            )
+        else:
+            dispatcher.close(turn)
+        assert not dispatcher.open
+        after = child_dispatch.read_records(tmp_path / "parent")[0]
+        assert after.children == before.children
+        assert (after.state, after.message, after.delivered) == ("complete", before.message, True)
+    assert child_work.roster(dispatcher)[0].mergeable

@@ -810,6 +810,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - `child_merge` records a stopped or continued child's explicit merge in `ChildRecord.merge_request` (`MergeRequest.result`, `delivered`), completes it at the next boundary through the same chain operation as a finished child, stamps the task and journals `parallel.child_merged`; the request holds finish and survives resume, a success replaces the child's recorded outcome, and a conflict leaves it retryable
 - `child_continue` reopens an unmerged child's dispatch before its private bootstrap resumes the same session (`app.child_resume` validates ownership); `ContinuationRecord` records its instruction, sequence and cumulative usage baseline, `parallel.child_continued` journals the new execution, and the parent charges only its new usage
 - stopped children keep their bound clone and launch file; other ended children resume in a fresh clone with setup rerun
+- a continuation whose worker never reports its start leaves the child's completed record as it was and removes the clone made for it
 - `app.child_trees` pins the recorded working and staged trees in the origin before cleanup or prune; unaccounted files keep their clone
 - a finished continuation updates its retained ref; under agent6-owned git the parent requests its merge with `merge_child`
 - `merge_child` is offered only to a parent with stopped unmerged work under `git.control = "agent6"`; it does not require the parallel tool knob, since an operator directive can start children

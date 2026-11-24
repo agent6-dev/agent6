@@ -62,11 +62,13 @@ class OpenDispatch:
         record: The dispatch's record, as last written.
         children: Its started children, in child order.
         judging: The judges ranking its attempts, while they run; None otherwise.
+        completed: The record a continuation replaced; None for a first launch.
     """
 
     record: child_dispatch.DispatchRecord
     children: list[child_records.StartedChild]
     judging: parallel_rank.Judging | None = None
+    completed: child_dispatch.DispatchRecord | None = None
 
 
 @dataclasses.dataclass(slots=True)
@@ -417,6 +419,15 @@ class ParallelDispatcher:
             results = [
                 self.result_of(task.record, child) for child in task.children if child.result.done()
             ]
+            if self.restored(task, results):
+                (res,) = results
+                conversation.notice(
+                    f"[parallel] child {res.spec.session_id} could not continue: {res.error}."
+                    " Its earlier result stands."
+                )
+                del self.open[identity]
+                told = True
+                continue
             record = self.reported(conversation, task.record, results)
             told = told or record is not task.record
             task.record = record
@@ -432,6 +443,23 @@ class ParallelDispatcher:
             del self.open[identity]
             told = True
         return child_merge.settle(self, conversation, turn) or told
+
+    def restored(self, task: OpenDispatch, results: Sequence[child_records.ChildResult]) -> bool:
+        """Write back the record a continuation replaced when its child never started.
+
+        Args:
+            task: An open dispatch.
+            results: The results of its children that have ended.
+
+        Returns:
+            Whether the completed record stands again, as after a refused launch.
+        """
+        if task.completed is None or not results or results[0].started:
+            return False
+        self.write(task.completed)
+        if task.completed.node_id:
+            self.emit_graph_snapshot()
+        return True
 
     def reported(
         self,
@@ -523,6 +551,8 @@ class ParallelDispatcher:
                 judge.stop()
         for task in self.open.values():
             results = [self.result_of(task.record, child) for child in task.children]
+            if self.restored(task, results):
+                continue
             if task.record.node_id and all(res.stopped_by or not res.ok for res in results):
                 # No work can merge. Release the listed task even if the parent never resumes.
                 self.complete(task.record, results, turn=turn)

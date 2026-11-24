@@ -203,6 +203,8 @@ class ChildResult:
             budget, its parent's stop, or `stopped` for the operator's and for the end of the
             execution that started it; "" when it ended by itself. A stopped child's work
             never merges by itself.
+        started: Whether its worker reported the start of this execution; False when the
+            launch failed or was stopped first.
     """
 
     spec: ChildSpec
@@ -220,6 +222,7 @@ class ChildResult:
     report: str = ""
     stopped_by: str = ""
     context: ChildContext = ChildContext()
+    started: bool = True
 
 
 class ChildSpawner(Protocol):

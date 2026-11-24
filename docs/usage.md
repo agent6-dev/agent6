@@ -540,6 +540,7 @@ The task's other attempts must have ended, with no merge pending.
   Missing recorded trees, commits or conversation data refuse continuation.
 - Under agent6-owned git, work already merged into the parent cannot continue; `parallel` starts a new child from there.
   Under model-owned git the merge status is unknown; the parent decides whether to continue the child.
+- A continuation that never starts leaves the child's earlier result as it was; `steer_child` can send it again.
 
 For a running child the instruction queues with the operator's steers on the channel `agent6 steer <child>` uses.
 If the child takes another turn, it reads the message under `PARENT STEERING (an instruction from the run that started this child):`; a child can finish review without taking another turn.

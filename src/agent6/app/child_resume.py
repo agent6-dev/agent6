@@ -94,10 +94,17 @@ def check_workspace(
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Workspace:
-    """The receipt the bootstrap must check, and the workspace its parent reports."""
+    """The receipt the bootstrap must check, and the workspace its parent reports.
+
+    Attributes:
+        clone: The receipt for the prepared checkout.
+        notice: The workspace as the parent's answer names it.
+        fresh: Whether `prepare` made the clone for this continuation.
+    """
 
     clone: child_launch.CloneReceipt
     notice: str
+    fresh: bool
 
     def checked(self, root: pathlib.Path) -> child_launch.CloneReceipt:
         """Return the receipt for the prepared clone.
@@ -289,6 +296,7 @@ def prepare(
         return Workspace(
             check_workspace(spec, private, parent=parent, record_state=record_state),
             "its kept clone",
+            fresh=False,
         )
     note = (
         "a fresh clone restored to its end tree"
@@ -328,4 +336,4 @@ def prepare(
         # No worker ran in this new clone. Every source object remains in the origin.
         shutil.rmtree(spec.worktree, ignore_errors=True)
         raise
-    return Workspace(clone, note)
+    return Workspace(clone, note, fresh=True)
