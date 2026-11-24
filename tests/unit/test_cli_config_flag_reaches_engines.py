@@ -97,10 +97,10 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 
     class _Server:
         def __init__(self) -> None:
-            self.notes: list[dict[str, Any]] = []
+            self.notes: list[object] = []
 
-        def notify_raw(self, obj: dict[str, Any]) -> None:
-            self.notes.append(obj)
+        def update(self, _acp_session_id: str, update: object) -> None:
+            self.notes.append(update)
 
     server = _Server()
     cfg_path = tmp_path / "overlay.toml"
