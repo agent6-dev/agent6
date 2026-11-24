@@ -387,6 +387,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                         isolation,
                         fix=True,
                         ruff_config_from=output.parent if output is not None else cwd,
+                        reporter=reporter,
                     ),
                 ]
         else:
@@ -401,6 +402,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 isolation,
                 fix=True,
                 ruff_config_from=output.parent if output is not None else cwd,
+                reporter=reporter,
             )
             # ruff --fix rewrote the workspace copies: publish what validated.
             candidate_scripts = _read_scripts(workspace)

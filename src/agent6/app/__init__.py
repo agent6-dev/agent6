@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Compose the engine into the run, resume, fork and machine lifecycles.
+"""Compose executions into the run, resume, fork and machine lifecycles.
 
-`agent6.app` sits below `ui/` and never imports it: the lifecycles (`run`, `resume`, `fork`,
-`machine`) and the `--parallel` dispatch (`parallel`, `children`, `compare`) drive `harness`,
-`git_ops`, `sessions` and the headless `viewmodel`. What needs a terminal, a live view, a detached
-`agent6` process or the session-dir bridge is injected by `ui/cli` as frozen values of callables
-(`frontend.SessionFrontend`, `children.ChildRuntime`). Output goes through the injected
-`reporter.Reporter` (default `STDIO_REPORTER`), never a direct `print`.
+App owns what spans executions: the manifest, the writer lock and the providers.
+The loop and every primitive it calls in a turn belong to `harness`.
+App imports `harness` and the layers below it, never `ui`.
+A front-end injects what app cannot do itself: `frontend.SessionFrontend`, `children.ChildRuntime`.
+Output goes through the injected `reporter.Reporter`, never a direct `print`.
+Main modules: `run`, `resume`, `fork`, `execution`, `children`, `merge`, `finalize`, `stop`.
 """
 
 from __future__ import annotations

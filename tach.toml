@@ -175,12 +175,12 @@ depends_on = [
 ]
 
 [[modules]]
-# review_gate uses parallel_dispatch and reviewer policy; toolset has no reviewer coupling.
-# reviewer parses bound completion artifacts with review_panel and llm_json.
-# review_gate and loop use review_history to restore durable panel evidence.
-# compaction_driver and compaction_rules use compaction_elision and compaction_window.
-# compaction_window uses loop_conversation and compaction_elision; the result cap
-# reads review_panel and verify_gate notice sizes within this harness boundary.
+# review.gate uses parallel_dispatch and parallel_panel; toolset has no reviewer coupling.
+# review.verdict parses bound completion artifacts with review.panel and llm_json.
+# review.gate and loop use review.history to restore durable panel evidence.
+# compaction.driver uses compaction.elision, compaction.rules and compaction.window.
+# compaction.window uses loop_conversation and compaction.elision; the result cap
+# reads review.panel and verify.gate notice sizes within this harness boundary.
 # The package re-exports prompt_preview; it uses dag_focus, prompt_blocks,
 # repo_context and toolset within this boundary.
 # parallel_dispatch shares one executor and budget reservation path for work and panels.
@@ -963,7 +963,7 @@ depends_on = []
 path = "agent6.sessions.id"
 # The bucket layout: minting an id means checking the directory it would name,
 # so the generator and the guard sit together rather than each caller spelling
-# the path out. git_read: an explicit --session-id must be a valid git branch
+# the path out. vcs.git.read: an explicit --session-id must be a valid git branch
 # name (it becomes agent6/<id> and refs/agent6/<id>/head) before state creation.
 depends_on = ["agent6.graph.ulid", "agent6.sessions.layout", "agent6.vcs.git.read", "agent6.words"]
 

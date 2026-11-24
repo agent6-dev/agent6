@@ -666,7 +666,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 **agent6's own git**
 
 - agent6's own commits, refs and merges go through `vcs/git/ops.py`, its queries through `vcs/git/read.py`, and the web Git and Files tabs' reads through `vcs/git/history.py` and `vcs/git/files.py`.
-  Only the `vcs` package's modules may import the private runner, `git_command.py`, enforced by `test_only_the_vcs_package_imports_the_runner`.
+  Only the `vcs` package's modules may import the private runner, `vcs/git/command.py`, enforced by `test_only_the_vcs_package_imports_the_runner`.
     - the package spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
     - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags.
@@ -689,7 +689,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   The base must still hold the recorded commit or the run's content (merging the ref into the base would change no file).
   Prune writes that record itself for a run merged by hand, on the same content check.
   A branch's or chain ref's line carries the sha to undelete it.
-- Host-side git calls use `git_policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.
+- Host-side git calls use `vcs.git.policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.
     - Of the shell's `GIT_*` variables, only `GIT_ASKPASS`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_EDITOR`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT` and `GIT_TRACE*` pass through; agent6 can still supply explicit settings such as `GIT_INDEX_FILE`.
     - Other PATH, SSH, proxy and credential-helper variables stay.
 
@@ -927,7 +927,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 - A child's config carries key references, never secret values
     - the parent writes each child's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)
     - the child reads the same `secrets.toml` or provider env var as any other run
-- Child git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; child spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
+- Child git plumbing (clone, fetch, merge) goes through `vcs/git/ops.py` and its private runner; child spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
 - A child starts from committed state only
     - a dispatch cuts children at the run's chain tip after chain-committing changes, and a merge first chain-commits the parent's own changes
     - `run --parallel` settles uncommitted tracked changes first, as every run does (`git.dirty_tree`)

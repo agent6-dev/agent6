@@ -10,10 +10,10 @@ protect paths, and builds the operator notify hook. The hook runs through
 from __future__ import annotations
 
 import pathlib
-import sys
 from collections.abc import Callable, Mapping
 
 from agent6.app import notify_hook
+from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.machine import StateSpec, ToolState
 
@@ -68,13 +68,12 @@ def machine_protect_paths(
     return tuple(out)
 
 
-def _stderr_note(message: str) -> None:
-    """Write a notice to stderr; the machine's stdout is the operator's run output."""
-    print(f"[agent6] {message}", file=sys.stderr)
-
-
 def build_machine_notify_hook(
-    cfg: Config, machine_id: str, root: pathlib.Path
+    cfg: Config,
+    machine_id: str,
+    root: pathlib.Path,
+    *,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> Callable[[str, str, str, str], None] | None:
     """Return the operator hook fired on `machine.notify` and `machine.end`, or None.
 
@@ -84,6 +83,7 @@ def build_machine_notify_hook(
         cfg: The machine's resolved config.
         machine_id: The hook's `AGENT6_MACHINE_ID`.
         root: The instance dir, passed as `AGENT6_MACHINE_DIR`.
+        reporter: Receives the hook's notices on stderr; stdout is the machine's run output.
 
     Returns:
         The hook, called with the event (`notify` or `end`), the state, the message and the
@@ -98,7 +98,7 @@ def build_machine_notify_hook(
             f"machine.{kind}",
             message=message,
             level=level,
-            note=_stderr_note,
+            note=reporter.note,
             AGENT6_MACHINE_ID=machine_id,
             AGENT6_MACHINE_DIR=str(root),
             AGENT6_MACHINE_STATE=state,

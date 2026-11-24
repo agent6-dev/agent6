@@ -22,6 +22,7 @@ import tempfile
 import tomllib
 
 from agent6 import kinds
+from agent6.app import reporter as app_reporter
 from agent6.sandbox import jail, run_in_jail
 
 __all__ = ["OfflineTestOutcome", "available_tools", "lint_and_typecheck", "run_offline_tests"]
@@ -187,6 +188,7 @@ def lint_and_typecheck(
     *,
     fix: bool = False,
     ruff_config_from: pathlib.Path | None = None,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> list[str]:
     """Lint and type-check the bundle's Python scripts in a no-network jail.
 
@@ -199,6 +201,7 @@ def lint_and_typecheck(
         fix: Apply ruff's safe fixes in place; only `machine create` does, on its own bundle.
         ruff_config_from: Resolve the ruff config from the publish destination, so the draft
             gate agrees with the `machine check` the published bundle faces.
+        reporter: Receives the note when a check does not run.
 
     Returns:
         The problems found; empty when clean, or when a note says a check did not run.
@@ -206,7 +209,7 @@ def lint_and_typecheck(
     if not scripts_dir.is_dir() or not any(scripts_dir.rglob("*.py")):
         return []
     if gap := _offline_gap(isolation):
-        print(f"note: script lint and type check not run ({gap})", file=sys.stderr)
+        reporter.err(f"note: script lint and type check not run ({gap})")
         return []
     base = scripts_dir.resolve()
     problems: list[str] = []
@@ -215,7 +218,7 @@ def lint_and_typecheck(
         if problem:
             problems.append(problem)
     else:
-        print("note: ruff not installed; script lint skipped", file=sys.stderr)
+        reporter.err("note: ruff not installed; script lint skipped")
     if pyrefly := _resolve_tool("pyrefly"):
         real = sorted(
             base / p.relative_to(scripts_dir)
@@ -235,7 +238,7 @@ def lint_and_typecheck(
             if problem:
                 problems.append(problem)
     else:
-        print("note: pyrefly not installed; script type check skipped", file=sys.stderr)
+        reporter.err("note: pyrefly not installed; script type check skipped")
     return problems
 
 

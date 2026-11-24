@@ -10,6 +10,8 @@ Three diagrams are built from the current source at site-build time (`docs/gen_d
 The layer stack is `ui -> app -> harness -> tools -> sandbox`.
 An edge is "imports from"; a dashed edge would mark an import climbing the stack.
 [tach](https://docs.gauge.sh/) records the map ([tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)); the engine never imports the UI.
+`harness` is the loop plus every primitive it calls in a turn.
+`app` composes executions into lifecycles.
 
 ```mermaid
 graph TD
@@ -26,9 +28,9 @@ graph TD
 
 Any layer may also use the shared substrate: `budget`, `child_env`, `child_records`, `config`, `context`, `credit_usage`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `llm_json`, `machine`, `media`, `models`, `operator_input`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `token_usage`, `vcs`, `viewmodel`, `words`.
 
-The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
-Only its modules import the runner, `git_command.py`.
-`git_policy.py` holds those switches and the hook and driver policy; `errors.py` owns `GitError`.
+The `vcs/git` package holds agent6's own git operations: `ops.py` writes, `read.py` queries, and `history.py` reads for display.
+Only the `vcs` package's modules import the runner, `command.py`.
+`policy.py` holds the hardening flags and the hook and driver policy; `errors.py` owns `GitError`.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
     - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`
@@ -241,7 +243,7 @@ A cap of `-1` or `0` has no meter, and a reviewer reads its reply count instead.
     - A settled end whose only green was the base's carries `verification = "unverified"`: an unverified end.
     - Over a red gate it returns under the same cap, counted apart from the model's own finishes.
 
-**Per-turn commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
+**Per-turn commits** fire when a gate run returns 0, through `vcs/git/ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 
 - every other editing turn commits as a checkpoint, whatever the gate policy: a gateless run, a gate nobody may run (under `run_commands = "deny"`, or after a denial), a turn the model did not verify, a turn the gate judged red
 - `branch_per_run` also advances a visible `agent6/<id>` branch
@@ -618,7 +620,7 @@ Without that comparison, freshness is unknown.
 Legacy counts carry an unknown-evidence notice; an unreadable journal or structured record retains its error in `MergeReviewGuard`.
 
 `app.merge_plan.run_merge()` is the merge the CLI, the TUI and the web each run in their own process: it validates, then calls `app.merge.execute_merge()`.
-`app.merge.execute_merge()` enforces the guard for CLI, web, TUI and auto-merge, and runs its git under the hook and driver policy of the config it was given (`git_policy.use`), so a merge inside the web server leaves the server's policy as it was.
+`app.merge.execute_merge()` enforces the guard for CLI, web, TUI and auto-merge, and runs its git under the hook and driver policy of the config it was given (`vcs.git.policy.use`), so a merge inside the web server leaves the server's policy as it was.
 It holds the existing session writer lock while re-reading the review fold, merging a pinned source commit, and recording that tip.
 Auto-merge uses the lock its lifecycle already holds; live dispositions wait in the IPC queue.
 Unreadable evidence refuses the merge with its reason.
@@ -852,7 +854,7 @@ Child panel evidence binds only its retained target: importing or merging the wo
 
 ## Enforcement layering
 
-- `git_ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the harness's commits.
+- `vcs/git/ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the harness's commits.
 
 [security.md](security.md) states which guarantee each layer provides.
 
@@ -1074,7 +1076,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Review panel | `harness/review/panel.py`, `harness/review/verdict.py` and `harness/review/gate.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
-| Git policy | [git_policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git/policy.py) |
+| Git policy | [vcs/git/policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git/policy.py) |
 | Child repository primitive | [harness/child_repo.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/child_repo.py) |
 | Session-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Ranking attempts | [harness/parallel_rank.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/parallel_rank.py) |

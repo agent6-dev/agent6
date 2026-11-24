@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run the agent loop over a session.
+"""Run the agent loop over one execution of a session.
 
-`Harness` (`loop.py`) drives one execution: the provider calls, the tool dispatch, the guards
-and gates, and the snapshot a resume re-enters; sibling modules hold its helpers.
-`system_prompt_for` and `model_exchange_for` expose the run's first exchange to
-`agent6 prompt show`.
+Harness is the loop plus every primitive it calls in a turn.
+What spans executions belongs to `app`, which composes executions into lifecycles.
+Harness imports `tools`, `sandbox` and the shared packages, never `app` or `ui`.
+`system_prompt_for` and `model_exchange_for` give `agent6 prompt show` the run's first exchange.
+Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel_dispatch`, `run_chain`.
 """
 
 from __future__ import annotations

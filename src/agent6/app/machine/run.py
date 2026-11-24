@@ -13,7 +13,6 @@ import dataclasses
 import os
 import pathlib
 import shutil
-import sys
 import uuid
 from collections.abc import Callable, Mapping
 
@@ -74,7 +73,12 @@ def _transitions(n: int) -> str:
     return f"{n} transition{'' if n == 1 else 's'}"
 
 
-def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
+def uncommitted_refusal(
+    path: pathlib.Path,
+    cwd: pathlib.Path,
+    *,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+) -> str | None:
     """Return the refusal when the machine's bundle has uncommitted changes, else None.
 
     A tool or agent executes the bundle as trusted logic, so an uncommitted piece is
@@ -84,6 +88,7 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
     Args:
         path: The `.asm.toml`, checked with its sibling `scripts/` when one exists.
         cwd: A directory inside the repository, or outside git to skip the check.
+        reporter: Receives the warning when git cannot answer.
 
     Returns:
         The refusal naming the first uncommitted piece, or None.
@@ -103,10 +108,7 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
             dirty = git_read.paths_dirty(root, (rel,))
         except errors.GitError as exc:
             # A review-discipline gate, not a security boundary: fail open, never silently.
-            print(
-                f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
-                file=sys.stderr,
-            )
+            reporter.warn(f"could not check {rel} for uncommitted changes: {exc}")
             continue
         if dirty:
             return (
@@ -350,7 +352,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     if bundle_problems:
         return _fail(reporter, path, bundle_problems, "bundle")
     cwd = pathlib.Path.cwd()
-    uncommitted = uncommitted_refusal(path, cwd)
+    uncommitted = uncommitted_refusal(path, cwd, reporter=reporter)
     if uncommitted is not None:
         reporter.refuse(uncommitted)
         return 2
@@ -609,7 +611,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                         " this instance starts from HEAD"
                     )
                 write_bundle(root, path)
-            operator_hook = host_preflight.build_machine_notify_hook(cfg, spec.machine, root)
+            operator_hook = host_preflight.build_machine_notify_hook(
+                cfg, spec.machine, root, reporter=reporter
+            )
 
             def surface_notify(kind: str, state: str, message: str, level: str) -> None:
                 """Show a notify here, where the foreground run is its own watcher, then hook.
