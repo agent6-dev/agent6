@@ -207,10 +207,19 @@ def test_a_blank_task_is_refused_before_any_handler(tmp_path: pathlib.Path) -> N
 
 def test_parallel_accepts_task_text_or_a_listed_id_but_not_both(tmp_path: pathlib.Path) -> None:
     d = _dispatcher(tmp_path, _config(tool=True), work=_Work())
-    for invalid in ({}, {"task": "text", "task_id": "0002"}, {"task_id": " "}):
+    invalid_calls: tuple[dict[str, str], ...] = (
+        {},
+        {"task": "", "task_id": ""},
+        {"task": "text", "task_id": "0002"},
+        {"task_id": " "},
+    )
+    for invalid in invalid_calls:
         with pytest.raises(tool_errors.ToolError, match="task"):
             d.dispatch("parallel", invalid)
     assert schema.ParallelInput.model_validate({"task_id": "0002"}).task_id == "0002"
+    # Each field's own default beside the other was refused for its length.
+    assert schema.ParallelInput.model_validate({"task": "", "task_id": "0002"}).task_id == "0002"
+    assert schema.ParallelInput.model_validate({"task": "text", "task_id": ""}).task == "text"
 
 
 def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathlib.Path) -> None:

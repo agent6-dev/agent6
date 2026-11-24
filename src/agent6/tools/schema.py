@@ -330,8 +330,8 @@ class ParallelInput(_ToolInput):
         " Give `task` text or a ready `task_id` from `list_tasks`, not both."
     )
 
-    task: str = pydantic.Field(default="", min_length=1, max_length=20_000)
-    task_id: str = pydantic.Field(default="", min_length=1, max_length=26)
+    task: str = pydantic.Field(default="", max_length=20_000)
+    task_id: str = pydantic.Field(default="", max_length=26)
     spec: str = pydantic.Field(default="", max_length=200)
 
     @pydantic.model_validator(mode="after")
