@@ -17,7 +17,6 @@ import itertools
 import math
 import pathlib
 import tomllib
-from collections.abc import Mapping
 from typing import Any, Literal, cast
 
 import pydantic
@@ -863,16 +862,6 @@ def _validate_wait(name: str, state: schema.WaitState, env: _Env) -> list[str]:
     return problems
 
 
-def _static_ref_value(ref: machine_predicate.Reference, var_values: dict[str, Any]) -> Any:
-    """Return the declared value a reference resolves to, or None."""
-    current: Any = var_values.get(ref.root)
-    for key in ref.path:
-        if not isinstance(current, Mapping) or key not in current:
-            return None
-        current = current[key]
-    return current
-
-
 def _timing_literal_problems(
     name: str, key: str, literal: str, kind: Literal["int", "iso"]
 ) -> list[str]:
@@ -943,7 +932,10 @@ def _timing_problems(
                 f"{schema.type_str(ref_type)}"
             )
         elif env.var_owner.get(ref.root) == "operator":
-            value = _static_ref_value(ref, env.var_values)
+            try:
+                value = ref.resolve(env.var_values)
+            except machine_predicate.PredicateError:
+                return problems
             if kind == "int":
                 if isinstance(value, int) and not isinstance(value, bool) and value < 1:
                     problems.append(

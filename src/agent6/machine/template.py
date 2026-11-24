@@ -144,16 +144,16 @@ def resolve_reference(ref: predicate.Reference, scope: Mapping[str, object]) -> 
         TemplateRuntimeError: The root is unknown, a segment navigates into a non-record,
             or a field is missing.
     """
-    if ref.root not in scope:
-        raise TemplateRuntimeError(f"unknown reference {ref.root!r}")
-    current: object = scope[ref.root]
-    for key in ref.path:
-        if not isinstance(current, Mapping):
-            raise TemplateRuntimeError(f"cannot navigate into non-record value at {ref.dotted!r}")
-        if key not in current:
-            raise TemplateRuntimeError(f"record has no field {key!r} (in {ref.dotted!r})")
-        current = current[key]
-    return current
+    try:
+        return ref.resolve(scope)
+    except predicate.MissingReferenceError as exc:
+        if exc.field is None:
+            raise TemplateRuntimeError(f"unknown reference {ref.root!r}") from exc
+        raise TemplateRuntimeError(
+            f"record has no field {exc.field!r} (in {ref.dotted!r})"
+        ) from exc
+    except predicate.PredicateError as exc:
+        raise TemplateRuntimeError(str(exc)) from exc
 
 
 def _apply_filter(value: object, filt: str | None, where: str) -> object:

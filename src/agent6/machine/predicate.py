@@ -18,6 +18,7 @@ from collections.abc import Mapping
 
 __all__ = [
     "ALLOWED_FUNCTIONS",
+    "MissingReferenceError",
     "Predicate",
     "PredicateError",
     "Reference",
@@ -45,6 +46,18 @@ class PredicateError(Exception):
     """Raised when a predicate is not a valid, allow-listed expression."""
 
 
+class MissingReferenceError(PredicateError):
+    """A reference has no root or lacks a field."""
+
+    def __init__(self, ref: Reference, field: str | None = None) -> None:
+        self.field = field
+        super().__init__(
+            f"unknown reference: {ref.root!r}"
+            if field is None
+            else f"missing field {field!r} in {ref.dotted!r}"
+        )
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class Reference:
     """A blackboard reference: a root variable plus record field navigations.
@@ -59,6 +72,30 @@ class Reference:
     def dotted(self) -> str:
         """The reference as the author spells it."""
         return ".".join((self.root, *self.path))
+
+    def resolve(self, scope: Mapping[str, object]) -> object:
+        """Read the root and each field by mapping lookup.
+
+        Args:
+            scope: The blackboard or capture variables.
+
+        Returns:
+            The referenced value, including None.
+
+        Raises:
+            MissingReferenceError: The root or a field is absent.
+            PredicateError: A field access needs a record.
+        """
+        if self.root not in scope:
+            raise MissingReferenceError(self)
+        value = scope[self.root]
+        for key in self.path:
+            if not isinstance(value, Mapping):
+                raise PredicateError(f"cannot navigate into non-record value at {self.dotted!r}")
+            if key not in value:
+                raise MissingReferenceError(self, key)
+            value = value[key]
+        return value
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -270,7 +307,7 @@ def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: 
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, (ast.Name, ast.Attribute)):
-        return _resolve(as_reference(node), blackboard)
+        return as_reference(node).resolve(blackboard)
     raise PredicateError(f"unsupported syntax: {type(node).__name__}")
 
 
@@ -354,55 +391,12 @@ def _contains(container: object, item: object) -> bool:
 
 
 def _has(reference: Reference, blackboard: Mapping[str, object]) -> bool:
-    """Return whether every segment of the reference resolves.
-
-    Args:
-        reference: The argument of `has()`.
-        blackboard: The variables.
-
-    Returns:
-        Whether the root and every field exist.
-
-    Raises:
-        PredicateError: A segment navigates into a non-record value, a type mismatch rather
-            than absence, as in `_resolve`.
-    """
-    if reference.root not in blackboard:
+    """Return False for a missing name or field, but report a non-record value."""
+    try:
+        reference.resolve(blackboard)
+    except MissingReferenceError:
         return False
-    value = blackboard[reference.root]
-    for key in reference.path:
-        if not isinstance(value, Mapping):
-            raise PredicateError(f"cannot navigate into non-record value at {reference.dotted!r}")
-        if key not in value:
-            return False
-        value = value[key]
     return True
-
-
-def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:
-    """Return the referenced value.
-
-    Args:
-        reference: The variable or record field to read.
-        blackboard: The variables.
-
-    Returns:
-        The value.
-
-    Raises:
-        PredicateError: The root is unknown, a field is missing, or a segment navigates into
-            a non-record value.
-    """
-    if reference.root not in blackboard:
-        raise PredicateError(f"unknown reference: {reference.root!r}")
-    value = blackboard[reference.root]
-    for key in reference.path:
-        if not isinstance(value, Mapping):
-            raise PredicateError(f"cannot navigate into non-record value at {reference.dotted!r}")
-        if key not in value:
-            raise PredicateError(f"missing field {key!r} in {reference.dotted!r}")
-        value = value[key]
-    return value
 
 
 def _as_number(value: object) -> float:
