@@ -1,0 +1,24 @@
+--- a/src/agent6/tools/schema.py
++++ b/src/agent6/tools/schema.py
+@@ -687,7 +687,6 @@
+     FindDefinitionInput,
+     FindReferencesInput,
+     ApplyEditInput,
+-    ApplyPatchInput,
+     RunVerifyInput,
+     RunCommandInput,
+     ReadSessionInput,
+--- a/src/agent6/prompts/loop.py
++++ b/src/agent6/prompts/loop.py
+@@ -24,10 +24,7 @@
+ 
+ """
+     + APPLY_EDIT_RULE
+-    + """- apply_patch: standard unified diff; multi-hunk, and multi-file when each
+-  file's section starts with a `diff --git` line.
+-"""
+-    "__PARTIAL_FS_RULE__"
++    + "__PARTIAL_FS_RULE__"
+     "__GIT_PROTECT_RULE__"
+     "__NETWORK_RULE__"
+     "__CONTAINER_RULE__"

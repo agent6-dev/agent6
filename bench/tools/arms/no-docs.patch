@@ -1,0 +1,34 @@
+--- a/src/agent6/tools/schema.py
++++ b/src/agent6/tools/schema.py
+@@ -722,7 +722,7 @@
+ )
+ 
+ # Ask mode: no control tools (the answer is the final message), plus agent6's own docs.
+-ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
++ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = ()
+ 
+ # A machine `agent` state: navigation plus `finish_session`, whose `result` carries the output.
+ MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishSessionInput,)
+@@ -785,7 +785,7 @@
+         base=base,
+         extras=extras,
+         names=names,
+-        permitted=names | {Agent6DocsInput.TOOL_NAME},
++        permitted=names,
+     )
+ 
+ 
+--- a/src/agent6/harness/prompt_blocks.py
++++ b/src/agent6/harness/prompt_blocks.py
+@@ -100,10 +100,7 @@
+             " matching the schema the task names."
+         )
+     if mode == "ask":
+-        return (
+-            "The question is above; a message with no tool call is the answer"
+-            " (`agent6_docs` covers agent6's own behaviour)."
+-        )
++        return "The question is above; a message with no tool call is the answer."
+     if run_commands == "deny" or not has_gate:
+         return "The task is above; `finish_session` requests the run end."
+     return (

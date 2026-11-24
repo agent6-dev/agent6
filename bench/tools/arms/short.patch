@@ -1,0 +1,78 @@
+--- a/src/agent6/tools/schema.py
++++ b/src/agent6/tools/schema.py
+@@ -84,17 +84,12 @@
+ 
+     TOOL_NAME: ClassVar[str] = "apply_edit"
+     TOOL_DESCRIPTION: ClassVar[str] = (
+-        "Edit one file. One edit: old_string and new_string (kind optional) at the"
+-        " top level. Several: `edits`, an array of {old_string, new_string, kind?},"
+-        " applied in order, all or none. Each old_string occurs exactly once in the"
+-        ' file, byte for byte. kind="create" makes a new file and kind="overwrite"'
+-        " writes the whole file, existing or not: for both, empty old_string, the"
+-        " full content in new_string, the only edit. An omitted kind follows the"
+-        ' pair: an empty old_string means "create", any other means "replace".'
+-        " A miss that matches exactly one region up to a uniform indent shift"
+-        " is healed and reported as `replace~indent`. A file whose lines end"
+-        " in CRLF is written back with CRLF, whatever the edit's content carries."
+-        " preview=true returns the would-be diff without touching disk."
++        "Edit one file. Give old_string, new_string and optional kind at top level for one edit"
++        " or in `edits` for ordered, all-or-none edits. Replace matches old_string byte for byte"
++        " exactly once. A unique uniform-indent match reports `replace~indent`. create (new file)"
++        " and overwrite (existing or not) take one edit: empty old_string, full new_string."
++        " Without kind, empty old_string creates, otherwise replaces. CRLF files keep CRLF."
++        " preview=true returns the diff without writing."
+     )
+ 
+     path: str = pydantic.Field(min_length=1)
+@@ -315,18 +310,15 @@
+     TOOL_NAME: ClassVar[str] = "parallel"
+     # The toolset adds the run's resolved roles, providers and limits.
+     TOOL_DESCRIPTION: ClassVar[str] = (
+-        "Start one task in a child session (a subagent) on a fresh clone of the committed"
+-        " tree, and return at once with the child's id. Call it once per task. `spec` is"
+-        " empty for one child; a count above one, or a comma-separated list of selectors,"
+-        " starts that many attempts at the same task, ranked once all have ended."
+-        ' With `git.control = "agent6"` the first merges onto this run at a turn boundary;'
+-        ' with `git.control = "model"` the result names the ref that holds each child\'s commits.'
+-        " A selector that is a role name brings its model, effort and temperature;"
+-        " `provider/model` runs with the worker's. A notice arrives when a child ends,"
+-        " with its summary, and when its task completes. `read_background` reads a child"
+-        " or waits for the next to end; `steer_child` sends an instruction to a running"
+-        " child or continues a stopped child; `stop_background` stops one. `finish_session`"
+-        " is refused while a child runs or its task awaits completion at a turn boundary."
++        "Start one child task on a fresh clone of the committed tree; return its id at once."
++        " Call once per task. Empty spec: one child. A count >1 or comma-separated selectors:"
++        " that many attempts, ranked after all end. With git.control=agent6 the first merges"
++        " at a turn boundary; with model the result names each commit ref. Role selectors use"
++        " their model, effort and temperature; provider/model uses worker effort and temperature."
++        " Notices give each ended child's summary and task completion. read_background reads a"
++        " child or waits for the next end. steer_child instructs a running child or continues a"
++        " stopped one; stop_background stops one. finish_session refuses while a child runs or"
++        " its task awaits turn-boundary completion."
+     )
+ 
+     task: str = pydantic.Field(min_length=1, max_length=20_000)
+@@ -639,17 +631,12 @@
+ 
+     TOOL_NAME: ClassVar[str] = "ask_user"
+     TOOL_DESCRIPTION: ClassVar[str] = (
+-        "Ask the operator; a question written as plain text reaches nobody."
+-        " `questions` is an array of {question, options?}; options are the"
+-        " labels of a choice (the CLI, TUI and web also take typed text; an"
+-        " editor over ACP answers only with an option). `wait` true: the call"
+-        " returns when the operator answers; with no front-end or terminal"
+-        " attached the run waits for a front-end, or returns unanswered at once"
+-        " under away mode deny."
+-        " `wait` false: the questions are queued and the call returns at once;"
+-        " the answers arrive as a message at a later turn, or on resume."
+-        " Returns {id, status: answered | pending | unanswered, answers, note?},"
+-        " answers aligned to the questions."
++        "Ask the operator here, not in prose. `questions`: [{question, options?}]. Options are"
++        " choice labels; ACP editors take only choices, CLI/TUI/web also take text. wait=true"
++        " waits for answers and, if unattached, a front-end (away deny: unanswered at once)."
++        " wait=false queues and returns at once; answers arrive by message on a later turn or"
++        " resume. Returns {id, status: answered | pending | unanswered, answers, note?} in"
++        " question order."
+     )
+ 
+     questions: tuple[UserQuestion, ...] = pydantic.Field(min_length=1, max_length=8)
