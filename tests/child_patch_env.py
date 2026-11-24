@@ -71,11 +71,13 @@ def recorded_child(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Child
         env_extra: dict[str, str] | None,
         stdin_text: str | None,
         repo: pathlib.Path | None = None,
+        *,
+        own_group: bool = False,
     ) -> tuple[tuple[str, ...], int, bytes, bytes]:
         assert not cwd.resolve().is_relative_to(clone)
         assert repo is None or not repo.resolve().is_relative_to(clone)
         assert all(str(clone) not in arg for arg in args) and "fetch" not in args
-        return spawn(cwd, args, env_extra, stdin_text, repo)
+        return spawn(cwd, args, env_extra, stdin_text, repo, own_group=own_group)
 
     monkeypatch.setattr(git_command, "spawn", parent_only)
     return Child(directory, clone, sha, base)
