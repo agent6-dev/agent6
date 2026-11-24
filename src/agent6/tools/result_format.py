@@ -104,7 +104,7 @@ def _clip_value(v: Any, max_value_chars: int) -> Any:
         return v if len(v) <= max_value_chars else v[:max_value_chars] + f"… ({len(v)} chars)"
     if isinstance(v, dict):
         return {k: _clip_value(x, max_value_chars) for k, x in v.items()}
-    if isinstance(v, list | tuple):
+    if isinstance(v, (list, tuple)):
         items = [_clip_value(x, max_value_chars) for x in v[:10]]
         return [*items, f"… ({len(v)} items)"] if len(v) > 10 else items
     return v

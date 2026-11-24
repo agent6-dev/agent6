@@ -67,7 +67,9 @@ def call_label(tool_name: str, tool_input: Any) -> str:
             if not value:  # absent, or present-but-empty: no identity to show
                 continue
             hint = (
-                shlex.join(str(a) for a in value) if isinstance(value, list | tuple) else str(value)
+                shlex.join(str(a) for a in value)
+                if isinstance(value, (list, tuple))
+                else str(value)
             )
             break
     if len(hint) > ELISION_HINT_MAX_CHARS:

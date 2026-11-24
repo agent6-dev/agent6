@@ -48,7 +48,7 @@ def coerce_stringified_args(
                 parsed, _ = decoder.raw_decode(_LONE_BACKSLASH.sub(r"\\\\", val.strip()))
             except ValueError:
                 continue
-        if not isinstance(parsed, dict | list):
+        if not isinstance(parsed, (dict, list)):
             continue
         if coerced is None:
             coerced = dict(raw_input)

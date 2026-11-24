@@ -846,7 +846,7 @@ def _hang_the_op_only(fake: _HungGit) -> object:
 
     def fake_popen(*a: object, **k: object) -> object:
         argv = a[0] if a else k.get("args", [])
-        if isinstance(argv, list | tuple) and probes & {str(x) for x in argv}:
+        if isinstance(argv, (list, tuple)) and probes & {str(x) for x in argv}:
             return real(*a, **k)  # type: ignore[arg-type]
         return fake
 

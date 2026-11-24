@@ -236,8 +236,7 @@ search-path = ["src", "."]
 preset = "strict"
 
 [tool.pyrefly.errors]
-# `isinstance(x, list | tuple)` is reported, where a class takes no type argument.
-implicit-any-type-argument = "ignore"
+implicit-any-type-argument = "error"
 non-exhaustive-match = "error"
 protected-access = "error"
 # jsonschema ships no stubs.
