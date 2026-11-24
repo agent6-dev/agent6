@@ -108,18 +108,38 @@ def score(task: str, output: bytes) -> dict[str, Any]:
 def grade(
     binary: pathlib.Path,
     config: pathlib.Path,
-    workspace: pathlib.Path,
+    repo: pathlib.Path,
     env: dict[str, str],
     scorer: pathlib.Path,
 ) -> dict[str, Any]:
-    """Pipe the archived grader into a fresh jail. Neither output stream reaches the terminal."""
+    """Run the archived grader with the submission mounted read-only outside its workspace."""
+    trial = repo.parent
+    workspace = trial / "grading"
+    workspace.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=workspace, env=env, check=True)
+    grants = trial / "grader.toml"
+    grants.write_text(
+        f"[sandbox]\nextra_read_paths = {json.dumps([str(repo)])}\n", encoding="utf-8"
+    )
     report = bytearray()
     deadline = time.monotonic() + 120
     with (
         scorer.open("rb") as script,
-        (workspace.parent / "grader.stderr").open("xb") as log,
+        (trial / "grader.stderr").open("xb") as log,
         subprocess.Popen(
-            [binary, "--config", config, "exec", "--new", "python3", "-I", "-", "repo"],
+            [
+                binary,
+                "--config",
+                config,
+                "--config",
+                grants,
+                "exec",
+                "--new",
+                "python3",
+                "-I",
+                "-",
+                repo,
+            ],
             cwd=workspace,
             env=env,
             stdin=script,

@@ -136,8 +136,7 @@ def sample(
 ) -> None:
     """Run one task and attach its measured outcome to the row."""
     task = TASKS[name]
-    workspace = trial / "grading"
-    repo = workspace / "repo"
+    repo = trial / "repo"
     fixture = source / "bench/coreagent/tasks" / name
     editing = task.answer is None
     repo.mkdir(parents=True)
@@ -175,9 +174,7 @@ def sample(
         row["exit_code"] = proc.returncode
         row.update(journals.measure(trial / "state", session))
         if editing:
-            # exec --new reads config from this pristine root, not from the edited repository.
-            subprocess.run(["git", "init", "-q"], cwd=workspace, env=env, check=True)
-            row.update(grading.grade(binary, config, workspace, env, fixture / "grade.py"))
+            row.update(grading.grade(binary, config, repo, env, fixture / "grade.py"))
         else:
             row["passed"] = (row["answer"] or "").strip().strip("`") == task.answer
 

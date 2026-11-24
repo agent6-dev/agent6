@@ -38,8 +38,8 @@ def _report() -> dict[str, Any]:
 
 
 def _grade(where: pathlib.Path, output: bytes) -> dict[str, Any]:
-    workspace = where / "grading"
-    workspace.mkdir()
+    repo = where / "repo"
+    repo.mkdir()
     scorer = where / "textkit/grade.py"
     scorer.parent.mkdir()
     scorer.write_bytes(output)
@@ -50,7 +50,7 @@ def _grade(where: pathlib.Path, output: bytes) -> dict[str, Any]:
         "sys.stdout.buffer.write(sys.stdin.buffer.read())\n"
     )
     binary.chmod(0o700)
-    return grading.grade(binary, where / "run.toml", workspace, os.environ.copy(), scorer)
+    return grading.grade(binary, where / "run.toml", repo, os.environ.copy(), scorer)
 
 
 def test_grader_stderr_is_private(

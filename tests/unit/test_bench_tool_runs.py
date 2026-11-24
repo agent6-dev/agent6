@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -90,7 +91,7 @@ def test_config_masks_the_source_profile_and_the_arms_build(
     monkeypatch.setattr(run, "install", mock.Mock(return_value=build / "venv/bin/agent6"))
 
     def inspect_config(repo: pathlib.Path, env: dict[str, str]) -> None:
-        config = tomllib.loads((repo.parents[1] / "run.toml").read_text())["sandbox"]
+        config = tomllib.loads((repo.parent / "run.toml").read_text())["sandbox"]
         assert config["isolation"] == "full"
         grant = pathlib.Path(env["XDG_CONFIG_HOME"]) / "agent6/secrets.toml"
         assert grant.samefile(profile / "secrets.toml")
@@ -115,6 +116,56 @@ def test_config_masks_the_source_profile_and_the_arms_build(
     assert run.main(args) == 1
     row = json.loads((tmp_path / "out/results.jsonl").read_text())
     assert row["error"] == "inspected before launch"
+
+
+def test_grader_policy_keeps_the_submission_and_its_metadata_read_only(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Build the policy for the captured exec invocation without starting a jail."""
+    from bench.tools import run
+
+    from agent6.config import layer
+    from agent6.ui.cli import exec_cmds
+
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "config.toml").touch()
+    source = tmp_path / "build/src"
+    task = pathlib.Path("bench/coreagent/tasks/eventflow")
+    shutil.copytree(ROOT / task, source / task)
+    trial = tmp_path / "trial"
+    binary = tmp_path / "fixture"
+    binary.write_text(
+        f"#!{sys.executable} -I\nimport json, os, sys\n"
+        "if 'exec' in sys.argv:\n"
+        "    sys.stdin.buffer.read()\n"
+        "    print(json.dumps([os.getcwd(), sys.argv[1:]]), file=sys.stderr)\n"
+        "    print(json.dumps(dict(cases_passed=0, cases_total=25, components_passed=0, "
+        "components_total=8, score=0)))\n"
+        "else:\n"
+        "    print(os.getcwd())\n"
+    )
+    binary.chmod(0o700)
+    monkeypatch.setattr(run.journals, "measure", mock.Mock(return_value={}))
+    args = argparse.Namespace(profile=profile, model="local/m", effort="medium", max_plan_points=2)
+    run.sample(binary, source, args, "eventflow", trial, {})
+
+    repo = pathlib.Path((trial / "agent.log").read_text().strip())
+    cwd, argv = json.loads((trial / "grader.stderr").read_text())
+    workspace = pathlib.Path(cwd)
+    assert not repo.is_relative_to(workspace) and not workspace.is_relative_to(repo)
+    assert (workspace / ".git/HEAD").is_file() and (repo / ".git/HEAD").is_file()
+    command = tuple(argv[argv.index("--new") + 1 :])
+    assert pathlib.Path(command[-1]) == repo
+    configs = tuple(pathlib.Path(argv[i + 1]) for i, arg in enumerate(argv) if arg == "--config")
+    assert all(not path.is_relative_to(workspace) for path in configs)
+    cfg = layer.load_effective(workspace, configs).config
+    assert cfg.sandbox.isolation == "full"
+    with exec_cmds.exec_policy(workspace, cfg, "full", command) as policy:
+        assert policy.extra_ro_paths == (repo,)
+        assert policy.extra_rw_paths == ()
+        assert workspace / ".git" in policy.extra_protect_paths
+        assert {profile, source.parent} <= set(policy.hide_paths)
 
 
 @pytest.fixture
