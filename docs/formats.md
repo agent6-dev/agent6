@@ -872,7 +872,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### parallel.child_continued
 
-**Support: public.** A parent started another execution of its stopped child.
+**Support: public.** A parent started another execution of its child.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -882,12 +882,12 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### parallel.child_merged
 
-**Support: public.** An explicit request to merge a stopped child completed.
+**Support: public.** An explicit request to merge a child completed.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | The child's dispatch group. |
-| `child` | `str` | The stopped child's session id. |
+| `child` | `str` | The requested child's session id. |
 | `status` | `str` | The requested merge's outcome. |
 | `ref` | `str` | The ref that holds the child's work. |
 | `sha` | `str` | The merge commit, or empty when nothing merged. |
@@ -2809,7 +2809,7 @@ Source: [`agent6.app.child_launch.ChildLaunch`](https://github.com/agent6-dev/ag
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `worktree` | `pathlib.Path` | The child's clone, the run's cwd. |
-| `clone` | `CloneReceipt \| None` | The receipt from first launch; an unbound launch cannot drive a checkout. |
+| `clone` | `CloneReceipt \| None` | The receipt for this checkout; an unbound launch cannot drive a checkout. |
 | `record_state` | `pathlib.Path` | The state dir of the repository that dispatched the child, where the child's record lives from its first event. |
 | `session_id` | `str` | The child's session id. |
 | `task` | `str` | The task text, exactly as the child's manifest records it. |
@@ -3407,7 +3407,7 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 
 ### CloneReceipt
 
-**Support: public.** The independent checkout and state the parent granted at first launch.
+**Support: public.** The independent checkout and state the parent granted for this execution.
 
 Source: [`agent6.app.child_launch.CloneReceipt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/child_launch.py).
 
@@ -3500,7 +3500,7 @@ Source: [`agent6.sessions.child_dispatch.ChildRecord`](https://github.com/agent6
 | `reported` | `bool` | Whether its parent's conversation holds the notice of its end. |
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
 | `settled` | `bool` | Whether its usage was charged; False while it is unknown. |
-| `merge_request` | `MergeRequest \| None` | The explicit request to merge stopped work; None before one. |
+| `merge_request` | `MergeRequest \| None` | The explicit request to merge retained work; None before one. |
 | `continuation` | `ContinuationRecord \| None` | The latest continuation, or None for the initial execution. |
 
 ### ModelsBrief
@@ -4090,7 +4090,7 @@ Source: [`agent6.sessions.child_dispatch.MergeRecord`](https://github.com/agent6
 | `status` | `Literal['merged', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped', 'retained']` | The merge's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a stopped child; "" when none. |
-| `commits` | `int` | The count beyond start on a stopped, ranked or retained ref, or 0 without a count. |
+| `commits` | `int` | The commits beyond the base on the retained ref, or 0 without a count. |
 | `context` | `ChildContext` | The child's last measured conversation size and activity. |
 | `target_before` | `str` | The chain tip before the merge. |
 | `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
@@ -4112,7 +4112,7 @@ Source: [`agent6.sessions.child_dispatch.UsageRecord`](https://github.com/agent6
 
 ### MergeRequest
 
-**Support: public.** A stopped child's requested merge and its delivery state.
+**Support: public.** A child's requested merge and its delivery state.
 
 Source: [`agent6.sessions.child_dispatch.MergeRequest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 

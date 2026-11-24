@@ -149,7 +149,7 @@ State is snapshotted before each model call and checkpointed per turn.
   A plan or ask fork uses the current checkout without edit tools or automatic commits; approved commands can still modify files.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
-- a stopped child continues through its parent's `steer_child`; direct `resume` refuses a child, and `agent6 fork <child-id>` starts independent work at its last commit
+- an unmerged child continues through its parent's `steer_child`; direct `resume` refuses a child
 - a run whose manifest cannot be read (a newer agent6 wrote it, or it is broken) refuses `resume`, `fork` and `sessions merge`, naming the cause, and no surface offers them
 - a `run --parallel` run whose budget ended every child reads `failed · budget exhausted` and exits `3`; `agent6 fork <child-id>` starts independent work from a child's commits
 - the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
@@ -470,10 +470,12 @@ One call is one task.
 The call starts its children in fresh clones of the committed tree, under the run's shared remaining budget, and returns at once with each child's session id.
 With `git.control = "model"`, the model must commit its changes before calling `parallel`; agent6 does not checkpoint a dirty tree for it.
 Each child is an ordinary run with the same tools as the parent and may edit its clone.
+After import the clone goes, unless the child stopped or the clone holds work the parent cannot preserve.
+Before cleanup or prune, the parent pins the child's recorded working and staged trees under `refs/agent6/<child>/trees/` and checks both pins.
 Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
 `read_background` with a child's id returns its id, attempt, state, task, `running`, `mergeable` and commit count beside its transcript tail.
-`mergeable` means the child's recorded merge status is `stopped`.
+`mergeable` marks stopped work or a continued child whose commits await an explicit merge.
 A merge can still be refused, for example if another attempt already merged.
 With a command's `background_id` it returns the command preview, state, `returncode`, `duration_s` and `still_running` beside the output tail.
 The duration runs from launch until the host observes the end.
@@ -486,24 +488,30 @@ Every background wait uses the shorter of `wait_s` and [`harness.command_checkin
 With an id, an omitted `wait_s` uses the check-in interval; without an id, it returns the roster at once.
 When the check-in ends a wait, `output` names the interval.
 
-`steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction or continues a stopped child and returns at once.
-A stopped child continues the same conversation in its retained clone, under the parent's remaining budget and approval policy, with the text as its next instruction.
-Its finished work follows the same merge policy as a new child's work.
-The task's other attempts must have ended, with none already merged and no merge pending.
-Continuation requires the conversation snapshot and the original clone recorded at first launch.
-If either is missing or the clone was replaced, `agent6 fork <child-id> --steer "..."` starts independent work from its commits.
-It queues in order with the operator's steers on the channel `agent6 steer <child>` uses.
+`steer_child` (`id`, `text`), offered with the `parallel` tool, sends an instruction to a running child or continues an unmerged child.
+The same child conversation continues under the parent's remaining budget and approval policy.
+The task's other attempts must have ended, with no merge pending.
+
+- A stopped child continues in its kept clone.
+- A failed or finished child continues in a fresh clone at its last commit, including an attempt ranked below the winner.
+  The recorded working tree and index are restored, then the clone's setup command runs again.
+- If a kill left no end tree, the notice says that uncommitted files could not be restored.
+  Missing recorded trees, commits or conversation data refuse continuation.
+- Under agent6-owned git, work already merged into the parent cannot continue; `parallel` starts a new child from there.
+  Under model-owned git the merge status is unknown; the parent decides whether to continue the child.
+
+For a running child the instruction queues with the operator's steers on the channel `agent6 steer <child>` uses.
 If the child takes another turn, it reads the message under `PARENT STEERING (an instruction from the run that started this child):`; a child can finish review without taking another turn.
 A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` in it are words, not commands.
-It is refused for an id that is no child of the run, a child that has finished or merged, or one that has not started.
+It is refused for an id that is no child of the run, or one that has not started.
 `stop_background` with a child's id stops the child; its work does not merge, and its branch holds what it committed.
 The roster and resumed parent state show the same stopped-child facts as its end notice, with the age updated.
 The two tools' descriptions mention children only in a run that has the `parallel` tool.
 `finish_session` is refused while a child runs or its task awaits completion at a turn boundary, and the refusal names the children that hold it.
 A stopped child holds no end unless its parent requests a merge or continues it.
-`merge_child(id)` requests a stopped child's merge at the next turn boundary and holds the end until its outcome is reported.
-It is offered only while the run has stopped, unmerged work and `git.control = "agent6"`, including children started by `/parallel` when the parallel tool is off.
-The task must have completed without another attempt merged; a pending merge of another attempt also refuses the call.
+`merge_child(id)` requests the merge of a stopped or continued child's commits at the next turn boundary and holds the end until its outcome is reported.
+It is offered only while the run has stopped or continued work awaiting a merge and `git.control = "agent6"`, including children started by `/parallel` when the parallel tool is off.
+A pending merge of another attempt refuses the call.
 A conflict merges nothing, names the files and the ref holding the work, and permits another request.
 A requested merge survives a parent resume.
 The run counts its children's spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
@@ -519,7 +527,8 @@ Their spend is included in the worker's total, not an extra charge, and their ev
 A child that needs an approval, or waits on an `ask_user`, asks on the run that dispatched it: the prompt names the child, and a standing answer given there covers the run's children.
 A question nobody answers on that run (`away mode deny`) returns `unanswered` to the child with the same note; a question the child queued (`wait: false`) stays on the child's own row.
 Children end with the execution that started them: when the run stops, or ends any other way, its running children are stopped and their spend is charged.
-A resumed run merges nothing of a child that was stopped: before its first call the model reads each stopped child with the branch that holds its work and its commit count.
+Before its first call a resumed parent sees the ended children it can continue.
+Agent6 retains their work; a continued child only merges at its parent's request.
 A task whose children had ended by themselves when the run ended completes then under the same merge policy as a turn boundary; each child's spend is settled once.
 `sessions list --children`, `sessions show` and the receipt list attempts and reviewers by dispatch group and number.
 The receipt's `Children` section names the settled spend already included in the run's total.

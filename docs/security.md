@@ -882,7 +882,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - cancelling a relayed preflight prompt gives the child no approval and leaves the watch free to stop it
     - on a stop before the start report, or if a running child ignores its stop request, the watch sends TERM to the child's process group, escalates to KILL after the grace and reaps it
     - a reviewer also enforces its deadline inside its own process
-    - a work child runs while its parent takes turns and ends with the parent's execution at the latest: the execution's end stops it and charges what it used; a child's commits merge automatically only when it ended by itself and its parent, or its parent's resume, merges its task, and a stopped child's commits stay on its branch
+    - a work child runs while its parent takes turns and ends with the parent's execution at the latest: the execution's end stops it and charges what it used; a child's commits merge automatically only when its first execution ended by itself and its parent, or its parent's resume, merges its task, and a stopped child's commits stay on its branch
 - A child whose launch file carries a conversation contract is a `reviewer` session: the same bootstrap and jail over its own clone of the reviewed snapshot, with the tool surface cut at both boundaries
     - a task's judges (`harness.parallel.judges`) are such reviewers: each ranks the task's attempts in a clone cut at the attempts' base, under the same contract surface, and its verdict is an order the harness checks names every attempt once; the winner is still a verified attempt or none
     - config validation checks judge counts without expanding them; scheduling checks the same [roster limit](config.md#harnessparallel) before starting the judges
@@ -904,10 +904,10 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - `read_background` and `stop_background` reach only children named in the run's own dispatch records.
       A session without `run_command` keeps these tools if it can start a child or already has children.
       It can stop only its children.
-    - `merge_child` accepts only a stopped child from the parent's own dispatch records, never a supplied git ref; it is offered only under `git.control = "agent6"`, records the request before answering, and merges at a clean turn boundary with the ordinary chain merge; model-owned git never runs this merge
-    - `steer_child` rides the same knob and the same two gates, and reaches only a child the run's dispatch records name that runs or has stopped; the text enters that child's conversation as one notice headed as its parent's and is never read as a steer verb (`abort`, `exit`, `/undo`, `detach`), a directive (`/parallel`, `/pin`, `/review`, a skill) or an answer to a question, so it grants the child nothing its config does not; the child journals it as `steer.parent`, and a child is offered neither tool, so depth stays 1
-    - only the parent can continue a stopped child, under its remaining allowance and approval policy
-    - the private launch binds the child, parent and group to the original clone, its git directory and its state
+    - `merge_child` accepts only stopped or continued work from the parent's own dispatch records, never a supplied git ref; it is offered only under `git.control = "agent6"`, records the request before answering, and merges at a clean turn boundary with the ordinary chain merge; model-owned git never runs this merge
+    - `steer_child` rides the same knob and the same two gates, and reaches only a child the run's dispatch records name that runs or has unmerged work; the text enters that child's conversation as one notice headed as its parent's and is never read as a steer verb (`abort`, `exit`, `/undo`, `detach`), a directive (`/parallel`, `/pin`, `/review`, a skill) or an answer to a question, so it grants the child nothing its config does not; the child journals it as `steer.parent`, and a child is offered neither tool, so depth stays 1
+    - only the parent can continue an unmerged child, under its remaining allowance and approval policy
+    - the private launch binds the child, parent and group to the kept or restored clone, its git directory and its state
     - a child clone must have its own Git common directory; a `commondir` pointer is refused without following it
     - the child reads its own origin journal by exact ID; its roster and memory stay in the clone's state
     - a continuation charges only the usage beyond its recorded baseline
