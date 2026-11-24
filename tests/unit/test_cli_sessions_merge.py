@@ -581,7 +581,7 @@ def test_the_repl_diff_keeps_gits_pager_out(
 
     def _spy(argv: list[str], **kw: object) -> object:
         seen.append(list(argv))
-        return real_run(argv, **kw)  # type: ignore[arg-type]
+        return real_run(argv, **kw)  # pyrefly: ignore[no-matching-overload]
 
     monkeypatch.setattr(subprocess, "run", _spy)
     repl.repl_run_diff("run-DIFF02")

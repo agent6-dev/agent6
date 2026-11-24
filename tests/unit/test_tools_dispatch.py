@@ -277,7 +277,7 @@ def test_ask_user_refused_outside_run_mode(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("mode", ["plan", "ask", "machine"])
 def test_run_metric_refused_outside_run_mode(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: kinds.SessionMode
 ) -> None:
     """run_metric_command is run-only, and the dispatcher backstops it in every other mode.
 
@@ -294,7 +294,7 @@ def test_run_metric_refused_outside_run_mode(
     def fake_run_in_jail(policy: object, **_kw: object) -> None:
         fired.append(policy)
 
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode=mode)  # type: ignore[arg-type]
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode=mode)
     d.metric = directive.parse_metric_spec(
         "minimize 'CYCLES:\\s*(\\d+)' -- /usr/bin/python3 -c 'print(\"CYCLES: 42\")'"
     )

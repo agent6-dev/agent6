@@ -143,7 +143,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     """
     starved = _FakeProvider("")
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
-    starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
+    starved.call = lambda **_kw: starved_resp  # pyrefly: ignore[method-assign]
     v = review_env.single_verdict(
         cast(Provider, starved), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k3"
     )
@@ -155,7 +155,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     # Truncated mid-answer (partial JSON) names the truncation, not the parser.
     cut = _FakeProvider("")
     cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
-    cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
+    cut.call = lambda **_kw: cut_resp  # pyrefly: ignore[method-assign]
     v2 = review_env.single_verdict(
         cast(Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
@@ -172,7 +172,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     """
     empty = _FakeProvider("")
     empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
-    empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
+    empty.call = lambda **_kw: empty_resp  # pyrefly: ignore[method-assign]
 
     v = review_env.single_verdict(
         cast(Provider, empty), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k2.6"
@@ -189,7 +189,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     # no way to tell a broken call from a model that only ever thinks.
     thinker = _FakeProvider("")
     thought = _Resp("", stop_reason="stop", output_tokens=7160, thinking="t" * 30_175)
-    thinker.call = lambda **_kw: thought  # type: ignore[method-assign]
+    thinker.call = lambda **_kw: thought  # pyrefly: ignore[method-assign]
 
     v2 = review_env.single_verdict(
         cast(Provider, thinker), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k2.6"
@@ -607,7 +607,7 @@ def test_a_verdict_cut_off_after_a_finding_names_the_truncation() -> None:
     """
     cut = _FakeProvider("")
     cut_resp = _Resp(_BLOCK_JSON[:-2] + ',{"categ', stop_reason="length", output_tokens=1500)
-    cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
+    cut.call = lambda **_kw: cut_resp  # pyrefly: ignore[method-assign]
     v = review_env.single_verdict(
         cast(Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )

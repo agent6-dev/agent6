@@ -66,7 +66,7 @@ def test_a_worker_turn_carries_the_offer_to_the_provider(
         chain=run_chain.RunChain(tmp_path),
         config=golden._config(),
         provider=worker,
-        dispatcher=golden._Dispatcher([False]),  # type: ignore[arg-type]
+        dispatcher=golden._Dispatcher([False]),  # pyrefly: ignore[bad-argument-type]
         logger=lambda _msg: None,
         mode="ask",
         web_search=offered,

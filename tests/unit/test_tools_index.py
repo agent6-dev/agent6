@@ -428,7 +428,7 @@ def test_find_references_go_filters_to_identifiers(tmp_path: pathlib.Path) -> No
 def test_symbol_is_frozen_dataclass() -> None:
     s = index.Symbol(name="x", kind="function", path=pathlib.Path("/tmp/x.py"), line=0, col=0)
     with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
-        s.name = "y"  # type: ignore[misc]
+        s.name = "y"  # pyrefly: ignore[read-only]
 
 
 def test_outline_names_why_it_has_no_symbols(

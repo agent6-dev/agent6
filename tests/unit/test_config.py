@@ -302,7 +302,9 @@ def test_openai_base_url_accepts_http_and_https(tmp_path: pathlib.Path) -> None:
         '[providers.local]\nbackend = "openai"\nbase_url = "http://localhost:11434/v1"\n\n[models.worker]',
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.providers["local"].base_url == "http://localhost:11434/v1"  # type: ignore[union-attr]
+    entry = cfg.providers["local"]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.base_url == "http://localhost:11434/v1"
 
 
 def test_openai_base_url_rejects_schemeless(tmp_path: pathlib.Path) -> None:
@@ -789,8 +791,9 @@ def test_token_command_parses(tmp_path: pathlib.Path) -> None:
     )
     cfg = load_config(_write(tmp_path, body))
     entry = cfg.providers["gw"]
-    assert entry.token_command == ("mint-token", "--json")  # type: ignore[union-attr]
-    assert entry.token_command_ttl_s == 60.0  # type: ignore[union-attr]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.token_command == ("mint-token", "--json")
+    assert entry.token_command_ttl_s == 60.0
 
 
 def test_token_command_ttl_defaults_to_300(tmp_path: pathlib.Path) -> None:
@@ -798,7 +801,9 @@ def test_token_command_ttl_defaults_to_300(tmp_path: pathlib.Path) -> None:
         '[providers.gw]\nbackend = "openai"\ntoken_command = ["mint-token"]'
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.providers["gw"].token_command_ttl_s == 300.0  # type: ignore[union-attr]
+    entry = cfg.providers["gw"]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.token_command_ttl_s == 300.0
 
 
 def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(
@@ -807,7 +812,8 @@ def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(
     """An empty `token_command` reads as unset; an empty element is refused as a typo."""
     body = _with_openai_provider('[providers.gw]\nbackend = "openai"\ntoken_command = []')
     entry = load_config(_write(tmp_path, body)).providers["gw"]
-    assert entry.token_command == ()  # type: ignore[union-attr]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.token_command == ()
     body = _with_openai_provider('[providers.gw]\nbackend = "openai"\ntoken_command = [""]')
     with pytest.raises(ConfigError, match="token_command"):
         load_config(_write(tmp_path, body))
@@ -885,7 +891,9 @@ def test_azure_defaults_api_key_header(tmp_path: pathlib.Path) -> None:
         'base_url = "https://r.openai.azure.com"\nextra_query = { "api-version" = "2024-06-01" }'
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.providers["a"].auth_style == "api_key_header"  # type: ignore[union-attr]
+    entry = cfg.providers["a"]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.auth_style == "api_key_header"
 
 
 def test_unknown_deployment_rejected(tmp_path: pathlib.Path) -> None:
@@ -899,7 +907,9 @@ def test_unknown_deployment_rejected(tmp_path: pathlib.Path) -> None:
 def test_explicit_auth_style_preserved(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider('[providers.x]\nbackend = "openai"\nauth_style = "none"')
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.providers["x"].auth_style == "none"  # type: ignore[union-attr]
+    entry = cfg.providers["x"]
+    assert isinstance(entry, OpenAIProviderEntry)
+    assert entry.auth_style == "none"
 
 
 @pytest.mark.parametrize(
@@ -1133,11 +1143,12 @@ def test_model_selectors_split_at_the_first_slash(tmp_path: pathlib.Path) -> Non
     cfg = load_config(_write(tmp_path, body))
     route = cfg.model_route("openrouter/moonshotai/kimi-k2.6")
     out = cfg.with_model_route("worker", route)
-    assert (out.models.worker.provider, out.models.worker.model) == (  # type: ignore[union-attr]
+    assert out.models.worker is not None
+    assert (out.models.worker.provider, out.models.worker.model) == (
         "openrouter",
         "moonshotai/kimi-k2.6",
     )
-    assert out.models.worker.effort == "high"  # type: ignore[union-attr]
+    assert out.models.worker.effort == "high"
     for spec in ("claude-y", "openrouter", "moonshotai/kimi-k2.6"):
         with pytest.raises(ConfigError, match="configured providers: anthropic, openrouter"):
             cfg.model_route(spec)

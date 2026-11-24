@@ -170,7 +170,7 @@ def test_a_contract_stops_at_its_turn_limit_without_running_the_last_tools(
         reads.append(name)
         return real(name, raw, **kw)
 
-    disp.dispatch = counting  # type: ignore[method-assign]
+    disp.dispatch = counting  # pyrefly: ignore[bad-assignment, method-assign]
     result = wf.run("read")
     assert provider.call.call_count == 3
     assert reads == ["read_file", "read_file"]  # the third response's tool never ran

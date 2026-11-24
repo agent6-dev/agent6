@@ -345,7 +345,7 @@ def test_special_inputs_refuse_before_open(
 
     def guard(path: pathlib.Path, *args: object, **kwargs: object) -> object:
         assert path != file, "attempted to open a non-regular input"
-        return original_open(path, *args, **kwargs)  # type: ignore[arg-type]
+        return original_open(path, *args, **kwargs)  # pyrefly: ignore[no-matching-overload]
 
     monkeypatch.setattr(pathlib.Path, "open", guard)
     with pytest.raises(errors.PackError, match="regular file"):

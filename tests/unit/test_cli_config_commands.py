@@ -329,7 +329,7 @@ def test_repo_list_edits_keep_values_inherited_from_global(iso: pathlib.Path) ->
 
     assert _run(["config", "add", "--repo", "sandbox.fetch_approved_hosts", "three.example"]) == 0
     repo = tomllib.loads((paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
-    assert repo["sandbox"]["fetch_approved_hosts"] == [  # type: ignore[index]
+    assert repo["sandbox"]["fetch_approved_hosts"] == [
         "one.example",
         "two.example",
         "three.example",
@@ -337,7 +337,7 @@ def test_repo_list_edits_keep_values_inherited_from_global(iso: pathlib.Path) ->
 
     assert _run(["config", "remove", "--repo", "sandbox.fetch_approved_hosts", "one.example"]) == 0
     repo = tomllib.loads((paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8"))
-    assert repo["sandbox"]["fetch_approved_hosts"] == [  # type: ignore[index]
+    assert repo["sandbox"]["fetch_approved_hosts"] == [
         "two.example",
         "three.example",
     ]
@@ -360,9 +360,9 @@ def test_machine_overlay_set_and_get(iso: pathlib.Path, capsys: pytest.CaptureFi
     # A non-security knob is fine in a machine overlay (review tuning).
     assert _run(["config", "set", "review.when", "verify_fail", "--machine-file", str(mf)]) == 0
     data = tomllib.loads(mf.read_text(encoding="utf-8"))
-    assert data["config"] == {"review": {"when": "verify_fail"}}  # type: ignore[comparison-overlap]
+    assert data["config"] == {"review": {"when": "verify_fail"}}
     # The original machine tables survive the edit.
-    assert data["machine"]["name"] == "demo"  # type: ignore[index]
+    assert data["machine"]["name"] == "demo"
     capsys.readouterr()
     assert _run(["config", "get", "review.when", "--machine-file", str(mf)]) == 0
     assert "[machine]" in capsys.readouterr().out
@@ -870,7 +870,7 @@ def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: pathlib.Path) ->
     assert _run(["config", "set", "presets.demo.compaction.drop_at_chars", "120000"]) == 0
     presets = _global_toml(iso)["presets"]
     assert isinstance(presets, dict)
-    assert presets["demo"]["compaction"] == {  # type: ignore[index]
+    assert presets["demo"]["compaction"] == {
         "drop_at_chars": 120000,
         "summarize_at_chars": 200000,
     }

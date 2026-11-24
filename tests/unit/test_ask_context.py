@@ -182,7 +182,7 @@ def test_ask_repl_multi_turn_carries_context(
 
     monkeypatch.setattr("builtins.input", _fake_input)
 
-    result = ask.run_ask_repl(wf, _FakeBudget(), layout, first_question="first question")  # type: ignore[arg-type]
+    result = ask.run_ask_repl(wf, _FakeBudget(), layout, first_question="first question")  # pyrefly: ignore[bad-argument-type]
 
     assert wf.calls[0] == "first question"  # turn 1 verbatim
     assert wf.words == ["first question", "a follow-up"]

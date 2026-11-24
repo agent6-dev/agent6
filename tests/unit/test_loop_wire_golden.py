@@ -267,13 +267,13 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_dir),
         config=_config(),
-        provider=worker,  # type: ignore[arg-type]
-        dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
+        provider=worker,
+        dispatcher=_Dispatcher(compact_flag),  # pyrefly: ignore[bad-argument-type]
         logger=lambda _msg: None,
         compaction=compaction_window.CompactionSettings(
             summarizer="helper",
             helper_context_tokens=200000,
-            helper=summarizer,  # type: ignore[arg-type]
+            helper=summarizer,
             drop_at_chars=2_000,
             keep_recent_turns=0,
         ),
@@ -315,8 +315,8 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
     wf2 = loop.Harness(
         chain=run_chain.RunChain(tmp_dir),
         config=_config(),
-        provider=resume_worker,  # type: ignore[arg-type]
-        dispatcher=_Dispatcher([False]),  # type: ignore[arg-type]
+        provider=resume_worker,
+        dispatcher=_Dispatcher([False]),  # pyrefly: ignore[bad-argument-type]
         logger=lambda _msg: None,
         compaction=compaction_window.CompactionSettings(drop_at_chars=2_000),
         resume_state_path=resume_snap,

@@ -63,7 +63,7 @@ def test_initial_inference_uses_the_prepared_target_through_run_task(
     real_prepare = session_runtime.prepare_local_execution
 
     def prepare(*args: object, **kwargs: object) -> command_tools.JailAccess:
-        access = real_prepare(*args, **kwargs)  # type: ignore[arg-type]
+        access = real_prepare(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
         accesses.append(access)
         # The target retains its prepared environment when the host's lookup changes.
         monkeypatch.setenv("HOME", str(host_home))

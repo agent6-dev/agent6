@@ -99,7 +99,7 @@ def test_journal_line_format_matches_golden(tmp_path: pathlib.Path) -> None:
     # Byte pin of the line format: a drift silently breaks replay of every older journal.
     j = _journal(tmp_path)
     for event in _golden_events():
-        j.append(event)  # type: ignore[arg-type]
+        j.append(event)  # pyrefly: ignore[bad-argument-type]
     written = j.journal_path.read_text(encoding="utf-8")
     assert written == (_DATA / "golden_journal.jsonl").read_text(encoding="utf-8")
 
@@ -444,7 +444,7 @@ def test_take_signal_preserves_poke_landing_mid_consume(
     def racing_read_text(self: pathlib.Path, *args: object, **kwargs: object) -> str:
         if self.name.startswith("signal"):
             j.poke("second")  # a poke lands mid-consume
-        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+        return real_read_text(self, *args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(pathlib.Path, "read_text", racing_read_text)
     assert j.take_signal() == (True, "first")

@@ -11,7 +11,7 @@ from agent6.machine import graph, semantics
 from tests.unit.test_machine_model import VALID_MACHINE
 
 
-def _spec(tmp_path: pathlib.Path):  # type: ignore[no-untyped-def]
+def _spec(tmp_path: pathlib.Path):
     path = tmp_path / "m.asm.toml"
     path.write_text(VALID_MACHINE, encoding="utf-8")
     return semantics.load_machine(path)

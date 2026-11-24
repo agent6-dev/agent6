@@ -582,7 +582,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
 
     printed: list[str] = []
     monkeypatch.setattr(steer_tty, "tty_message", printed.append)
-    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # pyrefly: ignore[implicit-any-lambda]
 
     facts = frontend.SessionFacts(
         spend="$1.42",
@@ -645,8 +645,8 @@ def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
     from agent6.sessions import event_log
     from agent6.ui.cli import steer_tty
 
-    monkeypatch.setattr(steer_tty, "tty_message", lambda _t: None)  # type: ignore[misc]
-    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(steer_tty, "tty_message", lambda _t: None)  # pyrefly: ignore[implicit-any-lambda]
+    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # pyrefly: ignore[implicit-any-lambda]
     monkeypatch.setattr(menu_input, "menu_capable", lambda: False)
 
     def at_the_open_menu(_text: str, **_kw: object) -> str:
@@ -687,8 +687,8 @@ def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
     def typed(_text: str, **_kw: object) -> str:
         return "focus on the failing test"
 
-    monkeypatch.setattr(steer_tty, "tty_message", lambda _t: None)  # type: ignore[misc]
-    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(steer_tty, "tty_message", lambda _t: None)  # pyrefly: ignore[implicit-any-lambda]
+    monkeypatch.setattr(process, "frontend_is_live", lambda _d: False)  # pyrefly: ignore[implicit-any-lambda]
     monkeypatch.setattr(menu_input, "menu_capable", lambda: False)
     monkeypatch.setattr(steer_tty, "tty_prompt", typed)
 

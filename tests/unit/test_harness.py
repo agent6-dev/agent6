@@ -2468,7 +2468,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
         max_turns=20,
     )
     # The budget fraction follows the measurement count: samples 5-8 see 80% left, 9+ see 10%.
-    wf._budget_fraction_remaining = lambda: 0.8 if dispatcher.metric_count <= 8 else 0.1  # type: ignore[method-assign]
+    wf._budget_fraction_remaining = lambda: 0.8 if dispatcher.metric_count <= 8 else 0.1  # pyrefly: ignore[method-assign]
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
@@ -8336,7 +8336,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path)
         events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
     wf.events = mock.MagicMock()
-    wf.events.emit = _capture  # type: ignore[method-assign]
+    wf.events.emit = _capture
     turn = _turn(number=3)
     turn.verify_just_passed = True
     turn.edit_since_verify_pass = False
@@ -8355,7 +8355,7 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
         events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
     wf.events = mock.MagicMock()
-    wf.events.emit = _capture  # type: ignore[method-assign]
+    wf.events.emit = _capture
 
     from agent6 import errors
 
@@ -10126,7 +10126,7 @@ def test_a_subject_that_cannot_read_git_reports_the_failed_commit(tmp_path: path
         events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
     wf.events = mock.MagicMock()
-    wf.events.emit = _capture  # type: ignore[method-assign]
+    wf.events.emit = _capture
     turn = _turn(number=3)
     turn.edited = True
     fault = errors.GitError("unable to read tree")

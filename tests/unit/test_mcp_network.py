@@ -13,6 +13,7 @@ contract and the refuse/degrade split.
 from __future__ import annotations
 
 import pathlib
+from typing import Literal
 
 import pytest
 
@@ -52,7 +53,7 @@ def test_the_words_mean_the_same_on_both_sides() -> None:
         sandbox = cfg.mcp.servers["s"].sandbox
         assert sandbox is not None and sandbox.network == value
     with pytest.raises(ValueError, match="network"):
-        SandboxConfig(network="none")  # type: ignore[arg-type]
+        SandboxConfig(network="none")  # pyrefly: ignore[bad-argument-type]
 
 
 @pytest.mark.parametrize("isolation", ["partial", "none"])
@@ -175,7 +176,9 @@ def test_a_server_agent6_does_not_jail_gets_no_network_warning(
 
 @pytest.mark.parametrize("value", ["auto", "session", "host"])  # the shared words
 @pytest.mark.parametrize("isolation", ["full", "partial", "none"])
-def test_the_per_server_knob_answers_exactly_like_tool_network(value: str, isolation: str) -> None:
+def test_the_per_server_knob_answers_exactly_like_tool_network(
+    value: Literal["auto", "session", "host"], isolation: kinds.IsolationLevel
+) -> None:
     """One axis, one vocabulary, one set of rules.
 
     They drifted: the per-server guard read `if isolation == "full"` where the sibling reads `if
@@ -185,10 +188,10 @@ def test_the_per_server_knob_answers_exactly_like_tool_network(value: str, isola
     """
     from agent6.config import SandboxConfig
 
-    per_server = confine.check_mcp_network_support(_server({"network": value}), isolation)  # type: ignore[arg-type]
+    per_server = confine.check_mcp_network_support(_server({"network": value}), isolation)
     global_knob = confine.check_network_support(
-        Config(sandbox=SandboxConfig(network=value)),  # type: ignore[arg-type]
-        isolation,  # type: ignore[arg-type]
+        Config(sandbox=SandboxConfig(network=value)),
+        isolation,
     )
     assert (per_server is None) == (global_knob is None), (
         f"{value!r} on {isolation!r}: per-server says"

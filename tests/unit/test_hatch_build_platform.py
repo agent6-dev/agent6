@@ -29,7 +29,7 @@ def test_sdist_includes_name_files_at_the_project_root() -> None:
 def _load_hook_module() -> types.ModuleType:
     # hatchling is absent from the dev venv; the subject is the hook's gate, so a bare base does.
     iface = types.ModuleType("hatchling.builders.hooks.plugin.interface")
-    iface.BuildHookInterface = object  # type: ignore[attr-defined]
+    iface.BuildHookInterface = object  # pyrefly: ignore[missing-attribute]
     for name in (
         "hatchling",
         "hatchling.builders",

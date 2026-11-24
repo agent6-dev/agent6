@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import child_records, directive
+from agent6 import child_records, directive, kinds
 from agent6.config import Config
 from agent6.harness import loop_conversation, loop_state, operator_bridge, run_chain, toolset
 from agent6.harness.parallel import dispatch as parallel_dispatch
@@ -69,7 +69,7 @@ class _Work:
 
 
 def _tools(
-    tmp_path: pathlib.Path, cfg: Config, *, mode: str = "run", work: Any = None
+    tmp_path: pathlib.Path, cfg: Config, *, mode: kinds.SessionMode = "run", work: Any = None
 ) -> dispatch.ToolDispatcher:
     repo = tmp_path / "repo"
     repo.mkdir(exist_ok=True)
@@ -77,15 +77,15 @@ def _tools(
         root=repo,
         config=cfg,
         isolation="none",
-        mode=mode,  # type: ignore[arg-type]
+        mode=mode,
         session_dir=tmp_path / "session",
     )
     d.children = work
     return d
 
 
-def _names(d: dispatch.ToolDispatcher, mode: str = "run") -> list[str]:
-    return [t.name for t in toolset.tool_definitions(d, mode=mode)]  # type: ignore[arg-type]
+def _names(d: dispatch.ToolDispatcher, mode: kinds.SessionMode = "run") -> list[str]:
+    return [t.name for t in toolset.tool_definitions(d, mode=mode)]
 
 
 def test_steer_child_is_offered_where_parallel_is_and_refused_everywhere_else(
@@ -357,7 +357,7 @@ def _steering(
     steering = operator_bridge.Steering(
         bridge=bridge,
         parallel=parallel,
-        dispatcher=None,  # type: ignore[arg-type]
+        dispatcher=None,  # pyrefly: ignore[bad-argument-type]
         record_decision=decide,
         log=lambda _m: None,
         emit=events.append,

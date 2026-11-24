@@ -495,7 +495,7 @@ def test_prepared_review_freezes_rules_findings_and_failed_verification(repo: pa
     assert prepared.excluded_paths == tuple(sorted(reviewer.chain.excluded))
     assert prepared.context.prior_findings == (state.review_panels[0].findings[0].finding,)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        prepared.panel_id = "forged"  # type: ignore[misc]
+        prepared.panel_id = "forged"  # pyrefly: ignore[read-only]
 
 
 @pytest.fixture(autouse=True)

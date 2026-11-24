@@ -126,7 +126,7 @@ def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
         pass
 
     bad = Bad()
-    bad.self_ref = bad  # type: ignore[attr-defined]
+    bad.self_ref = bad  # pyrefly: ignore[missing-attribute]
     sink.emit(
         journal.ToolCall(
             name="example", args_preview={"x": 1, "p": tmp_path / "a", "weird": bad}, call_id=1

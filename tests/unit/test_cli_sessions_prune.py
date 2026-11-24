@@ -1573,7 +1573,7 @@ def test_prune_records_a_manual_merge(
         "via": "",
         "method": None,
         "target_before": main_tip,
-        "ts": _recorded_merge(tmp_path, "hand11")["ts"],  # type: ignore[index]
+        "ts": _recorded_merge(tmp_path, "hand11")["ts"],  # pyrefly: ignore[unsupported-operation]
     }
     assert _recorded_merge(tmp_path, "part11") is None
     assert _recorded_merge(tmp_path, "diff11") is None

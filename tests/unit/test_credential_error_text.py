@@ -32,7 +32,7 @@ def test_a_grant_whose_token_cannot_ride_a_header_is_refused_without_its_value()
     secret = "SECRET-TOKEN-VALUE\n"
     with pytest.raises(ProviderError, match="cannot ride a header") as refused:
         oauth_protocol.grant_from_response(
-            _Resp(200, {"access_token": secret, "expires_in": 60}),  # type: ignore[arg-type]
+            _Resp(200, {"access_token": secret, "expires_in": 60}),  # pyrefly: ignore[bad-argument-type]
             operation="exchange",
             label="work",
         )
@@ -44,7 +44,7 @@ def test_a_token_error_scrubs_the_whole_body_before_clipping() -> None:
     rt = "refresh-token-value-0123456789abcdef"
     text = ("<" + rt + ">,") * 60 + rt
     err = oauth_protocol.token_error(
-        _Resp(400, {}, text=text),  # type: ignore[arg-type]
+        _Resp(400, {}, text=text),  # pyrefly: ignore[bad-argument-type]
         operation="refresh",
         provider="work",
         label="work",
@@ -57,7 +57,7 @@ def test_a_redirect_line_shows_no_location(monkeypatch: pytest.MonkeyPatch) -> N
     """A Location can echo the credential anywhere: its query, its userinfo, its host."""
     location = "https://user:SECRETVALUE@SECRETVALUE.evil.example/?echo=Bearer%20SECRETVALUE"
     err = oauth_protocol.redirect_refusal(
-        _Resp(302, {}, location=location),  # type: ignore[arg-type]
+        _Resp(302, {}, location=location),  # pyrefly: ignore[bad-argument-type]
         operation="refresh",
         label="work",
     )
@@ -84,7 +84,7 @@ def test_a_redirect_line_shows_no_location(monkeypatch: pytest.MonkeyPatch) -> N
         adapt_400=lambda _s, _t, _b: False,
         adapt_attempts=0,
         require_metered=lambda _d: None,
-        parse=lambda _d: None,  # type: ignore[arg-type, return-value]
+        parse=lambda _d: None,  # pyrefly: ignore[bad-argument-type]
     )
     with pytest.raises(ProviderError, match="redirected") as refused:
         call.run()

@@ -60,13 +60,13 @@ def test_every_record_has_a_writer_and_the_map_is_in_type_order() -> None:
 def test_a_record_refuses_an_unknown_field_and_a_wrong_type() -> None:
     """The record is the schema: a writer cannot invent a field or mistype one."""
     with pytest.raises(pydantic.ValidationError, match="typo"):
-        journal.LoopNote(text="ok", typo=1)  # type: ignore[call-arg]
+        journal.LoopNote(text="ok", typo=1)  # pyrefly: ignore[unexpected-keyword]
     with pytest.raises(pydantic.ValidationError, match="text"):
-        journal.LoopNote(text=3)  # type: ignore[arg-type]
+        journal.LoopNote(text=3)  # pyrefly: ignore[bad-argument-type]
     with pytest.raises(pydantic.ValidationError, match="text"):
-        journal.LoopNote()  # type: ignore[call-arg]
+        journal.LoopNote()  # pyrefly: ignore[missing-argument]
     with pytest.raises(pydantic.ValidationError, match="nodes"):
-        journal.GraphUpdate(nodes=[], cursor=None)  # type: ignore[arg-type]
+        journal.GraphUpdate(nodes=[], cursor=None)  # pyrefly: ignore[bad-argument-type]
 
 
 def test_the_sink_writes_the_envelope_and_leaves_unset_fields_out(tmp_path: pathlib.Path) -> None:

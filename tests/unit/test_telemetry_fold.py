@@ -149,7 +149,7 @@ def _attr(span: telemetry_records.Span | telemetry_records.LogRecord, key: str) 
 
 def _counter(fold: telemetry.TelemetryFold, name: str, **labels: object) -> float:
     key = (name, tuple(sorted(labels.items())))
-    return fold.metrics().counters.get(key, 0.0)  # type: ignore[arg-type]
+    return fold.metrics().counters.get(key, 0.0)  # pyrefly: ignore[no-matching-overload]
 
 
 def test_a_journal_folds_into_a_deterministic_span_tree() -> None:

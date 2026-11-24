@@ -174,7 +174,7 @@ def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
 
 def _world(
     tmp_path: pathlib.Path,
-    isolation: str,
+    isolation: kinds.IsolationLevel,
     *,
     cfg: Config | None = None,
     protect_paths: tuple[pathlib.Path, ...] = (),
@@ -182,7 +182,7 @@ def _world(
 ) -> live_world.LiveWorld:
     """A LiveWorld wired exactly as run_machine wires it, through the shared policy builder."""
     factory = run.machine_tool_policy_factory(
-        {"": StateConfig(cfg or Config(), isolation)},  # type: ignore[arg-type]
+        {"": StateConfig(cfg or Config(), isolation)},
         tmp_path,
         protect_paths=protect_paths,
         data_dir=data_dir,

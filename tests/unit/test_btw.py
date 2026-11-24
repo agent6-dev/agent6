@@ -99,7 +99,7 @@ def test_a_bare_btw_asks_for_a_question_instead_of_opening_a_session(
         "",
         "parent-BBBBBB",
         cwd=tmp_path,
-        launch=lambda *_a: called.append("x") or "",  # type: ignore[func-returns-value]
+        launch=lambda *_a: called.append("x") or "",
         list_asks=list,
     )
     assert session is None and "ask something" in err

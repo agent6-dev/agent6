@@ -396,7 +396,7 @@ class TestWorkflowLoadSkills:
         wf = loop.Harness(
             chain=run_chain.RunChain(tmp_path),
             config=cfg,
-            provider=None,  # type: ignore[arg-type]
+            provider=None,  # pyrefly: ignore[bad-argument-type]
             dispatcher=d,
             logger=lambda _: None,
             mode="plan",

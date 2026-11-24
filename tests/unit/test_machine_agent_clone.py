@@ -91,7 +91,7 @@ class _FakeChild:
         return 0
 
 
-def _runner(origin: pathlib.Path, tmp_path: pathlib.Path):  # type: ignore[no-untyped-def]
+def _runner(origin: pathlib.Path, tmp_path: pathlib.Path):
     return agent.build_machine_agent_runner(
         _OVERLAYS,
         origin,

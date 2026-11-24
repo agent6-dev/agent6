@@ -112,7 +112,7 @@ max_turns = 17
     mfile.write_text(_AGENT_MACHINE, encoding="utf-8")
     child_overlays: list[dict[str, object]] = []
 
-    def fake_build(overlays: dict[str, agent.StateOverlay], *_args: object, **_kwargs: object):  # type: ignore[no-untyped-def]
+    def fake_build(overlays: dict[str, agent.StateOverlay], *_args: object, **_kwargs: object):
         child_overlays.extend(entry.overlay for entry in overlays.values())
 
         def run(*_args: object, **_kwargs: object) -> AgentExecResult:
@@ -126,7 +126,7 @@ max_turns = 17
 
     code = run_mod.run_machine(mfile, reporter, config_paths=(explicit,))
     assert code == 0, said
-    assert child_overlays[0]["harness"]["max_turns"] == 17  # type: ignore[index]
+    assert child_overlays[0]["harness"]["max_turns"] == 17  # pyrefly: ignore[bad-index]
 
 
 def test_a_state_cannot_raise_a_zero_token_cap(

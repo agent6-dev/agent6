@@ -127,7 +127,7 @@ def test_add_subtask_writes_child_before_parent_link(
     parent_path = storage.node_md_path(layout, c.nodes(), parent.id)
     crash = {"armed": True}
 
-    def crashing_write_node(layout_, nodes_, node_):  # type: ignore[no-untyped-def]
+    def crashing_write_node(layout_, nodes_, node_):  # pyrefly: ignore[implicit-any-parameter]
         # Crash specifically when re-writing the parent (the link update).
         if crash["armed"] and node_.id == parent.id:
             raise OSError("simulated ENOSPC during parent link write")

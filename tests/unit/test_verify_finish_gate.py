@@ -179,7 +179,7 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
     for verify, gate_verdict, verification in cases:
         wf = _wf(verify=verify)
         wf.events = mock.MagicMock(emit=_capture)
-        wf.events.emit = _capture  # type: ignore[method-assign]
+        wf.events.emit = _capture
         state = loop_state.LoopState(original_task="t", tool_calls=0, verify=gate_verdict)
         emitted.clear()
         wf.finish(
@@ -210,7 +210,7 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
 
     wf = _wf(verify=True)
     wf.events = mock.MagicMock(emit=_capture)
-    wf.events.emit = _capture  # type: ignore[method-assign]
+    wf.events.emit = _capture
     for scoped in (True, False):
         state = loop_state.LoopState(
             original_task="t",

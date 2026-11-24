@@ -36,7 +36,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
     # The post-save key probe is stubbed so no test makes a network call; probe tests re-patch it.
     monkeypatch.setattr(
         "agent6.models.cache.probe_provider_key",
-        lambda *a, **k: cache.KeyProbeResult(  # type: ignore[misc]
+        lambda *a, **k: cache.KeyProbeResult(  # pyrefly: ignore[implicit-any-lambda]
             ok=True, status="ok", detail="provider returned 1 models"
         ),
     )
@@ -411,7 +411,7 @@ def test_connect_warns_when_provider_rejects_key(
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-BAD\n"))
     monkeypatch.setattr(
         "agent6.models.cache.probe_provider_key",
-        lambda *a, **k: cache.KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
+        lambda *a, **k: cache.KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # pyrefly: ignore[implicit-any-lambda]
     )
     rc = main(["connect", "anthropic"])
     assert rc == 0  # the key is saved anyway; the warning is advisory
@@ -1223,7 +1223,7 @@ def test_chatgpt_connect_replaces_old_format_entry_atomically_with_bound_grant(
         if path == paths.secrets_path():
             assert path.read_bytes() == old
             published.append(text)
-        real_write(path, text, **kwargs)  # type: ignore[arg-type]
+        real_write(path, text, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(secret_store.portable, "atomic_write", publish)
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)

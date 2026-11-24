@@ -1321,8 +1321,11 @@ def test_resume_model_flag_is_recorded_and_replayed(
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-MODEL1"
     routes: list[tuple[str, str]] = []
 
-    def _route(cfg: object, role: str, *, reporter: object, model_flag: str = "") -> bool:
-        planner = cfg.models.resolve(role)  # type: ignore[attr-defined]
+    from agent6.config import Config, RoleName
+
+    def _route(cfg: Config, role: RoleName, *, reporter: object, model_flag: str = "") -> bool:
+        planner = cfg.models.resolve(role)
+        assert planner is not None
         routes.append((model_flag, planner.model))
         return model_flag != "anthropic/claude-refused"
 

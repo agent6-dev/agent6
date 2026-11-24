@@ -38,7 +38,7 @@ def test_standalone_strategy_replaces_the_history_the_worker_receives(
         chain=run_chain.RunChain(tmp_path),
         config=scripted._config(),
         provider=worker,
-        dispatcher=scripted._Dispatcher([False]),  # type: ignore[arg-type]
+        dispatcher=scripted._Dispatcher([False]),  # pyrefly: ignore[bad-argument-type]
         logger=lambda _: None,
         compactor=keep,
         resume_state_path=snap,

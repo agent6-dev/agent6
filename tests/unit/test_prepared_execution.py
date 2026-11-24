@@ -100,7 +100,7 @@ def test_effective_controls_cover_every_sandbox_leaf(
     assert by_leaf["sandbox.protect_git"].effective == ("on" if isolation == "full" else "off")
     assert bool(by_leaf["sandbox.protect_git"].reason) == (isolation != "full")
     with pytest.raises(dataclasses.FrozenInstanceError):
-        rows[0].reason = "changed"  # type: ignore[misc]
+        rows[0].reason = "changed"  # pyrefly: ignore[read-only]
 
 
 @pytest.mark.parametrize(
@@ -117,7 +117,7 @@ def test_preparation_precedes_work_and_all_commands_share_it(
     real_open = jail_session.JailSession.open
 
     def observe(*args: object, **kwargs: object) -> jail_session.JailSession:
-        session = real_open(*args, **kwargs)  # type: ignore[arg-type]
+        session = real_open(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
         opened.append(session)
         return session
 
@@ -248,12 +248,12 @@ def test_run_execution_prepares_before_inference_and_reuses_the_session(
         order.append("prepare")
         if failure == "prepare":
             raise jail.JailUnavailableError("preparation refused")
-        session = real_open(*args, **kwargs)  # type: ignore[arg-type]
+        session = real_open(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
         opened.append(session)
         return session
 
     def observe_prepare(*args: object, **kwargs: object) -> command_tools.JailAccess:
-        access = real_prepare(*args, **kwargs)  # type: ignore[arg-type]
+        access = real_prepare(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
         accesses.append(access)
         return access
 
@@ -405,7 +405,7 @@ def test_prepared_session_asks_then_runs_an_approved_command(
     marker = tmp_path / "allowed"
 
     def open_session(*args: object, **kwargs: object) -> jail_session.JailSession:
-        session = real_open(*args, **kwargs)  # type: ignore[arg-type]
+        session = real_open(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
         opened.append(session)
         return session
 
@@ -414,7 +414,7 @@ def test_prepared_session_asks_then_runs_an_approved_command(
     ) -> kinds.CommandResult | kinds.BackgroundHandoff:
         order.append("run")
         ran_in.append(self)
-        return real_run(self, *args, **kwargs)  # type: ignore[arg-type]
+        return real_run(self, *args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
         assert len(opened) == 1 and not marker.exists()

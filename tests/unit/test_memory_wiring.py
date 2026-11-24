@@ -34,7 +34,7 @@ def _repo(root: pathlib.Path) -> kinds.RepoSummary:
     )
 
 
-def _build(mode: str, index: str, tmp_path: pathlib.Path) -> str:
+def _build(mode: kinds.LoopMode, index: str, tmp_path: pathlib.Path) -> str:
     return prompt_blocks.build_system_prompt(
         config=Config.model_validate(
             {
@@ -44,7 +44,7 @@ def _build(mode: str, index: str, tmp_path: pathlib.Path) -> str:
             }
         ),
         repo=_repo(tmp_path),
-        mode=mode,  # pyrefly: ignore[bad-argument-type]
+        mode=mode,
         memory_index=index,
         memory_dir_path="/state/memory",
         skills=None,

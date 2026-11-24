@@ -69,10 +69,10 @@ def test_chatgpt_listing_uses_holder_without_refresh_and_falls_back_to_cache(
 
     def token(self: oauth.OAuthCredential, **kwargs: object) -> str:
         seen.append(kwargs)
-        return real_token(self, **kwargs)  # type: ignore[arg-type]
+        return real_token(self, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
     def refused(method: str, url: str, **kwargs: object) -> httpx2.Response:
-        assert kwargs["headers"]["authorization"] == "Bearer expired"  # type: ignore[index]
+        assert kwargs["headers"]["authorization"] == "Bearer expired"  # pyrefly: ignore[bad-index]
         return httpx2.Response(401, request=httpx2.Request(method, url))
 
     monkeypatch.setattr(oauth.OAuthCredential, "token", token)

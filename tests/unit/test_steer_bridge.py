@@ -66,10 +66,10 @@ def test_make_steer_state_without_tty_uses_bridge(
 ) -> None:
     real_open = builtins.open
 
-    def fake_open(file: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    def fake_open(file: object, *args: object, **kwargs: object):
         if file == "/dev/tty":
             raise OSError("no controlling terminal")
-        return real_open(file, *args, **kwargs)  # type: ignore[arg-type]
+        return real_open(file, *args, **kwargs)  # pyrefly: ignore[no-matching-overload]
 
     monkeypatch.setattr("builtins.open", fake_open)
     events = event_log.EventSink(tmp_path / "logs.jsonl")

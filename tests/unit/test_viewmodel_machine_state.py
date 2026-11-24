@@ -229,11 +229,11 @@ def test_the_wire_form_reads_the_journal_once(tmp_path: pathlib.Path) -> None:
         reads += 1
         return real_read(self)
 
-    machine_journal.MachineJournal.read = counting_read  # type: ignore[method-assign]
+    machine_journal.MachineJournal.read = counting_read  # pyrefly: ignore[method-assign]
     try:
         d_out = machine_state.machine_state_as_dict(live, d)
     finally:
-        machine_journal.MachineJournal.read = real_read  # type: ignore[method-assign]
+        machine_journal.MachineJournal.read = real_read  # pyrefly: ignore[method-assign]
 
     assert d_out["refusals"]["stop"] == ""
     assert reads == 0, f"the wire form re-read the journal {reads} time(s)"
@@ -525,7 +525,7 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(
         folds += 1
         return real_tail(*args, **kwargs)
 
-    tail.tail_events = counting_tail  # type: ignore[assignment]
+    tail.tail_events = counting_tail
     try:
         machine_state.machine_verb_refusals(d, "tiny")  # stopped: no worker
         assert folds == 0
@@ -684,7 +684,7 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
         raise AssertionError("the whole log was read again")
 
     real_tail = tail.tail_events
-    tail.tail_events = no_full_read  # type: ignore[assignment]
+    tail.tail_events = no_full_read
     try:
         with log.open("a", encoding="utf-8") as fh:
             fh.write('{"type":"question.prompt","id":"q1","questions":[{"question":"?"}]}\n')

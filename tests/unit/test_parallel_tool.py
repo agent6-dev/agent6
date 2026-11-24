@@ -15,7 +15,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records
+from agent6 import child_records, kinds
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
 from agent6.harness import loop, operator_bridge, provider_call, run_chain, toolset
@@ -107,7 +107,7 @@ def _dispatcher(
     tmp_path: pathlib.Path,
     cfg: Config,
     *,
-    mode: str = "run",
+    mode: kinds.SessionMode = "run",
     work: Any = None,
     state_dir: pathlib.Path | None = None,
 ) -> dispatch.ToolDispatcher:
@@ -118,7 +118,7 @@ def _dispatcher(
         root=repo,
         config=cfg,
         isolation="none",
-        mode=mode,  # type: ignore[arg-type]
+        mode=mode,
         session_dir=tmp_path / "session",
         state_dir=state_dir,
     )
@@ -126,8 +126,8 @@ def _dispatcher(
     return d
 
 
-def _names(d: dispatch.ToolDispatcher, mode: str = "run") -> list[str]:
-    return [t.name for t in toolset.tool_definitions(d, mode=mode)]  # type: ignore[arg-type]
+def _names(d: dispatch.ToolDispatcher, mode: kinds.SessionMode = "run") -> list[str]:
+    return [t.name for t in toolset.tool_definitions(d, mode=mode)]
 
 
 def _description(d: dispatch.ToolDispatcher, name: str) -> str:
@@ -166,7 +166,9 @@ def test_enabled_in_run_mode_the_tool_shows_and_answers_with_the_childs_id(
 
 
 @pytest.mark.parametrize("mode", ["plan", "ask", "machine"])
-def test_other_modes_never_offer_or_run_the_tool(tmp_path: pathlib.Path, mode: str) -> None:
+def test_other_modes_never_offer_or_run_the_tool(
+    tmp_path: pathlib.Path, mode: kinds.SessionMode
+) -> None:
     d = _dispatcher(tmp_path, _config(tool=True), mode=mode, work=_Work())
     assert "parallel" not in _names(d, mode)
     with pytest.raises(tool_errors.ToolError, match="not available"):

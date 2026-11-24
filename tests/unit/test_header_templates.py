@@ -352,7 +352,7 @@ class _Inner:
 
 def _instrumented(inner: _Inner) -> role_providers.InstrumentedProvider:
     return role_providers.InstrumentedProvider(
-        inner=inner,  # type: ignore[arg-type]
+        inner=inner,
         actor="worker",
         model="m",
         provider_name="work",

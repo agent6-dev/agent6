@@ -16,7 +16,7 @@ import subprocess
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import confine
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, SandboxConfig
@@ -24,7 +24,7 @@ from agent6.sandbox import detect, jail
 from agent6.tools import policy as policy_module
 
 
-def _warned(isolation: str, cfg: Config, root: pathlib.Path) -> list[str]:
+def _warned(isolation: kinds.IsolationLevel, cfg: Config, root: pathlib.Path) -> list[str]:
     env = detect.Environment(
         in_container=False,
         container_signals=(),
@@ -36,7 +36,7 @@ def _warned(isolation: str, cfg: Config, root: pathlib.Path) -> list[str]:
     )
     lines: list[str] = []
     reporter = app_reporter.Reporter(out=lines.append, err=lines.append)
-    confine.warn_sandbox_gaps(isolation, env, cfg, root=root, reporter=reporter)  # pyrefly: ignore[bad-argument-type]
+    confine.warn_sandbox_gaps(isolation, env, cfg, root=root, reporter=reporter)
     return lines
 
 
@@ -56,7 +56,7 @@ def test_full_defaults_to_the_private_tmpfs_home(tmp_path: pathlib.Path) -> None
     ],
 )
 def test_the_builder_creates_and_grants_the_persistent_home(
-    tmp_path: pathlib.Path, isolation: str, cfg: Config
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, cfg: Config
 ) -> None:
     """Without a private /tmp the HOME persists; the builder creates it 0700 on the rw grant.
 
@@ -65,7 +65,7 @@ def test_the_builder_creates_and_grants_the_persistent_home(
     """
     home = paths.jail_cache_home(tmp_path)
     assert not home.exists()
-    policy = policy_module.jail_policy(tmp_path, cfg, isolation, ("true",))  # pyrefly: ignore[bad-argument-type]
+    policy = policy_module.jail_policy(tmp_path, cfg, isolation, ("true",))
     assert dict(policy.env)["HOME"] == str(home)
     assert home in policy.extra_rw_paths
     assert home.is_dir() and not home.is_symlink()
@@ -178,17 +178,17 @@ def test_a_symlinked_ancestor_into_a_private_dir_refuses(
 
 @pytest.mark.parametrize("isolation", ["partial", "none"])
 def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
-    tmp_path: pathlib.Path, isolation: str
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
     """`home = "tmp"` needs `full`'s private tmpfs: it refuses elsewhere, while `auto` degrades."""
     tmp = Config(sandbox=SandboxConfig(home="tmp"))
-    msg = confine.check_jail_home(tmp, isolation, tmp_path)  # pyrefly: ignore[bad-argument-type]
+    msg = confine.check_jail_home(tmp, isolation, tmp_path)
     assert msg is not None
     assert "requires sandbox.isolation = 'full'" in msg
     assert f"resolved to '{isolation}'" in msg
     assert "sandbox.home = 'auto'" in msg
-    assert confine.config_refusal(tmp, isolation, tmp_path) == msg  # pyrefly: ignore[bad-argument-type]
-    assert confine.config_refusal(Config(), isolation, tmp_path) is None  # pyrefly: ignore[bad-argument-type]
+    assert confine.config_refusal(tmp, isolation, tmp_path) == msg
+    assert confine.config_refusal(Config(), isolation, tmp_path) is None
     assert confine.config_refusal(tmp, "full", tmp_path) is None
 
 
@@ -204,13 +204,15 @@ def test_no_isolation_gives_the_operators_own_home(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.parametrize("isolation", ["partial", "full"])
-def test_an_explicit_host_home_refuses_under_a_jail(tmp_path: pathlib.Path, isolation: str) -> None:
+def test_an_explicit_host_home_refuses_under_a_jail(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
     """`home = "host"` is `none`'s value: a jail has no place for the operator's HOME."""
     host = Config(sandbox=SandboxConfig(home="host"))
-    msg = confine.check_jail_home(host, isolation, tmp_path)  # pyrefly: ignore[bad-argument-type]
+    msg = confine.check_jail_home(host, isolation, tmp_path)
     assert msg is not None and "requires sandbox.isolation = 'none'" in msg
     assert f"resolved to '{isolation}'" in msg
-    assert confine.config_refusal(host, isolation, tmp_path) == msg  # pyrefly: ignore[bad-argument-type]
+    assert confine.config_refusal(host, isolation, tmp_path) == msg
     assert confine.check_jail_home(host, "none", tmp_path) is None
 
 

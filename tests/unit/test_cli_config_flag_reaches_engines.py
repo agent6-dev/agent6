@@ -64,8 +64,8 @@ def test_merge_planner_passes_the_explicit_config_path(
     # The stand-ins carry only what the planner reads before the load.
     rc = merge_plan.plan_merge(
         tmp_path,
-        layout,  # type: ignore[arg-type]
-        _Manifest(),  # type: ignore[arg-type]
+        layout,  # pyrefly: ignore[bad-argument-type]
+        _Manifest(),  # pyrefly: ignore[bad-argument-type]
         None,
         None,
         config_paths=(explicit,),
@@ -105,7 +105,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     server = _Server()
     cfg_path = tmp_path / "overlay.toml"
     # The ignore covers the `_Server` stand-in; `config_paths` carries the real tuple shape.
-    bridge = acp_runner.RunBridge(server=server, config_paths=(cfg_path,))  # type: ignore[arg-type]
+    bridge = acp_runner.RunBridge(server=server, config_paths=(cfg_path,))  # pyrefly: ignore[bad-argument-type]
     session = acp_session.Session(acp_id="t", cwd=tmp_path)
     # The runner moves the process to the session's cwd; the monkeypatch moves it back.
     monkeypatch.chdir(tmp_path)

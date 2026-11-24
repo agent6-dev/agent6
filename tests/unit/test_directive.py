@@ -206,10 +206,10 @@ def test_empty_segment_mid_message_raises() -> None:
 
 
 def test_segment_is_a_frozen_dataclass() -> None:
-    (seg,) = directive.parse_directive("/parallel 2 -- x")  # type: ignore[misc]
+    (seg,) = directive.parse_directive("/parallel 2 -- x")  # pyrefly: ignore[not-iterable]
     assert isinstance(seg, directive.Segment)
     with pytest.raises(AttributeError):
-        seg.spec = "3"  # type: ignore[misc]
+        seg.spec = "3"  # pyrefly: ignore[read-only]
 
 
 def test_superscript_digit_is_not_a_child_count() -> None:

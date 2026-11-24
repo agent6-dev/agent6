@@ -39,7 +39,7 @@ def test_non_interactive_combo_proceeds_with_warning(
     assert "non-interactive" in err
 
 
-def _fixed_prompt(answer: str | None):  # type: ignore[no-untyped-def]
+def _fixed_prompt(answer: str | None):
     def prompt(_text: str) -> str | None:
         return answer
 

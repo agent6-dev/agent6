@@ -1354,7 +1354,7 @@ def test_a_state_default_supplies_the_required_baseline(
         encoding="utf-8",
     )
 
-    def build(*_args: object, **_kwargs: object):  # type: ignore[no-untyped-def]
+    def build(*_args: object, **_kwargs: object):
         def run(*_args: object, **_kwargs: object) -> AgentExecResult:
             return AgentExecResult(reason="finish_session", payload={"ok": True})
 

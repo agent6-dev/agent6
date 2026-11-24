@@ -15,6 +15,7 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.app import confine
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
@@ -49,14 +50,14 @@ def test_auto_degrades_with_a_warning(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize("isolation", ["partial", "none"])
-def test_on_refuses_where_it_cannot_be_honoured(isolation: str) -> None:
+def test_on_refuses_where_it_cannot_be_honoured(isolation: kinds.IsolationLevel) -> None:
     """`on` asks for something specific; running without it would be a lie.
 
     The value carries the demand, so a config written by `config fill` or by hand behaves the
     same: nothing depends on which layer the word came from.
     """
     on = Config.model_validate({"sandbox": {"protect_git": "on"}})
-    message = confine.check_protect_git_support(on, isolation)  # pyrefly: ignore[bad-argument-type]
+    message = confine.check_protect_git_support(on, isolation)
     assert message is not None
     assert "requires sandbox.isolation = 'full'" in message
     assert "sandbox.protect_git = 'auto'" in message  # names the fix

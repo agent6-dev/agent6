@@ -161,7 +161,7 @@ def test_auth_header_refuses_a_credential_that_is_not_header_safe(bad: str) -> N
     """
     for style in ("bearer", "x_api_key", "api_key_header"):
         with pytest.raises(provider_types.ProviderError) as excinfo:
-            wire.auth_header(style, bad)  # type: ignore[arg-type]
+            wire.auth_header(style, bad)
         # The secret must not leak into the error text (nor its distinctive bits).
         msg = str(excinfo.value)
         assert "sk-secret" not in msg and "X-Injected" not in msg and "tok" not in msg

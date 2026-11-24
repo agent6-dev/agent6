@@ -38,7 +38,7 @@ def _captured_git_envs(
     def spy(*args: object, **kwargs: object):
         env = kwargs.get("env")
         seen.append(env if isinstance(env, dict) else dict(os.environ))
-        return real(*args, **kwargs)  # type: ignore[arg-type]
+        return real(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
 
     monkeypatch.setattr(git_command.subprocess, "Popen", spy)
     git_command.run(tmp_path, "status", "--porcelain", check=False)

@@ -157,7 +157,7 @@ def test_every_line_is_a_single_line() -> None:
         ),
     ):
         for detail in ("expanded", "collapsed", "hidden"):
-            for line in transcript_style.item_lines(item, detail=detail):  # type: ignore[arg-type]
+            for line in transcript_style.item_lines(item, detail=detail):
                 for chunk, _style in line:
                     assert "\n" not in chunk, (item.kind, detail, chunk)
 

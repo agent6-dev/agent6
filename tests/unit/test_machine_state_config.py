@@ -256,9 +256,9 @@ def test_read_only_states_allow_disabled_commits(tmp_path: pathlib.Path) -> None
 
 def test_agent_and_tool_states_take_a_config_table(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, MACHINE))
-    assert spec.states["scan"].config == {"sandbox": {"extra_read_paths": ["/srv/inbox"]}}  # type: ignore[union-attr]
-    assert spec.states["judge"].config["harness"] == {"max_turns": 7}  # type: ignore[union-attr]
-    assert spec.states["store"].config == {}  # type: ignore[union-attr]
+    assert spec.states["scan"].config == {"sandbox": {"extra_read_paths": ["/srv/inbox"]}}  # pyrefly: ignore[missing-attribute]
+    assert spec.states["judge"].config["harness"] == {"max_turns": 7}  # pyrefly: ignore[missing-attribute]
+    assert spec.states["store"].config == {}  # pyrefly: ignore[missing-attribute]
 
 
 def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path) -> None:

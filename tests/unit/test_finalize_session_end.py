@@ -69,7 +69,7 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
 
 
 def test_finish_session_over_red_verify_is_not_headlined_passed(
-    tmp_path: pathlib.Path, capsys: object
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     layout = _layout(
         tmp_path,
@@ -94,12 +94,14 @@ def test_finish_session_over_red_verify_is_not_headlined_passed(
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
-    out = capsys.readouterr().out  # type: ignore[attr-defined]
+    out = capsys.readouterr().out
     assert "finished" in out
     assert "passed" not in out.split("\n")[1]  # the headline line, not the agent's summary
 
 
-def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: object) -> None:
+def test_all_green_finish_is_headlined_passed(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     layout = _layout(
         tmp_path,
         "r2",
@@ -119,7 +121,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
-    out = capsys.readouterr().out  # type: ignore[attr-defined]
+    out = capsys.readouterr().out
     assert "passed" in out
 
 
@@ -730,7 +732,9 @@ def test_interrupt_end_prints_cost_resume_and_branch_hints(
     assert "you are on agent6/r4" in out and "git switch main" in out
 
 
-def test_provider_error_is_headlined_failed(tmp_path: pathlib.Path, capsys: object) -> None:
+def test_provider_error_is_headlined_failed(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     layout = _layout(
         tmp_path,
         "r3",
@@ -750,7 +754,7 @@ def test_provider_error_is_headlined_failed(tmp_path: pathlib.Path, capsys: obje
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
     )
-    out = capsys.readouterr().out  # type: ignore[attr-defined]
+    out = capsys.readouterr().out
     assert "failed" in out and "provider error" in out
 
 

@@ -647,7 +647,7 @@ def test_attach_prompts_for_no_queued_or_carried_question(tmp_path: pathlib.Path
     fe = plan_watch._CliFrontEnd(tmp_path, _view())
     assert fe.open_prompts_at_attach(log) == []
     handled: list[str] = []
-    fe.handle = lambda event: handled.append(str(event.get("id")))  # type: ignore[method-assign]
+    fe.handle = lambda event: handled.append(str(event.get("id")))  # pyrefly: ignore[method-assign]
     for ev in history:  # the follow loop replays the scanned prefix first
         fe.react(ev)
     fe.react({**queued, "id": "question-3"})

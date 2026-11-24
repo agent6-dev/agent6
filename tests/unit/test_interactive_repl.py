@@ -75,7 +75,7 @@ def test_hook_pauses_the_console_heartbeat_while_prompting(
         return ""
 
     monkeypatch.setattr("builtins.input", _input)
-    hook = repl.build_repl_hook(tmp_path, _budget(), console_view=_FakeConsole())  # type: ignore[arg-type]
+    hook = repl.build_repl_hook(tmp_path, _budget(), console_view=_FakeConsole())  # pyrefly: ignore[bad-argument-type]
     assert hook(1, "a" * 40) == "continue"
     assert states == ["paused", "resumed"]
 

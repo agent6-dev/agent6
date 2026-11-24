@@ -214,7 +214,7 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
         def mcp_descriptors(self) -> tuple[object, ...]:
             return ()
 
-    definitions = toolset.tool_definitions(_Dispatcher(), mode="run")  # type: ignore[arg-type]
+    definitions = toolset.tool_definitions(_Dispatcher(), mode="run")  # pyrefly: ignore[bad-argument-type]
     by_name = {d.name: d for d in definitions}
     assert by_name["read_file"].input_schema == read_file
     assert by_name["add_task"].input_schema == add_task

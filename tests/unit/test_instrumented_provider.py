@@ -61,8 +61,8 @@ def test_a_call_and_its_result_share_one_id_and_identity() -> None:
     inner.call.return_value = _resp()
     wrapper = _wrap(inner)
     wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
-    (call,) = _emitted(wrapper.events, "model.call")  # type: ignore[arg-type]
-    (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]
+    (call,) = _emitted(wrapper.events, "model.call")
+    (result,) = _emitted(wrapper.events, "model.result")
     assert len(call["model_call_id"]) == 32 and call["model_call_id"] == result["model_call_id"]
     assert "reviewer_index" not in call and "reviewer_index" not in result
     for fields in (call, result):
@@ -80,8 +80,8 @@ def test_a_failed_call_keeps_its_id_and_a_reviewer_carries_its_index() -> None:
     wrapper = dataclasses.replace(_wrap(inner), actor="reviewer:security", reviewer_index=2)
     with pytest.raises(RuntimeError):
         wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
-    (call,) = _emitted(wrapper.events, "model.call")  # type: ignore[arg-type]
-    (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]
+    (call,) = _emitted(wrapper.events, "model.call")
+    (result,) = _emitted(wrapper.events, "model.result")
     assert call["model_call_id"] == result["model_call_id"]
     assert call["reviewer_index"] == result["reviewer_index"] == 2
     assert call["actor"] == result["actor"] == "reviewer:security"
@@ -240,5 +240,5 @@ def test_compaction_option_and_counts_follow_the_logical_call() -> None:
     option = provider_types.ClearToolResults(2, ("ask_user",))
     wrapper.call(system="s", messages=[], compaction=option)
     assert inner.call.call_args.kwargs["compaction"] is option
-    (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]
+    (result,) = _emitted(wrapper.events, "model.result")
     assert result["thinking_blocks_dropped"] == 2 and result["tool_results_cleared"] == 7

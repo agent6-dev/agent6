@@ -70,7 +70,7 @@ def test_copy_takes_only_the_referenced_images(tmp_path: pathlib.Path) -> None:
 
 def test_a_reference_refuses_what_is_not_an_image_digest() -> None:
     with pytest.raises(ValueError, match="media_type"):
-        operator_input.ImageRef(media_type="application/pdf", byte_size=1, sha256="0" * 64)  # type: ignore[arg-type]
+        operator_input.ImageRef(media_type="application/pdf", byte_size=1, sha256="0" * 64)  # pyrefly: ignore[bad-argument-type]
     with pytest.raises(ValueError, match="sha256"):
         operator_input.ImageRef(media_type="image/png", byte_size=1, sha256="../x")
 

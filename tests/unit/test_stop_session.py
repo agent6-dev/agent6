@@ -387,7 +387,7 @@ def test_a_runs_own_stop_markers_land_before_its_children_are_stopped(
     def _recording(session_dir: pathlib.Path, **kw: object) -> stop.StopOutcome:
         if session_dir == child:
             pending_when_child_stopped.append(ipc.stop_request_pending(parent))
-        return real(session_dir, **kw)  # type: ignore[arg-type]
+        return real(session_dir, **kw)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(stop, "stop_session", _recording)
     out = stop.stop_session(parent, request_only=True)

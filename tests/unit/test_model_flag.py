@@ -12,7 +12,7 @@ import pathlib
 import pytest
 
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, ConfigError
+from agent6.config import Config, ConfigError, RoleName
 from agent6.models import choices, validate
 
 _GLOBAL = """\
@@ -186,8 +186,10 @@ def test_a_refused_flag_route_names_the_flag_not_the_config(
     def _keys_ok(_cfg: object, extra: object = ()) -> None:
         return None
 
-    def _refused(cfg: Config, role: str) -> validate.ModelValidation:
-        model = cfg.models.resolve(role).model  # type: ignore[union-attr]
+    def _refused(cfg: Config, role: RoleName) -> validate.ModelValidation:
+        route = cfg.models.resolve(role)
+        assert route is not None
+        model = route.model
         return validate.ModelValidation(
             unknown=(model,), suggestions={model: ("claude-x",)}, can_validate=True
         )

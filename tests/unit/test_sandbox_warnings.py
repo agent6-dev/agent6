@@ -32,22 +32,23 @@ def _env(landlock_abi: int) -> detect.Environment:
     )
 
 
-def _cfg(tool_network: str = "auto", isolation: str = "auto") -> Config:
-    return Config(
-        sandbox=SandboxConfig(network=tool_network, isolation=isolation)  # type: ignore[arg-type]
-    )
+def _cfg(
+    tool_network: Literal["auto", "host", "session"] = "auto",
+    isolation: kinds.IsolationLevel | Literal["auto", "container"] = "auto",
+) -> Config:
+    return Config(sandbox=SandboxConfig(network=tool_network, isolation=isolation))
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])
 def test_git_control_without_sandbox(
-    control: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    control: Literal["agent6", "model"], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Unconfined agent6 git control warns and runs; the word names who manages history.
 
     Whether the model can also commit is the sandbox's business, so the warning rides the
     `none` banner and nothing refuses: the same config behaves the same however it was written.
     """
-    cfg = Config(git=GitConfig(control=control))  # type: ignore[arg-type]
+    cfg = Config(git=GitConfig(control=control))
     assert confine.config_refusal(cfg, "none", tmp_path) is None
     confine.warn_sandbox_gaps("none", _env(4), cfg, root=tmp_path)
     err = capsys.readouterr().err

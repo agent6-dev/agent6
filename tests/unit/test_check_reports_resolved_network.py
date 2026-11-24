@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from agent6 import kinds
 from agent6.config import Config
 from agent6.tools import target_policy
 
@@ -25,10 +26,10 @@ from agent6.tools import target_policy
     ],
 )
 def test_the_resolved_network_follows_the_level_and_the_knob(
-    configured: str, isolation: str, expected: str
+    configured: str, isolation: kinds.IsolationLevel, expected: str
 ) -> None:
     cfg = Config.model_validate({"sandbox": {"network": configured}})
-    assert target_policy.resolve_network(cfg, isolation) == expected  # type: ignore[arg-type]
+    assert target_policy.resolve_network(cfg, isolation) == expected
 
 
 def test_a_callers_own_answer_wins_but_still_cannot_outrun_the_level() -> None:

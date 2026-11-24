@@ -917,12 +917,12 @@ def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: pathlib.Path
             raise KeyboardInterrupt("died between the wake and its StepEvent")
         appended(event)  # pyrefly: ignore[bad-argument-type]
 
-    journal.append = _die_on_the_step  # type: ignore[method-assign]
+    journal.append = _die_on_the_step  # pyrefly: ignore[method-assign]
     with pytest.raises(KeyboardInterrupt):
         machine_engine.drive(
             spec, journal, FakeWorld({}, wakes=[contracts.WaitWake("tick")]), live=True
         )
-    journal.append = appended  # type: ignore[method-assign]
+    journal.append = appended  # pyrefly: ignore[method-assign]
 
     # The armed record survives for the restart, so the wait resumes on the same instant.
     assert armed and armed[0] is not None
@@ -1838,7 +1838,7 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: pathlib.Path) -
         machine_journal.write_stop_request(journal.root)
         return real_run_tool(argv, timeout_s, state=state)
 
-    world.run_tool = stop_during_first_tool  # type: ignore[method-assign]
+    world.run_tool = stop_during_first_tool  # pyrefly: ignore[method-assign]
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "stopped"
     assert not machine_journal.stop_requested(journal.root)  # consumed at the park
@@ -1913,10 +1913,10 @@ def test_a_wait_never_inherits_the_previous_waits_record(tmp_path: pathlib.Path)
         if isinstance(event, machine_journal.StepEvent):
             raise KeyboardInterrupt("died between the wake's StepEvent and the clear")
 
-    journal.append = _die_after_the_step  # type: ignore[method-assign]
+    journal.append = _die_after_the_step  # pyrefly: ignore[method-assign]
     with pytest.raises(KeyboardInterrupt):
         machine_engine.drive(spec, journal, FakeWorld({}), live=True)
-    journal.append = appended  # type: ignore[method-assign]
+    journal.append = appended  # pyrefly: ignore[method-assign]
     assert journal.read_pending_wait() == machine_journal.PendingWait(
         state="first", wake_epoch=1060.0
     )
@@ -1975,12 +1975,12 @@ def test_a_revisited_wait_state_arms_its_own_fresh_instant(tmp_path: pathlib.Pat
         if isinstance(event, machine_journal.StepEvent) and event.seq == 0:
             raise KeyboardInterrupt("died between the wake's StepEvent and the clear")
 
-    journal.append = _die_after_the_step  # type: ignore[method-assign]
+    journal.append = _die_after_the_step  # pyrefly: ignore[method-assign]
     first = FakeWorld({"bump": _ok("1")})
     first.clock = 1000.0
     with pytest.raises(KeyboardInterrupt):
         machine_engine.drive(spec, journal, first, live=True)
-    journal.append = appended  # type: ignore[method-assign]
+    journal.append = appended  # pyrefly: ignore[method-assign]
     assert journal.read_pending_wait() == machine_journal.PendingWait(
         state="poll", wake_epoch=1060.0
     )

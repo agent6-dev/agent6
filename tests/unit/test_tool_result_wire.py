@@ -76,7 +76,7 @@ def _config(tmp_path: pathlib.Path, *, extra: str = "") -> Config:
 def _wire(result: object) -> dict[str, Any]:
     """Return the model-facing bytes of a dispatch result."""
     to_wire = getattr(result, "to_wire", None)
-    return to_wire() if callable(to_wire) else result  # type: ignore[return-value]
+    return to_wire() if callable(to_wire) else result  # pyrefly: ignore[bad-return]
 
 
 def _dumps(result: object) -> str:
@@ -285,7 +285,7 @@ def _cmd_result(**kw: Any):
 
     base = dict(argv=("x",), returncode=0, stdout="", stderr="", duration_s=0.5, exec_failed=False)
     base.update(kw)
-    return kinds.CommandResult(**base)  # type: ignore[arg-type]
+    return kinds.CommandResult(**base)
 
 
 @pytest.mark.parametrize(

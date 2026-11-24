@@ -238,7 +238,7 @@ def test_a_restart_that_replaced_the_budget_line_shows_it_again(tmp_path: pathli
         dispatcher=ArmingDispatcher(),
         compaction=compaction_window.CompactionSettings(
             summarizer="helper",
-            helper=Summarizer(),  # type: ignore[arg-type]
+            helper=Summarizer(),
             helper_context_tokens=200_000,
             keep_recent_turns=0,
         ),

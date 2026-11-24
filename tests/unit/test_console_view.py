@@ -258,7 +258,7 @@ def test_cli_heartbeat_shows_working_when_the_stream_stalls(
 
     monkeypatch.setattr("agent6.ui.cli.console_render._MID_BLOCK_STALL_S", 1.5)
     out = _FakeTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "Let me investigate"})
@@ -290,7 +290,7 @@ def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
     import time
 
     out = _CountingTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "partial"})
@@ -310,7 +310,7 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
     import time
 
     out = _FakeTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "writing to tests/test"})
@@ -328,7 +328,7 @@ def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
     import time
 
     out = _FakeTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.result", "actor": "worker"})  # turn done...
@@ -357,7 +357,7 @@ def test_notice_clears_the_spinner_before_printing() -> None:
     import time
 
     out = _FakeTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         time.sleep(_STALL_WAIT_S)  # spinner up
@@ -375,7 +375,7 @@ def test_pause_suspends_the_heartbeat_spinner() -> None:
     import time
 
     out = _FakeTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "tool.call", "name": "ask_user", "args_preview": {}})
         time.sleep(_STALL_WAIT_S)  # a tool is in flight + output silent: spinner up
@@ -396,7 +396,7 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
     import time
 
     out = _FakeTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         wedged_at = time.time() - 2400
         view.feed({"type": "model.call", "actor": "worker", "model": "m", "ts": wedged_at - 1})
@@ -418,7 +418,7 @@ def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
     prints as inert text.
     """
     out = _FakeTTY()
-    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # pyrefly: ignore[bad-argument-type]
     try:
         view.feed({"type": "model.call", "actor": "worker", "model": "m"})
         view.feed({"type": "model.text_delta", "text": "safe \x1b]52;c;cGF5"})

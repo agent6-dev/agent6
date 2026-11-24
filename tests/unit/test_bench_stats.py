@@ -4,13 +4,9 @@
 
 from __future__ import annotations
 
-import pathlib
 import statistics
-import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "bench" / "sweep"))
-
-import stats  # path-injected bench module  # pyrefly: ignore[missing-import]
+from bench.sweep import stats
 
 
 def test_wilson_ci_known_values() -> None:

@@ -67,12 +67,12 @@ def _roundtrip(
 ) -> list[dict[str, Any]]:
     """Feed messages into the server's stdin, drive serve() to EOF and parse the responses."""
     payload = b"".join(json.dumps(m).encode("utf-8") + b"\n" for m in messages)
-    server._stdin = io.BytesIO(payload)  # type: ignore[attr-defined]  # test-only stdin swap
-    server._stdout = io.BytesIO()  # type: ignore[attr-defined]
+    server._stdin = io.BytesIO(payload)  # test-only stdin swap
+    server._stdout = io.BytesIO()
     server.serve()
-    server._stdout.seek(0)  # type: ignore[attr-defined]
+    server._stdout.seek(0)
     out: list[dict[str, Any]] = []
-    for line in server._stdout.readlines():  # type: ignore[attr-defined]
+    for line in server._stdout.readlines():
         out.append(json.loads(line))
     return out
 
@@ -221,15 +221,15 @@ def test_malformed_json_answers_a_parse_error(tmp_path: pathlib.Path) -> None:
     still works.
     """
     server = _server(tmp_path)
-    server._stdin = io.BytesIO(  # type: ignore[attr-defined]
+    server._stdin = io.BytesIO(
         b"not json\n"
         + json.dumps({"jsonrpc": "2.0", "id": 7, "method": "tools/list"}).encode("utf-8")
         + b"\n"
     )
-    server._stdout = io.BytesIO()  # type: ignore[attr-defined]
+    server._stdout = io.BytesIO()
     server.serve()
-    server._stdout.seek(0)  # type: ignore[attr-defined]
-    replies = [json.loads(line) for line in server._stdout.readlines()]  # type: ignore[attr-defined]
+    server._stdout.seek(0)
+    replies = [json.loads(line) for line in server._stdout.readlines()]
     assert [r.get("id") for r in replies] == [None, 7]
     assert replies[0]["error"]["code"] == -32700
 
@@ -467,7 +467,7 @@ def test_run_verify_delegates_to_dispatcher(
             returncode=0, stdout="", stderr="", duration_s=0.0, exec_failed=False
         )
 
-    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)
     resps = _roundtrip(
         server,
         [
@@ -494,7 +494,7 @@ def test_run_in_sandbox_validates_argv(
             returncode=0, stdout="ok", stderr="", duration_s=0.0, exec_failed=False
         )
 
-    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)
     # Empty argv fails the published schema (minItems 1) at the call boundary:
     # an invalid-params JSON-RPC error, not a tool-level isError result.
     resps = _roundtrip(
@@ -560,7 +560,7 @@ def test_tool_arguments_are_checked_against_the_published_schema(
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         raise AssertionError("handler must not run on a schema-invalid call")
 
-    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)
     resps = _roundtrip(
         server,
         [
@@ -611,7 +611,7 @@ def test_apply_patch_runs_verify_after(
             )
         raise AssertionError(name)
 
-    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)
     resps = _roundtrip(
         server,
         [
@@ -640,7 +640,7 @@ def test_apply_patch_surfaces_tool_error(
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
         raise tool_errors.ToolError("patch did not apply")
 
-    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)
     resps = _roundtrip(
         server,
         [
@@ -675,7 +675,7 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
             "verify command not found on the jail PATH"
         )
 
-    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)
     resps = _roundtrip(
         server,
         [
@@ -766,8 +766,8 @@ def test_serve_bounds_every_stdin_read(tmp_path: pathlib.Path) -> None:
 
     server = _server(tmp_path)
     msg = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
-    server._stdin = _RecordingStdin(msg.encode() + b"\n")  # type: ignore[attr-defined]
-    server._stdout = io.BytesIO()  # type: ignore[attr-defined]
+    server._stdin = _RecordingStdin(msg.encode() + b"\n")
+    server._stdout = io.BytesIO()
     server.serve()
     assert sizes and all(s == mod._MAX_LINE_BYTES + 1 for s in sizes)
 
@@ -785,11 +785,11 @@ def test_serve_drains_oversized_line_and_recovers(
     server = _server(tmp_path)
     junk = b"x" * 500 + b"\n"
     msg = json.dumps({"jsonrpc": "2.0", "id": 7, "method": "initialize", "params": {}}).encode()
-    server._stdin = io.BytesIO(junk + msg + b"\n")  # type: ignore[attr-defined]
-    server._stdout = io.BytesIO()  # type: ignore[attr-defined]
+    server._stdin = io.BytesIO(junk + msg + b"\n")
+    server._stdout = io.BytesIO()
     server.serve()
-    server._stdout.seek(0)  # type: ignore[attr-defined]
-    resps = [json.loads(line) for line in server._stdout.readlines()]  # type: ignore[attr-defined]
+    server._stdout.seek(0)
+    resps = [json.loads(line) for line in server._stdout.readlines()]
     assert [r["id"] for r in resps] == [7]
 
 

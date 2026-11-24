@@ -448,7 +448,7 @@ class _PingOnlyStreamResponse:
     def close(self) -> None:
         self._closed.set()
 
-    def iter_lines(self):  # type: ignore[no-untyped-def]
+    def iter_lines(self):
         # Emit a couple of ping heartbeats, then block until closed.
         yield "event: ping"
         yield 'data: {"type": "ping"}'
@@ -641,7 +641,7 @@ def test_anthropic_temperature_400_retries_without_temperature_then_latches() ->
     bodies: list[dict[str, Any]] = []
 
     def first_call(*_a: object, **k: object) -> _FakeJSONResponse:
-        bodies.append(json.loads(k["content"]))  # type: ignore[arg-type]
+        bodies.append(json.loads(k["content"]))  # pyrefly: ignore[bad-argument-type]
         return err400 if len(bodies) == 1 else ok200
 
     with mock.patch("agent6.providers.transport.http_post", side_effect=first_call):
@@ -658,7 +658,7 @@ def test_anthropic_temperature_400_retries_without_temperature_then_latches() ->
     bodies2: list[dict[str, Any]] = []
 
     def second_call(*_a: object, **k: object) -> _FakeJSONResponse:
-        bodies2.append(json.loads(k["content"]))  # type: ignore[arg-type]
+        bodies2.append(json.loads(k["content"]))  # pyrefly: ignore[bad-argument-type]
         return ok200
 
     with mock.patch("agent6.providers.transport.http_post", side_effect=second_call):
@@ -862,7 +862,7 @@ def test_both_http_seams_pass_the_granular_timeout(monkeypatch: pytest.MonkeyPat
     ):
         pass  # pragma: no cover, the stub raises before yielding
     assert [type(t) for t in seen] == [httpx2.Timeout, httpx2.Timeout]
-    assert all(t.connect == transport.CONNECT_TIMEOUT_S for t in seen)  # type: ignore[union-attr]
+    assert all(t.connect == transport.CONNECT_TIMEOUT_S for t in seen)  # pyrefly: ignore[missing-attribute]
 
 
 def test_an_oversized_provider_response_is_refused_not_buffered(

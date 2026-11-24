@@ -116,9 +116,9 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: pathlib.Path) -> 
     orig = ipc.read_answer
 
     def _fast_read(rd: pathlib.Path, pid: str, **kw: object) -> bool | None:
-        return orig(rd, pid, timeout_s=0.3, poll_s=0.05, live_dir=kw.get("live_dir"))  # type: ignore[arg-type]
+        return orig(rd, pid, timeout_s=0.3, poll_s=0.05, live_dir=kw.get("live_dir"))  # pyrefly: ignore[bad-argument-type, bad-return]
 
-    ipc.read_answer = _fast_read  # type: ignore[assignment]
+    ipc.read_answer = _fast_read  # pyrefly: ignore[bad-assignment]
     try:
         assert b.prompts.approve("run rm -rf?") is False
     finally:

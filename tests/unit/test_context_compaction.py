@@ -668,7 +668,7 @@ def _conv_with_repeated_reads(payload: str) -> loop_conversation.Conversation:
                 loop_conversation.ToolResultItem(
                     tool_use_id=tid,
                     content=payload,
-                    for_call=last.tool_uses[0],  # type: ignore[union-attr]
+                    for_call=last.tool_uses[0],  # pyrefly: ignore[missing-attribute]
                 )
             ]
         )
@@ -792,7 +792,7 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
                 loop_conversation.ToolResultItem(
                     tool_use_id=tid,
                     content=body,
-                    for_call=last.tool_uses[0],  # type: ignore[union-attr]
+                    for_call=last.tool_uses[0],  # pyrefly: ignore[missing-attribute]
                 )
             ]
         )
@@ -922,7 +922,7 @@ def test_strip_thinking_preserves_tool_use_pairing() -> None:
             loop_conversation.ToolResultItem(
                 tool_use_id="t1",
                 content="body",
-                for_call=last.tool_uses[0],  # type: ignore[union-attr]
+                for_call=last.tool_uses[0],  # pyrefly: ignore[missing-attribute]
             )
         ]
     )
