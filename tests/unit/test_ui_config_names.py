@@ -25,8 +25,9 @@ _REFERENCE = re.compile(
     rf"(?<![\w.])\[?(?P<root>{_ROOTS})\]?"
     r"(?P<tail>(?:\.(?:[a-z_][a-z_0-9]*|<name>|\*))+)(?![\w])"
 )
-# Exact non-config literals: events, checks, filenames, modules, telemetry and a suggestion key.
+# Exact non-config literals: events, checks, filenames, modules, telemetry, an id namespace, a URL.
 _NON_CONFIG = {
+    ("acp/prompt.py", "agent6.acp.prompt\n"),
     ("acp/updates.py", "budget.update"),
     ("cli/check_sandbox.py", "container.discovery"),
     ("cli/check_sandbox.py", "container.exposure"),
