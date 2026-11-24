@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent6 import terminal
-from agent6.graph import models
+from agent6.graph import models, order
 from agent6.sessions import journal, layout, process
 from agent6.viewmodel import events, format, log_line, review
 from agent6.viewmodel.session import core as session_core
@@ -366,7 +366,7 @@ def task_tree_views(
         cursor: The id of the task in progress.
 
     Returns:
-        The views: roots first in sorted id order, each followed by its children in
+        The views: roots first in `id_order`, each followed by its children in
         recorded order; a node whose parent is missing follows the roots; cycles and
         duplicates are visited once.
     """
@@ -413,12 +413,12 @@ def task_tree_views(
     # Sorted like `tree_order`, so the roots read in the same order on every surface.
     roots = [
         nid
-        for nid in sorted(nodes)
+        for nid in sorted(nodes, key=order.id_order)
         if not isinstance((n := nodes[nid]), dict) or n.get("parent_id") is None
     ]
     for nid in roots:
         visit(nid, 0)
-    for nid in sorted(nodes):
+    for nid in sorted(nodes, key=order.id_order):
         visit(nid, 0)
     return tuple(out)
 

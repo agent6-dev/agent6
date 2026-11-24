@@ -345,6 +345,16 @@ def test_graph_update_orders_multiple_roots_like_tree_order() -> None:
     assert [t.id for t in s.tasks] == ["01EARLY00000000000000000A", "01LATER00000000000000000A"]
 
 
+def test_graph_update_orders_ids_past_the_padding_like_tree_order() -> None:
+    """Task 10000 follows task 9999; string order put it first, apart from the frontier's order."""
+    nodes: dict[str, Any] = {
+        tid: {"title": tid, "parent_id": parent, "children": []}
+        for tid, parent in (("10000", None), ("9999", None), ("10001", "gone"), ("9998", "gone"))
+    }
+    s = viewmodel_state.apply_event(viewmodel_state.initial_state(), _graph_event(nodes))
+    assert [t.id for t in s.tasks] == ["9999", "10000", "9998", "10001"]
+
+
 def test_graph_update_shows_an_orphan_after_the_roots_like_tree_order() -> None:
     """A node whose parent is missing is not a root; `tree_order` appends it after the roots."""
     nodes: dict[str, Any] = {

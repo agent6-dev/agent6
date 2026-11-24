@@ -547,6 +547,7 @@ depends_on = [
   "agent6.errors",
   "agent6.evidence",
   "agent6.graph.models",
+  "agent6.graph.order",
   "agent6.kinds",
   "agent6.llm_json",
   "agent6.machine",
