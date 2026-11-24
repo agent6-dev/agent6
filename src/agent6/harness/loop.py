@@ -714,10 +714,11 @@ class Harness:
         # The turn the `parallel` tool dispatches for, set before its calls run.
         self.tool_turn = (conversation, state, ctx.turn)
         self._emit_budget(ctx.turn)
+        plan_on_disk = False
         if self.contract is None:
-            parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
-            if parked is not None:
-                return parked
+            plan_on_disk = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
+            if isinstance(plan_on_disk, loop_snapshot.SessionResult):
+                return plan_on_disk
             self._turn_before_call(conversation, state, ctx)
         endpoint = self.compaction.endpoint.writes_summary
         for call_id, reason in conversation.limit_attachments(append_only=endpoint):
@@ -728,24 +729,26 @@ class Harness:
         assert self.compactor is not None
         # An endpoint summary covers a request already sent, so it follows the reply instead.
         mode = self.compaction.cold_start
+        local_cold = state.cold_start is not None and not endpoint
         if state.cold_start is not None and (endpoint or mode == "resend"):
             loop_resume.report_cold_start(self, state, "endpoint" if endpoint else "resend", 0)
-        cold = state.cold_start is not None
-        before = compaction_window.context_chars(conversation) if cold else 0
+        before = (
+            compaction_window.context_chars(conversation) if state.cold_start is not None else 0
+        )
         restarted = not endpoint and self.compactor.compact(
             self.compaction_context(conversation, state, tools)
         )
         if restarted and self.contract is None:
             state.focus.surfaced_task_id = None
             self._maybe_surface_current_task(conversation, state)
-        if cold:
-            # The operator can edit plan.md while the cold helper is running.
-            if self.contract is None:
-                parked = self._maybe_inject_plan(
-                    conversation, state, turn=ctx.turn, restarted=restarted
-                )
-                if parked is not None:
-                    return parked
+        if local_cold and self.contract is None:
+            # The operator can edit plan.md while the helper is running, including on a resend.
+            plan = self._maybe_inject_plan(
+                conversation, state, turn=ctx.turn, restarted=restarted, required=plan_on_disk
+            )
+            if isinstance(plan, loop_snapshot.SessionResult):
+                return plan
+        if state.cold_start is not None:
             action = "summary_failed" if mode == "summarize" and not restarted else mode
             loop_resume.report_cold_start(
                 self, state, action, before - compaction_window.context_chars(conversation)
@@ -755,7 +758,7 @@ class Harness:
             conversation.notice(
                 review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
             )
-        if cold or restarted or self.contract is not None:
+        if local_cold or restarted or self.contract is not None:
             conversation.roll_cache_marks()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
         loop_resume.save_resume_snapshot(
@@ -774,7 +777,8 @@ class Harness:
         *,
         turn: int,
         restarted: bool = False,
-    ) -> loop_snapshot.SessionResult | None:
+        required: bool = False,
+    ) -> bool | loop_snapshot.SessionResult:
         """Show the planner the plan.md on disk when it changed.
 
         The file is the plan and `agent6 plan edit` writes the operator's answers to it between
@@ -785,17 +789,18 @@ class Harness:
             state: The execution to park if the file is unreadable.
             turn: The current turn.
             restarted: Replace the retained plan notice instead of appending another.
+            required: The file was readable before compaction.
 
         Returns:
-            The parked end when the file is unreadable, else None.
+            Whether the plan was read from disk, or the parked end on failure.
         """
         if self.mode != "plan" or self.plan_output_path is None:
-            return None
+            return False
         try:
             text = self.plan_output_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return None  # no plan yet; the first finish_planning creates it
         except (OSError, UnicodeDecodeError) as exc:
+            if isinstance(exc, FileNotFoundError) and not required:
+                return False
             session_id = self.session_id or "<session-id>"
             remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
             self.log(f"LOOP: {remedy}")
@@ -806,15 +811,15 @@ class Harness:
                 turn=turn,
             )
         notice = f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}"
-        if not conversation.show_plan(notice, restarted=restarted):
-            return None
-        self.log(f"  plan re-read from disk: {len(text)} chars")
-        self.emit(
-            journal.PlanReread(
-                path=str(self.plan_output_path),
-                bytes=len(text.encode("utf-8")),
+        if conversation.show_plan(notice, restarted=restarted):
+            self.log(f"  plan re-read from disk: {len(text)} chars")
+            self.emit(
+                journal.PlanReread(
+                    path=str(self.plan_output_path),
+                    bytes=len(text.encode("utf-8")),
+                )
             )
-        )
+        return True
 
     def _turn_before_call(
         self,

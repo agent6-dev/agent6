@@ -211,15 +211,16 @@ def test_cold_planner_restart_counts_the_request_with_one_current_plan(
     assert "Keep the local fixture." in str(sent) and "Superseded plan." not in str(sent)
 
 
+@pytest.mark.parametrize("previous", [[], [rules.request(actor="planner", model="other")]])
 def test_a_planner_restart_without_plan_md_keeps_the_checkpoint_plan(
-    tmp_path: pathlib.Path,
+    tmp_path: pathlib.Path, previous: list[dict[str, Any]]
 ) -> None:
     saved = _history()
     notice = f"{nudges.PLAN_ON_DISK_HEADER}\n\nKeep the orange label."
     saved.notice(notice, origin="plan")
     saved.assistant([{"type": "text", "text": "Read the fixture."}])
     sent, rows, _, helper = _resume(
-        tmp_path, "resend", [], plan=tmp_path / "plan.md", saved=saved, summarize_at=100
+        tmp_path, "resend", previous, plan=tmp_path / "plan.md", saved=saved, summarize_at=100
     )
     assert len(helper.calls) == 1 and any(r["type"] == "compact.summarise.done" for r in rows)
     snapshot = json.loads((tmp_path / "loop_state.json").read_text())
@@ -232,9 +233,10 @@ def test_a_planner_restart_without_plan_md_keeps_the_checkpoint_plan(
         ] == [notice]
 
 
-@pytest.mark.parametrize("edit", [b"Use the new fixture instead.", b"\xff"])
+@pytest.mark.parametrize("mode", ["summarize", "resend"])
+@pytest.mark.parametrize("edit", [b"Use the new fixture instead.", b"\xff", None])
 def test_cold_helper_plan_edit_reaches_the_worker_or_parks_it(
-    tmp_path: pathlib.Path, edit: bytes
+    tmp_path: pathlib.Path, mode: kinds.ColdStart, edit: bytes | None
 ) -> None:
     """An edit during the summary must reach both the request and its checkpoint."""
     plan = tmp_path / "plan.md"
@@ -244,14 +246,25 @@ def test_cold_helper_plan_edit_reaches_the_worker_or_parks_it(
 
     class EditingHelper(writers.Writer):
         def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
-            plan.write_bytes(edit)
+            if edit is None:
+                plan.rename(tmp_path / "withdrawn.md")
+            else:
+                plan.write_bytes(edit)
             return super().call(**kwargs)
 
     sent, rows, _, helper = _resume(
-        tmp_path, "summarize", previous, plan=plan, helper=EditingHelper(writers.response())
+        tmp_path,
+        mode,
+        previous,
+        plan=plan,
+        helper=EditingHelper(writers.response()),
+        summarize_at=100,
     )
     assert len(helper.calls) == 1
-    if edit == b"\xff":
+    cold_steps = [r for r in rows if r["type"] == "compact.cold_start"]
+    if mode == "resend":
+        assert [(r["action"], r["chars_not_sent"]) for r in cold_steps] == [("resend", 0)]
+    if edit is None or edit == b"\xff":
         assert not sent
         assert any(r["type"] == "plan.read_failed" for r in rows)
         assert any(r["type"] == "session.stop" and r["reason"] == "plan_unreadable" for r in rows)
@@ -262,11 +275,13 @@ def test_cold_helper_plan_edit_reaches_the_worker_or_parks_it(
         assert str(messages).count(edit.decode()) == 1 and "Use the old fixture." not in str(
             messages
         )
-    before, after = (
-        window.context_chars(loop_conversation.Conversation.from_wire(w)) for w in (resend, sent)
-    )
-    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
-    assert row["chars_not_sent"] == before - after
+    if mode == "summarize":
+        before, after = (
+            window.context_chars(loop_conversation.Conversation.from_wire(w))
+            for w in (resend, sent)
+        )
+        (row,) = cold_steps
+        assert row["chars_not_sent"] == before - after
 
 
 def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None:
