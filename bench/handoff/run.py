@@ -12,7 +12,7 @@ import tomllib
 from collections.abc import Sequence
 from typing import Any
 
-from bench.handoff import job, journals
+from bench.handoff import job, journals, table
 from bench.tools import run as tool_runs
 
 from agent6 import paths
@@ -174,6 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"{arm}-{rep}: {'; '.join(row['issues'])}", file=sys.stderr)
                     ok = False
     print(out / "results.jsonl")
+    table.print_set(out / "results.jsonl")
     return 0 if ok else 1
 
 
