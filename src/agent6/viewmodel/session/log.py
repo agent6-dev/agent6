@@ -15,7 +15,8 @@ from typing import Any
 from agent6 import credit_usage, evidence, kinds, terminal
 from agent6.sessions import event_log, journal
 from agent6.viewmodel import cache_usage as vm_cache_usage
-from agent6.viewmodel import events, format, review
+from agent6.viewmodel import events, format
+from agent6.viewmodel import review as viewmodel_review
 from agent6.viewmodel.session import core as session_core
 from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import status as session_status
@@ -131,7 +132,9 @@ class LogScan:
     pending_questions: int = 0
     oldest_pending_question_ep: float | None = None
     left_out: tuple[tuple[str, str], ...] = ()
-    review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
+    review: viewmodel_review.ReviewView = dataclasses.field(
+        default_factory=viewmodel_review.ReviewView
+    )
 
     execution_id: str | None = None
     source_tip: str | None = None
@@ -380,7 +383,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     # Every question nobody has answered yet, by id, across executions.
     open_questions: dict[str, float | None] = {}
     left_out: dict[str, str] = {}
-    review_view = review.ReviewView()
+    review_view = viewmodel_review.ReviewView()
     source_tip: str | None = None
     final_verify_id: str | None = None
     end_ep: float | None = None
@@ -409,7 +412,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     evidence_notes.append(f"journal line {line_number}: expected an event object")
                     continue
                 cache.observe(ev)
-                review_view = review.apply_event(review_view, ev)
+                review_view = viewmodel_review.apply_event(review_view, ev)
                 etype = ev.get("type")
                 try:
                     if etype == journal.ExecutionSettings.TYPE:

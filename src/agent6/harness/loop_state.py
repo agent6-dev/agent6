@@ -23,9 +23,9 @@ from agent6.harness import (
     loop_snapshot,
     metric_rules,
     quiet_turns,
-    spiral,
 )
-from agent6.harness.compaction import cold_start
+from agent6.harness import spiral as harness_spiral
+from agent6.harness.compaction import cold_start as compaction_cold_start
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.providers import ProviderResponse
 from agent6.tools import waits
@@ -95,7 +95,9 @@ class LoopState:
     # The journal keeps each observed change; the model hears only the boundary's presence.
     operator_presence: str = ""
     operator_presence_notified: str = ""
-    spiral: spiral.SpiralGuard = dataclasses.field(default_factory=spiral.SpiralGuard)
+    spiral: harness_spiral.SpiralGuard = dataclasses.field(
+        default_factory=harness_spiral.SpiralGuard
+    )
     no_progress: guards.Ladder = dataclasses.field(default_factory=guards.no_progress_ladder)
     settled: guards.SettledGuard = dataclasses.field(default_factory=guards.SettledGuard)
     metric: metric_rules.MetricGuard = dataclasses.field(default_factory=metric_rules.MetricGuard)
@@ -109,7 +111,7 @@ class LoopState:
     execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
     call_context: kinds.CallContext | None = None
     idle_deadline: waits.Deadline | None = None
-    cold_start: cold_start.Trigger | None = None
+    cold_start: compaction_cold_start.Trigger | None = None
     request_summarized: bool = False
     review_panels: tuple[review_records.ReviewPanel, ...] = ()
     budget_nudges: guards.BudgetNudges = dataclasses.field(default_factory=guards.BudgetNudges)

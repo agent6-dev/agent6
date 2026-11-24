@@ -10,6 +10,7 @@ first prompt records under, so the id an editor keeps across a restart names the
 
 from __future__ import annotations
 
+import builtins
 import dataclasses
 import datetime
 import pathlib
@@ -95,7 +96,7 @@ class Sessions:
 
     run: Callable[[Session, str], StopReason]
     state_dir_for: Callable[[pathlib.Path], pathlib.Path]
-    build_options: Callable[[Session], list[dict[str, Any]]] = lambda _session: []
+    build_options: Callable[[Session], builtins.list[dict[str, Any]]] = lambda _session: []
     _by_id: dict[str, Session] = dataclasses.field(default_factory=dict)
 
     def new(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -121,7 +122,7 @@ class Sessions:
         self._by_id[session.acp_id] = session
         return {"sessionId": session.acp_id, "configOptions": self._options(session)}
 
-    def _options(self, session: Session) -> list[dict[str, Any]]:
+    def _options(self, session: Session) -> builtins.list[dict[str, Any]]:
         """Return the session's complete config options, recorded as what the editor holds."""
         session.config_options = self.build_options(session)
         return session.config_options

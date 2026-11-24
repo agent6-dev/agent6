@@ -8,7 +8,8 @@ import dataclasses
 from typing import Literal
 
 from agent6 import budget, credit_usage, evidence, kinds, token_usage
-from agent6.viewmodel import format, review
+from agent6.viewmodel import format
+from agent6.viewmodel import review as viewmodel_review
 from agent6.viewmodel.session import status as session_status
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
@@ -566,7 +567,9 @@ class SessionState:
     last_model_call: ModelCallView | None = None
     tool_calls: tuple[ToolCallView, ...] = ()
     last_verify: VerifyView | None = None
-    review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
+    review: viewmodel_review.ReviewView = dataclasses.field(
+        default_factory=viewmodel_review.ReviewView
+    )
     environment: EnvironmentView | None = None
     targets: evidence.ExecutionTargets = dataclasses.field(
         default_factory=evidence.ExecutionTargets

@@ -52,7 +52,6 @@ from agent6.harness import (
     metric_sampler,
     nudges,
     operator_bridge,
-    operator_tasks,
     parallel_dispatch,
     parallel_rank,
     prompt_blocks,
@@ -61,15 +60,16 @@ from agent6.harness import (
     repo_context,
     run_chain,
     run_checkpoint,
-    standing_goal,
     tool_effects,
     toolset,
 )
 from agent6.harness import compaction as harness_compaction
+from agent6.harness import operator_tasks as harness_operator_tasks
+from agent6.harness import standing_goal as harness_standing_goal
 from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
-from agent6.harness.review import gate as review_gate
+from agent6.harness.review import gate as harness_review_gate
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
 from agent6.harness.verify import child as child_verify
@@ -185,8 +185,8 @@ class Harness:
         default_factory=compaction_window.CompactionSettings
     )
     compactor: strategy.Strategy | None = None
-    review: review_gate.ReviewSettings = dataclasses.field(
-        default_factory=review_gate.ReviewSettings
+    review: harness_review_gate.ReviewSettings = dataclasses.field(
+        default_factory=harness_review_gate.ReviewSettings
     )
     media_input: media.InputCapabilities = dataclasses.field(
         default_factory=media.InputCapabilities
@@ -2159,9 +2159,9 @@ class Harness:
         )
 
     @functools.cached_property
-    def standing(self) -> standing_goal.Standing:
+    def standing(self) -> harness_standing_goal.Standing:
         """Return the standing goal, the re-entry a soft end converts into."""
-        return standing_goal.Standing(
+        return harness_standing_goal.Standing(
             curator=self.curator,
             patience=self.config.harness.standing_patience,
             budget_remaining=self._budget_fraction_remaining,
@@ -2180,9 +2180,9 @@ class Harness:
         )
 
     @functools.cached_property
-    def operator_tasks(self) -> operator_tasks.OperatorTasks:
+    def operator_tasks(self) -> harness_operator_tasks.OperatorTasks:
         """Return the taker of the operator's queued tasks."""
-        return operator_tasks.OperatorTasks(
+        return harness_operator_tasks.OperatorTasks(
             curator=self.curator,
             log=self.log,
             emit=self.emit,
@@ -2244,9 +2244,9 @@ class Harness:
         )
 
     @functools.cached_property
-    def review_gate(self) -> review_gate.ReviewGate:
+    def review_gate(self) -> harness_review_gate.ReviewGate:
         """Return the in-loop review panel."""
-        return review_gate.ReviewGate(
+        return harness_review_gate.ReviewGate(
             # An ask or a plan writes no diff of its own: the in-loop panel sits only in a run.
             settings=self.review
             if self.mode == "run"

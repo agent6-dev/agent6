@@ -475,7 +475,9 @@ def print_session_end(
         if panel.execution_id != scan.execution_id or panel.result is None:
             continue
         # The gate counts blocking model routes; two reviewers can share a route.
-        votes = collections.Counter(reviewer.verdict for reviewer in panel.reviewers)
+        votes: collections.Counter[str] = collections.Counter(
+            reviewer.verdict for reviewer in panel.reviewers
+        )
         labels = {"block": "with block findings", "pass": "passed", "abstain": "abstained"}
         counted = ", ".join(f"{votes[v]} {label}" for v, label in labels.items() if votes[v])
         outcome = counted or "no reviewer replies recorded"
