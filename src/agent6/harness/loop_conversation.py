@@ -90,11 +90,13 @@ class Notice:
         text: The text.
         origin: Who delivered the notice. A local summary is a `restart`.
         operator_words: Verbatim inputs within a rendered steer, answer notice or restart.
+        answer_for: The ask_user call whose capped result this notice completes on local replay.
     """
 
     text: str
     origin: NoticeOrigin = "harness"
     operator_words: tuple[str, ...] = ()
+    answer_for: str | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -614,6 +616,8 @@ class Conversation:
                         block["origin"] = item.origin
                     if snapshot and item.operator_words:
                         block["operator_words"] = list(item.operator_words)
+                    if snapshot and item.answer_for is not None:
+                        block["answer_for"] = item.answer_for
                 if (m_idx, i_idx) in marks:
                     block["cache_control"] = dict(_EPHEMERAL)
                 blocks.append(block)
@@ -713,9 +717,11 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
     if block.get("type") == "text":
         origin = block.get("origin", "harness")
         words = block.get("operator_words", [])
+        answer_for = block.get("answer_for")
         if (
-            keys - {"origin", "operator_words"} != {"type", "text"}
+            keys - {"origin", "operator_words", "answer_for"} != {"type", "text"}
             or not isinstance(block["text"], str)
+            or ("answer_for" in keys and not isinstance(answer_for, str))
             or origin
             not in (
                 "harness",
@@ -731,7 +737,7 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
             or not all(isinstance(w, str) for w in words)
         ):
             raise ValueError(f"malformed conversation: {where} is not a plain text block")
-        return Notice(text=block["text"], origin=origin, operator_words=tuple(words))
+        return Notice(block["text"], origin, tuple(words), answer_for)
     if block.get("type") == "tool_result":
         if (
             keys - {"unshown_answer"} != {"type", "tool_use_id", "content"}

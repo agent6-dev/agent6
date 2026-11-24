@@ -12,6 +12,7 @@ from unittest import mock
 import pytest
 
 from agent6.harness import loop_conversation as history
+from agent6.harness import tool_effects
 from agent6.harness.compaction import driver
 from agent6.providers import anthropic, claude_code_wire, openai_messages, responses_codec
 from agent6.tools import results
@@ -276,3 +277,80 @@ def test_answer_before_tool_capping_reaches_the_local_restart(operators: int) ->
     )
     assert words in prompt
     assert (f"Operator message:\n{words}" in _notice(conv)) is bool(operators)
+
+
+def _answers(first: str, second: str) -> history.Conversation:
+    conv = history.Conversation()
+    conv.notice("Opening task.", origin="operator")
+    calls = conv.assistant(
+        [
+            {
+                "type": "tool_use",
+                "name": "ask_user",
+                "id": q,
+                "input": {"questions": [{"question": q}]},
+            }
+            for q in ("Which file?", "Which test?")
+        ]
+    ).tool_uses
+    items: list[history.ToolResultItem] = []
+    for call, words in zip(calls, (first, second), strict=True):
+        answer = results.AnswersResult(call.id, (words,))
+        items.append(
+            tool_effects.bounded_result(call, json.dumps(answer.to_wire()), None, None, answer, 400)
+        )
+    conv.results(items)
+    assert items[0].unshown_answer == first and items[1].unshown_answer is None
+    return conv
+
+
+def test_endpoint_fallback_omits_the_answer_notice_from_a_kept_turn() -> None:
+    from agent6.prompts import compaction
+
+    # Even words shaped like a prior summary are still a tool answer.
+    first = compaction.unsigned_summary_notice("a" * 600 + " capped ending")
+    conv = _answers(first, "short answer")
+    _restart(conv, keep_recent_turns=1, keep_operator_messages=0, keep_recent_chars=2000)
+    conv = history.Conversation.from_wire(conv.to_wire(snapshot=True))
+    wire = conv.to_wire()
+    assert any(b.get("text") == first for m in wire for b in m["content"])
+    assert all(
+        "capped ending" not in str(b)
+        for m in wire
+        for b in m["content"]
+        if b["type"] == "tool_result"
+    )
+    conv.notice("Check the parser.", origin="operator")
+    worker, helper = (
+        writers.Writer(writers.response("")),
+        writers.Writer(writers.response("Ready.")),
+    )
+    ctx = writers.context(worker, helper, [], conversation=conv)
+    assert driver.Endpoint().summarise_and_restart(ctx)
+    prompt = helper.calls[0]["messages"][0]["content"]
+    assert "Which file?" in prompt and "Check the parser." in prompt
+    assert "capped ending" not in prompt and "short answer" not in prompt
+
+
+@pytest.mark.parametrize("operators", [1, 2])
+@pytest.mark.parametrize("after_replay", [False, True])
+def test_mixed_answers_are_reserved_and_summarised_in_call_order(
+    operators: int, after_replay: bool
+) -> None:
+    first, second = "A" * 600 + " first", "second answer"
+    conv = _answers(first, second)
+    if after_replay:
+        _restart(conv, keep_recent_turns=1, keep_operator_messages=0, keep_recent_chars=2000)
+        conv = history.Conversation.from_wire(conv.to_wire(snapshot=True))
+    _reply(conv, "Done.")
+    prompt = _restart(
+        conv, keep_recent_turns=0, keep_operator_messages=operators, keep_recent_chars=2000
+    )
+    quote = "Operator message:\n"
+    expected = [first, second] if operators == 2 else [second]
+    assert _notice(conv).count(quote) == operators and (
+        "\n\n".join(quote + w for w in expected)
+    ) in _notice(conv)
+    assert prompt.count(first) == prompt.count(second) == 1 and prompt.index(first) < prompt.index(
+        second
+    )

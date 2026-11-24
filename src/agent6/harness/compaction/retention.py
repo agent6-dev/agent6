@@ -6,10 +6,31 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 from agent6.harness import loop_conversation as history
 from agent6.harness.compaction import window
+
+
+def inputs(message: history.UserMessage) -> Iterator[history.ToolResultItem | history.Notice]:
+    """Read results in call order, using the full answer notice where one was replayed.
+
+    Args:
+        message: A user message in wire order, results before notices.
+
+    Yields:
+        Each result or its answer notice, then the other notices.
+    """
+    answers = {
+        it.answer_for: it
+        for it in message.items
+        if isinstance(it, history.Notice) and it.answer_for is not None
+    }
+    for item in message.items:
+        if isinstance(item, history.ToolResultItem):
+            yield answers.get(item.tool_use_id, item)
+        elif item.answer_for is None:
+            yield item
 
 
 def operator_words(item: history.Notice | history.ToolResultItem) -> tuple[str, ...]:
@@ -47,6 +68,37 @@ class Replay:
     tail: tuple[history.Message, ...]
 
 
+def _result_messages(
+    msg: history.UserMessage,
+) -> tuple[history.UserMessage, list[history.UserMessage]]:
+    """Keep full answers with their results and leave other notices for the next turn.
+
+    Args:
+        msg: The message answering the calls.
+
+    Returns:
+        The paired results and any inputs for the next reply.
+    """
+    results: list[history.ToolResultItem] = []
+    answers: list[history.Notice] = []
+    notices: list[history.Notice] = []
+    for item in msg.items:
+        if isinstance(item, history.ToolResultItem):
+            if item.unshown_answer is not None:
+                answers.append(
+                    history.Notice(item.unshown_answer, "operator", answer_for=item.tool_use_id)
+                )
+                results.append(dataclasses.replace(item, unshown_answer=None))
+            else:
+                results.append(item)
+        elif item.answer_for is not None:
+            answers.append(item)
+        else:
+            notices.append(item)
+    following = [history.UserMessage(tuple(notices))] if notices else []
+    return history.UserMessage((*results, *answers)), following
+
+
 def _turns(
     messages: Sequence[history.Message],
     keep_thinking_turns: int,
@@ -75,26 +127,9 @@ def _turns(
             turns.append(inputs)
             inputs = []
         elif msg.items and isinstance(msg.items[0], history.ToolResultItem):
-            results = tuple(it for it in msg.items if isinstance(it, history.ToolResultItem))
-            # Preserve the capped result on the wire. Carry the full operator answer beside it.
-            answers = tuple(
-                history.Notice(it.unshown_answer, "operator")
-                for it in results
-                if it.unshown_answer is not None
-            )
-            if answers:
-                turns[-1].append(
-                    history.UserMessage(
-                        tuple(dataclasses.replace(it, unshown_answer=None) for it in results)
-                    )
-                )
-                turns[-1].append(history.UserMessage(answers))
-            else:
-                turns[-1].append(
-                    msg if len(results) == len(msg.items) else history.UserMessage(results)
-                )
-            if len(results) < len(msg.items):
-                inputs.append(history.UserMessage(msg.items[len(results) :]))
+            paired, following = _result_messages(msg)
+            turns[-1].append(paired)
+            inputs.extend(following)
         else:
             inputs.append(msg)
     return turns, inputs
@@ -161,7 +196,7 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
         for i, group in enumerate(groups)
         for m in group
         if isinstance(m, history.UserMessage)
-        for it in m.items
+        for it in inputs(m)
         for word in operator_words(it)
     ]
     reserved: list[tuple[int, str]] = []

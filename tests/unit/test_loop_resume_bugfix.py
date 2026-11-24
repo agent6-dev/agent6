@@ -374,7 +374,7 @@ def test_resume_judges_the_saved_best_against_only_the_journal_target(
     path.write_text(
         json.dumps(
             {
-                "version": 8,
+                "version": loop_snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,

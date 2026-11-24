@@ -52,8 +52,8 @@ def _transcript_lines(
                         + json.dumps(block.get("input") or {}, ensure_ascii=False)
                     )
         else:
-            for item in message.items:
-                if isinstance(item, loop_conversation.Notice):
+            for item in retention.inputs(message):
+                if isinstance(item, loop_conversation.Notice) and item.answer_for is None:
                     parts.append(f"[user:text] {item.text}")
                 elif include_answers:
                     parts.extend(
@@ -163,8 +163,10 @@ def _prior_summary(messages: Sequence[loop_conversation.Message]) -> str:
                 if isinstance(block, dict) and block.get("type") == "compaction":
                     prior_req = f"\n\nPrevious progress summary:\n{block['content']}"
         for item in getattr(message, "items", ()):
-            if isinstance(item, loop_conversation.Notice) and (
-                prior := compaction.progress_summary_from_notice(item.text)
+            if (
+                isinstance(item, loop_conversation.Notice)
+                and item.origin == "restart"
+                and (prior := compaction.progress_summary_from_notice(item.text))
             ):
                 prior_req = (
                     "\n\nThis conversation was ALREADY compacted; the summary from"
