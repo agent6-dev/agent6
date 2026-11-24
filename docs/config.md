@@ -126,6 +126,7 @@ A minimal block is just `backend` (plus `base_url` for a non-default host).
 | `<name>.extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
 | `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
+| `<name>.web_search` | `false` | Offer the provider's hosted web search on the worker's run and ask turns; billed by the provider apart from tokens; true needs backend anthropic, chatgpt or responses, and the vendor's own address for anthropic and responses |
 | `<name>.price_from` | per endpoint | Configured provider whose listing supplies token rates instead of this entry's own listing; default: openrouter for direct Anthropic and OpenAI endpoints |
 | `<name>.prompt_caching` | `true` | prompt caching for `backend = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
 | `<name>.server_compaction` | `true` | true on a supported model: the endpoint clears old tool results and writes the summary; agent6 changes no earlier message there; false or an unsupported model: agent6 compacts by itself; default: true for `deployment = "direct"` without a configured `base_url`, false otherwise |

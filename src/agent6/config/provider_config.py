@@ -26,6 +26,19 @@ Backend = Literal["anthropic", "openai", "chatgpt", "responses", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
+# The backends whose vendor hosts a web search; anthropic and responses entries also need the
+# vendor's own address.
+WEB_SEARCH_BACKENDS: frozenset[str] = frozenset({"anthropic", "chatgpt", "responses"})
+_WEB_SEARCH_BACKEND_NAMES = " or ".join(
+    (", ".join(sorted(WEB_SEARCH_BACKENDS)[:-1]), max(WEB_SEARCH_BACKENDS))
+)
+
+_WEB_SEARCH_DESCRIPTION = (
+    "Offer the provider's hosted web search on the worker's run and ask turns; billed by the "
+    f"provider apart from tokens; true needs backend {_WEB_SEARCH_BACKEND_NAMES}, and the "
+    "vendor's own address for anthropic and responses"
+)
+
 
 def provider_name_refusal(name: str) -> str:
     """Return why a provider name cannot be one dotted-key component, or "".
@@ -276,6 +289,7 @@ class _ProviderBase(pydantic.BaseModel):
             "Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s."
         ),
     )
+    web_search: bool = pydantic.Field(default=False, description=_WEB_SEARCH_DESCRIPTION)
 
     @pydantic.model_validator(mode="before")
     @classmethod
@@ -424,6 +438,12 @@ class _ProviderBase(pydantic.BaseModel):
                 "oauth sends its grant as a bearer header (`Authorization: Bearer`); auth_style"
                 f" {self.auth_style!r} is not honoured, drop it"
             )
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _web_search_needs_a_hosting_endpoint(self) -> _ProviderBase:
+        if self.web_search and (refusal := web_search_refusal(self)):
+            raise ValueError(refusal)
         return self
 
 
@@ -683,6 +703,13 @@ class ClaudeCodeProviderEntry(pydantic.BaseModel):
             'executable for `backend = "claude_code"` only; a name on PATH or an absolute path'
         ),
     )
+    web_search: bool = pydantic.Field(default=False, description=_WEB_SEARCH_DESCRIPTION)
+
+    @pydantic.model_validator(mode="after")
+    def _web_search_needs_a_hosting_endpoint(self) -> ClaudeCodeProviderEntry:
+        if self.web_search and (refusal := web_search_refusal(self)):
+            raise ValueError(refusal)
+        return self
 
 
 ProviderEntry = Annotated[
@@ -693,6 +720,29 @@ ProviderEntry = Annotated[
     | ClaudeCodeProviderEntry,
     pydantic.Discriminator("backend"),
 ]
+
+
+def web_search_refusal(entry: _ProviderBase | ClaudeCodeProviderEntry) -> str:
+    """Return why the entry cannot offer its provider's hosted web search, or "".
+
+    Args:
+        entry: A provider entry.
+
+    Returns:
+        The refusal for `web_search = true`, naming the key and how to change it.
+    """
+    if entry.backend not in WEB_SEARCH_BACKENDS:
+        return (
+            f"web_search = true: backend {entry.backend!r} has no hosted web search; set"
+            f" web_search = false, or use backend {_WEB_SEARCH_BACKEND_NAMES}"
+        )
+    if isinstance(entry, PricedProviderEntry) and not entry.direct_vendor:
+        return (
+            "web_search = true: only the vendor's own address hosts the search"
+            " (api.anthropic.com for anthropic, api.openai.com for responses) and this entry"
+            f" dials {parse.urlsplit(entry.base_url).hostname}; set web_search = false"
+        )
+    return ""
 
 
 def plan_metered(entry: object) -> bool:

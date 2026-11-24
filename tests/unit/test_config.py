@@ -10,7 +10,7 @@ from typing import get_args
 import pydantic
 import pytest
 
-from agent6 import config
+from agent6 import config, kinds
 from agent6.config import (
     AnthropicProviderEntry,
     Config,
@@ -1175,3 +1175,65 @@ def test_other_backends_refuse_server_compaction(tmp_path: pathlib.Path, backend
                 tmp_path, f'[providers.p]\nbackend = "{backend}"\n{url}server_compaction = true\n'
             )
         )
+
+
+@pytest.mark.parametrize(
+    ("entry", "reason"),
+    [
+        ('backend = "openai"\n', "backend 'openai' has no hosted web search"),
+        ('backend = "claude_code"\n', "backend 'claude_code' has no hosted web search"),
+        (
+            'backend = "anthropic"\nbase_url = "https://gateway.example/v1"\n',
+            "this entry dials gateway.example",
+        ),
+        (
+            'backend = "anthropic"\ndeployment = "vertex"\n'
+            'base_url = "https://vertex.example/v1"\n',
+            "this entry dials vertex.example",
+        ),
+        (
+            'backend = "responses"\nbase_url = "https://gateway.example/v1"\n',
+            "this entry dials gateway.example",
+        ),
+    ],
+)
+def test_web_search_refuses_an_entry_that_hosts_no_search(
+    tmp_path: pathlib.Path, entry: str, reason: str
+) -> None:
+    """`web_search = true` refuses at load where the vendor hosts no search.
+
+    The refusal names the entry, its backend, the key and the change.
+    """
+    with pytest.raises(ConfigError) as exc:
+        load_config(_write(tmp_path, f"[providers.p]\n{entry}web_search = true\n"))
+    message = str(exc.value)
+    backend = entry.split('"')[1]
+    assert f"providers.p.{backend}: Value error, web_search = true: " in message
+    assert reason in message
+    assert "set web_search = false" in message
+    off = load_config(_write(tmp_path, f"[providers.p]\n{entry}"))
+    assert off.providers["p"].web_search is False
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        'backend = "anthropic"\n',
+        'backend = "responses"\nbase_url = "https://api.openai.com/v1"\n',
+        'backend = "chatgpt"\n',
+    ],
+)
+def test_web_search_reaches_only_the_workers_run_and_ask_turns(
+    tmp_path: pathlib.Path, entry: str
+) -> None:
+    """The key is off by default and binds the worker's entry in run and ask alone."""
+    routes = '[models.default]\nmodel = "p/m"\n[models.reviewer]\nmodel = "q/m"\n'
+    other = f"[providers.q]\n{entry}"
+    off = load_config(_write(tmp_path, f"{routes}[providers.p]\n{entry}{other}"))
+    assert not any(off.offers_web_search(mode) for mode in ("run", "ask"))
+    on = load_config(_write(tmp_path, f"{routes}[providers.p]\n{entry}web_search = true\n{other}"))
+    assert [m for m in kinds.SESSION_KINDS if on.offers_web_search(m)] == ["run", "ask"]
+    reviewer_only = load_config(
+        _write(tmp_path, f"{routes}[providers.p]\n{entry}{other}web_search = true\n")
+    )
+    assert not any(reviewer_only.offers_web_search(m) for m in kinds.SESSION_KINDS)

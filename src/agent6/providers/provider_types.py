@@ -676,6 +676,24 @@ class ToolDefinition:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class WebSearch:
+    """One search the provider's hosted tool ran inside a response.
+
+    Attributes:
+        id: The provider's id for the search.
+        query: The query the model sent; empty when the reply names none.
+        status: `completed`, or the provider's word for another outcome; empty when unreported.
+        urls: The result URLs on Messages; on Responses, the URLs the reply cites after the
+            search.
+    """
+
+    id: str
+    query: str = ""
+    status: str = ""
+    urls: tuple[str, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ProviderResponse:
     """The response to one provider call.
 
@@ -697,6 +715,8 @@ class ProviderResponse:
         refused: Tool-use ids the provider's own front-end answered with an error
             before agent6 could run them, with its text; the loop records the error
             as the result and runs nothing.
+        web_searches: The hosted searches the response holds, in order.
+        web_searches_billed: The hosted searches the provider bills for this response.
     """
 
     text: str
@@ -713,6 +733,8 @@ class ProviderResponse:
     thinking_blocks_dropped: int = 0
     tool_results_cleared: int = 0
     serving: kinds.Serving = kinds.UNREPORTED
+    web_searches: tuple[WebSearch, ...] = ()
+    web_searches_billed: int = 0
 
     @property
     def usage(self) -> ProviderUsage:

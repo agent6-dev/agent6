@@ -288,6 +288,19 @@ class Config(pydantic.BaseModel):
         word = self.sandbox.protect_git
         return word == "on" or (word == "auto" and self.git.control != "model")
 
+    def offers_web_search(self, mode: str) -> bool:
+        """Return whether the mode's own turns offer the provider's hosted web search.
+
+        Args:
+            mode: The session mode.
+
+        Returns:
+            True for run and ask when the worker's provider entry sets `web_search`.
+        """
+        worker = self.models.resolve("worker") if mode in ("run", "ask") else None
+        entry = self.providers.get(worker.provider) if worker is not None else None
+        return entry is not None and entry.web_search
+
     @pydantic.model_validator(mode="after")
     def _pass_env_excludes_provider_keys(self) -> Config:
         """Refuse a `pass_env` naming a provider's `api_key_env`.
