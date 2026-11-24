@@ -25,6 +25,10 @@ Read `children[].outcome` for the parent's decision, or an empty string for none
 See [CLI JSON](formats.md#cli-json) for the session and receipt payloads that carry these fields.
 Child rows in `ps --json` and `/api/hub` have no `outcome` field.
 
+**Credit balances in session snapshots:** `budget.session.credit_readings` holds distinct account balances with their observation times.
+`usd_observed_credits` is the part of the execution or session USD total due to balance declines.
+See [SessionUsage](formats.md#sessionusage) and [ExecutionUsage](formats.md#executionusage).
+
 ## CLI listing rows
 
 [`agent6.viewmodel.listing`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py) &middot; mutable container + 2 frozen turn types

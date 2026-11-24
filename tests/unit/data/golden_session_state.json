@@ -103,6 +103,8 @@
   "environment": null,
   "budget": {
     "session": {
+      "credit_readings": [],
+      "usd_observed_credits": 0.0,
       "usd": 0.004841036,
       "usd_partial": false,
       "plan_observed_points": 0.0,
@@ -114,6 +116,7 @@
       "output_tokens": null,
       "cache_read_tokens": null,
       "cache_write_tokens": null,
+      "usd_observed_credits": 0.0,
       "usd": 0.0,
       "usd_partial": false,
       "unmetered_tokens": 0,
