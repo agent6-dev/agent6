@@ -4417,7 +4417,7 @@ def _stuck_count(messages: list[dict[str, Any]]) -> int:
 
 
 def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None:
-    """The split/pass/skip nudge re-fires on the same stuck task and caps at _STUCK_NUDGE_MAX."""
+    """A stuck task gets at most `STUCK_NUDGE_MAX` nudges at regular intervals."""
     from agent6.harness.tasks import focus as dag_focus
 
     cur = _FakeCurator(
@@ -4432,7 +4432,7 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
     # One nudge after the first period, but not before it.
     for _ in range(dag_focus.STUCK_ON_TASK_AFTER):
         _surface(wf, st, messages)
-    assert _stuck_count(messages) == 0  # turns_on_task is _STUCK_ON_TASK_AFTER-1 here
+    assert _stuck_count(messages) == 0
     _surface(wf, st, messages)
     assert _stuck_count(messages) == 1  # crossed the first period
     # Keep grinding well past the cap; it re-fires periodically then stops.

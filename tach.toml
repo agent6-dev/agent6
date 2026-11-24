@@ -21,10 +21,6 @@ depends_on = []
 # presentation, process-spawn, and session-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, ChildRuntime).
 # machine.check shares bundle, config and jail-PATH checks with create and the CLI.
-# execution drains review_actions through sessions.ipc at the worker steer boundary.
-# run and resume share session_runtime; execution, session_runtime and role_providers
-# use conversation_state for persisted conversation ids and completed-call counts.
-# merge calls merge_message; its builders use session_setup, providers, harness and viewmodel.
 path = "agent6.app"
 depends_on = [
   "agent6",
