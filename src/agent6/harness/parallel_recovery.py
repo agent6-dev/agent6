@@ -60,6 +60,7 @@ class _CreditHistory:
     continuations: dict[tuple[str, str, int], int]
     origins: dict[tuple[int, str], set[int]]
     readings: dict[tuple[int, str], set[credit_usage.Reading]]
+    last_unbound_settlement: dict[str, int]
 
     @classmethod
     def read(cls, logs: pathlib.Path) -> _CreditHistory:
@@ -76,6 +77,8 @@ class _CreditHistory:
         continuations: dict[tuple[str, str, int], int] = {}
         origins: dict[tuple[int, str], set[int]] = {}
         readings: dict[tuple[int, str], set[credit_usage.Reading]] = {}
+        last_unbound_settlement: dict[str, int] = {}
+        settled: set[str] = set()
         for raw in tail.tail_events(logs, follow=False):
             match raw:
                 case {"type": "session.start" | "session.resume"}:
@@ -94,17 +97,24 @@ class _CreditHistory:
                     row = events.parse_event(raw)
                     if not isinstance(row, journal.BudgetUpdate):
                         continue
+                    # Later live rows repeat the keys of children already settled.
+                    unbound_settlement = "credit_origins" not in raw and not settled.issuperset(
+                        row.settled_children
+                    )
+                    settled.update(row.settled_children)
                     for account, binding in row.credit_origins.items():
                         if isinstance(binding, int):
                             origins.setdefault((execution, account), set()).add(binding)
                     for origin, reading in row.credits.scoped():
+                        if unbound_settlement:
+                            last_unbound_settlement[reading.account] = execution
                         if origin is None:
                             origins.setdefault((execution, reading.account), set()).add(execution)
                         series = execution if origin is None else origin
                         readings.setdefault((series, reading.account), set()).add(reading)
                 case _:
                     continue
-        return cls(executions, continuations, origins, readings)
+        return cls(executions, continuations, origins, readings, last_unbound_settlement)
 
     def restore(
         self,
@@ -141,6 +151,16 @@ class _CreditHistory:
                 "the parent journal does not identify the execution that launched it"
             )
         for account in sorted({r.account for r in new}):
+            if (
+                continuation
+                and not continuation.owner
+                and self.last_unbound_settlement.get(account, 0) > execution
+            ):
+                raise child_dispatch.DispatchRecordError(
+                    f"ambiguous credit series for {child.account_id}: a later child settlement "
+                    f"does not say which execution the {account} balance belongs to. "
+                    "This run was started under an older version of agent6."
+                )
             origins = self.origins.get((execution, account), {execution})
             if len(origins) != 1:
                 raise child_dispatch.DispatchRecordError(

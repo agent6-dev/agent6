@@ -18,7 +18,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import child_records, paths
+from agent6 import child_records, credit_usage, paths
 from agent6.app import child_watch, children
 from agent6.config import Config
 from agent6.harness import (
@@ -544,15 +544,9 @@ def test_fresh_credit_cap_starts_at_the_first_live_balance(
     assert fresh.available().usd == 0
 
 
-@pytest.mark.parametrize("notice", [True, False], ids=["journaled", "unknown"])
-def test_ownerless_continuation_needs_its_launch_execution(
-    short_repo: pathlib.Path, notice: bool
-) -> None:
-    """An interrupted reconciliation did not start the continuation it has yet to settle."""
-    repo = short_repo / "repo"
-    child_env.init_repo(repo)
-    parent = child_env.create_record(repo, "parent")
-    sink = event_log.EventSink(parent / "logs.jsonl")
+def _ownerless_continuation(
+    repo: pathlib.Path, parent: pathlib.Path, *, notice: bool = True
+) -> pathlib.Path:
     _resume(parent, "first")
     child = _running_child(repo, parent, "parent-p1", work=True)
     (record,) = _records(parent)
@@ -564,15 +558,26 @@ def test_ownerless_continuation_needs_its_launch_execution(
         record.child(child.name).model_copy(update={"continuation": continued, "usage": initial})
     )
     path = child_dispatch.record_path(parent, record.identity)
-    data = running.model_dump(mode="json")
-    del data["children"][0]["continuation"]["owner"]
-    path.write_text(json.dumps(data))
+    path.write_text(running.model_dump_json(exclude_unset=True))
     _resume(parent, "continuing")
     if notice:
-        sink.emit(
+        event_log.EventSink(parent / "logs.jsonl").emit(
             journal.ParallelChildContinued(group=record.identity, child=child.name, sequence=1)
         )
     _resume(child, "continued-child")
+    return child
+
+
+@pytest.mark.parametrize("notice", [True, False], ids=["journaled", "unknown"])
+def test_ownerless_continuation_needs_its_launch_execution(
+    short_repo: pathlib.Path, notice: bool
+) -> None:
+    """An interrupted reconciliation did not start the continuation it has yet to settle."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    sink = event_log.EventSink(parent / "logs.jsonl")
+    child = _ownerless_continuation(repo, parent, notice=notice)
     meter = _tracker()
     _balance(meter, 10, 10)
     _balance(meter, 20, 8)
@@ -586,7 +591,7 @@ def test_ownerless_continuation_needs_its_launch_execution(
 
     _resume(parent, "interrupted-recovery")
     with pytest.raises(_Crash):
-        _reconcile(repo, parent, _tracker(), stop_at=record.identity)
+        _reconcile(repo, parent, _tracker(), stop_at="parent-p1")
     _resume(parent, "recovery")
     fresh = _tracker()
     if not notice:
@@ -598,6 +603,63 @@ def test_ownerless_continuation_needs_its_launch_execution(
     usage = children.child_usage(parent)
     assert usage is not None
     assert (usage.usd, fresh.available().usd) == (3, 9)
+
+
+@pytest.mark.parametrize(
+    ("account", "origins", "remaining"),
+    [
+        ("provider:p", None, None),
+        ("provider:p", {"provider:p": {0: 3}}, 0),
+        ("provider:p", {}, 2),
+        ("provider:q", None, 2),
+    ],
+    ids=["missing-origin", "launch-series", "live-series", "other-account"],
+)
+def test_ownerless_continuation_needs_the_series_of_a_later_settlement(
+    short_repo: pathlib.Path,
+    account: str,
+    origins: credit_usage.Origins | None,
+    remaining: int | None,
+) -> None:
+    """A sibling's $12 top-up can put the decline to $8 at the $4 cap."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    sink = event_log.EventSink(parent / "logs.jsonl")
+    child = _ownerless_continuation(repo, parent)
+    launch = _tracker()
+    _balance(launch, 10, 10)
+    budget_events.emit_budget_update(launch, sink.emit)
+    meter = _tracker()
+    _balance(meter, 30, 8)
+    budget_events.emit_budget_update(meter, event_log.EventSink(child / "logs.jsonl").emit)
+
+    _resume(parent, "interrupted-recovery")
+    settlement = journal.BudgetUpdate(
+        usd_total=0,
+        settled_children=("parent-r1-l1",),
+        credit_readings=(credit_usage.Reading(account, 20, 12),),
+    )
+    if origins is not None:
+        settlement = settlement.model_copy(update={"credit_origins": origins})
+    sink.emit(settlement)
+    if account == "provider:q":
+        live = credit_usage.Reading("provider:p", 40, 6)
+        sink.emit(settlement.model_copy(update={"credit_readings": (live,)}))
+
+    _resume(parent, "recovery")
+    fresh = _tracker(4)
+    if remaining is None:
+        with pytest.raises(child_dispatch.DispatchRecordError, match="ambiguous") as refusal:
+            _reconcile(repo, parent, fresh)
+        for detail in ("parent-p1-l1:1", account, "settlement", "older version"):
+            assert detail in str(refusal.value)
+        assert not _records(parent)[0].child(child.name).settled
+        assert "parent-p1-l1:1" not in fresh.snapshot().settled_children
+        return
+    _reconcile(repo, parent, fresh)
+    assert _records(parent)[0].child(child.name).settled
+    assert fresh.available().usd == remaining
 
 
 def test_a_failed_record_write_launches_nothing(
