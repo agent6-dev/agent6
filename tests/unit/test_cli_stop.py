@@ -309,10 +309,10 @@ def test_a_group_stops_only_its_live_children(
 _DRAINING_PARENT = """
 import json, sys, time
 from pathlib import Path
-from agent6.viewmodel import session_is_live
+from agent6.viewmodel import listing
 d, child = Path(sys.argv[1]), Path(sys.argv[2])
 (d / "draining").write_text("1")  # the caller waits for this before stopping
-while session_is_live(child):
+while listing.session_is_live(child):
     time.sleep(0.05)
 end = {"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}
 with (d / "logs.jsonl").open("a") as fh:

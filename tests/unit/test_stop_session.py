@@ -21,6 +21,7 @@ from agent6.sandbox import jail
 from agent6.sessions import ipc, process
 from agent6.sessions import shells as session_shells
 from agent6.tools import background
+from agent6.viewmodel import listing
 
 _ANSWERING_WORKER = """
 import json, sys, time
@@ -395,7 +396,7 @@ def test_a_runs_own_stop_markers_land_before_its_children_are_stopped(
     def _children(d: pathlib.Path) -> list[pathlib.Path]:
         return [child] if d == parent else []
 
-    monkeypatch.setattr(stop, "session_is_live", _live)
+    monkeypatch.setattr(listing, "session_is_live", _live)
     monkeypatch.setattr(stop, "_live_children", _children)
     pending_when_child_stopped: list[bool] = []
     real = stop.stop_session
