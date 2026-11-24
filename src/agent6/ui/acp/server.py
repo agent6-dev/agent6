@@ -19,13 +19,14 @@ from typing import Any, BinaryIO
 
 from agent6 import __version__
 from agent6.app import frontend
+from agent6.ui import operator_images
 from agent6.ui.acp import review, rpc, updates
 from agent6.ui.acp import session as acp_session
 
 # The client sends the newest version it supports and disconnects if this one will not do.
 PROTOCOL_VERSION = 1
-# 4 MiB, the MCP server's cap; past it the payload is dropped, not buffered.
-MAX_LINE_BYTES = 1 << 22
+# 4 MiB, the MCP server's cap, and a prompt's images; past it the payload is dropped, not buffered.
+MAX_LINE_BYTES = (1 << 22) + operator_images.ENCODED_TOTAL_MAX
 # How long EOF waits for an execution to reach a boundary: a verify's length, not a wedged run's.
 EOF_GRACE_S = 30.0
 
@@ -336,7 +337,18 @@ class ACPServer:
             )
         sessions = self._sessions()
         session = sessions.get(params)
-        text = acp_session.prompt_text(params)
+        images = acp_session.prompt_images(params)
+        text = acp_session.prompt_text(params, allow_empty=bool(images))
+        if images:
+            # Checked before the worker starts, so a refused image answers this request.
+            if text.startswith("/"):
+                raise rpc.RpcError(
+                    rpc.INVALID_PARAMS, "a directive takes no image; send it with a prompt"
+                )
+            try:
+                operator_images.decode(images)
+            except operator_images.ImageRefusedError as exc:
+                raise rpc.RpcError(rpc.INVALID_PARAMS, str(exc)) from exc
         if review.handle_command(
             sessions,
             session,
@@ -349,6 +361,7 @@ class ACPServer:
             session,
             text,
             finish=lambda reason: self.reply(req_id, result={"stopReason": reason}),
+            images=images,
         )
         return DEFERRED
 
@@ -411,7 +424,8 @@ class ACPServer:
             "agentCapabilities": {
                 "loadSession": True,
                 # A resource block's uri is client-controlled; passing it through is path injection.
-                "promptCapabilities": {"embeddedContext": False},
+                # An image block's inline data is taken; its uri is never opened.
+                "promptCapabilities": {"embeddedContext": False, "image": True},
                 # An editor lists recorded runs, reopens one after a restart and closes a thread.
                 "sessionCapabilities": {"list": {}, "resume": {}, "close": {}},
             },

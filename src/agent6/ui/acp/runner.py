@@ -28,7 +28,7 @@ from agent6.app import run as app_run
 from agent6.app.session import setup as session_setup
 from agent6.sessions import id, ipc, journal
 from agent6.sessions import layout as sessions_layout
-from agent6.ui import keymap, spawn
+from agent6.ui import keymap, operator_images, spawn
 from agent6.ui.acp import frontend as acp_frontend
 from agent6.ui.acp import options, updates
 from agent6.ui.acp import server as acp_server
@@ -555,6 +555,11 @@ class RunBridge:
             ACP's stop reason.
         """
         layout = session.layout(agent6_paths.state_dir(session.cwd))
+        if session.images:
+            # Stored in the run's own directory before it starts, which finds them by its words.
+            message = operator_images.accept(layout.session_dir, text, session.images)
+            ipc.write_launch_input(layout.session_dir, message)
+            text = message.text
         journal_before = viewmodel_tail.journal_size(layout.logs_path)
 
         said: list[str] = []

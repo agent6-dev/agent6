@@ -452,6 +452,8 @@ depends_on = [
   "agent6.tools",
   # A scoped approval offers the four answers every front-end shares.
   "agent6.ui.keymap",
+  # A prompt's image blocks pass the intake the web's uploads pass.
+  "agent6.ui.operator_images",
   # The same detached-resume spawner ui.cli uses: `--detach` is a lifecycle
   # affordance, not a CLI one.
   "agent6.ui.spawn",

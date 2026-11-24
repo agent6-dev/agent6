@@ -23,6 +23,7 @@ from agent6 import kinds
 from agent6.app import preflight, stop
 from agent6.sessions import id, ipc, process
 from agent6.sessions import layout as sessions_layout
+from agent6.ui import operator_images
 from agent6.ui.acp import options, rpc, updates
 from agent6.viewmodel import listing, tail
 
@@ -48,6 +49,7 @@ class Session:
             while `finish` runs and an editor may prompt again the instant it reads
             the reply.
         require_resume: Refuse a missing resume point instead of starting new work.
+        images: The images of the prompt in flight, as the editor sent them.
         closed: The editor closed the conversation while a prompt was in flight; the
             cancelled prompt still answers, then the entry goes.
         model: The route the editor picked for this session's next prompts; "" runs the
@@ -63,6 +65,7 @@ class Session:
     cancelled: bool = False
     execution_live: bool = False
     require_resume: bool = False
+    images: tuple[operator_images.EncodedImage, ...] = ()
     closed: bool = False
     model: str = ""
     effort: kinds.EffortLevel | None = None
@@ -345,6 +348,7 @@ class Sessions:
         *,
         finish: Callable[[StopReason], None],
         require_resume: bool = False,
+        images: tuple[operator_images.EncodedImage, ...] = (),
     ) -> None:
         """Run the prompt on a worker, and answer when it ends.
 
@@ -354,6 +358,7 @@ class Sessions:
             finish: Answers the prompt; called once with the stop reason, `cancelled` after
                 a cancel whatever the run returned.
             require_resume: Refuse instead of starting new work if the resume point is missing.
+            images: The prompt's image blocks, as `prompt_images` read them.
 
         Raises:
             RpcError: The session has an execution in flight.
@@ -363,6 +368,7 @@ class Sessions:
             raise rpc.RpcError(rpc.INVALID_PARAMS, "that session already has a prompt in flight")
         session.cancelled = False
         session.require_resume = require_resume
+        session.images = images
 
         def _work() -> None:
             try:
@@ -372,6 +378,7 @@ class Sessions:
             answer = "cancelled" if session.cancelled else reason
             session.execution_live = False
             session.require_resume = False
+            session.images = ()
             finish(answer)
             if session.closed:
                 self._by_id.pop(session.acp_id, None)
@@ -494,14 +501,44 @@ def _flat(rows: list[listing.ListingRow]) -> list[listing.ListingRow]:
     return out
 
 
-def prompt_text(params: dict[str, Any]) -> str:
-    """Join the prompt's text and resource_link blocks into the task.
+def prompt_images(params: dict[str, Any]) -> tuple[operator_images.EncodedImage, ...]:
+    """Return the prompt's image blocks, in order, as the editor sent them.
 
-    A `resource_link` renders as its uri, which the model reads through the
-    ordinary tools; other non-text blocks are dropped, as `initialize` said.
+    A block's `uri` is the editor's and is never opened: only the inline `data` is read.
 
     Args:
         params: The `session/prompt` params.
+
+    Returns:
+        Each image's declared media type and base64 data; `operator_images` checks them.
+
+    Raises:
+        RpcError: An image block lacks its `mimeType` or its `data`.
+    """
+    blocks: Any = params.get("prompt")
+    images: list[operator_images.EncodedImage] = []
+    for index, b in enumerate(blocks if isinstance(blocks, list) else [], start=1):
+        if not isinstance(b, dict) or b.get("type") != "image":
+            continue
+        for field in ("mimeType", "data"):
+            if not isinstance(b.get(field), str):
+                raise rpc.RpcError(
+                    rpc.INVALID_PARAMS, f"prompt content block {index} {field} must be a string"
+                )
+        images.append((b["mimeType"], b["data"]))
+    return tuple(images)
+
+
+def prompt_text(params: dict[str, Any], *, allow_empty: bool = False) -> str:
+    """Join the prompt's text and resource_link blocks into the task.
+
+    A `resource_link` renders as its uri, which the model reads through the
+    ordinary tools; an image block is read by `prompt_images`, and other non-text
+    blocks are dropped, as `initialize` said.
+
+    Args:
+        params: The `session/prompt` params.
+        allow_empty: The prompt carries images, so it needs no text.
 
     Returns:
         The task text.
@@ -535,6 +572,6 @@ def prompt_text(params: dict[str, Any]) -> str:
             if uri:
                 parts.append(f"Attached: {uri}")
     text = "\n\n".join(parts).strip()
-    if not text:
+    if not text and not allow_empty:
         raise rpc.RpcError(rpc.INVALID_PARAMS, "the prompt carried no text")
     return text
