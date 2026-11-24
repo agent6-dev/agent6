@@ -522,6 +522,7 @@ def _journal() -> str:
 
 # The JSON kind a record field's annotation declares, as the page names it.
 _RECORD_KINDS = {
+    "Origins": "object",
     "str": "str",
     "int": "int",
     "float": "float",

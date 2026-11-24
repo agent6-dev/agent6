@@ -111,12 +111,12 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `settled_children` | `list, optional` | Child session IDs included in this execution's cumulative spend. |
 | `usd_own_calls` | `float, optional` | Cost of this execution's priced calls, excluding children and credits. |
-| `usd_observed_credits` | `float, optional` | Account credit declines inside the USD cap reading, counted once per account. |
+| `usd_observed_credits` | `float, optional` | Credit declines charged to this cap, counted by account and parent execution. |
 | `credit_readings` | `list, optional` | Balances observed in the subtree. A retried append can repeat a reading. |
 | `credit_readings[].account` | `str` | A fingerprint of the account ID, or the provider entry if the ID is absent. |
 | `credit_readings[].observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
 | `credit_readings[].balance_usd` | `float` | The balance in dollars. |
-| `credit_origins` | `object, optional` | The execution number that began each restored account's series (start is 1). |
+| `credit_origins` | `object, optional` | Each recovered account maps to its execution number (start is 1). If its readings have different origins, the value maps zero-based `credit_readings` indexes to executions. A missing origin means this row's execution. |
 | `usd_total` | `float` | USD cap reading: own calls, settled children and observed credit declines. |
 | `input_total` | `int, optional` | This tracker's own fresh input tokens. |
 | `output_total` | `int, optional` | This tracker's own output tokens. |

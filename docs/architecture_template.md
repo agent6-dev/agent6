@@ -656,10 +656,11 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
   Each child contributes its inclusive counts once, not its per-call rows as well.
   A continuation contributes only its increase over `usage_before`.
 - `usd_own_calls` is the cost of this execution's calls alone.
-  The parent folds child credit readings into its own account series instead of adding the child's observed declines.
-  Recovery restores each child's accounts from the parent execution that started or continued it.
-  `credit_origins` keeps later recoveries on the same account series without joining independent executions.
-  Only additional declines count against the fresh USD cap.
+  The parent orders its own and its children's credit readings by account within each execution.
+  Recovery binds each child settlement key to the execution that started or continued it.
+  Only the declines that child adds to its execution's journaled series draw on the fresh cap.
+  `credit_origins` identifies recovered readings even when one budget row contains several executions' readings of the same account.
+  Live readings start a separate series at the first observed balance.
 - Before launching children, `sessions/child_dispatch.py` writes `<session_dir>/dispatch/<group>.json` atomically (version 15); a failed write refuses the dispatch.
     - A work record holds one task: its identity, source, `merge_policy`, owner execution, base, spec, parent DAG node, and each child's limits and whether its end was reported.
     - The state advances from `prepared` to `running` across the parent's turns, then `settling` as each child's usage is charged once or marked outstanding, and `ranking` while a task's judges run.
@@ -687,6 +688,8 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - A task whose children ended by themselves completes under its git policy, as at a turn boundary; a record with no child found completes as `dispatch interrupted before launch; nothing ran`.
     - Recovery delivers each outcome notice once, including for a record already complete; a session older than the records has none to reconcile.
 - a child's `ContinuationRecord` keeps its owner execution, instruction, sequence and already charged usage; its settlement key is `<child>:<sequence>`, so live readings and recovery count only new spend and an earlier execution's settlement cannot suppress the continuation's charge
+  Without a recorded owner, recovery uses the `parallel.child_continued` row for that group, child and sequence.
+  If neither identifies the execution, a resume refuses to settle new credit readings before its first model call.
 - a panel gives each reviewer `ChildLimits` (a turn cap and a wall-clock deadline) in its launch file: the bootstrap clamps `harness.max_turns` (a configured `-1` cannot lift the cap) and arms its own backstop, the stop bridges at the deadline and SIGTERM to itself a grace later; the parent's await ends at the same deadline, and a child that reaches it reads `ended at its deadline`, never a success; a work child has no limits of its own and runs under its parent's config
 - the ranking is [parallel_rank.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/parallel_rank.py): a judge is a reviewer child whose verdict is an order
     - `rank` runs at the turn boundary after a task's attempts have all ended: it charges the attempts, briefs each candidate (`candidates`: its diff from the base, its gate's word, its cost, its finish summary; a stopped attempt is none) and, with two candidates or more and a judge configured, starts one reviewer per `[harness.parallel].judges` entry in the background (`start`: the rank prompt, an opening that lists the attempts, `review.max_turns`, the tools the run's model is offered cut to the reviewer surface, a clone cut at the attempts' base)

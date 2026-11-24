@@ -127,7 +127,7 @@ class BudgetUpdate(Event):
     )
     usd_observed_credits: float = pydantic.Field(
         default=0.0,
-        description="Account credit declines inside the USD cap reading, counted once per account.",
+        description="Credit declines charged to this cap, counted by account and parent execution.",
     )
     credit_readings: tuple[credit_usage.Reading, ...] = pydantic.Field(
         default=(),
@@ -136,8 +136,9 @@ class BudgetUpdate(Event):
     credit_origins: credit_usage.Origins = pydantic.Field(
         default_factory=dict,
         description=(
-            "Originating execution per recovered account (start is 1). For mixed origins, "
-            "keys index `credit_readings` from zero. A missing origin means this execution."
+            "Each recovered account maps to its execution number (start is 1). If its readings "
+            "have different origins, the value maps zero-based `credit_readings` indexes to "
+            "executions. A missing origin means this row's execution."
         ),
     )
     usd_total: float = pydantic.Field(

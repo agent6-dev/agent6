@@ -441,10 +441,12 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
 Priced calls and observed credit declines share the USD ceiling.
 The cap counts each call once, including calls made by children.
-Parent and child readings of the same credit balance form one series in observation order.
-A fingerprint of the account ID identifies that series, or the provider entry if the backend gives no ID.
+Within one parent execution, parent and child readings of the same credit balance form one series in observation order.
+A fingerprint of the account ID identifies the account, or the provider entry if the backend gives no ID.
 A top-up raises the balance for the next reading.
 The declines include other users of the account; they are not attributed to calls.
+On resume, settling an interrupted child charges only declines its readings add to the execution that launched it.
+The first live reading starts a fresh series, even for the same account.
 Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
 Listing refreshes do not run `token_command` or substitute a static key for it.
 For `api.anthropic.com` and `api.openai.com` on a direct deployment, the default reference is the configured `openrouter` entry.

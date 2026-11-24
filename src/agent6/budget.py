@@ -385,7 +385,7 @@ class BudgetSnapshot:
         per_model: The usage totals by provider/model route.
         usd_own_calls: The cost of this execution's priced calls, excluding children and balances.
         usd_partial: Unpriced calls make the USD reading a lower bound.
-        usd_observed_credits: The sum of balance declines, once per account.
+        usd_observed_credits: The credit declines charged to this execution's cap.
         credits: The unpublished balance observations and their parent executions.
         credit_reading_count: How many distinct balances the subtree has observed.
         usd_running_children: The running children's USD outside the credit series. The cap
