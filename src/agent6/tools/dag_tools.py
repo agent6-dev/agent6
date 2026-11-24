@@ -91,10 +91,12 @@ def update_task(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.Updat
                     " it stays until the operator retires it. Work it when"
                     " nothing else is ready, or finish_session on a hard limit."
                 )
-        intent = models.UpdateStatusIntent(
-            id=args.id,
-            new_status=args.status,  # type: ignore[arg-type]  # pydantic validates the literal
-            note=args.note,
+        intent = models.UpdateStatusIntent.model_validate(
+            {
+                "id": args.id,
+                "new_status": args.status,
+                "note": args.note,
+            }
         )
         node = curator.update_status(intent)
     # The curator rejects unknown ids and cycles; dispatch() surfaces that as a ToolError.
