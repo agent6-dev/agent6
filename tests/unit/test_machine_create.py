@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import paths
+from agent6 import budget, kinds, paths
 from agent6.app.machine import agent
 from agent6.app.machine import create as _create
 from agent6.app.session import runtime as session_runtime
@@ -24,8 +24,9 @@ from agent6.machine import (
     build_authoring_prompt,
 )
 from agent6.sandbox import detect
+from agent6.sessions import budget_events, event_log
 from agent6.ui.cli import main
-from agent6.viewmodel import format
+from agent6.viewmodel import format, telemetry
 from agent6.viewmodel.session import status as session_status
 
 VALID_MACHINE = """\
@@ -509,6 +510,54 @@ def test_create_logs_the_cumulative_spend_across_attempts(
     assert abs(last["usd_total"] - 0.03) < 1e-9  # 0.01 + 0.02, not the last 0.02
     assert last["input_total"] == 250 and last["output_total"] == 50
     assert last["plan_observed_points"] == 4.0  # the stderr line's points reach the journal too
+
+
+def test_create_counts_every_attempts_own_cost_in_the_cost_metric(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The total row carried no own cost, so the metric counted only the costliest attempt."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    attempts = iter([({}, 0.02), (_draft(VALID_MACHINE), 0.03)])
+
+    def fake_build(
+        overlays: object, root: pathlib.Path, transcript_dir: pathlib.Path, **_kw: object
+    ) -> Callable[[AgentRequest, pathlib.Path], AgentExecResult]:
+        def run(_request: AgentRequest, events_log: pathlib.Path) -> AgentExecResult:
+            files, cost = next(attempts)
+            _write_draft(root, files)
+            # Each attempt meters on its own tracker and journals to the draft's log.
+            meter = budget.BudgetTracker(max_usd=10, max_tokens_fallback=-1, max_plan_points=-1)
+            meter.record(
+                route=kinds.ModelRoute("p", "m"),
+                input_tokens=10,
+                output_tokens=5,
+                cache_read_tokens=0,
+                cache_write_tokens=0,
+                cost_usd=cost,
+            )
+            budget_events.emit_budget_update(meter, event_log.EventSink(events_log).emit)
+            snap = meter.snapshot()
+            return AgentExecResult(
+                payload=None,
+                reason="finish_session",
+                usd=snap.usd_total,
+                usd_own_calls=snap.usd_own_calls,
+                input_tokens=snap.input_total,
+                output_tokens=snap.output_total,
+            )
+
+        return run
+
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
+    assert main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
+    logs = next((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
+    fold = telemetry.TelemetryFold(logs.parent.name)
+    for line in logs.read_text(encoding="utf-8").splitlines():
+        fold.feed(json.loads(line))
+    fold.close()
+    assert fold.metrics().counters[("agent6_cost_usd_total", ())] == pytest.approx(0.05)
 
 
 def test_create_saves_the_prompt(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

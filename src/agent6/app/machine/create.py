@@ -304,6 +304,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     valid_path: pathlib.Path | None = None
     valid_scripts: dict[str, str] = {}
     total_usd = 0.0
+    total_own = 0.0
     total_partial = False
     total_in = 0
     total_out = 0
@@ -348,6 +349,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             events_log,
         )
         total_usd += result.usd
+        total_own += result.usd_own_calls or 0.0
         total_plan += result.plan_observed_points
         total_partial |= result.usd_partial
         total_in += result.input_tokens
@@ -421,6 +423,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     events.emit(
         journal.BudgetUpdate(
             usd_total=total_usd,
+            usd_own_calls=total_own,
             input_total=total_in,
             output_total=total_out,
             plan_observed_points=total_plan,
