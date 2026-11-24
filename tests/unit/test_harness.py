@@ -80,6 +80,9 @@ class _StubDispatcher:
         """A stub has no stopped child to merge."""
         return False
 
+    def background_children_available(self) -> bool:
+        return False
+
     session_id = ""  # the tool set reads the run's id; a bare double has none
 
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract

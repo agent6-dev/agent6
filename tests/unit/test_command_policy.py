@@ -14,9 +14,9 @@ from agent6.app import frontend as app_frontend
 from agent6.config import Config
 from agent6.sandbox import jail_session
 from agent6.sessions import ipc
-from agent6.tools import dispatch, operator_prompts
+from agent6.tools import child_tools, dispatch, operator_prompts, tool_errors
 
-_COMMAND_TOOLS = {"run_command", "run_verify_command", "stop_background"}
+_COMMAND_TOOLS = {"run_command", "run_verify_command", "read_background", "stop_background"}
 
 
 @pytest.mark.parametrize("configured", ["allow", "deny"])
@@ -110,6 +110,35 @@ def test_the_policy_is_re_read_not_cached(tmp_path: pathlib.Path) -> None:
     assert d.command_policy() == "ask"
     ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)
     assert d.command_policy() == "allow"
+
+
+def test_a_child_stop_offer_does_not_authorize_a_command_stop(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
+    """A later session denial leaves the parent its child controls, not a signal to a command."""
+    from unittest import mock
+
+    cfg = Config.model_validate(
+        {"sandbox": {"run_commands": "ask"}, "harness": {"parallel": {"tool": True}}}
+    )
+    session = tmp_path / "session"
+    prompts = operator_prompts.OperatorPrompts(
+        approver=lambda _: operator_prompts.ApprovalAnswer(True, "stdin"), session_dir=session
+    )
+    d = build_dispatcher(root=tmp_path, config=cfg, session_dir=session, prompts=prompts)
+    children = mock.Mock(spec=child_tools.Children)
+    children.roster.return_value = ()
+    d.children = children
+    handle = d.dispatch("run_command", {"argv": ["sleep", "60"], "background": True}).to_wire()[
+        "background_id"
+    ]
+    ipc.set_session_deny(session, ipc.COMMAND_SCOPE)
+
+    assert d.command_policy() == "deny"
+    assert "stop_background" in d.available_tool_names()
+    with pytest.raises(tool_errors.ToolError, match="run_commands"):
+        d.dispatch("stop_background", {"id": handle})
+    assert d.dispatch("read_background", {"id": handle, "wait_s": 0}).to_wire()["still_running"]
 
 
 def test_a_single_no_refuses_one_call_and_withdraws_nothing(

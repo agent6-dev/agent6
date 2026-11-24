@@ -407,7 +407,8 @@ Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong i
 
 ### 4. Commands and environment
 
-Every command tool (`run_command`, `run_verify_command`, `run_metric_command`, `stop_background`) answers to `[sandbox].run_commands`; the first three run jailed, and `stop_background` signals a jailed child agent6 already started.
+`run_command`, `run_verify_command` and `run_metric_command` run jailed under `[sandbox].run_commands`.
+`stop_background` can signal a command only while the session has `run_command`.
 Only the operator can set a run's metric: neither a machine config nor a child launch can supply its command, pattern or direction.
 `run_metric_command` takes no arguments and executes the same approved argv as an automatic reading; a metric widens no file or network grant.
 `run_commands = "deny"` withholds the verify gate too.
@@ -899,7 +900,9 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - child evidence binds only the child's retained review target, never the top-level checkout after a merge or later edit
 - The model's `parallel` tool is off by default (`[harness.parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a child and with the loop's children installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel
     - a child the model starts is an ordinary run that may edit its clone, under its parent's config and the parent's remaining budget, which its children share, with no turn cap or deadline of its own; at most `harness.parallel.max_children` run at once, and agent6 merges its finished commits only under `git.control = "agent6"`
-    - `read_background` and `stop_background` reach a child only by a session id the run's own dispatch records name, so the model reads or stops through them no session it did not start; under `run_commands = "deny"` a run with the `parallel` tool keeps `stop_background`, which then stops children only
+    - `read_background` and `stop_background` reach only children named in the run's own dispatch records.
+      A session without `run_command` keeps these tools if it can start a child or already has children.
+      It can stop only its children.
     - `merge_child` accepts only a stopped child from the parent's own dispatch records, never a supplied git ref; it is offered only under `git.control = "agent6"`, records the request before answering, and merges at a clean turn boundary with the ordinary chain merge; model-owned git never runs this merge
     - `steer_child` rides the same knob and the same two gates, and reaches only a child the run's dispatch records name that runs or has stopped; the text enters that child's conversation as one notice headed as its parent's and is never read as a steer verb (`abort`, `exit`, `/undo`, `detach`), a directive (`/parallel`, `/pin`, `/review`, a skill) or an answer to a question, so it grants the child nothing its config does not; the child journals it as `steer.parent`, and a child is offered neither tool, so depth stays 1
     - only the parent can continue a stopped child, under its remaining allowance and approval policy

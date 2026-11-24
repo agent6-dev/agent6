@@ -344,22 +344,32 @@ def test_child_reads_show_the_command_and_its_exit_without_output(
     assert "OUTPUT" not in text
 
 
-def test_stop_background_stops_a_child_even_where_commands_are_denied(
+@pytest.mark.parametrize("tool", [True, False], ids=["model-dispatch", "operator-dispatch"])
+def test_a_parent_can_read_and_stop_its_child_when_commands_are_denied(
     tmp_path: pathlib.Path,
+    tool: bool,
 ) -> None:
-    """The parent can stop a child it started; `run_commands = "deny"` withholds commands only."""
+    """Both a parallel offer and an operator-started child give the parent background work."""
     denied = {"sandbox": {"run_commands": "deny"}}
     work = _Work()
-    d = _dispatcher(tmp_path, _config(tool=True, extra=denied), work=work)
-    assert "stop_background" in _names(d) and "run_command" not in _names(d)
-    d.dispatch("parallel", {"task": "write a"})
-
+    d = _dispatcher(tmp_path, _config(tool=tool, extra=denied), work=work)
+    background_tools = {"read_background", "stop_background"}
+    if tool:
+        assert background_tools <= set(_names(d))
+        d.dispatch("parallel", {"task": "write a"})
+    else:
+        assert background_tools.isdisjoint(_names(d))
+        work.start("write a", "")
+    names = set(_names(d))
+    assert "run_command" not in names and background_tools <= names
+    assert "`attempt`" in _description(d, "read_background")
+    assert "command" not in _description(d, "stop_background")
+    read = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 0}).to_wire()
+    assert read["running"] is True and read["task"] == "write a"
     stopped = d.dispatch("stop_background", {"id": "run-p1-l1"}).to_wire()
 
     assert work.stopped == ["run-p1-l1"]
     assert stopped == {"shells": [], "children": ["[run-p1-l1] attempt 1 · stopping: write a"]}
-    without = _dispatcher(tmp_path, _config(tool=False, extra=denied), work=_Work())
-    assert "stop_background" not in _names(without)
 
 
 def test_the_description_names_every_role_the_providers_and_the_limits(

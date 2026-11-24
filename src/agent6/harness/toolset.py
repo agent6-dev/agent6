@@ -71,10 +71,15 @@ def tool_definitions(
             description = parallel_description(dispatcher.config)
         if (
             cls in (tools_schema.ReadBackgroundInput, tools_schema.StopBackgroundInput)
-            and dispatcher.parallel_available()
+            and dispatcher.background_children_available()
         ):
-            # A default run reads neither note: its background tools reach commands alone.
-            description += cls.CHILDREN_NOTE
+            child_stop = (
+                cls is tools_schema.StopBackgroundInput
+                and tools_schema.RunCommandInput.TOOL_NAME not in available
+            )
+            description = (
+                cls.CHILDREN_NOTE.lstrip() if child_stop else description + cls.CHILDREN_NOTE
+            )
         out.append(
             ToolDefinition(
                 name=cls.TOOL_NAME,

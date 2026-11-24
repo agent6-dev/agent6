@@ -73,10 +73,11 @@ class SandboxConfig(pydantic.BaseModel):
         },
         default="ask",
         description=(
-            "Permission for `run_command`, `run_verify_command`, `run_metric_command` and "
-            "`stop_background`; asking requires someone to answer and permits session-wide "
-            "answers; allow is clamped to ask in `ask` and `plan` modes; `--auto-approve` "
-            "never overrides configured deny; `--no-commands` withholds commands."
+            "Permission for `run_command`, `run_verify_command` and `run_metric_command`. "
+            "Deny also prevents `stop_background` from stopping commands. "
+            "Asking requires someone to answer and permits session-wide answers. "
+            "Allow is clamped to ask in `ask` and `plan` modes. `--auto-approve` never "
+            "overrides configured deny. `--no-commands` withholds commands."
         ),
     )
     # Hosts, never URL prefixes: a prefix invites `evil.com/docs.python.org`.

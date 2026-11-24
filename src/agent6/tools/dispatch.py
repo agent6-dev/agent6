@@ -67,8 +67,11 @@ _COMMAND_TOOLS = frozenset(
         schema.RunCommandInput.TOOL_NAME,
         schema.RunVerifyInput.TOOL_NAME,
         schema.RunMetricInput.TOOL_NAME,
-        schema.StopBackgroundInput.TOOL_NAME,
     }
+)
+
+_BACKGROUND_TOOLS = frozenset(
+    {schema.ReadBackgroundInput.TOOL_NAME, schema.StopBackgroundInput.TOOL_NAME}
 )
 
 # The tools that start and steer children: offered and refused on the same grounds.
@@ -295,16 +298,19 @@ class ToolDispatcher:
 
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
-        # Under "deny" a run with the `parallel` tool keeps stop_background: a child can be stopped.
-        return (
-            (self.allowed_tools is not None and name not in self.allowed_tools)
-            or (
-                name in _COMMAND_TOOLS
-                and self.command_policy() == "deny"
-                and not (name == schema.StopBackgroundInput.TOOL_NAME and self.parallel_available())
-            )
-            or (name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld)
-        )
+        return self._policy_refusal(name) is not None
+
+    def _policy_refusal(self, name: str) -> str | None:
+        if self.allowed_tools is not None and name not in self.allowed_tools:
+            return "not available in this conversation contract"
+        if name in _BACKGROUND_TOOLS:
+            refusal = self._policy_refusal(schema.RunCommandInput.TOOL_NAME)
+            return refusal if refusal and not self.background_children_available() else None
+        if name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld:
+            return "not available (verify gate withheld for the rest of the run after denial)"
+        if name in _COMMAND_TOOLS and self.command_policy() == "deny":
+            return "not available (run_commands = 'deny')"
+        return None
 
     @property
     def config(self) -> Config:
@@ -314,6 +320,12 @@ class ToolDispatcher:
     def parallel_available(self) -> bool:
         """Return whether the model is offered the `parallel` tool: both gates open, run mode."""
         return self._mode == "run" and self._tool_refusal(schema.ParallelInput.TOOL_NAME) is None
+
+    def background_children_available(self) -> bool:
+        """Return whether this run can start a child or has one on its roster."""
+        return self.parallel_available() or (
+            self.children is not None and bool(self.children.roster())
+        )
 
     def merge_child_available(self) -> bool:
         """Return whether this parent has stopped work agent6 may merge."""
@@ -339,16 +351,14 @@ class ToolDispatcher:
             return "not available (no child dispatcher in this front-end)"
         return None
 
-    def _tool_refusal(self, name: str) -> str | None:  # noqa: PLR0911  # one return per refusal
+    def _tool_refusal(self, name: str) -> str | None:
         """Return why a built-in tool is withheld right now, or None when it is offered."""
         if name == schema.MergeChildInput.TOOL_NAME and not self.merge_child_available():
             return "not available (requires stopped unmerged work and git.control = agent6)"
         if name in _CHILD_TOOLS and (why := self._parallel_refusal()):
             return why
-        if self.tool_is_withheld(name):
-            if name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld:
-                return "not available (verify gate withheld for the rest of the run after denial)"
-            return "not available (run_commands = 'deny')"
+        if why := self._policy_refusal(name):
+            return why
         # `fetch` is redundant when a jailed command already has the network.
         if (
             name == schema.FetchInput.TOOL_NAME
@@ -1009,12 +1019,17 @@ class ToolDispatcher:
 
         Returns:
             The row of the command or the child after the stop.
+
+        Raises:
+            ToolError: The session may stop children but not commands.
         """
         args = schema.StopBackgroundInput.model_validate(raw)
         if self.children is not None and any(c.id == args.id for c in self.children.roster()):
             self.children.stop(args.id)
             rows = tuple(c.line() for c in self.children.roster() if c.id == args.id)
             return results.BackgroundRosterResult(shells=(), children=rows)
+        if refusal := self._policy_refusal(schema.RunCommandInput.TOOL_NAME):
+            raise tool_errors.ToolError(f"command stop {refusal}")
         return command_tools.stop_background(raw, get_background=self._background)
 
     def _background(self) -> background.BackgroundShells:

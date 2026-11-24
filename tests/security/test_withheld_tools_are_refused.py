@@ -62,7 +62,13 @@ def test_a_command_tool_withheld_by_policy_is_refused(tmp_path: pathlib.Path) ->
         config=Config.model_validate({"sandbox": {"run_commands": "deny"}}),
         isolation="none",
     )
-    _assert_withheld_are_refused(d, {"run_command", "stop_background"})
+    _assert_withheld_are_refused(d, {"run_command", "read_background", "stop_background"})
+
+
+def test_a_reviewer_without_run_command_has_no_background_work(tmp_path: pathlib.Path) -> None:
+    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="reviewer")
+    d.allowed_tools = ("read_background", "stop_background")
+    _assert_withheld_are_refused(d, {"read_background", "stop_background"}, mode="reviewer")
 
 
 def test_fetch_withheld_because_commands_have_the_network_is_refused(

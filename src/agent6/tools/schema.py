@@ -398,15 +398,14 @@ class ReadBackgroundInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "read_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Pass run_command's `background_id` as `id` for `background_id`, a `command` preview,"
-        " `state`, `returncode` (null if unknown), `duration_s`, `still_running` and the `output`"
-        " tail. `detail` explains errors. With no `id`, `shells` lists one line per command."
-        " `tail_lines` bounds the tail. With an `id`, `wait_s` waits for exit"
+        "A command `id` returns `background_id`, `command` (preview), `state`, `returncode`"
+        " (null if unknown), `duration_s`, `still_running` and the `output` tail. `detail`"
+        " explains errors. No `id`: one line per command in `shells`. `tail_lines` bounds the"
+        " tail. With an `id`, `wait_s` waits for exit"
         " (0 = look now; omitted = the run's configured check-in interval)."
         " Waits are bounded by that interval when it is above 0."
     )
 
-    # Appended in a run that has the `parallel` tool; every other run reads the text above.
     CHILDREN_NOTE: ClassVar[str] = (
         " A child id returns `id`, `attempt`, `state`, `task`, `running`, `mergeable`, `commits`"
         " (null if unknown) and the transcript tail in `output`. With no `id`, `children` lists"
@@ -427,7 +426,6 @@ class StopBackgroundInput(_ToolInput):
         "Stop one command by `background_id`. Returns its status line in `shells`,"
         " with the exit code if known."
     )
-    # Appended in a run that has the `parallel` tool; every other run reads the text above.
     CHILDREN_NOTE: ClassVar[str] = (
         " A child id requests an immediate stop and returns its status line in `children`"
         " with `shells` empty. Its commits stay on its branch."
