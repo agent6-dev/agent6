@@ -20,7 +20,7 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import execution, finalize, reporter
+from agent6.app import execution, execution_finish, finalize, reporter
 from agent6.app import frontend as app_frontend
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
@@ -1113,7 +1113,7 @@ def test_a_closed_output_pipe_ends_the_run_as_a_stop_not_a_crash(tmp_path: pathl
     layout.ensure()
     events = event_log.EventSink(layout.logs_path)
 
-    reason = execution._journal_escape(
+    reason = execution_finish.journal_escape(
         events, BrokenPipeError(32, "Broken pipe"), execution_id="execution", turns=2
     )
 
@@ -1417,6 +1417,6 @@ def test_a_sandbox_that_cannot_be_prepared_is_not_a_crash(tmp_path: pathlib.Path
         container.ContainerError("the container mounts the workspace elsewhere"),
         detect.IsolationUnavailableError("full isolation needs bubblewrap"),
     ):
-        reason = execution._journal_escape(events, refusal, execution_id="execution", turns=0)
+        reason = execution_finish.journal_escape(events, refusal, execution_id="execution", turns=0)
         ended = [json.loads(line) for line in layout.logs_path.read_text().splitlines()][-1]
         assert reason == ended["reason"] == "sandbox_unavailable"

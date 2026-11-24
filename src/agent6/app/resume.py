@@ -17,6 +17,7 @@ from collections.abc import Callable
 from agent6 import budget, kinds
 from agent6.app import (
     execution,
+    execution_finish,
     fork_worktrees,
     preflight,
     resume_chain,
@@ -342,7 +343,7 @@ def resume_task(
     except preflight.SessionRefusedError as refusal:
         return refusal.rc
     if end.detach_requested:
-        execution.detach_to_background(
+        execution_finish.detach_to_background(
             frontend=frontend,
             cfg=start.cfg,
             layout=layout,

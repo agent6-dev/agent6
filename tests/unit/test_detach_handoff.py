@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`execution.detach_to_background`, the one hand-off both lifecycles make after a `/detach`."""
+"""Both lifecycles hand a detached run to the same background resume helper."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.app import execution, frontend, reporter
+from agent6.app import execution, execution_finish, frontend, reporter
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config
@@ -53,7 +53,7 @@ def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(
     said: list[str] = []
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    execution.detach_to_background(
+    execution_finish.detach_to_background(
         frontend=_frontend(calls),
         cfg=Config(),  # run_commands = ask, nothing granted
         layout=layout,
@@ -74,7 +74,7 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pa
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
-    execution.detach_to_background(
+    execution_finish.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,
@@ -165,7 +165,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     process.write_worker_pid(layout.session_dir, os.getpid())
 
-    execution.detach_to_background(
+    execution_finish.detach_to_background(
         frontend=_frontend(calls),
         cfg=cfg,
         layout=layout,
@@ -176,7 +176,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     # the child overwrites it
     assert process.read_worker_pid(layout.session_dir) == os.getpid()
 
-    execution.detach_to_background(
+    execution_finish.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,

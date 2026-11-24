@@ -215,7 +215,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `base_sha` | `str` | `''` |
 
 - **Written by:** harness/loop
-- **Read by:** app/{execution, finalize, fork, frontend, resume, resume_record, resume_setup, resume_tree, undo}, app/parallel/resume, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, quiet_turns}, ui/acp/frontend, ui/cli/ask
+- **Read by:** app/{execution, execution_finish, finalize, fork, frontend, resume, resume_record, resume_setup, resume_tree, undo}, app/parallel/resume, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, quiet_turns}, ui/acp/frontend, ui/cli/ask
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (41 test files exercise it)
 
 ## ToolResult family

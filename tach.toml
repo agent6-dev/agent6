@@ -21,11 +21,10 @@ depends_on = []
 # presentation, process-spawn, and session-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, ChildRuntime).
 # machine.check shares bundle, config and jail-PATH checks with create and the CLI.
-# run uses run_preflight within the app layer.
-# run uses run_open within the app layer.
-# resume uses resume_record within the app layer.
-# resume uses resume_setup within the app layer.
-# execution uses execution_harness within the app layer.
+# run checks the checkout with run_preflight and opens its record with run_open.
+# resume reopens the snapshot with resume_record and prepares the checkout with resume_setup.
+# execution builds the harness with execution_harness and settles the chain with execution_finish.
+# run and resume hand a detach to execution_finish after releasing the writer lock.
 path = "agent6.app"
 depends_on = [
   "agent6",

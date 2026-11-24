@@ -18,6 +18,7 @@ from agent6 import budget as agent6_budget
 from agent6 import directive, kinds
 from agent6.app import (
     execution,
+    execution_finish,
     fork_worktrees,
     preflight,
     run_open,
@@ -325,7 +326,7 @@ def run_task(
         return refusal.rc
     if end.detach_requested:
         # The worker lock is released, so the detached `resume` can acquire it.
-        execution.detach_to_background(
+        execution_finish.detach_to_background(
             frontend=frontend,
             cfg=start.cfg,
             layout=start.layout,

@@ -202,10 +202,11 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
 # The modules that hold the lifecycle's stages, by the name their callers import them under.
 _STAGE_MODULES = {
     "execution": "src/agent6/app/execution.py",
-    "run": "src/agent6/app/run.py",
-    "run_preflight": "src/agent6/app/run_preflight.py",
-    "run_open": "src/agent6/app/run_open.py",
+    "execution_finish": "src/agent6/app/execution_finish.py",
     "execution_harness": "src/agent6/app/execution_harness.py",
+    "run": "src/agent6/app/run.py",
+    "run_open": "src/agent6/app/run_open.py",
+    "run_preflight": "src/agent6/app/run_preflight.py",
     "session_prepare": "src/agent6/app/session/prepare.py",
 }
 # The stage behind a call through a callable the lifecycle hands in, by the attribute called:
