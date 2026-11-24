@@ -120,6 +120,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
 
     - Tab and Shift+Tab keep the focused setting below the sticky toolbar when its buttons wrap.
     - Removing an entry or reviewer asks inside the editor. Cancel or Escape returns to the draft and its selected layer.
+      After you confirm a reviewer removal, Config reloads the roster even if the reply is lost.
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
     - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge

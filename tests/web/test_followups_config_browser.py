@@ -133,3 +133,40 @@ def test_cancelling_removal_returns_to_the_editor_draft(
     assert "localhost" not in config.read_text()
     assert "tests" not in config.read_text()
     assert not errors
+
+
+@pytest.mark.parametrize("lose_reload", [False, True])
+def test_a_lost_removal_reply_requires_a_fresh_reviewer_confirmation(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, lose_reload: bool
+) -> None:
+    """A lost reply cannot replay an index after the next reviewer takes its place."""
+    from playwright import sync_api
+
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('[review]\nreviewers = [{focus = "tests"}, {focus = "security"}]\n')
+    page, _ = open_page(port)
+
+    def lose_reply(route: Route) -> None:
+        assert route.fetch().ok
+        route.abort()
+
+    page.route("**/api/config/reviewer/remove", lose_reply, times=1)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    edit = page.get_by_role("button", name="edit review.reviewers", exact=True)
+    edit.click()
+    page.get_by_role("button", name="Remove reviewer 1: tests").click()
+    question = page.get_by_role("alertdialog")
+    if lose_reload:
+        page.route("**/api/config", lambda route: route.abort(), times=1)
+    question.get_by_role("button", name="Remove", exact=True).click()
+    sync_api.expect(question).to_have_count(0)
+    if lose_reload:
+        sync_api.expect(page.get_by_role("heading", name="Could not reload Config")).to_be_visible()
+        sync_api.expect(edit).to_have_count(0)
+        page.get_by_role("button", name="Try again").click()
+    edit.click()
+    page.get_by_role("button", name="Remove reviewer 1: security").click()
+    sync_api.expect(question).to_have_accessible_name("Remove reviewer 1: security?")
+    question.get_by_role("button", name="Cancel").click()
+    assert "tests" not in config.read_text() and "security" in config.read_text()

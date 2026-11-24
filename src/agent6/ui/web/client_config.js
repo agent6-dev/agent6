@@ -1,7 +1,6 @@
 // --- config ------------------------------------------------------------------
-async function renderConfig(gen = routeGen, readState = () => ({})) {
+async function renderConfig(gen = routeGen, state = {}) {
   if (gen !== routeGen) return;
-  const state = readState();
   const [data, registry] = await Promise.all([
     getJSON('/api/config'),
     getJSON('/api/config/entry_tables'),
@@ -27,15 +26,18 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     filter.oninput();
   };
   bar.appendChild(modifiedBtn);
-  const refresh = () => {
+  const refresh = async () => {
     if (gen !== routeGen || !card.isConnected) return;
-    return renderConfig(gen, () => ({
+    const state = {
       filter: filter.value, modified, x: window.scrollX, y: window.scrollY,
       folded: folds(),
       key: rows.find(row => row.edit === document.activeElement)?.key,
       filtering: document.activeElement === filter,
       action: [...bar.children].indexOf(document.activeElement),
-    }));
+    };
+    card.inert = true; // A write can change which reviewer an index names.
+    try { await renderConfig(gen, state); }
+    catch (e) { if (gen === routeGen && card.isConnected) showProblem('Could not reload Config', e.message, true); }
   };
   // The preset button opens `agent6.preset`; the rows are the config under that preset.
   const presetBtn = el('button', null, 'Preset: ' + (selected || 'none'));
@@ -223,7 +225,7 @@ function addButtons(dialog) {
   return { add, act: actionRow(dialog, row, add) };
 }
 
-// Only a successful removal closes the editor. Cancel restores its fields, including the layer.
+// Cancel restores the editor's fields, including the layer.
 function confirmConfigRemoval(dialog, opener, title, text, remove) {
   const fields = [...dialog.children];
   const label = dialog.getAttribute('aria-labelledby'), keys = dialog.onkeydown;
@@ -564,8 +566,11 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       remove.setAttribute('aria-label', 'Remove reviewer ' + label);
       remove.onclick = () => confirmConfigRemoval(dialog, remove, `Remove reviewer ${label}?`,
         `This saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`, async () => {
-          const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
-          toast(result.message); close(); await refresh();
+          try {
+            const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
+            toast(result.message);
+          } catch (e) { toast(e.message, true); }
+          close(); await refresh();
         });
       item.appendChild(remove); roster.appendChild(item);
     });
