@@ -541,20 +541,6 @@ def selected_preset(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = 
     return write.selected_preset(layer.load_effective(cwd, config_paths))
 
 
-def preset_remove_layer(cwd: pathlib.Path, preset: str) -> str:
-    """Return the removal layer for a selected preset.
-
-    Args:
-        cwd: The repository.
-        preset: The selected preset's name.
-
-    Returns:
-        `repo` if the repo defines the preset table, otherwise `global`.
-    """
-    tables = io.read_toml_file(paths.repo_config_path(cwd)).get("presets")
-    return "repo" if isinstance(tables, dict) and preset in tables else "global"
-
-
 def config_payload(
     cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> dict[str, Any]:
@@ -589,7 +575,7 @@ def config_payload(
                 entry_sources[table.path, name] = source.source
     for key, setting in payload.items():
         if key == "agent6.preset" and (preset := write.selected_preset(eff)):
-            setting["remove_layer"] = preset_remove_layer(cwd, preset)
+            setting["remove_layer"] = write.preset_remove_layer(cwd, preset)
         if entry := write.entry_of(key):
             table, name = entry
             setting["entry"] = {

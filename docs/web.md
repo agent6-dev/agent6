@@ -133,7 +133,8 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - Removing an entry or reviewer asks inside the editor and names the target layer.
       Cancel or Escape returns to the draft and its selected layer.
       After you confirm, Config reloads even if the reply is lost.
-      An entry removal cannot switch to a different preset or config layer.
+      A removal cannot switch to a different preset or config layer.
+      If the reviewer roster no longer matches your confirmation, nothing is removed.
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
     - follow a graph column down to a commit's first parent; a side line leads to another parent of a merge

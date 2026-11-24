@@ -2842,6 +2842,17 @@ def test_config_writes_report_shadowing_layers(
         described = "the repo config" if source == "repo" else f"--config {higher}"
     if route == "/entry/remove":
         body = {**body, "preset": "mask" if source == "preset" else "", "repo": False}
+    elif route == "/reviewer/remove":
+        # The API caller confirms the global roster even when a higher layer masks it.
+        body = {
+            **body,
+            "repo": False,
+            "preset": "mask" if source == "preset" else "",
+            "expected": {
+                "source": f"flag ({srv.config_paths[0]})" if source == "flag" else source,
+                "roster": [{"focus": "mask" if source == "preset" else "old"}],
+            },
+        }
     status, data = _post(port, "/api/config" + route, body)
     assert status == 200, data
     if source == "preset":
@@ -3053,14 +3064,29 @@ def test_config_reviewer_append_and_positional_removal(
         {"focus": "tests", "model": "p/vendor/id", "temperature": "0.5", "repo": True},
     )
     assert status == 200 and data["ok"] is True, data
-    status, data = _post(port, "/api/config/reviewer/remove", {"index": 0, "repo": True})
+    removal: dict[str, object] = {
+        "index": 0,
+        "repo": True,
+        "preset": "",
+        "expected": {
+            "source": "repo",
+            "roster": [
+                {"focus": "tests", "effort": "off"},
+                {"focus": "tests", "model": "p/vendor/id", "temperature": 0.5},
+            ],
+        },
+    }
+    status, data = _post(port, "/api/config/reviewer/remove", removal)
     assert status == 200 and data["ok"] is True, data
+    status, data = _post(port, "/api/config/reviewer/remove", removal)
+    assert status == 422 and "Nothing was removed" in str(data["error"]), data
     status, body, _ = _get(port, "/api/config")
     assert status == 200
     setting = json.loads(body)["review.reviewers"]
     assert setting["value"] == [{"focus": "tests", "model": "p/vendor/id", "temperature": 0.5}]
     assert setting["source"] == "repo"
-    status, data = _post(port, "/api/config/reviewer/remove", {"index": 0, "repo": True})
+    removal["expected"] = {"source": "repo", "roster": setting["value"]}
+    status, data = _post(port, "/api/config/reviewer/remove", removal)
     assert status == 200 and data["ok"] is True, data
     assert io.read_toml_file(paths.repo_config_path(srv.cwd))["review"]["reviewers"] == []
     assert io.read_toml_file(paths.global_config_path())["review"]["reviewers"] == [
@@ -3078,7 +3104,17 @@ def test_config_reviewer_append_and_positional_removal(
         ("reviewer/remove", {"index": -1}, 400),
         ("reviewer/remove", {"index": True}, 400),
         ("reviewer/remove", {"index": 0.5}, 400),
-        ("reviewer/remove", {"index": 0}, 422),
+        ("reviewer/remove", {"index": 0}, 400),
+        (
+            "reviewer/remove",
+            {
+                "index": 0,
+                "repo": False,
+                "preset": "",
+                "expected": {"roster": [], "source": "default"},
+            },
+            422,
+        ),
     ],
 )
 def test_config_reviewer_refuses_bad_input(

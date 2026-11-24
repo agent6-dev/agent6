@@ -265,15 +265,19 @@ class ReviewerBody(_Body):
 
 
 class RemoveReviewerBody(_Body):
-    """The zero-based reviewer position and save target.
+    """Remove a reviewer only from the roster and destination the operator confirmed.
 
     Attributes:
         index: The zero-based reviewer position to remove.
         repo: Whether to write repo config rather than global config.
+        preset: The selected preset, or an empty string for no preset.
+        expected: The ordered reviewers and the source shown when confirming.
     """
 
     index: int = pydantic.Field(strict=True, ge=0)
-    repo: bool = False
+    repo: bool
+    preset: str
+    expected: write.ReviewerSnapshot
 
 
 class LoginBody(_Body):
@@ -942,7 +946,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/config/reviewer/remove":
             removal = RemoveReviewerBody.model_validate(self._read_body())
             ok, msg = actions.remove_reviewer(
-                self.cwd, removal.index, repo=removal.repo, config_paths=self.config_paths
+                self.cwd,
+                removal.index,
+                repo=removal.repo,
+                preset=removal.preset,
+                expected=removal.expected,
+                config_paths=self.config_paths,
             )
         elif path == "/api/config/preset":
             pb = PresetBody.model_validate(self._read_body())

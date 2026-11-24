@@ -3317,7 +3317,7 @@ Source: [`agent6.ui.web.server.ReviewerBody`](https://github.com/agent6-dev/agen
 
 ### RemoveReviewerBody
 
-**Support: public.** The zero-based reviewer position and save target.
+**Support: public.** Remove a reviewer only from the roster and destination the operator confirmed.
 
 Source: [`agent6.ui.web.server.RemoveReviewerBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
@@ -3325,6 +3325,8 @@ Source: [`agent6.ui.web.server.RemoveReviewerBody`](https://github.com/agent6-de
 | --- | --- | --- |
 | `index` | `int` | The zero-based reviewer position to remove. |
 | `repo` | `bool` | Whether to write repo config rather than global config. |
+| `preset` | `str` | The selected preset, or an empty string for no preset. |
+| `expected` | `ReviewerSnapshot` | The ordered reviewers and the source shown when confirming. |
 
 ### LoginBody
 
@@ -4081,6 +4083,17 @@ Source: [`agent6.review_records.FindingResolution`](https://github.com/agent6-de
 | `commit` | `str \| None` | The associated correction commit, or null. |
 | `verify_id` | `str \| None` | The associated verification attempt, or null. |
 
+### ReviewerSnapshot
+
+**Support: public.** The reviewer roster confirmed for removal.
+
+Source: [`agent6.config.write.ReviewerSnapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `roster` | `tuple[ReviewerConfig, ...]` | The ordered entries in the roster to edit. |
+| `source` | `str` | The config source shown when confirming. |
+
 ### ReviewTarget
 
 **Support: public.** Identify the immutable trees and path coverage of a review.
@@ -4375,6 +4388,19 @@ Source: [`agent6.sessions.journal.SettingObservation`](https://github.com/agent6
 | `value` | `str \| float \| int \| bool \| None` | The value as `agent6 config show` prints it; *** where that masks it. |
 | `source` | `str` | The winning layer, preset, flag or runtime policy. |
 | `file` | `str \| None` | The defining config file, if any. |
+
+### ReviewerConfig
+
+**Support: public.** One reviewer's focus and optional model settings.
+
+Source: [`agent6.config.harness_config.ReviewerConfig`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/harness_config.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `focus` | `str` | A short review stance. |
+| `model` | `str \| None` | A provider/model route; inherits the reviewer role when unset. |
+| `temperature` | `float \| None` | sampling temperature; route's value when unset; `temperature = 0.0` an explicit override |
+| `effort` | `Literal['off', 'low', 'medium', 'high', 'xhigh', 'max'] \| None` | reasoning effort; route's value when unset; `effort = "off"` an explicit override |
 
 ### ChildContext
 

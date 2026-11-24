@@ -175,6 +175,48 @@ def test_a_lost_removal_reply_requires_a_fresh_reviewer_confirmation(
     assert "tests" not in config.read_text() and "security" in config.read_text()
 
 
+@pytest.mark.parametrize("change", ["roster", "preset", "layer"])
+def test_a_changed_reviewer_confirmation_writes_nothing(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    change: str,
+) -> None:
+    """A second editor cannot redirect the confirmed removal or reuse a shifted position."""
+    from playwright import sync_api
+
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    roster = 'reviewers = [{focus = "tests", effort = "low"}, {focus = "tests", effort = "high"}]\n'
+    text = (
+        '[agent6]\npreset = "one"\n[presets.one.review]\n'
+        + roster
+        + "[presets.two.review]\n"
+        + roster
+    )
+    config.write_text(text)
+    page, _ = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit review.reviewers", exact=True).click()
+    page.get_by_role("button", name="Remove reviewer 1: tests").click()
+    if change == "layer":
+        repo = paths.repo_config_path(tmp_path)
+        repo.parent.mkdir(parents=True, exist_ok=True)
+        repo.write_text("[presets.one.review]\n" + roster)
+    elif change == "preset":
+        config.write_text(text.replace('preset = "one"', 'preset = "two"'))
+    else:
+        config.write_text(text.replace('{focus = "tests", effort = "low"}, ', "", 1))
+    before = config.read_bytes()
+    with page.expect_response("**/api/config/reviewer/remove") as refusal:
+        page.get_by_role("alertdialog").get_by_role("button", name="Remove", exact=True).click()
+    assert refusal.value.status == 422
+    assert config.read_bytes() == before
+    if change == "layer":
+        assert paths.repo_config_path(tmp_path).read_text() == "[presets.one.review]\n" + roster
+    sync_api.expect(page.get_by_text("Nothing was removed.", exact=False)).to_be_visible()
+
+
 def test_config_reads_a_preset_through_a_foreign_owned_symlink(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,

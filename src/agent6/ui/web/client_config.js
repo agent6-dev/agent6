@@ -565,7 +565,10 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       remove.setAttribute('aria-label', 'Remove reviewer ' + label);
       remove.onclick = () => confirmConfigRemoval(dialog, remove, `Remove reviewer ${label}?`,
         `This saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`, refresh,
-        () => postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'}));
+        () => postJSON('/api/config/reviewer/remove', {
+          index, preset, repo: (preset ? removeLayer : s.source) === 'repo',
+          expected: {roster: reviewers, source: s.source},
+        }));
       item.appendChild(remove); roster.appendChild(item);
     });
     dialog.insertBefore(roster, field);

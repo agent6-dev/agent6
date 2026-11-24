@@ -23,7 +23,7 @@ from agent6.ui.web import page
 from tests.web import client_assets
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "e43932e48885b3f57e0b5436645ee078c4e8e047b680b5a34090ffccdbe742bb"
+PAGE_SHA256 = "1a7efc7e5c486055936abaa44ccd17976a1106f68e919dd3a12f1ea1c6a7c183"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -497,7 +497,10 @@ function field(id) { return nodes().find(n => n.id === id); }
   removes[1].onclick();
   await button('Remove').onclick();
   assert.deepEqual(posts.shift(), {
-    path: '/api/config/reviewer/remove', body: {index: 1, repo: true},
+    path: '/api/config/reviewer/remove', body: {
+      index: 1, preset: '', repo: true,
+      expected: {roster: [{focus: 'tests'}, {focus: 'tests'}], source: 'repo'},
+    },
   });
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """

@@ -788,7 +788,7 @@ def remove_entry(
     source = "repo" if repo else "global"
     try:
         if preset != model.selected_preset(cwd, config_paths) or (
-            preset and model.preset_remove_layer(cwd, preset) != source
+            preset and write.preset_remove_layer(cwd, preset) != source
         ):
             return False, "The preset or config layer changed. Nothing was removed."
         result = write.remove_entry(cwd, entry_table, name, to_repo=repo, preset=preset)
@@ -843,7 +843,9 @@ def remove_reviewer(
     cwd: pathlib.Path,
     index: int,
     *,
-    repo: bool = False,
+    repo: bool,
+    preset: str,
+    expected: write.ReviewerSnapshot,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Remove a zero-based reviewer position; a selected preset's roster when one is selected.
@@ -852,17 +854,18 @@ def remove_reviewer(
         cwd: The repository.
         index: The position to remove.
         repo: Write to the repo config instead of the global one.
+        preset: The confirmed preset, or an empty string for no preset.
+        expected: The confirmed roster and its source.
         config_paths: The editor's `--config` files.
 
     Returns:
         Whether the write landed, and the confirmation or validation error.
     """
-    preset = model.selected_preset(cwd, config_paths)
-    if preset:
-        repo = bool(write.preset_layer(cwd, preset))
     try:
-        err = write.remove_reviewer(cwd, index, to_repo=repo, preset=preset)
-    except errors.OperatorError as exc:
+        err = write.remove_reviewer(
+            cwd, index, to_repo=repo, preset=preset, expected=expected, config_paths=config_paths
+        )
+    except (ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if err:
         return False, err

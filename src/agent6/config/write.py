@@ -860,8 +860,41 @@ def add_reviewer(
         )
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReviewerSnapshot:
+    """The reviewer roster confirmed for removal.
+
+    Attributes:
+        roster: The ordered entries in the roster to edit.
+        source: The config source shown when confirming.
+    """
+
+    roster: tuple[harness_config.ReviewerConfig, ...]
+    source: str
+
+
+def preset_remove_layer(repo_root: pathlib.Path, preset: str) -> str:
+    """Return the removal layer for a selected preset.
+
+    Args:
+        repo_root: The repository.
+        preset: The selected preset's name.
+
+    Returns:
+        `repo` if the repo defines the preset table, otherwise `global`.
+    """
+    tables = io.read_toml_file(paths.repo_config_path(repo_root)).get("presets")
+    return "repo" if isinstance(tables, dict) and preset in tables else "global"
+
+
 def remove_reviewer(
-    repo_root: pathlib.Path, index: int, *, to_repo: bool = False, preset: str = ""
+    repo_root: pathlib.Path,
+    index: int,
+    *,
+    to_repo: bool = False,
+    preset: str = "",
+    expected: ReviewerSnapshot | None = None,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> str | None:
     """Remove a zero-based position, writing an explicit empty list after the last reviewer.
 
@@ -871,6 +904,8 @@ def remove_reviewer(
         to_repo: The repo resolution instead of defaults plus the global config.
         preset: The selected preset; the roster shown under it shrinks and is written to
             its `[presets.<name>]` table.
+        expected: The confirmed roster and source for a conditional removal.
+        config_paths: The editor's `--config` files.
 
     Returns:
         The input or validation error, else None.
@@ -879,16 +914,39 @@ def remove_reviewer(
         ConfigError: The config cannot be loaded or the writer refuses the key.
         OperatorError: The target cannot be written.
     """
+    key = preset_key(preset, "review.reviewers")
     target = _prepare_write_target(repo_root, to_repo=to_repo)
-    with writing_config(target):
-        eff = layer.load_effective(repo_root) if to_repo or preset else layer.load_global_only()
+    with writing_config(target) as held:
+        eff = (
+            layer.load_effective(repo_root, config_paths if preset else ())
+            if to_repo or preset
+            else layer.load_global_only()
+        )
         roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
+        if expected is not None:
+            if not held:
+                return "Could not lock the config. Nothing was removed."
+            shown = eff if preset else layer.load_effective(repo_root, config_paths)
+            if (
+                selected_preset(shown) != preset
+                or shown.sources.get("review.reviewers", "default") != expected.source
+                or (
+                    preset
+                    and preset_remove_layer(repo_root, preset) != ("repo" if to_repo else "global")
+                )
+            ):
+                return "The preset or config layer changed. Nothing was removed."
+            saved = io.read_toml_leaf(io.read_toml_file(target), key)
+            if eff.config.review.reviewers != expected.roster or (
+                saved is not None and saved != roster
+            ):
+                return "The reviewer roster does not match the confirmation. Nothing was removed."
         if not 0 <= index < len(roster):
             return f"reviewer index {index} is out of range (roster has {len(roster)} reviewers)"
         del roster[index]
         return set_config_value(
             repo_root,
-            preset_key(preset, "review.reviewers"),
+            key,
             io.format_toml_value(roster),
             to_repo=to_repo,
         )
