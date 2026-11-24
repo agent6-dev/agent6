@@ -19,6 +19,7 @@ from agent6.app import role_providers
 from agent6.config import Config, ReviewConfig, io, layer_data
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
+from agent6.providers import provider_types
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import config_view
 from tests import review_env
@@ -175,7 +176,11 @@ def test_reviewers_refuse_strings_blank_focus_and_unknown_fields(entry: object) 
     ],
 )
 def test_reviewer_sampling_reaches_provider_call(
-    pinned: bool, overrides: dict[str, object], effort: str, temperature: float
+    tmp_path: pathlib.Path,
+    pinned: bool,
+    overrides: dict[str, object],
+    effort: str,
+    temperature: float,
 ) -> None:
     """A reviewer sends its entry's settings, off and zero included; a pinned one inherits too."""
     route = {"model": "o/moonshotai/kimi-k2"}
@@ -215,7 +220,9 @@ def test_reviewer_sampling_reaches_provider_call(
         provider = role_providers.build_role_provider(
             cfg.with_model_settings("worker", resolved.settings),
             "worker",
-            transcript_sink=mock.MagicMock(),
+            transcript_sink=provider_types.TranscriptSink(
+                tmp_path / "t", objects_dir=tmp_path / "objects"
+            ),
             budget=mock.MagicMock(),
         )
         wired.append(
