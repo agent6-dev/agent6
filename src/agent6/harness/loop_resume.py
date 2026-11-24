@@ -133,6 +133,24 @@ def seed_carryover(
             conversation.notice(prompts_compaction.pinned_block(state.pins))
 
 
+def report_cold_start(
+    harness: loop.Harness, state: loop_state.LoopState, action: journal.ColdStartAction, saved: int
+) -> None:
+    """Report the cold step once for the resumed execution.
+
+    Args:
+        harness: The execution that owns the log and journal.
+        state: The execution with the pending cold trigger.
+        action: What happened to the history.
+        saved: The reduction in characters in the prepared worker history.
+    """
+    assert state.cold_start is not None
+    record = state.cold_start.record(harness.compaction.cold_start, action, saved)
+    harness.log(record.message)
+    harness.emit(record)
+    state.cold_start = None
+
+
 def carry_adopted_gate(
     harness: loop.Harness, snapshot: loop_snapshot.SessionSnapshot
 ) -> tuple[str, ...]:

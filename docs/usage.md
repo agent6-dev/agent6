@@ -578,6 +578,7 @@ Set either to `0` to reserve no messages or keep no optional turns, respectively
 A kept turn still includes the operator text it received.
 Older reserved messages appear in time order before the pins and any summary, including answers without their tool calls.
 The opening task has no special place.
+A planner reads the current `plan.md` instead of replaying saved plan notices.
 
 `compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
 After reserving the operator's words, the newest eligible turn stays whole even if it exceeds the space left.

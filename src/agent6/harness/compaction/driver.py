@@ -314,23 +314,17 @@ class Tiered(_Scheduled):
         Returns:
             True when the worker needs fresh focus notices after a restart.
         """
-        trigger = context.cold_start
-        if trigger is None:
+        mode = context.settings.cold_start
+        if context.cold_start is None or mode == "resend":
             return self._scheduled(context, drop=self.drop)
         conversation = context.conversation
-        before = compaction_window.context_chars(conversation)
-        mode = context.settings.cold_start
-        action: journal.ColdStartAction = mode
-        restarted = False
         match mode:
             case "drop":
                 self.drop(context, cold=True)
+                return False
             case "summarize":
-                restarted = self.summarise_and_restart(
-                    context, cold=True, focus=_take_focus(context)
-                )
-                if not restarted:
-                    action = "summary_failed"
+                if not self.summarise_and_restart(context, cold=True, focus=_take_focus(context)):
+                    return False
             case "truncate":
                 replay = retention.select(conversation.messages, context.settings)
                 conversation.restart(
@@ -339,20 +333,9 @@ class Tiered(_Scheduled):
                     quotes=replay.quotes,
                 )
                 self._set_restart_floor(context)
-                restarted = True
-            case "resend":
-                pass
-        if restarted:
-            elided, gists = compaction_rules.count_elisions(conversation)
-            context.emit(journal.CompactRestored(elided=elided, gists=gists))
-        record = trigger.record(
-            mode, action, before - compaction_window.context_chars(conversation)
-        )
-        context.log(record.message)
-        context.emit(record)
-        if mode == "resend":
-            return self._scheduled(context, drop=self.drop)
-        return restarted
+        elided, gists = compaction_rules.count_elisions(conversation)
+        context.emit(journal.CompactRestored(elided=elided, gists=gists))
+        return True
 
     def drop(self, context: strategy.Context, *, cold: bool = False) -> None:
         """Apply the first tier in place without a restart."""

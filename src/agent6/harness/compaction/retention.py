@@ -121,7 +121,7 @@ def _partition(
             contract.append(m)
         elif origin == "restart":
             prior.append(m)
-        elif origin != "reply_count":
+        elif origin not in ("plan", "reply_count"):
             history_messages.append(m)
     return contract, prior, history_messages
 

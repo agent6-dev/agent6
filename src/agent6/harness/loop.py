@@ -727,27 +727,30 @@ class Harness:
         conversation.roll_cache_marks()
         assert self.compactor is not None
         # An endpoint summary covers a request already sent, so it follows the reply instead.
-        if endpoint and state.cold_start is not None:
-            record = state.cold_start.record(self.compaction.cold_start, "endpoint", 0)
-            self.log(record.message)
-            self.emit(record)
+        mode = self.compaction.cold_start
+        if state.cold_start is not None and (endpoint or mode == "resend"):
+            loop_resume.report_cold_start(self, state, "endpoint" if endpoint else "resend", 0)
+        before = compaction_window.context_chars(conversation) if state.cold_start else 0
         restarted = not endpoint and self.compactor.compact(
             self.compaction_context(conversation, state, tools)
         )
-        state.cold_start = None
-        if self.contract is not None:
-            # A reviewer reads which reply this is, and on the last that it decides now.
-            # Said after compaction: a restart's kept tail would otherwise repeat it.
-            conversation.notice(
-                review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
-            )
-        elif restarted:
+        if restarted and self.contract is None:
             state.focus.surfaced_task_id = None
             state.plan_injected = ""
             parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
             if parked is not None:
                 return parked
             self._maybe_surface_current_task(conversation, state)
+        if state.cold_start is not None:
+            action = "summary_failed" if mode == "summarize" and not restarted else mode
+            loop_resume.report_cold_start(
+                self, state, action, before - compaction_window.context_chars(conversation)
+            )
+        if self.contract is not None:
+            # Every reviewer request gets this notice, regardless of compaction.
+            conversation.notice(
+                review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
+            )
         if restarted or self.contract is not None:
             conversation.roll_cache_marks()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -799,7 +802,7 @@ class Harness:
         if text == state.plan_injected:
             return None
         state.plan_injected = text
-        conversation.notice(f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}")
+        conversation.notice(f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}", origin="plan")
         self.log(f"  plan re-read from disk: {len(text)} chars")
         self.emit(
             journal.PlanReread(

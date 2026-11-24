@@ -50,7 +50,8 @@ def _resume(
     endpoint: bool = False,
     helper_reply: str = "Helper handoff.",
     drop_at: int = 10**8,
-) -> tuple[str, list[dict[str, Any]], list[str], writers.Writer]:
+    plan: pathlib.Path | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], writers.Writer]:
     path = directory / "logs.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
     snap = directory / "loop_state.json"
@@ -77,6 +78,8 @@ def _resume(
     dispatcher.tool_is_withheld.side_effect = withheld
     wf = test_harness._wf(
         provider=worker,
+        mode="plan" if plan is not None else "run",
+        plan_output_path=plan,
         dispatcher=dispatcher,
         events=event_log.EventSink(path),
         resume_state_path=snap,
@@ -101,7 +104,7 @@ def _resume(
     )
     wf.resume(steer="Continue here.")
     worker.call.assert_called_once()
-    sent = str(worker.call.call_args.kwargs["messages"])
+    sent = worker.call.call_args.kwargs["messages"]
     return sent, [json.loads(line) for line in path.read_text().splitlines()], lines, helper
 
 
@@ -113,7 +116,7 @@ def test_first_cold_worker_request(
     fields = {cause: "other"} if cause != "idle" else {}
     # A later worker-written summary, listing or helper call cannot warm the ordinary request.
     now = datetime.datetime.now(datetime.UTC).isoformat()
-    sent, rows, lines, helper = _resume(
+    wire, rows, lines, helper = _resume(
         tmp_path,
         mode,
         [
@@ -126,6 +129,7 @@ def test_first_cold_worker_request(
         ],
         limit=5 if cause == "idle" else -1,
     )
+    sent = str(wire)
     assert ("Old evidence." in sent) is (mode == "resend")
     assert ("Old dialogue." in sent) is (mode in ("resend", "drop"))
     assert ("old reasoning" in sent) is (mode == "resend")
@@ -160,7 +164,7 @@ def test_no_idle_limit_or_unknown_history_does_not_rewrite(
     tmp_path: pathlib.Path, rows: list[dict[str, Any]]
 ) -> None:
     sent, log, _, helper = _resume(tmp_path, "truncate", rows)
-    assert "Old evidence." in sent and not helper.calls
+    assert "Old evidence." in str(sent) and not helper.calls
     assert not any(r["type"] == "compact.cold_start" for r in log)
 
 
@@ -168,21 +172,38 @@ def test_endpoint_keeps_its_own_compaction_at_a_cold_start(tmp_path: pathlib.Pat
     sent, rows, _, helper = _resume(
         tmp_path, "truncate", [rules.request(model="other")], endpoint=True
     )
-    assert "Old evidence." in sent and not helper.calls
+    assert "Old evidence." in str(sent) and not helper.calls
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
     assert row["action"] == "endpoint" and row["chars_not_sent"] == 0
 
 
 def test_a_cold_drop_does_not_run_a_second_warm_drop(tmp_path: pathlib.Path) -> None:
     sent, _, _, _ = _resume(tmp_path, "drop", [rules.request(model="other")], drop_at=100)
-    assert "Edited file body." in sent and "Old evidence." not in sent
+    assert "Edited file body." in str(sent) and "Old evidence." not in str(sent)
+
+
+@pytest.mark.parametrize("mode", ["summarize", "truncate"])
+def test_cold_planner_restart_counts_the_request_with_one_current_plan(
+    tmp_path: pathlib.Path, mode: kinds.ColdStart
+) -> None:
+    plan = tmp_path / "plan.md"
+    plan.write_text("Keep the local fixture.")
+    previous = [rules.request(actor="planner", model="other")]
+    resend, _, _, _ = _resume(tmp_path, "resend", previous, plan=plan)
+    sent, rows, _, _ = _resume(tmp_path, mode, previous, plan=plan)
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    before, after = (
+        window.context_chars(loop_conversation.Conversation.from_wire(w)) for w in (resend, sent)
+    )
+    assert row["chars_not_sent"] == before - after > 0
+    assert str(sent).count("Keep the local fixture.") == 1
 
 
 def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None:
     sent, rows, _, helper = _resume(
         tmp_path, "summarize", [rules.request(model="other")], helper_reply=""
     )
-    assert len(helper.calls) == 1 and "Old evidence." in sent
+    assert len(helper.calls) == 1 and "Old evidence." in str(sent)
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
     assert row["action"] == "summary_failed" and row["chars_not_sent"] == 0
 
@@ -234,6 +255,6 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(
             ]
         )
     sent, rows, _, _ = _resume(tmp_path, "truncate", rows)
-    assert "Old evidence." not in sent and "earlier history was left out" in sent
+    assert "Old evidence." not in str(sent) and "earlier history was left out" in str(sent)
     (cold,) = [r for r in rows if r["type"] == "compact.cold_start"]
     assert (cold["previous_route"], cold["route"]) == ("process/claude-haiku-4-5", "p/m")

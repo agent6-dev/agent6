@@ -36,7 +36,7 @@ from typing import Any, Literal
 from agent6 import kinds, media
 
 NoticeOrigin = Literal[
-    "harness", "operator", "model", "panel", "restart", "contract", "reply_count"
+    "harness", "operator", "model", "panel", "plan", "restart", "contract", "reply_count"
 ]
 
 _EPHEMERAL = {"type": "ephemeral"}
@@ -677,7 +677,16 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
             keys - {"origin", "operator_words"} != {"type", "text"}
             or not isinstance(block["text"], str)
             or origin
-            not in ("harness", "operator", "model", "panel", "restart", "contract", "reply_count")
+            not in (
+                "harness",
+                "operator",
+                "model",
+                "panel",
+                "plan",
+                "restart",
+                "contract",
+                "reply_count",
+            )
             or not isinstance(words, list)
             or not all(isinstance(w, str) for w in words)
         ):
