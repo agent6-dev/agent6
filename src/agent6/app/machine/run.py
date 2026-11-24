@@ -394,6 +394,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     path: pathlib.Path,
     reporter: app_reporter.Reporter,
     *,
+    invoked_as: pathlib.Path | None = None,
     config_paths: tuple[pathlib.Path, ...] = (),
     exit_on_wait: bool = False,
     restart: bool = False,
@@ -406,6 +407,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     Args:
         path: The `.asm.toml`.
         reporter: The two output channels.
+        invoked_as: The name or file to repeat in the restart command.
         config_paths: The `--config` files, part of the operator's ceiling.
         exit_on_wait: Return at the first wait state instead of blocking through it.
         restart: Archive the stopped instance, if any, and start a fresh run.
@@ -642,7 +644,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             events = journal.read()
             if events and isinstance(events[-1], MachineEnd):
                 end = events[-1]
-                rerun = shlex.join(("agent6", "machine", "run", str(path), "--restart"))
+                rerun = shlex.join(
+                    ("agent6", "machine", "run", str(invoked_as or path), "--restart")
+                )
                 reporter.refuse(
                     f"{spec.machine} already ended in {end.state!r}"
                     f" ({end.status}: {end.reason})."

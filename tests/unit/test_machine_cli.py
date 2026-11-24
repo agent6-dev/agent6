@@ -842,6 +842,8 @@ def test_run_refuses_rerun_of_ended_instance(
     err = capsys.readouterr().err
     assert "already ended" in err
     assert f"`agent6 machine run {f} --restart`" in err
+    assert main(["machine", "run", "tiny"]) == 2
+    assert "`agent6 machine run tiny --restart`" in capsys.readouterr().err
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
     assert process.read_worker_pid(root) == sentinel
     # The journal still reads terminal, unchanged.

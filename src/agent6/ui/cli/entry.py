@@ -1077,7 +1077,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
     if args.machine_command == "list":
         return machine_cmds._cmd_machine_list()
-    if args.machine_command in ("check", "test", "graph", "run"):
+    if args.machine_command in ("check", "test", "graph"):
         args.file = machine_cmds.machine_file(args.file)
     if args.machine_command == "check":
         return machine_check._cmd_machine_check(args.file, config_paths=args.config)
@@ -1089,8 +1089,9 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return machine_check._cmd_machine_graph(args.file, fmt=args.format)
     if args.machine_command == "run":
         return machine_run.run_machine(
-            args.file,
+            machine_cmds.machine_file(args.file),
             app_reporter.STDIO_REPORTER,
+            invoked_as=args.file,
             config_paths=args.config,
             exit_on_wait=args.exit_on_wait,
             restart=args.restart,
