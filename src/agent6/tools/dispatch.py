@@ -254,9 +254,7 @@ class ToolDispatcher:
             schema.DagAddTaskInput.TOOL_NAME: dag_tools.add_task,
             schema.DagUpdateTaskInput.TOOL_NAME: dag_tools.update_task,
             schema.DagListTasksInput.TOOL_NAME: dag_tools.list_tasks,
-            schema.UseSkillInput.TOOL_NAME: lambda ctx, raw: skill_tools.use_skill(
-                ctx.workspace, ctx.resolved_skills, raw
-            ),
+            schema.UseSkillInput.TOOL_NAME: skill_tools.use_skill,
         }
         self._index: index.SymbolIndex | None = None
         # Concurrent reviewers must not double-build the index.

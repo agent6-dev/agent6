@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import os
 import pathlib
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent6 import path_safety, paths
 from agent6.config import Config
 from agent6.context import skills
 from agent6.tools import results, schema, tool_errors
+
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
 
 def configured_skills(cfg: Config) -> skills.ResolvedSkills:
@@ -39,16 +41,11 @@ def configured_skills(cfg: Config) -> skills.ResolvedSkills:
     )
 
 
-def use_skill(
-    ws: path_safety.Workspace,
-    resolve_skills: Callable[[], skills.ResolvedSkills],
-    raw: dict[str, Any],
-) -> results.SkillResult:
+def use_skill(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.SkillResult:
     """Return a skill's instructions, or one of its files, for the model's context.
 
     Args:
-        ws: The run's file boundary; its hidden paths are refused here too.
-        resolve_skills: Loads the enabled skills; called only after the arguments validate.
+        ctx: The workspace and its configured skills.
         raw: The tool call's arguments.
 
     Returns:
@@ -60,7 +57,7 @@ def use_skill(
             exceeds 256 KiB.
     """
     args = schema.UseSkillInput.model_validate(raw)
-    resolved = resolve_skills()
+    resolved = ctx.resolved_skills()
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     skill = by_name.get(args.name)
     if skill is None:
@@ -76,7 +73,7 @@ def use_skill(
             real = path_safety.contain(skill.dir.resolve(), args.file).abs_path
     except path_safety.ContainmentError as exc:  # absolute or `..`
         raise tool_errors.ToolError(f"{name!r} escapes the skill directory") from exc
-    if ws.is_denied(real):
+    if ctx.workspace.is_denied(real):
         raise tool_errors.ToolError(
             f"Path is hidden from this run: {name!r} of skill {skill.name!r} is under a path in"
             " sandbox.hide_paths or one of agent6's private directories"

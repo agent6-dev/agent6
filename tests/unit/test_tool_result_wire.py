@@ -640,19 +640,13 @@ def test_wire_tool_error_shape(tmp_path: pathlib.Path) -> None:
     assert content == '{"error": "Unknown tool: no_such_tool"}'
 
 
-def test_the_tool_error_log_line_names_the_tool_once() -> None:
+def test_the_tool_error_log_line_names_the_tool_once(tool_context: dispatch.ToolContext) -> None:
     """A tool raises the bare message; the logger prefixes the tool's name."""
-    from agent6 import path_safety
-    from agent6.context import skills
     from agent6.harness import loop_state
     from agent6.tools import skill_tools
 
     with pytest.raises(tool_errors.ToolError) as exc:
-        skill_tools.use_skill(
-            path_safety.Workspace(root=pathlib.Path("/nonexistent")),
-            lambda: skills.ResolvedSkills(enabled=(), always=(), warnings=()),
-            {"name": "x"},
-        )
+        skill_tools.use_skill(tool_context, {"name": "x"})
     assert str(exc.value).startswith("unknown or disabled skill 'x'")
     wf = mock.MagicMock()
     state = loop_state.LoopState(original_task="t", tool_calls=0)
