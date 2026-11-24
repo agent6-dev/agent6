@@ -43,6 +43,7 @@ Scenario keys (all optional):
   `rate_limit` emits `rate_limit_event` lines.
 - `die_in_round`: exit 3 with `die_message` (default `boom`) on stderr after
   that round's `message_start` (rounds count across turns).
+- `die_after_delta`: exit 3 after the first text or thinking delta.
 - `synthetic_error`: `{"text"}`: the signed-out shape, a synthetic
   assistant line then a `result` with `is_error` true and subtype success.
 - `exit_code`: the exit status on stdin EOF between turns; EOF while a
@@ -253,6 +254,8 @@ class _Fake:
                     "delta": {"type": kind, key: text[i : i + size]},
                 }
             )
+            if self.scenario.get("die_after_delta"):
+                sys.exit(3)
 
     def tools_call(self, tool_use_id: str, tool_use: dict[str, Any]) -> str | None:
         """Send the `tools/call`; None when a `can_use_tool` answer denied it."""

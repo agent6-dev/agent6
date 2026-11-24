@@ -541,27 +541,28 @@ class InstrumentedProvider:
             or text_delta_callback is not None
             or thinking_delta_callback is not None
         )
-        # The process streams even without a live view. A reply confirms it received the call.
-        process = isinstance(self.inner, ClaudeCodeProvider) and events is not None
-        reply_started = False
 
         def _on_text(piece: str) -> None:
-            nonlocal reply_started
-            reply_started |= bool(piece)
-            if stream and events is not None:
+            if events is not None:
                 events.emit(journal.ModelTextDelta(actor=actor, text=piece, **identity))
             if text_delta_callback is not None:
                 text_delta_callback(piece)
 
         def _on_thinking(piece: str) -> None:
-            nonlocal reply_started
-            reply_started |= bool(piece)
-            if stream and events is not None:
+            if events is not None:
                 events.emit(journal.ModelThinkingDelta(actor=actor, text=piece, **identity))
             if thinking_delta_callback is not None:
                 thinking_delta_callback(piece)
 
+        process_reply = False
+
+        def on_reply() -> None:
+            nonlocal process_reply
+            process_reply = True
+
         options: dict[str, Any] = {"compaction": compaction} if compaction is not None else {}
+        if isinstance(self.inner, ClaudeCodeProvider) and events is not None:
+            options["on_reply"] = on_reply
         try:
             resp = self.inner.call(
                 system=system,
@@ -570,8 +571,8 @@ class InstrumentedProvider:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 reasoning_effort=reasoning_effort,
-                text_delta_callback=_on_text if stream or process else None,
-                thinking_delta_callback=_on_thinking if stream or process else None,
+                text_delta_callback=_on_text if stream else None,
+                thinking_delta_callback=_on_thinking if stream else None,
                 should_abort=should_abort,
                 should_interrupt=should_interrupt,
                 context=context,
@@ -591,7 +592,7 @@ class InstrumentedProvider:
                     **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
                 },
                 ends_call=provider_call.closes_call(exc, context),
-                process_reply=process and reply_started,
+                process_reply=process_reply,
             )
             self._emit_budget()
             raise

@@ -159,6 +159,7 @@ class ClaudeCodeProvider:
         should_interrupt: Callable[[], bool] | None = None,
         compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
+        on_reply: Callable[[], None] | None = None,
     ) -> provider_types.ProviderResponse:
         """Run one round on the worker's process, or one process for a tool-less call.
 
@@ -175,6 +176,7 @@ class ClaudeCodeProvider:
             should_interrupt: Polled each tick; True ends the turn to steer.
             compaction: The history operation on a supporting endpoint.
             context: The application's context for the call; None outside a conversation.
+            on_reply: Observe the first nonempty text or thinking delta without its content.
 
         Returns:
             The round's response.
@@ -202,7 +204,9 @@ class ClaudeCodeProvider:
                 # The worker's session, blocked on its tools/call, is untouched.
                 s = self._spawn(system, [], messages, watch)
             s.consumed = claude_code_wire.history_skeleton(messages)
-            r = claude_code_stream.Round(serving=kinds.Serving(model=s.resolved_model or None))
+            r = claude_code_stream.Round(
+                serving=kinds.Serving(model=s.resolved_model or None), on_reply=on_reply
+            )
             transcript = self._open_transcript(s, system, messages, context)
             with transcript.capture():
                 try:

@@ -30,6 +30,7 @@ class Round:
         stop_reason: The stop reason from message_delta.
         message_id: The message id from message_start.
         ended: Whether message_stop landed.
+        on_reply: Called once on the first nonempty text or thinking delta.
         cb: The open block's delta callback.
         held: The streamed tail the email scrub holds back.
     """
@@ -40,6 +41,7 @@ class Round:
     serving: kinds.Serving = kinds.UNREPORTED
     message_id: str = ""
     ended: bool = False
+    on_reply: Callable[[], None] | None = None
     cb: Callable[[str], None] | None = None
     held: str = ""
 
@@ -103,6 +105,9 @@ def emit_delta(
         cb: The delta callback; None streams nothing.
         final: Whether this flushes the held tail.
     """
+    if piece and r.on_reply is not None:
+        r.on_reply()
+        r.on_reply = None
     if cb is None:
         return
     r.cb = cb

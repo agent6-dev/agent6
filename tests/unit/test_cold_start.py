@@ -281,17 +281,34 @@ def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None
     assert row["action"] == "summary_failed" and row["chars_not_sent"] == 0
 
 
-@pytest.mark.parametrize("fails_after_text,stream", [(False, False), (True, True), (True, False)])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "outcome", ["success", "error_result", "buffered_text", "buffered_thinking"]
+)
 def test_resume_from_a_process_worker_uses_its_last_issued_call(
-    tmp_path: pathlib.Path, fails_after_text: bool, stream: bool
+    tmp_path: pathlib.Path, outcome: str, stream: bool
 ) -> None:
+    prefix = "private-prefix"
     scenario: dict[str, Any] = {"turns": [[{"text": "part of a reply"}]]}
-    if fails_after_text:
+    error = ""
+    buffered = outcome.startswith("buffered_")
+    if buffered:
+        scenario = {
+            "account_email": f"{prefix}@example.test",
+            "turns": [[{outcome.removeprefix("buffered_"): prefix}]],
+            "die_after_delta": True,
+        }
+        error = "exited 3"
+    elif outcome == "error_result":
         scenario["result"] = {"subtype": "error_during_execution", "is_error": True}
+        error = "error_during_execution"
     binary, _ = claude._install(tmp_path, scenario)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    transcripts = provider_types.TranscriptSink(
+        tmp_path / "transcripts", objects_dir=tmp_path / "objects"
+    )
     worker = role_providers.InstrumentedProvider(
-        inner=claude._provider(binary),
+        inner=claude._provider(binary, transcript_sink=transcripts),
         actor="worker",
         model="claude-haiku-4-5",
         provider_name="process",
@@ -302,8 +319,8 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(
     with (
         contextlib.closing(worker),
         (
-            pytest.raises(provider_types.ProviderError, match="error_during_execution")
-            if fails_after_text
+            pytest.raises(provider_types.ProviderError, match=error)
+            if error
             else contextlib.nullcontext()
         ),
     ):
@@ -316,8 +333,13 @@ def test_resume_from_a_process_worker_uses_its_last_issued_call(
             ),
         )
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
-    assert any(r["type"] == "model.text_delta" and r["text"] for r in rows) is stream
-    if fails_after_text:
+    assert any(r["type"] in ("model.text_delta", "model.thinking_delta") for r in rows) is (
+        stream and not buffered
+    )
+    if buffered:
+        (transcript,) = (tmp_path / "transcripts").glob("*.json")
+        assert prefix not in transcript.read_text() and prefix not in sink.path.read_text()
+    if error:
         (attempt,) = [r for r in rows if r["type"] == "model.attempt"]
         assert attempt["process_reply"] is True and attempt["ok"] is False
     for call_id, actor, ok in (("side", "helper:summariser", True), ("not_sent", "worker", False)):
