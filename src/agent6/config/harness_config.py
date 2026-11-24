@@ -516,14 +516,15 @@ class CompactionConfig(pydantic.BaseModel):
         json_schema_extra={
             "choice_meanings": {
                 "worker": "Worker continues its own request",
-                "helper": "Helper reads history without tool output",
+                "helper": "Replaced history with operator answers, without other tool output",
             }
         },
         default="worker",
         description=(
             "Local compaction only: "
             "tier-2 writer: worker continues its own request with a summary instruction; "
-            "helper reads replaced history without tool output, bounded by its known window; "
+            "helper reads replaced history including operator answers but not other tool output, "
+            "bounded by its known window; "
             "worker falls back once to helper on rejection or unusable output; claude_code "
             "always uses helper because its live session cannot be rolled back"
         ),
@@ -548,14 +549,16 @@ class CompactionConfig(pydantic.BaseModel):
             "Whole-context character threshold for a summary by the endpoint or agent6; "
             "an accepted summary restarts the conversation and preserves the task DAG; "
             "unset: model's window "
-            "minus a 16k-token reserve; required above `compaction.drop_at_chars`"
+            "minus a 16k-token reserve; explicit value must exceed `compaction.drop_at_chars` "
+            "and `compaction.keep_recent_chars`"
         ),
     )
     keep_operator_messages: int = pydantic.Field(
         ge=-1,
         default=-1,
         description=(
-            "Local restart: reserve the newest N operator messages within the character cap; "
+            "Local restart: reserve the newest N operator messages (task, steers, answers) "
+            "word for word before selecting turns; "
             "-1: no count limit; 0: reserve none outside kept turns"
         ),
     )
@@ -563,7 +566,8 @@ class CompactionConfig(pydantic.BaseModel):
         ge=-1,
         default=-1,
         description=(
-            "Local restart: keep up to N whole turns, newest first; -1: no count limit; "
+            "Local restart: keep up to N consecutive replies with their inputs and paired "
+            "results, newest first; -1: no count limit; "
             "0: keep no optional turns"
         ),
     )
@@ -571,7 +575,8 @@ class CompactionConfig(pydantic.BaseModel):
         ge=0,
         default=80_000,
         description=(
-            "Local restart: shared character cap on operator messages and recent turns; "
+            "Local restart: shared character cap on reserved operator messages and recent "
+            "turns; the newest optional turn stays whole even if it exceeds the space left; "
             "0: keep nothing optional; adaptive thresholds limit the cap to half of "
             "`compaction.summarise_at_chars`"
         ),

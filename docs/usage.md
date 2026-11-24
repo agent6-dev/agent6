@@ -576,18 +576,19 @@ The planner reads `plan.md` again after local compaction on a cold start, includ
 It parks if the file becomes unreadable or disappears during compaction.
 On an endpoint that writes signed summaries, the line reports that the local mode does not apply.
 
-**What a local restart keeps.** `compaction.keep_operator_messages` reserves the newest task, steers and answers word for word.
+**What a local restart keeps.** `compaction.keep_operator_messages` reserves the operator's newest messages (task, steers and answers) word for word.
 `compaction.keep_recent_turns` keeps an unbroken run of recent replies with their inputs and tool results.
 Both counts default to `-1` (no count limit).
 Set either to `0` to reserve no messages or keep no optional turns, respectively.
 A kept turn still includes the operator text it received.
 Older reserved messages appear in time order before the pins and any summary, including answers without their tool calls.
-The opening task has no special place.
-A planner reads the current `plan.md` instead of replaying saved plan notices.
+The opening task has no special place, and a model assignment or rendered machine prompt is not an operator message.
+The local helper reads operator answers in the replaced history, including full answers to capped `ask_user` calls, but no other tool output.
+The helper fallback for a signed endpoint summary omits those tool answers.
 
 `compaction.keep_recent_chars` caps the two together (default `80000`); `agent6 config show` gives the effective cap for the worker.
 After reserving the operator's words, the newest eligible turn stays whole even if it exceeds the space left.
-At `0`, only work the worker has yet to read or finish survives beside the restart notice.
+At `0`, no optional history survives; the restart still carries pending work and any required plan or contract notice.
 `compaction.keep_thinking_turns` limits how many recent replies keep their thinking when a local drop rewrites tool results or a local restart keeps turns.
 
 **Compact before the prompt cache expires.** Set `providers.<name>.idle_compact_s` below the cache lifetime of your endpoint.
