@@ -1122,9 +1122,9 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 def _dispatch_acp(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 acp`."""
-    from agent6.ui.acp import serve_acp
+    from agent6.ui.acp import runner
 
-    return serve_acp(config_paths=args.config)
+    return runner.serve_acp(config_paths=args.config)
 
 
 def _dispatch_pack(args: argparse.Namespace) -> int:
