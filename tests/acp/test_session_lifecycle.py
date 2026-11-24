@@ -291,7 +291,8 @@ def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathl
     assert updates[4]["locations"] == [{"path": str(cwd / "parser.py")}]
     assert updates[5]["content"]["text"].startswith("[agent6] Panel panel: complete\n")
     assert updates[6]["content"]["text"] == (
-        "[agent6] Finding f1 · block · parser.py:3-4\nDefect f1\nReproduce with an empty input.\n"
+        "[agent6] Finding f1 · block · correctness · parser.py:3-4\nDefect f1\n"
+        "Reproduce with an empty input.\n"
     )
     assert updates[7]["content"]["text"] == "[agent6] committed abc1234 · 1 lines\n"
     assert updates[8]["content"]["text"] == "[agent6] Session passed - $0 · 1 tool · 1 commit\n"
