@@ -63,7 +63,7 @@ Each live run checks its merged config with `agent6 config show` before spending
 Anthropic models (unpriced) get token caps instead of `--max-usd`.
 ChatGPT routes use the host's plan cap; `--budget` caps dollars, not plan use.
 
-### G12 and B15 on ChatGPT
+### G12 on ChatGPT
 
 From the repository root, with the installed binary on PATH (or `AGENT6_BIN` set):
 
@@ -73,16 +73,10 @@ python3 bench/coreagent/run.py --provider chatgpt --model <model> --effort high 
     --tasks textkit,rpn,ledger,bugs --conditions baseline,verify_finish \
     --reps 3 --parallel 2 --label g12
 python3 bench/coreagent/stats.py bench/coreagent/results/g12.jsonl
-
-# B15: original task versus an automatic helper rewrite.
-python3 bench/coreagent/run.py --provider chatgpt --model <model> --effort high \
-    --tasks textkit,rpn,ledger,bugs --conditions baseline,revise_auto \
-    --reps 3 --parallel 2 --label b15
-python3 bench/coreagent/stats.py bench/coreagent/results/b15.jsonl
 ```
 
 Replace `<model>` with the model id, without the `chatgpt/` prefix.
-Both commands write the route `chatgpt/<model>`.
+The runner writes the route `chatgpt/<model>`.
 Add `--dry-run` to build the same repos and configs without launching agent6 or the grader.
 `COREAGENT_RUNS` selects the repo and private state directory parent (default `~/coreagent-runs`).
 Dry runs print each config path and do not append result rows.
@@ -93,7 +87,6 @@ Dry runs print each config path and do not append result rows.
 |-----------|---------|------------|
 | `baseline` | Shipped defaults: `harness.verify.when = "never"` | G12 and B15 control |
 | `verify_finish` | `harness.verify.when = "finish"` | G12 treatment: harness runs the finish gate; both arms retain the same tools and verify command |
-| `revise_auto` (retired) | Prompt revision, removed from config | B15 treatment: helper rewrote the task before the worker loop |
 | `decompose` | `harness.prompt.decompose = "on"` | Front-loaded decomposition |
 | `compact_tight` | Lower compaction thresholds | Force compaction on moderate tasks |
 
@@ -104,9 +97,11 @@ Add a condition by adding a config-TOML fragment to the dict. The task prompt is
 deliberately NEUTRAL about decomposition, so any DAG-use difference comes from the
 condition's config, not the prompt.
 
-## Reproducibility
+## Recorded results
 
-Results are append-only JSONL under `results/`. Each record carries the model,
-condition, task, rep, session_id, and every metric, so a run is fully reproducible
-from `(model, condition, task)`. `COMPACTION_RESEARCH.md` is the literature
-survey behind Thrust 1. Findings + adopt/scrap calls: see `FINDINGS.md`.
+Results are append-only JSONL under `results/`.
+Each record carries the model, condition, task, rep, session_id, and every metric.
+B15 measured the retired `revise_auto` condition: a helper rewrote the task before the worker loop.
+This runner does not accept it.
+`COMPACTION_RESEARCH.md` is the literature survey behind Thrust 1.
+Findings + adopt/scrap calls: see `FINDINGS.md`.
