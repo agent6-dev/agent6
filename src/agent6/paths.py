@@ -451,6 +451,12 @@ def git_exposure_record(checkout: pathlib.Path) -> pathlib.Path:
     """Return the file that records a model's commands could write a checkout's `.git`.
 
     Keyed on the checkout itself, so a session's clone has its own, removed with its state.
+
+    Args:
+        checkout: The workspace whose commands had the access.
+
+    Returns:
+        The record's path under the state base.
     """
     return state_base() / repo_id(checkout) / "git-writable"
 
