@@ -564,11 +564,22 @@ def test_a_journal_that_replaced_another_exports_from_its_start(
     sizes: list[int] = []
     sent: list[int] = []
     whole: list[int] = []
+    trace_ids: set[str] = set()
+    span_ids: set[str] = set()
     for day, rows in ((1, rest), (2, rest[-1:]), (3, [*rest[:1], *rest])):
         started = {**first, "ts": f"2026-07-0{day}T00:00:00+00:00"}
         journal.write_text("".join(json.dumps(row) + "\n" for row in [started, *rows]))
         sizes.append(journal.stat().st_size)
-        sent.append(export.export(repo, config, post=_Collector().post).spans)
+        collector = _Collector()
+        sent.append(export.export(repo, config, post=collector.post).spans)
+        if machine:
+            for _, _, body in collector.requests:
+                spans = body["resourceSpans"][0]["scopeSpans"][0]["spans"]
+                traces = {s["traceId"] for s in spans}
+                states = {s["spanId"] for s in spans}
+                assert traces.isdisjoint(trace_ids) and states.isdisjoint(span_ids)
+                trace_ids.update(traces)
+                span_ids.update(states)
         # An endpoint with no cursor takes the whole journal.
         fresh = config.model_copy(update={"endpoint": f"http://127.0.0.1:{4320 + day}"})
         whole.append(export.export(repo, fresh, post=_Collector().post).spans)

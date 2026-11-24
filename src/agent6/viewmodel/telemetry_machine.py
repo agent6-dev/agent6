@@ -10,9 +10,9 @@ from typing import Any
 from agent6.viewmodel import telemetry_metrics, telemetry_records
 
 
-def state_parent(session_id: str, seq: int) -> telemetry_records.SpanContext:
+def state_parent(session_id: str, journal_id: str, seq: int) -> telemetry_records.SpanContext:
     """Return the trace and state span ids shared by a machine and its worker journals."""
-    trace = telemetry_records.hex_id(f"agent6:machine:{session_id}", 32)
+    trace = telemetry_records.hex_id(f"agent6:machine:{session_id}:{journal_id}", 32)
     return telemetry_records.SpanContext(
         trace, telemetry_records.hex_id(f"{trace}:state:{seq}", 16)
     )
@@ -21,8 +21,9 @@ def state_parent(session_id: str, seq: int) -> telemetry_records.SpanContext:
 class MachineFold:
     """Fold completed state visits; a parked state waits for its journaled transition."""
 
-    def __init__(self, session_id: str) -> None:
+    def __init__(self, session_id: str, journal_id: str) -> None:
         self.session_id = session_id
+        self.journal_id = journal_id
         self.meter = telemetry_metrics.Meter()
         self._start_ns = 0
         self._spend: dict[int, telemetry_metrics.Meter] = {}
@@ -44,7 +45,7 @@ class MachineFold:
             self._book(seq, fact)
         if kind not in ("step", "machine.end"):
             return telemetry_records.Emitted()
-        context = state_parent(self.session_id, seq)
+        context = state_parent(self.session_id, self.journal_id, seq)
         fields: dict[str, telemetry_records.AttributeValue] = {
             "agent6.session.id": self.session_id,
             "agent6.machine.state": str(event.get("state", "")),

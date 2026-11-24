@@ -69,6 +69,7 @@ class TelemetryFold:
 
     Args:
         session_id: The session the journal belongs to.
+        journal_id: The cursor's journal identity, required for a machine journal.
         capture: `metadata`, or `content` for the capped excerpts.
         parent: The machine state a worker belongs to, None for a standalone run.
     """
@@ -77,10 +78,12 @@ class TelemetryFold:
         self,
         session_id: str,
         *,
+        journal_id: str = "",
         capture: Capture = "metadata",
         parent: telemetry_records.SpanContext | None = None,
     ) -> None:
         self.session_id = session_id
+        self._journal_id = journal_id
         self.capture = capture
         self._parent = parent
         self._machine: telemetry_machine.MachineFold | None = None
@@ -118,7 +121,7 @@ class TelemetryFold:
                 self.first_ns = ns
         now = self._last_ns
         if kind == "machine.begin":
-            self._machine = telemetry_machine.MachineFold(self.session_id)
+            self._machine = telemetry_machine.MachineFold(self.session_id, self._journal_id)
         if self._machine is not None:
             return self._machine.feed(event, now)
         spans: list[telemetry_records.Span] = []

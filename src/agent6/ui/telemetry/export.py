@@ -291,18 +291,22 @@ class _Session:
         self.config = config
         self.destination = destination
         self.resource = resource
+        self.journal_id = _journal_id(self.journal)
         parent = (
-            telemetry_machine.state_parent(machine.session_id, seq) if machine is not None else None
+            telemetry_machine.state_parent(machine.session_id, machine.journal_id, seq)
+            if machine is not None
+            else None
         )
-        self.fold = telemetry.TelemetryFold(self.session_id, capture=config.capture, parent=parent)
+        self.fold = telemetry.TelemetryFold(
+            self.session_id, journal_id=self.journal_id, capture=config.capture, parent=parent
+        )
         cursor_id = f"machine:{self.session_id}" if self.is_machine else self.session_id
         self.cursors: dict[str, _Cursor] = {}
         if destination is not None:
-            journal_id = _journal_id(self.journal)
             for signal, selected in (("traces", config.traces), ("logs", config.logs)):
                 if selected == "otlp":
                     self.cursors[signal] = _Cursor.read(
-                        state_dir, config.endpoint, cursor_id, signal, journal_id
+                        state_dir, config.endpoint, cursor_id, signal, self.journal_id
                     )
         self.spans: list[telemetry_records.Span] = []
         self.interrupted: set[str] = set()

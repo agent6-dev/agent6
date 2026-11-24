@@ -188,9 +188,9 @@
                   },
                   "severityNumber": 9,
                   "severityText": "INFO",
-                  "spanId": "647545b22a0d92b9",
+                  "spanId": "69d8ad6312912975",
                   "timeUnixNano": "1784160003000000000",
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 },
                 {
                   "attributes": [
@@ -214,7 +214,7 @@
                   "severityText": "INFO",
                   "spanId": "846a17cd85a7f935",
                   "timeUnixNano": "1784160004000000000",
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 }
               ],
               "scope": {
@@ -592,12 +592,12 @@
                   "endTimeUnixNano": "1784160001000000000",
                   "kind": 1,
                   "name": "agent6.machine.state",
-                  "spanId": "ecf36f4a3cb4a88a",
+                  "spanId": "a4fa292ed1ddb4e6",
                   "startTimeUnixNano": "1784160000000000000",
                   "status": {
                     "code": 1
                   },
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 },
                 {
                   "attributes": [
@@ -641,12 +641,12 @@
                   "endTimeUnixNano": "1784160002000000000",
                   "kind": 1,
                   "name": "agent6.machine.state",
-                  "spanId": "754331be308f476a",
+                  "spanId": "5b9971668bd2b488",
                   "startTimeUnixNano": "1784160001000000000",
                   "status": {
                     "code": 0
                   },
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 },
                 {
                   "attributes": [
@@ -696,12 +696,12 @@
                   "endTimeUnixNano": "1784160003000000000",
                   "kind": 1,
                   "name": "agent6.machine.state",
-                  "spanId": "647545b22a0d92b9",
+                  "spanId": "69d8ad6312912975",
                   "startTimeUnixNano": "1784160002000000000",
                   "status": {
                     "code": 0
                   },
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 },
                 {
                   "attributes": [
@@ -745,12 +745,12 @@
                   "endTimeUnixNano": "1784160004000000000",
                   "kind": 1,
                   "name": "agent6.machine.state",
-                  "spanId": "a1747af4db61678e",
+                  "spanId": "766a8368601fad21",
                   "startTimeUnixNano": "1784160003000000000",
                   "status": {
                     "code": 1
                   },
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 },
                 {
                   "attributes": [
@@ -782,12 +782,12 @@
                   "endTimeUnixNano": "1784160006000000000",
                   "kind": 1,
                   "name": "agent6.machine.state",
-                  "spanId": "31f262e198938268",
+                  "spanId": "da43d08f2a0508e5",
                   "startTimeUnixNano": "1784160004000000000",
                   "status": {
                     "code": 1
                   },
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 },
                 {
                   "attributes": [
@@ -849,7 +849,7 @@
                   "status": {
                     "code": 1
                   },
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 },
                 {
                   "attributes": [
@@ -887,13 +887,13 @@
                   "endTimeUnixNano": "1784160004000000000",
                   "kind": 1,
                   "name": "agent6.execution",
-                  "parentSpanId": "a1747af4db61678e",
+                  "parentSpanId": "766a8368601fad21",
                   "spanId": "846a17cd85a7f935",
                   "startTimeUnixNano": "1784160003000000000",
                   "status": {
                     "code": 1
                   },
-                  "traceId": "b9182da46e8d0eac3878e5ae2c937024"
+                  "traceId": "e13a43b1b2148e3d7281129eac2123e7"
                 }
               ]
             }

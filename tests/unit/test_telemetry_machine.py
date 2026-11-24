@@ -51,7 +51,7 @@ def worker() -> list[dict[str, Any]]:
 def folded() -> tuple[
     telemetry.TelemetryFold, list[telemetry_records.Span], list[telemetry_records.LogRecord]
 ]:
-    fold = telemetry.TelemetryFold("demo")
+    fold = telemetry.TelemetryFold("demo", journal_id="test-journal")
     spans: list[telemetry_records.Span] = []
     logs: list[telemetry_records.LogRecord] = []
     for event in journal():
@@ -88,7 +88,7 @@ def test_machine_states_waits_and_spend_survive_without_worker_logs() -> None:
 
 
 def test_a_pruned_worker_does_not_turn_a_mixed_machine_total_into_call_cost() -> None:
-    fold = telemetry.TelemetryFold("demo")
+    fold = telemetry.TelemetryFold("demo", journal_id="test-journal")
     for event in journal():
         if event.get("fact", {}).get("kind") == "agent":
             del event["fact"]["usd_own_calls"]
