@@ -17,7 +17,7 @@ Use the same control samples for both editing comparisons.
 **Editing tasks.** [Coreagent](../coreagent/README.md) supplies the prompts, starting trees and hidden graders.
 `textkit` exercises implementation from a stub.
 `bugs` needs several edits in one file; `eventflow` needs fixes across modules.
-A pass requires every case in the original `grade.py`, not a green starter suite or a model's claim.
+A pass means the original `grade.py` reported every case passing, not that the starter suite passed or the model claimed success.
 
 **Ask tasks.** The [machine bench](../machine/README.md) tests generated bundles offline.
 Ask for the command that runs a bundle's mock tests (`agent6 machine test`).
@@ -42,7 +42,7 @@ The control patch is empty.
 
 Set `base` to a private directory on a real disk outside the checkout and `launcher` to the binary's absolute path.
 Sign in to a dedicated profile and skip the default-model picker.
-Keep only provider settings in its `config.toml`.
+Its `config.toml` may contain only provider settings and `agent6.config_version`.
 Do not share this profile with another process: each run returns its refreshed `secrets.toml` to the profile.
 The jail hides the source profile and the arm build from both the submission and the grader.
 
@@ -71,22 +71,39 @@ python3.13 -m bench.tools.table "$base/control/results.jsonl" "$base/no-patch/re
 ```
 
 **Bounds.** Each run gets a new repository and private config, state, data and cache homes.
-The plan cap bounds observed account movement, not dollars or an in-flight call.
-Priced calls have a $1 cap; unpriced calls have a 100,000-token fallback cap.
+The build finds `git` and `uv` on the caller's `PATH`.
+Trial processes on the host use `PATH=/usr/bin:/bin` and invoke the arm by absolute path.
+Commands inside the jail use [agent6's jail PATH](../../docs/security.md#2-sandbox).
+The plan cap measures observed account movement in percentage points and does not stop an in-flight call.
+The $1 cap counts priced spend and observed account credit declines.
+Tokens count toward the 100,000-token fallback when a call has no plan reading, reported cost or known price.
 Editing arms allow jailed commands and offer `parallel` so all three definitions reach the model.
 Ask withholds commands; a headless approval request is denied.
-The hidden grader runs after the session via `agent6 exec --new`, not against the host Python environment.
-It has two minutes and 64 KiB per output stream.
-Its stderr goes to the private `grader.stderr` file, not to the terminal.
+
+**Grading.** After an editing session, `agent6 exec --new` uses a fresh `grading/` repository as its writable workspace.
+Its own `.git` stays protected.
+A read-only grant covers the sibling submission, `repo/`, including its `.git`.
+The runner sends the archived scorer unchanged to `python3 -I -` through an anonymous pipe.
+`bugs` and `textkit` import the submission in the scorer process.
+Checking the report format and totals does not independently verify its claims.
+
+One two-minute deadline covers sending the scorer, draining the pipes and waiting for `exec` to exit.
+The runner accepts up to 64 KiB each on stdout and stderr.
+Exceeding either limit leaves the run unscored.
+Neither stream reaches the terminal; the runner keeps the accepted stderr in `grader.stderr`.
+The pipe limits do not cap `agent.log` or memory used inside a scorer.
+`eventflow` captures stdout and stderr from each case subprocess in memory with a 30-second timeout and no byte cap.
+Use a host memory limit for the run set if a hard memory bound is needed.
 
 **Evidence.** `results.jsonl` has one row per attempted task and replicate.
 The task-replicate directory keeps `agent.log`, the repository and the journals.
 Turns are the root `session.stop.turns`; the ask answer is its `summary` when the reason is `answered`.
 Failed/completed edit counts come from `tool.result.ok`, including children.
 Input (fresh, cache read and cache write) and output tokens sum `model.result` once per logical call across those journals.
-This counts reported usage on the final attempt, not unreported retry spend.
+This counts the final attempt's reported usage and excludes earlier attempts.
 The table shows pooled failures/calls and the median [min,max] per run for failures, turns and tokens.
-It gives the count of known readings when any are missing.
-A missing journal or grader result is a measurement error, not a zero score.
+It gives the count of known readings when some are missing and prints `?` when none are known.
+A missing root journal, root stop or grader result is a measurement error, not a zero score.
 Grader stdout must contain one JSON report with the task's case and component totals.
+The official `bugs` and `textkit` import-error reports count as scored failures.
 A malformed, extra or oversized report leaves that run unscored; the set continues.
