@@ -575,7 +575,10 @@ def config_payload(
                 entry_sources[table.path, name] = source.source
     for key, setting in payload.items():
         if key == "agent6.preset" and (preset := write.selected_preset(eff)):
-            setting["remove_layer"] = "repo" if write.preset_layer(cwd, preset) else "global"
+            tables = io.read_toml_file(paths.repo_config_path(cwd)).get("presets")
+            setting["remove_layer"] = (
+                "repo" if isinstance(tables, dict) and preset in tables else "global"
+            )
         if entry := write.entry_of(key):
             table, name = entry
             setting["entry"] = {

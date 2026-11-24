@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import re
 from collections.abc import Callable
@@ -172,6 +173,40 @@ def test_a_lost_removal_reply_requires_a_fresh_reviewer_confirmation(
     sync_api.expect(question).to_have_accessible_name("Remove reviewer 1: security?")
     question.get_by_role("button", name="Cancel").click()
     assert "tests" not in config.read_text() and "security" in config.read_text()
+
+
+def test_config_reads_a_preset_through_a_foreign_owned_symlink(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Showing a preset's removal layer needs read access, not write ownership."""
+    from playwright import sync_api
+
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[agent6]\npreset = "work"\n[presets.work.providers.local]\nbackend = "openai"\n'
+    )
+    repo = paths.repo_config_path(tmp_path)
+    repo.parent.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "shared.toml"
+    target.touch()
+    repo.symlink_to(target)
+    reader = dataclasses.replace(paths.effective_user(), uid=target.stat().st_uid + 1)
+    monkeypatch.setattr(paths, "effective_user", lambda: reader)
+
+    page, errors = open_page(port)
+    with page.expect_response("**/api/config") as response:
+        page.goto(f"http://127.0.0.1:{port}/#/config")
+    assert response.value.ok, response.value.text()
+    page.get_by_role("button", name="edit providers.local.backend", exact=True).click()
+    page.get_by_role("button", name="Remove provider", exact=True).click()
+    sync_api.expect(page.get_by_role("alertdialog")).to_have_accessible_description(
+        re.compile(r"\[presets\.work\].*global config")
+    )
+    assert not errors
 
 
 @pytest.mark.parametrize("applied", [True, False], ids=["lost-reply", "lost-request"])
