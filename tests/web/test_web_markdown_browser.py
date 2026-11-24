@@ -230,6 +230,43 @@ def test_a_heading_link_in_the_open_file_scrolls_in_place(
     assert not errors
 
 
+@pytest.mark.parametrize("restore", ["back", "pageshow"])
+def test_returning_to_closed_markdown_opens_a_fresh_preview(
+    markdown_repo: tuple[int, str], open_page: Callable[[int], tuple[Page, list[str]]], restore: str
+) -> None:
+    """Back and a persisted pageshow must not reuse the host of a closed preview."""
+    from playwright import sync_api
+
+    port, _ = markdown_repo
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    url = f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md"
+    page.goto(url)
+    frame = page.frame_locator(".files-preview iframe")
+    frame.get_by_role("link", name="details", exact=True).click()
+    sync_api.expect(frame.locator("#details")).to_be_in_viewport()
+    iframe = page.locator(".files-preview iframe")
+    closed = iframe.get_attribute("src")
+    assert closed
+    with page.expect_response("**/api/files/preview/close") as closing:
+        if restore == "back":
+            page.get_by_role("button", name="Files", exact=True).click()
+        else:
+            page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide', {persisted: true}))")
+    assert closing.value.ok
+    sync_api.expect(iframe).to_have_count(0)
+    if restore == "back":
+        page.go_back()
+        sync_api.expect(page).to_have_url(url)
+        heading = "h1"
+    else:
+        page.evaluate("dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
+        heading = "#details"
+    sync_api.expect(frame.locator(heading)).to_be_in_viewport()
+    sync_api.expect(iframe).not_to_have_attribute("src", closed)
+    assert not errors
+
+
 def test_a_heading_link_leaves_the_page_undimmed(
     markdown_repo: tuple[int, str], open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:

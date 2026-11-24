@@ -289,7 +289,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   bar.insertBefore(toggle, pick.root);
 
   // -- the tree ----------------------------------------------------------------------
-  let entries = [], truncated = false, rev = '', ignored = false, loading = 0, shown = null, markdown = null;
+  let entries = [], truncated = false, rev = '', ignored = false, loading = 0, shown = null;
   // The count heads the tree it counts, so its arrival neither moves nor narrows a field on the bar.
   const counts = el('div', 'muted files-counts');
   // A working-tree row's mark says how it differs from HEAD: M modified, A untracked, I ignored. A
@@ -543,7 +543,6 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     // A Markdown file cut at the size cap has no rendering: its text alone shows.
     if (t.truncated) { modes.remove(); blame.hidden = false; return; }
     md = el('div', 'files-preview'); box.appendChild(md);
-    markdown = { path: f.path, view: md, scroll: id => filesState.previewScroll?.(id) };
     for (const button of modes.children) button.disabled = false;
     selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
   };
@@ -553,7 +552,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     app.removeAttribute('aria-busy'); // route() marked the page it expected to replace
     query = hashQuery;
     if (!file) { closeFile(); return true; }
-    if (markdown?.path === file && markdown.view.isConnected) { body.classList.add('viewing'); markdown.scroll(query.get('anchor')); return true; }
+    if (file === shown && filesState.previewScroll) {
+      body.classList.add('viewing'); filesState.previewScroll(query.get('anchor')); return true;
+    }
     shown = file; reveal(file);
     if (![...tree.querySelectorAll('.gf')].find(r => r.dataset.path === file)?.checkVisibility()) paintTree();
     return showFile(entries.find(f => f.path === file) || { path: file, kind: 'file', size: null }, false, true);
