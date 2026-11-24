@@ -16,12 +16,24 @@ It uses the same engine, config, and jail as `agent6 run`.
 }
 ```
 
+## Protocol versions
+
+agent6 serves ACP v1 and v2, one version per connection.
+
+- `initialize` selects the highest version agent6 serves that is at most the `protocolVersion` the editor requests: 1 selects v1, 2 or more selects v2
+- a request for 0 answers `-32022` with `data.supported: [1, 2]`
+- an editor that sends no `initialize` is served as v1
+- v2 is the protocol's Preview; agent6 follows its `schema-v2.0.0-beta.3`
+
+The sections below describe v1.
+[What v2 changes](#what-v2-changes) lists each difference.
+
 ## What the editor sees
 
 Every run writes one event journal; the CLI, TUI, web UI, and ACP all render it the same way.
 An editor sees what `agent6 attach` shows: reasoning, each tool call and its outcome, auto-commits, and how the run ended.
 
-ACP carries a tool call as two messages.
+ACP v1 carries a tool call as two messages.
 
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
 - a call names its tool (`name`) beside the call's title; built-in calls carry their ACP kind, and an edit result carries each written or deleted path as an absolute follow-along location, without a line
@@ -131,7 +143,8 @@ A session is one conversation in one directory.
   Each execution uses that directory without changing the connection process's cwd.
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (an execution that died before its first checkpoint leaves nothing to resume: the next prompt starts a new run, and the editor is told)
   After an undo on another surface, the next prompt follows the run's continuation.
-- a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session queues and says for which session it waits
+- under v1 a busy session refuses a prompt rather than queueing it; under v2 the prompt [steers the run](#a-prompt-during-a-run)
+- one connection runs one prompt at a time across its sessions, and a prompt on another session queues and says for which session it waits
 - `session/list` (`cwd` optional, absolute) names the repository's resumable runs, newest first: agent6's run id as `sessionId`, the task as `title`, the last activity as `updatedAt`; one page, no cursor.
   A run `agent6 resume` would refuse (a child, a run whose worktree is gone, a run with no checkpoint) is left out.
   Without `cwd` it covers every repository the connection has a session open in.
@@ -165,14 +178,90 @@ A session is one conversation in one directory.
   The first prompt says why it cannot run.
 - a run another front-end detaches to the background keeps the picked model and takes the config's effort
 
+## What v2 changes
+
+An editor that requests `protocolVersion: 2` gets the same runs through v2's messages.
+
+### The prompt turn
+
+- `session/prompt` answers `{messageId}` once the prompt's message is in the conversation, not when the run ends.
+  A first prompt is in once its run has recorded it as the task.
+  A later prompt is in once the resumed run has queued it as its steer.
+- a `user_message` update carries the same `messageId` and the prompt's text
+- `state_update` reports the session: `running` as work starts, `requires_action` while a permission request is open, `idle` as work ends
+- the `idle` that ends the work carries its `stopReason`: `end_turn`, `max_turn_requests`, `cancelled` or `error`
+- a run that fails after its message is in ends with `stopReason: "error"` and the JSON-RPC error object in `error`.
+  A prompt that fails before that answers the request with the error.
+- a command agent6 answers itself (`/receipt`, `/findings`, `/answer`, `/resolve`, `/reopen`) is a turn of its own: its message, `running`, its answer, `idle` with `end_turn`.
+  Answered during a run, it reports no state.
+
+### A prompt during a run
+
+- a prompt that arrives while the session runs joins the run's steer queue, as [a message typed during a run](usage.md#follow-and-steer-a-run) does on every other surface
+- it answers `{messageId}` once it is queued, and the run takes it at its next turn boundary
+- if the run ends or is cancelled first, the steer waits in the queue: a later execution takes it at its first turn boundary, after its own prompt, and an execution that ends in one turn leaves it waiting
+- a steer the run handles as a directive (`/pin`, `/parallel`, a skill) is reported when it is sent, and a replay does not repeat it as a user message
+- `abort`, `exit`, `detach` and `/undo` travel as task text; a composer command (`/compact`) or a malformed directive answers `-32602`
+- a prompt that arrives before the execution has chosen its run answers `-32603`; send it again
+
+### Retrying a prompt
+
+- a prompt may carry an `idempotencyKey` of 1 to 255 characters; anything else answers `-32602`
+- the message's id is derived from the session and the key, and the run's journal keeps that id with the message; the key itself is not stored
+- a prompt whose key names a message the conversation holds answers that `messageId` and adds nothing, after a restart too
+- a retry that arrives before the first request is answered shares its answer
+- a prompt that answered an error left no message, so its key can be sent again
+- the key of a command agent6 answered itself is known until the connection ends
+
+### Updates
+
+- every message carries a `messageId`.
+  A message from the journal is named by its row, and a prompt's message by the id its reply carried, so a replay names both as the live run did.
+  The model's streamed text and thinking are chunks of one message per model call; every other message arrives whole.
+- a tool call is created by its first `tool_call_update`, which carries its `title`, `name` and `kind`; there is no `tool_call`
+- a call waiting on an approval or an answer reads `paused`, and a call the operator's stop cut short reads `cancelled`
+- an edit's diff is one entry: `changes` names each file's `operation` (`add`, `delete`, `modify`) and absolute `path`, and `patch` holds a `git_patch` of them all.
+  The patch gives an added or deleted file mode `100644`, since the stored change holds its text alone.
+- the task list is a `plan_update` with `planId: "tasks"`
+- `usage_update` carries `cost: null` when the run has no priced total
+- each command and each command input carries its `type`
+
+### Sessions and requests
+
+- `session/new` and `session/resume` answer with `availableCommands` beside `configOptions`; an option's key is `configId`
+- `session/resume` takes `replayFrom: {"type": "start"}` to replay the conversation, then sends `replay_complete`.
+  Every resume sends the session's `state_update` before its reply.
+  There is no `session/load`.
+- `session/set_config_option` needs `type: "id"`
+- `session/request_permission` carries the prompt as `title` and names the gated call as its `subject`; a prompt that gates no call has no subject.
+  A request nobody waits on any more is cancelled with `$/cancel_request`.
+- `session/close` replies after the cancelled work's last update, and closing a session that is not open succeeds
+- `session/cancel` ends with `idle` and `stopReason: "cancelled"`; a prompt cancelled before its message is in answers `-32800`
+- an unknown session answers `-32002` with `data.sessionId`
+- a request with a null `id`, and an `initialize` after another request, answer `-32600`
+- a prompt block that is not `text`, `resource_link` or `image` answers `-32602`
+- `capabilities.session.prompt.image` advertises image blocks; no MCP transport is advertised
+
 ## Not implemented
 
 - `session/delete`: the operator removes a run's record (`agent6 sessions remove`).
-- Mid-run steering: ACP has no message for a prompt while the previous prompt is running.
-- `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
+- Mid-run steering under v1: v1 has no message for a prompt while the previous prompt is running.
+- `fs/*` and `terminal/*` (v1): ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
 - Free-text answers to a waiting `ask_user` question: the editor gets option buttons only, so a waiting question without options is unanswered and not queued (see the [frontend cases](#approvals)); `/answer` takes any text.
 - Embedded resources in a prompt: text, `resource_link` and `image` blocks are read (a link rides in as its uri; the workspace boundary still decides what it reaches)
-    - embedded resources are dropped; `promptCapabilities.embeddedContext` says so
+    - v1 drops an embedded resource, as `promptCapabilities.embeddedContext` says; v2 refuses the prompt
+- MCP servers and additional directories from the editor: agent6 takes both from its own config, and a session that carries either is refused.
+
+v2 parts agent6 does not send or serve:
+
+- `notice`, `compaction_update`, `terminal_update`, `subagent_update` and the `background` list: agent6's own lines are `[agent6]` agent messages, and child steps are labelled messages in the parent conversation
+- `tool_call/cancel`, `terminal/cancel`, `elicitation/create`, `auth/login` and `systemPrompt`
+
+v2 rules agent6 does not meet:
+
+- a request before `initialize` is served as v1 instead of answering `-32600`
+- `session/resume` of a session with a prompt in flight on the same connection is refused instead of synchronized
+- a resume sends no `session_info_update`
 
 ## Troubleshooting
 
