@@ -181,6 +181,45 @@ def test_vendor_prefixed_id_precedes_a_normalized_claude_alias(
     )
 
 
+_VERTEX = {
+    "deployment": "vertex",
+    "base_url": "https://us-east5-aiplatform.googleapis.com/v1/projects/p/locations/us-east5"
+    "/publishers/anthropic/models",
+    "token_command": ["true"],
+}
+
+
+@pytest.mark.parametrize("settings", [{"base_url": "https://proxy.example"}, _VERTEX])
+def test_an_explicit_reference_prices_claude_behind_any_anthropic_entry(
+    settings: dict[str, object], tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Claude on Vertex or behind a proxy stayed unpriced with `price_from` set."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    providers = config.Config.model_validate(
+        {
+            "providers": {
+                "named": {"backend": "anthropic", **settings, "price_from": "openrouter"},
+                "unset": {"backend": "anthropic", **settings},
+                "openrouter": {"backend": "openai", "base_url": "https://prices.example"},
+            }
+        }
+    ).providers
+    listed = "anthropic/claude-sonnet-4.5"
+    price_env.write(
+        {listed: [3.0, 15.0], "z-ai/glm-x": [1.0, 2.0]},
+        name="openrouter",
+        entry=providers["openrouter"],
+    )
+    for model, source in (
+        ("claude-sonnet-4-5", listed),
+        ("claude-sonnet-4-5-20250929", listed),
+        ("glm-x", "z-ai/glm-x"),
+    ):
+        quote = models_pricing.lookup_price(kinds.ModelRoute("named", model), providers)
+        assert quote is not None and quote.source == kinds.ModelRoute("openrouter", source)
+        assert models_pricing.lookup_price(kinds.ModelRoute("unset", model), providers) is None
+
+
 def test_a_listing_that_publishes_cache_rates_prices_them(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
