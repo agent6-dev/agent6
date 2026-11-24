@@ -19,7 +19,7 @@ from agent6.app import run, stop
 from agent6.app.session import setup as session_setup
 from agent6.sessions import event_log, ipc, journal
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.acp import model, prompt, runner
+from agent6.ui.acp import model, prompt, rpc, runner
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from tests.acp import schema_check, test_runner, test_session_lifecycle
@@ -176,7 +176,8 @@ def test_a_command_answered_at_once_is_a_turn_of_its_own(tmp_path: pathlib.Path)
         resume = {"sessionId": saved.name, "cwd": str(cwd)}
         wire.send(id=2, method="session/resume", params=resume)
         wire.collect(lambda f: f.get("id") == 2)
-        wire.prompt(saved.name, "/findings")
+        command = {"sessionId": saved.name, "prompt": [{"type": "text", "text": "/findings"}]}
+        wire.send(id=3, method="session/prompt", params=command | {"idempotencyKey": "k"})
         frames = wire.collect(_idle(saved.name))
         reply = next(f for f in frames if f.get("id") == 3)
         assert not schema_check.v2_errors("PromptResponse", reply["result"])
@@ -191,6 +192,11 @@ def test_a_command_answered_at_once_is_a_turn_of_its_own(tmp_path: pathlib.Path)
         assert bodies[0]["content"] == [{"type": "text", "text": "/findings"}]
         assert bodies[2]["content"][0]["text"] == "[agent6] No recorded findings.\n"
         assert _states(frames, saved.name) == [("running", None), ("idle", "end_turn")]
+        wire.send(id=4, method="session/prompt", params=command | {"idempotencyKey": "k"})
+        wire.send(id=5, method="session/list", params={})
+        again = wire.collect(lambda f: f.get("id") == 5)
+        assert [f.get("id") for f in again] == [4, 5], "the retried command answered twice"
+        assert again[0]["result"] == reply["result"]
     finally:
         wire.close()
 
@@ -207,6 +213,14 @@ def test_a_command_answered_during_a_run_leaves_the_runs_state_alone() -> None:
     assert not [update for update in sent if isinstance(update, model.StateUpdate)]
     assert ended == ["end_turn"]
     assert sent[0] == model.Message("user", "m1", "/answer q1 yes", prompt=True)
+
+
+def test_a_prompt_cannot_steer_an_execution_that_has_not_chosen_its_run() -> None:
+    """Queued before the run is chosen, the steer could land in a directory no run reads."""
+    starting = acp_session.Session(acp_id="s", cwd=pathlib.Path("/x"), execution_live=True)
+    with pytest.raises(rpc.RpcError, match="still starting") as refused:
+        prompt.steer(starting, pathlib.Path("/state"), "hi", turn=prompt.Turn(lambda _end: None))
+    assert refused.value.code == rpc.INTERNAL_ERROR
 
 
 def test_a_permission_wait_reports_requires_action_then_running(
