@@ -140,11 +140,12 @@ async function editFileText(path, afterSave) {
   const dialog = openDialog('Edit ' + path, 'wide files-editor');
   if (!dialog) return;
   dialog.setAttribute('closedby', 'closerequest');
-  const field = (name, control, parent = dialog) => {
+  const field = (name, control, parent) => {
     const label = el('label', null, name); label.appendChild(control); parent.appendChild(label); return control;
   };
-  const text = field('File text', el('textarea', 'field file-text')); text.spellcheck = false; text.disabled = true;
-  const conflict = el('section', 'files-conflict'); conflict.hidden = true; dialog.appendChild(conflict);
+  const fields = el('div', 'files-fields'); dialog.appendChild(fields);
+  const text = field('File text', el('textarea', 'field file-text'), fields); text.spellcheck = false; text.disabled = true;
+  const conflict = el('section', 'files-conflict'); conflict.hidden = true; fields.appendChild(conflict);
   conflict.appendChild(el('p', null, 'The file changed on disk.'));
   const disk = field('Disk version', el('textarea', 'field file-disk'), conflict); disk.readOnly = true; disk.rows = 3;
   const load = el('button', null, 'Load new file'), overwrite = el('button', null, 'Overwrite with mine');

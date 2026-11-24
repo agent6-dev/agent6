@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.web import captures, test_files_edit, test_web_browser
+from tests.web import captures, test_files_edit, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
+browser = test_files_preview_browser.browser
 served = test_files_edit.served
 open_page = test_web_browser.open_page
 
@@ -65,11 +66,12 @@ def test_edit_keeps_the_draft_and_offers_three_conflict_choices(
     assert not errors
 
 
-@pytest.mark.parametrize("width", [390, 1440])
+@pytest.mark.parametrize(("width", "height"), [(390, 480), (568, 320), (1440, 480)])
 def test_editor_grows_with_the_viewport_and_keeps_actions_visible(
     served: tuple[pathlib.Path, int],
     open_page: Callable[[int], tuple[Page, list[str]]],
     width: int,
+    height: int,
 ) -> None:
     """The editor uses the Source font and leaves its actions visible during conflicts."""
     from playwright import sync_api
@@ -96,7 +98,7 @@ def test_editor_grows_with_the_viewport_and_keeps_actions_visible(
     sync_api.expect(dialog.get_by_text("The file changed on disk.", exact=True)).to_be_visible(
         timeout=8000
     )
-    page.set_viewport_size({"width": width, "height": 480})
+    page.set_viewport_size({"width": width, "height": height})
     for name in ("Load new file", "Overwrite with mine", "Save as new file", "Cancel"):
         sync_api.expect(dialog.get_by_role("button", name=name, exact=True)).to_be_in_viewport(
             ratio=1
