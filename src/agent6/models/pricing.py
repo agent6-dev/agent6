@@ -163,9 +163,10 @@ def lookup_price(
         return None
     search = data.get("search_pricing")
     fee = search.get(model) if isinstance(search, dict) else None
-    listed = isinstance(fee, (int, float)) and not isinstance(fee, bool) and fee > 0
+    if isinstance(fee, bool) or not isinstance(fee, (int, float)):
+        fee = None
     return Quote(
         Price(*row),
         kinds.ModelRoute(source, model),
-        web_search_usd=float(fee) if listed and math.isfinite(fee) else None,
+        web_search_usd=float(fee) if fee is not None and 0 < fee < math.inf else None,
     )
