@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pathlib
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -268,3 +269,15 @@ def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
         "model.result",
     ]
     assert rows[1]["ok"] is True and rows[3]["text"] == "ok"
+
+
+def test_a_model_assignment_is_not_an_operator_quote() -> None:
+    from tests.unit import test_restart_retention
+
+    wf = test_harness._wf(task_source="model", curator=None)
+    with mock.patch.object(wf, "_drive_loop") as drive:
+        wf.run("model assignment")
+    conv = drive.call_args.kwargs["conversation"]
+    conv.assistant([{"type": "text", "text": "done"}])
+    test_restart_retention._restart(conv, keep_recent_chars=100, keep_recent_turns=0)
+    assert "model assignment" not in test_restart_retention._notice(conv)

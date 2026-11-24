@@ -35,6 +35,10 @@ from typing import Any, Literal
 
 from agent6 import kinds, media
 
+NoticeOrigin = Literal[
+    "harness", "operator", "model", "panel", "restart", "contract", "reply_count"
+]
+
 _EPHEMERAL = {"type": "ephemeral"}
 
 
@@ -86,7 +90,7 @@ class Notice:
     """
 
     text: str
-    origin: Literal["harness", "operator", "restart"] = "harness"
+    origin: NoticeOrigin = "harness"
     operator_words: tuple[str, ...] = ()
 
 
@@ -340,7 +344,7 @@ class Conversation:
         self,
         text: str,
         *,
-        origin: Literal["harness", "operator"] = "harness",
+        origin: NoticeOrigin = "harness",
         operator_words: tuple[str, ...] = (),
     ) -> None:
         """Append harness or operator text as its own user message.
@@ -668,7 +672,8 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
         if (
             keys - {"origin", "operator_words"} != {"type", "text"}
             or not isinstance(block["text"], str)
-            or origin not in ("harness", "operator", "restart")
+            or origin
+            not in ("harness", "operator", "model", "panel", "restart", "contract", "reply_count")
             or not isinstance(words, list)
             or not all(isinstance(w, str) for w in words)
         ):

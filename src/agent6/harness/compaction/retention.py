@@ -22,7 +22,9 @@ def operator_words(item: history.Notice | history.ToolResultItem) -> tuple[str, 
         One message per delivery, including the quotes carried by a prior restart.
     """
     if isinstance(item, history.Notice):
-        return item.operator_words or ((item.text,) if item.origin == "operator" else ())
+        if item.origin == "operator":
+            return item.operator_words or (item.text,)
+        return item.operator_words if item.origin == "restart" else ()
     if item.for_call.name != "ask_user":
         return ()
     try:
@@ -84,6 +86,32 @@ def _turns(
     return turns, inputs
 
 
+def _partition(
+    messages: Sequence[history.Message],
+) -> tuple[list[history.Message], list[history.Message], list[history.Message]]:
+    """Separate the notices with a fixed place on replay.
+
+    Args:
+        messages: The local history.
+
+    Returns:
+        The review opening, prior summaries and selectable history.
+    """
+    contract: list[history.Message] = []
+    prior: list[history.Message] = []
+    history_messages: list[history.Message] = []
+    for m in messages:
+        notice = m.items[0] if isinstance(m, history.UserMessage) and len(m.items) == 1 else None
+        origin = notice.origin if isinstance(notice, history.Notice) else None
+        if origin == "contract":
+            contract.append(m)
+        elif origin == "restart":
+            prior.append(m)
+        elif origin != "reply_count":
+            history_messages.append(m)
+    return contract, prior, history_messages
+
+
 def select(messages: Sequence[history.Message], settings: window.CompactionSettings) -> Replay:
     """Reserve operator messages, then extend the kept suffix while whole turns fit.
 
@@ -94,15 +122,8 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
     Returns:
         The helper transcript, verbatim quotes and paired messages to replay.
     """
-    # Prior summaries go to the writer, never back into the tail as inputs to a kept turn.
-    prior: tuple[history.Message, ...] = ()
-    if (
-        messages
-        and isinstance(first := messages[0], history.UserMessage)
-        and any(isinstance(it, history.Notice) and it.origin == "restart" for it in first.items)
-    ):
-        prior, messages = (first,), messages[1:]
-    turns, live = _turns(messages, settings.keep_thinking_turns)
+    contract, prior, history_messages = _partition(messages)
+    turns, live = _turns(history_messages, settings.keep_thinking_turns)
     start = len(turns)
     remaining = settings.keep_recent_chars
     optional = remaining > 0 and settings.keep_recent_turns != 0
@@ -149,5 +170,5 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
     return Replay(
         (*prior, *(m for turn in turns[:start] for m in turn)),
         tuple(word for turn, word in reversed(reserved) if turn < start),
-        (*(m for turn in turns[start:] for m in turn), *live),
+        (*contract, *(m for turn in turns[start:] for m in turn), *live),
     )

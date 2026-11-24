@@ -14,6 +14,7 @@ from agent6.harness import loop_conversation as history
 from agent6.harness.compaction import driver
 from agent6.providers import anthropic, claude_code_wire, openai_messages, responses_codec
 from tests.unit import test_compaction_writers as writers
+from tests.unit import test_harness
 
 
 def _reply(conv: history.Conversation, text: str) -> None:
@@ -207,8 +208,6 @@ def test_zero_caps_keep_unread_calls_results_and_notices() -> None:
 
 
 def test_quote_contains_the_steer_without_the_harness_heading() -> None:
-    from tests.unit import test_harness
-
     conv = history.Conversation()
     conv.notice("task", origin="operator")
     harness = test_harness._wf()

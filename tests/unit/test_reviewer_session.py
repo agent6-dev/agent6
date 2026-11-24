@@ -245,7 +245,8 @@ def test_a_reviewer_has_every_base_tool_except_the_two_that_edit() -> None:
     assert "read_background" not in schema.mode_tools("machine").names
 
 
-def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("char_cap", [0, 500])
+def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path, char_cap: int) -> None:
     """A long review restarts from a summary; the task, rules and diff stay, once."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -263,7 +264,10 @@ def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path) -> No
         system="s", opening=opening, max_turns=6, allowed_tools=("read_file",)
     )
     small = compaction_window.CompactionSettings(
-        drop_at_chars=2_000, summarise_at_chars=4_000, keep_recent_chars=500, elision_gists=False
+        drop_at_chars=2_000,
+        summarise_at_chars=4_000,
+        keep_recent_chars=char_cap,
+        elision_gists=False,
     )
     wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract, compaction=small)
     result = wf.run("review")
@@ -277,6 +281,7 @@ def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path) -> No
     assert summarise["messages"][-1]["content"].startswith("Write the summary now.")
     sent = json.dumps(final["messages"])
     assert "SUMMARY: read big.txt" in sent and sent.count(opening) == 1
+    assert "Operator message:" not in sent
     # The count is said after the restart too: it is told each turn, not kept in the history.
     assert sent.count("[harness] reply ") == 1 and "[harness] reply 2 of 6." in sent
 

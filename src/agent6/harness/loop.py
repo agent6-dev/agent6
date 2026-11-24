@@ -331,7 +331,11 @@ class Harness:
         )
         initial_user = f"TASK:\n{user_task}\n\n{instructions}{dag_hint}"
         conversation = loop_conversation.Conversation()
-        conversation.notice(initial_user, origin="operator", operator_words=(operator_task,))
+        conversation.notice(
+            initial_user,
+            origin=self.task_source,
+            operator_words=(operator_task,) if self.task_source == "operator" else (),
+        )
         return system, conversation, root_id
 
     def _open_contract(
@@ -351,7 +355,7 @@ class Harness:
             f" tools={','.join(contract.allowed_tools) or 'none'}"
         )
         conversation = loop_conversation.Conversation()
-        conversation.notice(contract.opening, origin="operator")
+        conversation.notice(contract.opening, origin="contract")
         return contract.system, conversation, None
 
     def _container_roots(self) -> tuple[str, str] | None:
@@ -730,7 +734,9 @@ class Harness:
         if self.contract is not None:
             # A reviewer reads which reply this is, and on the last that it decides now.
             # Said after compaction: a restart's kept tail would otherwise repeat it.
-            conversation.notice(review_prompts.reply_notice(ctx.turn, self.contract.max_turns))
+            conversation.notice(
+                review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
+            )
         elif restarted:
             state.focus.surfaced_task_id = None
             state.plan_injected = ""
