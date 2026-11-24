@@ -114,6 +114,12 @@ def _v2_tool_call(update: model.ToolCallUpdate) -> dict[str, Any]:
     """Return v2's upsert: the fields the update sets, the title on the one that creates the call.
 
     The files an edit changed are one `diff`: each file's operation, and a patch of them all.
+
+    Args:
+        update: The tool call's update.
+
+    Returns:
+        The `tool_call_update` body.
     """
     body: dict[str, Any] = {
         "sessionUpdate": "tool_call_update",
@@ -240,6 +246,12 @@ def _v1_tool_call(update: model.ToolCallUpdate) -> dict[str, Any]:
 
     A v1 diff is one entry per file: `oldText` null for an added file, `newText` empty for
     a deleted one.
+
+    Args:
+        update: The tool call's update.
+
+    Returns:
+        The `tool_call` or `tool_call_update` body.
     """
     status = _V1_STATUS.get(update.status, update.status)
     if update.title and update.status in ("pending", "in_progress", "paused"):
