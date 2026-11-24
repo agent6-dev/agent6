@@ -496,6 +496,22 @@ class CompactionConfig(pydantic.BaseModel):
 
     model_config = validation.MODEL_CONFIG
 
+    cold_start: kinds.ColdStart = pydantic.Field(
+        default="drop",
+        description=(
+            "Local history on resume when the route changes or the provider's idle limit "
+            "has elapsed. Endpoint compaction does not use this setting."
+        ),
+        json_schema_extra={
+            "choice_meanings": {
+                "resend": "Send history without a cold-start rewrite",
+                "drop": "Replace all eligible old tool results",
+                "summarize": "Restart with a helper summary and the selected history",
+                "truncate": "Restart with the selected history and no summary",
+            }
+        },
+    )
+
     summariser: Literal["worker", "helper"] = pydantic.Field(
         json_schema_extra={
             "choice_meanings": {

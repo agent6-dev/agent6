@@ -60,7 +60,7 @@ class _Scheduled(abc.ABC):
             The turn's deadline, or None when it has no idle compaction due.
         """
         idle = context.settings.idle
-        if idle is None or not idle.seconds:
+        if idle is None or idle.seconds == -1:
             return None
         total = context.prefix_chars + compaction_window.context_chars(context.conversation)
         if total <= idle.min_chars or total < self.tier2_floor_chars:

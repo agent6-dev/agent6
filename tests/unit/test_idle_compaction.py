@@ -124,7 +124,7 @@ def test_idle_summary_uses_the_cached_request_then_keeps_only_the_pending_reply(
     assert not compactor.idle(turn, time.monotonic())
 
 
-@pytest.mark.parametrize("seconds,floor", [(0, 0), (0.01, 1000000)])
+@pytest.mark.parametrize("seconds,floor", [(-1, 0), (0.01, 1000000)])
 def test_idle_limit_and_size_must_both_apply(seconds: float, floor: int) -> None:
     writer = writers.Writer(writers.response())
     turn = writers.context(writer, writer, [], idle=window.IdleCompaction("p", seconds, floor))

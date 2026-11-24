@@ -592,6 +592,7 @@ def _drive_state(
         mode="read_only" if mode == "read_only" else "run",
         state_dir=paths.state_dir(req.cwd),
         compaction=compaction_window.CompactionSettings(
+            cold_start=cfg.compaction.cold_start,
             drop_at_chars=compact_drop,
             summarise_at_chars=compact_summarise,
             tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, "worker"),

@@ -20,6 +20,7 @@ from agent6 import review_records
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 
 TernaryMode = Literal["deny", "ask", "allow"]
+ColdStart = Literal["resend", "drop", "summarize", "truncate"]
 # `none` runs commands as plain subprocesses: a host with no confinement, or an operator opt-out.
 IsolationLevel = Literal["full", "partial", "none"]
 NetworkMode = Literal["host", "session", "none"]

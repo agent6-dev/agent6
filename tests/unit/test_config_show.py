@@ -8,6 +8,7 @@ import json
 import pathlib
 import tomllib
 
+import pydantic
 import pytest
 
 from agent6 import kinds, paths
@@ -42,6 +43,9 @@ def test_config_show_uses_compaction_keys(
     settings = json.loads(capsys.readouterr().out)
     assert settings["compaction.summary_max_tokens"]["value"] == 2048
     assert settings["compaction.summary_max_tokens"]["source"] == "default"
+    cold = settings["compaction.cold_start"]
+    assert (cold["value"], cold["source"]) == ("drop", "default")
+    assert set(cold["choices"]) == {"resend", "drop", "summarize", "truncate"}
     for key in ("compaction.keep_operator_messages", "compaction.keep_recent_turns"):
         assert (settings[key]["value"], settings[key]["source"]) == (-1, "default")
     assert not any(key.startswith("context.") for key in settings)
@@ -81,16 +85,24 @@ def test_provider_idle_compaction_defaults_and_origins(tmp_path: pathlib.Path) -
         '[providers.c]\nbackend = "claude_code"\n'
     )
     data = json.loads(config_view.render_show(layer.load_effective(tmp_path, (cfg,)), as_json=True))
-    for name, seconds in (("a", 240), ("r", 240), ("o", 0), ("g", 0)):
+    for name, seconds in (("a", 240), ("r", 240), ("o", -1), ("g", -1)):
         for key, expected in (("idle_compact_s", seconds), ("idle_compact_min_chars", 240000)):
             row = data[f"providers.{name}.{key}"]
             assert (row["value"], row["source"]) == (expected, "default")
     assert not any(key.startswith("providers.c.idle_compact") for key in data)
-    cfg.write_text('[providers.a]\nbackend = "anthropic"\nidle_compact_s = 0\n')
+    cfg.write_text('[providers.a]\nbackend = "anthropic"\nidle_compact_s = -1\n')
     changed = json.loads(
         config_view.render_show(layer.load_effective(tmp_path, (cfg,)), as_json=True)
     )["providers.a.idle_compact_s"]
-    assert changed["value"] == 0 and changed["source"] != "default"
+    assert changed["value"] == -1 and changed["source"] != "default"
+
+
+@pytest.mark.parametrize("seconds", [0, -0.1, -2])
+def test_only_minus_one_removes_the_idle_limit(seconds: float) -> None:
+    with pytest.raises(pydantic.ValidationError, match="idle_compact_s"):
+        Config.model_validate(
+            {"providers": {"p": {"backend": "openai", "idle_compact_s": seconds}}}
+        )
 
 
 def test_config_presets_reads_the_explicit_config_file(

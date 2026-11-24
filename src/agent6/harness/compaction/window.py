@@ -10,7 +10,7 @@ import re
 from collections.abc import Sequence
 from typing import Literal
 
-from agent6 import media
+from agent6 import kinds, media
 from agent6.harness import loop_conversation
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.providers import Provider, provider_types
@@ -150,6 +150,7 @@ class CompactionSettings:
     """Context compaction as the run configures it.
 
     Attributes:
+        cold_start: What to do with older local history on a cold resume.
         drop_at_chars: Tier 1 turns the oldest tool results into placeholders
             past this, aiming for half the threshold where protections allow.
         summarise_at_chars: Tier 2 summarises and restarts past this.
@@ -184,6 +185,7 @@ class CompactionSettings:
         default_factory=provider_types.EndpointCompaction
     )
     idle: IdleCompaction | None = None
+    cold_start: kinds.ColdStart = "drop"
 
 
 def strip_old_thinking(

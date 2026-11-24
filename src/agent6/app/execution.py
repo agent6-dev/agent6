@@ -661,6 +661,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             ),
             call=provider_call.CallSettings(temperature=role_providers.role_temperature(cfg, role)),
             compaction=compaction_window.CompactionSettings(
+                cold_start=cfg.compaction.cold_start,
                 drop_at_chars=tools.compact_drop_at_chars,
                 summarise_at_chars=tools.compact_summarise_at_chars,
                 tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, role),

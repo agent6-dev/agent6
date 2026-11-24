@@ -124,15 +124,32 @@ def _require_json_shaped(value: Any, path: str) -> None:
     )
 
 
+def _idle_limit(seconds: float) -> float:
+    """Require a positive duration or the no-limit sentinel.
+
+    Args:
+        seconds: The configured idle limit.
+
+    Returns:
+        The validated limit.
+
+    Raises:
+        ValueError: The limit is neither positive nor -1.
+    """
+    if seconds == -1 or seconds > 0:
+        return seconds
+    raise ValueError("must be positive, or exactly -1 for no idle limit")
+
+
 IdleCompactSeconds = Annotated[
     float,
+    pydantic.AfterValidator(_idle_limit),
     pydantic.Field(
-        ge=0,
         allow_inf_nan=False,
         description=(
-            "Seconds from worker request start to compact during a wait with either writer; "
-            "0 disables idle compaction; defaults: 240 for anthropic and responses, "
-            "0 for openai and chatgpt; neither idle setting applies to claude_code"
+            "Seconds from worker request start to compact during a wait or treat a resume as "
+            "cold. Use -1 for no idle limit. Defaults: 240 for anthropic and responses, "
+            "-1 for openai and chatgpt. Neither idle setting applies to claude_code."
         ),
     ),
 ]
@@ -150,12 +167,13 @@ class _ProviderBase(pydantic.BaseModel):
 
     # Declared here so backend leads every subclass's model_fields; each subclass narrows it.
     backend: Backend
-    idle_compact_s: IdleCompactSeconds = 0
+    idle_compact_s: IdleCompactSeconds = -1
     idle_compact_min_chars: int = pydantic.Field(
         default=240000,
         ge=0,
         description=(
-            "Character floor for idle compaction with either writer, including system and tools."
+            "Character floor for compaction during a wait, including system and tools. "
+            "Does not apply on resume."
         ),
     )
     deployment: Deployment = pydantic.Field(

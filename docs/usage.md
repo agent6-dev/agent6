@@ -564,7 +564,7 @@ The timer starts when the worker starts its model request.
 It can compact during a blocking command, a background wait, an approval, a question or an interactive run parked for a message.
 The whole context must exceed `providers.<name>.idle_compact_min_chars` (default `240000`).
 The summary does not end the wait or add a worker turn.
-Set the limit to `0` to turn it off.
+Set the limit to `-1` to turn it off.
 See the [provider defaults](config.md#providersname).
 
 ## Measure a run
