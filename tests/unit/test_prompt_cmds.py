@@ -12,7 +12,9 @@ import subprocess
 import pytest
 
 from agent6 import paths
+from agent6.ui import cli
 from agent6.ui.cli import prompt_cmds  # pyright: ignore[reportPrivateUsage]
+from tests import launch_env
 
 
 def _git_repo(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -81,6 +83,40 @@ def test_prompt_show_plan_mode_differs(
     rc = prompt_cmds._cmd_prompt_show((), mode="plan")
     out = capsys.readouterr().out
     assert rc == 0 and "PLAN mode" in out
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_prompt_show_matches_a_fresh_runs_child_offers_with_commands_denied(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    parallel: bool,
+) -> None:
+    """The preview shows the child tools the first request carries, without any command tools."""
+    _isolate(tmp_path, monkeypatch, _git_repo(tmp_path))
+    with launch_env.scripted_provider() as (url, calls):
+        config = tmp_path / "config.toml"
+        config.write_text(
+            f'[providers.p]\nbackend = "openai"\nbase_url = "{url}"\n'
+            '[models.default]\nmodel = "p/test"\n'
+            '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
+            f"[harness.parallel]\ntool = {str(parallel).lower()}\n"
+            '[harness.verify]\ninfer = false\n[review]\nwhen = "never"\n',
+            encoding="utf-8",
+        )
+        argv = ["--config", str(config)]
+        assert cli.cli_main([*argv, "prompt", "show", "--mode", "run", "--json"]) == 0
+        preview = {t["name"]: t for t in json.loads(capsys.readouterr().out)["tools"]}
+        assert cli.cli_main([*argv, "run", "Report the available tools."]) == 0
+
+    actual = {t["function"]["name"]: t["function"] for t in calls[0]["tools"]}
+    children = {"parallel", "steer_child", "read_background", "stop_background"}
+    relevant = children | {"run_command", "run_verify_command", "run_metric_command", "merge_child"}
+    assert actual.keys() & relevant == (children if parallel else set())
+    assert preview.keys() & relevant == actual.keys() & relevant
+    for name in actual.keys() & children:
+        assert preview[name]["description"] == actual[name]["description"]
+        assert preview[name]["input_schema"] == actual[name]["parameters"]
 
 
 def test_prompt_show_includes_recorded_memories(

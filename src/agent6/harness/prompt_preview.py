@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+from typing import Never
 
 from agent6 import kinds
 from agent6.config import Config
@@ -13,7 +14,7 @@ from agent6.context import memory, skills
 from agent6.harness import dag_focus, prompt_blocks, repo_context, toolset
 from agent6.providers import ToolDefinition
 from agent6.sandbox import detect, jail
-from agent6.tools import dispatch
+from agent6.tools import dispatch, tool_errors
 
 
 def system_prompt_for(
@@ -71,6 +72,18 @@ class ModelExchange:
     mcp_pending: bool
 
 
+class _PreviewChildren:
+    """Represent the empty roster the loop installs before its first call."""
+
+    def roster(self) -> tuple[()]:
+        return ()
+
+    def _refuse(self, *args: object, **kwargs: object) -> Never:
+        raise tool_errors.ToolError("a prompt preview cannot dispatch child tools")
+
+    start = wait = stop = steer = merge = _refuse
+
+
 def model_exchange_for(
     config: Config,
     root: pathlib.Path,
@@ -98,6 +111,8 @@ def model_exchange_for(
         mode="machine" if mode == "read_only" else mode,
         state_dir=state_dir,
     )
+    if mode == "run":
+        dispatcher.children = _PreviewChildren()
     tools = tuple(toolset.tool_definitions(dispatcher, mode=mode))
     header = prompt_blocks.initial_instructions(
         mode, config.sandbox.run_commands, has_gate=bool(config.harness.verify.command)
