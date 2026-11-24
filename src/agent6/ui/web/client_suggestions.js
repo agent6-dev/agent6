@@ -197,7 +197,7 @@ function attachRefSuggest(ta, root, session = () => '') {
   const frag = () => {
     const caret = ta.selectionStart;
     const m = /(?<![\p{L}\p{N}_@/])@([A-Za-z0-9_./-]*)$/u.exec(ta.value.slice(0, caret));
-    return m ? { start: caret - m[1].length, end: caret, text: m[1] } : null;
+    return m ? { start: m.index, end: caret, text: m[1] } : null;
   };
   const close = () => {
     clearTimeout(timer); generation++;
@@ -225,7 +225,7 @@ function attachRefSuggest(ta, root, session = () => '') {
     }
     box.textContent = '';
     items.forEach((path, i) => {
-      const o = el('div', 'ac-item' + (i === active ? ' on' : ''), '@' + path);
+      const o = el('div', 'ac-item' + (i === active ? ' on' : ''), path);
       o.id = box.id + '-' + i; o.setAttribute('role', 'option'); o.setAttribute('aria-selected', String(i === active));
       o.onmousedown = (e) => { e.preventDefault(); insert(path); };
       box.appendChild(o);

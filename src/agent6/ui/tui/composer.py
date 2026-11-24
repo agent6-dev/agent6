@@ -112,12 +112,12 @@ def ref_suggestion_line(found: path_completion.RefSuggestions) -> rich_text.Text
         found: The matches.
 
     Returns:
-        The files as typed references, and how many more match.
+        The relative paths and how many more match.
     """
     if not found.paths:
         return rich_text.Text("no matching files", style="dim")
     more = f"  (+{found.more} more, keep typing)" if found.more else ""
-    shown = "  ".join(f"@{path}" for path in found.paths)
+    shown = "  ".join(found.paths)
     return rich_text.Text.assemble(("files: ", "dim"), shown, (more, "dim"))
 
 
@@ -457,10 +457,11 @@ class SteerInput(widgets.TextArea):
         """Replace the fragment under the caret with the only match, else the shared prefix."""
         row, column = self.cursor_location
         fragment = path_completion.ref_fragment(self.get_text_range((0, 0), (row, column))) or ""
-        only = len(found.paths) == 1 and not found.more
-        completed = f"{found.paths[0]} " if only else found.common
-        if only or len(completed) > len(fragment):
-            self.replace(completed, (row, column - len(fragment)), (row, column))
+        start = column - len(fragment)
+        if len(found.paths) == 1 and not found.more:
+            self.replace(found.paths[0] + " ", (row, start - 1), (row, column))
+        elif len(found.common) > len(fragment):
+            self.replace(found.common, (row, start), (row, column))
 
     @override
     def on_mount(self) -> None:

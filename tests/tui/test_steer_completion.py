@@ -125,7 +125,7 @@ def test_unsent_parallel_shows_each_task_in_the_conversation(tmp_path: pathlib.P
 def test_an_at_reference_lists_files_and_tab_accepts_one(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`@` in the composer offered nothing: a path had to be typed whole."""
+    """Tab extends an ambiguous fragment and replaces a unique one with the plain path."""
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     for name in ("notes.md", "src/main.py", "src/model.py"):
@@ -143,15 +143,15 @@ def test_an_at_reference_lists_files_and_tab_accepts_one(
             await pilot.pause()
             bar = app.screen.query_one("#conv-input", composer.SteerInput)
             hint = app.screen.query_one("#conv-suggest", composer.SteerSuggest)
-            bar.insert("read @src/m")
+            bar.insert("read @src")
             await pilot.pause()
             assert hint.display
-            assert "files: @src/main.py  @src/model.py" in str(hint.render())
+            assert "files: src/main.py  src/model.py" in str(hint.render())
             await pilot.press("tab")  # two matches: Tab keeps what they share
             assert bar.text == "read @src/m"
             await pilot.press("a", "tab")
             await pilot.pause()
-            assert bar.text == "read @src/main.py "
+            assert bar.text == "read src/main.py "
             assert not hint.display
             bar.insert("and mail a@no")  # an address is no reference
             await pilot.pause()
