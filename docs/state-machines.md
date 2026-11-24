@@ -820,9 +820,9 @@ The verdict counts script files that ran and files skipped, not individual test 
 Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary agent6 run handed this document's grammar, writing the `.asm.toml` and every `scripts/...` file with `apply_edit` in a drafting workspace of its own.
 
-- no new tool: the edit tools only, since `run_commands = "deny"` withholds every command tool; a machine or state config cannot set a session metric
-- no host is pre-allowed, so a headless `fetch` denies
-- it never sees the operator's checkout; the workspace bounds its writes the way a repo bounds a run's
+- `sandbox.run_commands` governs the drafting run: the default (`ask`) requires approval; `deny` withholds command tools
+- where `fetch` is available, `sandbox.fetch_approved_hosts` lists the hosts it may read without approval (default: none)
+- the drafting run starts in its own workspace, under the same sandbox settings as a run
 
 - the workspace is an empty git repo under `[git.worktree].base_dir` (where child clones and fork worktrees live)
     - each turn commits, and a failed create keeps the workspace for the operator to read

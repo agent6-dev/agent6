@@ -971,6 +971,8 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 
 **Bundle confinement**
 
+- `machine create` drafts in a separate workspace under your `sandbox.run_commands` and `sandbox.fetch_approved_hosts` settings
+- By default, commands and `fetch` requests need approval; `run_commands = "deny"` withholds command tools without changing approved hosts
 - Scripts live in a reviewed `scripts/` beside the `.asm.toml`
     - `machine check` verifies every entry and static reference resolves inside the bundle (escaping symlinks rejected)
 - Scripts are committed, never fetched or generated at run time

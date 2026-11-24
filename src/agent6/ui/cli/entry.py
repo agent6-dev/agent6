@@ -1072,6 +1072,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     from agent6.ui.cli import (
         machine_check,
         machine_cmds,
+        preflight_prompts,
     )
 
     if args.machine_command == "list":
@@ -1111,6 +1112,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
             app_reporter.STDIO_REPORTER,
             output=args.output,
             max_attempts=args.max_attempts,
+            confirm_unconfined=preflight_prompts.confirm_unconfined_autorun,
             config_paths=args.config,
             budget_overrides=session_setup.BudgetOverrides.from_args(args),
         )

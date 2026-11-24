@@ -14,6 +14,7 @@ import os
 import pathlib
 import shutil
 import uuid
+from collections.abc import Callable
 
 from agent6 import errors, kinds, machine, path_safety, paths, portable
 from agent6.app import preflight, worktrees
@@ -22,7 +23,7 @@ from agent6.app.machine import agent, bundle
 from agent6.app.machine import draft as drafting
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import ConfigError, layer
+from agent6.config import Config, ConfigError, layer
 from agent6.sessions import event_log, id, journal, layout, lock, process
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -121,6 +122,7 @@ def _open_draft(
     config_paths: tuple[pathlib.Path, ...],
     budget_overrides: session_setup.BudgetOverrides | None,
     reporter: app_reporter.Reporter,
+    confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
 ) -> drafting.Draft:
     """Check the config and open the draft journal before preparing the workspace.
 
@@ -130,6 +132,7 @@ def _open_draft(
         config_paths: Explicit config layers.
         budget_overrides: Budget flags for the draft.
         reporter: The output channels.
+        confirm_unconfined: Confirms an unconfined autorun with the operator.
 
     Returns:
         The opened draft.
@@ -154,12 +157,8 @@ def _open_draft(
     if not lock.hold_workspace(cwd):
         reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
         raise preflight.SessionRefusedError(2)
-    # A create session withholds the command tools: an unconfined autorun needs no confirmation.
     isolation = session_runtime.select_isolation(
-        cfg,
-        cwd=cwd,
-        confirm_unconfined=lambda _isolation, _cfg: True,
-        reporter=reporter,
+        cfg, cwd=cwd, confirm_unconfined=confirm_unconfined, reporter=reporter
     )
     scratch = new_draft_dir(paths.state_dir(cwd))
     paths.mkdir_for_real_user(scratch.parent)
@@ -214,12 +213,6 @@ def _prepare_runner(draft: drafting.Draft) -> drafting.Runner:
     # loses an explicit repo reset when the workspace reloads the operator's global layer.
     overlay = cfg.model_dump(mode="json")
     overlay["agent6"].pop("preset", None)  # the overlay layer forbids a preset
-    # The execution writes files and nothing else; agent6 runs the validators itself.
-    overlay["sandbox"] = {
-        **overlay.get("sandbox", {}),
-        "run_commands": "deny",
-        "fetch_approved_hosts": list[str](),
-    }
     # Resolved on the host: the confined execution cannot read ~/.gitconfig.
     try:
         name, email = git_read.verify_git_identity(
@@ -322,6 +315,7 @@ def create_machine(
     *,
     output: pathlib.Path | None,
     max_attempts: int,
+    confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
     config_paths: tuple[pathlib.Path, ...] = (),
     budget_overrides: session_setup.BudgetOverrides | None = None,
 ) -> int:
@@ -333,6 +327,7 @@ def create_machine(
         output: Where to write the `.asm.toml`; None writes `<machine>.asm.toml` in cwd and
             refuses to overwrite anything.
         max_attempts: How many authoring attempts to make.
+        confirm_unconfined: Confirms an unconfined autorun with the operator.
         config_paths: The `--config` files the effective config is read under.
         budget_overrides: The `--max-*` flags, capping the attempts as they cap a run.
 
@@ -343,7 +338,9 @@ def create_machine(
         reporter.error("--max-attempts must be >= 1.")
         return 2
     try:
-        draft = _open_draft(task, output, config_paths, budget_overrides, reporter)
+        draft = _open_draft(
+            task, output, config_paths, budget_overrides, reporter, confirm_unconfined
+        )
         runner = _prepare_runner(draft)
     except preflight.SessionRefusedError as refusal:
         return refusal.rc

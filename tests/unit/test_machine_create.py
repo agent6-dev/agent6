@@ -162,13 +162,16 @@ def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
 
 
 def _stub_preflight(
-    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel = "none"
+    monkeypatch: pytest.MonkeyPatch,
+    isolation: kinds.IsolationLevel = "none",
+    *,
+    sandbox: dict[str, object] | None = None,
 ) -> None:
     def _load(_root: object, _explicit: object = None) -> layer_data.EffectiveConfig:
         # A real Config: the authoring execution materializes it as its overlay.
         cfg = Config.model_validate(
             {
-                "sandbox": {"isolation": "none"},
+                "sandbox": {"isolation": "none", **(sandbox or {})},
                 "budget": {"max_usd": 10.0},
                 "providers": {"openrouter": {"backend": "openai", "api_key_env": "OR_KEY"}},
                 "models": {"default": {"model": "openrouter/test-model"}},
@@ -1529,17 +1532,32 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
     assert "PLW1510" in retry_prompt  # the lint problem, in the same attempt's diagnostics
 
 
+@pytest.mark.parametrize("mode", [None, "allow", "deny"])
 def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str | None,
 ) -> None:
-    """The bundle is files in a workspace, not a finish payload.
-
-    A ~20KB TOML string inside tool-call JSON defeated a model's emitter three times in a row; the
-    execution drafts with the edit tools and no shell.
-    """
+    """The workspace receives the operator's sandbox settings and holds the drafted files."""
     monkeypatch.chdir(tmp_path)
-    _stub_preflight(monkeypatch)
-    captured: list[tuple[AgentRequest, pathlib.Path, object]] = []
+    config = tmp_path / "draft.toml"
+    config.write_text(
+        '[providers.openrouter]\nbackend = "openai"\napi_key_env = "OR_KEY"\n'
+        '[models.default]\nmodel = "openrouter/test-model"\n'
+        '[budget]\nmax_usd = 10\n[sandbox]\nisolation = "none"\n'
+        + (
+            f'run_commands = "{mode}"\nfetch_approved_hosts = ["docs.python.org"]\n' if mode else ""
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OR_KEY", "unused")
+
+    def no_preflight(_cfg: Config, **_kw: object) -> str:
+        return "none"
+
+    monkeypatch.setattr(session_runtime, "select_isolation", no_preflight)
+    captured: list[tuple[AgentRequest, pathlib.Path, Config]] = []
 
     seen: list[bool] = []
 
@@ -1550,7 +1568,8 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
         **_kw: object,
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            captured.append((request, root, overlays[""].overlay))
+            cfg = layer.load_effective_with_overlay(root, overlays[""].overlay).config
+            captured.append((request, root, cfg))
             # Read while the execution runs: a published create removes the workspace.
             seen.append((root / ".git").exists())
             for rel, content in _draft(VALID_MACHINE).items():
@@ -1560,7 +1579,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
         return run
 
     monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
-    assert main(["machine", "create", "Greet the user"]) == 0
+    assert main(["--config", str(config), "machine", "create", "Greet the user"]) == 0
     assert captured, "runner was never invoked"
     req, root, cfg = captured[0]
     assert req.mode == "run", "the authoring agent writes files"
@@ -1571,13 +1590,41 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     # The jail masks the state dir, so a workspace inside it would be hidden from the run.
     state = paths.state_dir(tmp_path)
     assert state not in root.parents, "the workspace sits outside the state dir"
-    assert isinstance(cfg, dict)
-    # The operator's own settings ride as the overlay; the workspace's per-repo layer is empty.
-    assert "provider" not in cfg["models"]["default"]
-    assert cfg["models"]["default"]["model"] == "openrouter/test-model"
-    assert cfg["sandbox"]["run_commands"] == "deny", "and it still carries no command tool"
+    assert cfg.models.default is not None and cfg.models.default.model == "test-model"
+    assert cfg.sandbox.run_commands == (mode or "ask")
+    assert cfg.sandbox.fetch_approved_hosts == (("docs.python.org",) if mode else ())
     # A workspace that never ran has no state dir; rmtree reported that like a failure.
     assert "the drafting workspace stays" not in capsys.readouterr().err
+
+
+def test_create_confirms_unconfined_autorun_before_drafting(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A draft that can run unconfined commands follows the ordinary startup confirmation."""
+    from agent6.app import preflight
+    from agent6.ui.cli import preflight_prompts
+
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch, sandbox={"run_commands": "allow"})
+
+    def select(
+        cfg: Config,
+        *,
+        confirm_unconfined: Callable[[kinds.IsolationLevel, Config], bool],
+        **_kw: object,
+    ) -> str:
+        if not confirm_unconfined("none", cfg):
+            raise preflight.SessionRefusedError(2)
+        return "none"
+
+    monkeypatch.setattr(session_runtime, "select_isolation", select)
+
+    def decline(_isolation: kinds.IsolationLevel, _cfg: Config) -> bool:
+        return False
+
+    monkeypatch.setattr(preflight_prompts, "confirm_unconfined_autorun", decline)
+    _stub_runner(monkeypatch, [])  # a refused launch must not draft
+    assert main(["machine", "create", "Greet the user"]) == 2
 
 
 def test_create_publishes_the_files_a_referenced_script_needs(
