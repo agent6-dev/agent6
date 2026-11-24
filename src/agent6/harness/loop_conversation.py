@@ -34,6 +34,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 from agent6 import kinds, media
+from agent6.harness import nudges
 
 NoticeOrigin = Literal[
     "harness", "operator", "model", "panel", "plan", "restart", "contract", "reply_count"
@@ -156,8 +157,28 @@ class UserMessage:
 
     items: tuple[ToolResultItem | Notice, ...]
 
+    @property
+    def plan_text(self) -> str | None:
+        """Return the standalone planner notice, including its header."""
+        if len(self.items) != 1 or not isinstance(notice := self.items[0], Notice):
+            return None
+        if notice.origin == "plan" or (
+            notice.origin == "harness"
+            and notice.text.startswith(nudges.PLAN_ON_DISK_HEADER + "\n\n")
+        ):
+            return notice.text
+        return None
+
 
 Message = AssistantMessage | UserMessage
+
+
+def latest_plan(messages: Sequence[Message]) -> UserMessage | None:
+    """Return the most recent saved plan notice, if the planner has seen one."""
+    return next(
+        (m for m in reversed(messages) if isinstance(m, UserMessage) and m.plan_text is not None),
+        None,
+    )
 
 
 def _parse_tool_uses(blocks: Sequence[Any]) -> tuple[ToolUse, ...]:

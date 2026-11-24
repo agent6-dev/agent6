@@ -102,11 +102,13 @@ def _turns(
 
 def _partition(
     messages: Sequence[history.Message],
+    plan: history.UserMessage | None,
 ) -> tuple[list[history.Message], list[history.Message], list[history.Message]]:
     """Separate the notices with a fixed place on replay.
 
     Args:
         messages: The local history.
+        plan: The plan notice to keep; other copies are superseded.
 
     Returns:
         The review opening, prior summaries and selectable history.
@@ -121,7 +123,9 @@ def _partition(
             contract.append(m)
         elif origin == "restart":
             prior.append(m)
-        elif origin not in ("plan", "reply_count"):
+        elif origin != "reply_count":
+            if isinstance(m, history.UserMessage) and m is not plan and m.plan_text is not None:
+                continue
             history_messages.append(m)
     return contract, prior, history_messages
 
@@ -136,7 +140,8 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
     Returns:
         The helper transcript, verbatim quotes and paired messages to replay.
     """
-    contract, prior, history_messages = _partition(messages)
+    plan = history.latest_plan(messages)
+    opening, prior, history_messages = _partition(messages, plan)
     turns, live = _turns(history_messages, settings.keep_thinking_turns)
     start = len(turns)
     remaining = settings.keep_recent_chars
@@ -179,8 +184,13 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
             break
         remaining -= cost
         start -= 1
+    replaced = (*prior, *(m for turn in turns[:start] for m in turn))
+    # A fork may have no plan.md. Keep its latest plan even outside the selected turns.
+    if plan is not None and plan in replaced:
+        opening.append(plan)
+        replaced = tuple(m for m in replaced if m is not plan)
     return Replay(
-        (*prior, *(m for turn in turns[:start] for m in turn)),
+        replaced,
         tuple(word for turn, word in reversed(reserved) if turn < start),
-        (*contract, *(m for turn in turns[start:] for m in turn), *live),
+        (*opening, *(m for turn in turns[start:] for m in turn), *live),
     )

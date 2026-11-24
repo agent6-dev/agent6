@@ -736,10 +736,6 @@ class Harness:
         )
         if restarted and self.contract is None:
             state.focus.surfaced_task_id = None
-            state.plan_injected = ""
-            parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
-            if parked is not None:
-                return parked
             self._maybe_surface_current_task(conversation, state)
         if state.cold_start is not None:
             action = "summary_failed" if mode == "summarize" and not restarted else mode
@@ -777,7 +773,7 @@ class Harness:
 
         Args:
             conversation: The conversation the plan enters.
-            state: The execution's state; remembers the last plan shown.
+            state: The execution to park if the file is unreadable.
             turn: The current turn.
 
         Returns:
@@ -799,10 +795,11 @@ class Harness:
                 loop_snapshot.End("plan_unreadable", remedy, checkpoint=False),
                 turn=turn,
             )
-        if text == state.plan_injected:
+        notice = f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}"
+        saved = loop_conversation.latest_plan(conversation.messages)
+        if saved is not None and saved.plan_text == notice:
             return None
-        state.plan_injected = text
-        conversation.notice(f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}", origin="plan")
+        conversation.notice(notice, origin="plan")
         self.log(f"  plan re-read from disk: {len(text)} chars")
         self.emit(
             journal.PlanReread(
@@ -935,7 +932,6 @@ class Harness:
             deadline, state.idle_deadline = state.idle_deadline, None
             if deadline is not None and deadline.result():
                 state.focus.surfaced_task_id = None
-                state.plan_injected = ""
             binding = self.contract.review_binding if self.contract is not None else None
             state.call_context = kinds.CallContext(
                 execution_id=self.execution_id,
@@ -975,7 +971,6 @@ class Harness:
                 state.request_summarised = self.compactor.compact(summary_context)
                 if state.request_summarised:
                     state.focus.surfaced_task_id = None
-                    state.plan_injected = ""
             return response
         except agent6_budget.BudgetExceededError as exc:
             self.log(f"LOOP: budget exhausted at turn {turn}")

@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import config, kinds, media
 from agent6.app import role_providers
-from agent6.harness import loop_conversation, operator_bridge
+from agent6.harness import loop_conversation, nudges, operator_bridge
 from agent6.harness.compaction import window
 from agent6.providers import provider_types, request_headers
 from agent6.sessions import event_log
@@ -51,13 +51,15 @@ def _resume(
     helper_reply: str = "Helper handoff.",
     drop_at: int = 10**8,
     plan: pathlib.Path | None = None,
+    saved: loop_conversation.Conversation | None = None,
+    summarize_at: int = 10**9,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], writers.Writer]:
     path = directory / "logs.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for row in rows))
     snap = directory / "loop_state.json"
     snap.write_text(
         test_harness._resume_snapshot(
-            messages=_history().to_wire(snapshot=True),
+            messages=(saved or _history()).to_wire(snapshot=True),
             pins=["Binding pin."],
             original_task="Original goal.",
         ).model_dump_json()
@@ -93,7 +95,8 @@ def _resume(
             idle=window.IdleCompaction("p", limit, 10**9),
             endpoint=provider_types.EndpointCompaction(writes_summary=endpoint),
             drop_at_chars=drop_at,
-            summarise_at_chars=10**9,
+            summarise_at_chars=summarize_at,
+            summariser="helper",
             elision_gists=False,
             helper=helper,
             helper_context_tokens=200000,
@@ -183,20 +186,46 @@ def test_a_cold_drop_does_not_run_a_second_warm_drop(tmp_path: pathlib.Path) -> 
 
 
 @pytest.mark.parametrize("mode", ["summarize", "truncate"])
+@pytest.mark.parametrize("saved_plan", [None, "Keep the local fixture.", "Superseded plan."])
 def test_cold_planner_restart_counts_the_request_with_one_current_plan(
-    tmp_path: pathlib.Path, mode: kinds.ColdStart
+    tmp_path: pathlib.Path, mode: kinds.ColdStart, saved_plan: str | None
 ) -> None:
     plan = tmp_path / "plan.md"
     plan.write_text("Keep the local fixture.")
+    saved = _history()
+    if saved_plan is not None:
+        saved.notice(f"{nudges.PLAN_ON_DISK_HEADER}\n\n{saved_plan}")
     previous = [rules.request(actor="planner", model="other")]
-    resend, _, _, _ = _resume(tmp_path, "resend", previous, plan=plan)
-    sent, rows, _, _ = _resume(tmp_path, mode, previous, plan=plan)
+    resend, _, _, _ = _resume(tmp_path, "resend", previous, plan=plan, saved=saved)
+    sent, rows, _, _ = _resume(tmp_path, mode, previous, plan=plan, saved=saved)
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
     before, after = (
         window.context_chars(loop_conversation.Conversation.from_wire(w)) for w in (resend, sent)
     )
     assert row["chars_not_sent"] == before - after > 0
-    assert str(sent).count("Keep the local fixture.") == 1
+    assert str(sent).count(nudges.PLAN_ON_DISK_HEADER) == 1
+    assert "Keep the local fixture." in str(sent) and "Superseded plan." not in str(sent)
+
+
+def test_a_planner_restart_without_plan_md_keeps_the_checkpoint_plan(
+    tmp_path: pathlib.Path,
+) -> None:
+    saved = _history()
+    notice = f"{nudges.PLAN_ON_DISK_HEADER}\n\nKeep the orange label."
+    saved.notice(notice, origin="plan")
+    saved.assistant([{"type": "text", "text": "Read the fixture."}])
+    sent, rows, _, helper = _resume(
+        tmp_path, "resend", [], plan=tmp_path / "plan.md", saved=saved, summarize_at=100
+    )
+    assert len(helper.calls) == 1 and any(r["type"] == "compact.summarise.done" for r in rows)
+    snapshot = json.loads((tmp_path / "loop_state.json").read_text())
+    for messages in (sent, snapshot["messages"]):
+        assert [
+            b["text"]
+            for m in messages
+            for b in m["content"]
+            if b.get("text", "").startswith("[harness plan]")
+        ] == [notice]
 
 
 def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None:

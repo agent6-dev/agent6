@@ -51,8 +51,6 @@ class LoopState:
         verify: The verify verdict every "is the run green" consumer reads.
         ever_edited: True once any edit landed.
         command_cut: An immediate stop ended a running command this execution.
-        plan_injected: The plan.md text the planner was last shown; fresh per
-            execution, so a resumed planner is re-shown the operator's edits.
         root_task_id: The DAG root task id, set once by the loop.
         system: The system prompt, set once by the loop.
         parallel_groups_dispatched: How many `/parallel` sibling groups this run
@@ -86,7 +84,6 @@ class LoopState:
     )
     ever_edited: bool = False
     command_cut: bool = False
-    plan_injected: str = ""
     root_task_id: str | None = None
     system: str = ""
     operator_task: str = ""
