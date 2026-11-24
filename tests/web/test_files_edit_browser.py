@@ -145,6 +145,51 @@ def test_overwrite_refuses_a_second_disk_change(
     assert all("409" in error for error in errors), errors
 
 
+@pytest.mark.parametrize(
+    ("disk", "focused"),
+    [("theirs\n", "Load new file"), (None, "Overwrite with mine")],
+    ids=["changed", "removed"],
+)
+def test_a_conflicting_save_moves_the_focus_to_the_first_conflict_action(
+    served: tuple[pathlib.Path, int],
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    disk: str | None,
+    focused: str,
+) -> None:
+    """Save left the footer at a conflict, and the focus it held fell to the page body."""
+    from playwright.sync_api import Route, expect
+
+    repo, port = served
+    page, errors = open_page(port)
+    reads = 0
+    saving = False
+
+    def hold_the_poll(route: Route) -> None:
+        # Only the Save may find the disk change: the editor's poll would replace Save first.
+        nonlocal reads, saving
+        saving = saving or route.request.method == "POST"
+        reads += 1
+        if saving or reads == 1:
+            route.continue_()
+
+    page.route("**/api/files/text*", hold_the_poll)
+    page.goto(f"http://127.0.0.1:{port}/#/files/WORKTREE/plan.md")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Edit plan.md")
+    editor = dialog.get_by_role("textbox", name="File text", exact=True)
+    expect(editor).to_have_value("# Plan\n")
+    editor.fill("mine\n")
+    if disk is None:
+        (repo / "plan.md").unlink()
+    else:
+        (repo / "plan.md").write_text(disk, encoding="utf-8")
+    dialog.get_by_role("button", name="Save", exact=True).focus()
+    page.keyboard.press("Enter")
+    expect(dialog.get_by_role("button", name=focused, exact=True)).to_be_focused()
+    expect(editor).to_have_value("mine\n")
+    assert all("409" in error for error in errors), errors
+
+
 def test_edit_loads_the_whole_file_and_escape_keeps_unsaved_text(
     served: tuple[pathlib.Path, int], open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:

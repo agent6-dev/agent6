@@ -186,6 +186,7 @@ async function editFileText(path, afterSave) {
     if (dialog.open) timer = setTimeout(poll, 2000);
   };
   const write = async (destination, digest) => {
+    const held = document.activeElement === save;
     busy = true; buttons(); error.textContent = '';
     try {
       const response = await serverFetch('/api/files/text', {method: 'POST',
@@ -199,7 +200,11 @@ async function editFileText(path, afterSave) {
       dialog.close();
       await afterSave(destination);
     } catch (e) { if (dialog.open) error.textContent = e.message; else toast(e.message, true); }
-    finally { busy = false; buttons(); }
+    finally {
+      busy = false; buttons();
+      // A conflict took Save out of the footer: the focus it held goes to the first enabled action.
+      if (held && !save.isConnected) row.querySelector('button:enabled').focus();
+    }
   };
   load.onclick = () => {
     loaded = latest; text.value = loaded.text; conflict.hidden = true; error.textContent = '';
