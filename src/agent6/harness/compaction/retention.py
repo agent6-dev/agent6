@@ -211,7 +211,6 @@ def select(
         if isinstance(m, history.UserMessage)
         for it in inputs(m)
         for word in operator_words(it)
-        if word not in pins
     ]
     # A review contract's opening is its task and keeps its own place.
     task = "" if opening else task
@@ -219,6 +218,8 @@ def select(
         # The run holds its task, so a rewrite that removed the opening cannot lose it.
         stated = next((turn for turn, word in words if word == task), -1)
         words = [(stated, task), *(w for w in words if w[1] != task)]
+    # The pinned block states a pin, so its message is neither reserved nor counted.
+    words = [w for w in words if w[1] not in pins]
     reserved: list[tuple[int, str]] = []
     costs: dict[int, int] = {}
     for n, (turn, word) in enumerate(reversed(words)):

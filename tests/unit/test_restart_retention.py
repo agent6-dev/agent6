@@ -163,8 +163,9 @@ def test_a_task_the_history_lost_returns_from_the_run() -> None:
 def _restart_run(wf: Any, conv: history.Conversation, state: Any, **settings: int) -> str:
     """Restart a conversation with the pins and facts of its own run."""
     helper = writers.Writer(writers.response("Ready."))
-    wf.compaction = window.CompactionSettings(
-        helper=helper, helper_context_tokens=200000, summariser="helper", **settings
+    wf.compaction = dataclasses.replace(
+        window.CompactionSettings(helper=helper, helper_context_tokens=200000, summariser="helper"),
+        **settings,
     )
     assert driver.Tiered().summarise_and_restart(wf.compaction_context(conv, state, []))
     return _notice(conv)
@@ -184,6 +185,16 @@ def test_a_pinned_steer_is_stated_once_by_the_pinned_block() -> None:
     assert notice.count("Never touch vendor/.") == 1
     assert "PINNED operator instructions (verbatim):\n1. Never touch vendor/." in notice
     assert "Operator message:\nfirst steer" in notice and notice.count("Operator message:") == 1
+
+    # A pinned task is the pinned block's too, not a second statement under the task label.
+    state = test_harness._state(original_task="Never touch vendor/.")
+    conv = wf._open_task("Never touch vendor/.")[1]
+    wf.steering.operator_steer(
+        conv, 1, state, "/pin Never touch vendor/.", heading="OPERATOR STEERING:"
+    )
+    _reply(conv, "ok")
+    notice = _restart_run(wf, conv, state, keep_recent_turns=0)
+    assert notice.count("Never touch vendor/.") == 1 and "TASK (the goal" not in notice
 
 
 def test_a_steered_skill_is_quoted_by_name_without_its_text(tmp_path: pathlib.Path) -> None:
