@@ -165,6 +165,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._record(method, body)
             else:
                 self._replay(method, body)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True  # the client left: nobody reads an answer
         except Exception as exc:
             self._send(500, "text/plain", f"proxy error: {exc}".encode(), False)
 
