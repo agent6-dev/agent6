@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import pathlib
 import re
 from collections.abc import Sequence
 
@@ -221,12 +222,13 @@ def compact_old_tool_results(
         return CompactionStats()
 
     target = max_total_bytes // 2 if max_total_bytes is not None else None
+    edited = frozenset(map(pathlib.PurePath, protect_paths))
     # Dedup first: freeing duplicate bytes is lossless and may spare real content.
     deduped_calls = _dedupe_identical_results(
         conversation,
         pointers,
         keep_recent=keep_recent,
-        protect_paths=protect_paths if target is None else frozenset(),
+        protect_paths=edited if target is None else frozenset(),
     )
     if deduped_calls:
         pointers, total = _tool_result_pointers(conversation)
@@ -241,11 +243,9 @@ def compact_old_tool_results(
         if c[0] != undelivered_message
         and not _is_operator_answer(_result_at(conversation, c[0], c[1]))
     ]
-    if protect_paths:
+    if edited:
         hot = [
-            c
-            for c in candidates
-            if _protected_read(_result_at(conversation, c[0], c[1]), protect_paths)
+            c for c in candidates if _protected_read(_result_at(conversation, c[0], c[1]), edited)
         ]
         exempt = set(hot)
         candidates = [c for c in candidates if c not in exempt]
@@ -255,7 +255,7 @@ def compact_old_tool_results(
     walk = _Tier1Pass(
         conversation=conversation,
         max_total_bytes=target,
-        protect_paths=protect_paths,
+        protect_paths=edited,
         candidates=candidates,
         total=total,
     )
@@ -287,13 +287,16 @@ def _is_operator_answer(item: loop_conversation.ToolResultItem) -> bool:
     return item.for_call.name == ASK_USER_TOOL
 
 
-def _protected_read(item: loop_conversation.ToolResultItem, paths: frozenset[str]) -> bool:
+def _protected_read(
+    item: loop_conversation.ToolResultItem, paths: frozenset[pathlib.PurePath]
+) -> bool:
     """Return whether this read supplied a recently edited file."""
     call = item.for_call
     return (
-        call.name == "read_file"
+        bool(paths)
+        and call.name == "read_file"
         and isinstance(call.input, dict)
-        and str(call.input.get("path", "")) in paths
+        and pathlib.PurePath(str(call.input.get("path", ""))) in paths
     )
 
 
@@ -339,7 +342,7 @@ def _dedupe_identical_results(
     pointers: list[tuple[int, int, int]],
     *,
     keep_recent: int,
-    protect_paths: frozenset[str],
+    protect_paths: frozenset[pathlib.PurePath],
 ) -> tuple[str, ...]:
     """Replace every copy but the newest of a byte-identical result with a placeholder.
 
@@ -421,7 +424,7 @@ class _Tier1Pass:
 
     conversation: loop_conversation.Conversation
     max_total_bytes: int | None
-    protect_paths: frozenset[str]
+    protect_paths: frozenset[pathlib.PurePath]
     candidates: list[tuple[int, int, int]]
     total: int
     victims: list[tuple[int, int, int]] = dataclasses.field(default_factory=list)
@@ -479,7 +482,7 @@ class _Tier1Pass:
             path = str(call.input.get("path", ""))
             if (
                 not path
-                or path in self.protect_paths
+                or _protected_read(item, self.protect_paths)
                 or size < compaction_elision.GIST_MIN_SOURCE_CHARS
             ):
                 continue

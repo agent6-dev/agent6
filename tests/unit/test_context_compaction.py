@@ -218,12 +218,15 @@ def test_compact_elides_oldest_when_over_threshold() -> None:
     assert contents[2] == c
 
 
-def test_cold_drop_keeps_edited_reads_and_can_distill_other_victims() -> None:
+@pytest.mark.parametrize("read_path,edit_path", [("./hot.py", "hot.py"), ("hot.py", "./hot.py")])
+def test_cold_drop_keeps_edited_reads_and_can_distill_other_victims(
+    read_path: str, edit_path: str
+) -> None:
     conv = loop_conversation.Conversation()
     hot = "hot evidence " * 1000
-    for path in ("hot.py", "hot.py", "other.py"):
+    for path in (read_path, read_path, "other/hot.py"):
         _add_exchange(conv, ("read_file", {"path": path}, hot))
-    _add_exchange(conv, ("apply_edit", {"path": "hot.py"}, "edited"))
+    _add_exchange(conv, ("apply_edit", {"path": edit_path}, "edited"))
     _add_exchange(conv, *(("run_command", {}, c * 1000) for c in "xyz"))
     stats = compaction_rules.compact_old_tool_results(
         conv,
@@ -233,7 +236,7 @@ def test_cold_drop_keeps_edited_reads_and_can_distill_other_victims() -> None:
     )
     contents = _result_contents(conv)
     assert contents[:2] == [hot, hot] and contents[-3:] == [c * 1000 for c in "xyz"]
-    assert stats.gist_paths == ("other.py",) and "file facts" in contents[2]
+    assert stats.gist_paths == ("other/hot.py",) and "file facts" in contents[2]
 
 
 def test_compact_drops_to_half_the_bound_then_leaves_room_to_grow() -> None:

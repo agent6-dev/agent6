@@ -96,7 +96,7 @@ def test_no_gister_and_failed_gister_fall_back_to_bare() -> None:
 
 def test_small_protected_and_non_read_results_are_never_gisted() -> None:
     conv = loop_conversation.Conversation()
-    _add_read(conv, "hot.py", "h" * 5000)  # protected: actively edited
+    _add_read(conv, "./hot.py", "h" * 5000)  # protected: actively edited
     _add_read(conv, "tiny.md", "t" * 300)  # below GIST_MIN_SOURCE_CHARS
     _add_call(conv, "grep", {"pattern": "q"}, "g" * 5000)  # not a read_file
     _add_read(conv, "b.py", "x" * 500)
