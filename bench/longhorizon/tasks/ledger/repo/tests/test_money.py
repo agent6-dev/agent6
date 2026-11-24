@@ -12,7 +12,7 @@ class MoneyTest(unittest.TestCase):
 
     def test_parse_refuses_floats_and_extra_decimals(self) -> None:
         with self.assertRaises(TypeError):
-            parse(12.5)  # type: ignore[arg-type]
+            parse(12.5)
         with self.assertRaises(ValueError):
             parse("1.005")
 
