@@ -167,7 +167,7 @@ def test_model_listings_use_the_capped_request(
 def test_a_listing_does_not_substitute_a_static_key_for_a_command_token(
     cache_home: pathlib.Path,
 ) -> None:
-    entry = OpenAIProviderEntry(backend="openai", token_command=["test-token"])
+    entry = OpenAIProviderEntry(backend="openai", token_command=("test-token",))
     response = httpx2.Response(
         200, json={"data": [{"id": "x"}]}, request=httpx2.Request("GET", entry.base_url)
     )
