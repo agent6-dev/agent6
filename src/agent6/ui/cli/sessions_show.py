@@ -242,15 +242,18 @@ def _usage_line(scan: LogScan) -> str:
         scan: The run's log scan.
 
     Returns:
-        `in` and `out`, the cached side when the journal recorded it, the plan movement a
-        percent-metered execution observed against its cap, then the usage as the listing's
-        cell spells it unless it would repeat that movement.
+        `in` and `out`, the cached side when the journal recorded it, the hosted web
+        searches when any ran, the plan movement a percent-metered execution observed against
+        its cap, then the usage as the listing's cell spells it unless it would repeat that
+        movement.
     """
     run = scan.budget.execution
     tokens = f"in={run.input_tokens or 0} out={run.output_tokens or 0}"
     if run.cache_read_tokens is not None or run.cache_write_tokens is not None:
         tokens += f" cache_r={run.cache_read_tokens or 0}"
         tokens += f" cache_w={run.cache_write_tokens or 0}"
+    if run.web_searches:
+        tokens += f" searches={run.web_searches}"
     if run.plan_cap is not None and run.plan_cap > 0:
         tokens += f" plan moved={run.plan_observed_points:g}/{run.plan_cap:g}pt"
         if scan.executions == 1 and scan.usage_cell == f"{run.plan_observed_points:g}pt":

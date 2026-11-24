@@ -476,6 +476,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 ),
                 plan_cap=_cap(raw.get("plan_cap")),
                 account=_account_reading(raw),
+                web_searches=_count(raw.get("web_searches")) or 0,
             )
         case "environment.starting":
             return journal.EnvironmentStarting(

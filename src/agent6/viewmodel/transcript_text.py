@@ -276,6 +276,26 @@ def mcp_unavailable_body(event: dict[str, Any]) -> str:
     return f"{error}; its tools are missing"
 
 
+def web_search_body(event: dict[str, Any]) -> str:
+    """Word a hosted web search: its query, an outcome other than completed, then its URLs.
+
+    Args:
+        event: The `model.web_search` event.
+
+    Returns:
+        One line; the query and URLs are provider text, scrubbed of terminal controls.
+    """
+    query = " ".join(str(event.get("query", "")).split())
+    status = str(event.get("status") or "")
+    raw = event.get("urls")
+    urls = [str(url) for url in raw] if isinstance(raw, (list, tuple)) else []
+    head = (f"Search: {query}" if query else "Search") + (
+        f" ({status})" if status not in ("", "completed") else ""
+    )
+    line = " · ".join(part for part in (head, " ".join(urls)) if part)
+    return " ".join(terminal.scrub_terminal_controls(line).split())
+
+
 def compact_requested_body(event: dict[str, Any]) -> str:
     """Return the line for a compaction request, with its focus."""
     focus = str(event.get("focus", "")).strip()
@@ -334,6 +354,7 @@ MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "skills.warning": lambda event: f"skills: WARNING: {event.get('warning', '')}",
     "review.start": review.rules_notice,
     "mcp.server_unavailable": mcp_unavailable_body,
+    "model.web_search": web_search_body,
     "jail.degraded": jail_degraded_body,
     "pack.quarantined": lambda event: f"WARNING: {event.get('warning', '')}",
     "steer.parent": lambda e: f"parent: {e.get('text', '')}",

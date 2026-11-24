@@ -250,6 +250,7 @@ def _usage(
         usd_cap=row.usd_cap,
         tokens_fallback_cap=row.tokens_fallback_cap,
         plan_cap=row.plan_cap,
+        web_searches=row.web_searches,
     )
     session = state_types.SessionUsage(
         settled_children=tuple(

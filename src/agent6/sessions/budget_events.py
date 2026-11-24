@@ -70,6 +70,8 @@ def budget_update(budget: agent6_budget.BudgetTracker) -> journal.BudgetUpdate:
         plan_observed_points=snap.plan_observed_points,
         plan_cap=snap.max_plan_points,
         account=account,
+        # Unset without a search, so the row is the one written before searches were counted.
+        **({"web_searches": snap.web_searches} if snap.web_searches else {}),
     )
 
 

@@ -160,6 +160,7 @@ class ExecutionUsage:
         usd_cap: `[budget].max_usd`.
         tokens_fallback_cap: `[budget].max_tokens_fallback`.
         plan_cap: `[budget].max_plan_points`.
+        web_searches: Hosted web searches the provider billed on this lifetime's own calls.
     """
 
     input_tokens: int | None = None
@@ -177,6 +178,7 @@ class ExecutionUsage:
     tokens_fallback_cap: int | None = None
     plan_cap: float | None = None
     child_model_tokens: token_usage.TokenCounts = token_usage.UNKNOWN
+    web_searches: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

@@ -8,7 +8,7 @@ import shlex
 from typing import Any
 
 from agent6 import budget, evidence, terminal
-from agent6.viewmodel import events, format, review
+from agent6.viewmodel import events, format, review, transcript_text
 
 
 def _edit_kind(edit: dict[str, object]) -> str:
@@ -240,6 +240,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
             salient = _cut(" ".join(str(event.get("detail", "")).split()), 160)
         case "mcp.server_unavailable":
             salient = f"{event.get('server')} unavailable: {_cut(str(event.get('error', '')), 120)}"
+        case "model.web_search":
+            salient = transcript_text.web_search_body(event)
         case "skills.warning" | "pack.quarantined":
             salient = _cut(str(event.get("warning", "")), 160)
         case "session.resume":

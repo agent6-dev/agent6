@@ -207,6 +207,10 @@ class BudgetUpdate(Event):
         default=None,
         description="The latest subscription account reading; null before a plan call runs.",
     )
+    web_searches: int = pydantic.Field(
+        default=0,
+        description="Hosted web searches the provider billed on this tracker's own calls.",
+    )
 
     @property
     def credits(self) -> credit_usage.Batch:
@@ -918,6 +922,44 @@ class ModelThinkingDelta(Event):
     reviewer_index: int | None = pydantic.Field(
         default=None,
         description="The reviewer's roster position; null outside a reviewer.",
+    )
+
+
+class ModelWebSearch(Event):
+    """The provider's hosted web search ran inside a model call."""
+
+    TYPE: ClassVar[str] = "model.web_search"
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
+    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
+    actor: str = pydantic.Field(
+        description="The calling role, optionally followed by a colon and detail."
+    )
+    model: str = pydantic.Field(description="Model identifier.")
+    provider: str = pydantic.Field(description="Configured provider name.")
+    model_call_id: str = pydantic.Field(
+        description="The model call whose response holds the search.",
+    )
+    reviewer_index: int | None = pydantic.Field(
+        default=None,
+        description="Zero-based reviewer index.",
+    )
+    search_id: str = pydantic.Field(description="The provider's identifier for the search.")
+    query: str = pydantic.Field(
+        description="The query the model sent; empty when the response names none."
+    )
+    status: str | None = pydantic.Field(
+        default=None,
+        description="`completed`, or the provider's word for another outcome.",
+    )
+    urls: tuple[str, ...] = pydantic.Field(
+        default=(),
+        description=(
+            "The result URLs on Messages; on Responses, the URLs the response cites after "
+            "the search."
+        ),
     )
 
 
@@ -2134,6 +2176,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "model.result": ModelResult,
     "model.text_delta": ModelTextDelta,
     "model.thinking_delta": ModelThinkingDelta,
+    "model.web_search": ModelWebSearch,
     "nudge.loop_guard": NudgeLoopGuard,
     "nudge.memory_flip": NudgeMemoryFlip,
     "nudge.metric_plateau": NudgeMetricPlateau,

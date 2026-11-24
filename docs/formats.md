@@ -145,6 +145,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `account.credits_has` | `bool` | Whether the account holds purchased credits. |
 | `account.credits_unlimited` | `bool` | Whether the credits are unlimited. |
 | `account.credits_balance` | `str` | The credit balance as the backend sent it; empty when none. |
+| `web_searches` | `int, optional` | Hosted web searches the provider billed on this tracker's own calls. |
 
 ### checkpoint.committed
 
@@ -728,6 +729,24 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `reviewer_index` | `int, optional` | The reviewer's roster position; null outside a reviewer. |
+
+### model.web_search
+
+**Support: public.** The provider's hosted web search ran inside a model call.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `actor` | `str` | The calling role, optionally followed by a colon and detail. |
+| `model` | `str` | Model identifier. |
+| `provider` | `str` | Configured provider name. |
+| `model_call_id` | `str` | The model call whose response holds the search. |
+| `reviewer_index` | `int, optional` | Zero-based reviewer index. |
+| `search_id` | `str` | The provider's identifier for the search. |
+| `query` | `str` | The query the model sent; empty when the response names none. |
+| `status` | `str, optional` | `completed`, or the provider's word for another outcome. |
+| `urls` | `list, optional` | The result URLs on Messages; on Responses, the URLs the response cites after the search. |
 
 ### nudge.loop_guard
 
@@ -4349,6 +4368,7 @@ Source: [`agent6.viewmodel.session.records.ExecutionUsage`](https://github.com/a
 | `tokens_fallback_cap` | `int \| None` | `[budget].max_tokens_fallback`. |
 | `plan_cap` | `float \| None` | `[budget].max_plan_points`. |
 | `child_model_tokens` | `TokenCounts` | Fresh input and output charged through child settlement. |
+| `web_searches` | `int` | Hosted web searches the provider billed on this lifetime's own calls. |
 
 ### AccountReading
 

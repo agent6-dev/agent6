@@ -437,7 +437,7 @@ def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, Any]:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class InstrumentedProvider:
-    """Wrap a provider to emit `model.call`, `model.attempt`, `model.result` and `budget.update`.
+    """Wrap a provider to emit the `model.*` call events and `budget.update`.
 
     Attributes:
         inner: The wrapped provider, unchanged.
@@ -599,6 +599,17 @@ class InstrumentedProvider:
             self._emit_budget()
             raise
         self.conversations.completed(self.actor, self.provider_name, call_context=call_context)
+        if self.events is not None:
+            for search in resp.web_searches:
+                self.events.emit(
+                    journal.ModelWebSearch(
+                        **self._identity(call_context),
+                        search_id=search.id,
+                        query=search.query,
+                        urls=search.urls,
+                        **({"status": search.status} if search.status else {}),
+                    )
+                )
         self._record_attempt(
             call_context,
             context,
