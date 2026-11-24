@@ -559,7 +559,7 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
             "document.addEventListener('keydown', (e) => {\n  for (const k of KEYS)"
         )
     ]
-    for label in ("Ctrl+K", "'?'", "Ctrl+R", "Ctrl+Enter", "Shift+Enter"):
+    for label in ("Ctrl+K", "'?'", "Ctrl+R", "sendNowKey", "Shift+Enter"):
         assert label in keys
     # Firefox opens a private window on Ctrl+Shift+P; `>` in Ctrl+K's box opens the palette.
     assert "Shift-P" not in client

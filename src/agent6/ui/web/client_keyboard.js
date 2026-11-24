@@ -180,7 +180,7 @@ const KEYS = [
   { label: 'Enter', where: 'In the composer', does: 'send the instruction; resume an ended session' },
   { label: 'Shift+Enter', where: 'In the composer', does: 'newline' },
   { label: '/', where: 'In the composer', does: 'directive completion; Tab or Enter accepts' },
-  { label: 'Ctrl+Enter', where: "In a session's composer", does: 'send now, interrupting the call in flight (/now)' },
+  { label: sendNowKey, where: "In a session's composer", does: 'send now, interrupting the call in flight (/now)' },
   { label: 'Ctrl+R', where: "In a session's composer", does: "search this session's past messages" },
   { label: 'Enter', where: 'In Search file contents on Files', does: 'find literal text at the selected revision; open a match to go to its line' },
   { label: '↑ ↓', where: 'In a list', does: 'move' },

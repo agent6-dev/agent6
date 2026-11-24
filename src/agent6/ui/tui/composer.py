@@ -83,7 +83,11 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
         return []
     if mode == "draft":
         return []
-    return [(c.name, c.help) for c in directive.commands_for(mode) if c.name.startswith(text)]
+    return [
+        (c.name, keymap.composer_help(c.name, c.help, web=False))
+        for c in directive.commands_for(mode)
+        if c.name.startswith(text)
+    ]
 
 
 def complete_steer(text: str, *, mode: ComposerMode) -> str | None:
@@ -512,7 +516,7 @@ class SteerInput(widgets.TextArea):
 
     def on_key(self, event: events.Key) -> None:
         """Submit on Enter, insert a newline on Ctrl+J, complete a command or an `@path` on Tab."""
-        if event.key == "enter":
+        if event.key == keymap.TUI_SEND_KEY.lower():
             event.prevent_default()
             event.stop()
             text = self.text.strip()

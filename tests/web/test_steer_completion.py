@@ -18,7 +18,15 @@ from tests.web import session_logs, signin
 def test_the_served_page_offers_the_registered_commands_for_each_composer() -> None:
     encoded = page.CLIENT_JS.split("const composerCommands = ", 1)[1].split(";\n", 1)[0]
     assert json.loads(encoded) == {
-        mode: [[c.name, c.help] for c in directive.commands_for(mode)]
+        mode: [
+            [
+                c.name,
+                "Interrupt the current call: Ctrl+Enter with plain text"
+                if c.name == "/now"
+                else c.help,
+            ]
+            for c in directive.commands_for(mode)
+        ]
         for mode in ("start", "plan/ask", "steer", "resume")
     }
 

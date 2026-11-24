@@ -610,7 +610,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "/now <text>",
-        "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
+        "Interrupt the current call",
         "controls the run",
         _LIVE,
         "agent6.ui.directive_actions.submit_composer_line",

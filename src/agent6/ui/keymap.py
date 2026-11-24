@@ -78,6 +78,18 @@ def approval_prompt_suffix(*, standing: bool) -> str:
     return f"[{letters}]  ({scoped}, this session): "
 
 
+TUI_SEND_KEY = "Enter"
+WEB_SEND_NOW_KEY = "Ctrl+Enter"
+
+
+def composer_help(name: str, help_text: str, *, web: bool) -> str:
+    """Return command help with the immediate steer keys the composer accepts."""
+    if name != "/now":
+        return help_text
+    keys = f"{WEB_SEND_NOW_KEY} with plain text" if web else f"/now <text>, then {TUI_SEND_KEY}"
+    return f"{help_text}: {keys}"
+
+
 FINDINGS = "Findings"
 ANSWER_QUESTION = "Answer a question…"
 REVIEW_TEXT = {

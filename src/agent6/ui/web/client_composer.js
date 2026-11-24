@@ -122,7 +122,7 @@ function makeComposer(id) {
         'Resume continues this session with the instruction (empty = just resume) · Enter newline'), keys);
     } else {
       ta.placeholder = 'steer… (/ for directives)';
-      hint.replaceChildren(...enterHint('Enter sends the instruction at the session\'s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline',
+      hint.replaceChildren(...enterHint('Enter sends the instruction at the session\'s next safe boundary · ' + sendNowKey + ' sends it now · Shift+Enter newline',
         'Send injects the instruction at the session\'s next safe boundary · Enter newline'), keys);
     }
   };

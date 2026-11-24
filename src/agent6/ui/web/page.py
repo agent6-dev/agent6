@@ -59,11 +59,17 @@ def client_script(name: str) -> str:
     source = _ASSETS.joinpath(name).read_text(encoding="utf-8")
     if name == "client_suggestions.js":
         commands = {
-            mode: [(c.name, c.help) for c in directive.commands_for(mode)]
+            mode: [
+                (c.name, keymap.composer_help(c.name, c.help, web=True))
+                for c in directive.commands_for(mode)
+            ]
             for mode in ("start", "plan/ask", "steer", "resume")
         }
         encoded = json.dumps(commands).replace("<", r"\u003c")
-        return f"const composerCommands = {encoded};\n" + source
+        return (
+            f"const composerCommands = {encoded};\nconst sendNowKey = {json.dumps(keymap.WEB_SEND_NOW_KEY)};\n"
+            + source
+        )
     if name == "client_review.js":
         labels = {value: label for label, value in keymap.REVIEW_DISPOSITIONS}
         return (
