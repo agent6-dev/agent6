@@ -2,10 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Model providers behind one `Provider` protocol.
 
-`AnthropicProvider` (Anthropic Messages), `OpenAIProvider` (any Chat Completions
-endpoint: OpenAI, OpenRouter, Ollama, vLLM, llama.cpp), `ChatGPTProvider` (the
-ChatGPT subscription's Codex backend) and `ClaudeCodeProvider` (the installed
-Claude Code binary) are interchangeable; `[models.<role>]` routes each role.
+A shared package: it imports `sandbox` and no layer above it.
+The providers are interchangeable, and `[models.<role>]` routes each role.
+Main modules: `anthropic`, `openai`, `responses`, `chatgpt`, `claude_code`, `provider_types`.
 """
 
 from __future__ import annotations

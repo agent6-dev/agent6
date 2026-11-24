@@ -2,10 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Version control for agent6's own commits, refs and merges.
 
-Git today: the operations (`git_ops`), the hardening flags and hook policy (`git_policy`),
-the history reads the web Git tab shows (`git_history`), the commit message composer
-(`commit_message`) and the private runner (`git_command`). All leaves; import the
-submodules directly.
+A shared package: any layer may import it, and it imports no layer.
+Git lives in the `git` sub-package, and only this package's modules import its runner.
+The package spells no push, `--force`, history rewrite or `reset --hard`.
+Main modules: `commit_message`, `commit_graph`, `review`, `review_rule_reader`.
 """
 
 from __future__ import annotations

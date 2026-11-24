@@ -2,14 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Serve the Agent Client Protocol: agent6 driven by an editor.
 
-The front-end reports through the viewmodel fold and acts through
-`SessionFrontend` and `FrontendCapabilities`, like the other three; ACP's
-`initialize` is a capability exchange, so it maps onto the second. Every path is
-absolute and line numbers are 1-based, as the spec states.
-
-ACP's client-owned filesystem and terminal (`fs/*`, `terminal/*`) are not adopted:
-the agent owns a jail the operator configured, so an editor cannot be talked into
-doing the model's filesystem work.
+A front-end: it may import every layer and the shared `ui` helpers, never another front-end.
+It reports through the viewmodel fold and acts through `SessionFrontend`, like the other three.
+ACP's `initialize` is a capability exchange, so it maps onto `FrontendCapabilities`.
+Every path is absolute and line numbers are 1-based, as the spec states.
+ACP's client-owned `fs/*` and `terminal/*` are not adopted: the operator's jail does that work.
+Main modules: `server`, `session`, `runner`, `updates`, `frontend`.
 """
 
 from __future__ import annotations

@@ -2,6 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The telemetry exporter: a reader of session journals beside the four front-ends.
 
-`otlp` encodes the projection's records as OTLP/HTTP JSON bodies and `prometheus` as the
-text exposition; neither opens a socket.
+It imports `viewmodel`, `sessions` and `config`, and no layer below `ui`.
+`otlp` and `prometheus` encode the projection's records, and neither opens a socket.
+Main modules: `export`, `otlp`, `prometheus`.
 """

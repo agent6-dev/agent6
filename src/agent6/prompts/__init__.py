@@ -2,10 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Static prompt text: the strings agent6 sends to models.
 
-The system-prompt bases and context blocks (`loop`), the reviewers (`review`), the
-compare judge (`judge`), the summarizer and restart prompts (`compaction`) and the
-machine-authoring grammar (`machine`). Pure text with `{...}` placeholders; the harness and
-machine layers assemble them. The package imports nothing from agent6, so it stays a leaf.
+A shared leaf: any layer may import it, and it imports nothing from agent6.
+The text is pure, with `{...}` placeholders its callers fill.
+Main modules: `loop`, `review`, `review_directive`, `compaction`, `machine`.
 """
 
 from __future__ import annotations

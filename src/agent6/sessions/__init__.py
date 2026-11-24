@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Session identity and on-disk state.
 
-Ids and prefix resolution (`id`), the state directory layout (`layout`), the manifest
-(`manifest`), the single-writer flock (`lock`) and the answer-file contract between a
-front-end and the harness (`ipc`). All leaves; import the submodules directly.
+A shared package: any layer may import it, and it imports no layer.
+The package re-exports nothing: import the submodules directly.
+Main modules: `id`, `layout`, `manifest`, `journal`, `event_log`, `lock`, `ipc`, `process`.
 """
 
 from __future__ import annotations

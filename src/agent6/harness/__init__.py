@@ -3,6 +3,7 @@
 """Run the agent loop over one execution of a session.
 
 Harness is the loop plus every primitive it calls in a turn.
+`Harness` in `loop` drives one execution: provider calls, tool dispatch, guards, gates, snapshots.
 What spans executions belongs to `app`, which composes executions into lifecycles.
 Harness imports `tools`, `sandbox` and the shared packages, never `app` or `ui`.
 `system_prompt_for` and `model_exchange_for` give `agent6 prompt show` the run's first exchange.
