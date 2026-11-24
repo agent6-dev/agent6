@@ -887,12 +887,15 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             restart: Archive the previous run before starting.
         """
         err = spawn.start_machine(self.repo_cwd, path, instance, self.config_paths, restart=restart)
-        app.call_from_thread(self._machine_run_started, path, err)
+        app.call_from_thread(self._machine_run_started, path, err, restart=restart)
 
-    def _machine_run_started(self, path: pathlib.Path, err: str) -> None:
+    def _machine_run_started(self, path: pathlib.Path, err: str, *, restart: bool) -> None:
         """Open the watch on the started run, or show the refusal."""
         if err:
-            self.app.push_screen(modals.TextModal(f"Could not start {path.name}", err))
+            if restart:
+                self.app.push_screen(modals.TextModal(f"Could not restart {path.name}", err))
+            else:
+                self.app.notify(err, severity="error", timeout=8.0)
             return
         self._open_watch(path)
 
