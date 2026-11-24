@@ -419,6 +419,7 @@ def build_harness(
         )
     wf = loop.Harness(
         task_source=launch.task_source if launch is not None else "operator",
+        sibling_notice=launch.sibling_notice if launch is not None else "",
         settings=settings,
         media_input=role_providers.input_capabilities(cfg, session.rm_role),
         chain=run_chain.RunChain(
