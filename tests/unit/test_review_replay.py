@@ -135,7 +135,7 @@ def test_cli_replays_one_call_per_arm_and_reports_only_comparable_pairs(
             assert sent[field] == env.responses_body()[field]
         assert row["system_sha256"] == hashlib.sha256(sent["instructions"].encode()).hexdigest()
         assert sent["model"] == "selected" and sent["reasoning"]["effort"] == "high"
-        assert row["model"] == "p/selected" and row["effort"] == "high"
+        assert row["model"] == "p/selected" and row["requested_effort"] == "high"
     assert [r["repeat"] for r in rows] == [1, 1, 2, 2, 3, 3] * 2
     assert {r["session"] for r in rows[:6]} == {"alpha"}
     assert [r["outcome"] for r in rows[4:6]] == ["asked for a tool", "block"]
@@ -161,6 +161,40 @@ def test_no_recordings_fail_before_calling_the_provider(
     assert replay.main([str(tmp_path), "--model", "p/model", "--effort", "default"]) != 0
     out, err = capsys.readouterr()
     assert not out and "no finished panel reviewers" in err
+
+
+def test_cli_refuses_a_reasoning_override_before_spending(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    responses_config: pathlib.Path,
+) -> None:
+    """A Responses body override would send low while the experiment requests high."""
+    env.record_review(tmp_path, "first", env.responses_body())
+    with responses_config.open("a") as file:
+        file.write('[providers.p.extra_body.reasoning]\neffort = "low"\n')
+    sent: list[str] = []
+
+    def post(url: str, *, content: bytes, **kwargs: Any) -> httpx2.Response:
+        sent.append(json.loads(content)["reasoning"]["effort"])
+        message = {"type": "message", "content": [{"type": "output_text", "text": answer()}]}
+        return httpx2.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [message],
+                "usage": {"input_tokens": 18, "output_tokens": 9},
+            },
+        )
+
+    monkeypatch.setattr(transport, "http_post", post)
+    code = replay.main(
+        [str(tmp_path), "--config", str(responses_config), "--model", "p/m", "--effort", "high"]
+    )
+    out, err = capsys.readouterr()
+    assert not sent, f"sent {sent}; calls: {out}"
+    assert code == 1 and not out
+    assert "extra_body.reasoning" in err and "--effort" in err
 
 
 def test_a_provider_failure_leaves_a_call_record_not_a_pass(

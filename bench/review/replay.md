@@ -19,7 +19,9 @@ Use the recorded provider/model and effort in place of the example.
 Use `--effort default` for an unset effort.
 The command uses the checkout's effective agent6 config and budget; `--config FILE` adds an overlay.
 It sends the recorded task, rules and diff to the selected provider.
-Keep the provider settings the same as in the recording, including any `extra_body` overrides.
+Set reasoning effort with `--effort` only.
+The replay refuses `extra_body.reasoning`, `reasoning_effort`, `thinking` and `output_config` overrides before spending because they can replace the adapter's effort controls.
+Keep other provider settings the same as in the recording.
 
 ## Calls
 
@@ -43,7 +45,8 @@ Keep the provider settings the same as in the recording, including any `extra_bo
 
 ## Read the results
 
-Stdout has one JSON line per logical call: child session, source transcript, repetition, arm, model, effort, system text hash and outcome.
+Stdout has one JSON line per logical call: child session, source transcript, repetition, arm, model, requested effort, system text hash and outcome.
+`requested_effort` records the argument, not an observation of the model's reasoning or the adapter's wire representation.
 A complete run has `2 × reviews × repeats` lines.
 On a provider or budget error, a `call failed` line identifies the interrupted pair and the command exits nonzero.
 The input state stays unchanged.

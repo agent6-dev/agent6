@@ -54,7 +54,7 @@ def replay(
                     "repeat": repeat,
                     "arm": arm,
                     "model": settings.route.spec,
-                    "effort": settings.effort or "default",
+                    "requested_effort": settings.effort or "default",
                     "system_sha256": hashlib.sha256(system.encode("utf-8")).hexdigest(),
                 }
                 kwargs: dict[str, Any] = (
@@ -104,8 +104,15 @@ def main(argv: list[str] | None = None) -> int:
         openings = recordings.read_reviews(args.state_dir)
         cfg = layer.load_effective(pathlib.Path.cwd(), tuple(args.config)).config
         route = cfg.model_route(args.model)
-        if isinstance(cfg.providers[route.provider], config.ClaudeCodeProviderEntry):
+        entry = cfg.providers[route.provider]
+        if isinstance(entry, config.ClaudeCodeProviderEntry):
             raise config.ConfigError("select an HTTP provider, not a local Claude Code process")
+        for key in ("output_config", "reasoning", "reasoning_effort", "thinking"):
+            if key in entry.extra_body:
+                raise config.ConfigError(
+                    f"remove providers.{route.provider}.extra_body.{key} for replay;"
+                    " set reasoning effort with --effort only"
+                )
         settings = kinds.ModelSettings(route, None if args.effort == "default" else args.effort)
         cfg = cfg.with_model_settings("reviewer", settings)
         if refusal := preflight.budget_preflight(cfg, [(route.provider, route.model)]):
