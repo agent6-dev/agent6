@@ -372,6 +372,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                     *problems,
                     *scriptcheck.lint_and_typecheck(
                         workspace / "scripts",
+                        isolation,
                         fix=True,
                         ruff_config_from=output.parent if output is not None else cwd,
                     ),
@@ -385,6 +386,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             events.emit(journal.LoopNote(text="linting + offline-testing the draft"))
             problems = scriptcheck.lint_and_typecheck(
                 workspace / "scripts",
+                isolation,
                 fix=True,
                 ruff_config_from=output.parent if output is not None else cwd,
             )
@@ -396,7 +398,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 reporter.err(
                     f"machine create: {offline.skipped} offline script test"
                     f"{'' if offline.skipped == 1 else 's'} not run"
-                    f" ({offline.skip_reason}); static checks still applied"
+                    f" ({offline.skip_reason})"
                 )
             report = dry_run(candidate_spec, None)
             problems.extend(

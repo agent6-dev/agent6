@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import pathlib
 import shutil
+import subprocess
 
 import pytest
 
 from agent6 import kinds
 from agent6.app.machine import scriptcheck
+from agent6.sandbox import jail
+from tests.jail_env import require_userns_jail
 
 _CLEAN = "import json\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
 
@@ -21,8 +24,10 @@ def _write(scripts_dir: pathlib.Path, name: str, body: str) -> None:
 
 
 def _need(tool: str) -> None:
+    """Skip without the tool, then require the jail the tool runs in."""
     if tool not in scriptcheck.available_tools():
         pytest.skip(f"{tool} not installed in this environment")
+    require_userns_jail()
 
 
 # --- static: ruff + pyrefly -------------------------------------------------
@@ -32,44 +37,108 @@ def test_lint_typecheck_clean(tmp_path: pathlib.Path) -> None:
     _need("ruff")
     _need("pyrefly")
     _write(tmp_path / "scripts", "ok.py", _CLEAN)
-    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full") == []
 
 
-def test_static_checks_disable_python_bytecode(
+def _recorded_jail(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> list[kinds.JailPolicy]:
+    """Lay down one clean script and record each policy the check hands the jail."""
+    _write(tmp_path / "scripts", "ok.py", _CLEAN)
+    seen: list[kinds.JailPolicy] = []
+
+    def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        seen.append(policy)
+        return kinds.CommandResult(
+            argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0
+        )
+
+    def _no_child(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("a checker started outside the jail")
+
+    monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
+    monkeypatch.setattr(subprocess, "Popen", _no_child)
+    return seen
+
+
+def test_the_checkers_start_inside_a_jail_with_no_network(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both checkers started as children of the agent6 process, outside any jail."""
+    seen = _recorded_jail(monkeypatch, tmp_path)
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full") == []
+    assert [pathlib.Path(policy.argv[0]).name for policy in seen] == [
+        tool for tool in ("ruff", "pyrefly") if tool in scriptcheck.available_tools()
+    ]
+    for policy in seen:
+        assert policy.isolation == "full" and policy.network == "none"
+        assert policy.extra_protect_paths == (policy.cwd,)
+        assert not policy.extra_rw_paths
+
+
+@pytest.mark.parametrize(
+    ("isolation", "reason"),
+    [("none", "no sandbox"), ("partial", "needs sandbox.isolation = 'full'")],
+)
+def test_the_checkers_do_not_run_below_full_isolation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    isolation: kinds.IsolationLevel,
+    reason: str,
+) -> None:
+    """Below `full` no jail cuts the network, so the check is noted as not run, never passed."""
+    seen = _recorded_jail(monkeypatch, tmp_path)
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", isolation) == []
+    assert not seen
+    assert capsys.readouterr().err == f"note: script lint and type check not run ({reason})\n"
+
+
+def test_a_jail_that_cannot_start_is_a_problem(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write(tmp_path / "scripts", "ok.py", _CLEAN)
-    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
-    seen_env: dict[str, str] = {}
 
-    def _resolve_tool(name: str) -> list[str] | None:
-        return ["fake-tool"] if name == "ruff" else None
+    def _raise(_policy: object) -> kinds.CommandResult:
+        raise jail.JailUnavailableError("no namespaces")
 
-    def _run(
-        _argv: list[str],
-        *,
-        capture_output: bool,
-        text: bool,
-        timeout: float,
-        cwd: pathlib.Path,
-        check: bool,
-        env: dict[str, str],
-    ) -> object:
-        del capture_output, text, timeout, cwd, check
-        seen_env.update(env)
-        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    monkeypatch.setattr(scriptcheck, "run_in_jail", _raise)
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
+    assert problems
+    assert all("could not run in a jail (no namespaces)" in problem for problem in problems)
+
+
+def test_a_checker_writes_nothing_but_the_scripts_ruff_fixes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bundle is read-only to both checkers; `fix` opens the scripts to ruff alone."""
+    require_userns_jail()
+    _write(tmp_path / "scripts", "ok.py", _CLEAN)
+    probe = tmp_path / "tools" / "probe"
+    probe.parent.mkdir()
+    # The second argument tells the checkers apart: ruff's is `--no-cache`, pyrefly's `--config`.
+    probe.write_text(
+        f'#!/bin/sh\ntouch "{tmp_path}/out$2" "{tmp_path}/scripts/in$2" 2>/dev/null\nexit 0\n',
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+
+    def _resolve_tool(_name: str) -> pathlib.Path:
+        return probe
 
     monkeypatch.setattr(scriptcheck, "_resolve_tool", _resolve_tool)
-    monkeypatch.setattr(scriptcheck.subprocess, "run", _run)
-
-    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
-    assert seen_env["PYTHONDONTWRITEBYTECODE"] == "1"
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full") == []
+    written = {path.name for path in (tmp_path, tmp_path / "scripts") for path in path.iterdir()}
+    assert written == {"scripts", "tools", "ok.py"}
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full", fix=True) == []
+    assert {path.name for path in (tmp_path / "scripts").iterdir()} == {"ok.py", "in--no-cache"}
+    assert {path.name for path in tmp_path.iterdir()} == {"scripts", "tools"}
 
 
 def test_lint_catches_undefined_name(tmp_path: pathlib.Path) -> None:
     _need("ruff")
     _write(tmp_path / "scripts", "bad.py", "print(undefined_name)\n")
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert any("ruff" in p for p in problems)
 
 
@@ -80,7 +149,7 @@ def test_typecheck_catches_type_error(tmp_path: pathlib.Path) -> None:
     """An unconfigured pyrefly run uses its `basic` preset, which reports no type error."""
     _need("pyrefly")
     _write(tmp_path / "scripts", "bad.py", _TYPED_BUG)
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert any("pyrefly" in p and "scripts/bad.py:2" in p for p in problems), problems
 
 
@@ -88,7 +157,7 @@ def test_typecheck_requires_annotations(tmp_path: pathlib.Path) -> None:
     """The check runs the `strict` preset: the default one passes an unannotated parameter."""
     _need("pyrefly")
     _write(tmp_path / "scripts", "loose.py", "def f(x):\n    return x\n")
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert any("pyrefly" in p and "scripts/loose.py:1" in p for p in problems), problems
 
 
@@ -100,27 +169,8 @@ def test_typecheck_ignores_a_pyrefly_config_in_the_bundle(tmp_path: pathlib.Path
         (directory / "pyrefly.toml").write_text(
             "[errors]\nunsupported-operation = false\n", encoding="utf-8"
         )
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert any("pyrefly" in p for p in problems), problems
-
-
-def test_typecheck_runs_nothing_from_the_bundle(tmp_path: pathlib.Path) -> None:
-    """Unconfigured, pyrefly ran the `python` of a `.venv` it found beside the scripts."""
-    _need("pyrefly")
-    _write(tmp_path / "scripts", "ok.py", _CLEAN)
-    marker = tmp_path / "ran"
-    # The interpreter pyrefly queries imports these; neither directory is on its path.
-    for directory in (tmp_path, tmp_path / "scripts"):
-        for module in ("json", "sysconfig"):
-            _write(directory, f"{module}.py", f"open({str(marker)!r}, 'w').close()\n")
-    planted = tmp_path / "scripts" / ".venv" / "bin"
-    planted.mkdir(parents=True)
-    (planted.parent / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
-    for name in ("python", "python3"):
-        (planted / name).write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
-        (planted / name).chmod(0o755)
-    scriptcheck.lint_and_typecheck(tmp_path / "scripts")
-    assert not marker.exists()
 
 
 def test_typecheck_resolves_an_import_of_a_sibling_script(tmp_path: pathlib.Path) -> None:
@@ -131,7 +181,7 @@ def test_typecheck_resolves_an_import_of_a_sibling_script(tmp_path: pathlib.Path
     for directory in (tmp_path / "scripts", tmp_path / "scripts" / "nested"):
         _write(directory, "helper.py", helper)
         _write(directory, "caller.py", caller)
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert not any("pyrefly" in p for p in problems), problems
 
 
@@ -139,17 +189,17 @@ def test_typecheck_skips_test_files(tmp_path: pathlib.Path) -> None:
     """Pyrefly is not run on `*_test.py` (mock internals trip it); ruff still is."""
     _need("pyrefly")
     _write(tmp_path / "scripts", "x_test.py", _TYPED_BUG)
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert not any("pyrefly" in p for p in problems)
 
 
 def test_no_python_scripts_is_clean(tmp_path: pathlib.Path) -> None:
     _write(tmp_path / "scripts", "run.sh", "#!/bin/sh\necho hi\n")
-    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full") == []
 
 
 def test_missing_scripts_dir_is_clean(tmp_path: pathlib.Path) -> None:
-    assert scriptcheck.lint_and_typecheck(tmp_path / "nope") == []
+    assert scriptcheck.lint_and_typecheck(tmp_path / "nope", "full") == []
 
 
 def test_lint_follows_the_bundles_ruff_config(tmp_path: pathlib.Path) -> None:
@@ -163,7 +213,7 @@ def test_lint_follows_the_bundles_ruff_config(tmp_path: pathlib.Path) -> None:
     _need("ruff")
     (tmp_path / "ruff.toml").write_text('[lint]\nignore = ["F401"]\n', encoding="utf-8")
     _write(tmp_path / "scripts", "imports.py", "import json\n")
-    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full") == []
 
 
 def test_create_fix_mode_lints_under_the_destinations_config(tmp_path: pathlib.Path) -> None:
@@ -180,7 +230,7 @@ def test_create_fix_mode_lints_under_the_destinations_config(tmp_path: pathlib.P
     body = "import json\n"
     _write(tmp_path / "scratch" / "scripts", "imports.py", body)
     problems = scriptcheck.lint_and_typecheck(
-        tmp_path / "scratch" / "scripts", fix=True, ruff_config_from=dest
+        tmp_path / "scratch" / "scripts", "full", fix=True, ruff_config_from=dest
     )
     assert not any("ruff" in p for p in problems)
     # F401 is off in the destination's config: nothing to fix, file untouched.
@@ -210,11 +260,11 @@ def _fake_jail(returncode: int, stderr: str = "") -> object:
 def _run_python_script(policy: kinds.JailPolicy) -> kinds.CommandResult:
     """Execute a known test fixture at the jail seam, without building a nested sandbox."""
     import os
-    import subprocess
     import sys
 
     result = subprocess.run(
-        [sys.executable, *policy.argv[1:]],
+        # The mock tests name the jail's `python3`; a checker names its own binary.
+        [sys.executable, *policy.argv[1:]] if policy.argv[0] == "python3" else policy.argv,
         cwd=policy.cwd,
         env={**os.environ, **dict(policy.env)},
         capture_output=True,
@@ -352,8 +402,6 @@ def test_offline_tests_no_test_files(tmp_path: pathlib.Path) -> None:
 def test_offline_tests_jail_unavailable_surfaces_diagnostic(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.sandbox import jail
-
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
 
     def _raise(_policy: object) -> kinds.CommandResult:
@@ -370,7 +418,7 @@ def test_static_diagnostics_relativize_temp_paths(tmp_path: pathlib.Path) -> Non
     # bundle-relative paths, like the offline-test diagnostics.
     _need("ruff")
     _write(tmp_path / "scripts", "bad.py", "print(undefined_name)\n")
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert problems
     assert "agent6-scriptcheck-" not in problems[0]
     assert "scripts/bad.py" in problems[0]
@@ -438,10 +486,10 @@ def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: pathlib.Path) -> 
     body = "import json\nimport os\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
     _write(tmp_path / "scripts", "fixable.py", body)
     # Default: reported, file untouched.
-    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full")
     assert (tmp_path / "scripts" / "fixable.py").read_text() == body
     # Fix mode: repaired in place, nothing reported for the fixable part.
-    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", fix=True)
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full", fix=True)
     fixed = (tmp_path / "scripts" / "fixable.py").read_text()
     assert "import os" not in fixed
     assert not any("ruff" in p for p in problems)
@@ -456,8 +504,7 @@ def test_the_create_lint_anchors_relative_patterns_where_machine_check_does(
     repo's pyproject would silence the draft (linted from its workspace) and fire on the published
     bundle under `machine check`.
     """
-    if scriptcheck._resolve_tool("ruff") is None:
-        pytest.skip("ruff is not installed")
+    _need("ruff")
     repo = tmp_path / "repo"
     (repo / "machines").mkdir(parents=True)
     (repo / "pyproject.toml").write_text(
@@ -471,11 +518,11 @@ def test_the_create_lint_anchors_relative_patterns_where_machine_check_does(
         "VALUE = 'a line that is longer than twenty characters'\n", encoding="utf-8"
     )
     drafted = scriptcheck.lint_and_typecheck(
-        workspace / "scripts", ruff_config_from=repo / "machines"
+        workspace / "scripts", "full", ruff_config_from=repo / "machines"
     )
     published = repo / "machines" / "m"
     shutil.copytree(workspace, published)
-    checked = scriptcheck.lint_and_typecheck(published / "scripts")
+    checked = scriptcheck.lint_and_typecheck(published / "scripts", "full")
     assert any("E501" in p for p in checked), checked
     assert any("E501" in p for p in drafted), drafted
     assert not any(str(workspace) in p for p in drafted), drafted  # bundle-relative paths

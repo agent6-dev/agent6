@@ -961,6 +961,12 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
     - `machine check` verifies every entry and static reference resolves inside the bundle (escaping symlinks rejected)
 - Scripts are committed, never fetched or generated at run time
     - the `.asm.toml` and `scripts/` are read-only in every jail during a run
+- `machine check`, `machine test` and `machine create` run ruff, pyrefly and the mock tests through `run_in_jail` with no network
+    - only `full` `sandbox.isolation` cuts a child off the network: under `partial` and `none` none of the three runs, and the command says so
+    - ruff sees its own binary, the scripts and the one ruff config that governs them; the scripts are writable only while `machine create` applies ruff's safe fixes to its own draft
+    - pyrefly sees its own binary and the directory that holds the machine file, read-only; it asks the jail's `python3` for its version and package paths
+    - a mock test runs in a private copy of the bundle
+    - the jail mounts none of your grants and no tool directory, and `uvx` fetches neither checker
 - Front-ends render `machine.notify` as an overlay, and `attach` / TUI call `notify-send` with fixed argv for a machine's notify and for a session that waits or ends, so a model message is inert data.
     - the body is escaped (`html.escape`), since a notification server reads markup there
 - The out-of-band hook `[notify].on_event` runs an operator argv on the host with the minimal `hook_env` env plus `AGENT6_NOTIFY_*` and `AGENT6_MACHINE_*`.
@@ -1097,11 +1103,6 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
       The URL is operator-supplied and nothing fetched is executed
 - `app/notify_hook.py`: the operator notify hook (`run_notify_hook`): `[notify].on_event` at a session's end and, from `machine run`, on a machine's notify and end (built by `app/machine/host_preflight.build_machine_notify_hook`).
   Argv from config, env from `hook_env` (a minimal base plus `AGENT6_NOTIFY_*` and `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
-- `app/machine/scriptcheck.py`: ruff and pyrefly with fixed argv, reading generated scripts statically.
-  Those scripts execute only via `run_in_jail`.
-  pyrefly gets an empty config file, so it reads none from the bundle.
-  pyrefly gets the `python3` on `PATH` as its interpreter and asks it for its version and package paths, so it runs none from a `.venv` in the bundle.
-  That interpreter starts in an empty private directory with `PYTHONSAFEPATH=1`, so no file of the bundle is on its import path.
 - `app/machine/agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
 - `ui/tui/clipboard.py`: `tmux load-buffer -w -` with fixed argv and the copied transcript text on stdin.
 - `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment, transcript text on stdin.

@@ -95,7 +95,8 @@ def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, 
         return _fail(path, exc.problems, exc.label)
     spec = checked.spec
     _print_notes(checked)
-    _warn_script_findings(scriptcheck.lint_and_typecheck(path.parent / "scripts"))
+    isolation = checked.configs.machine.isolation
+    _warn_script_findings(scriptcheck.lint_and_typecheck(path.parent / "scripts", isolation))
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
     return 0
 
@@ -124,11 +125,12 @@ def _cmd_machine_test(
     except check.CheckError as exc:
         return _fail(path, exc.problems, exc.label)
     spec = checked.spec
-    offline = scriptcheck.run_offline_tests(path.parent, checked.configs.machine.isolation)
+    isolation = checked.configs.machine.isolation
+    offline = scriptcheck.run_offline_tests(path.parent, isolation)
     if offline.problems:
         return _fail(path, list(offline.problems), "scripts")
     _print_notes(checked)
-    _warn_script_findings(scriptcheck.lint_and_typecheck(path.parent / "scripts"))
+    _warn_script_findings(scriptcheck.lint_and_typecheck(path.parent / "scripts", isolation))
     fixture: dict[str, Any] | None = None
     if blackboard is not None:
         try:

@@ -773,7 +773,7 @@ These [job states](architecture.md#jail-job-ownership) are separate from the wor
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
 | `agent6 machine create <task> [-o <file>] [--max-attempts N] [--max-usd USD] [--max-plan-points POINTS] [--max-tokens-fallback N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam); output: a draft for operator review + commit ([`machine create`](#machine-create)) |
-| `agent6 machine check <file>`             | validate: the `[config]` overlay and every state's `config` against the config schema, their refusals and the sandbox bound; parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; warnings for script findings (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; pyrefly with its `strict` preset and no config file); no execution, no network |
+| `agent6 machine check <file>`             | validate: the `[config]` overlay and every state's `config` against the config schema, their refusals and the sandbox bound; parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; warnings for script findings (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; pyrefly with its `strict` preset and no config file; both in a no-network jail); no execution, no network |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` validates; the bundle's `scripts/**/*_test.py` mock tests in a no-network jail (`full` `sandbox.isolation` only: elsewhere they count as not run on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | machine diagram; `--format mermaid` (default): `stateDiagram-v2`; `--format dot`: Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the Graphviz/`xdot` ecosystem; both pure renders of the same validated graph, reachability computed at load |
 | `agent6 machine run <file> [--exit-on-wait] [--auto-approve\|--no-commands] [--disable-sandbox]` | machine start or resume; lock acquired, loop driven; `--exit-on-wait`: next wake persisted, exit 0 (status `waiting`) at the first not-ready `wait`, resume by an external scheduler ([a systemd timer or cron](cli.md#scheduled-runs)); approval and sandbox flags: same purpose and refusals as the run flags |
@@ -797,6 +797,9 @@ A leading `~` marks dollar totals that omit unpriced usage; the `run` and `statu
 It warns when a `tool` state's binary is not on the jail's PATH.
 `check` and `test` print what ruff and pyrefly find in the scripts as warnings under one line that says so.
 The findings change neither the exit code nor the verdict line: a machine with an unlinted or untyped script is valid and runnable.
+ruff and pyrefly run in a jail with no network, which needs `full` `sandbox.isolation`: at another level a note says the script lint and type check did not run.
+The jail shows ruff the scripts and the one config file that governs them: ruff reads no user-level config, and it fails, naming the file, when the governing config extends one elsewhere.
+Both checkers are the ones installed beside agent6, else on `PATH`.
 
 `machine test` prints the same jail-PATH warnings and sandbox and environment notes as `check`.
 It runs mock tests at the machine's resolved isolation level.
@@ -817,7 +820,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
     - each turn commits, and a failed create keeps the workspace for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), pyrefly (`strict`), the `machine test` dry-run, and mock tests in a no-network jail
     - a ruff or pyrefly finding refuses the draft; on a bundle written by hand, `machine check` and `machine test` only warn
-    - the mock tests run under `full` `sandbox.isolation` only: elsewhere agent6 reports them as not run
+    - ruff, pyrefly and the mock tests run under `full` `sandbox.isolation` only: elsewhere agent6 reports them as not run and publishes the draft without them
     - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back
     - up to `--max-attempts` (default 3); the agent patches the files it wrote
 - the result is a draft: `-o <file>` overwrites the file and same-named files in the `scripts/` directory beside it

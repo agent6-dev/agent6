@@ -149,7 +149,9 @@ def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
 # --- CLI flow --------------------------------------------------------------
 
 
-def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+def _stub_preflight(
+    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel = "none"
+) -> None:
     def _load(_root: object, _explicit: object = None) -> layer_data.EffectiveConfig:
         # A real Config: the authoring execution materializes it as its overlay.
         cfg = Config.model_validate(
@@ -167,7 +169,7 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def _no_preflight(_cfg: object, **_kw: object) -> str:
         # The isolation preflight is the run lifecycle's, tested there.
-        return "none"
+        return isolation
 
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
@@ -929,6 +931,7 @@ def test_create_output_flag_creates_parent_dirs(
     assert target.read_text(encoding="utf-8").startswith('machine = "greeter"')
 
 
+@pytest.mark.needs_namespaces
 def test_create_publishes_the_bytes_the_lint_gate_passed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -938,7 +941,7 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
     monkeypatch.chdir(tmp_path)
-    _stub_preflight(monkeypatch)
+    _stub_preflight(monkeypatch, isolation="full")
     unused_import = "import json\nprint('hi')\n"  # F401: ruff fixes it safely
 
     def fake_build(
@@ -959,9 +962,10 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
     assert main(["machine", "create", "Run a script"]) == 0
     written = (tmp_path / "scripts" / "run.py").read_text(encoding="utf-8")
     assert "import json" not in written, written
-    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts", "full") == []
 
 
+@pytest.mark.needs_namespaces
 def test_create_retry_prompt_names_the_script_problem(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -971,7 +975,7 @@ def test_create_retry_prompt_names_the_script_problem(
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
     monkeypatch.chdir(tmp_path)
-    _stub_preflight(monkeypatch)
+    _stub_preflight(monkeypatch, isolation="full")
     prompts: list[str] = []
     bad = "print(undefined_name)\n"  # F821
     good = "import json\nprint(json.dumps({}))\n"
@@ -1096,7 +1100,7 @@ def test_create_writes_script_bundle(
     assert (tmp_path / "scripted.asm.toml").exists()
     script = tmp_path / "scripts" / "run.py"
     assert script.exists()
-    # The published bytes are the gate's (ruff --fix ran), so content is compared.
+    # The gate may rewrite the scripts (ruff --fix), so content is compared.
     written = script.read_text(encoding="utf-8")
     assert written.startswith("import json") and "print(json.dumps({}))" in written
     assert "1 script(s)" in out.err
@@ -1157,6 +1161,7 @@ def test_create_rejects_missing_script_then_succeeds(
     assert "attempt 2/3" in out.err
 
 
+@pytest.mark.needs_namespaces
 def test_create_rejects_lint_bad_script(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1166,7 +1171,7 @@ def test_create_rejects_lint_bad_script(
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
     monkeypatch.chdir(tmp_path)
-    _stub_preflight(monkeypatch)
+    _stub_preflight(monkeypatch, isolation="full")
     bad = "import json\nprint(undefined_name)\n"  # F821 undefined name
     _stub_runner(
         monkeypatch,
@@ -1479,12 +1484,13 @@ def test_create_runs_the_shared_isolation_preflight(
     assert "REFUSING" in err and "private directory" in err
 
 
+@pytest.mark.needs_namespaces
 def test_a_structural_failure_still_reports_the_scripts_lint_problems(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One attempt reveals every problem class: a TOML failure and a lint failure together."""
     monkeypatch.chdir(tmp_path)
-    _stub_preflight(monkeypatch)
+    _stub_preflight(monkeypatch, isolation="full")
     bad_toml = 'machine = "x"\nversion = 1\ninitial = "missing_state"\n'
     bad_script = "import subprocess\nsubprocess.run(['ls'])\n"  # PLW1510: no check=
     seen_prompts: list[str] = []

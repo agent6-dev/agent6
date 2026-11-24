@@ -1802,6 +1802,7 @@ def test_offline_validation_prints_sandbox_and_pass_env_notes(
     assert "receives the environment variable(s) TOKEN when [machine].pass_env allows them" in out
 
 
+@pytest.mark.needs_namespaces
 @pytest.mark.parametrize("verb", ["check", "test"])
 def test_script_findings_are_warnings_under_an_ok_verdict(
     tmp_path: pathlib.Path,

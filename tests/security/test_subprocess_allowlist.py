@@ -40,7 +40,6 @@ _PATTERN = re.compile(
 # completer, which runs in the operator's shell, not in agent6).
 ALLOWED = {
     "app/notify_hook.py",
-    "app/machine/scriptcheck.py",
     "app/machine/agent.py",
     "providers/claude_code_session.py",
     "providers/claude_code.py",
