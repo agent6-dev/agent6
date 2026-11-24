@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Fresh and resumed executions share one execution body.
 
-Both hand `ExecutionInputs` to `execution.run_execution`, the one place the Harness is built.
-A `Harness(...)` call in either lifecycle module would let their wiring drift apart.
+Both hand `ExecutionInputs` to `execution.run_execution`. Only the shared execution builds a
+Harness. A `Harness(...)` call in a run or resume stage would let their wiring drift apart.
 """
 
 from __future__ import annotations
@@ -19,10 +19,12 @@ import agent6.app.run
 
 def _calls(module: types.ModuleType, name: str) -> int:
     assert module.__file__ is not None
-    src = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+    entry = pathlib.Path(module.__file__)
+    stages = entry.parent.glob(f"{entry.stem}_*.py")
     return sum(
         1
-        for node in ast.walk(ast.parse(src))
+        for path in (entry, *stages)
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
         if isinstance(node, ast.Call)
         and (
             (isinstance(node.func, ast.Name) and node.func.id == name)
