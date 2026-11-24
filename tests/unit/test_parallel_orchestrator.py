@@ -240,9 +240,7 @@ class _FakeSpawner:
             cost=self.cost_by_child.get(spec.number, 0.05),
             points=self.points_by_child.get(spec.number),
             read_at=self.read_at_by_child.get(spec.number, _READ_AT + spec.number),
-            base_sha=git_read.status(self.origin).head_sha
-            if spec.number in self.branch_at_base
-            else "",
+            base_sha=git_read.status(self.origin).head_sha,
         )
         if spec.number in self.pid_children:
             (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -1423,7 +1421,8 @@ def test_a_failed_child_never_merges_into_the_parent(
     assert res.ok is False
     assert "failed" in res.error and "provider error" in res.error
     # The work is not lost: the branch was imported before the verdict.
-    assert "agent6/co-pf-l1" in res.error
+    assert "agent6/co-pf-l1 holds 1 commit" in res.error
+    assert (res.commits, res.has_commits) == (1, True)
     assert git_read.branch_exists(origin, "agent6/co-pf-l1")
 
 

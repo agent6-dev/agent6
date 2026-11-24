@@ -645,30 +645,28 @@ def recorded_result(
         tokens=call.context_tokens if call is not None and call.context_tokens > 0 else None,
         last_run_at=recorded.last_event_at,
     )
-    if not produced_result(summary.status):
-        # Only a child that finishes deliberately can merge into its parent as a success.
-        return child_records.ChildResult(
-            spec=spec,
-            session_dir=dest,
-            branch=branch,
-            ok=False,
-            error=(f"{stopped_by}: " if stopped_by else "")
-            + f"no result ({format.status_label(summary.status, summary.detail)});"
-            f" {parallel_results.imported_branch_note(origin, branch)}",
-            imported_ref=imported.ref,
-            imported_tip=imported.tip,
-            usage=usage,
-        )
+    ok = produced_result(summary.status)
+    commits = child_commits(origin, dest, imported)
+    held = (
+        f"{imported.ref} holds {commits} commit(s)"
+        if imported.ref
+        else "no branch (the run made no commit)"
+    )
     return child_records.ChildResult(
         spec=spec,
         session_dir=dest,
         branch=branch,
-        ok=True,
-        error="",
+        ok=ok,
+        error=""
+        if ok
+        else (
+            (f"{stopped_by}: " if stopped_by else "")
+            + f"no result ({format.status_label(summary.status, summary.detail)}); {held}"
+        ),
         imported_ref=imported.ref,
         imported_tip=imported.tip,
         has_commits=child_has_commits(dest, imported),
-        commits=child_commits(origin, dest, imported),
+        commits=commits,
         verification=summary.verification,
         usage=usage,
         report=recorded.finish_summary,
@@ -806,8 +804,10 @@ def recover_children(
                 )
             )
             continue
-        ref = branch if git_read.branch_exists(origin, branch) else ""
-        tip = (git_read.branch_tip_sha(origin, branch) or "") if ref else ""
+        manifest = sessions_manifest.read_manifest(child_dir)
+        ref = git_read.chain_ref_for(session_id) if manifest.git_control == "model" else branch
+        tip = git_read.chain_tip(origin, ref) or ""
+        ref = ref if tip else ""
         imported = child_records.Imported(child_dir, ref, tip)
         results.append(recorded_result(spec, branch, child_dir, imported, origin=origin))
     return results

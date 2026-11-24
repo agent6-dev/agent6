@@ -50,7 +50,9 @@ def merge_child_result(
     """
     rid = res.spec.session_id
     if not res.ok:
-        return child_records.ChildMerge(rid, res.branch, "failed", "", res.error)
+        return child_records.ChildMerge(
+            rid, res.imported_ref, "failed", "", res.error, commits=res.commits
+        )
     if not res.has_commits:
         return child_records.ChildMerge(rid, res.branch, "no_changes", "", "")
     rev = res.imported_ref or res.branch

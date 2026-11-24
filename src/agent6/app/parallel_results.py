@@ -18,22 +18,6 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
 
 
-def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
-    """Return the branch a successful import retained, or say the child made no commit.
-
-    Args:
-        origin: The repository the child was imported into.
-        branch: The child's branch.
-
-    Returns:
-        "branch imported as <branch>", or "no branch (the run made no commit)" when the
-        origin has no such branch.
-    """
-    if git_read.branch_exists(origin, branch):
-        return f"branch imported as {branch}"
-    return "no branch (the run made no commit)"
-
-
 def stamp(session_dir: pathlib.Path, **updates: object) -> str | None:
     """Apply field updates to a session's manifest.
 
