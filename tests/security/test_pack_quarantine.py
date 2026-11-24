@@ -23,7 +23,7 @@ import pytest
 
 import agent6
 from agent6 import errors, kinds, pack, pack_manifest, paths
-from agent6.app import confine, execution, merge, role_providers
+from agent6.app import confine, execution_harness, merge, role_providers
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import run as machine_run
 from agent6.config import Config, layer
@@ -303,7 +303,7 @@ def test_a_session_says_it_once_through_its_journal(tmp_path: pathlib.Path) -> N
     root.mkdir()
     forged = _forge(root)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.subscribe(functools.partial(execution.headless_marker, log=printed.append))
+    sink.subscribe(functools.partial(execution_harness.headless_marker, log=printed.append))
     pack.quarantine(root, warn=said.append, events=sink)
     (row,) = [json.loads(line) for line in sink.path.read_text(encoding="utf-8").splitlines()]
     assert row["type"] == "pack.quarantined"

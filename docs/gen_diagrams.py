@@ -205,6 +205,7 @@ _STAGE_MODULES = {
     "run": "src/agent6/app/run.py",
     "run_preflight": "src/agent6/app/run_preflight.py",
     "run_open": "src/agent6/app/run_open.py",
+    "execution_harness": "src/agent6/app/execution_harness.py",
     "session_prepare": "src/agent6/app/session/prepare.py",
 }
 # The stage behind a call through a callable the lifecycle hands in, by the attribute called:

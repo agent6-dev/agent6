@@ -25,6 +25,7 @@ depends_on = []
 # run uses run_open within the app layer.
 # resume uses resume_record within the app layer.
 # resume uses resume_setup within the app layer.
+# execution uses execution_harness within the app layer.
 path = "agent6.app"
 depends_on = [
   "agent6",
