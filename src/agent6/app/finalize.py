@@ -21,7 +21,7 @@ from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.harness import advice, loop_snapshot
-from agent6.sessions import budget_events, event_log, journal
+from agent6.sessions import budget_events, event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
@@ -384,7 +384,7 @@ def settle_budget(budget: agent6_budget.BudgetTracker, events: event_log.EventSi
         events: The session journal.
     """
     if budget.settle():
-        events.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(budget)))
+        budget_events.emit_budget_update(budget, events.emit)
 
 
 def print_child_config_notes(

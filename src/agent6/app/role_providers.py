@@ -677,9 +677,7 @@ class InstrumentedProvider:
         spend ledger.
         """
         if self.events is not None:
-            self.events.emit(
-                journal.BudgetUpdate(**budget_events.budget_update_fields(self.budget))
-            )
+            budget_events.emit_budget_update(self.budget, self.events.emit)
 
 
 def helper_actor_provider(

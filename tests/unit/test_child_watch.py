@@ -362,6 +362,21 @@ def test_a_parent_counts_a_running_childs_spend_and_ends_it_at_the_cap(
     assert parent.asked == [], "a spent budget ends the child before its prompt is relayed"
 
 
+def test_the_watch_retries_an_unwritten_meter_on_the_next_poll(tmp_path: pathlib.Path) -> None:
+    """A failed append does not mark an unchanged reading as journaled."""
+    parent = _Parent(tmp_path)
+    sink = event_log.EventSink(parent.dir / "logs.jsonl")
+    budget = agent6_budget.BudgetTracker(max_usd=1, max_tokens_fallback=-1, max_plan_points=-1)
+    watch = child_watch.ChildWatch(parent.prompts, parent.dir, budget, sink.emit)
+    child = _child(tmp_path, _spend(0.25))
+    sink.path.mkdir()
+    with pytest.raises(event_log.EventWriteError, match="unwritable"):
+        watch(child, "child", "running")
+    sink.path.rmdir()
+    watch(child, "child", "running")
+    assert child_watch.running_usage(parent.dir).usd == 0.25
+
+
 def test_the_watch_journals_the_meter_as_running_children_move_it(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

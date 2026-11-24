@@ -63,7 +63,7 @@ def test_shared_model_id_keeps_each_routes_price(
             provider.call(system="s", messages=[])
     assert tracker.estimate_usd() == (11.0, False)
     assert tracker.fraction_remaining() == pytest.approx(0.45)
-    assert budget_events.budget_update_fields(tracker)["usd_total"] == 11.0
+    assert budget_events.budget_update(tracker).usd_total == 11.0
     assert set(tracker.snapshot().per_model) == {
         kinds.ModelRoute("expensive", "shared"),
         kinds.ModelRoute("cheap", "shared"),
@@ -94,8 +94,9 @@ def test_the_budget_row_names_the_account_it_read() -> None:
         tracker.record_plan_preflight(
             provider, budget.PlanUsage.single(used, 300, 2e9, secondary_used_percent=5.0)
         )
-    fields = budget_events.budget_update_fields(tracker)
-    account = fields["account"]
-    assert account.provider == "b" and account.used_percent == 40.0
+    row = budget_events.budget_update(tracker)
+    account = row.account
+    assert account is not None and account.provider == "b" and account.used_percent == 40.0
     assert [w.name for w in account.windows] == ["primary", "secondary"]
+    fields = row.model_dump()
     assert "plan_used_percent" not in fields and "plan_windows" not in fields

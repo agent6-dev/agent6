@@ -871,7 +871,7 @@ class ParallelDispatcher:
         """Journal the meter after a settlement, so the children's charge is on the record."""
         if self.budget is None:
             return
-        self.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(self.budget)))
+        budget_events.emit_budget_update(self.budget, self.emit)
         self.emit(budget_events.budget_turn(self.budget, turn))
 
     def ensure_clean(self, turn: int, what: str) -> bool:

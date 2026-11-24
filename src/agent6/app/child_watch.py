@@ -186,8 +186,8 @@ class ChildWatch:
         with self._row_lock:
             if moved == self._journaled or (not now and at - self._journaled_at < ROW_INTERVAL_S):
                 return
+            budget_events.emit_budget_update(budget, self._emit)
             self._journaled, self._journaled_at = moved, at
-        self._emit(journal.BudgetUpdate(**budget_events.budget_update_fields(budget)))
 
     def _relay(self, reader: _PromptJournal, label: str, interrupted: Callable[[], bool]) -> None:
         """Publish a reply only to the open slot the parent offered to its operator."""

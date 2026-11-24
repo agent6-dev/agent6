@@ -31,7 +31,7 @@ class Ledger:
 
     spent_usd: float = 0.0
     _seen: set[Reading] = dataclasses.field(default_factory=set)
-    _unpublished: list[Reading] = dataclasses.field(default_factory=list)
+    _unpublished: set[Reading] = dataclasses.field(default_factory=set)
 
     def __len__(self) -> int:
         return len(self._seen)
@@ -41,7 +41,7 @@ class Ledger:
         new = set(readings).difference(self._seen)
         if not new:
             return
-        self._unpublished.extend(sorted(new))
+        self._unpublished.update(new)
         self._seen.update(new)
         self.spent_usd = math.fsum(
             max(earlier.balance_usd - later.balance_usd, 0.0)
@@ -49,8 +49,11 @@ class Ledger:
             for earlier, later in itertools.pairwise(series)
         )
 
-    def take_readings(self) -> tuple[Reading, ...]:
-        """Return just the observations added since the last budget row."""
-        readings = tuple(self._unpublished)
-        self._unpublished.clear()
-        return readings
+    @property
+    def unpublished(self) -> tuple[Reading, ...]:
+        """The observations not yet confirmed by a journal append."""
+        return tuple(sorted(self._unpublished))
+
+    def published(self, readings: Iterable[Reading]) -> None:
+        """Mark only the observations included in a written row as published."""
+        self._unpublished.difference_update(readings)

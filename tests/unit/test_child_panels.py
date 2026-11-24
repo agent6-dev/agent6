@@ -77,8 +77,8 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
                 cache_write_tokens=0,
                 cost_usd=cost,
             )
-        event_log.EventSink(worker_dir / "logs.jsonl").emit(
-            journal.BudgetUpdate(**budget_events.budget_update_fields(worker))
+        budget_events.emit_budget_update(
+            worker, event_log.EventSink(worker_dir / "logs.jsonl").emit
         )
         executor = child_env.dispatcher(clone, worker_dir, cfg, worker)
         refused = executor.dispatch(
@@ -278,7 +278,7 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
                 )
         if boundary == "accounting_failed":
             # Finalization can still publish the charged meter after the dispatch emit failed.
-            original_emit(journal.BudgetUpdate(**budget_events.budget_update_fields(meter)))
+            budget_events.emit_budget_update(meter, original_emit)
         before = len(calls)
         ancestor = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
         ancestor.settle_child(worker_dir.name, children.child_usage(worker_dir))
@@ -546,10 +546,10 @@ def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
     child_dispatch.write_record(worker, record, now=time.time())
     tracker = budget.BudgetTracker(max_usd=10, max_tokens_fallback=100, max_plan_points=20)
     sink = event_log.EventSink(worker / "logs.jsonl")
-    sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+    budget_events.emit_budget_update(tracker, sink.emit)
     assert children.child_usage(worker) is None
     tracker.settle_child(leaf, budget.UsageSettlement(usd=2.0, usd_partial=False, tokens=0))
-    sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+    budget_events.emit_budget_update(tracker, sink.emit)
     usage = children.child_usage(worker)
     assert usage is not None
     assert usage.usd == pytest.approx(2.0)

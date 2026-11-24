@@ -112,7 +112,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `settled_children` | `list, optional` | Child session IDs included in this execution's cumulative spend. |
 | `usd_own_calls` | `float, optional` | Cost of this execution's priced calls, excluding children and credits. |
 | `usd_observed_credits` | `float, optional` | Account credit declines inside the USD cap reading, counted once per account. |
-| `credit_readings` | `list, optional` | New account balances observed in the subtree, with their observation times. |
+| `credit_readings` | `list, optional` | Balances observed in the subtree. A retried append can repeat a reading. |
 | `credit_readings[].account` | `str` | A fingerprint of the account ID, or the provider entry if the ID is absent. |
 | `credit_readings[].observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
 | `credit_readings[].balance_usd` | `float` | The balance in dollars. |

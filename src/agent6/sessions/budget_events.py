@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
 
 from agent6 import budget as agent6_budget
 from agent6.sessions import journal
@@ -22,8 +22,8 @@ def budget_turn(budget: agent6_budget.BudgetTracker, turn: int) -> journal.Budge
     )
 
 
-def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
-    """Return a `budget.update` event's fields: the tracker's cumulative spend and plan reading."""
+def budget_update(budget: agent6_budget.BudgetTracker) -> journal.BudgetUpdate:
+    """Return a `budget.update` row without consuming its balance readings."""
     snap = budget.snapshot(for_journal=True)
     account = None
     latest = next(reversed(snap.plans.items()), None)  # the last reading any provider gave
@@ -47,7 +47,7 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
             credits_unlimited=plan.credits_unlimited,
             credits_balance=plan.credits_balance,
         )
-    return dict(
+    return journal.BudgetUpdate(
         settled_children=tuple(sorted(snap.settled_children)),
         input_settled_children=snap.child_model_tokens.input_tokens,
         output_settled_children=snap.child_model_tokens.output_tokens,
@@ -70,3 +70,12 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
         plan_cap=snap.max_plan_points,
         account=account,
     )
+
+
+def emit_budget_update(
+    budget: agent6_budget.BudgetTracker, emit: Callable[[journal.BudgetUpdate], None]
+) -> None:
+    """Journal the meter and confirm its balance readings after the append succeeds."""
+    row = budget_update(budget)
+    emit(row)
+    budget.credit_readings_published(row.credit_readings)

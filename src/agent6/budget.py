@@ -907,11 +907,16 @@ class BudgetTracker:
                 used = max(used, self._plan_observed_points() / self.max_plan_points)
         return max(0.0, 1.0 - used)
 
+    def credit_readings_published(self, readings: tuple[credit_usage.Reading, ...]) -> None:
+        """Confirm the readings a budget row wrote, leaving concurrent observations pending."""
+        with self._lock:
+            self._credits.published(readings)
+
     def snapshot(self, *, for_journal: bool = False) -> BudgetSnapshot:
         """Return a point-in-time copy of every counter.
 
         Args:
-            for_journal: Take the new balance observations for the next budget row.
+            for_journal: Include the unpublished balance observations.
 
         Returns:
             The counters read under one lock.
@@ -927,7 +932,7 @@ class BudgetTracker:
                 usd_own_calls=own_usd,
                 usd_partial=partial or self._children_partial,
                 usd_observed_credits=self._credits.spent_usd,
-                credit_readings=self._credits.take_readings() if for_journal else (),
+                credit_readings=self._credits.unpublished if for_journal else (),
                 input_total=self._input_total,
                 output_total=self._output_total,
                 cache_read_total=self._cache_read_total,

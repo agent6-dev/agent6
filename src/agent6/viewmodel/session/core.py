@@ -262,7 +262,11 @@ def _usage(
             - prior.execution.usd_observed_credits
             + row.usd_observed_credits
         ),
-        credit_readings=prior.session.credit_readings + row.credit_readings,
+        credit_readings=(
+            tuple(dict.fromkeys((*prior.session.credit_readings, *row.credit_readings)))
+            if row.credit_readings
+            else prior.session.credit_readings
+        ),
         usd_partial=bool(row.usd_partial) or prior.session.usd_partial,
         plan_observed_points=banked_points + (row.plan_observed_points or 0.0),
     )

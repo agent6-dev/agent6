@@ -609,7 +609,7 @@ def test_a_settled_childs_spend_is_exported_once(repo: pathlib.Path) -> None:
         log = runs / session_id / "logs.jsonl"
         sink = event_log.EventSink(log)
         sink.emit(journal.SessionStart(user_task="t", mode="run", execution_id="e1"))
-        sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+        budget_events.emit_budget_update(tracker, sink.emit)
         return tracker, log
 
     _child, child_log = started("child", 0.30)
@@ -617,9 +617,7 @@ def test_a_settled_childs_spend_is_exported_once(repo: pathlib.Path) -> None:
     usage = children.child_usage(child_log.parent)
     assert usage is not None and usage.usd == pytest.approx(0.30)
     parent.settle_child("child", usage)
-    event_log.EventSink(parent_log).emit(
-        journal.BudgetUpdate(**budget_events.budget_update_fields(parent))
-    )
+    budget_events.emit_budget_update(parent, event_log.EventSink(parent_log).emit)
     # The parent's own views keep the child's spend.
     assert session_log.scan_session_log(parent_log).budget.session.usd == pytest.approx(0.50)
     lines = export.prometheus_text(repo).splitlines()
@@ -648,12 +646,12 @@ def test_observers_of_one_credit_drop_do_not_export_or_settle_two_dollars(
                     20, 300, 0, has_credits=True, credits_balance=balance
                 ),
             )
-            sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+            budget_events.emit_budget_update(tracker, sink.emit)
     assert child.estimate_usd()[0] == 1
     usage = children.child_usage(runs / "child")
     assert usage is not None
     parent.settle_child("child", usage)
-    sinks[0].emit(journal.BudgetUpdate(**budget_events.budget_update_fields(parent)))
+    budget_events.emit_budget_update(parent, sinks[0].emit)
     assert parent.available().usd == 1
     parent.check()
     lines = export.prometheus_text(repo).splitlines()

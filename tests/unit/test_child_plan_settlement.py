@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 
 import pytest
@@ -44,17 +45,13 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
         tracker.record_plan_preflight("b", b0)
     panel.record_plan_preflight("b", b1)
     leaf_sink = event_log.EventSink(leaf / "logs.jsonl")
-    leaf_sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(panel)))
+    budget_events.emit_budget_update(panel, leaf_sink.emit)
     leaf_usage = children.child_usage(leaf)
     assert leaf_usage is not None
     owner.settle_child(leaf.name, leaf_usage)
     owner.record_plan_preflight("a", a1)
     sink = event_log.EventSink(worker / "logs.jsonl")
-    sink.emit(
-        journal.BudgetUpdate(
-            **budget_events.budget_update_fields(owner),
-        )
-    )
+    budget_events.emit_budget_update(owner, sink.emit)
     child_dispatch.write_record(
         worker,
         child_dispatch.DispatchRecord(
@@ -111,6 +108,59 @@ def _call(tracker: budget.BudgetTracker, dollars: float) -> None:
     )
 
 
+def test_failed_budget_append_keeps_the_balance_for_child_settlement(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A missing baseline in the child journal would hide its decline from the parent."""
+    child = budget.BudgetTracker(max_usd=2, max_tokens_fallback=-1, max_plan_points=-1)
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    _balance(child, "p", "shared", 10, 10)
+    sink.path.mkdir()
+    with pytest.raises(event_log.EventWriteError, match="unwritable"):
+        budget_events.emit_budget_update(child, sink.emit)
+    sink.path.rmdir()
+    _balance(child, "p", "shared", 20, 9)
+    budget_events.emit_budget_update(child, sink.emit)
+    usage = children.child_usage(tmp_path)
+    assert usage is not None and usage.usd_observed_credits == 1
+    parent = budget.BudgetTracker(max_usd=2, max_tokens_fallback=-1, max_plan_points=-1)
+    parent.note_running("child", child_watch.running_usage(tmp_path))
+    parent.settle_child("child", usage)
+    assert parent.snapshot().usd_observed_credits == 1
+
+
+def test_a_retried_append_confirms_only_its_own_readings(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed fsync can leave a readable row that the next append repeats."""
+    child = budget.BudgetTracker(max_usd=3, max_tokens_fallback=-1, max_plan_points=-1)
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    _balance(child, "p", "shared", 10, 10)
+
+    def failed_sync(fd: int) -> None:
+        raise OSError("sync failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", failed_sync)
+        with pytest.raises(event_log.EventWriteError, match="sync failed"):
+            budget_events.emit_budget_update(child, sink.emit)
+    sink.subscribe(lambda _: _balance(child, "p", "shared", 30, 8))
+    _balance(child, "p", "shared", 20, 9)
+    for _ in range(2):
+        budget_events.emit_budget_update(child, sink.emit)
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert [[r["balance_usd"] for r in row["credit_readings"]] for row in rows] == [
+        [10],
+        [10, 9],
+        [8],
+    ]
+    usage = children.child_usage(tmp_path)
+    assert usage is not None and [r.balance_usd for r in usage.credit_readings] == [10, 9, 8]
+    parent = budget.BudgetTracker(max_usd=3, max_tokens_fallback=-1, max_plan_points=-1)
+    parent.settle_child("child", usage)
+    assert parent.available().usd == 1
+
+
 def test_credit_journal_distinguishes_accounts_without_publishing_their_header_values(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -120,9 +170,7 @@ def test_credit_journal_distinguishes_accounts_without_publishing_their_header_v
     _balance(tracker, "q", second, 20, 2)
     _balance(tracker, "alias", first, 30, 9)
     path = tmp_path / "logs.jsonl"
-    event_log.EventSink(path).emit(
-        journal.BudgetUpdate(**budget_events.budget_update_fields(tracker))
-    )
+    budget_events.emit_budget_update(tracker, event_log.EventSink(path).emit)
     wire = path.read_text()
     assert first not in wire and second not in wire
     usage = children.child_usage(tmp_path)
@@ -146,7 +194,7 @@ def test_running_and_settled_children_fold_credit_by_account_and_observation_tim
     _balance(child, "other", "child-only", 10, 5)
     _balance(child, "other", "child-only", 20, 4)
     _call(child, 0.50)
-    sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(child)))
+    budget_events.emit_budget_update(child, sink.emit)
 
     for _ in range(2):
         parent.note_running("child", child_watch.running_usage(child_dir))
@@ -189,7 +237,7 @@ def test_a_continued_child_charges_only_new_calls_and_keeps_the_credit_series(
         _balance(child, "p", "shared", at, balance)
         _balance(child, "p", "shared", at + 10, balance - 1)
         _call(child, call_cost)
-        sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(child)))
+        budget_events.emit_budget_update(child, sink.emit)
         parent.note_running("child", child_watch.running_usage(child_dir))
         usage = children.child_usage(child_dir)
         assert usage is not None

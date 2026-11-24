@@ -131,7 +131,7 @@ class BudgetUpdate(Event):
     )
     credit_readings: tuple[credit_usage.Reading, ...] = pydantic.Field(
         default=(),
-        description="New account balances observed in the subtree, with their observation times.",
+        description="Balances observed in the subtree. A retried append can repeat a reading.",
     )
     usd_total: float = pydantic.Field(
         description="USD cap reading: own calls, settled children and observed credit declines.",
