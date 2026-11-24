@@ -86,6 +86,22 @@ def test_after_turn_writes_the_marker_alone(tmp_path: pathlib.Path) -> None:
     assert not ipc.stop_request_is_now(d)  # the step's running command is left to finish
 
 
+@pytest.mark.parametrize("stale", [True, False])
+def test_resuming_after_failed_setup_keeps_only_a_current_stop(
+    tmp_path: pathlib.Path, stale: bool
+) -> None:
+    """Keeping unread instructions also kept a stale Stop's abort and steer request."""
+    d = _live_run(tmp_path, "setup-run-AAAAAA")
+    process.write_worker_pid(d, os.getpid())
+    assert stop.stop_session(d, request_only=True).ok
+
+    ipc.clear_pending_answers(d, started_at=time.time() + (60 if stale else -60), keep_steer=True)
+
+    assert ipc.stop_request_pending(d) is not stale
+    assert ipc.steer_request_pending(d) is not stale
+    assert ipc.take_steer_answer(d) == (None if stale else "abort")
+
+
 def test_request_only_writes_both_bridges_without_waiting_or_signalling(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

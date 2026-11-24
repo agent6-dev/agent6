@@ -220,7 +220,7 @@ def clear_pending_answers(
     answers), and the stop and compact markers (an instant re-stop) go; only files older
     than the start, less `TIMESTAMP_SLACK_S`: one written since belongs to the execution
     that is starting. The answer to a question still pending in the journal stays: the new
-    execution delivers it. `keep_steer` preserves the steer answer and request too.
+    execution delivers it. `keep_steer` preserves an unread instruction, not a control verb.
     Front-end claims need no sweep: `frontend_is_live` prunes dead
     ones, and a live watcher's must survive so its modals stay wired up.
 
@@ -233,6 +233,12 @@ def clear_pending_answers(
     """
     answer_dirs = (session_dir / APPROVAL_DIR_NAME, session_dir / QUESTION_DIR_NAME)
     markers = (STOP_REQUEST_FILE, COMPACT_REQUEST_FILE)
+    if keep_steer:
+        try:
+            answer = (session_dir / STEER_ANSWER_FILE).read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            answer = ""
+        keep_steer = bool(answer) and answer.lower() not in STEER_VERBS
     if not keep_steer:
         markers += (
             STEER_ANSWER_FILE,

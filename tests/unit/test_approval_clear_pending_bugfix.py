@@ -124,3 +124,12 @@ def test_clear_pending_keeps_a_queued_questions_answer(tmp_path: pathlib.Path) -
     assert ipc.question_answers_written(session_dir, "question-1")
     assert not ipc.question_answers_written(session_dir, "question-2")
     assert not ipc.answer_written(session_dir, "approval-1")
+
+
+def test_failed_setup_keeps_an_unread_instruction(tmp_path: pathlib.Path) -> None:
+    assert ipc.submit_steer(tmp_path, "update the docs")
+
+    ipc.clear_pending_answers(tmp_path, started_at=time.time() + 60, keep_steer=True)
+
+    assert ipc.steer_request_pending(tmp_path)
+    assert ipc.take_steer_answer(tmp_path) == "update the docs"
