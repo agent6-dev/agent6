@@ -162,7 +162,7 @@ class ResumeError(Exception):
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 7
+SNAPSHOT_VERSION = 8
 
 
 class SessionSnapshot(pydantic.BaseModel):
@@ -177,7 +177,7 @@ class SessionSnapshot(pydantic.BaseModel):
     Attributes:
         version: The snapshot format, refused when it is not `SNAPSHOT_VERSION`.
         system: The frozen system prompt.
-        messages: The conversation.
+        messages: The conversation, including the origin of operator notices.
         tool_calls: The tool calls made so far.
         next_turn: The turn the snapshot's provider call runs.
         root_task_id: The task graph's root, when the run has one.
@@ -435,7 +435,7 @@ def fold_interrupted_turn(
     )
     folded = snapshot.model_copy(
         update={
-            "messages": conversation.to_wire(),
+            "messages": conversation.to_wire(snapshot=True),
             "next_turn": flight.turn + 1,
             "tool_calls": snapshot.tool_calls + returned,
         }

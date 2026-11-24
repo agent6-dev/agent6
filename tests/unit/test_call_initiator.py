@@ -10,8 +10,9 @@ from typing import Any
 import pytest
 
 from agent6 import kinds
-from agent6.harness import loop_conversation, provider_call
+from agent6.harness import loop_conversation, loop_snapshot, provider_call
 from agent6.providers import ProviderError, ProviderResponse, request_headers
+from tests.unit import test_harness
 
 
 def _ok() -> ProviderResponse:
@@ -54,9 +55,32 @@ def test_the_initiator_follows_the_latest_notice_origin() -> None:
     assert conv.initiator == "agent"
     conv.notice("OPERATOR STEERING: faster", origin="operator")
     assert conv.initiator == "user"
-    # The wire carries text only: a snapshot read back is the harness's.
-    reloaded = loop_conversation.Conversation.from_wire(conv.to_wire())
-    assert reloaded.initiator == "agent"
+
+
+def test_checkpoint_preserves_notice_authors_but_the_provider_gets_plain_text(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A resumed steer keeps its author even beside an identical harness notice."""
+    snap = tmp_path / "loop_state.json"
+    harness = test_harness._wf(root=tmp_path, resume_state_path=snap)
+    state = test_harness._state()
+    conv = loop_conversation.Conversation()
+    for origin in ("operator", "harness"):
+        conv.notice("same words", origin=origin)
+    wire = harness._turn_pre_call(
+        conversation=conv,
+        state=state,
+        ctx=harness._turn_context(state, turn=1, execution_start=1),
+        tools=[],
+    )
+    assert isinstance(wire, list) and wire == conv.to_wire()
+    assert all("origin" not in b for m in wire for b in m["content"])
+    for path in (snap, tmp_path / "checkpoints" / "0001.json"):
+        saved = loop_snapshot.load_session_snapshot(path)
+        resumed = loop_conversation.Conversation.from_wire(saved.messages)
+        assert resumed.messages == conv.messages
+        assert resumed.initiator == "user"
+        assert resumed.to_wire() == wire
 
 
 def test_the_caller_passes_the_initiator_as_a_partial_context() -> None:

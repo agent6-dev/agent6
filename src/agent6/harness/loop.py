@@ -588,7 +588,7 @@ class Harness:
                     return result
                 # A prose-only turn also reaches the snapshot and the operator boundary.
                 loop_resume.save_resume_snapshot(
-                    self, state, conversation.to_wire(), next_turn=turn + 1
+                    self, state, conversation.to_wire(snapshot=True), next_turn=turn + 1
                 )
                 outcome = loop_steer.operator_boundary(self, conversation, turn, state)
                 if outcome is not None:
@@ -610,7 +610,7 @@ class Harness:
             conversation.results(turn_state.tool_results)
             # Snapshot, then clear the marker: a stale marker is cleared, never missed.
             loop_resume.save_resume_snapshot(
-                self, state, conversation.to_wire(), next_turn=turn + 1
+                self, state, conversation.to_wire(snapshot=True), next_turn=turn + 1
             )
             if self.resume_state_path is not None:
                 loop_snapshot.clear_turn_marker(
@@ -737,12 +737,15 @@ class Harness:
             self._maybe_surface_current_task(conversation, state)
         if restarted or self.contract is not None:
             conversation.roll_cache_marks()
-        wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
         loop_resume.save_resume_snapshot(
-            self, state, wire, next_turn=ctx.turn, write_checkpoint=True
+            self,
+            state,
+            conversation.to_wire(snapshot=True),
+            next_turn=ctx.turn,
+            write_checkpoint=True,
         )
-        return wire
+        return conversation.to_wire()
 
     def _maybe_inject_plan(
         self,
@@ -943,7 +946,7 @@ class Harness:
                 changed=lambda: loop_resume.save_resume_snapshot(
                     self,
                     state,
-                    conversation.to_wire(),
+                    conversation.to_wire(snapshot=True),
                     next_turn=turn,
                 ),
             )

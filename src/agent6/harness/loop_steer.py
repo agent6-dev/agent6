@@ -116,7 +116,9 @@ def operator_boundary(
         return stopped
     if harness.children is not None and harness.children.settle(conversation, turn):
         # The records say these notices were told: the snapshot a resume reads holds them too.
-        loop_resume.save_resume_snapshot(harness, state, conversation.to_wire(), next_turn=turn + 1)
+        loop_resume.save_resume_snapshot(
+            harness, state, conversation.to_wire(snapshot=True), next_turn=turn + 1
+        )
     operator_state(harness, conversation, state)
     return steer_outcome(harness, harness.steering.handle(conversation, turn, state), turn, state)
 

@@ -240,7 +240,7 @@ class ParallelDispatcher:
                 continue
             prepared.append((record, children))
         # Persisted before the children start: a crash there would reuse a group's id on resume.
-        self.save_snapshot(state, conversation.to_wire(), next_turn=turn + 1)
+        self.save_snapshot(state, conversation.to_wire(snapshot=True), next_turn=turn + 1)
         started = [self.launch(record, children) for record, children in prepared]
         return child_records.Started(
             tuple(child for one in started for child in one.children),

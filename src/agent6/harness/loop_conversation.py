@@ -77,8 +77,7 @@ class Notice:
     """Harness or operator text in a user message.
 
     The initial task, nudges, critiques, steering and the tier-2 restart summary
-    are notices. The origin lives in memory only: the wire carries text, so a
-    notice read back from a snapshot is the harness's.
+    are notices. Snapshots keep the origin. Providers receive plain text.
 
     Attributes:
         text: The text.
@@ -503,8 +502,11 @@ class Conversation:
 
     # ---- the wire boundary ----------------------------------------------
 
-    def to_wire(self) -> list[dict[str, Any]]:
-        """Return the provider and snapshot message list.
+    def to_wire(self, *, snapshot: bool = False) -> list[dict[str, Any]]:
+        """Return the provider or snapshot message list.
+
+        Args:
+            snapshot: Include notice origins for resume.
 
         Returns:
             Fresh dicts for user messages with `cache_control` stamped at the mark
@@ -542,6 +544,8 @@ class Conversation:
                     }
                 else:
                     block = {"type": "text", "text": item.text}
+                    if snapshot and item.origin != "harness":
+                        block["origin"] = item.origin
                 if (m_idx, i_idx) in marks:
                     block["cache_control"] = dict(_EPHEMERAL)
                 blocks.append(block)
@@ -639,9 +643,14 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
         raise ValueError(f"malformed conversation: {where} is not a block object")
     keys = set(block) - {"cache_control"}
     if block.get("type") == "text":
-        if keys != {"type", "text"} or not isinstance(block["text"], str):
+        origin = block.get("origin", "harness")
+        if (
+            keys - {"origin"} != {"type", "text"}
+            or not isinstance(block["text"], str)
+            or origin not in ("harness", "operator")
+        ):
             raise ValueError(f"malformed conversation: {where} is not a plain text block")
-        return Notice(text=block["text"])
+        return Notice(text=block["text"], origin=origin)
     if block.get("type") == "tool_result":
         if (
             keys != {"type", "tool_use_id", "content"}
