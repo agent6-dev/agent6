@@ -804,15 +804,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `turn` | `int` | The execution's turn number. |
 
-### nudge.run_budget
-
-**Support: public.** The model was asked to finish within its remaining run budget.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
-
 ### nudge.silent_no_work
 
 **Support: public.** A silent finish without work was returned to the model.

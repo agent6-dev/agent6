@@ -235,21 +235,6 @@ STAGNATION_NUDGE_GATELESS = (
     " finite, and finish_session ends the run with its summary."
 )
 
-# A non-metric run gets one wrap-up directive when the budget runs low.
-RUN_BUDGET_NUDGE_BELOW = 0.25
-
-RUN_BUDGET_NUDGE = (
-    "[harness budget] Under a quarter of the budget remains; the loop halts"
-    " when a cap is crossed. run_verify_command certifies the work and"
-    " finish_session ends the run."
-)
-
-# Gateless variant: nothing to verify, so straight to finish_session.
-RUN_BUDGET_NUDGE_GATELESS = (
-    "[harness budget] Under a quarter of the budget remains; the loop halts"
-    " when a cap is crossed. finish_session ends the run."
-)
-
 # The budget line: what the execution has used of each cap, read before each worker call.
 BUDGET_LINE_PREFIX = "[harness budget] this execution: "
 QUEUE_LINE_PREFIX = "[harness queue] "

@@ -1466,7 +1466,6 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
         verify_gate.harness_verify_notice(gate, "turn"),
         review_panel.review_notice("\u6f22" * 10_000),
         nudges.STAGNATION_NUDGE,
-        nudges.RUN_BUDGET_NUDGE,
     ]
     assert sum(len(text.encode()) for text in turn) < claude_code_wire.CLAUDE_CODE_PERSIST_BYTES
 

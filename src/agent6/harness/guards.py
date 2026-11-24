@@ -773,11 +773,9 @@ class BudgetNudges:
 
     Attributes:
         plan_finish: The planner's finish directive.
-        run_budget: A plain run's wrap-up directive.
     """
 
     plan_finish: bool = False
-    run_budget: bool = False
 
 
 def plan_budget_nudge(state: loop_state.LoopState, ctx: advice.TurnContext) -> advice.Nudge | None:
@@ -811,32 +809,6 @@ def plan_budget_nudge(state: loop_state.LoopState, ctx: advice.TurnContext) -> a
     )
 
 
-def run_budget_nudge(state: loop_state.LoopState, ctx: advice.TurnContext) -> advice.Nudge | None:
-    """Direct a plain run once to verify and finish before a cap ends it.
-
-    Fires once the budget fraction falls to `RUN_BUDGET_NUDGE_BELOW`; gateless,
-    finish alone. A metric run has its own end-game.
-
-    Args:
-        state: The run's loop state.
-        ctx: The turn's facts.
-
-    Returns:
-        The directive, or None.
-    """
-    if ctx.mode != "run" or ctx.metric or state.budget_nudges.run_budget:
-        return None
-    remaining = ctx.budget_remaining()
-    if remaining is None or remaining > nudges.RUN_BUDGET_NUDGE_BELOW:
-        return None
-    state.budget_nudges.run_budget = True
-    return advice.Nudge(
-        nudges.RUN_BUDGET_NUDGE if ctx.gate_present() else nudges.RUN_BUDGET_NUDGE_GATELESS,
-        event=journal.NudgeRunBudget(turn=ctx.turn, budget_remaining=remaining),
-        log=f"LOOP: run budget-nudge at turn {ctx.turn}",
-    )
-
-
 # The order is the order the notices reach the model and the precedence among the
 # stops; a stop the tool-error ladder raised during dispatch outranks them all.
 AFTER_TOOLS: tuple[advice.Advisor, ...] = (
@@ -850,4 +822,4 @@ AFTER_TOOLS: tuple[advice.Advisor, ...] = (
 )
 
 # The advisors that speak before the provider call, in order.
-BEFORE_CALL: tuple[advice.BeforeCallAdvisor, ...] = (plan_budget_nudge, run_budget_nudge)
+BEFORE_CALL: tuple[advice.BeforeCallAdvisor, ...] = (plan_budget_nudge,)

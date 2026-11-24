@@ -2,8 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The before-call budget notices.
 
-A planner's one-shot finish directive on a low budget or too many turns, and a plain run's one-shot
-wrap-up directive on a low budget, each once per run and only in its mode. The budget line states
+A planner gets one finish directive on a low budget or too many turns. The budget line states
 what the execution has used of each cap, before each worker call, when it changed.
 """
 
@@ -12,7 +11,7 @@ from __future__ import annotations
 import pathlib
 from typing import Any, override
 
-from agent6 import budget, directive, kinds
+from agent6 import budget, kinds
 from agent6.harness import guards, loop_conversation, loop_state, nudges, operator_bridge
 from agent6.harness.compaction import window as compaction_window
 from agent6.prompts import review
@@ -49,30 +48,6 @@ def test_the_planner_is_told_once_on_a_low_budget_or_too_many_turns() -> None:
     assert guards.plan_budget_nudge(_state(), turn_context(budget_remaining=lambda: 0.1)) is None
 
 
-def test_a_plain_run_is_told_once_on_a_low_budget_naming_its_gate() -> None:
-    low = turn_context(budget_remaining=lambda: nudges.RUN_BUDGET_NUDGE_BELOW, turn=9)
-    state = _state()
-    nudge = guards.run_budget_nudge(state, low)
-    assert nudge is not None and nudge.text == nudges.RUN_BUDGET_NUDGE_GATELESS
-    assert nudge.event == journal.NudgeRunBudget(
-        turn=9, budget_remaining=nudges.RUN_BUDGET_NUDGE_BELOW
-    )
-    assert nudge.log == "LOOP: run budget-nudge at turn 9"
-    assert guards.run_budget_nudge(state, low) is None
-
-    gated = turn_context(budget_remaining=lambda: 0.1, gate_present=lambda: True)
-    nudge = guards.run_budget_nudge(_state(), gated)
-    assert nudge is not None and nudge.text == nudges.RUN_BUDGET_NUDGE
-    assert guards.run_budget_nudge(_state(), turn_context(budget_remaining=lambda: 0.5)) is None
-    assert guards.run_budget_nudge(_state(), turn_context()) is None
-    metric = turn_context(
-        budget_remaining=lambda: 0.1, metric=directive.parse_metric_spec("maximize -- score")
-    )
-    assert guards.run_budget_nudge(_state(), metric) is None
-    plan = turn_context(budget_remaining=lambda: 0.1, mode="plan")
-    assert guards.run_budget_nudge(_state(), plan) is None
-
-
 def _tracker(
     *, max_usd: float = -1, max_tokens_fallback: int = -1, max_plan_points: float = -1
 ) -> budget.BudgetTracker:
@@ -103,7 +78,7 @@ def _budget_lines(messages: list[dict[str, Any]]) -> list[str]:
         for message in messages
         if message["role"] == "user"
         for block in message["content"]
-        if block.get("text", "").startswith(nudges.BUDGET_LINE_PREFIX)
+        if block.get("text", "").startswith("[harness budget]")
     ]
 
 
@@ -195,6 +170,16 @@ def test_each_call_reads_the_plan_points_the_execution_has_moved(tmp_path: pathl
     ]
     assert worker.systems == ["SYSTEM"] * 5
     assert tracker.snapshot().plan_observed_points == 55
+
+
+def test_a_low_budget_plain_run_reads_only_its_meter(tmp_path: pathlib.Path) -> None:
+    tracker = _tracker(max_plan_points=1.25)
+    tracker.record_plan_preflight(_PLAN_ROUTE.provider, _plan_reading(10))
+    worker = _drive(tmp_path, tracker, [11, 11])
+    assert worker.lines[-1] == [
+        "[harness budget] this execution: plan moved=0/1.25pt",
+        "[harness budget] this execution: plan moved=1/1.25pt",
+    ]
 
 
 def test_the_budget_line_takes_no_cache_mark_from_the_turns_results(
@@ -319,7 +304,7 @@ def test_the_newest_budget_line_is_read_from_the_history() -> None:
     conv.notice("TASK")
     assert conv.latest_notice(nudges.BUDGET_LINE_PREFIX) is None
     conv.notice(nudges.BUDGET_LINE_PREFIX + "turn=1/5")
-    conv.notice(nudges.RUN_BUDGET_NUDGE)
+    conv.notice(nudges.STAGNATION_NUDGE)
     conv.notice(nudges.BUDGET_LINE_PREFIX + "turn=2/5")
     assert conv.latest_notice(nudges.BUDGET_LINE_PREFIX) == nudges.BUDGET_LINE_PREFIX + "turn=2/5"
     conv.restart("summary")

@@ -1025,17 +1025,6 @@ class NudgeQuestion(Event):
     turn: int = pydantic.Field(description="The execution's turn number.")
 
 
-class NudgeRunBudget(Event):
-    """The model was asked to finish within its remaining run budget."""
-
-    TYPE: ClassVar[str] = "nudge.run_budget"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    budget_remaining: float | None = pydantic.Field(
-        default=None,
-        description="Remaining budget fraction; null without a finite cap.",
-    )
-
-
 class NudgeSilentNoWork(Event):
     """A silent finish without work was returned to the model."""
 
@@ -2215,7 +2204,6 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "nudge.no_progress": NudgeNoProgress,
     "nudge.plan_finish": NudgePlanFinish,
     "nudge.question": NudgeQuestion,
-    "nudge.run_budget": NudgeRunBudget,
     "nudge.silent_no_work": NudgeSilentNoWork,
     "nudge.stagnation": NudgeStagnation,
     "nudge.task_stuck": NudgeTaskStuck,

@@ -2592,56 +2592,6 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     assert provider.nudged_on == [1]
 
 
-def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A non-metric `run` gets a one-shot wrap-up nudge when budget runs low."""
-    from agent6.harness import loop as loopmod
-    from agent6.harness import nudges
-
-    def _low_budget(_self: object) -> float:
-        return 0.2
-
-    monkeypatch.setattr(loopmod.Harness, "_budget_fraction_remaining", _low_budget)
-
-    class ProviderStub:
-        def __init__(self) -> None:
-            self.calls = 0
-            self.nudged_on: list[int] = []
-
-        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
-            self.calls += 1
-            if nudges.RUN_BUDGET_NUDGE[:24] in _turn_input(kwargs["messages"]):
-                self.nudged_on.append(self.calls)
-            return _tool_resp("list_dir", {"path": "."}, tool_id=f"l-{self.calls}")
-
-    class DispatcherStub(_StubDispatcher):
-        def dispatch(
-            self, name: str, raw_input: dict[str, Any], *, origin: object = None
-        ) -> tools_results.ToolResult:
-            return tools_results.RawResult({"content": "..."})
-
-    provider = ProviderStub()
-    wf = _wf(
-        root=tmp_path,
-        mode="run",
-        provider=provider,
-        dispatcher=DispatcherStub(),
-        max_turns=4,
-    )
-    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
-    wf._drive_loop(
-        system="s",
-        conversation=loop_conversation.Conversation.from_wire(messages),
-        tool_calls=0,
-        start_turn=1,
-        root_task_id=None,
-        original_task="t",
-    )
-    # fires once, on the first turn at/below the threshold, and only once.
-    assert provider.nudged_on == [1]
-
-
 def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> None:
     """A worker spinning after a green verify is nudged once, then stopped as verify_settled."""
 
