@@ -1623,7 +1623,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     config = tmp_path / "draft.toml"
     config.write_text(
         '[providers.openrouter]\nbackend = "openai"\napi_key_env = "OR_KEY"\n'
-        '[models.default]\nmodel = "openrouter/test-model"\n'
+        '[models.default]\nmodel = "openrouter/test-model"\neffort = "medium"\n'
         '[budget]\nmax_usd = 10\n[sandbox]\nisolation = "none"\n'
         + (
             f'run_commands = "{mode}"\nfetch_approved_hosts = ["docs.python.org"]\n' if mode else ""
@@ -1664,6 +1664,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     assert captured, "runner was never invoked"
     req, root, cfg = captured[0]
     assert req.mode == "run", "the authoring agent writes files"
+    assert req.effort == "medium"
     assert req.output_schema is None, "no finish payload: the bundle is on disk"
     assert seen == [True], "the workspace is a repo, like any run's"
     assert not root.exists(), "and it is gone once its bundle is published"

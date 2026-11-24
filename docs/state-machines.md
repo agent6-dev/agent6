@@ -821,6 +821,7 @@ The verdict counts script files that ran and files skipped, not individual test 
 Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary agent6 run handed this document's grammar, writing the `.asm.toml` and every `scripts/...` file with `apply_edit` in a drafting workspace of its own.
 
+- The drafting run uses the worker model's configured effort, or `off` when unset.
 - `sandbox.run_commands` governs the drafting run: the default (`ask`) requires approval; `deny` withholds command tools
 - where `fetch` is available, `sandbox.fetch_approved_hosts` lists the hosts it may read without approval (default: none)
 - the drafting run starts in its own workspace, under the same sandbox settings as a run

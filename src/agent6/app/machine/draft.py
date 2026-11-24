@@ -235,6 +235,8 @@ def try_draft(
     spend = draft.spend
     # One ledger across attempts: each subprocess is otherwise a fresh tracker. -1 = unlimited.
     cfg = draft.cfg
+    worker = cfg.models.resolve("worker")
+    effort = (worker.effort if worker else None) or "off"
     create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
     plan_cap = None if cfg.budget.max_plan_points == -1 else cfg.budget.max_plan_points
     for next_attempt in range(1, max_attempts + 1):
@@ -258,8 +260,6 @@ def try_draft(
         )
         reporter.err(f"machine create: attempt {draft.attempt}/{max_attempts}...")
         draft.events.emit(journal.LoopNote(text=f"attempt {draft.attempt}/{max_attempts}"))
-        # effort="off": authoring transcribes a described design. Measured on kimi-k2.6: "low"
-        # timed out on 3 of 3 attempts in 30-minute thinks; "off" drafted in 2.5 minutes for $0.02.
         remaining = None if create_cap is None else max(create_cap - spend.usd, 0.0)
         remaining_plan = None if plan_cap is None else max(plan_cap - spend.plan, 0.0)
         result = runner(
@@ -268,7 +268,7 @@ def try_draft(
                 operator_task=task,
                 timeout_s=_CREATE_TIMEOUT_S,
                 mode="run",
-                effort="off",
+                effort=effort,
                 remaining_usd=remaining,
                 max_plan_points=remaining_plan,
             ),
