@@ -19,7 +19,7 @@ from agent6.ui.tui import composer
 
 
 def test_each_composer_offers_its_registered_rows() -> None:
-    for mode in ("start", "steer", "resume"):
+    for mode in ("start", "plan/ask", "steer", "resume"):
         assert composer.steer_suggestion_rows("/", mode=mode) == [
             (c.name, c.help) for c in directive.commands_for(mode)
         ]

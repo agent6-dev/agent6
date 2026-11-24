@@ -30,7 +30,7 @@ from agent6.viewmodel.session import state as viewmodel_state
 if TYPE_CHECKING:
     from agent6.ui.tui import prompts as tui_prompts
 
-ComposerMode = Literal["steer", "resume", "start", "draft"]
+ComposerMode = Literal["steer", "resume", "start", "plan/ask", "draft"]
 # Resolves the root and hidden paths an `@path` completes against, as `task_refs.session_workspace`.
 WorkspaceSource = Callable[[], tuple[pathlib.Path, tuple[str, ...]]]
 
@@ -70,8 +70,7 @@ def composer_labels(
 def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, str]]:
     """Return the (command, help) rows matching a `/…` first word still being typed.
 
-    A resume composer withholds the live-run commands, a start offers only
-    /parallel and /review, and a draft offers none.
+    A draft describes a machine and offers no slash commands.
 
     Args:
         text: The composer's text.

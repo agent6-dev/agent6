@@ -330,6 +330,8 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
             app.screen.query_one("#draft-preset", widgets.Select).value = "review"
             bar.focus()
             await pilot.pause()
+            assert composer.complete_steer("/p", mode=bar.mode) is None
+            assert composer.complete_steer("/r", mode=bar.mode) == "/review "
             await pilot.press("a", "ctrl+j", "b", "enter")
             deadline = time.monotonic() + 10
             while app.return_value is None and time.monotonic() < deadline:

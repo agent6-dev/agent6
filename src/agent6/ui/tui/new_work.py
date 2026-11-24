@@ -258,6 +258,9 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         mode = str(self.query_one("#draft-mode", widgets.Select).value)
         preset = str(self.query_one("#draft-preset", widgets.Select).value)
         route = choices.default_route(self.repo_cwd, self.config_paths, mode, preset)
+        self.query_one("#draft-input", composer.SteerInput).set_mode(
+            mode="start" if mode == "run" else "plan/ask"
+        )
         self.query_one("#draft-model", widgets.Select).set_options(self._model_options(route))
         self._on_task_changed()
 
