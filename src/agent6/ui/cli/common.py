@@ -26,7 +26,6 @@ from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import terminal_guard
 from agent6.viewmodel import format
 
-
 crash_session: contextvars.ContextVar[pathlib.Path | None] = contextvars.ContextVar(
     "crash_session", default=None
 )
