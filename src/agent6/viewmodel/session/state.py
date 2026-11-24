@@ -381,7 +381,9 @@ def task_tree_views(
         seen.add(nid)
         created_by, standing = str(node.get("created_by", "")), bool(node.get("standing", False))
         parent_id = node.get("parent_id")
-        holders = node.get("held_by") or ()
+        holders = node.get("held_by")
+        if not isinstance(holders, (list, tuple)) or not all(isinstance(h, str) for h in holders):
+            holders = ()
         note = models.owner_note(
             created_by=created_by,
             parent_id=str(parent_id) if isinstance(parent_id, str) else None,

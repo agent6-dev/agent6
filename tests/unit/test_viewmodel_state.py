@@ -1086,6 +1086,8 @@ _WRONG_SHAPE_EVENTS: list[dict[str, Any]] = [
     {"type": "compact.dropped", "count": 1, "calls": 5},
     {"type": "compact.gist.done", "gisted": 1, "paths": True, "demoted": 1, "demoted_paths": 1},
     {"type": "graph.update", "nodes": {"a": {"title": "a", "children": 5}}},
+    {"type": "graph.update", "nodes": {"a": {"held_by": 1}}},
+    {"type": "graph.update", "nodes": {"a": {"held_by": ["child", 1]}}},
 ]
 
 
