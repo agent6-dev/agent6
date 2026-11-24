@@ -55,17 +55,23 @@ def add_session_worktree(
 
     Raises:
         GitError: Git refused the worktree.
+        OSError: The clone or its origin could not be recorded.
     """
     if kind == "clone":
         # A local clone copies the whole object store, so a commit only a hidden ref holds is there.
         git_ops.clone_repo(repo, path)
-        git_ops.checkout_detached(path, sha)
-        # A command typed in the clone finds the repository's sessions, as in a linked worktree.
-        origin = paths.checkout_root(repo)
-        (path / ".git" / paths.SESSION_CLONE_ORIGIN).write_text(f"{origin}\n", encoding="utf-8")
-        record = paths.session_clone_record(origin, path)
-        paths.mkdir_for_real_user(record.parent)
-        record.write_text(f"{path.resolve()}\n", encoding="utf-8")
+        # Until the origin record is complete, nothing else owns cleanup of this clone.
+        with contextlib.ExitStack() as rollback:
+            rollback.callback(shutil.rmtree, path)
+            git_ops.checkout_detached(path, sha)
+            origin = paths.checkout_root(repo)
+            (path / ".git" / paths.SESSION_CLONE_ORIGIN).write_text(f"{origin}\n", encoding="utf-8")
+            record = paths.session_clone_record(origin, path)
+            paths.mkdir_for_real_user(record.parent)
+            with record.open("w", encoding="utf-8") as output:
+                rollback.callback(record.unlink, missing_ok=True)
+                output.write(f"{path.resolve()}\n")
+            rollback.pop_all()
         return Checkout(path, None)
     checkout = Checkout(path, git_read.git_common_dir(repo))
     git_ops.add_worktree(repo, path, sha)

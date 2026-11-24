@@ -225,6 +225,25 @@ def test_prune_keeps_a_clone_that_holds_work_no_commit_has(
     assert (worktree / "left.txt").exists()
 
 
+def test_a_failed_origin_record_leaves_no_clone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed origin write left a clone no manifest owned and no retry could create."""
+    repo = _repo(tmp_path, monkeypatch)
+    clone = tmp_path / "clone"
+    record = paths.session_clone_record(repo, clone)
+    record.mkdir(parents=True)
+
+    with pytest.raises(IsADirectoryError):
+        fork_worktrees.add_session_worktree(repo, clone, "HEAD", "clone")
+
+    assert not clone.exists()
+    assert record.is_dir()
+    record.rmdir()
+    fork_worktrees.add_session_worktree(repo, clone, "HEAD", "clone")
+    assert paths.session_clone_origin(clone) == repo
+
+
 def test_remove_deletes_the_clone_with_the_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
