@@ -240,3 +240,14 @@ def test_stripping_old_thinking_does_not_replay_an_empty_assistant() -> None:
     assert [m["content"] for m in conv.to_wire()[1:]] == [
         [{"type": "text", "text": w}] for w in ("first input", "new")
     ]
+
+
+def test_operator_reservation_precedes_the_oversize_turn_exception() -> None:
+    conv = history.Conversation()
+    words = "o" * 31
+    conv.notice(words, origin="operator")
+    _reply(conv, "old")
+    _reply(conv, "r" * 200)
+    _restart(conv, keep_recent_chars=100, keep_operator_messages=1)
+    assert f"Operator message:\n{words}" in _notice(conv)
+    assert conv.to_wire()[1]["content"][0]["text"] == "r" * 200

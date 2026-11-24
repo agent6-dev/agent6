@@ -127,10 +127,7 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
     start = len(turns)
     remaining = settings.keep_recent_chars
     optional = remaining > 0 and settings.keep_recent_turns != 0
-    if turns and optional:
-        start -= 1  # The newest eligible turn stays whole even when it exceeds the cap.
-        remaining -= sum(map(window.message_chars, turns[start]))
-    elif turns:
+    if turns and not optional:
         # Even at zero, unanswered calls and results without a subsequent reader are live work.
         last = turns[-1]
         for i, m in enumerate(last):
@@ -163,7 +160,8 @@ def select(messages: Sequence[history.Message], settings: window.CompactionSetti
 
     while optional and start > 0 and len(turns) - start != settings.keep_recent_turns:
         cost = sum(map(window.message_chars, turns[start - 1])) - costs.get(start - 1, 0)
-        if cost > remaining:
+        # Only the newest turn can exceed the room left after reserving operator words.
+        if cost > remaining and start != len(turns):
             break
         remaining -= cost
         start -= 1
