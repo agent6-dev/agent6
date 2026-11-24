@@ -234,7 +234,8 @@ class _ProviderBase(pydantic.BaseModel):
         min_length=1,
         description=(
             "environment variable holding the API key; precedence over `secrets.toml`; unset "
-            "for a key stored by `agent6 connect` or an unauthenticated local endpoint"
+            "for a key stored by `agent6 connect` or an unauthenticated local endpoint; a "
+            "start refuses when the named variable is unset and no key is stored"
         ),
     )
     token_command: validation.Argv = pydantic.Field(

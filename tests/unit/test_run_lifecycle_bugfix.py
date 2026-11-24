@@ -19,6 +19,9 @@ import pytest
 from agent6 import budget, kinds, paths
 from agent6.app import role_providers
 from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
+from agent6.config import Config
+from agent6.models import cache
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 
@@ -254,7 +257,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     """
     repo = _setup(tmp_path, monkeypatch)
     # An Anthropic route with no resolvable key: the case that refuses (an
-    # OpenAI-compat endpoint legitimately runs keyless, so it would not).
+    # OpenAI-compat endpoint that names no key variable runs keyless, so it would not).
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
         '[models.default]\nmodel = "anth/claude-sonnet-4-5"\n'
@@ -282,6 +285,35 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     err = capsys.readouterr().err
     assert "agent6 connect" in err
     assert "crashed" not in err and "traceback" not in err
+
+
+@pytest.mark.parametrize("backend", ["openai", "responses"])
+def test_an_unset_key_variable_refuses_the_start_on_every_backend(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, backend: str
+) -> None:
+    """Only an Anthropic entry refused; another backend started and failed at its first call."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.delenv("UNSET_KEY", raising=False)
+    listed: list[str] = []
+
+    def fake_list(name: str, *_a: object, **_k: object) -> list[str]:
+        listed.append(name)
+        return []
+
+    monkeypatch.setattr(cache, "list_models", fake_list)
+
+    def cfg(**auth: str) -> Config:
+        entry = {"backend": backend, "base_url": "http://127.0.0.1:9/v1", **auth}
+        return Config.model_validate(
+            {"providers": {"p": entry}, "models": {"default": {"model": "p/m"}}}
+        )
+
+    refusal = session_setup.check_provider_keys(cfg(api_key_env="UNSET_KEY"))
+    assert refusal is not None and "UNSET_KEY, is not set" in refusal and not listed
+    # An endpoint that takes no key names no variable, and runs.
+    assert session_setup.check_provider_keys(cfg()) is None and listed == ["p"]
+    monkeypatch.setenv("UNSET_KEY", "sk-test")
+    assert session_setup.check_provider_keys(cfg(api_key_env="UNSET_KEY")) is None
 
 
 def test_a_execution_discards_a_stop_it_never_honored(

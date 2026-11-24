@@ -413,16 +413,19 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) 
         cache.list_models(name, entry, None)  # through the stored sign-in
         return None
     key = secret_store.resolve_api_key(name, entry.api_key_env, secrets=secrets)
-    if (
-        not key
-        and isinstance(entry, AnthropicProviderEntry)
-        and not entry.token_command
-        and entry.auth_style != "none"
-    ):
-        return (
-            f"no API key for [providers.{name}] (Anthropic). Run"
-            f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
-        )
+    if not key and not entry.token_command and entry.auth_style != "none":
+        if isinstance(entry, AnthropicProviderEntry):
+            return (
+                f"no API key for [providers.{name}] (Anthropic). Run"
+                f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
+            )
+        if entry.api_key_env:
+            # An endpoint that takes no key names no variable.
+            return (
+                f"no API key for [providers.{name}]: its api_key_env, {entry.api_key_env}, is"
+                " not set. Set it, run `agent6 connect`, or remove api_key_env when the"
+                " endpoint takes no key."
+            )
     cache.list_models(name, entry, key or None)
     return None
 
