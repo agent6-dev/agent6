@@ -197,6 +197,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
                 if pins
                 else "no pinned instructions"
             )
+        case "compact.cold_start":
+            salient = str(event.get("message", ""))
         case "compact.dropped":
             calls = _as_list(event.get("calls"))
             named = ", ".join(str(c) for c in calls)

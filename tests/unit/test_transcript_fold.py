@@ -1116,14 +1116,16 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
                 "kept_messages": 3,
             },
             {"type": "compact.summarise.failed", "error": "429 rate limited"},
+            {"type": "compact.cold_start", "message": "Cold start: route changed."},
         ]
     )
-    assert [it.kind for it in items] == ["marker"] * 5
+    assert [it.kind for it in items] == ["marker"] * 6
     assert items[0].body == "compaction requested: the parser"
     assert items[1].body == "compaction refused: too little history to summarise"
     assert items[2].body == "compaction requested"
     assert items[3].body == "context compacted: 1,200-char summary, 3 recent messages kept verbatim"
     assert items[4].body == "compaction failed: 429 rate limited"
+    assert items[5].body == "Cold start: route changed."
 
 
 def test_parallel_compared_renders_the_ranking() -> None:

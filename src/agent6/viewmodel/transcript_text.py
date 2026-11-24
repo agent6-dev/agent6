@@ -358,6 +358,7 @@ MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "standing.set": standing_set_body,
     "task.request_refused": request_refused_body,
     "compact.requested": compact_requested_body,
+    "compact.cold_start": lambda e: str(e.get("message", "")),
     "compact.summarise.done": compact_done_body,
     "compact.summarise.failed": compact_failed_body,
     "compact.refused": compact_refused_body,

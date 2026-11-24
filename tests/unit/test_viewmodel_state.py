@@ -184,6 +184,8 @@ def test_format_log_line_keeps_the_compaction_reason() -> None:
         {"type": "compact.requested", "focus": "keep the auth work"}
     )
     assert "keep the auth work" in requested
+    cold = {"type": "compact.cold_start", "message": "Cold start: route changed."}
+    assert cold["message"] in log_line.format_log_line(cold)
 
 
 def test_a_budget_row_spells_spend_as_every_surface_does() -> None:

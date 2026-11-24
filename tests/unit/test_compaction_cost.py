@@ -51,6 +51,7 @@ def test_receipt_reports_cache_share_and_only_the_next_worker_call(tmp_path: pat
         {"type": "compact.gist.done", "gisted": 0, "demoted": 1},
         {"type": "compact.thinking_dropped", "messages": 1},
         {"type": "compact.summarise.done", "summary_chars": 5},
+        {"type": "compact.cold_start", "action": "truncate"},
     ],
 )
 def test_each_history_rewrite_counts_once_across_resumes(

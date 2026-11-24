@@ -148,6 +148,7 @@ class CacheUsageFold:
             or (kind == "compact.thinking_dropped" and _count(row, "messages"))
             or (kind == "compact.gist.done" and _count(row, "demoted"))
             or kind == "compact.summarise.done"
+            or (kind == "compact.cold_start" and row.get("action") == "truncate")
         ):
             self.pending = True
         elif row.get("actor") == "worker":
