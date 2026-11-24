@@ -116,7 +116,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `credit_readings[].account` | `str` | A fingerprint of the account ID, or the provider entry if the ID is absent. |
 | `credit_readings[].observed_ns` | `int` | When the observer received the reading, in Unix nanoseconds. |
 | `credit_readings[].balance_usd` | `float` | The balance in dollars. |
-| `credit_origins` | `object, optional` | Each recovered account maps to its execution number (start is 1). If its readings have different origins, the value maps zero-based `credit_readings` indexes to executions. A missing origin means this row's execution. |
+| `credit_origins` | `object, optional` | For each account, zero-based `credit_readings` indexes map recovered readings to their execution numbers (start is 1). Unmarked readings belong to this row's execution. A single number identifies the series used for the whole account. |
 | `usd_total` | `float` | USD cap reading: own calls, settled children and observed credit declines. |
 | `input_total` | `int, optional` | This tracker's own fresh input tokens. |
 | `output_total` | `int, optional` | This tracker's own output tokens. |

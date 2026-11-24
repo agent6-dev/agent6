@@ -443,9 +443,10 @@ Priced calls and observed credit declines share the USD ceiling.
 The cap counts each call once, including calls made by children.
 Within one parent execution, parent and child readings of the same credit balance form one series in observation order.
 A fingerprint of the account ID identifies the account, or the provider entry if the backend gives no ID.
+The meter converts a balance in credit units to dollars at 25 credits per dollar before recording it.
 A top-up raises the balance for the next reading.
 The declines include other users of the account; they are not attributed to calls.
-On resume, settling an interrupted child charges only declines its readings add to the execution that launched it.
+On resume, settling an interrupted child charges only the declines it adds to the account series its launching execution used.
 The first live reading starts a fresh series, even for the same account.
 Rates come from the route's own model listing unless `providers.<name>.price_from` names another provider.
 Listing refreshes do not run `token_command` or substitute a static key for it.

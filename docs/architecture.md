@@ -717,9 +717,11 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
   A continuation contributes only its increase over `usage_before`.
 - `usd_own_calls` is the cost of this execution's calls alone.
   The parent orders its own and its children's credit readings by account within each execution.
-  Recovery binds each child settlement key to the execution that started or continued it.
-  Only the declines that child adds to its execution's journaled series draw on the fresh cap.
-  `credit_origins` identifies recovered readings even when one budget row contains several executions' readings of the same account.
+  Recovery looks up each account series used by the execution that started or continued the child.
+  Only the declines that child adds to the recorded series draw on the fresh cap.
+  `credit_origins` marks recovered readings by index in the budget row.
+  A numeric origin identifies the series the writing execution used for the whole account.
+  If the journal identifies conflicting series for a child's account, resume stops before settling it.
   Live readings start a separate series at the first observed balance.
 - Before launching children, `sessions/child_dispatch.py` writes `<session_dir>/dispatch/<group>.json` atomically (version 15); a failed write refuses the dispatch.
     - A work record holds one task: its identity, source, `merge_policy`, owner execution, base, spec, parent DAG node, and each child's limits and whether its end was reported.
