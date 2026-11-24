@@ -51,13 +51,13 @@ def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> 
                 continue
             if record.state != "complete" or not available(child, model_git=False):
                 raise tool_errors.ToolError(
-                    f"child {child_id} has no completed task with work awaiting a merge"
+                    f"child {child_id} has no returned work awaiting a merge"
                 )
             if child.continuation is None and any(
                 c.merge and c.merge.status in ("merged", "no_changes") for c in record.children
             ):
                 raise tool_errors.ToolError(
-                    "another attempt already completed this task; nothing merged"
+                    "another attempt returned the result for this dispatch; nothing merged"
                 )
             if any(c.session_id != child_id and pending(c) for c in record.children):
                 raise tool_errors.ToolError("another attempt already has a merge requested")
@@ -123,8 +123,17 @@ def settle(
                 dispatcher.write(record)
             result = parallel_merge.merge_of(child.model_copy(update={"merge": outcome}))
             task_id = None if child.detached else record.node_id
-            parallel_merge.record_outcomes(
-                dispatcher.curator, task_id, [result], log=dispatcher.log
+            detail = (
+                parallel_merge.merge_words(result)
+                if result.status in ("merged", "no_changes")
+                else f"{result.branch} not merged: {result.detail}"
+            )
+            parallel_merge.record_work(
+                dispatcher.curator,
+                task_id,
+                f"Requested merge of {child.session_id}: {detail}",
+                sha=result.sha,
+                log=dispatcher.log,
             )
             dispatcher.emit_graph_snapshot()
             dispatcher.emit(

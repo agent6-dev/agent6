@@ -387,27 +387,28 @@ def add_parallel_node(
         return None
 
 
-def record_outcomes(
+def record_work(
     curator: graph_curator.GraphCurator | None,
     node_id: str | None,
-    children: Sequence[child_records.ChildMerge],
+    note: str,
     *,
+    sha: str,
     log: Callable[[str], None],
 ) -> None:
-    """Record the attached children's work without marking their task.
+    """Record what happened to the attached work without marking the task.
 
     Args:
         curator: The graph, or None.
         node_id: The attached task, or None.
-        children: Its returned attempts in dispatch order.
+        note: The returned attempts or the result of a requested merge.
+        sha: The commit on the parent chain, empty if nothing merged.
         log: The run's text logger.
     """
-    if curator is None or node_id is None or not children:
+    if curator is None or node_id is None or not note:
         return
     try:
-        for child in children:
-            if child.status == "merged" and child.sha != curator.get(node_id).commit_sha:
-                curator.record_commit(graph_models.RecordCommitIntent(id=node_id, sha=child.sha))
-        curator.append_note(node_id, "; ".join(child_note(child) for child in children))
+        if sha and sha != curator.get(node_id).commit_sha:
+            curator.record_commit(graph_models.RecordCommitIntent(id=node_id, sha=sha))
+        curator.append_note(node_id, note)
     except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
         log(f"PARALLEL: could not record child work on task {node_id}: {exc}")

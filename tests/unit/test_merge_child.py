@@ -25,6 +25,8 @@ def test_a_stopped_child_merges_only_after_the_requested_boundary(tmp_path: path
     children.stop(sid, path="child.txt")
     dispatcher.settle(conversation, 2)
     assert {node.status for node in graph.nodes().values()} == {"pending"}
+    note = graph.get("0002").notes
+    assert "stopped by its parent" in note
     before = dispatcher.chain.tip()
 
     def names() -> list[str]:
@@ -38,6 +40,12 @@ def test_a_stopped_child_merges_only_after_the_requested_boundary(tmp_path: path
     dispatcher.settle(conversation, 3)
     assert (repo / "child.txt").is_file()
     assert {node.status for node in graph.nodes().values()} == {"pending"}
+    node = graph.nodes()["0002"]
+    assert node.notes.splitlines() == [
+        note,
+        f"Requested merge of {sid}: merged into parent chain at {node.commit_sha[:12]}",
+    ]
+    assert node.awaiting_mark
     assert "merge_child" not in names()
     assert not child_work.unmerged(dispatcher)
     assert not dispatcher.settle(conversation, 4)
@@ -145,6 +153,8 @@ def test_an_explicit_merge_preserves_one_merge_per_task(
         (repo / "README.md").write_text("uncommitted\n")
     elif reason == "pending":
         harness.dispatcher.dispatch("merge_child", {"id": two})
-    with pytest.raises(tool_errors.ToolError):
+    with pytest.raises(
+        tool_errors.ToolError, match="another attempt returned" if reason == "winner" else None
+    ):
         harness.dispatcher.dispatch("merge_child", {"id": one})
     assert not (repo / f"{one}.txt").exists()

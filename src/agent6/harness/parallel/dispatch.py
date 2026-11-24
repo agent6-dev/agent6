@@ -605,7 +605,13 @@ class ParallelDispatcher:
             record = self.noded(record)
             self.write(record)
         task_id = None if any(c.detached for c in record.children) else record.node_id
-        parallel_merge.record_outcomes(self.curator, task_id, merges, log=self.log)
+        parallel_merge.record_work(
+            self.curator,
+            task_id,
+            "; ".join(parallel_merge.child_note(child) for child in merges),
+            sha=next((child.sha for child in merges if child.status == "merged"), ""),
+            log=self.log,
+        )
         message = parallel_merge.summary_text(
             record.identity, merges, record.ranking, task_id=task_id
         )
