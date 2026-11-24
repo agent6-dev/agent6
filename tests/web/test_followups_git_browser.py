@@ -7,12 +7,13 @@ from typing import TYPE_CHECKING
 import pytest
 
 from tests.unit import test_git_history
-from tests.web import captures, test_web_browser
+from tests.web import captures, test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 git_port = test_web_browser.git_port
@@ -55,6 +56,28 @@ def test_compare_fields_have_visible_labels(
         expect(page.get_by_role("combobox", name=name, exact=True)).to_be_focused()
         page.keyboard.press("Escape")
     captures.save(page, "compare-labels")
+    assert not errors
+
+
+def test_compact_compare_keeps_tab_off_the_covered_graph(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """The graph and toolbar leave the Tab order until Graph uncovers them."""
+    from playwright import sync_api
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.get_by_role("button", name="Compare", exact=True).press("Enter")
+    sync_api.expect(page.get_by_role("heading", name="Compare")).to_be_focused()
+    back = page.get_by_role("button", name="Graph", exact=True)
+    back.press("Shift+Tab")
+    assert not page.evaluate("document.activeElement.closest('.git-graph, .git-bar') !== null")
+    for region in [".git-graph", ".git-bar"]:
+        sync_api.expect(page.locator(region)).to_be_hidden()
+    back.press("Enter")
+    sync_api.expect(page.locator('.gc-row[tabindex="0"]')).to_be_focused()
+    sync_api.expect(page.locator(".git-bar")).to_be_visible()
     assert not errors
 
 

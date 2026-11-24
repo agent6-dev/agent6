@@ -135,6 +135,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side
     - recorded review comparisons preserve their tree identities and Files links; full context and commit blame are unavailable there
     - an open diff hides the repository toolbar, and the unselected graph has no empty details pane
+    - On a narrow screen the side panel takes the graph's place in the Tab order. **Graph** brings the graph and toolbar back.
     - split diffs fall back to inline when the diff pane is too narrow, keeping the saved split choice
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; several lines queue up before you write and start the run
 - **Files page**: opens on the working tree of the checkout where you started `agent6 web`.

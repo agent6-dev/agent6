@@ -167,6 +167,8 @@
   .git-commit textarea { flex-basis: 100%; }
   .git-commit button { flex: 1 1 auto; }
   .git-side { display: none; }
+  .git-app:has(> .git-body > .git-side.open) > .git-bar,
+  .git-body:has(> .git-side.open) > .git-graph { visibility: hidden; }
   .git-side.open {
     display: block; position: fixed; left: 0; right: 0; z-index: 16; overflow: auto;
     top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
