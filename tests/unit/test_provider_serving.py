@@ -541,6 +541,41 @@ def test_malformed_json_output_is_billed_before_checking_the_tier(
     )
 
 
+@pytest.mark.parametrize(
+    ("content", "stream"),
+    [(1, False), ([], False), ([], True)],
+    ids=["malformed", "parsed", "streamed"],
+)
+def test_a_cost_no_float_holds_is_unreported_and_the_tier_is_still_checked(
+    tmp_path: pathlib.Path, content: object, stream: bool
+) -> None:
+    """An integer cost past the float range keeps the token counts and the tier refusal."""
+    body = {
+        "status": "completed",
+        "model": "snapshot",
+        "service_tier": "priority",
+        "output": [{"type": "message", "content": content}],
+        "usage": {"input_tokens": 10, "output_tokens": 2, "cost": 10**400},
+    }
+    with provider_endpoint.serve(
+        [{"type": "response.completed", "response": body}] if stream else body
+    ) as (url, calls):
+        worker = _worker(tmp_path, url, "responses", stream, service_tier="flex")
+        with pytest.raises(
+            provider_types.ProviderError, match="asked 'flex', served 'priority'"
+        ) as exc:
+            worker.call(system="s", messages=[])
+    assert exc.value.fatal and len(calls) == 1
+    snapshot = worker.budget.snapshot()
+    assert (snapshot.usd_own_calls, snapshot.unmetered_tokens) == (0, 12)
+    _, rows = _records(tmp_path)
+    assert len(rows) == 2 and all(
+        (row["input_tokens"], row["output_tokens"], row["served_service_tier"])
+        == (10, 2, "priority")
+        for row in rows
+    )
+
+
 @pytest.mark.parametrize("stream", [False, True])
 def test_billed_tier_mismatch_keeps_the_failed_generations_usage(
     tmp_path: pathlib.Path, stream: bool

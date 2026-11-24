@@ -15,6 +15,7 @@ import datetime
 import json
 import math
 import pathlib
+import sys
 import threading
 from collections.abc import Callable, Generator, Mapping
 from email import utils
@@ -78,11 +79,11 @@ class ProviderUsage:
 def reported_cost(usage: Mapping[str, Any]) -> float | None:
     """Return gateway-reported dollars, including a measured zero."""
     cost = usage.get("cost")
+    # The bound compares exactly; `float` and `math.isfinite` raise on an int past the range.
     if (
         isinstance(cost, int | float)
         and not isinstance(cost, bool)
-        and math.isfinite(cost)
-        and cost >= 0
+        and 0 <= cost <= sys.float_info.max
     ):
         return float(cost)
     return None
