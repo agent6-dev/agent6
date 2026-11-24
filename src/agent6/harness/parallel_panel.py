@@ -145,8 +145,8 @@ def execute(
     record = dispatcher.announce(record, children)
     started: list[child_records.StartedChild] = []
     submitted: set[str] = set()
+    results: list[child_records.ChildResult] = []
     try:
-        results: list[child_records.ChildResult] = []
         for offset in range(0, len(children), batch_width):
             # Each batch starts under what the run has left then; its children share it.
             ceiling = dispatcher.budget.available() if dispatcher.budget is not None else None
@@ -165,10 +165,11 @@ def execute(
                 f"group spawner returned {len(results)} result(s) for {len(children)} child(ren)"
             )
     except Exception as exc:
-        # The front-end callback may fail after launching: the children's usage is unknown.
+        # A submitted reviewer without a result stays unsettled.
         for child in started:
-            child.stop()
-        failed = dispatcher.failed_launch(record, exc, submitted=submitted)
+            if not child.result.done():
+                child.stop()
+        failed = dispatcher.failed_launch(record, exc, submitted=submitted, reviewers=results)
         return child_records.DispatchResult(
             failed.identity, True, (), failed.message, base=failed.base
         )

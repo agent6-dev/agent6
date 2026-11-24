@@ -159,6 +159,48 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         )
 
 
+def test_a_later_launch_failure_keeps_the_reviewers_that_returned(short_repo: pathlib.Path) -> None:
+    """A panel returns its first reviewer even when its next batch cannot start."""
+    repo = short_repo / "repo"
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
+    with launch_env.scripted_provider(("reviewed",), cost_usd=0.1) as (url, _calls):
+        meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
+        executor = child_env.dispatcher(repo, parent, child_env.config(url), meter)
+        spawn = executor.child_spawner
+        assert spawn is not None
+
+        def first_batch_only(
+            children: list[child_records.ChildTask], group: str, *, at: str | None = None
+        ) -> list[child_records.StartedChild]:
+            if group.endswith("-b2"):
+                raise child_repo.ChildRepoError("second batch unavailable")
+            return spawn(children, group, at=at)
+
+        executor.child_spawner = first_batch_only
+        task = child_records.ChildTask(
+            "review",
+            "reviewer",
+            contract=kinds.ConversationContract(system="s", opening="o", max_turns=1),
+        )
+        result = parallel_panel.dispatch_panel(
+            executor,
+            [task, task],
+            panel_id="example",
+            at=child_env.git(repo, "rev-parse", "HEAD"),
+            concurrency=1,
+        )
+    assert "second batch unavailable" in result.message
+    rows = [json.loads(line) for line in (parent / "logs.jsonl").read_text().splitlines()]
+    (returned,) = [row for row in rows if row["type"] == "parallel.returned"]
+    first = "parent-rexample-b1-l1"
+    assert [(c["session_id"], c["status"]) for c in returned["children"]] == [(first, "no_changes")]
+    (record,) = child_dispatch.read_records(parent)
+    done, missing = record.children
+    assert record.state == "complete" and done.settled and not missing.settled
+    assert done.merge is not None and done.merge.status == "no_changes" and missing.merge is None
+
+
 class _Crash(BaseException):
     """Simulate a process exit outside the dispatcher's exception handler."""
 

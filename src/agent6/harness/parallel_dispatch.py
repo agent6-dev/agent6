@@ -324,7 +324,12 @@ class ParallelDispatcher:
         return record
 
     def failed_launch(
-        self, record: child_dispatch.DispatchRecord, exc: Exception, *, submitted: set[str]
+        self,
+        record: child_dispatch.DispatchRecord,
+        exc: Exception,
+        *,
+        submitted: set[str],
+        reviewers: Sequence[child_records.ChildResult] = (),
     ) -> child_dispatch.DispatchRecord:
         """Record a dispatch whose spawner failed: its nodes, its event, its message.
 
@@ -332,6 +337,7 @@ class ParallelDispatcher:
             record: The running dispatch.
             exc: The spawner's fault.
             submitted: Children whose watches report their own ends.
+            reviewers: Results collected before the panel's launch failed.
 
         Returns:
             The record, complete, its message the failure.
@@ -348,7 +354,15 @@ class ParallelDispatcher:
                 )
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
         message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was merged."
-        return self.record_return(self.settled(record, {}), message)
+        by_id = {res.spec.session_id: res for res in reviewers}
+        record = self.settled(record, by_id)
+        merges: list[child_records.ChildMerge] = []
+        for child in record.children:
+            if res := by_id.get(child.session_id):
+                returned = parallel_merge.reviewer_record(child, res, self.chain.tip() or "")
+                record = record.with_child(returned)
+                merges.append(parallel_merge.merge_of(returned))
+        return self.record_return(record, message, merges)
 
     def unended(self) -> list[concurrent.futures.Future[child_records.ChildResult]]:
         """Return the result of every child and judge this execution started that still runs."""
@@ -668,14 +682,10 @@ class ParallelDispatcher:
             before = self.chain.tip() or ""
             res = by_id.get(child.session_id)
             if record.merge_policy == "record_only":
-                merge = child_records.ChildMerge(
-                    child.session_id,
-                    "",
-                    "no_changes" if res is not None and res.ok else "failed",
-                    "",
-                    (res.error or res.stopped_by) if res is not None else "no imported record",
-                )
-            elif res is not None and res.ok and res.stopped_by:
+                record = record.with_child(parallel_merge.reviewer_record(child, res, before))
+                self.write(record)
+                continue
+            if res is not None and res.ok and res.stopped_by:
                 merge = parallel_merge.stopped_merge(res)
             elif (
                 res is not None

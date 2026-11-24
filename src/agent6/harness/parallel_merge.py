@@ -319,6 +319,19 @@ def rank_summary(children: Sequence[child_records.ChildMerge]) -> str:
     return "\n".join(lines)
 
 
+def reviewer_record(
+    child: child_dispatch.ChildRecord, result: child_records.ChildResult | None, tip: str
+) -> child_dispatch.ChildRecord:
+    """Return the reviewer's recorded outcome without changing the parent's chain."""
+    merge = child_dispatch.MergeRecord(
+        status="no_changes" if result is not None and result.ok else "failed",
+        detail=(result.error or result.stopped_by) if result is not None else "no imported record",
+        target_before=tip,
+        target_after=tip,
+    )
+    return child.model_copy(update={"merge": merge, "report": result.report if result else ""})
+
+
 def merge_of(child: child_dispatch.ChildRecord) -> child_records.ChildMerge:
     """Return a recorded child's merge; a child never merged reads as failed."""
     merge = child.merge
