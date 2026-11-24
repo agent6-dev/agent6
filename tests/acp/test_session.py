@@ -212,7 +212,7 @@ def test_an_execution_cancelled_while_it_runs_reports_itself_as_cancelled() -> N
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[acp_session.TurnEnd] = []
-    sessions.start_execution(session, "go", finish=seen.append)
+    sessions.start_execution(session, "go", turn=acp_session.Turn(seen.append))
     assert started.wait(timeout=5)
     sessions.cancel(session)
     release.set()
@@ -229,7 +229,7 @@ def test_a_stale_cancel_does_not_kill_the_next_execution() -> None:
     sessions = _sessions(_ends)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"), cancelled=True)
     seen: list[acp_session.TurnEnd] = []
-    sessions.start_execution(session, "go", finish=seen.append)
+    sessions.start_execution(session, "go", turn=acp_session.Turn(seen.append))
     if session.thread is not None:
         session.thread.join(timeout=5)
     assert seen == ["end_turn"]
@@ -314,7 +314,7 @@ def test_a_run_that_dies_still_ends_the_execution() -> None:
     sessions = _sessions(_boom)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     seen: list[acp_session.TurnEnd] = []
-    sessions.start_execution(session, "go", finish=seen.append)
+    sessions.start_execution(session, "go", turn=acp_session.Turn(seen.append))
     if session.thread is not None:
         session.thread.join(timeout=5)
     (end,) = seen
@@ -333,9 +333,9 @@ def test_a_second_prompt_on_a_busy_session_is_refused() -> None:
     sessions = _sessions(_slow)
     session = acp_session.Session(acp_id="s1", cwd=pathlib.Path("/repo"))
     try:
-        sessions.start_execution(session, "one", finish=lambda _r: None)
+        sessions.start_execution(session, "one", turn=acp_session.Turn(lambda _r: None))
         with pytest.raises(Exception, match="already has a prompt"):
-            sessions.start_execution(session, "two", finish=lambda _r: None)
+            sessions.start_execution(session, "two", turn=acp_session.Turn(lambda _r: None))
     finally:
         release.set()
         if session.thread is not None:
@@ -379,7 +379,7 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
     def _finish(_end: acp_session.TurnEnd) -> None:
         seen.append(session.is_running())
 
-    sessions.start_execution(session, "one", finish=_finish)
+    sessions.start_execution(session, "one", turn=acp_session.Turn(_finish))
     if session.thread is not None:
         session.thread.join(timeout=5)
     assert seen == [False], "the execution was still 'in flight' as it answered"
@@ -456,7 +456,7 @@ def test_eof_grace_is_one_deadline_across_sessions() -> None:
     for i in range(3):
         s = acp_session.Session(acp_id=f"s{i}", cwd=pathlib.Path("/repo"))
         held._by_id[s.acp_id] = s
-        held.start_execution(s, "go", finish=lambda _r: None)
+        held.start_execution(s, "go", turn=acp_session.Turn(lambda _r: None))
     start = time.monotonic()
     try:
         held.wait_for_executions(timeout_s=0.5)

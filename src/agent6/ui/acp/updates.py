@@ -367,7 +367,6 @@ def updates_for(
     streamed: bool = False,
     objects_dir: pathlib.Path | None = None,
     message_id: str = "",
-    prompt: bool = False,
     cancelled: bool = False,
 ) -> list[model.Update]:
     """Return the updates one fold item becomes.
@@ -384,7 +383,6 @@ def updates_for(
         streamed: The item is one delta of a message in flight, sent whole.
         objects_dir: The run's object directory; None sends an edit without its diffs.
         message_id: The id of the message the item is, or is a piece of; "" mints one.
-        prompt: The item is the prompt this connection sent.
         cancelled: The operator stopped the run, so a call it never returned from reads
             `cancelled`.
 
@@ -439,7 +437,7 @@ def updates_for(
     message = (
         model.MessageChunk(role, message_id, printable(body))
         if streamed
-        else model.Message(role, message_id, printable(body), prompt=prompt)
+        else model.Message(role, message_id, printable(body))
     )
     return [message] if body else []
 

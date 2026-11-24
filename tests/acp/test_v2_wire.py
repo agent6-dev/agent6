@@ -31,7 +31,6 @@ _RECORDED = pathlib.Path(__file__).parent.parent / "unit" / "data" / "golden_ses
 @pytest.fixture(autouse=True)
 def _homes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setattr(acp_server, "VERSIONS", (1, 2))
 
 
 _OPTION = {

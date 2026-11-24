@@ -36,6 +36,50 @@ TurnEnd = StopReason | rpc.RpcError
 ACP_MODE = "run"
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Turn:
+    """How one prompt's turn reaches the editor.
+
+    v2 answers a prompt once its message is in the conversation and reports the work
+    through the session's state; v1 answers when the work ends.
+
+    Attributes:
+        finish: Answers for the end of the turn's work: once, with the stop reason or the
+            failed turn's error, `cancelled` after a cancel whatever the run returned.
+        inserted: Says the prompt's message is in the conversation; safe to repeat.
+        notify: Sends an update to the prompt's conversation.
+        message_id: The id of the prompt's message.
+    """
+
+    finish: Callable[[TurnEnd], None]
+    inserted: Callable[[], None] = lambda: None
+    notify: Callable[[model.Update], None] = lambda _update: None
+    message_id: str = ""
+
+    def begin(self, text: str) -> None:
+        """Report a prompt whose message is in the conversation as its work begins.
+
+        Args:
+            text: The prompt's text.
+        """
+        self.inserted()
+        if text:
+            message = updates.printable(text)
+            self.notify(model.Message("user", self.message_id, message, prompt=True))
+
+    def end(self, end: TurnEnd) -> None:
+        """Report that the turn's work ended, then answer for it.
+
+        Args:
+            end: The stop reason, or the error that ended the work.
+        """
+        if isinstance(end, rpc.RpcError):
+            self.notify(model.StateUpdate("idle", "error", end))
+        else:
+            self.notify(model.StateUpdate("idle", end))
+        self.finish(end)
+
+
 @dataclasses.dataclass(slots=True)
 class Session:
     """One ACP session: a working directory, and at most one live execution.
@@ -53,6 +97,7 @@ class Session:
             the reply.
         require_resume: Refuse a missing resume point instead of starting new work.
         images: The images of the prompt in flight, as the editor sent them.
+        turn: The prompt in flight, as the editor hears of it.
         closed: The editor closed the conversation while a prompt was in flight; the
             cancelled prompt still answers, then the entry goes.
         settled: Called once a closed conversation's execution has ended.
@@ -70,6 +115,7 @@ class Session:
     execution_live: bool = False
     require_resume: bool = False
     images: tuple[operator_images.EncodedImage, ...] = ()
+    turn: Turn | None = None
     closed: bool = False
     settled: Callable[[], None] = lambda: None
     model: str = ""
@@ -384,17 +430,16 @@ class Sessions:
         session: Session,
         text: str,
         *,
-        finish: Callable[[TurnEnd], None],
+        turn: Turn,
         require_resume: bool = False,
         images: tuple[operator_images.EncodedImage, ...] = (),
     ) -> None:
-        """Run the prompt on a worker, and answer when it ends.
+        """Run the prompt on a worker, reporting the session `running` and then `idle`.
 
         Args:
             session: The session the prompt came on.
             text: The prompt, as `prompt_text` joined it.
-            finish: Answers the prompt; called once with the stop reason or the failed turn's
-                error, `cancelled` after a cancel whatever the run returned.
+            turn: How the turn reaches the editor.
             require_resume: Refuse instead of starting new work if the resume point is missing.
             images: The prompt's image blocks, as `prompt_images` read them.
 
@@ -407,9 +452,11 @@ class Sessions:
         session.cancelled = False
         session.require_resume = require_resume
         session.images = images
+        session.turn = turn
 
         def _work() -> None:
             end: TurnEnd
+            turn.notify(model.StateUpdate("running"))
             try:
                 end = self.run(session, text)
             except rpc.RpcError as exc:
@@ -422,7 +469,8 @@ class Sessions:
                 session.execution_live = False
                 session.require_resume = False
                 session.images = ()
-                finish(answer)
+                session.turn = None
+                turn.end(answer)
                 closed = session.closed
             if closed:
                 self._by_id.pop(session.acp_id, None)
@@ -436,6 +484,7 @@ class Sessions:
             # A thread that never ran would leave the session busy and EOF's join raising.
             session.execution_live = False
             session.thread = None
+            session.turn = None
             raise
 
     def wait_for_executions(self, *, timeout_s: float) -> None:

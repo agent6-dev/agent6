@@ -6,7 +6,7 @@ import argparse
 import pathlib
 import shlex
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Iterable, Iterator
 from typing import NoReturn, override
 
 from agent6 import review_records
@@ -194,22 +194,47 @@ def _recorded_updates(
                 yield from updates.updates_for(item, message_id=ids.of(item, event, index))
 
 
+def _answered(
+    current: session.Session, turn: session.Turn, text: str, said: Iterable[model.Update]
+) -> None:
+    """Report a command answered here: its message, what it said, and its end.
+
+    Args:
+        current: The current conversation.
+        turn: How the turn reaches the editor.
+        text: The command as typed.
+        said: The updates the command answers with.
+    """
+    # A run in flight owns the session's state: its own end reports `idle`.
+    busy = current.is_running()
+    turn.begin(text)
+    if not busy:
+        turn.notify(model.StateUpdate("running"))
+    for update in said:
+        turn.notify(update)
+    if busy:
+        turn.finish("end_turn")
+    else:
+        turn.end("end_turn")
+
+
 def handle_command(
     sessions: session.Sessions,
     current: session.Session,
     text: str,
     *,
-    notify: Callable[[str, model.Update], None],
-    finish: Callable[[session.TurnEnd], None],
+    turn: session.Turn,
 ) -> bool:
     """Handle an advertised review command before the prompt reaches the worker.
+
+    A command answered here is a turn of its own: its message is in the conversation, an
+    idle session runs while it is answered, and it ends `end_turn`.
 
     Args:
         sessions: The session manager.
         current: The current conversation.
         text: The prompt text.
-        notify: The callback that sends session updates.
-        finish: The callback that ends the prompt with a stop reason or a failed turn's error.
+        turn: How the turn reaches the editor.
 
     Returns:
         True when this command was handled; False for an ordinary prompt.
@@ -229,8 +254,7 @@ def handle_command(
             else _read_only_reply(command, sessions, current, args)
         )
         if body is not None:
-            notify(current.acp_id, updates.notice(body))
-            finish("end_turn")
+            _answered(current, turn, text, [updates.notice(body)])
             return True
         if not current.session_id:
             raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
@@ -266,7 +290,7 @@ def handle_command(
         live = current.is_running() or process.worker_is_alive(saved.session_dir)
 
         def resume(steer: str) -> str:
-            sessions.start_execution(current, steer, finish=finish, require_resume=True)
+            sessions.start_execution(current, steer, turn=turn, require_resume=True)
             return ""
 
         (result, *_more) = review_actions.act_many(
@@ -277,17 +301,15 @@ def handle_command(
             resume=resume,
             wait_s=0,
         )
+        if command == "/fix":
+            return True
         # A live execution's tail owns its notices; idle dispositions have no tail.
-        if command != "/fix" and not live:
-            for update in _recorded_updates(saved.logs_path, before, action.request_id):
-                notify(current.acp_id, update)
-        elif command != "/fix":
-            notify(
-                current.acp_id,
-                updates.notice(f"{result.message} (request {result.request_id})"),
-            )
-        if command != "/fix":
-            finish("end_turn")
+        said = (
+            [updates.notice(f"{result.message} (request {result.request_id})")]
+            if live
+            else _recorded_updates(saved.logs_path, before, action.request_id)
+        )
+        _answered(current, turn, text, said)
         return True
     except (review_actions.ReviewActionError, OSError, ValueError) as exc:
         raise rpc.RpcError(rpc.INVALID_PARAMS, str(exc)) from exc

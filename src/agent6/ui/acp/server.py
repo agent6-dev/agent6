@@ -9,11 +9,13 @@ an unbounded `readline` buffers a whole line before any size check.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import sys
 import threading
 import time
 import traceback
+import uuid
 from collections.abc import Callable
 from typing import Any, BinaryIO
 
@@ -24,7 +26,7 @@ from agent6.ui.acp import model, review, rpc, updates, wire
 from agent6.ui.acp import session as acp_session
 
 # The protocol versions served, lowest first; `initialize` selects one for the connection.
-VERSIONS: tuple[int, ...] = (1,)
+VERSIONS: tuple[int, ...] = (1, 2)
 # 4 MiB, the MCP server's cap, and a prompt's images; past it the payload is dropped, not buffered.
 MAX_LINE_BYTES = (1 << 22) + operator_images.ENCODED_TOTAL_MAX
 # How long EOF waits for an execution to reach a boundary: a verify's length, not a wedged run's.
@@ -45,6 +47,53 @@ class _Pending:
 
     arrived: threading.Event = dataclasses.field(default_factory=threading.Event)
     answer: dict[str, Any] | None = None
+
+
+@dataclasses.dataclass
+class _PromptAnswer:
+    """Answer one `session/prompt` as the connection's version orders it.
+
+    v1 answers when the turn's work ends, with its stop reason or its error. v2 answers
+    once the prompt's message is in the conversation, with the message's id; an error
+    answers only a prompt whose message never got in.
+
+    Attributes:
+        server: The connection.
+        request_id: The id the answer carries.
+        message_id: The id of the prompt's message.
+    """
+
+    server: ACPServer
+    request_id: object
+    message_id: str
+    _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    _answered: bool = False
+
+    def inserted(self) -> None:
+        """Answer a v2 prompt: its message is in the conversation."""
+        if self.server.protocol_version >= 2:
+            self._once(result={"messageId": self.message_id})
+
+    def ended(self, end: acp_session.TurnEnd) -> None:
+        """Answer a v1 prompt for its turn's end, or a v2 prompt whose message never got in."""
+        if isinstance(end, rpc.RpcError):
+            self._once(error=end)
+        elif self.server.protocol_version == 1:
+            self._once(result={"stopReason": end})
+        elif end == "cancelled":
+            why = "the prompt was cancelled before its message was added"
+            self._once(error=rpc.RpcError(rpc.REQUEST_CANCELLED, why))
+        else:
+            self.inserted()
+
+    def _once(
+        self, *, result: dict[str, Any] | None = None, error: rpc.RpcError | None = None
+    ) -> None:
+        with self._lock:
+            if self._answered:
+                return
+            self._answered = True
+        self.server.reply(self.request_id, result=result, error=error)
 
 
 def capabilities_from(_client: dict[str, Any]) -> frontend.FrontendCapabilities:
@@ -414,11 +463,11 @@ class ACPServer:
         return DEFERRED
 
     def _session_prompt(self, params: dict[str, Any], req_id: object) -> object:
-        """Serve `session/prompt`; the worker replies with the stop reason or the turn's error.
+        """Serve `session/prompt`; the turn answers as the connection's version orders it.
 
         Args:
             params: The `sessionId` and the `prompt` content blocks.
-            req_id: The id the worker's reply answers.
+            req_id: The id the turn's answer carries.
 
         Returns:
             `DEFERRED`.
@@ -446,16 +495,16 @@ class ACPServer:
             except operator_images.ImageRefusedError as exc:
                 raise rpc.RpcError(rpc.INVALID_PARAMS, str(exc)) from exc
 
-        def finish(end: acp_session.TurnEnd) -> None:
-            # ACP v1 reports a failed turn as the request's error; `refusal` is a model's.
-            if isinstance(end, rpc.RpcError):
-                self.reply(req_id, error=end)
-            else:
-                self.reply(req_id, result={"stopReason": end})
-
-        if review.handle_command(sessions, session, text, notify=self.update, finish=finish):
+        answer = _PromptAnswer(self, req_id, uuid.uuid4().hex)
+        turn = acp_session.Turn(
+            finish=answer.ended,
+            inserted=answer.inserted,
+            notify=functools.partial(self.update, session.acp_id),
+            message_id=answer.message_id,
+        )
+        if review.handle_command(sessions, session, text, turn=turn):
             return DEFERRED
-        sessions.start_execution(session, text, finish=finish, images=images)
+        sessions.start_execution(session, text, turn=turn, images=images)
         return DEFERRED
 
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:

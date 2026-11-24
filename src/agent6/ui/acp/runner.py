@@ -333,9 +333,12 @@ class RunBridge:
                 for text in options
             ),
         )
+        self.server.update(session.acp_id, model.StateUpdate("requires_action"))
         chosen = self.server.request_permission(
             session.acp_id, request, timeout_s=acp_frontend.PERMISSION_TIMEOUT_S, until=_done
         )
+        if not session.cancelled:  # a cancelled execution reports `idle` as it ends
+            self.server.update(session.acp_id, model.StateUpdate("running"))
         return None if chosen is None else options[chosen]
 
     def _frontend(
@@ -613,6 +616,8 @@ class RunBridge:
             self.server.update(session.acp_id, updates.notice(f"the run stopped (exit {code})"))
         # Only a journal that grew and ended in this execution carries its end reason.
         grown = viewmodel_tail.journal_size(layout.logs_path) > journal_before
+        if grown and session.turn is not None:
+            session.turn.inserted()  # a tail that never drained read no start row
         scan = session_log.scan_session_log(layout.logs_path)
         reason = scan.stop_reason if grown and scan.finished else ""
         return stop_reason(code, stop_reason=reason)
@@ -669,6 +674,9 @@ class RunBridge:
                 ids.feed(event)
                 if event_type in journal.SESSION_START_EVENTS:
                     announced.execution_id = str(event.get("execution_id") or "")
+                    if session.turn is not None:
+                        # The engine holds the prompt: recorded as its task, or queued as its steer.
+                        session.turn.begin(prompt)
                 for update in info.feed(event) if info is not None else ():
                     self.server.update(session.acp_id, update)
                 for update in plan.feed(event):
@@ -741,18 +749,18 @@ class RunBridge:
             announced: The execution's register of announced calls.
             sending: What the tail knows about the item.
         """
-        # The editor shows its own prompt already; a steer from another front-end is news.
-        own = item.kind == "task" or (
+        if item.kind == "task" or (
             item.kind == "operator" and item.body.strip() == sending.prompt.strip()
-        )
+        ):
+            # The execution's start row reported its own prompt; another front-end's steer is news.
+            return
         within = updates.execution_call_id(item) if item.kind in ("tool", "verify") else ""
         wire_id = (
             updates.wire_call_id(session.session_id, announced.execution_id, within)
             if within
             else ""
         )
-        # The fold's task is a headline; the message is the whole prompt.
-        wire_item = dataclasses.replace(item, body=sending.prompt) if item.kind == "task" else item
+        wire_item = item
         spoken = sending.spoken
         if item.kind == "done" and spoken.strip() and item.body.strip() == spoken.strip():
             wire_item = dataclasses.replace(item, body="")
@@ -772,7 +780,6 @@ class RunBridge:
             paths=sending.paths,
             objects_dir=sending.objects_dir,
             message_id=sending.message_id,
-            prompt=own,
             cancelled=sending.cancelled,
         ):
             self.server.update(session.acp_id, update)
