@@ -18,7 +18,7 @@ from typing import Any
 
 from agent6 import kinds
 from agent6.config import Config, ConfigError, SandboxConfig, io, layer, layer_data
-from agent6.machine import AgentState, MachineSpec, ToolState
+from agent6.machine import schema
 from agent6.sandbox import detect
 from agent6.tools import policy as tools_policy
 from agent6.tools import target_policy
@@ -260,7 +260,7 @@ def config_widening(
 
 
 def resolve_configs(
-    spec: MachineSpec,
+    spec: schema.MachineSpec,
     cwd: pathlib.Path,
     env: detect.Environment,
     *,
@@ -320,7 +320,7 @@ def resolve_configs(
     widened = [f"the machine's [config] sets {problem}" for problem in machine_wide.values()]
     states: dict[str, StateConfig] = {}
     for name, state in spec.states.items():
-        if not isinstance(state, (AgentState, ToolState)):
+        if not isinstance(state, (schema.AgentState, schema.ToolState)):
             continue
         if not state.config:
             states[name] = machine
@@ -344,7 +344,7 @@ def resolve_configs(
     for name, resolved in states.items():
         state = spec.states[name]
         if (
-            isinstance(state, AgentState)
+            isinstance(state, schema.AgentState)
             and state.mode == "run"
             and not resolved.config.git.commit_per_turn
         ):

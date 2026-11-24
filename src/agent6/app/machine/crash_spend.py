@@ -11,11 +11,11 @@ from __future__ import annotations
 import datetime
 import pathlib
 
-from agent6.machine import AttemptSpend, MachineJournal, StepEvent
+from agent6.machine import journal as machine_journal
 from agent6.viewmodel.machine import logs as machine_logs
 
 
-def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
+def book_crashed_attempt(journal: machine_journal.MachineJournal, root: pathlib.Path) -> None:
     """Journal an `AttemptSpend` for an orphaned state log and retire the log dir.
 
     A supervisor death mid-state leaves provider spend recorded only in the per-state log;
@@ -33,7 +33,7 @@ def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
     seq = machine_logs.state_dir_seq(newest.parent.name)
     if seq is None:
         return
-    if any(isinstance(e, StepEvent) and e.seq == seq for e in journal.read()):
+    if any(isinstance(e, machine_journal.StepEvent) and e.seq == seq for e in journal.read()):
         return
     state = newest.parent.name.split("-", 1)[-1]
     # Rename first: the seq does not advance across a crash, so a seq-derived name collides.
@@ -44,7 +44,7 @@ def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:
     spend = machine_logs.read_budget_totals(retired / newest.name)
     if spend.usd or spend.input_tokens or spend.output_tokens:
         journal.append(
-            AttemptSpend(
+            machine_journal.AttemptSpend(
                 ts=ts,
                 seq=seq,
                 state=state,

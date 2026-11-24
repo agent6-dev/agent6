@@ -30,9 +30,10 @@ depends_on = [
   "agent6",
   "agent6.budget",
   "agent6.child_env",
+  "agent6.child_records",
   "agent6.config",
-  "agent6.config.io",
   "agent6.config.child_snapshot",
+  "agent6.config.io",
   "agent6.config.layer",
   "agent6.config.layer_data",
   "agent6.config.secret_store",
@@ -47,9 +48,14 @@ depends_on = [
   "agent6.harness",
   "agent6.journal_tail",
   "agent6.kinds",
-  "agent6.child_records",
-  "agent6.machine",
+  "agent6.machine.authoring",
+  "agent6.machine.contracts",
+  "agent6.machine.dryrun",
+  "agent6.machine.engine",
   "agent6.machine.journal",
+  "agent6.machine.live_world",
+  "agent6.machine.schema",
+  "agent6.machine.semantics",
   "agent6.media",
   "agent6.models.cache",
   "agent6.models.pricing",
@@ -69,11 +75,11 @@ depends_on = [
   "agent6.sandbox.jail_session",
   "agent6.sessions.attachments",  # a fork copies the images its checkpoint names
   "agent6.sessions.budget_events",
+  "agent6.sessions.child_dispatch",
   "agent6.sessions.event_log",
   "agent6.sessions.id",
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
-  "agent6.sessions.child_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.lineage",
   "agent6.sessions.lock",
@@ -124,7 +130,13 @@ depends_on = [
   "agent6.graph.storage",
   "agent6.harness",
   "agent6.kinds",
-  "agent6.machine",
+  "agent6.machine.contracts",
+  "agent6.machine.dryrun",
+  "agent6.machine.engine",
+  "agent6.machine.graph",
+  "agent6.machine.journal",
+  "agent6.machine.schema",
+  "agent6.machine.semantics",
   "agent6.models.cache",
   "agent6.models.choices",
   "agent6.models.validate",
@@ -300,7 +312,7 @@ depends_on = ["agent6.credit_usage", "agent6.kinds", "agent6.operator_input"]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.vcs.git.read: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.choices", "agent6.pack", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.sessions.shells", "agent6.terminal", "agent6.ui.directive_actions", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.parallel_preview", "agent6.ui.path_completion", "agent6.ui.spawn", "agent6.vcs.git.files", "agent6.vcs.git.history", "agent6.vcs.git.read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
+depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.schema", "agent6.machine.semantics", "agent6.models.choices", "agent6.pack", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.sessions.shells", "agent6.terminal", "agent6.ui.directive_actions", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.parallel_preview", "agent6.ui.path_completion", "agent6.ui.spawn", "agent6.vcs.git.files", "agent6.vcs.git.history", "agent6.vcs.git.read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
 
 [[modules]]
 path = "agent6.ui.parallel_preview"
@@ -469,13 +481,9 @@ depends_on = [
 path = "agent6.ui.web"
 depends_on = [
   "agent6",
-  # /undo forks in-process (app.fork), the same direction ui.acp already uses.
   "agent6.app",
-  # The variable naming the operator's own secret, kept out of every child.
   "agent6.child_env",
-  # new-work preflight: refuse a run submission while a live worker holds the
-  # checkout, instead of spawning a doomed detached run
-    "agent6.config",
+  "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",
   "agent6.config.layer_data",
@@ -485,17 +493,16 @@ depends_on = [
   "agent6.directive",  # slash completion rows in the served page
   "agent6.errors",
   "agent6.kinds",  # the modes an operator starts, for the composer's routes
-  "agent6.machine",
-  # config-editor value suggestions: the one owner every editor and TAB
-  # completion read
+  "agent6.machine.journal",
+  "agent6.machine.schema",
+  "agent6.machine.semantics",
   "agent6.models.choices",
-  "agent6.path_safety",
   "agent6.pack",
+  "agent6.path_safety",
   "agent6.paths",
   "agent6.review_records",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
-  # run_plan reads the session's mode from its manifest before spawning.
   "agent6.sessions.manifest",
   "agent6.sessions.process",
   "agent6.ui.directive_actions",
@@ -505,7 +512,6 @@ depends_on = [
   "agent6.ui.path_completion",
   "agent6.ui.spawn",
   "agent6.ui.telemetry",
-  # One branch-tips snapshot per hub poll (the listing's unmerged mark).
   "agent6.vcs.git.diff",
   "agent6.vcs.git.fetch",
   "agent6.vcs.git.files",
@@ -515,7 +521,6 @@ depends_on = [
   "agent6.vcs.git.read",
   "agent6.viewmodel",
   "agent6.viewmodel.receipt",
-  # The sign-in secret is minted from the session-id wordlist.
   "agent6.words",
 ]
 
@@ -546,19 +551,20 @@ depends_on = [
   "agent6.graph.order",
   "agent6.kinds",
   "agent6.llm_json",
-  "agent6.machine",
+  "agent6.machine.contracts",
   "agent6.machine.journal",
   "agent6.machine.schema",
+  "agent6.machine.semantics",
   "agent6.models.choices",
   "agent6.models.registry",
   "agent6.paths",
   "agent6.providers",
   "agent6.review_records",
+  "agent6.sessions.child_dispatch",
   "agent6.sessions.completion",
   "agent6.sessions.event_log",
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
-  "agent6.sessions.child_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.lineage",
   "agent6.sessions.manifest",
@@ -1044,7 +1050,7 @@ depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage
 
 [[modules]]
 path = "agent6.machine"
-depends_on = ["agent6.machine.authoring", "agent6.machine.contracts", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.live_world", "agent6.machine.schema", "agent6.machine.semantics", "agent6.prompts"]
+depends_on = []
 
 [[modules]]
 path = "agent6.machine.authoring"

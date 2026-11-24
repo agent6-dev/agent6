@@ -11,7 +11,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6.app.machine import agent
-from agent6.machine import AgentExecResult, AgentRequest, schema
+from agent6.machine import contracts, schema
 from agent6.vcs.git import read as git_read
 
 _REQUEST = agent.MachineAgentRequest(
@@ -24,7 +24,7 @@ _REQUEST = agent.MachineAgentRequest(
     protect_paths=(pathlib.Path("/work/repo/m.asm.toml"),),
     shared_writes=(pathlib.Path("/srv/outbox"),),
     commit_identity=git_read.CommitIdentity(name="Machine Bot", email="bot@example.com"),
-    request=AgentRequest(
+    request=contracts.AgentRequest(
         prompt="review the queue",
         timeout_s=600.0,
         effort="low",
@@ -56,7 +56,7 @@ _REQUEST_BYTES = (
     '"note":{"type":"str","optional":true,"enum":null}}}}}'
 )
 
-_RESULT = AgentExecResult(
+_RESULT = contracts.AgentExecResult(
     reason="finish_session",
     payload={"ok": True, "notes": "queue drained"},
     usd=0.0588752,
@@ -84,7 +84,7 @@ def test_result_serializes_to_pinned_bytes() -> None:
 
 
 def test_result_bytes_validate_to_same_object() -> None:
-    assert AgentExecResult.model_validate_json(_RESULT_BYTES) == _RESULT
+    assert contracts.AgentExecResult.model_validate_json(_RESULT_BYTES) == _RESULT
 
 
 def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
@@ -95,7 +95,7 @@ def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
     """
     import json
 
-    res = AgentExecResult(reason="finish_session", payload={"note": "bad \ud800 tail"})
+    res = contracts.AgentExecResult(reason="finish_session", payload={"note": "bad \ud800 tail"})
     text = res.model_dump_json()
     assert json.loads(text)["payload"]["note"].startswith("bad ")
     assert "\ud800" not in json.loads(text)["payload"]["note"]
@@ -109,7 +109,7 @@ def test_defaulted_request_omits_nothing() -> None:
         overlay={},
         isolation="none",
         transcript_dir=pathlib.Path("/t"),
-        request=AgentRequest(prompt="p", timeout_s=1.0),
+        request=contracts.AgentRequest(prompt="p", timeout_s=1.0),
     )
     assert minimal.model_dump_json() == (
         '{"cwd":"/w","root":"/w","overlay":{},"setting_origins":{},"isolation":"none","transcript_dir":"/t",'

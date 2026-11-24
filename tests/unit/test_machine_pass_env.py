@@ -14,7 +14,7 @@ import pytest
 
 from agent6.app.machine import host_preflight, run, state_configs
 from agent6.config import Config
-from agent6.machine import MachineError, ToolState, load_machine
+from agent6.machine import schema, semantics
 from agent6.ui.cli import machine_check
 
 MACHINE = """
@@ -52,19 +52,21 @@ def _write(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
 
 
 def test_a_tool_state_declares_the_variables_it_wants(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path, MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, MACHINE))
     fetch = spec.states["fetch"]
-    assert isinstance(fetch, ToolState)
+    assert isinstance(fetch, schema.ToolState)
     assert fetch.pass_env == ("X_TOKEN", "X_REGION")
-    with pytest.raises(MachineError, match="invalid environment variable name"):
-        load_machine(_write(tmp_path, MACHINE.replace('"X_REGION"', '"BAD NAME"')))
+    with pytest.raises(schema.MachineError, match="invalid environment variable name"):
+        semantics.load_machine(_write(tmp_path, MACHINE.replace('"X_REGION"', '"BAD NAME"')))
 
 
 def test_the_operator_allowlist_is_never_a_machine_overlay_or_a_provider_key(
     tmp_path: pathlib.Path,
 ) -> None:
-    with pytest.raises(MachineError, match=r"machine\.pass_env"):
-        load_machine(_write(tmp_path, MACHINE + '\n[config.machine]\npass_env = ["X_TOKEN"]\n'))
+    with pytest.raises(schema.MachineError, match=r"machine\.pass_env"):
+        semantics.load_machine(
+            _write(tmp_path, MACHINE + '\n[config.machine]\npass_env = ["X_TOKEN"]\n')
+        )
     with pytest.raises(ValueError, match="never passes a provider key to a machine's tool"):
         Config.model_validate(
             {
@@ -75,7 +77,7 @@ def test_the_operator_allowlist_is_never_a_machine_overlay_or_a_provider_key(
 
 
 def test_a_variable_the_operator_has_not_allowed_refuses_the_run(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path, MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, MACHINE))
     refusal = host_preflight.machine_pass_env_refusal(Config(), spec.states)
     assert refusal is not None and "[states.fetch] asks for X_TOKEN, X_REGION" in refusal
     assert "[machine].pass_env does not allow" in refusal

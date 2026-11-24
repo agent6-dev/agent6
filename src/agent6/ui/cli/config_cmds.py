@@ -14,12 +14,8 @@ from agent6 import errors, paths, portable
 from agent6.app import confine
 from agent6.app.machine import state_configs
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, notices, write
-from agent6.machine import (
-    MachineError,
-    load_machine,
-    protected_overlay_error,
-    protected_overlay_key_error,
-)
+from agent6.machine import schema as machine_schema
+from agent6.machine import semantics
 from agent6.sandbox import detect
 from agent6.ui.cli import common
 from agent6.viewmodel import config_view
@@ -56,7 +52,7 @@ def _read_machine_overlay(machine: pathlib.Path | None) -> dict[str, object] | N
     overlay = io.read_toml_file(machine).get("config", {})
     if not isinstance(overlay, dict):
         return {}
-    if problem := protected_overlay_error(overlay):
+    if problem := machine_schema.protected_overlay_error(overlay):
         raise errors.OperatorError(problem)
     return overlay
 
@@ -233,7 +229,7 @@ def _reject_machine_protected(key: str, machine: pathlib.Path | None) -> str | N
     """Return the error for an operator-only key in a machine overlay, by the loader's own rule."""
     if machine is None:
         return None
-    return protected_overlay_key_error(io.render_key(io.split_key(key)))
+    return machine_schema.protected_overlay_key_error(io.render_key(io.split_key(key)))
 
 
 def _check_machine(text: str) -> None:
@@ -248,14 +244,14 @@ def _check_machine(text: str) -> None:
     with tempfile.NamedTemporaryFile("w", suffix=".asm.toml", delete=True, encoding="utf-8") as tf:
         tf.write(text)
         tf.flush()
-        load_machine(pathlib.Path(tf.name))
+        semantics.load_machine(pathlib.Path(tf.name))
 
 
 def _machine_is_valid(text: str) -> bool:
     """Return whether the text parses as a complete, valid machine spec."""
     try:
         _check_machine(text)
-    except MachineError:
+    except machine_schema.MachineError:
         return False
     return True
 
@@ -369,7 +365,7 @@ def _write_machine(
         err = f"{target}: invalid TOML: {exc}"
     except ConfigError as exc:
         err = _leaf_problems(str(exc))
-    except MachineError as exc:
+    except machine_schema.MachineError as exc:
         err = "; ".join(exc.problems)
     if err is None:
         portable.atomic_write(target, text)

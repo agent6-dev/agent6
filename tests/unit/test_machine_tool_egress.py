@@ -14,15 +14,9 @@ from agent6 import kinds, paths
 from agent6.app.machine import bundle as machine_bundle
 from agent6.app.machine import host_preflight, run, state_configs
 from agent6.config import Config
-from agent6.machine import (
-    MachineError,
-    MachineJournal,
-    ToolState,
-    contracts,
-    drive,
-    live_world,
-    load_machine,
-)
+from agent6.machine import contracts, live_world, schema, semantics
+from agent6.machine import engine as machine_engine
+from agent6.machine import journal as machine_journal
 from agent6.sandbox import jail
 
 # A two-tool machine: the first tool opts into the network, the second does not.
@@ -97,18 +91,18 @@ def _write(tmp_path: pathlib.Path, text: str, name: str = "m.asm.toml") -> pathl
 
 
 def test_a_tool_state_sets_its_network_in_its_config_table(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path, NET_MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, NET_MACHINE))
     fetch = spec.states["fetch"]
     store = spec.states["store"]
-    assert isinstance(fetch, ToolState) and fetch.config == {"sandbox": {"network": "host"}}
-    assert isinstance(store, ToolState) and store.config == {}
+    assert isinstance(fetch, schema.ToolState) and fetch.config == {"sandbox": {"network": "host"}}
+    assert isinstance(store, schema.ToolState) and store.config == {}
 
 
 def test_a_network_field_on_a_tool_state_fails_the_load(tmp_path: pathlib.Path) -> None:
     """One spelling: a state's network is `config.sandbox.network`, for tool and agent states."""
     text = NET_MACHINE.replace('command = ["store"]\n', 'command = ["store"]\nnetwork = "host"\n')
-    with pytest.raises(MachineError, match="network"):
-        load_machine(_write(tmp_path, text))
+    with pytest.raises(schema.MachineError, match="network"):
+        semantics.load_machine(_write(tmp_path, text))
 
 
 # --- the engine names each tool call's state to the World ----------------
@@ -148,10 +142,10 @@ class _RecordingWorld:
 
 
 def test_engine_names_the_state_of_each_tool_call(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path, NET_MACHINE))
-    journal = MachineJournal(tmp_path / "inst")
+    spec = semantics.load_machine(_write(tmp_path, NET_MACHINE))
+    journal = machine_journal.MachineJournal(tmp_path / "inst")
     world = _RecordingWorld(state_calls=[])
-    result = drive(spec, journal, world, live=True)
+    result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "ok"
     assert world.state_calls == [(("scripts/fetch.sh",), "fetch"), (("store",), "store")]
 
@@ -191,7 +185,7 @@ def _world(
     )
     return live_world.LiveWorld(
         cwd=tmp_path,
-        journal=MachineJournal(tmp_path / "i"),
+        journal=machine_journal.MachineJournal(tmp_path / "i"),
         tool_policy=factory,
         data_dir=data_dir,
     )
@@ -340,7 +334,7 @@ def test_a_bundle_in_a_subdirectory_runs_its_own_scripts(
         shared_writes=(),
     )
     world = live_world.LiveWorld(
-        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), tool_policy=factory
+        cwd=tmp_path, journal=machine_journal.MachineJournal(tmp_path / "i"), tool_policy=factory
     )
     world.run_tool(
         ("python3", "scripts/count.py", "./scripts/x.sh", "notes/scripts", "/bin/true"), 5.0
@@ -387,13 +381,13 @@ def test_bundle_ok_when_script_exists(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "fetch.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     assert machine_bundle.validate_bundle(spec, f) == []
 
 
 def test_bundle_flags_missing_script(tmp_path: pathlib.Path) -> None:
     f = _write(tmp_path, NET_MACHINE)  # references scripts/fetch.sh, never created
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     problems = machine_bundle.validate_bundle(spec, f)
     assert any("not found in bundle" in p for p in problems)
 
@@ -403,7 +397,7 @@ def test_bundle_flags_escaping_command_ref(tmp_path: pathlib.Path) -> None:
         'command = ["scripts/fetch.sh"]', 'command = ["scripts/../../etc/x"]'
     )
     f = _write(tmp_path, text)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     problems = machine_bundle.validate_bundle(spec, f)
     assert any("escapes the bundle" in p for p in problems)
 
@@ -414,7 +408,7 @@ def test_bundle_flags_symlink_escape(tmp_path: pathlib.Path) -> None:
     outside = tmp_path.parent / "outside_secret"
     outside.write_text("secret", encoding="utf-8")
     (tmp_path / "scripts" / "fetch.sh").symlink_to(outside)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     problems = machine_bundle.validate_bundle(spec, f)
     assert any("outside the bundle" in p for p in problems)
 
@@ -424,7 +418,7 @@ def test_bundle_reports_circular_symlink_in_scripts(tmp_path: pathlib.Path) -> N
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     problems = machine_bundle.validate_bundle(spec, f)  # must not raise
     assert any("loop" in p for p in problems)
 
@@ -434,7 +428,7 @@ def test_bundle_reports_circular_symlink_command_ref(tmp_path: pathlib.Path) -> 
     f = _write(tmp_path, text)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     problems = machine_bundle.validate_bundle(spec, f)  # must not raise
     assert any("fetch" not in p and "loop" in p for p in problems)
 

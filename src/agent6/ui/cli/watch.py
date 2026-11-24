@@ -16,7 +16,8 @@ import pathlib
 import sys
 
 from agent6 import paths
-from agent6.machine import JournalError, MachineError, load_machine
+from agent6.machine import journal as machine_journal
+from agent6.machine import schema, semantics
 from agent6.sessions import id
 from agent6.ui.cli import common, machine_cmds, plan_watch
 from agent6.viewmodel import (
@@ -55,10 +56,12 @@ def _machine_json_snapshot(machine_dir: pathlib.Path) -> int:
     """
     try:
         snap = machine_snapshot(machine_dir)
-    except JournalError as exc:  # a MachineError too: the corrupt-journal wording first
+    except (
+        machine_journal.JournalError
+    ) as exc:  # a MachineError too: the corrupt-journal wording first
         common.error(f"{exc}")
         return 1
-    except MachineError as exc:
+    except schema.MachineError as exc:
         source = machine_dir / "machine.asm.toml"
         print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
         return 1
@@ -77,8 +80,8 @@ def _machine_watch_tui(machine_dir: pathlib.Path) -> int:
     """
     source = machine_dir / "machine.asm.toml"
     try:
-        spec = load_machine(source)
-    except MachineError as exc:
+        spec = semantics.load_machine(source)
+    except schema.MachineError as exc:
         print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
         return 1
     try:

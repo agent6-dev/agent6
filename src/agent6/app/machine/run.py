@@ -28,26 +28,8 @@ from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError
 from agent6.harness.parallel import repo as child_repo
-from agent6.machine import (
-    AgentExecResult,
-    AgentRequest,
-    AgentState,
-    EngineError,
-    JournalError,
-    LiveWorld,
-    MachineEnd,
-    MachineError,
-    MachineJournal,
-    ToolExecResult,
-    ToolPolicyFactory,
-    ToolState,
-    bundle_drift,
-    clear_stop_request,
-    drive,
-    load_machine,
-    machine_lock,
-    write_bundle,
-)
+from agent6.machine import contracts, live_world, schema, semantics
+from agent6.machine import engine as machine_engine
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
 from agent6.sessions import layout, lock, process
@@ -136,7 +118,7 @@ def machine_tool_runner(
     states: Mapping[str, state_configs.StateConfig],
     reporter: app_reporter.Reporter,
     *,
-    tool_policy: ToolPolicyFactory,
+    tool_policy: live_world.ToolPolicyFactory,
 ) -> Callable[[str, kinds.JailPolicy, pathlib.Path | None], kinds.CommandResult]:
     """Return a jail runner that executes each tool policy in a fresh clone at the chain tip.
 
@@ -176,7 +158,7 @@ def machine_tool_runner(
         """
         resolved = states.get(state)
         if resolved is None:
-            raise EngineError(f"no config was resolved for state {state!r}")
+            raise contracts.EngineError(f"no config was resolved for state {state!r}")
         dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
         try:
             agent.clone_at_machine_chain(cwd, dest, git_read.machine_chain_ref_for(machine_id))
@@ -211,7 +193,7 @@ def machine_tool_policy_factory(
     bundle_dir: pathlib.Path | None = None,
     in_place: bool = True,
     shared_writes: tuple[pathlib.Path, ...],
-) -> ToolPolicyFactory:
+) -> live_world.ToolPolicyFactory:
     """Return the per-call tool-jail policy builder for a machine.
 
     The one shared `jail_policy` over the state's own config, plus the machine deltas (the
@@ -335,17 +317,17 @@ def _archive_for_restart(
         None to go on to the run. Else the exit code: 2 when the chain holds unmerged work,
         with the instance left in place; 1 when the instance cannot be read or moved.
     """
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     if not journal.exists():
         return None
     try:
-        with machine_lock(root):
+        with machine_journal.machine_lock(root):
             unmerged = _unmerged_chain(cwd, machine_id)
             if unmerged is not None:
                 reporter.refuse(f"cannot restart {machine_id}: {unmerged}")
                 return 2
             archive = machine_journal.archive_instance(root, journal.end_event())
-    except JournalError as exc:
+    except machine_journal.JournalError as exc:
         reporter.error(str(exc))
         return 1
     reporter.note(f"archived the previous run to {archive}")
@@ -420,8 +402,8 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         refusal.
     """
     try:
-        spec = load_machine(path)
-    except MachineError as exc:
+        spec = semantics.load_machine(path)
+    except schema.MachineError as exc:
         return _fail(reporter, path, list(exc.problems))
     # A security boundary: `load_machine` does not validate the bundle, so run does, like check.
     bundle_problems = bundle.validate_bundle(spec, path)
@@ -432,11 +414,13 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     if uncommitted is not None:
         reporter.refuse(uncommitted)
         return 2
-    agent_states = {n: s for n, s in spec.states.items() if isinstance(s, AgentState)}
+    agent_states = {n: s for n, s in spec.states.items() if isinstance(s, schema.AgentState)}
     # mode="run" agent states edit and commit; they need a resolved git identity.
     has_run_agent = any(s.mode == "run" for s in agent_states.values())
-    has_tool_state = any(isinstance(s, ToolState) for s in spec.states.values())
-    agent_runner: Callable[[AgentRequest, pathlib.Path | None], AgentExecResult] | None = None
+    has_tool_state = any(isinstance(s, schema.ToolState) for s in spec.states.values())
+    agent_runner: (
+        Callable[[contracts.AgentRequest, pathlib.Path | None], contracts.AgentExecResult] | None
+    ) = None
     env = detect.probed_environment()
     # The machine's own file and scripts are read-only in every jail: no state rewrites them.
     protect_paths = host_preflight.machine_protect_paths(path, cwd, config_paths)
@@ -500,7 +484,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     # has_run_agent supplies both clone arguments: every tool and agent state then runs in a clone.
     if has_run_agent:
         try:
-            events = MachineJournal(root).read()
+            events = machine_journal.MachineJournal(root).read()
             if events:
                 begin = events[0]
                 if not isinstance(begin, machine_journal.MachineBegin) or not begin.base_commit:
@@ -512,7 +496,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 base_commit = begin.base_commit
             else:
                 base_commit = git_read.status(cwd).head_sha
-        except (errors.GitError, JournalError) as exc:
+        except (errors.GitError, machine_journal.JournalError) as exc:
             reporter.refuse(f"cannot resolve the machine's starting commit: {exc}")
             return 2
         if not base_commit:
@@ -634,15 +618,15 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter.refuse(str(exc))
         return 2
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)
-    journal = MachineJournal(root, keep_snapshots=keep_snapshots)
+    journal = machine_journal.MachineJournal(root, keep_snapshots=keep_snapshots)
     data_dir = root / "data"
     try:
-        with machine_lock(root):
+        with machine_journal.machine_lock(root):
             journal.ensure_dirs()
             # Refused before any worker.pid stamp: a stamped pid would read "started" and then
             # "running" forever in `machine status`.
             events = journal.read()
-            if events and isinstance(events[-1], MachineEnd):
+            if events and isinstance(events[-1], machine_journal.MachineEnd):
                 end = events[-1]
                 rerun = shlex.join(
                     ("agent6", "machine", "run", str(invoked_as or path), "--restart")
@@ -656,7 +640,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 return 2
             if journal.exists():
                 # A live instance runs the bundle it recorded.
-                drift = bundle_drift(root, path)
+                drift = machine_journal.bundle_drift(root, path)
                 if drift is not None:
                     reporter.refuse(
                         f"{drift}. A live instance runs the bundle it recorded."
@@ -665,7 +649,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     return 2
             paths.mkdir_for_real_user(data_dir)
             # A leftover stop marker would park this invocation at its first boundary.
-            clear_stop_request(root)
+            machine_journal.clear_stop_request(root)
             # Before the drive re-runs the state, which starts a fresh log over the crashed one.
             crash_spend.book_crashed_attempt(journal, root)
             app_frontend.apply_spawned_away_default(root, app_frontend.approval_scopes(cfg))
@@ -682,7 +666,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                         f" {git_read.machine_branch_for(spec.machine)!r} is in HEAD;"
                         " this instance starts from HEAD"
                     )
-                write_bundle(root, path)
+                machine_journal.write_bundle(root, path)
             operator_hook = host_preflight.build_machine_notify_hook(
                 cfg, spec.machine, root, reporter=reporter
             )
@@ -722,7 +706,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     )
                     poke_hint_shown = True
 
-            def say_tool_failure(state: str, outcome: ToolExecResult) -> None:
+            def say_tool_failure(state: str, outcome: contracts.ToolExecResult) -> None:
                 """Name a failed tool step here: a bare `nonzero` edge reads as progress.
 
                 Args:
@@ -743,7 +727,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 in_place=not has_run_agent,
                 shared_writes=shared_writes,
             )
-            world = LiveWorld(
+            world = live_world.LiveWorld(
                 cwd=cwd,
                 journal=journal,
                 agent_runner=agent_runner,
@@ -772,7 +756,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             # Stamped after the last refusal; the finally always clears it.
             process.write_worker_pid(root, os.getpid())
             try:
-                result = drive(
+                result = machine_engine.drive(
                     spec,
                     journal,
                     world,
@@ -789,7 +773,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                         pack.quarantine_tree(paths.checkout_root(cwd), warn=reporter.warn)
                 finally:
                     process.clear_worker_pid(root)
-    except (JournalError, EngineError) as exc:
+    except (machine_journal.JournalError, contracts.EngineError) as exc:
         reporter.error(str(exc))
         return 1
     spend, _ = machine_logs.machine_spend(journal.read(), root, alive=False)

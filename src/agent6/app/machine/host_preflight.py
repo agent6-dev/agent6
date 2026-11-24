@@ -15,10 +15,10 @@ from collections.abc import Callable, Mapping
 from agent6.app import notify_hook
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
-from agent6.machine import StateSpec, ToolState
+from agent6.machine import schema
 
 
-def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> str | None:
+def machine_pass_env_refusal(cfg: Config, states: Mapping[str, schema.StateSpec]) -> str | None:
     """Return the refusal naming every tool state asking for a disallowed variable, else None.
 
     Args:
@@ -33,7 +33,7 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
     asks = [
         f"[states.{name}] asks for {', '.join(n for n in state.pass_env if n not in allowed)}"
         for name, state in states.items()
-        if isinstance(state, ToolState) and any(n not in allowed for n in state.pass_env)
+        if isinstance(state, schema.ToolState) and any(n not in allowed for n in state.pass_env)
     ]
     if not asks:
         return None

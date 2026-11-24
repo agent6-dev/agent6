@@ -7,9 +7,9 @@ import dataclasses
 import pathlib
 import shutil
 
-from agent6 import machine
 from agent6.app.machine import bundle, state_configs
 from agent6.config import ConfigError
+from agent6.machine import schema, semantics
 from agent6.sandbox import detect, tool_paths
 
 
@@ -26,7 +26,7 @@ class CheckError(Exception):
 class CheckedBundle:
     """The validated machine, its resolved configs and advisory jail-PATH warnings."""
 
-    spec: machine.MachineSpec
+    spec: schema.MachineSpec
     configs: state_configs.MachineConfigs
     warnings: tuple[str, ...]
 
@@ -51,8 +51,8 @@ def check_bundle(
         CheckError: The file, bundle or config is invalid.
     """
     try:
-        spec = machine.load_machine(path)
-    except machine.MachineError as exc:
+        spec = semantics.load_machine(path)
+    except schema.MachineError as exc:
         raise CheckError(list(exc.problems)) from exc
     if problems := bundle.validate_bundle(spec, path):
         raise CheckError(problems, "bundle")
@@ -103,7 +103,7 @@ def script_binaries(scripts_dir: pathlib.Path) -> dict[str, str]:
     return out
 
 
-def tool_reachability_warnings(spec: machine.MachineSpec, path: pathlib.Path) -> list[str]:
+def tool_reachability_warnings(spec: schema.MachineSpec, path: pathlib.Path) -> list[str]:
     """Return a warning for each binary the machine execs that the jail PATH does not resolve.
 
     Tool-state `command[0]` plus literal subprocess argv in bundle scripts. Offline
@@ -120,7 +120,7 @@ def tool_reachability_warnings(spec: machine.MachineSpec, path: pathlib.Path) ->
     search = tool_paths.jail_search_path()
     sources: dict[str, str] = {}
     for name, state in spec.states.items():
-        if isinstance(state, machine.ToolState):
+        if isinstance(state, schema.ToolState):
             sources.setdefault(state.command[0], f"[states.{name}] command")
     for binary, script in script_binaries(path.parent / "scripts").items():
         sources.setdefault(binary, f"scripts/{script}")

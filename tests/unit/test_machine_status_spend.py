@@ -7,18 +7,18 @@ from __future__ import annotations
 import json
 import pathlib
 
-from agent6.machine import AgentFact, StepEvent
+from agent6.machine import journal as machine_journal
 from agent6.viewmodel.machine import logs as machine_logs
 
 
-def _agent_step(seq: int, usd: float) -> StepEvent:
-    return StepEvent(
+def _agent_step(seq: int, usd: float) -> machine_journal.StepEvent:
+    return machine_journal.StepEvent(
         ts="t",
         seq=seq,
         state=f"s{seq}",
         label="ok",
         goto="next",
-        fact=AgentFact(
+        fact=machine_journal.AgentFact(
             outcome="ok",
             reason="finish_session",
             payload=None,
@@ -179,9 +179,9 @@ def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: pa
 def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) -> None:
     """A supervisor crash mid-agent-state books the per-state log's spend as an AttemptSpend."""
     from agent6.app.machine import crash_spend
-    from agent6.machine import AttemptSpend, MachineJournal
+    from agent6.machine import journal as machine_journal
 
-    journal = MachineJournal(tmp_path)
+    journal = machine_journal.MachineJournal(tmp_path)
     journal.ensure_dirs()
     journal.begin(machine="m", version=1)
     journal.append(_agent_step(0, 0.10))
@@ -189,7 +189,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
 
     crash_spend.book_crashed_attempt(journal, tmp_path)
     events = journal.read()
-    booked = [e for e in events if isinstance(e, AttemptSpend)]
+    booked = [e for e in events if isinstance(e, machine_journal.AttemptSpend)]
     assert len(booked) == 1
     assert booked[0].seq == 1 and booked[0].state == "hunt"
     assert abs(booked[0].usd - 0.059) < 1e-9
@@ -200,7 +200,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
 
     # Idempotent: no orphan left, nothing more books.
     crash_spend.book_crashed_attempt(journal, tmp_path)
-    assert len([e for e in journal.read() if isinstance(e, AttemptSpend)]) == 1
+    assert len([e for e in journal.read() if isinstance(e, machine_journal.AttemptSpend)]) == 1
 
     # The spend fold keeps the slice with the worker dead.
     spend, _ = machine_logs.machine_spend(journal.read(), tmp_path, alive=False)
@@ -211,7 +211,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
     _state_log(tmp_path, 1, "hunt", 0.02)
     crash_spend.book_crashed_attempt(journal, tmp_path)
 
-    booked = [e for e in journal.read() if isinstance(e, AttemptSpend)]
+    booked = [e for e in journal.read() if isinstance(e, machine_journal.AttemptSpend)]
     assert len(booked) == 2
     assert abs(sum(e.usd for e in booked) - 0.079) < 1e-9, "the first attempt was booked twice"
     assert len(list((tmp_path / "states").glob("crashed-*-0001-hunt"))) == 2
@@ -219,7 +219,8 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
 
 def test_booked_attempt_spend_counts_against_max_usd(tmp_path: pathlib.Path) -> None:
     """The engine's budget check folds AttemptSpend, so a crashed slice is never re-granted."""
-    from agent6.machine import AttemptSpend, MachineJournal, engine, load_machine
+    from agent6.machine import engine, semantics
+    from agent6.machine import journal as machine_journal
 
     f = tmp_path / "m.asm.toml"
     f.write_text(
@@ -243,12 +244,14 @@ reason = "routed"
 """,
         encoding="utf-8",
     )
-    spec = load_machine(f)
-    journal = MachineJournal(tmp_path / "inst")
+    spec = semantics.load_machine(f)
+    journal = machine_journal.MachineJournal(tmp_path / "inst")
     journal.ensure_dirs()
     journal.begin(machine="capped", version=1)
     journal.append(
-        AttemptSpend(ts="t", seq=0, state="route", usd=0.06, input_tokens=10, output_tokens=5)
+        machine_journal.AttemptSpend(
+            ts="t", seq=0, state="route", usd=0.06, input_tokens=10, output_tokens=5
+        )
     )
     result = engine.drive(spec, journal, None, live=False)  # replay tolerates the event
     assert result.status == "incomplete"
@@ -262,7 +265,7 @@ reason = "routed"
 def test_transitions_carry_bounded_failure_evidence(tmp_path: pathlib.Path) -> None:
     """A failed edge carries why on the shared fold's transition view; success stays one line."""
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.viewmodel.machine import state as machine_state
 
     f = tmp_path / "m.asm.toml"
@@ -302,9 +305,9 @@ reason = "r"
 """,
         encoding="utf-8",
     )
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     events = [
-        StepEvent(
+        machine_journal.StepEvent(
             ts="t",
             seq=0,
             state="probe",
@@ -314,13 +317,13 @@ reason = "r"
                 exit_code=2, stdout="", timed_out=False, stderr="boom\nno such file\n"
             ),
         ),
-        StepEvent(
+        machine_journal.StepEvent(
             ts="t",
             seq=1,
             state="fix",
             label="failed",
             goto="done",
-            fact=AgentFact(
+            fact=machine_journal.AgentFact(
                 outcome="failed",
                 reason="budget_exhausted",
                 payload=None,
@@ -335,7 +338,7 @@ reason = "r"
     assert ms.transitions[1].detail == "failed: budget_exhausted"
 
     ok_events = [
-        StepEvent(
+        machine_journal.StepEvent(
             ts="t",
             seq=0,
             state="probe",

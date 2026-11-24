@@ -20,13 +20,8 @@ from agent6 import paths as agent6_paths
 from agent6.app import fork, merge_plan, stop, undo
 from agent6.app import reporter as app_reporter
 from agent6.config import ConfigError, io, notices, write
-from agent6.machine import (
-    JournalError,
-    MachineError,
-    MachineJournal,
-    load_machine,
-    write_stop_request,
-)
+from agent6.machine import journal as machine_journal
+from agent6.machine import schema, semantics
 from agent6.sessions import ipc, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, operator_images, spawn
@@ -92,8 +87,8 @@ def spawn_machine_run(
             f" ({', '.join(sorted(by_name)) or 'none listed'})"
         )
     try:
-        spec = load_machine(pathlib.Path(machine_file))
-    except MachineError as exc:
+        spec = semantics.load_machine(pathlib.Path(machine_file))
+    except schema.MachineError as exc:
         return False, f"invalid machine file: {exc}"
     instance = layout.machines_root(agent6_paths.state_dir(cwd)) / spec.machine
     err = spawn.start_machine(
@@ -406,7 +401,7 @@ def machine_stop(cwd: pathlib.Path, name: str) -> tuple[bool, str]:
     ok, answer = machine_state.verb_answer(machine_dir, name, "stop")
     if not ok or answer:
         return ok, answer
-    write_stop_request(machine_dir)
+    machine_journal.write_stop_request(machine_dir)
     return True, "stop requested; the machine parks at its next transition boundary"
 
 
@@ -430,8 +425,8 @@ def machine_poke(
         return False, refusal
     payload: Any = data if data is not None else (message or None)
     try:
-        MachineJournal(machine_dir).poke(payload)
-    except JournalError as exc:
+        machine_journal.MachineJournal(machine_dir).poke(payload)
+    except machine_journal.JournalError as exc:
         return False, str(exc)
     return True, "poked"
 

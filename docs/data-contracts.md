@@ -264,8 +264,8 @@ The parse boundary of a `.asm.toml` machine file.
 | `config` | `dict[str, Any]` | `factory` |
 
 - **Written by:** machine/semantics
-- **Read by:** pack, app/machine/{bundle, host_preflight, run, state_configs}, machine/{__init__, contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine/state
-- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (16 test files exercise it)
+- **Read by:** pack, app/machine/{bundle, check, create, draft, host_preflight, run, state_configs}, machine/{contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine/state
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (17 test files exercise it)
 
 ## JournalEvent
 
@@ -276,8 +276,8 @@ The append-only journal, the snapshots and the single-writer lock of one machine
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 
 - **Written by:** machine/{engine, journal}
-- **Read by:** app/machine/{crash_spend, run}, machine/{__init__, contracts, dryrun, execution, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/wire, viewmodel/machine/{logs, state}
-- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (14 test files exercise it)
+- **Read by:** app/machine/{crash_spend, run}, machine/{contracts, dryrun, execution, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/wire, viewmodel/machine/{logs, state}
+- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (15 test files exercise it)
 
 ## TaskNode
 

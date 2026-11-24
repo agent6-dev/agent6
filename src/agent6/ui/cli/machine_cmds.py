@@ -19,17 +19,9 @@ from typing import Any
 
 from agent6 import budget, errors, paths
 from agent6.app.machine import listing
-from agent6.machine import (
-    EngineError,
-    JournalError,
-    MachineError,
-    MachineJournal,
-    PendingWait,
-    StepEvent,
-    drive,
-    load_machine,
-    write_stop_request,
-)
+from agent6.machine import contracts, schema, semantics
+from agent6.machine import engine as machine_engine
+from agent6.machine import journal as machine_journal
 from agent6.sessions import layout, process
 from agent6.ui import notify
 from agent6.ui.cli import common, machine_check, plan_watch
@@ -144,8 +136,8 @@ def _no_instance_hint(machine_id: str, cwd: pathlib.Path) -> str:
     candidate = pathlib.Path(machine_id)
     if machine_id.endswith(".asm.toml") or candidate.is_file():
         name = ""
-        with contextlib.suppress(MachineError, OSError):
-            name = load_machine(candidate).machine
+        with contextlib.suppress(schema.MachineError, OSError):
+            name = semantics.load_machine(candidate).machine
         if name in existing:
             return (
                 f" Did you mean the instance id {name!r}?"
@@ -217,13 +209,13 @@ def _cmd_machine_replay(machine_id: str) -> int:
         return 2
     source_path = root / "machine.asm.toml"
     try:
-        spec = load_machine(source_path)
-    except MachineError as exc:
+        spec = semantics.load_machine(source_path)
+    except schema.MachineError as exc:
         return machine_check._fail(source_path, exc.problems)
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     try:
-        result = drive(spec, journal, None, live=False)
-    except (JournalError, EngineError) as exc:
+        result = machine_engine.drive(spec, journal, None, live=False)
+    except (machine_journal.JournalError, contracts.EngineError) as exc:
         common.error(f"{exc}")
         return 1
     print(
@@ -233,7 +225,9 @@ def _cmd_machine_replay(machine_id: str) -> int:
     return 0 if result.status in ("ok", "incomplete") else 1
 
 
-def _armed_wait_tolerant(root: pathlib.Path, ms: MachineState) -> tuple[PendingWait | None, str]:
+def _armed_wait_tolerant(
+    root: pathlib.Path, ms: MachineState
+) -> tuple[machine_journal.PendingWait | None, str]:
     """Return the armed wait and a note; a corrupt wait.json yields the note instead.
 
     The readout goes on, as the shared dir word tolerates it (parked, keep streaming),
@@ -249,7 +243,7 @@ def _armed_wait_tolerant(root: pathlib.Path, ms: MachineState) -> tuple[PendingW
     """
     try:
         return armed_wait(root, ms), ""
-    except JournalError as exc:
+    except machine_journal.JournalError as exc:
         return None, str(exc)
 
 
@@ -268,15 +262,15 @@ def _cmd_machine_status(machine_id: str) -> int:
         return 2
     source_path = root / "machine.asm.toml"
     try:
-        spec = load_machine(source_path)
-    except MachineError as exc:
+        spec = semantics.load_machine(source_path)
+    except schema.MachineError as exc:
         return machine_check._fail(source_path, exc.problems)
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     try:
-        result = drive(spec, journal, None, live=False)
+        result = machine_engine.drive(spec, journal, None, live=False)
         events = journal.read()
         snapshot = journal.latest_snapshot()
-    except (JournalError, EngineError) as exc:
+    except (machine_journal.JournalError, contracts.EngineError) as exc:
         common.error(f"{exc}")
         return 1
     ms = fold_machine(spec, events)
@@ -321,7 +315,7 @@ def _cmd_machine_status(machine_id: str) -> int:
         print("  blackboard:")
         for key, value in snapshot.blackboard.items():
             print(f"    {key} = {value!r}")
-    step_events = [e for e in events if isinstance(e, StepEvent)]
+    step_events = [e for e in events if isinstance(e, machine_journal.StepEvent)]
     if step_events:
         print("  recent steps:")
         for event in step_events[-5:]:
@@ -354,7 +348,7 @@ def _cmd_machine_poke(
     if not ok or refusal:
         common.refuse(f"{refusal}")
         return 2
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     if message is not None:
         payload: Any = message
     elif data is not None:
@@ -367,7 +361,7 @@ def _cmd_machine_poke(
         payload = None
     try:
         journal.poke(payload)
-    except JournalError as exc:
+    except machine_journal.JournalError as exc:
         common.error(f"{exc}")
         return 1
     carried = "" if payload is None else " (with payload)"
@@ -399,7 +393,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
     if answer:
         print(f"[agent6] {answer}", file=sys.stderr)
         return 0
-    write_stop_request(root)
+    machine_journal.write_stop_request(root)
     print(f"stop requested: {machine_id} parks at its next transition boundary")
     return 0
 
@@ -467,13 +461,13 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
         return 2
     source = root / "machine.asm.toml"
     try:
-        spec = load_machine(source)
-    except MachineError as exc:
+        spec = semantics.load_machine(source)
+    except schema.MachineError as exc:
         return machine_check._fail(source, exc.problems)
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     try:
         ms = fold_machine(spec, journal.read())
-    except JournalError as exc:
+    except machine_journal.JournalError as exc:
         common.error(f"{exc}")
         return 1
     print(_render_overview(ms), flush=True)
@@ -497,7 +491,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
         while True:
             try:
                 ms = fold_machine(spec, journal.read())
-            except JournalError as exc:
+            except machine_journal.JournalError as exc:
                 # The same degradation `machine status` gives a corrupt journal, never a traceback.
                 common.error(f"{exc}")
                 return 1

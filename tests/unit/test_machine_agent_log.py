@@ -18,7 +18,7 @@ import pytest
 
 from agent6.app import role_providers
 from agent6.app.machine import agent
-from agent6.machine import AgentRequest
+from agent6.machine import contracts
 from agent6.machine import journal as machine_journal
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, ipc, journal, process
@@ -119,7 +119,7 @@ def _run(
     monkeypatch: pytest.MonkeyPatch,
     owner: pathlib.Path,
     log: pathlib.Path,
-    request: AgentRequest,
+    request: contracts.AgentRequest,
     prov: _Finishes | None = None,
     *,
     compaction: dict[str, int] | None = None,
@@ -210,7 +210,7 @@ def test_a_restart_states_the_rendered_prompt_as_the_task(
     owner = tmp_path / "machines" / "judge"
     owner.mkdir(parents=True)
     log = owner / "logs.jsonl" if authoring else owner / "states" / "0000-look" / "logs.jsonl"
-    request = AgentRequest(
+    request = contracts.AgentRequest(
         prompt="Rendered request with machine output.",
         operator_task="Author a judge." if authoring else None,
         state_name="" if authoring else "look",
@@ -253,7 +253,9 @@ def test_a_running_agent_state_takes_a_steer_and_its_log_closes_with_it(
     machine_journal.MachineJournal(instance).begin(machine="judge", version=1)
     process.write_worker_pid(instance, os.getpid())  # the supervisor
     log = instance / "states" / "0000-look" / "logs.jsonl"
-    request = AgentRequest(prompt="Judge the repository.", timeout_s=60.0, state_name="look")
+    request = contracts.AgentRequest(
+        prompt="Judge the repository.", timeout_s=60.0, state_name="look"
+    )
 
     prov = _run(tmp_path, monkeypatch, instance, log, request)
 
@@ -280,7 +282,9 @@ def test_a_steer_written_while_no_front_end_claims_the_machine_reaches_the_state
     machine_journal.MachineJournal(instance).begin(machine="judge", version=1)
     process.write_worker_pid(instance, os.getpid())  # the supervisor
     log = instance / "states" / "0000-look" / "logs.jsonl"
-    request = AgentRequest(prompt="Judge the repository.", timeout_s=60.0, state_name="look")
+    request = contracts.AgentRequest(
+        prompt="Judge the repository.", timeout_s=60.0, state_name="look"
+    )
     prov = _SteeredOnce(log.parent)
 
     _run(tmp_path, monkeypatch, instance, log, request, prov)
@@ -303,7 +307,7 @@ def test_the_authoring_agent_leaves_the_draft_log_to_machine_create(
     log = draft / "logs.jsonl"
     start = journal.SessionStart(execution_id="draft", user_task="author it", mode="machine")
     process.emit_session_start(event_log.EventSink(log), draft, start)
-    request = AgentRequest(
+    request = contracts.AgentRequest(
         prompt="Author a machine.", operator_task="author it", timeout_s=60.0, mode="run"
     )
 
@@ -330,7 +334,9 @@ def test_an_agent_state_reads_its_dollar_and_token_meters(
     owner = tmp_path / "machines" / "judge"
     owner.mkdir(parents=True)
     log = owner / "states" / "0000-look" / "logs.jsonl"
-    request = AgentRequest(prompt="Judge.", state_name="look", timeout_s=60, remaining_usd=2.0)
+    request = contracts.AgentRequest(
+        prompt="Judge.", state_name="look", timeout_s=60, remaining_usd=2.0
+    )
     prov = _run(tmp_path, monkeypatch, owner, log, request, Records(None))
     assert isinstance(prov, Records)
     line = "[harness budget] this execution: metered=$0/$2.00; fallback tokens=0/2000000"

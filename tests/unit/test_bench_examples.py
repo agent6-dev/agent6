@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6.machine import MachineError, load_machine
+from agent6.machine import schema, semantics
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 _BENCH = _REPO / "bench"
@@ -29,10 +29,10 @@ def _example_tomls() -> list[pathlib.Path]:
 @pytest.mark.parametrize("toml", _example_tomls(), ids=lambda p: f"{p.parent.name}/{p.name}")
 def test_shipped_machine_examples_validate(toml: pathlib.Path) -> None:
     if toml.name in _EXPECTED_INVALID:
-        with pytest.raises(MachineError):
-            load_machine(toml)
+        with pytest.raises(schema.MachineError):
+            semantics.load_machine(toml)
     else:
-        load_machine(toml)
+        semantics.load_machine(toml)
 
 
 # Fields the budget redesign and the git.allow_* removal deleted; recorded outputs are exempt.

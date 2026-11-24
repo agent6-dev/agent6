@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from agent6.machine import MachineError
+from agent6.machine import schema
 from agent6.sessions import layout
 from agent6.ui.web import model
 from agent6.viewmodel import (
@@ -256,7 +256,7 @@ def stream_machine(chan: SseChannel, machine_dir: pathlib.Path) -> None:
                 "machine": machine_snapshot(machine_dir, execution=fold.execution()),
                 "reasoning": reasoning,
             }
-        except MachineError as exc:
+        except schema.MachineError as exc:
             chan.send({"type": "error", "error": "; ".join(exc.problems)})
             return
         # A stopped machine's frame carries `worker_lost`; the stream stays open for `machine run`.

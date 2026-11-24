@@ -8,10 +8,11 @@ import dataclasses
 import pathlib
 from collections.abc import Callable
 
-from agent6 import budget, kinds, machine, path_safety
+from agent6 import budget, kinds, path_safety
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import check, scriptcheck
 from agent6.config import Config
+from agent6.machine import authoring, contracts, dryrun, schema
 from agent6.sessions import event_log, journal
 
 _CREATE_TIMEOUT_S = 900.0
@@ -80,7 +81,7 @@ def attempt_reason(problems: list[str]) -> str:
     return f"{head}{extra}"
 
 
-type Runner = Callable[[machine.AgentRequest, pathlib.Path | None], machine.AgentExecResult]
+type Runner = Callable[[contracts.AgentRequest, pathlib.Path | None], contracts.AgentExecResult]
 
 
 @dataclasses.dataclass(slots=True)
@@ -94,7 +95,7 @@ class Spend:
     input_tokens: int = 0
     output_tokens: int = 0
 
-    def add(self, result: machine.AgentExecResult) -> None:
+    def add(self, result: contracts.AgentExecResult) -> None:
         """Book one attempt before its draft is checked."""
         self.usd += result.usd
         self.own += result.usd_own_calls or 0.0
@@ -155,7 +156,7 @@ class ValidatedDraft:
     """The machine file and the scripts that passed validation together."""
 
     path: pathlib.Path
-    spec: machine.MachineSpec
+    spec: schema.MachineSpec
     scripts: dict[str, str]
 
 
@@ -202,7 +203,7 @@ def validate_draft(
             f"machine create: {offline.skipped} offline script test"
             f"{'' if offline.skipped == 1 else 's'} not run ({offline.skip_reason})"
         )
-    report = machine.dry_run(checked.spec, None)
+    report = dryrun.dry_run(checked.spec, None)
     problems.extend(
         f"dry-run state {c.name!r}: {c.detail}"
         for c in (*report.states, *report.branches)
@@ -252,7 +253,7 @@ def try_draft(
             )
             break
         draft.attempt = next_attempt
-        prompt = machine.build_authoring_prompt(
+        prompt = authoring.build_authoring_prompt(
             task, attempt=draft.attempt, diagnostics=diagnostics
         )
         reporter.err(f"machine create: attempt {draft.attempt}/{max_attempts}...")
@@ -262,7 +263,7 @@ def try_draft(
         remaining = None if create_cap is None else max(create_cap - spend.usd, 0.0)
         remaining_plan = None if plan_cap is None else max(plan_cap - spend.plan, 0.0)
         result = runner(
-            machine.AgentRequest(
+            contracts.AgentRequest(
                 prompt=prompt,
                 operator_task=task,
                 timeout_s=_CREATE_TIMEOUT_S,

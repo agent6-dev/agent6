@@ -15,7 +15,7 @@ from unittest import mock
 from agent6.app.machine import agent
 from agent6.config import Config
 from agent6.harness import finish_gates, loop, loop_conversation, loop_state, run_chain
-from agent6.machine import AgentRequest
+from agent6.machine import contracts
 from agent6.machine import schema as machine_schema
 from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
@@ -29,8 +29,8 @@ _SCHEMAS = {
 }
 
 
-def _request(schema: str | None) -> AgentRequest:
-    return AgentRequest(
+def _request(schema: str | None) -> contracts.AgentRequest:
+    return contracts.AgentRequest(
         prompt="judge the tree",
         timeout_s=60.0,
         output_schema=schema,

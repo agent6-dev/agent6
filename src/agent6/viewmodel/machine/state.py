@@ -14,7 +14,7 @@ import pathlib
 from collections.abc import Sequence
 from typing import Any, Literal
 
-from agent6.machine import MachineError, MachineResult, journal, load_machine, schema
+from agent6.machine import contracts, journal, schema, semantics
 from agent6.sessions import layout, process
 from agent6.viewmodel import format
 from agent6.viewmodel.machine import logs as machine_logs
@@ -108,7 +108,7 @@ class MachineState:
     current: str
     states: tuple[MachineStateView, ...]
     transitions: tuple[TransitionView, ...]
-    ended: MachineResult | None
+    ended: contracts.MachineResult | None
     notifications: tuple[NotificationView, ...]
 
     @property
@@ -182,7 +182,7 @@ def fold_machine(spec: schema.MachineSpec, events: Sequence[object]) -> MachineS
         for name, st in spec.states.items()
     )
     transitions = tuple(_transition_view(s) for s in steps)
-    ended = MachineResult.from_end(end) if end is not None else None
+    ended = contracts.MachineResult.from_end(end) if end is not None else None
     notes = [e for e in events if isinstance(e, journal.MachineNotify)]
     notifications = tuple(
         NotificationView(ts=n.ts, state=n.state, message=n.message, level=n.level)
@@ -405,9 +405,9 @@ def summarize_machine_dir(machine_dir: pathlib.Path) -> MachineSummary:
     """
     mtime = machine_mtime(machine_dir)
     try:
-        spec = load_machine(machine_dir / "machine.asm.toml")
+        spec = semantics.load_machine(machine_dir / "machine.asm.toml")
         ms = fold_machine(spec, journal.MachineJournal(machine_dir).read())
-    except (MachineError, OSError) as exc:
+    except (schema.MachineError, OSError) as exc:
         first_line = str(exc).split("\n", 1)[0]
         return MachineSummary(machine_dir.name, "", "", "unreadable", first_line, mtime)
     probes = probe_instance(machine_dir, ms)
@@ -439,7 +439,7 @@ MACHINE_VERBS: tuple[MachineVerb, ...] = ("stop", "poke", "steer", "answer")
 def verb_refusals(
     name: str,
     *,
-    ended: MachineResult | None,
+    ended: contracts.MachineResult | None,
     alive: bool,
     open_wait: bool,
     agent_open: bool,
@@ -512,9 +512,9 @@ def machine_verb_refusals(machine_dir: pathlib.Path, name: str) -> dict[MachineV
     if not machine_dir.is_dir():
         return dict.fromkeys(MACHINE_VERBS, f"no machine {name!r}")
     try:
-        spec = load_machine(machine_dir / "machine.asm.toml")
+        spec = semantics.load_machine(machine_dir / "machine.asm.toml")
         ms = fold_machine(spec, journal.MachineJournal(machine_dir).read())
-    except MachineError as exc:
+    except schema.MachineError as exc:
         return dict.fromkeys(MACHINE_VERBS, f"machine {name!r}: {exc}")
     return probe_instance(machine_dir, ms).refusals(name, ms)
 

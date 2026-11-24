@@ -15,18 +15,7 @@ from typing import Any
 
 from agent6 import errors
 from agent6.app.machine import check, scriptcheck
-from agent6.machine import (
-    AgentState,
-    DryRunReport,
-    MachineError,
-    MachineSpec,
-    ToolState,
-    dry_run,
-    fixture_problems,
-    load_machine,
-    render_dot,
-    render_mermaid,
-)
+from agent6.machine import dryrun, graph, schema, semantics
 from agent6.ui.cli import common
 
 
@@ -61,9 +50,11 @@ def _print_notes(checked: check.CheckedBundle) -> None:
     if sandbox := spec.config.get("sandbox"):
         print(f"[config] sets the sandbox of every state: {_leaves(sandbox)}")
     for name, state in spec.states.items():
-        if isinstance(state, (AgentState, ToolState)) and (sandbox := state.config.get("sandbox")):
+        if isinstance(state, (schema.AgentState, schema.ToolState)) and (
+            sandbox := state.config.get("sandbox")
+        ):
             print(f"[states.{name}] sets its own sandbox: {_leaves(sandbox)}")
-        if isinstance(state, ToolState) and state.pass_env:
+        if isinstance(state, schema.ToolState) and state.pass_env:
             print(
                 f"[states.{name}] receives the environment variable(s)"
                 f" {', '.join(state.pass_env)} when [machine].pass_env allows them"
@@ -137,10 +128,10 @@ def _cmd_machine_test(
             fixture = tomllib.loads(errors.read_operator_file(blackboard))
         except tomllib.TOMLDecodeError as exc:
             raise errors.OperatorError(f"blackboard fixture is not valid TOML: {exc}") from exc
-        fixture_errors = fixture_problems(spec, fixture)
+        fixture_errors = semantics.fixture_problems(spec, fixture)
         if fixture_errors:
             return _fail(path, fixture_errors, "blackboard")
-    report = dry_run(spec, fixture)
+    report = dryrun.dry_run(spec, fixture)
     _print_dry_run_report(spec, report)
     if report.ok:
         # A skip rides the verdict line: OK with tests silently unrun reads as tests ran green.
@@ -160,7 +151,7 @@ def _cmd_machine_test(
     return 1
 
 
-def _print_dry_run_report(spec: MachineSpec, report: DryRunReport) -> None:
+def _print_dry_run_report(spec: schema.MachineSpec, report: dryrun.DryRunReport) -> None:
     """Render the per-state and per-branch dry-run tables."""
     mark = {True: "ok", False: "FAIL"}
     print(f"machine {spec.machine!r}: per-state dry-run")
@@ -190,8 +181,8 @@ def _cmd_machine_graph(path: pathlib.Path, *, fmt: str) -> int:
         The exit code, 1 when the file does not parse.
     """
     try:
-        spec = load_machine(path)
-    except MachineError as exc:
+        spec = semantics.load_machine(path)
+    except schema.MachineError as exc:
         return _fail(path, exc.problems)
-    print((render_dot if fmt == "dot" else render_mermaid)(spec), end="")
+    print((graph.render_dot if fmt == "dot" else graph.render_mermaid)(spec), end="")
     return 0

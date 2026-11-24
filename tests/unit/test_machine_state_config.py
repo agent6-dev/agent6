@@ -18,7 +18,7 @@ from agent6 import kinds, paths
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, host_preflight, run, state_configs
 from agent6.config import Config, ConfigError, SandboxConfig
-from agent6.machine import AgentExecResult, MachineError, load_machine
+from agent6.machine import contracts, schema, semantics
 from agent6.sandbox import detect, jail
 
 # The probe before any fixture stubs it: the stub must never fill the real cache.
@@ -226,7 +226,7 @@ def test_run_state_requires_commits_at_resolution_and_check(
         table = "config" if layer_name == "machine" else "states.work.config"
         text += f"\n[{table}.git]\ncommit_per_turn = false\n"
     path = _write(tmp_path, text)
-    spec = load_machine(path)
+    spec = semantics.load_machine(path)
     with pytest.raises(ConfigError, match=r"git\.commit_per_turn = true.*chain.*only.*clone"):
         state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
     assert cli.main(["machine", "check", str(path)]) == 1
@@ -237,7 +237,7 @@ def test_run_state_requires_commits_at_resolution_and_check(
 def test_read_only_states_allow_disabled_commits(tmp_path: pathlib.Path) -> None:
     """Read-only agent and tool states need no commit chain."""
     _operator("[git]\ncommit_per_turn = false\n")
-    spec = load_machine(
+    spec = semantics.load_machine(
         _write(tmp_path, RUN_STATE_AFTER_WAIT.replace('mode = "run"', 'mode = "read_only"'))
     )
     configs = state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
@@ -246,15 +246,17 @@ def test_read_only_states_allow_disabled_commits(tmp_path: pathlib.Path) -> None
 
 
 def test_agent_and_tool_states_take_a_config_table(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path, MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, MACHINE))
     assert spec.states["scan"].config == {"sandbox": {"extra_read_paths": ["/srv/inbox"]}}  # pyrefly: ignore[missing-attribute]
     assert spec.states["judge"].config["harness"] == {"max_turns": 7}  # pyrefly: ignore[missing-attribute]
     assert spec.states["store"].config == {}  # pyrefly: ignore[missing-attribute]
 
 
 def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(MachineError, match="config"):
-        load_machine(_write(tmp_path, MACHINE + "\n[states.done.config.harness]\nmax_turns = 3\n"))
+    with pytest.raises(schema.MachineError, match="config"):
+        semantics.load_machine(
+            _write(tmp_path, MACHINE + "\n[states.done.config.harness]\nmax_turns = 3\n")
+        )
 
 
 @pytest.mark.parametrize(
@@ -280,8 +282,8 @@ def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path)
 def test_a_state_table_carries_no_operator_only_key(
     tmp_path: pathlib.Path, table: str, needle: str
 ) -> None:
-    with pytest.raises(MachineError, match=needle):
-        load_machine(_write(tmp_path, MACHINE + "\n" + table))
+    with pytest.raises(schema.MachineError, match=needle):
+        semantics.load_machine(_write(tmp_path, MACHINE + "\n" + table))
 
 
 @pytest.mark.parametrize(
@@ -301,8 +303,8 @@ def test_an_overlay_reaches_neither_the_host_nor_the_operators_money(
     tmp_path: pathlib.Path, table: str, needle: str
 ) -> None:
     """A skill dir is read on the host, clones are made under the workdir, credits cost money."""
-    with pytest.raises(MachineError, match=needle):
-        load_machine(_write(tmp_path, MACHINE + "\n" + table))
+    with pytest.raises(schema.MachineError, match=needle):
+        semantics.load_machine(_write(tmp_path, MACHINE + "\n" + table))
 
 
 @pytest.mark.parametrize(
@@ -326,8 +328,8 @@ def test_an_operator_only_refusal_names_the_table_that_holds_the_key(
     tmp_path: pathlib.Path, table: str, said: str
 ) -> None:
     """A key in a state's table is reported under that state, never as the machine's."""
-    with pytest.raises(MachineError) as refused:
-        load_machine(_write(tmp_path, MACHINE + "\n" + table))
+    with pytest.raises(schema.MachineError) as refused:
+        semantics.load_machine(_write(tmp_path, MACHINE + "\n" + table))
     assert said in str(refused.value)
     assert str(refused.value).count("must not set") == 1
 
@@ -337,7 +339,7 @@ def test_a_state_table_cannot_select_a_preset(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _operator()
-    spec = load_machine(
+    spec = semantics.load_machine(
         _write(
             tmp_path,
             MACHINE.replace(
@@ -353,8 +355,8 @@ def test_a_state_table_cannot_select_a_preset(
 def test_state_cap_is_not_a_field_of_an_agent_state(tmp_path: pathlib.Path) -> None:
     """The schema rejects a cap outside the budget table."""
     budget = MACHINE.replace('prompt = "judge"', 'prompt = "judge"\nmax_usd = 1.0')
-    with pytest.raises(MachineError, match="max_usd"):
-        load_machine(_write(tmp_path, budget))
+    with pytest.raises(schema.MachineError, match="max_usd"):
+        semantics.load_machine(_write(tmp_path, budget))
 
 
 @pytest.mark.parametrize("key", ["max_usd", "max_tokens_fallback", "max_plan_points"])
@@ -364,7 +366,7 @@ def test_machine_cannot_raise_an_operator_budget_cap(
 ) -> None:
     """An unlimited allowance in a machine file cannot cancel an operator cap."""
     _operator(OPERATOR + f"\n[budget]\n{key} = 3\n")
-    spec = load_machine(_write(tmp_path, MACHINE + f"\n[{where}.budget]\n{key} = -1\n"))
+    spec = semantics.load_machine(_write(tmp_path, MACHINE + f"\n[{where}.budget]\n{key} = -1\n"))
     with pytest.raises(ConfigError, match=rf"budget\.{key} = -1.*wider than your config's 3"):
         state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
 
@@ -578,7 +580,7 @@ def test_the_machine_narrows_and_a_state_widens_back_up_to_the_operators(
     monkeypatch.chdir(tmp_path)
     _operator()
     configs = state_configs.resolve_configs(
-        load_machine(_write(tmp_path, MACHINE)), tmp_path, detect.probed_environment()
+        semantics.load_machine(_write(tmp_path, MACHINE)), tmp_path, detect.probed_environment()
     )
     assert configs.operator.config.sandbox.extra_read_paths == ("/srv/inbox", "/opt/toolchain")
     assert configs.machine.config.sandbox.extra_read_paths == ()
@@ -600,7 +602,7 @@ def test_a_state_wider_than_the_operator_is_refused_by_name(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
-    spec = load_machine(_write(tmp_path, MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, MACHINE))
     with pytest.raises(state_configs.ConfigWidenedError) as refused:
         state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
     said = str(refused.value)
@@ -629,7 +631,7 @@ def test_shared_regions_exclude_unused_operator_write_grants(
             '[states.judge.config.sandbox]\nextra_write_paths = ["/srv/outbox/judge"]',
         )
     configs = state_configs.resolve_configs(
-        load_machine(_write(tmp_path, text)), tmp_path, detect.probed_environment()
+        semantics.load_machine(_write(tmp_path, text)), tmp_path, detect.probed_environment()
     )
     expected = (
         (pathlib.Path("/srv/outbox/judge"), pathlib.Path("/srv/outbox/machine"))
@@ -651,7 +653,9 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox/in"]'
     )
     with pytest.raises(state_configs.ConfigWidenedError) as refused:
-        state_configs.resolve_configs(load_machine(_write(tmp_path, nested)), tmp_path, env)
+        state_configs.resolve_configs(
+            semantics.load_machine(_write(tmp_path, nested)), tmp_path, env
+        )
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /srv/outbox/in")
     assert "which the machine's jailed commands write" in said
@@ -660,7 +664,9 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
     whole = MACHINE.replace(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox"]'
     )
-    configs = state_configs.resolve_configs(load_machine(_write(tmp_path, whole)), tmp_path, env)
+    configs = state_configs.resolve_configs(
+        semantics.load_machine(_write(tmp_path, whole)), tmp_path, env
+    )
     assert state_configs.shared_write_regions(configs, tmp_path) == (pathlib.Path("/srv/outbox"),)
 
 
@@ -681,7 +687,9 @@ def test_a_grant_under_the_hosts_tmp_is_refused_when_any_state_writes_it(
         'isolation = "full"\nextra_read_paths = ["/tmp/handoff"]',
     )
     with pytest.raises(state_configs.ConfigWidenedError) as refused:
-        state_configs.resolve_configs(load_machine(_write(tmp_path, mixed)), tmp_path, env)
+        state_configs.resolve_configs(
+            semantics.load_machine(_write(tmp_path, mixed)), tmp_path, env
+        )
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /tmp/handoff")
     assert f"it sits inside {pathlib.Path('/tmp').resolve()}, which the machine's" in said
@@ -702,7 +710,7 @@ def test_the_ceiling_is_the_operators_layers_alone(
         match=r"the machine's \[config\] sets sandbox\.extra_read_paths",
     ):
         state_configs.resolve_configs(
-            load_machine(_write(tmp_path, widened)), tmp_path, detect.probed_environment()
+            semantics.load_machine(_write(tmp_path, widened)), tmp_path, detect.probed_environment()
         )
 
 
@@ -712,7 +720,7 @@ def test_a_config_flag_file_is_part_of_the_ceiling(
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
     ops = _write(tmp_path, '[sandbox]\nextra_write_paths = ["/srv/outbox"]\n', name="ops.toml")
-    spec = load_machine(_write(tmp_path, MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, MACHINE))
     configs = state_configs.resolve_configs(
         spec, tmp_path, detect.probed_environment(), config_paths=(ops,)
     )
@@ -739,7 +747,7 @@ def test_agent_launch_keeps_state_and_operator_setting_origins(
     path = _write(tmp_path, MACHINE)
     ops = _write(tmp_path, "[budget]\nmax_usd = 2\n", name="ops.toml")
     configs = state_configs.resolve_configs(
-        load_machine(path), tmp_path, detect.probed_environment(), config_paths=(ops,)
+        semantics.load_machine(path), tmp_path, detect.probed_environment(), config_paths=(ops,)
     )
     snapshot = agent.state_overlay(configs.states["judge"], path)
     assert snapshot.setting_origins["budget.max_usd"] == ("flag", str(ops))
@@ -751,7 +759,7 @@ def test_the_operator_flags_apply_after_the_overlays(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _operator(OPERATOR + 'run_commands = "ask"\n')
-    spec = load_machine(
+    spec = semantics.load_machine(
         _write(tmp_path, MACHINE + '\n[states.store.config.sandbox]\nrun_commands = "deny"\n')
     )
     configs = state_configs.resolve_configs(
@@ -769,7 +777,7 @@ def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     _operator(OPERATOR + 'run_commands = "allow"\nisolation = "full"\n')
-    spec = load_machine(_write(tmp_path, MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, MACHINE))
     configs = state_configs.resolve_configs(
         spec, tmp_path, detect.probed_environment(), disable_sandbox=True, no_commands=True
     )
@@ -793,7 +801,7 @@ def test_each_tool_state_gets_its_own_jail_policy(
         + '\n[states.store.config.sandbox]\nnetwork = "host"\n'
     )
     configs = state_configs.resolve_configs(
-        load_machine(_write(tmp_path, machine)), tmp_path, detect.probed_environment()
+        semantics.load_machine(_write(tmp_path, machine)), tmp_path, detect.probed_environment()
     )
     build = run.machine_tool_policy_factory(
         configs.states, tmp_path, protect_paths=(), data_dir=None, shared_writes=()
@@ -821,8 +829,8 @@ def test_each_agent_state_gets_its_own_overlay(
         seen.update(overlays)
         built_with.update(_k)
 
-        def run_agent(*_a: object, **_k: object) -> AgentExecResult:
-            return AgentExecResult(reason="finish_session", payload={"ok": True})
+        def run_agent(*_a: object, **_k: object) -> contracts.AgentExecResult:
+            return contracts.AgentExecResult(reason="finish_session", payload={"ok": True})
 
         return run_agent
 
@@ -846,7 +854,7 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
     from agent6.app import role_providers
     from agent6.harness import loop as harness_loop
     from agent6.harness import loop_snapshot
-    from agent6.machine import AgentRequest
+    from agent6.machine import contracts
     from agent6.tools import dispatch
 
     keys = ("AGENT6_NO_COMMANDS", "AGENT6_DISABLE_SANDBOX")
@@ -859,8 +867,8 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
     def fake_build(overlays: dict[str, agent.StateOverlay], *_a: object, **_k: object) -> Any:
         seen.update(overlays)
 
-        def run_agent(*_a: object, **_k: object) -> AgentExecResult:
-            return AgentExecResult(reason="finish_session", payload={"ok": True})
+        def run_agent(*_a: object, **_k: object) -> contracts.AgentExecResult:
+            return contracts.AgentExecResult(reason="finish_session", payload={"ok": True})
 
         return run_agent
 
@@ -905,7 +913,7 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
         overlay=seen["judge"].overlay,
         isolation=seen["judge"].isolation,
         transcript_dir=tmp_path / "tr",
-        request=AgentRequest(prompt="judge", timeout_s=5.0, state_name="judge"),
+        request=contracts.AgentRequest(prompt="judge", timeout_s=5.0, state_name="judge"),
     )
     assert agent.run_one(req).reason == "finish_session"
     assert captured["config"].sandbox.run_commands == "deny"
@@ -919,12 +927,12 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
 
 
 def test_an_agent_request_naming_no_state_ends_as_an_error(tmp_path: pathlib.Path) -> None:
-    from agent6.machine import AgentRequest
+    from agent6.machine import contracts
 
     runner = agent.build_machine_agent_runner(
         {"judge": agent.StateOverlay({}, "none")}, tmp_path, tmp_path / "tr"
     )
-    result = runner(AgentRequest(prompt="p", timeout_s=5.0, state_name="ghost"), None)
+    result = runner(contracts.AgentRequest(prompt="p", timeout_s=5.0, state_name="ghost"), None)
     assert result.reason == "error: no config was resolved for state 'ghost'"
 
 
@@ -1143,7 +1151,9 @@ def test_resolve_configs_keeps_the_resolved_isolation_per_state(
     monkeypatch.chdir(tmp_path)
     _operator()
     env = detect.probed_environment()
-    configs = state_configs.resolve_configs(load_machine(_write(tmp_path, MACHINE)), tmp_path, env)
+    configs = state_configs.resolve_configs(
+        semantics.load_machine(_write(tmp_path, MACHINE)), tmp_path, env
+    )
     expected = detect.resolve_isolation("auto", env)
     assert {s.isolation for s in configs.states.values()} == {expected}
     assert isinstance(configs.states["scan"], state_configs.StateConfig)

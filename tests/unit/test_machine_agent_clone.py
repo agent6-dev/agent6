@@ -19,7 +19,7 @@ from agent6 import errors, paths
 from agent6.app import reporter, role_providers
 from agent6.app.machine import agent, state_configs
 from agent6.config import Config
-from agent6.machine import AgentRequest
+from agent6.machine import contracts
 from agent6.providers import ProviderResponse
 from agent6.sandbox import jail as sandbox_jail
 from agent6.vcs.git import ops as git_ops
@@ -107,8 +107,10 @@ def _runner(origin: pathlib.Path, tmp_path: pathlib.Path):
 _OVERLAYS = {f"s{seq}": agent.StateOverlay({}, "none") for seq in (0, 1)}
 
 
-def _req(seq: int, mode: str = "run") -> AgentRequest:
-    return AgentRequest(prompt="p", timeout_s=60.0, mode=mode, state_name=f"s{seq}", step_seq=seq)
+def _req(seq: int, mode: str = "run") -> contracts.AgentRequest:
+    return contracts.AgentRequest(
+        prompt="p", timeout_s=60.0, mode=mode, state_name=f"s{seq}", step_seq=seq
+    )
 
 
 def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
@@ -245,8 +247,11 @@ def test_tool_clone_runs_setup_before_reading_environment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, setup_exit: int
 ) -> None:
     """A tool clone runs the setup command already resolved by preflight."""
-    from agent6 import kinds, machine
+    from agent6 import kinds
     from agent6.app.machine import run as machine_run
+    from agent6.machine import engine as machine_engine
+    from agent6.machine import journal as machine_journal
+    from agent6.machine import live_world, semantics
 
     origin = _origin(tmp_path)
     fail_setup = setup_exit != 0
@@ -314,9 +319,9 @@ reason = "setup failed"
 """,
         encoding="utf-8",
     )
-    journal = machine.MachineJournal(tmp_path / "instance")
-    failures: list[machine.ToolExecResult] = []
-    world = machine.LiveWorld(
+    journal = machine_journal.MachineJournal(tmp_path / "instance")
+    failures: list[contracts.ToolExecResult] = []
+    world = live_world.LiveWorld(
         cwd=origin,
         journal=journal,
         jail_runner=recorded_runner,
@@ -325,7 +330,7 @@ reason = "setup failed"
         state_log_root=tmp_path / "logs",
         keep_state_logs=3,
     )
-    result = machine.drive(machine.load_machine(spec_path), journal, world, live=True)
+    result = machine_engine.drive(semantics.load_machine(spec_path), journal, world, live=True)
     assert result.status == ("failed" if fail_setup else "ok")
     assert calls.count(expected_setup) == 1
     assert len(calls) == (1 if fail_setup else 2)
@@ -393,8 +398,9 @@ def test_a_tool_states_setup_runs_without_its_pass_env(
 @pytest.mark.parametrize("state", ["", "unknown"])
 def test_tool_clone_unknown_state_is_an_engine_error(tmp_path: pathlib.Path, state: str) -> None:
     """An unknown state is a wiring error, never a synthetic command exit."""
-    from agent6 import kinds, machine
+    from agent6 import kinds
     from agent6.app.machine import run as machine_run
+    from agent6.machine import contracts
 
     runner = machine_run.machine_tool_runner(
         tmp_path,
@@ -404,7 +410,7 @@ def test_tool_clone_unknown_state_is_an_engine_error(tmp_path: pathlib.Path, sta
         reporter.STDIO_REPORTER,
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=tmp_path, argv=argv),
     )
-    with pytest.raises(machine.EngineError, match="no config was resolved"):
+    with pytest.raises(contracts.EngineError, match="no config was resolved"):
         runner(state, kinds.JailPolicy(cwd=tmp_path, argv=("true",)), None)
     assert not (tmp_path / "clones").exists()
 
@@ -413,9 +419,11 @@ def test_tool_clone_host_failure_aborts_the_machine(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed clone is a host failure, not the tool state's nonzero edge."""
-    from agent6 import kinds, machine
+    from agent6 import kinds
     from agent6.app.machine import run as machine_run
     from agent6.harness.parallel import repo as child_repo
+    from agent6.machine import contracts, live_world
+    from agent6.machine import journal as machine_journal
 
     origin = _origin(tmp_path)
 
@@ -423,9 +431,9 @@ def test_tool_clone_host_failure_aborts_the_machine(
         raise child_repo.ChildRepoError("clone unavailable")
 
     monkeypatch.setattr(agent, "clone_at_machine_chain", fail_clone)
-    world = machine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=origin,
-        journal=machine.MachineJournal(tmp_path / "instance"),
+        journal=machine_journal.MachineJournal(tmp_path / "instance"),
         jail_runner=machine_run.machine_tool_runner(
             origin,
             "m1",
@@ -436,7 +444,7 @@ def test_tool_clone_host_failure_aborts_the_machine(
         ),
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
     )
-    with pytest.raises(machine.EngineError, match="clone unavailable"):
+    with pytest.raises(contracts.EngineError, match="clone unavailable"):
         world.run_tool(("true",), 5, state="check")
 
 
@@ -444,8 +452,10 @@ def test_tool_setup_logs_share_numeric_state_log_pruning(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Tool setup logs obey keep_state_logs across the four-digit sequence boundary."""
-    from agent6 import kinds, machine
+    from agent6 import kinds
     from agent6.app.machine import run as machine_run
+    from agent6.machine import journal as machine_journal
+    from agent6.machine import live_world
 
     origin = _origin(tmp_path)
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
@@ -458,9 +468,9 @@ def test_tool_setup_logs_share_numeric_state_log_pruning(
         )
 
     monkeypatch.setattr(sandbox_jail, "run_in_jail", execute)
-    world = machine.LiveWorld(
+    world = live_world.LiveWorld(
         cwd=origin,
-        journal=machine.MachineJournal(tmp_path / "instance"),
+        journal=machine_journal.MachineJournal(tmp_path / "instance"),
         jail_runner=machine_run.machine_tool_runner(
             origin,
             "m1",
@@ -487,8 +497,11 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     """Setup exit outcomes take named edges, host failures abort, and tool clones have no gate."""
-    from agent6 import kinds, machine
+    from agent6 import kinds
     from agent6.app.machine import run as machine_run
+    from agent6.machine import contracts, live_world, semantics
+    from agent6.machine import engine as machine_engine
+    from agent6.machine import journal as machine_journal
 
     origin = _origin(tmp_path)
     cfg = Config.model_validate(
@@ -554,9 +567,9 @@ reason = "timeout edge"
 """,
         encoding="utf-8",
     )
-    journal = machine.MachineJournal(tmp_path / "instance")
-    failures: list[machine.ToolExecResult] = []
-    world = machine.LiveWorld(
+    journal = machine_journal.MachineJournal(tmp_path / "instance")
+    failures: list[contracts.ToolExecResult] = []
+    world = live_world.LiveWorld(
         cwd=origin,
         journal=journal,
         jail_runner=runner,
@@ -564,10 +577,10 @@ reason = "timeout edge"
         on_tool_failure=lambda state, outcome: failures.append(outcome),
     )
     if failure == "jail":
-        with pytest.raises(machine.EngineError, match="no namespace"):
-            machine.drive(machine.load_machine(spec_path), journal, world, live=True)
+        with pytest.raises(contracts.EngineError, match="no namespace"):
+            machine_engine.drive(semantics.load_machine(spec_path), journal, world, live=True)
         return
-    result = machine.drive(machine.load_machine(spec_path), journal, world, live=True)
+    result = machine_engine.drive(semantics.load_machine(spec_path), journal, world, live=True)
     assert result.state == {"success": "done", "timeout": "timed_out"}.get(failure, "error")
     assert ("tool",) in calls if failure == "success" else ("tool",) not in calls
 
@@ -700,7 +713,7 @@ def _state_in_a_clone(
     monkeypatch: pytest.MonkeyPatch,
     setup: list[str],
     mode: Literal["run", "read_only", "machine"] = "run",
-) -> tuple[agent.AgentExecResult, _Finishes, pathlib.Path, pathlib.Path]:
+) -> tuple[contracts.AgentExecResult, _Finishes, pathlib.Path, pathlib.Path]:
     """Run one run-mode state through `run_one` in a fresh clone, with a setup command."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("PROBE_KEY", "sk-probe")
@@ -730,7 +743,9 @@ def _state_in_a_clone(
         },
         isolation="none",
         transcript_dir=tmp_path / "m1" / "agent_transcripts",
-        request=AgentRequest(prompt="p", timeout_s=60.0, mode=mode, state_name="s0", step_seq=0),
+        request=contracts.AgentRequest(
+            prompt="p", timeout_s=60.0, mode=mode, state_name="s0", step_seq=0
+        ),
     )
     return agent.run_one(req), prov, origin, clone
 

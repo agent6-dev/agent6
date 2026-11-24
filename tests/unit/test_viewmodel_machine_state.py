@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6.machine import journal as machine_journal
-from agent6.machine import load_machine
+from agent6.machine import semantics
 from agent6.viewmodel import tail
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
@@ -47,7 +47,7 @@ reason = "routed"
 def _spec(tmp_path: pathlib.Path):
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    return load_machine(f)
+    return semantics.load_machine(f)
 
 
 def test_fold_empty_starts_at_initial(tmp_path: pathlib.Path) -> None:
@@ -125,7 +125,7 @@ def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: pathli
         '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "d"\n',
         encoding="utf-8",
     )
-    waiting = machine_state.fold_machine(load_machine(wf), [])
+    waiting = machine_state.fold_machine(semantics.load_machine(wf), [])
     assert machine_state.machine_status_word(waiting, parked=False, alive=True) == "waiting"
 
 
@@ -593,17 +593,16 @@ def test_an_unreadable_summary_keeps_its_reason_to_one_line(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A spec with several problems keeps the listing's reason cell to one line."""
-    from agent6.machine import MachineError
-    from agent6.viewmodel.machine import state as mod
+    from agent6.machine import schema
 
     d = tmp_path / "inst"
     d.mkdir()
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
 
     def broken(_path: pathlib.Path) -> Any:
-        raise MachineError(["state 'a' is unreachable", "state 'b' is unreachable"])
+        raise schema.MachineError(["state 'a' is unreachable", "state 'b' is unreachable"])
 
-    monkeypatch.setattr(mod, "load_machine", broken)
+    monkeypatch.setattr(semantics, "load_machine", broken)
     summary = machine_state.summarize_machine_dir(d)
     assert summary.status == "unreadable"
     assert summary.reason == "state 'a' is unreachable"

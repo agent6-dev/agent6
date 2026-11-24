@@ -1621,12 +1621,12 @@ def test_per_state_log_disabled_without_root(tmp_path: pathlib.Path) -> None:
 
 def test_best_effort_usd_limit_no_longer_validates(tmp_path: pathlib.Path) -> None:
     # The old soft field must fail the grammar loudly, never load as an ignored knob.
-    from agent6.machine import MachineError
+    from agent6.machine import schema
 
     body = _SPENDER.replace("max_usd = 0.05", "best_effort_usd_limit = 0.05")
     f = tmp_path / "m.asm.toml"
     f.write_text(body, encoding="utf-8")
-    with pytest.raises(MachineError, match="best_effort_usd_limit"):
+    with pytest.raises(schema.MachineError, match="best_effort_usd_limit"):
         semantics.load_machine(f)
 
 

@@ -259,7 +259,7 @@ def test_the_machine_loop_journals_under_a_driving_actor(
     from agent6 import budget, kinds
     from agent6.app.machine import agent
     from agent6.config import Config
-    from agent6.machine import AgentRequest
+    from agent6.machine import contracts
 
     def stub_provider(*_args: object, **_kwargs: object) -> mock.MagicMock:
         return mock.MagicMock()
@@ -272,7 +272,7 @@ def test_the_machine_loop_journals_under_a_driving_actor(
         overlay={},
         isolation="none",
         transcript_dir=tmp_path / "transcripts",
-        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
+        request=contracts.AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
     provider, _summarizer, _events = agent._build_agent_providers(
         Config(),

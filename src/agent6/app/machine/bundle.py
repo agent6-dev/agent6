@@ -13,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6.machine import MachineError, MachineSpec, ToolState, load_machine
+from agent6.machine import schema, semantics
 
 
 def _bundle_script_ref(element: str) -> str | None:
@@ -82,7 +82,7 @@ def _check_scripts_dir(scripts_dir: pathlib.Path, bundle: pathlib.Path) -> list[
     return problems
 
 
-def _check_command_scripts(name: str, state: ToolState, bundle: pathlib.Path) -> list[str]:
+def _check_command_scripts(name: str, state: schema.ToolState, bundle: pathlib.Path) -> list[str]:
     """Return a problem per static command element whose script is missing or escapes."""
     problems: list[str] = []
     for element in state.command:
@@ -104,7 +104,7 @@ def _check_command_scripts(name: str, state: ToolState, bundle: pathlib.Path) ->
     return problems
 
 
-def validate_bundle(spec: MachineSpec, machine_path: pathlib.Path) -> list[str]:
+def validate_bundle(spec: schema.MachineSpec, machine_path: pathlib.Path) -> list[str]:
     """Validate the script bundle beside a machine file.
 
     Args:
@@ -123,7 +123,7 @@ def validate_bundle(spec: MachineSpec, machine_path: pathlib.Path) -> list[str]:
     if scripts_dir.exists():
         problems.extend(_check_scripts_dir(scripts_dir, bundle))
     for name, state in spec.states.items():
-        if isinstance(state, ToolState):
+        if isinstance(state, schema.ToolState):
             problems.extend(_check_command_scripts(name, state, bundle))
     return problems
 
@@ -156,8 +156,8 @@ def summarize_machine_file(path: pathlib.Path) -> MachineFileSummary:
         The file's listing columns.
     """
     try:
-        spec = load_machine(path)
-    except (MachineError, OSError):
+        spec = semantics.load_machine(path)
+    except (schema.MachineError, OSError):
         return MachineFileSummary("-", "-", "invalid")
     problems = validate_bundle(spec, path)
     verdict = "valid" if not problems else f"{len(problems)} issue(s)"

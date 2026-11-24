@@ -10,7 +10,7 @@ import re
 
 import pytest
 
-from agent6.machine import dry_run, dryrun, load_machine, semantics
+from agent6.machine import dryrun, semantics
 from agent6.sandbox import detect, jail
 
 # tool -> branch -> (agent | tool) -> terminal, with a typed capture + an enum.
@@ -84,7 +84,7 @@ def _write(tmp_path: pathlib.Path, text: str = DEMO) -> pathlib.Path:
 
 
 def test_synthesize_record_is_schema_valid(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path))
+    spec = semantics.load_machine(_write(tmp_path))
     payload = dryrun.synthesize_record(spec, "review")
     # enum field -> first member; scalar -> zero value.
     assert payload == {"label": "low", "score": 0}
@@ -98,7 +98,7 @@ def test_synthesize_record_is_schema_valid(tmp_path: pathlib.Path) -> None:
 
 
 def test_synthesize_handles_lists(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path))
+    spec = semantics.load_machine(_write(tmp_path))
     assert dryrun.synthesize_record(spec, "scan_result") == {"items": []}
 
 
@@ -106,8 +106,8 @@ def test_synthesize_handles_lists(tmp_path: pathlib.Path) -> None:
 
 
 def test_dry_run_states_route_and_capture(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path))
-    report = dry_run(spec)
+    spec = semantics.load_machine(_write(tmp_path))
+    report = dryrun.dry_run(spec)
     by_name = {s.name: s for s in report.states}
     # branch state is reported separately, not in the per-state pass.
     assert "check" not in by_name
@@ -126,7 +126,7 @@ def test_dry_run_renders_a_terminal_reason(tmp_path: pathlib.Path) -> None:
         DEMO.replace('reason = "done"', 'reason = "done, approved={{ approved }}"'),
         encoding="utf-8",
     )
-    by_name = {s.name: s for s in dry_run(load_machine(f)).states}
+    by_name = {s.name: s for s in dryrun.dry_run(semantics.load_machine(f)).states}
     assert by_name["stop_ok"].ok
     assert by_name["stop_ok"].detail == "ok: done, approved=false"
 
@@ -135,8 +135,8 @@ def test_dry_run_renders_a_terminal_reason(tmp_path: pathlib.Path) -> None:
 
 
 def test_branch_routes_to_else_by_default(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path))
-    report = dry_run(spec)  # approved defaults to false
+    spec = semantics.load_machine(_write(tmp_path))
+    report = dryrun.dry_run(spec)  # approved defaults to false
     check = next(b for b in report.branches if b.name == "check")
     assert check.goto == "stop_ok"
     assert check.predicate == "else"
@@ -144,8 +144,8 @@ def test_branch_routes_to_else_by_default(tmp_path: pathlib.Path) -> None:
 
 
 def test_branch_fixture_steers_routing(tmp_path: pathlib.Path) -> None:
-    spec = load_machine(_write(tmp_path))
-    report = dry_run(spec, {"approved": True})
+    spec = semantics.load_machine(_write(tmp_path))
+    report = dryrun.dry_run(spec, {"approved": True})
     check = next(b for b in report.branches if b.name == "check")
     assert check.clause_index == 0
     assert check.goto == "judge"
@@ -161,13 +161,13 @@ def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: pathlib.Pat
         '{ if = "approved", goto = "judge" }',
         '{ if = "verdict.score > 0", goto = "judge" }',
     )
-    spec = load_machine(_write(tmp_path, text))
-    report = dry_run(spec)
+    spec = semantics.load_machine(_write(tmp_path, text))
+    report = dryrun.dry_run(spec)
     check = next(b for b in report.branches if b.name == "check")
     assert check.ok, check.detail
     assert check.goto == "stop_ok"  # zero score -> else
     # A fixture still wins over the synthesized record.
-    report2 = dry_run(spec, {"verdict": {"label": "high", "score": 5}})
+    report2 = dryrun.dry_run(spec, {"verdict": {"label": "high", "score": 5}})
     check2 = next(b for b in report2.branches if b.name == "check")
     assert check2.goto == "judge"
 

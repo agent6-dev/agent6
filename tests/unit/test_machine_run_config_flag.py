@@ -88,7 +88,7 @@ def test_explicit_config_reaches_each_agent_state(
 ) -> None:
     """Child agent runs receive `--config` along with the machine-file overlay."""
     from agent6.app.machine import run as run_mod
-    from agent6.machine import AgentExecResult
+    from agent6.machine import contracts
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path.parent / f"{tmp_path.name}-config"))
@@ -115,8 +115,8 @@ max_turns = 17
     def fake_build(overlays: dict[str, agent.StateOverlay], *_args: object, **_kwargs: object):
         child_overlays.extend(entry.overlay for entry in overlays.values())
 
-        def run(*_args: object, **_kwargs: object) -> AgentExecResult:
-            return AgentExecResult(reason="finish_session", payload={"ok": True})
+        def run(*_args: object, **_kwargs: object) -> contracts.AgentExecResult:
+            return contracts.AgentExecResult(reason="finish_session", payload={"ok": True})
 
         return run
 

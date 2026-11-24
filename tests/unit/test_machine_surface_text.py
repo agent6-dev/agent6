@@ -6,23 +6,24 @@ import pathlib
 
 import pytest
 
-from agent6 import machine
 from agent6.app.machine import host_preflight
 from agent6.config import Config, ConfigError, layer, sandbox_config, surface_config
+from agent6.machine import authoring
+from agent6.machine import schema as machine_schema
 from agent6.tools import schema
 from agent6.ui.cli import main
 
 
 def test_authoring_guide_attributes_commits_to_the_harness() -> None:
     """Run states have edit and verify tools, not a commit tool."""
-    text = " ".join(machine.build_authoring_prompt("Write a machine", attempt=1).split())
+    text = " ".join(authoring.build_authoring_prompt("Write a machine", attempt=1).split())
     assert "full edit and verify tool set; the harness commits its edits." in text
     assert "commit" not in schema.mode_tools("run").names
 
 
 def test_pass_env_text_names_explicit_config_layers(tmp_path: pathlib.Path) -> None:
     """The allowlist's description, refusal and docstring all name --config FILE."""
-    state = machine.ToolState.model_validate(
+    state = machine_schema.ToolState.model_validate(
         {"kind": "tool", "command": ["true"], "timeout_s": 1, "pass_env": ["TOKEN"], "on": {}}
     )
     refusal = host_preflight.machine_pass_env_refusal(Config(), {"fetch": state})

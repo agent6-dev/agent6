@@ -33,16 +33,8 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6 import budget, paths
 from agent6.app.machine import listing
-from agent6.machine import (
-    JournalError,
-    MachineError,
-    MachineJournal,
-    MachineSpec,
-    load_machine,
-    render_mermaid,
-    validate_semantics,
-    write_stop_request,
-)
+from agent6.machine import graph, schema, semantics
+from agent6.machine import journal as machine_journal
 from agent6.sessions import ipc, layout, process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, forms, menubar, modals, screen_chrome, theme
@@ -163,11 +155,11 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
     """
     )
 
-    def __init__(self, instance_dir: pathlib.Path, spec: MachineSpec) -> None:
+    def __init__(self, instance_dir: pathlib.Path, spec: schema.MachineSpec) -> None:
         super().__init__()
         self._root = instance_dir
         self._spec = spec
-        self._journal = MachineJournal(instance_dir)
+        self._journal = machine_journal.MachineJournal(instance_dir)
         self._cursor = machine_watch.MachineWatchCursor()
         self._pending = ""  # thinking and answer text, flushed in readable chunks
         self._ended = False
@@ -205,7 +197,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         process.register_frontend(self._root, os.getpid())
         try:
             events: list[Any] = self._journal.read()
-        except JournalError:
+        except machine_journal.JournalError:
             events = []  # the first poll surfaces the corruption in the header
         seeded = fold_machine(self._spec, events)
         self._cursor.seed_notifications(seeded)
@@ -324,7 +316,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         if answer:
             self.app.notify(answer, timeout=6.0)
             return
-        write_stop_request(self._root)
+        machine_journal.write_stop_request(self._root)
         self.app.notify("stop requested; the machine parks at its next boundary", timeout=4.0)
 
     def action_poke(self) -> None:
@@ -369,7 +361,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         try:
             events = self._journal.read()
             ms = fold_machine(self._spec, events)
-        except JournalError as exc:
+        except machine_journal.JournalError as exc:
             # Shown and kept polling: an append may heal or end the run.
             self.query_one("#mw-head", textual_widgets.Static).update(
                 rich_text.Text(f"journal unreadable: {exc}")
@@ -519,8 +511,8 @@ def machine_detail_text(path: pathlib.Path) -> str:
         The text, or the load error itself so a half-written file never crashes the page.
     """
     try:
-        spec = load_machine(path)
-    except (MachineError, OSError) as exc:
+        spec = semantics.load_machine(path)
+    except (schema.MachineError, OSError) as exc:
         return f"failed to load {path.name}:\n\n{exc}"
     lines = [
         f"machine: {spec.machine}",
@@ -530,14 +522,14 @@ def machine_detail_text(path: pathlib.Path) -> str:
     ]
     # `state.kind` is the user word the watch screen and the web detail show.
     lines.extend(f"  {name}  ({state.kind})" for name, state in spec.states.items())
-    problems = validate_semantics(spec)
+    problems = semantics.validate_semantics(spec)
     lines.append("")
     if problems:
         lines.append(f"semantics: {len(problems)} problem(s)")
         lines.extend(f"  - {p}" for p in problems)
     else:
         lines.append("semantics: OK  (`agent6 machine check` also lints the bundle's scripts)")
-    lines += ["", "graph (mermaid):", render_mermaid(spec)]
+    lines += ["", "graph (mermaid):", graph.render_mermaid(spec)]
     return "\n".join(lines)
 
 
@@ -853,8 +845,8 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             if not confirmed:
                 return
             try:
-                spec = load_machine(path)
-            except MachineError as exc:
+                spec = semantics.load_machine(path)
+            except schema.MachineError as exc:
                 self.app.notify(f"cannot load {path.name}: {exc}", severity="error", timeout=8.0)
                 return
             self._spawn_machine_run(
@@ -913,8 +905,8 @@ class MachinesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     def _open_watch(self, path: pathlib.Path) -> None:
         """Push the watch screen for the machine at the path."""
         try:
-            spec = load_machine(path)
-        except MachineError as exc:
+            spec = semantics.load_machine(path)
+        except schema.MachineError as exc:
             self.app.notify(f"cannot load {path.name}: {exc}", severity="error", timeout=8.0)
             return
         instance = layout.machines_root(self.agent6_dir) / spec.machine
@@ -984,7 +976,7 @@ class _MachineWatchApp(theme.PlainNotify, theme.MuxPointerShapes, textual_app.Ap
     """
     )
 
-    def __init__(self, instance_dir: pathlib.Path, spec: MachineSpec) -> None:
+    def __init__(self, instance_dir: pathlib.Path, spec: schema.MachineSpec) -> None:
         super().__init__()
         self._instance = instance_dir
         self._spec = spec
@@ -995,6 +987,6 @@ class _MachineWatchApp(theme.PlainNotify, theme.MuxPointerShapes, textual_app.Ap
         self.push_screen(MachineWatchScreen(self._instance, self._spec))
 
 
-def run_machine_watch_tui(instance_dir: pathlib.Path, spec: MachineSpec) -> int:
+def run_machine_watch_tui(instance_dir: pathlib.Path, spec: schema.MachineSpec) -> int:
     """Return the exit code of the watch view run over an instance."""
     return _MachineWatchApp(instance_dir, spec).run() or 0

@@ -283,9 +283,9 @@ def _complete_config_keys(
     if command in ("set", "unset", "add", "remove") and isinstance(
         getattr(kw.get("parsed_args"), "machine_file", None), pathlib.Path
     ):
-        from agent6.machine import protected_overlay_key_error  # noqa: PLC0415
+        from agent6.machine import schema as machine_schema  # noqa: PLC0415
 
-        keys = {key for key in keys if protected_overlay_key_error(key) is None}
+        keys = {key for key in keys if machine_schema.protected_overlay_key_error(key) is None}
     return sorted(k for k in keys if k.startswith(prefix))
 
 
@@ -315,9 +315,9 @@ def _complete_config_values(
         return []
     key = getattr(parsed_args, "key", "") or ""
     if isinstance(getattr(parsed_args, "machine_file", None), pathlib.Path):
-        from agent6.machine import protected_overlay_key_error  # noqa: PLC0415
+        from agent6.machine import schema as machine_schema  # noqa: PLC0415
 
-        if protected_overlay_key_error(key) is not None:
+        if machine_schema.protected_overlay_key_error(key) is not None:
             return []
     parts = io.split_key(key)
     schema_key = io.render_key(parts[2:] if len(parts) > 2 and parts[0] == "presets" else parts)

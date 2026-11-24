@@ -18,7 +18,7 @@ from agent6.app import confine, role_providers
 from agent6.app.machine import agent
 from agent6.config import Config, ConfigError, validate_config
 from agent6.harness import loop as harness_loop
-from agent6.machine import AgentRequest
+from agent6.machine import contracts
 from agent6.tools import dispatch
 from agent6.vcs.git import read as git_read
 
@@ -117,7 +117,7 @@ def test_run_one_returns_finish_payload(
         overlay={"models": {"default": {"model": "anthropic/claude-x"}}},
         isolation="none",  # no real sandbox: landlock is a no-op
         transcript_dir=tmp_path / "t",
-        request=AgentRequest(prompt="go", timeout_s=5.0),
+        request=contracts.AgentRequest(prompt="go", timeout_s=5.0),
     )
     out = agent.run_one(req)
     assert out.reason == "finish_session"
@@ -179,7 +179,7 @@ def test_run_one_drops_out_of_cwd_protect_paths(
         isolation="none",
         transcript_dir=tmp_path / "t",
         protect_paths=(inside, outside),
-        request=AgentRequest(prompt="go", timeout_s=5.0),
+        request=contracts.AgentRequest(prompt="go", timeout_s=5.0),
     )
     agent.run_one(req)
     # Only the in-cwd path survives the subprocess-boundary re-validation.
@@ -208,7 +208,7 @@ def test_run_one_hands_the_commit_identity_to_the_chain_and_the_jail_not_the_pro
         isolation="none",
         transcript_dir=tmp_path / "t",
         commit_identity=git_read.CommitIdentity(name="Machine Bot", email="bot@example.com"),
-        request=AgentRequest(prompt="go", timeout_s=5.0, mode="run"),
+        request=contracts.AgentRequest(prompt="go", timeout_s=5.0, mode="run"),
     )
     out = agent.run_one(req)
     assert out.reason == "finish_session"

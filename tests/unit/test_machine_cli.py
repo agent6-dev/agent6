@@ -18,7 +18,7 @@ import pytest
 
 from agent6 import errors, paths
 from agent6.app.machine import agent
-from agent6.machine import MachineJournal, write_stop_request
+from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
 from agent6.sessions import ipc, process
 from agent6.ui.cli import main
@@ -76,7 +76,7 @@ def test_run_exit_on_wait_yields_waiting(
     assert "WAITING" in out
     # The wait was armed and persisted.
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    pending = MachineJournal(root).read_pending_wait()
+    pending = machine_journal.MachineJournal(root).read_pending_wait()
     assert pending is not None
     assert pending.state == "poll"
 
@@ -204,9 +204,12 @@ def test_status_after_an_operator_stop_names_the_resume_command(
 
     def stop_once_parked() -> None:
         deadline = time.monotonic() + 30
-        while not MachineJournal(root).wait_path.is_file() and time.monotonic() < deadline:
+        while (
+            not machine_journal.MachineJournal(root).wait_path.is_file()
+            and time.monotonic() < deadline
+        ):
             time.sleep(0.05)
-        write_stop_request(root)
+        machine_journal.write_stop_request(root)
 
     stopper = threading.Thread(target=stop_once_parked)
     stopper.start()
@@ -254,7 +257,7 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert MachineJournal(root).read_pending_wait() is not None
+    assert machine_journal.MachineJournal(root).read_pending_wait() is not None
     # The run cleared its own pid on exit; re-stamp a live worker (this pytest).
     process.write_worker_pid(root, os.getpid())
     code = main(["machine", "status", "waiter_delayed"])
@@ -274,7 +277,7 @@ def test_status_names_a_poke_only_for_an_armed_wait(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    MachineJournal(root).clear_pending_wait()
+    machine_journal.MachineJournal(root).clear_pending_wait()
     process.write_worker_pid(root, os.getpid())
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
@@ -298,7 +301,7 @@ def test_status_shows_a_pending_poke_until_it_is_acked(
     capsys.readouterr()
     assert main(["machine", "status", "waiter_delayed"]) == 0
     assert "poke pending: 'go'" in capsys.readouterr().out
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     assert journal.take_signal() == (True, "go")  # claimed, the step not yet durable
     assert main(["machine", "status", "waiter_delayed"]) == 0
     assert "poke pending: 'go'" in capsys.readouterr().out
@@ -335,7 +338,7 @@ def test_status_tolerates_a_corrupt_pending_wait(
     capsys.readouterr()  # drop run output
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
     process.clear_worker_pid(root)
-    MachineJournal(root).wait_path.write_text("{ not valid json", encoding="utf-8")
+    machine_journal.MachineJournal(root).wait_path.write_text("{ not valid json", encoding="utf-8")
 
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0  # not aborted
@@ -386,7 +389,7 @@ def test_status_reports_stopped_for_a_crashed_instance(
     root = paths.state_dir(tmp_path) / "machines" / "crasher"
     root.mkdir(parents=True)
     (root / "machine.asm.toml").write_text(CRASHER, encoding="utf-8")
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     journal.ensure_dirs()
     journal.begin(machine="crasher", version=1)
     journal.append(
@@ -826,7 +829,8 @@ def test_run_refuses_rerun_of_ended_instance(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # An ended instance can only be replayed; a rerun refuses before stamping worker.pid.
-    from agent6.machine import drive, load_machine
+    from agent6.machine import engine as machine_engine
+    from agent6.machine import semantics
 
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
@@ -847,7 +851,12 @@ def test_run_refuses_rerun_of_ended_instance(
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
     assert process.read_worker_pid(root) == sentinel
     # The journal still reads terminal, unchanged.
-    result = drive(load_machine(root / "machine.asm.toml"), MachineJournal(root), None, live=False)
+    result = machine_engine.drive(
+        semantics.load_machine(root / "machine.asm.toml"),
+        machine_journal.MachineJournal(root),
+        None,
+        live=False,
+    )
     assert result.status == "ok"
 
 
@@ -903,7 +912,9 @@ def test_restart_archives_an_ended_run_and_starts_fresh(
     """`--restart` on an ended machine begins a new run and keeps the old journal readable."""
     import datetime
 
-    from agent6.machine import MachineBegin, MachineEnd, drive, load_machine
+    from agent6.machine import engine as machine_engine
+    from agent6.machine import journal as machine_journal
+    from agent6.machine import semantics
     from agent6.viewmodel.machine import state as machine_state
 
     monkeypatch.chdir(tmp_path)
@@ -913,8 +924,8 @@ def test_restart_archives_an_ended_run_and_starts_fresh(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
-    old = MachineJournal(root).read()
-    assert isinstance(old[-1], MachineEnd) and old[-1].state == "woken"
+    old = machine_journal.MachineJournal(root).read()
+    assert isinstance(old[-1], machine_journal.MachineEnd) and old[-1].state == "woken"
     capsys.readouterr()
 
     assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 0
@@ -924,13 +935,16 @@ def test_restart_archives_an_ended_run_and_starts_fresh(
     ended = datetime.datetime.fromisoformat(old[-1].ts)
     archive = state_dir / f"waiter_delayed.archived-{ended:%Y%m%dT%H%M%S%fZ}"
     assert str(archive) in captured.err
-    assert MachineJournal(archive).read() == old
-    replay = drive(
-        load_machine(archive / "machine.asm.toml"), MachineJournal(archive), None, live=False
+    assert machine_journal.MachineJournal(archive).read() == old
+    replay = machine_engine.drive(
+        semantics.load_machine(archive / "machine.asm.toml"),
+        machine_journal.MachineJournal(archive),
+        None,
+        live=False,
     )
     assert (replay.status, replay.state) == ("ok", "woken")
-    fresh = MachineJournal(root).read()
-    assert [type(event) for event in fresh] == [MachineBegin]
+    fresh = machine_journal.MachineJournal(root).read()
+    assert [type(event) for event in fresh] == [machine_journal.MachineBegin]
     assert fresh[0].ts != old[0].ts
     assert machine_state.machine_instance_dirs(state_dir) == [root]
 
@@ -941,21 +955,21 @@ def test_restart_archives_a_stopped_wait_and_starts_fresh(
     """A plain start keeps the wait; restart archives it intact and arms a new one."""
     import datetime
 
-    from agent6.machine import machine_lock
+    from agent6.machine import journal as machine_journal
 
     monkeypatch.chdir(tmp_path)
     f = _committed_waiter(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
-    begun = MachineJournal(root).read()
-    armed = MachineJournal(root).read_pending_wait()
+    begun = machine_journal.MachineJournal(root).read()
+    armed = machine_journal.MachineJournal(root).read_pending_wait()
     capsys.readouterr()
 
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
-    assert MachineJournal(root).read() == begun
-    assert MachineJournal(root).read_pending_wait() == armed
-    with machine_lock(root):
+    assert machine_journal.MachineJournal(root).read() == begun
+    assert machine_journal.MachineJournal(root).read_pending_wait() == armed
+    with machine_journal.machine_lock(root):
         assert main(["machine", "run", str(f), "--restart", "--exit-on-wait"]) == 1
     err = capsys.readouterr().err
     assert "waiter_delayed is already running" in err
@@ -976,10 +990,10 @@ def test_restart_archives_a_stopped_wait_and_starts_fresh(
         <= datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
     )
     assert str(archive) in captured.err
-    assert MachineJournal(archive).read() == begun
-    assert MachineJournal(archive).read_pending_wait() == armed
-    assert MachineJournal(root).read() != begun
-    assert MachineJournal(root).read_pending_wait() != armed
+    assert machine_journal.MachineJournal(archive).read() == begun
+    assert machine_journal.MachineJournal(archive).read_pending_wait() == armed
+    assert machine_journal.MachineJournal(root).read() != begun
+    assert machine_journal.MachineJournal(root).read_pending_wait() != armed
 
 
 def test_restart_checks_the_previous_branch_even_without_a_run_state(
@@ -992,7 +1006,7 @@ def test_restart_checks_the_previous_branch_even_without_a_run_state(
     assert main(args) == 0
     state_dir = paths.state_dir(tmp_path)
     root = state_dir / "machines" / "waiter_delayed"
-    old = MachineJournal(root).read()
+    old = machine_journal.MachineJournal(root).read()
     work = subprocess.run(
         ["git", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "work"],
         check=True,
@@ -1003,7 +1017,7 @@ def test_restart_checks_the_previous_branch_even_without_a_run_state(
     subprocess.run(["git", "update-ref", f"refs/heads/{branch}", work], check=True)
     assert main([*args, "--restart"]) == 2
     assert f"git merge {branch}" in capsys.readouterr().err
-    assert MachineJournal(root).read() == old
+    assert machine_journal.MachineJournal(root).read() == old
     assert not list(state_dir.glob("waiter_delayed.archived-*"))
 
 
@@ -1019,7 +1033,7 @@ def test_poke_drops_signal_for_waiting_machine(
     assert "poked" in capsys.readouterr().out
     # The signal is now pending for the next take_signal().
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert MachineJournal(root).take_signal() == (True, None)
+    assert machine_journal.MachineJournal(root).take_signal() == (True, None)
 
 
 def test_poke_carries_data_payload(
@@ -1031,7 +1045,7 @@ def test_poke_carries_data_payload(
     capsys.readouterr()
     assert main(["machine", "poke", "waiter_delayed", "--data", '{"cmd": "go"}']) == 0
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    j = MachineJournal(root)
+    j = machine_journal.MachineJournal(root)
     assert j.take_signal() == (True, {"cmd": "go"})
     j.ack_signal()
     # --message wraps a plain string.
@@ -1080,7 +1094,7 @@ def test_poke_refuses_an_instance_without_an_open_wait(
     root = paths.state_dir(tmp_path) / "machines" / "tiny"
     root.mkdir(parents=True)
     (root / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    MachineJournal(root).begin(machine="tiny", version=1)
+    machine_journal.MachineJournal(root).begin(machine="tiny", version=1)
     if alive:
         process.write_worker_pid(root, os.getpid())
 
@@ -1260,7 +1274,7 @@ model = "anthropic/x"
     argv = ["machine", "run", str(source), "--exit-on-wait", "--auto-approve"]
     assert main(argv) == 0
     root = layout.machines_root(paths.state_dir(tmp_path)) / "wait-then-run"
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     first = journal.read()[0]
     assert isinstance(first, machine_journal.MachineBegin)
     assert first.base_commit == base
@@ -1343,7 +1357,7 @@ def test_a_state_default_supplies_the_required_baseline(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A state whose `config` table pins a model route runs without a worker default."""
-    from agent6.machine import AgentExecResult
+    from agent6.machine import contracts
 
     monkeypatch.chdir(tmp_path)
     config_home = tmp_path.parent / f"{tmp_path.name}-config"
@@ -1360,8 +1374,8 @@ def test_a_state_default_supplies_the_required_baseline(
     )
 
     def build(*_args: object, **_kwargs: object):
-        def run(*_args: object, **_kwargs: object) -> AgentExecResult:
-            return AgentExecResult(reason="finish_session", payload={"ok": True})
+        def run(*_args: object, **_kwargs: object) -> contracts.AgentExecResult:
+            return contracts.AgentExecResult(reason="finish_session", payload={"ok": True})
 
         return run
 
@@ -1370,13 +1384,15 @@ def test_a_state_default_supplies_the_required_baseline(
 
 
 def _stub_agent_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent6.machine import AgentExecResult, AgentRequest
+    from agent6.machine import contracts
 
     def build(
         *_args: object, **_kwargs: object
-    ) -> Callable[[AgentRequest, pathlib.Path | None], AgentExecResult]:
-        def run(_request: AgentRequest, _log: pathlib.Path | None) -> AgentExecResult:
-            return AgentExecResult(
+    ) -> Callable[[contracts.AgentRequest, pathlib.Path | None], contracts.AgentExecResult]:
+        def run(
+            _request: contracts.AgentRequest, _log: pathlib.Path | None
+        ) -> contracts.AgentExecResult:
+            return contracts.AgentExecResult(
                 reason="finish_session",
                 payload={"ok": True},
                 usd=0.02,
@@ -1492,9 +1508,12 @@ def test_machine_run_end_line_carries_spend_and_tokens(
 
     def stop_once_parked() -> None:
         deadline = time.monotonic() + 30
-        while not MachineJournal(root).wait_path.is_file() and time.monotonic() < deadline:
+        while (
+            not machine_journal.MachineJournal(root).wait_path.is_file()
+            and time.monotonic() < deadline
+        ):
             time.sleep(0.05)
-        write_stop_request(root)
+        machine_journal.write_stop_request(root)
 
     stopper = threading.Thread(target=stop_once_parked) if ending == "stopped" else None
     if stopper is not None:
@@ -1524,7 +1543,7 @@ def test_run_refuses_a_legacy_journal_without_a_starting_commit(
     subprocess.run(["git", "add", "legacy.asm.toml"], check=True)
     subprocess.run(["git", "commit", "-qm", "legacy machine"], check=True)
     root = layout.machines_root(paths.state_dir(tmp_path)) / "run-warn"
-    journal = MachineJournal(root)
+    journal = machine_journal.MachineJournal(root)
     journal.ensure_dirs()
     journal.journal_path.write_text(
         '{"type":"machine.begin","ts":"t","machine":"run-warn","version":1}\n',
@@ -1836,7 +1855,7 @@ model = "p/m"
     assert "--auto-approve" not in err
     assert "git merge agent6/machine-run-warn" in err
     assert f"git update-ref -d {ref}" in err
-    assert MachineJournal(root).end_event() is not None
+    assert machine_journal.MachineJournal(root).end_event() is not None
     assert not list(state_dir.glob("run-warn.archived-*"))
 
     subprocess.run(["git", "update-ref", "-d", ref], cwd=repo, check=True)
@@ -2255,7 +2274,7 @@ def test_status_and_list_name_a_parked_approval(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     root = paths.state_dir(tmp_path) / "machines" / "waiter_delayed"
-    MachineJournal(root).clear_pending_wait()
+    machine_journal.MachineJournal(root).clear_pending_wait()
     process.write_worker_pid(root, os.getpid())
     execution = root / "states" / "0001-attempt"
     execution.mkdir(parents=True)

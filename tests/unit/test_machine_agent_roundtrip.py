@@ -15,12 +15,12 @@ import sys
 import pytest
 
 from agent6.app.machine import agent
-from agent6.machine import AgentExecResult, AgentRequest
+from agent6.machine import contracts
 
 
 def _round_trip(
     tmp_path: pathlib.Path, req: agent.MachineAgentRequest
-) -> tuple[int, AgentExecResult | None]:
+) -> tuple[int, contracts.AgentExecResult | None]:
     req_file = tmp_path / "request.json"
     out_file = tmp_path / "result.json"
     req_file.write_text(req.model_dump_json(), encoding="utf-8")
@@ -31,7 +31,7 @@ def _round_trip(
         check=False,
     )
     result = (
-        AgentExecResult.model_validate_json(out_file.read_text(encoding="utf-8"))
+        contracts.AgentExecResult.model_validate_json(out_file.read_text(encoding="utf-8"))
         if out_file.is_file()
         else None
     )
@@ -48,7 +48,7 @@ def test_network_refusal_writes_a_valid_error_result(tmp_path: pathlib.Path) -> 
         overlay={"sandbox": {"network": "session"}},
         isolation="partial",
         transcript_dir=cwd / "transcripts",
-        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
+        request=contracts.AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
     rc, result = _round_trip(tmp_path, req)
     assert rc == 0
@@ -67,7 +67,7 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: pathlib.Path) -> Non
         overlay={"budget": {"max_tokens_fallback": -5}},
         isolation="none",
         transcript_dir=cwd / "transcripts",
-        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
+        request=contracts.AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
     rc, result = _round_trip(tmp_path, req)
     assert rc == 0

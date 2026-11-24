@@ -18,11 +18,7 @@ from agent6.app.machine import create as _create
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, layer, layer_data
-from agent6.machine import (
-    AgentExecResult,
-    AgentRequest,
-    build_authoring_prompt,
-)
+from agent6.machine import authoring, contracts
 from agent6.sandbox import detect
 from agent6.sessions import budget_events, event_log
 from agent6.ui.cli import main
@@ -80,7 +76,7 @@ def test_the_authoring_prompt_asks_for_no_key_a_state_refuses() -> None:
 
     from agent6.machine import schema
 
-    prompt = build_authoring_prompt("Poll a queue", attempt=1)
+    prompt = authoring.build_authoring_prompt("Poll a queue", attempt=1)
     assert "`summary`" not in prompt
     with pytest.raises(pydantic.ValidationError, match="summary"):
         schema.MachineSpec.model_validate(
@@ -92,7 +88,7 @@ def test_the_authoring_prompt_asks_for_no_key_a_state_refuses() -> None:
 
 
 def test_build_authoring_prompt_first_attempt() -> None:
-    prompt = build_authoring_prompt("Poll a queue", attempt=1)
+    prompt = authoring.build_authoring_prompt("Poll a queue", attempt=1)
     assert "authoring guide" in prompt
     assert "Poll a queue" in prompt
     assert "finish_session" in prompt
@@ -102,21 +98,21 @@ def test_build_authoring_prompt_first_attempt() -> None:
 
 def test_authoring_guide_describes_the_metered_budget() -> None:
     # One budget story: max_usd caps metered spend, unpriced models fall to max_tokens_fallback.
-    prompt = build_authoring_prompt("Poll a queue", attempt=1)
+    prompt = authoring.build_authoring_prompt("Poll a queue", attempt=1)
     assert "max_usd" in prompt and "max_tokens_fallback" in prompt
     assert "best_effort_usd_limit" not in prompt
 
 
 def test_authoring_guide_teaches_pass_env_and_its_example_declares_it() -> None:
     """The example read `PRICE_FEED_TOKEN` with no `pass_env`, so no jail passed it."""
-    prompt = build_authoring_prompt("Poll a queue", attempt=1)
+    prompt = authoring.build_authoring_prompt("Poll a queue", attempt=1)
     assert 'pass_env = ["PRICE_FEED_TOKEN"]' in prompt
     assert "`[machine].pass_env`" in prompt
 
 
 def test_authoring_guide_names_no_cron_key() -> None:
     """A `wait` state has no `cron` key, so the guide names none."""
-    assert "cron" not in build_authoring_prompt("Poll a queue", attempt=1)
+    assert "cron" not in authoring.build_authoring_prompt("Poll a queue", attempt=1)
 
 
 def test_authoring_guide_does_not_call_the_data_dir_the_one_writable_spot() -> None:
@@ -124,7 +120,7 @@ def test_authoring_guide_does_not_call_the_data_dir_the_one_writable_spot() -> N
 
     Existing workspace entries outside the protect paths stay writable there.
     """
-    prompt = " ".join(build_authoring_prompt("Poll a queue", attempt=1).split())
+    prompt = " ".join(authoring.build_authoring_prompt("Poll a queue", attempt=1).split())
     assert "one writable spot" not in prompt
 
 
@@ -133,7 +129,7 @@ def test_authoring_guide_does_not_call_the_workspace_read_only_under_partial() -
 
     Existing workspace entries outside the protect paths stay writable there.
     """
-    prompt = " ".join(build_authoring_prompt("Poll a queue", attempt=1).split())
+    prompt = " ".join(authoring.build_authoring_prompt("Poll a queue", attempt=1).split())
     assert "workspace is read-only" not in prompt
 
 
@@ -142,13 +138,13 @@ def test_authoring_guide_does_not_call_the_bundle_read_only_at_every_level() -> 
 
     Under `none` no jail runs, so a tool can write the bundle.
     """
-    prompt = " ".join(build_authoring_prompt("Poll a queue", attempt=1).split())
+    prompt = " ".join(authoring.build_authoring_prompt("Poll a queue", attempt=1).split())
     assert "read-only at every level" not in prompt
 
 
 def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
     """A retry names the problems and sends the agent back to its own files in the workspace."""
-    prompt = build_authoring_prompt(
+    prompt = authoring.build_authoring_prompt(
         "Poll a queue",
         attempt=2,
         diagnostics=["initial 'nowhere' names no state"],
@@ -193,7 +189,7 @@ def _stub_preflight(
 
 def _stub_runner(
     monkeypatch: pytest.MonkeyPatch,
-    drafts: Iterable[tuple[dict[str, str], AgentExecResult]],
+    drafts: Iterable[tuple[dict[str, str], contracts.AgentExecResult]],
 ) -> None:
     """Each attempt writes its files into the drafting workspace, then returns its result."""
     seq = iter(drafts)
@@ -203,8 +199,10 @@ def _stub_runner(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            _request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             files, result = next(seq)
             for rel, content in files.items():
                 target = root / rel
@@ -236,18 +234,20 @@ def test_create_runs_the_authoring_agent_as_a_run_on_the_worker_model(
     """The authoring request names no model, so the agent runs the operator's worker model."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
-    captured: list[AgentRequest] = []
+    captured: list[contracts.AgentRequest] = []
 
     def fake_build(
         overlays: object,
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             captured.append(request)
             _write_draft(root, _draft(VALID_MACHINE))
-            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -281,13 +281,15 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
         overlay = overlays[""].overlay
         seen.append(layer.load_effective_with_overlay(root, overlay).config.harness.max_turns)
 
-        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+        def run(
+            _request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             _write_draft(root, _draft(VALID_MACHINE))
-            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -314,13 +316,15 @@ def test_create_takes_the_budget_flags_run_takes(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
         budget = layer.load_effective_with_overlay(root, overlays[""].overlay).config.budget
 
-        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+        def run(
+            request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             seen.append((budget.max_plan_points, request.remaining_usd, request.max_plan_points))
             _write_draft(root, _draft(VALID_MACHINE))
-            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -339,11 +343,23 @@ def test_create_keeps_one_plan_point_ledger_across_attempts(
     _stub_runner(
         monkeypatch,
         [
-            ({}, AgentExecResult(payload=None, reason="finish_session", plan_observed_points=20.0)),
-            ({}, AgentExecResult(payload=None, reason="finish_session", plan_observed_points=20.0)),
+            (
+                {},
+                contracts.AgentExecResult(
+                    payload=None, reason="finish_session", plan_observed_points=20.0
+                ),
+            ),
+            (
+                {},
+                contracts.AgentExecResult(
+                    payload=None, reason="finish_session", plan_observed_points=20.0
+                ),
+            ),
             (
                 _draft(VALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", plan_observed_points=1.0),
+                contracts.AgentExecResult(
+                    payload=None, reason="finish_session", plan_observed_points=1.0
+                ),
             ),
         ],
     )
@@ -372,7 +388,7 @@ def test_create_commit_guidance_applies_only_to_a_target_in_git(
         git_ops.init_repo(target)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session"))],
+        [(_draft(VALID_MACHINE), contracts.AgentExecResult(payload=None, reason="finish_session"))],
     )
     assert main(["machine", "create", "Greet", "-o", str(target / "draft.asm.toml")]) == 0
     err = capsys.readouterr().err
@@ -389,7 +405,12 @@ def test_create_writes_default_path(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.02))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user"])
     assert code == 0
@@ -416,7 +437,7 @@ def test_create_spend_line_has_tokens_and_an_accurate_partial_marker(
         [
             (
                 {},
-                AgentExecResult(
+                contracts.AgentExecResult(
                     reason="finish_session",
                     usd=0.01,
                     usd_partial=partial,
@@ -427,7 +448,7 @@ def test_create_spend_line_has_tokens_and_an_accurate_partial_marker(
             ),
             (
                 _draft(VALID_MACHINE),
-                AgentExecResult(
+                contracts.AgentExecResult(
                     reason="finish_session",
                     payload=None,
                     usd=0.02,
@@ -456,13 +477,15 @@ def test_create_writes_watchable_event_log(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **kw: object,
-    ) -> Callable[[AgentRequest, object], AgentExecResult]:
-        def run(_request: AgentRequest, events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest, object], contracts.AgentExecResult]:
+        def run(
+            _request: contracts.AgentRequest, events_log: object = None
+        ) -> contracts.AgentExecResult:
             assert _request.operator_task == "Greet the user"
             assert _request.prompt != _request.operator_task
             captured_log.append(events_log)
             _write_draft(root, _draft(VALID_MACHINE))
-            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -496,7 +519,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
             # First attempt returns no draft (fails), second succeeds.
             (
                 {},
-                AgentExecResult(
+                contracts.AgentExecResult(
                     payload=None,
                     reason="finish_session",
                     usd=0.01,
@@ -507,7 +530,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
             ),
             (
                 _draft(VALID_MACHINE),
-                AgentExecResult(
+                contracts.AgentExecResult(
                     payload=None,
                     reason="finish_session",
                     usd=0.02,
@@ -540,8 +563,10 @@ def test_create_counts_every_attempts_own_cost_in_the_cost_metric(
 
     def fake_build(
         overlays: object, root: pathlib.Path, transcript_dir: pathlib.Path, **_kw: object
-    ) -> Callable[[AgentRequest, pathlib.Path], AgentExecResult]:
-        def run(_request: AgentRequest, events_log: pathlib.Path) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest, pathlib.Path], contracts.AgentExecResult]:
+        def run(
+            _request: contracts.AgentRequest, events_log: pathlib.Path
+        ) -> contracts.AgentExecResult:
             files, cost = next(attempts)
             _write_draft(root, files)
             # Each attempt meters on its own tracker and journals to the draft's log.
@@ -556,7 +581,7 @@ def test_create_counts_every_attempts_own_cost_in_the_cost_metric(
             )
             budget_events.emit_budget_update(meter, event_log.EventSink(events_log).emit)
             snap = meter.snapshot()
-            return AgentExecResult(
+            return contracts.AgentExecResult(
                 payload=None,
                 reason="finish_session",
                 usd=snap.usd_total,
@@ -584,7 +609,12 @@ def test_create_saves_the_prompt(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user warmly"])
     assert code == 0
@@ -603,11 +633,11 @@ def test_create_retries_then_succeeds(
         [
             (
                 _draft(INVALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
             (
                 _draft(VALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.03),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.03),
             ),
         ],
     )
@@ -640,12 +670,14 @@ def test_create_retries_config_problems_before_publishing(
 
     def build(
         overlays: object, root: pathlib.Path, transcript_dir: pathlib.Path, **_kw: object
-    ) -> Callable[[AgentRequest, object], AgentExecResult]:
-        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest, object], contracts.AgentExecResult]:
+        def run(
+            request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             prompts.append(request.prompt)
             assert not (tmp_path / "greeter.asm.toml").exists()
             _write_draft(root, _draft(VALID_MACHINE + (extra if len(prompts) == 1 else "")))
-            return AgentExecResult(payload=None, reason="finish_session")
+            return contracts.AgentExecResult(payload=None, reason="finish_session")
 
         return run
 
@@ -667,7 +699,7 @@ def test_create_reports_the_shared_jail_path_warnings(
         [
             (
                 _draft(VALID_MACHINE.replace('"echo"', '"missing-machine-tool-xyz"')),
-                AgentExecResult(payload=None, reason="finish_session"),
+                contracts.AgentExecResult(payload=None, reason="finish_session"),
             )
         ],
     )
@@ -684,7 +716,12 @@ def test_create_refuses_to_overwrite_default_path(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user"])
     assert code == 2  # a refusal
@@ -706,7 +743,12 @@ def test_create_refuses_to_replace_a_broken_output_symlink(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
 
     assert main(["machine", "create", "Greet the user"]) == 2
@@ -724,7 +766,12 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
     assert main(["machine", "create", "Greet the user"]) == 2  # a refusal
     capsys.readouterr()
@@ -745,7 +792,12 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
 
     real_write = _create._write_scripts
@@ -778,7 +830,12 @@ def test_create_output_flag_overwrites(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user", "-o", str(target)])
     assert code == 0
@@ -807,7 +864,7 @@ def test_create_output_flag_names_the_files_it_replaced(
         [
             (
                 _draft(SCRIPT_MACHINE, **{"run.py": SCRIPT_BODY, "new.py": "print('new')\n"}),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
             )
         ],
     )
@@ -846,11 +903,11 @@ def test_create_never_valid_exits_1(
         [
             (
                 _draft(INVALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
             (
                 _draft(INVALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ],
     )
@@ -875,11 +932,11 @@ def test_create_surfaces_a_reason_per_failed_attempt(
         [
             (
                 {},
-                AgentExecResult(payload=None, reason="max_turns", usd=0.0),
+                contracts.AgentExecResult(payload=None, reason="max_turns", usd=0.0),
             ),  # returned no draft
             (  # a structurally invalid draft
                 _draft(INVALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ],
     )
@@ -908,10 +965,10 @@ def test_create_no_payload_gives_diagnostic_and_retries(
     _stub_runner(
         monkeypatch,
         [
-            ({}, AgentExecResult(payload=None, reason="max_turns", usd=0.0)),
+            ({}, contracts.AgentExecResult(payload=None, reason="max_turns", usd=0.0)),
             (
                 _draft(VALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ],
     )
@@ -937,7 +994,12 @@ def test_create_output_flag_creates_parent_dirs(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
     target = tmp_path / "new" / "deep" / "m.asm.toml"
     code = main(["machine", "create", "Greet the user", "-o", str(target)])
@@ -963,12 +1025,14 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            _request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             _write_draft(
                 root, {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": unused_import}
             )
-            return AgentExecResult(payload=None, reason="finish_session", usd=0.01)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01)
 
         return run
 
@@ -997,11 +1061,11 @@ def test_create_retry_prompt_names_the_script_problem(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": bad},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": good},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ]
     )
@@ -1011,8 +1075,10 @@ def test_create_retry_prompt_names_the_script_problem(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             prompts.append(request.prompt)
             files, result = next(responses)
             _write_draft(root, files)
@@ -1074,10 +1140,12 @@ def test_create_attempts_share_one_budget_ledger(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             caps.append(request.remaining_usd)
-            return AgentExecResult(payload=None, reason="finish_session", usd=6.0)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=6.0)
 
         return run
 
@@ -1104,7 +1172,7 @@ def test_create_writes_script_bundle(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             )
         ],
     )
@@ -1134,7 +1202,7 @@ def test_create_refuses_to_overwrite_existing_script(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             )
         ],
     )
@@ -1159,12 +1227,12 @@ def test_create_rejects_missing_script_then_succeeds(
             # attempt 1: references the script but omits it -> rejected.
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
             # attempt 2: now ships it -> accepted.
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             ),
         ],
     )
@@ -1192,7 +1260,7 @@ def test_create_rejects_lint_bad_script(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": bad},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -1217,7 +1285,7 @@ def test_create_publish_validates_the_destination_before_claiming_success(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -1252,7 +1320,7 @@ def test_create_writes_no_script_through_a_linked_scripts_directory(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -1310,7 +1378,7 @@ def test_create_writes_scripts_before_the_machine_file(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -1338,7 +1406,7 @@ def test_create_never_ships_script_exits_1(
         [
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -1400,7 +1468,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     runner = agent.build_machine_agent_runner(
         {"": agent.StateOverlay({}, "full")}, tmp_path, tmp_path / "tr"
     )
-    res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="read_only"), events_log)
+    res = runner(contracts.AgentRequest(prompt="p", timeout_s=1.0, mode="read_only"), events_log)
     assert res.reason == "timeout"
     assert res.usd == pytest.approx(0.0588752)
     assert (res.input_tokens, res.output_tokens) == (66084, 838)
@@ -1415,7 +1483,7 @@ def test_create_failure_stop_reason_names_the_failure(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [({}, AgentExecResult(payload=None, reason="max_turns", usd=0.0))],
+        [({}, contracts.AgentExecResult(payload=None, reason="max_turns", usd=0.0))],
     )
     assert main(["machine", "create", "Greet the user", "--max-attempts", "1"]) == 1
 
@@ -1441,7 +1509,12 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
+        [
+            (
+                _draft(VALID_MACHINE),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+            )
+        ],
     )
     assert main(["machine", "create", "Greet the user"]) == 0
 
@@ -1514,13 +1587,15 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             seen_prompts.append(request.prompt)
             (root / "greeter.asm.toml").write_text(bad_toml, encoding="utf-8")
             (root / "scripts").mkdir(exist_ok=True)
             (root / "scripts" / "helper.py").write_text(bad_script, encoding="utf-8")
-            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -1557,7 +1632,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
         return "none"
 
     monkeypatch.setattr(session_runtime, "select_isolation", no_preflight)
-    captured: list[tuple[AgentRequest, pathlib.Path, Config]] = []
+    captured: list[tuple[contracts.AgentRequest, pathlib.Path, Config]] = []
 
     seen: list[bool] = []
 
@@ -1566,15 +1641,17 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             cfg = layer.load_effective_with_overlay(root, overlays[""].overlay).config
             captured.append((request, root, cfg))
             # Read while the execution runs: a published create removes the workspace.
             seen.append((root / ".git").exists())
             for rel, content in _draft(VALID_MACHINE).items():
                 (root / rel).write_text(content, encoding="utf-8")
-            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
+            return contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -1646,7 +1723,7 @@ def test_create_publishes_the_files_a_referenced_script_needs(
                     "scripts/common.py": "def helper() -> int:\n    return 1\n",
                     "scripts/data.json": "{}\n",
                 },
-                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -1705,11 +1782,13 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+    ) -> Callable[[contracts.AgentRequest], contracts.AgentExecResult]:
+        def run(
+            _request: contracts.AgentRequest, _events_log: object = None
+        ) -> contracts.AgentExecResult:
             nonlocal attempts
             attempts += 1
-            return AgentExecResult(payload=None, reason="steer_abort", usd=0.0)
+            return contracts.AgentExecResult(payload=None, reason="steer_abort", usd=0.0)
 
         return run
 
@@ -1731,11 +1810,11 @@ def test_create_under_a_zero_dollar_cap_still_runs_its_first_attempt(
     _stub_runner(
         monkeypatch,
         [
-            ({}, AgentExecResult(payload=None, reason="finish_session", usd=0.0)),
-            ({}, AgentExecResult(payload=None, reason="finish_session", usd=0.0)),
+            ({}, contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)),
+            ({}, contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0)),
             (
                 _draft(VALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", usd=0.0),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.0),
             ),
         ],
     )
@@ -1759,11 +1838,11 @@ def test_create_names_the_pass_env_grant_a_draft_needs(
         [
             (
                 {"greeter.asm.toml": asks, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             ),
             (
                 {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
-                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
+                contracts.AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             ),
         ],
     )

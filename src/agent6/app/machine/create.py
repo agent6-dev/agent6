@@ -16,7 +16,7 @@ import shutil
 import uuid
 from collections.abc import Callable
 
-from agent6 import errors, kinds, machine, path_safety, paths, portable
+from agent6 import errors, kinds, path_safety, paths, portable
 from agent6.app import preflight, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle
@@ -24,6 +24,7 @@ from agent6.app.machine import draft as drafting
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
+from agent6.machine import schema
 from agent6.sessions import event_log, id, journal, layout, lock, process
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -99,12 +100,12 @@ def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter)
         reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
 
 
-def _pass_env_to_allow(spec: machine.MachineSpec, allowed: tuple[str, ...]) -> list[str]:
+def _pass_env_to_allow(spec: schema.MachineSpec, allowed: tuple[str, ...]) -> list[str]:
     """Return the variables the machine's tools name that `[machine].pass_env` lacks, sorted."""
     asked = {
         name
         for state in spec.states.values()
-        if isinstance(state, machine.ToolState)
+        if isinstance(state, schema.ToolState)
         for name in state.pass_env
     }
     return sorted(asked - set(allowed))

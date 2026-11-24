@@ -13,7 +13,7 @@ from agent6 import evidence, kinds
 from agent6.app import reporter as app_reporter
 from agent6.app import worktree_setup
 from agent6.config import Config
-from agent6.machine import EngineError
+from agent6.machine import contracts
 from agent6.sandbox import jail
 from agent6.sessions import event_log, journal
 from agent6.tools import target_policy
@@ -86,4 +86,4 @@ def tool_setup_failure(
         return None
     if prepared.result is not None:
         return prepared.result
-    raise EngineError(prepared.problem)
+    raise contracts.EngineError(prepared.problem)

@@ -28,7 +28,7 @@ import pydantic
 
 from agent6 import __version__, errors, kinds, pack
 from agent6.config import ConfigError, is_loopback_host, layer, write
-from agent6.machine import MachineError
+from agent6.machine import schema
 from agent6.sessions import process
 from agent6.ui import operator_images, parallel_preview, spawn
 from agent6.ui.telemetry import export
@@ -1643,7 +1643,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._sse_machine(machine_dir)
             else:
                 self._send_json({"error": f"not found: machine/{name}/{sub}"}, status=404)
-        except MachineError as exc:
+        except schema.MachineError as exc:
             self._send_json({"error": f"machine {name!r}: {'; '.join(exc.problems)}"}, status=422)
 
     # -- plain responses ------------------------------------------------------

@@ -12,7 +12,8 @@ import pathlib
 from typing import Any
 
 from agent6 import budget
-from agent6.machine import MachineJournal, load_machine
+from agent6.machine import journal as machine_journal
+from agent6.machine import semantics
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
@@ -305,8 +306,8 @@ def machine_snapshot(
         MachineError: The machine source cannot be loaded.
         JournalError: The journal is corrupt.
     """
-    spec = load_machine(machine_dir / "machine.asm.toml")
-    events = MachineJournal(machine_dir).read()
+    spec = semantics.load_machine(machine_dir / "machine.asm.toml")
+    events = machine_journal.MachineJournal(machine_dir).read()
     ms = machine_state.fold_machine(spec, events)
     d = machine_state.machine_state_as_dict(ms, machine_dir, execution=execution)
     spend, in_flight = machine_logs.machine_spend(

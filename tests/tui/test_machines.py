@@ -14,7 +14,7 @@ from textual import app as textual_app
 from textual import widgets
 
 from agent6 import paths
-from agent6.machine import MachineSpec
+from agent6.machine import schema
 from agent6.sessions import process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, modals
@@ -194,13 +194,13 @@ def test_watch_screen_carries_the_menu_bar_and_its_items_resolve(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
     """The watch screen has every screen's chrome, and every menu item resolves to an action."""
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.ui.tui import menubar
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "instance"
     instance.mkdir()
 
@@ -228,7 +228,7 @@ def test_watch_screen_shows_states_transitions_and_end(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
     """The watch screen renders the state overview, the log transition and the ended status."""
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
@@ -236,7 +236,7 @@ def test_watch_screen_shows_states_transitions_and_end(
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
 
     class _Host(textual_app.App[None]):
         def on_mount(self) -> None:
@@ -269,7 +269,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
     The end flag seeds from the fold that seeds notification history; a machine ending while
     watched still announces.
     """
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
@@ -283,7 +283,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
 
     class _Host(textual_app.App[None]):
         def on_mount(self) -> None:
@@ -309,7 +309,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
     """An ended machine takes no input: Steer and Message dim and their actions are no-ops."""
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
@@ -317,7 +317,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     # A per-state dir so _current_state_dir() resolves: the dead dir a steer would hit.
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
@@ -357,7 +357,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
     """An ended machine's log ending on a model.call renders no live thinking line."""
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
@@ -365,7 +365,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0  # terminates at once -> ended
     instance = paths.state_dir(tmp_path) / "machines" / "tiny"
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
     (state / "logs.jsonl").write_text(
@@ -683,10 +683,10 @@ def test_watch_screen_survives_corrupt_journal(tmp_path: pathlib.Path) -> None:
 
     The header shows the corruption and polling continues.
     """
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = _write(tmp_path / "m.asm.toml", TINY)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / ".agent6" / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "journal.jsonl").write_text('{"type": "step", "bogus": 1}\n', encoding="utf-8")
@@ -716,10 +716,10 @@ def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: pathlib.Path) -> N
     """
     import json
 
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = _write(tmp_path / "m.asm.toml", TINY)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / ".agent6" / "machines" / "tiny"
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
@@ -795,12 +795,12 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
     Its worker is gone and its newest state dir is a finished agent state, so nothing polls
     the marker; writing it reported success and dropped the course-correction.
     """
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "parked"
     instance.mkdir(parents=True)
     # A begun-but-not-ended journal: not `_ended`, and no worker.pid -> dead.
@@ -838,11 +838,11 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
 
 def test_watch_header_reads_a_corrupt_wait_as_waiting(tmp_path: pathlib.Path) -> None:
     """A corrupt pending-wait file counts as parked, so the watch header says "waiting"."""
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
@@ -877,11 +877,11 @@ def test_watch_header_names_the_reason_and_when_a_parked_machine_wakes(
     status` and the web page do.
     """
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     journal = machine_journal.MachineJournal(instance)
@@ -918,11 +918,11 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: pathlib.Path) -> None
     """
     import os
 
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -952,16 +952,18 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: pathlib.Path) -> None
     asyncio.run(scenario())
 
 
-def _blocked_machine(tmp_path: pathlib.Path, *, alive: bool) -> tuple[pathlib.Path, MachineSpec]:
+def _blocked_machine(
+    tmp_path: pathlib.Path, *, alive: bool
+) -> tuple[pathlib.Path, schema.MachineSpec]:
     """A machine instance whose newest agent state is blocked on an unanswered approval."""
     import json
     import os
 
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
@@ -1152,14 +1154,14 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
 
     Disabling the binding made it a silent no-op that Help still listed.
     """
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = _write(tmp_path / "waiter.asm.toml")
     assert cli_main(["machine", "run", str(f), "--exit-on-wait"]) == 0  # parks, worker gone
     instance = paths.state_dir(tmp_path) / "machines" / "waiter_demo"
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
 
     class _WatchHost(textual_app.App[None]):
         def on_mount(self) -> None:
@@ -1218,7 +1220,7 @@ def test_a_live_machine_marks_only_the_turn_in_flight(tmp_path: pathlib.Path) ->
     from typing import Any
 
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     root = tmp_path / "hunt"
     root.mkdir()
@@ -1276,7 +1278,7 @@ reason = "done"
 
         def on_mount(self) -> None:
             self.push_screen(
-                machmod.MachineWatchScreen(root, load_machine(root / "machine.asm.toml"))
+                machmod.MachineWatchScreen(root, semantics.load_machine(root / "machine.asm.toml"))
             )
 
     out: list[str] = []
@@ -1298,10 +1300,10 @@ def test_watch_footer_keeps_every_machine_verb_visible_and_gates_it(tmp_path: pa
     from textual.widgets._footer import FooterKey
 
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = _write(tmp_path / "tiny.asm.toml", TINY)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -1339,10 +1341,10 @@ def test_watch_footer_refreshes_when_only_poke_availability_changes(tmp_path: pa
     from textual.widgets._footer import FooterKey
 
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = _write(tmp_path / "tiny.asm.toml", TINY)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -1377,10 +1379,10 @@ def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathli
     import os
 
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = _write(tmp_path / "tiny.asm.toml", TINY)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
@@ -1425,10 +1427,10 @@ def test_a_poke_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathlib
     Otherwise it leaves an unconsumable signal.
     """
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = _write(tmp_path / "tiny.asm.toml", TINY)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -1495,13 +1497,13 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
     """One poll folds the journal once and reads the newest state log incrementally."""
     import os
 
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
     from agent6.ui.tui import machines
     from agent6.viewmodel.machine import state as vm_mod
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -1556,10 +1558,10 @@ def test_a_click_on_a_stale_lit_verb_explains_itself_once(tmp_path: pathlib.Path
     from textual.widgets._footer import FooterKey
 
     from agent6.machine import journal as machine_journal
-    from agent6.machine import load_machine
+    from agent6.machine import semantics
 
     f = _write(tmp_path / "tiny.asm.toml", TINY)
-    spec = load_machine(f)
+    spec = semantics.load_machine(f)
     instance = tmp_path / "machines" / "tiny"
     instance.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")

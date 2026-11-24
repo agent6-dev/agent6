@@ -41,7 +41,7 @@ from agent6.config import Config, ConfigError, layer, layer_data
 from agent6.harness import loop, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.parallel import repo as child_repo
-from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
+from agent6.machine import contracts, semantics
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, journal, process
@@ -93,7 +93,7 @@ class MachineAgentRequest(pydantic.BaseModel):
     protect_paths: tuple[pathlib.Path, ...] = ()
     shared_writes: tuple[pathlib.Path, ...] = ()
     commit_identity: git_read.CommitIdentity | None = None
-    request: AgentRequest
+    request: contracts.AgentRequest
 
     def settings(self, cfg: Config, base: Config) -> tuple[journal.SettingObservation, ...]:
         """Keep the host source for each setting the state runs unchanged.
@@ -132,7 +132,9 @@ def _machine_head_sha(root: pathlib.Path) -> str | None:
         return None
 
 
-def _finish_validator(r: AgentRequest) -> Callable[[dict[str, Any] | None], list[str]] | None:
+def _finish_validator(
+    r: contracts.AgentRequest,
+) -> Callable[[dict[str, Any] | None], list[str]] | None:
     """Build the finish-payload check for a state that declares an output schema.
 
     Args:
@@ -146,12 +148,14 @@ def _finish_validator(r: AgentRequest) -> Callable[[dict[str, Any] | None], list
         return None
 
     def check(payload: dict[str, Any] | None) -> list[str]:
-        return validate_record_payload(r.schemas, name, payload, where="finish_session payload")
+        return semantics.validate_record_payload(
+            r.schemas, name, payload, where="finish_session payload"
+        )
 
     return check
 
 
-def _task_with_contract(r: AgentRequest) -> str:
+def _task_with_contract(r: contracts.AgentRequest) -> str:
     """Render the state prompt plus its finish contract as `field: type` lines.
 
     Args:
@@ -189,7 +193,7 @@ def _task_with_contract(r: AgentRequest) -> str:
 
 def _result(
     reason: str, payload: dict[str, Any] | None, budget: agent6_budget.BudgetTracker | None
-) -> AgentExecResult:
+) -> contracts.AgentExecResult:
     """Build the state's result.
 
     Args:
@@ -208,7 +212,7 @@ def _result(
         snap = budget.snapshot()
         usd, own, partial = snap.usd_total, snap.usd_own_calls, snap.usd_partial
         inp, out, plan = snap.input_total, snap.output_total, snap.plan_observed_points
-    return AgentExecResult(
+    return contracts.AgentExecResult(
         reason=reason,
         payload=payload,
         usd=usd,
@@ -399,7 +403,7 @@ def run_one(
     *,
     attach_console: Callable[[event_log.EventSink], None] = _no_console,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> AgentExecResult:
+) -> contracts.AgentExecResult:
     """Run one machine `agent` state to completion inside its subprocess.
 
     Args:
@@ -514,7 +518,7 @@ def run_one(
 
 def _drive_state(
     req: MachineAgentRequest,
-    r: AgentRequest,
+    r: contracts.AgentRequest,
     cfg: Config,
     dispatcher: dispatch.ToolDispatcher,
     *,
@@ -526,7 +530,7 @@ def _drive_state(
     budget: agent6_budget.BudgetTracker,
     reporter: app_reporter.Reporter,
     events: event_log.EventSink | None,
-) -> AgentExecResult:
+) -> contracts.AgentExecResult:
     """Run the setup command, build the harness and drive the state to its end.
 
     Args:
@@ -677,7 +681,7 @@ def build_machine_agent_runner(
     machine_id: str | None = None,
     clone_root: pathlib.Path | None = None,
     shared_writes: tuple[pathlib.Path, ...] = (),
-) -> Callable[[AgentRequest, pathlib.Path | None], AgentExecResult]:
+) -> Callable[[contracts.AgentRequest, pathlib.Path | None], contracts.AgentExecResult]:
     """Build the host-side runner an `agent` state fires.
 
     The runner spawns the subprocess with a fixed argv, hands it the request through
@@ -702,21 +706,23 @@ def build_machine_agent_runner(
         The runner: given a request and an optional per-call event log, the result.
     """
 
-    def run_agent(request: AgentRequest, events_log: pathlib.Path | None = None) -> AgentExecResult:
+    def run_agent(
+        request: contracts.AgentRequest, events_log: pathlib.Path | None = None
+    ) -> contracts.AgentExecResult:
         # The salvage reads this call's events only: `machine create` shares one draft log.
         start_offset = 0
         if events_log is not None:
             with contextlib.suppress(OSError):
                 start_offset = events_log.stat().st_size
 
-        def salvaged(reason: str) -> AgentExecResult:
+        def salvaged(reason: str) -> contracts.AgentExecResult:
             # Without a result file the spend comes from the event log, so the guard trips.
             spend = (
                 machine_logs.read_budget_totals(events_log, from_offset=start_offset)
                 if events_log is not None
                 else machine_logs.Spend()
             )
-            return AgentExecResult(
+            return contracts.AgentExecResult(
                 reason=reason,
                 payload=None,
                 usd=spend.usd,
@@ -794,7 +800,9 @@ def build_machine_agent_runner(
                         result = salvaged("error")
                     else:
                         try:
-                            result = AgentExecResult.model_validate_json(out_file.read_bytes())
+                            result = contracts.AgentExecResult.model_validate_json(
+                                out_file.read_bytes()
+                            )
                         except (OSError, pydantic.ValidationError):
                             # A malformed result file counts as missing.
                             result = salvaged("error")
@@ -844,10 +852,10 @@ def _import_machine_clone(
     clone: pathlib.Path,
     chain_ref: str,
     branch: str,
-    result: AgentExecResult,
+    result: contracts.AgentExecResult,
     state: StateOverlay,
     shared_writes: tuple[pathlib.Path, ...],
-) -> AgentExecResult:
+) -> contracts.AgentExecResult:
     """Import the state's commits into the origin on every outcome, then drop the clone.
 
     Serial states make both ref updates fast-forwards. An import failure keeps the
