@@ -133,8 +133,6 @@ def seed_steer(
         steer.strip(),
         images=launch.images,
         message_id=launch.message_id,
-        # A plain steer takes the free slot; one with an id cannot, so it takes the inbox's head.
-        first=bool(launch.message_id),
     ):
         reporter.error("could not write the initial steer request")
         raise preflight.SessionRefusedError(2)

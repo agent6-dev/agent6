@@ -28,16 +28,15 @@ def test_a_steer_with_an_id_waits_in_the_inbox_and_keeps_it_into_the_slot(
     assert ipc.take_steer_message_id(tmp_path) == "", "consumed with its steer"
 
 
-def test_the_steer_that_starts_an_execution_goes_ahead_of_the_steers_left_waiting(
+def test_a_steer_with_an_id_stays_behind_the_steers_left_waiting(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Behind them, an execution answered an older message and left its own prompt queued."""
     ipc.submit_steer(tmp_path, "left from the last run", message_id="m-old")
-    assert ipc.submit_steer(tmp_path, "this execution's prompt", message_id="m-new", first=True)
+    assert ipc.submit_steer(tmp_path, "this execution's prompt", message_id="m-new")
 
-    assert [entry.message_id for entry in ipc.queued_steers(tmp_path)] == ["m-new", "m-old"]
+    assert [entry.message_id for entry in ipc.queued_steers(tmp_path)] == ["m-old", "m-new"]
     assert ipc.promote_queued_steer(tmp_path)
-    assert ipc.take_steer_answer(tmp_path) == "this execution's prompt"
+    assert ipc.take_steer_answer(tmp_path) == "left from the last run"
 
 
 def test_a_steer_displaced_from_the_slot_keeps_its_id(tmp_path: pathlib.Path) -> None:

@@ -199,7 +199,7 @@ An editor that requests `protocolVersion: 2` gets the same runs through v2's mes
 
 - a prompt that arrives while the session runs joins the run's steer queue, as [a message typed during a run](usage.md#follow-and-steer-a-run) does on every other surface
 - it answers `{messageId}` once it is queued, and the run takes it at its next turn boundary
-- if the run ends or is cancelled first, the steer waits in the queue: a later execution takes it at its first turn boundary, after its own prompt, and an execution that ends in one turn leaves it waiting
+- if the run ends or is cancelled first, the steer waits in the queue: the next execution delivers the waiting steers in order before its own prompt reaches the model
 - a steer the run handles as a directive (`/pin`, `/parallel`, a skill) is reported when it is sent, and a replay does not repeat it as a user message
 - `abort`, `exit`, `detach` and `/undo` travel as task text; a composer command (`/compact`) or a malformed directive answers `-32602`
 - a prompt that arrives before the execution has chosen its run answers `-32603`; send it again

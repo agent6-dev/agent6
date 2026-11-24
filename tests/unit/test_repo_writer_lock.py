@@ -681,10 +681,9 @@ def test_a_steer_survives_a_resume_that_parks_again(
     assert manifest.read_manifest(layout.session_dir).parked_reason == "checkout busy"
 
     assert resume("", later=120.0) == 0
-    # The order the parked starts would have read them in: each start's own steer first.
     assert [queued.text for queued in ipc.queued_steers(layout.session_dir)] == [
-        "and the changelog",
         "also update the docs",
+        "and the changelog",
     ]
     assert not ipc.steer_request_pending(layout.session_dir)
 

@@ -1132,7 +1132,6 @@ def submit_steer(
     findings: tuple[str, ...] = (),
     images: tuple[operator_input.ImageRef, ...] = (),
     message_id: str = "",
-    first: bool = False,
 ) -> bool:
     """Queue a steer: into the slot when it is free, else behind the one in flight.
 
@@ -1141,8 +1140,7 @@ def submit_steer(
     (`abort`, `exit`, `/undo`, `detach`) takes the slot whatever it holds; an urgent steer
     takes it too, and the instruction it displaces moves to the head of the inbox. A steer
     with images or a message id always enters the inbox, since only the worker pairs the
-    slot with them: at its tail, or at its head for the steer that starts an execution,
-    which a free slot would have taken first.
+    slot with them. Ordinary instructions join any waiting entries at the tail.
 
     Args:
         session_dir: The session directory.
@@ -1151,7 +1149,6 @@ def submit_steer(
         findings: The review findings a Fix steer carries.
         images: The images sent with the instruction, stored in the session's attachments.
         message_id: The id the front-end gave the instruction, journaled with it.
-        first: The steer starts an execution, which takes it before the steers left waiting.
 
     Returns:
         Whether the steer landed, in the slot or the inbox.
@@ -1162,14 +1159,18 @@ def submit_steer(
             entry = QueuedSteer(
                 text=text, now=now, findings=findings, images=images, message_id=message_id
             )
-            return (_queue_steer_first if first else queue_steer)(session_dir, entry)
+            return queue_steer(session_dir, entry)
         if text.strip().lower() in STEER_VERBS:
             write_steer_answer(session_dir, text)
         elif now and steer_request_pending(session_dir):
             if not _displace_slot(session_dir):
                 return False
             write_steer_answer(session_dir, text)
-        elif steer_request_pending(session_dir) or not _publish_answer(answer, text):
+        elif (
+            steer_request_pending(session_dir)
+            or (not now and any((session_dir / STEERS_DIR_NAME).glob("*.steer")))
+            or not _publish_answer(answer, text)
+        ):
             return queue_steer(session_dir, QueuedSteer(text=text, now=now, findings=findings))
     except OSError:
         return False

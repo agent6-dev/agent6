@@ -12,7 +12,7 @@ from agent6 import directive, terminal
 from agent6.harness import loop_conversation, loop_resume, loop_snapshot, loop_state, metric_rules
 from agent6.harness.parallel import merge as parallel_merge
 from agent6.harness.parallel import recovery as parallel_recovery
-from agent6.sessions import child_dispatch, journal
+from agent6.sessions import child_dispatch, ipc, journal
 from agent6.tools import operator_prompts, tool_errors, waits
 from agent6.vcs.git import ops as git_ops
 
@@ -20,41 +20,41 @@ if TYPE_CHECKING:
     from agent6.harness import loop
 
 
-def seeded_steer(
+def opening_steers(
     harness: loop.Harness,
     conversation: loop_conversation.Conversation,
     turn: int,
     state: loop_state.LoopState,
+    *,
+    resuming: bool,
 ) -> loop_snapshot.SessionResult | None:
-    """Consume the follow-up a `resume --steer` queued before the loop started.
-
-    It enters the conversation ahead of the first model call, since a resumed conversation
-    that was already finished ends on turn 1 before the end-of-turn poll runs.
+    """Deliver the waiting instructions in order before the first model call.
 
     Args:
         harness: The execution's harness.
-        conversation: The conversation the steer enters.
-        turn: The first turn of the execution.
+        conversation: The conversation the steers enter.
+        turn: The execution's first turn.
         state: The execution's state.
+        resuming: Whether the execution continues a snapshot.
 
     Returns:
-        The end the steer asked for, or None when the execution goes on.
+        The end a steer requested, or None to continue.
     """
-    # This resume path handles both finished and interrupted runs.
-    return steer_outcome(
-        harness,
-        harness.steering.handle(
-            conversation,
-            turn,
-            state,
-            heading=(
-                "OPERATOR STEERING: This execution continues the run even if it previously"
-                " finished, and the steer below is its task."
-            ),
-        ),
-        turn,
-        state,
+    waiting = 0
+    if (directory := harness.session_dir) is not None:
+        waiting = len(ipc.queued_steers(directory)) + ipc.steer_answer_written(directory)
+    heading = (
+        "OPERATOR STEERING: This execution continues the run even if it previously"
+        " finished, and the steer below is its task."
+        if resuming
+        else "OPERATOR STEERING:"
     )
+    # A resume also polls an in-memory bridge. New arrivals wait for the next boundary.
+    for _ in range(max(waiting, int(resuming))):
+        verb = harness.steering.handle(conversation, turn, state, heading=heading)
+        if (end := steer_outcome(harness, verb, turn, state)) is not None:
+            return end
+    return None
 
 
 def take_requests(
@@ -353,7 +353,7 @@ def execution_opening(
     """Open an execution's first turn with the operator's side, before the first model call.
 
     A fresh run hears the operator's presence; a resume hears it with the missed answers and
-    the open questions, then takes the steer that started it.
+    the open questions. Both deliver the waiting steers before the first model call.
 
     Args:
         harness: The execution's harness.
@@ -370,6 +370,8 @@ def execution_opening(
     """
     if not resuming:
         operator_state(harness, conversation, state)
+        if (end := opening_steers(harness, conversation, turn, state, resuming=False)) is not None:
+            return end
         if harness.opening:
             return ranked_opening(harness, conversation, turn, state)
         return None
@@ -382,7 +384,7 @@ def execution_opening(
             parallel_recovery.reconcile(harness.parallel, state, conversation, turn=turn - 1)
         except child_dispatch.DispatchRecordError as exc:
             raise loop_snapshot.ResumeError(str(exc)) from exc
-    return seeded_steer(harness, conversation, turn, state)
+    return opening_steers(harness, conversation, turn, state, resuming=True)
 
 
 def quiet_continuation(

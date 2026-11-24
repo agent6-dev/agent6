@@ -375,7 +375,7 @@ def test_a_v2_editor_drives_a_run_to_each_of_its_ends(
     assert len(provider.requests) == asked
 
 
-def test_a_steer_its_run_never_took_reaches_the_next_execution_after_its_prompt(
+def test_a_waiting_steer_precedes_the_next_prompt_on_its_first_model_call(
     scripted: tuple[_Provider, Callable[[int], _Editor]], tmp_path: pathlib.Path
 ) -> None:
     """A run that ends on the call a steer arrived in leaves the steer queued for a later one."""
@@ -396,12 +396,12 @@ def test_a_steer_its_run_never_took_reaches_the_next_execution_after_its_prompt(
     first += editor.until(_idle)
     assert len(provider.requests) == 1, "the run ended on the call the steer arrived in"
 
-    provider.script.extend([LIST, FINISH])
+    provider.script.append(FINISH)
     editor.send("session/prompt", prompt("And then stop."))
     second = editor.until(_idle)
-    assert "And then stop." in provider.requests[1], "the execution took its own prompt first"
-    assert "One more thing." not in provider.requests[1]
-    assert "One more thing." in provider.requests[2], "the waiting steer came at the boundary"
+    assert len(provider.requests) == 2
+    first_call = provider.requests[1]
+    assert first_call.index("One more thing.") < first_call.index("And then stop.")
     said = [u["content"][0]["text"] for u in _updates(second, "user_message")]
     assert said == ["And then stop."], "the steer was reported when it was sent, not again"
     assert steered_id(first, late)
