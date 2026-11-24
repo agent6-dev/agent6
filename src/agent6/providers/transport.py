@@ -230,6 +230,24 @@ def _tier_mismatch(route: kinds.ModelRoute, serving: kinds.Serving) -> str:
     return ""
 
 
+def _book_response(
+    budget: agent6_budget.BudgetTracker | None,
+    route: kinds.ModelRoute,
+    parsed: provider_types.ProviderResponse,
+) -> None:
+    """Book the response on the requested route at the tier that served it."""
+    if budget is not None:
+        budget.record(
+            route=route,
+            serving=parsed.serving,
+            input_tokens=parsed.input_tokens,
+            output_tokens=parsed.output_tokens,
+            cache_read_tokens=parsed.cache_read_tokens,
+            cache_write_tokens=parsed.cache_write_tokens,
+            cost_usd=parsed.cost_usd,
+        )
+
+
 def meter_completion(
     budget: agent6_budget.BudgetTracker | None,
     route: kinds.ModelRoute,
@@ -253,16 +271,7 @@ def meter_completion(
     Raises:
         ProviderError: The upstream failed the completion.
     """
-    if budget is not None:
-        budget.record(
-            route=route,
-            serving=parsed.serving,
-            input_tokens=parsed.input_tokens,
-            output_tokens=parsed.output_tokens,
-            cache_read_tokens=parsed.cache_read_tokens,
-            cache_write_tokens=parsed.cache_write_tokens,
-            cost_usd=parsed.cost_usd,
-        )
+    _book_response(budget, route, parsed)
     if reason := _tier_mismatch(route, parsed.serving):
         raise provider_types.ProviderError(reason, fatal=True, usage=parsed.usage)
     if (
@@ -569,24 +578,43 @@ class ProviderCall:
             )
         transcript.observe_serving(data)
         transcript.response_body = data
-        # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
-        err = data.get("error")
-        if err and not _has_assistant_output(data):
-            self._observe_recovery(recovery_pending, envelope_status(err))
-            error = provider_types.ProviderError(
-                f"{self.api_label} error in 2xx body: "
-                f"{self._safe_text(envelope_detail(err), headers)}",
-                status_code=envelope_status(err),
-                tier_refused=provider_types.refuses_service_tier(err, envelope_status(err)),
-                retry_after_s=provider_types.parse_retry_after(resp.headers),
-            )
-            self._refuse_tier(error, transcript.serving)
-            raise error
         try:
+            err = data.get("error")
+            if err and not _has_assistant_output(data):
+                status = envelope_status(err)
+                self._observe_recovery(recovery_pending, status)
+                raise provider_types.ProviderError(
+                    f"{self.api_label} error in 2xx body: "
+                    f"{self._safe_text(envelope_detail(err), headers)}",
+                    status_code=status,
+                    tier_refused=provider_types.refuses_service_tier(err, status),
+                    retry_after_s=provider_types.parse_retry_after(resp.headers),
+                )
             if self.budget is not None:
                 self.require_metered(data)
             parsed = self.parse(data)
         except provider_types.ProviderError as exc:
+            # A failed generation can carry a bill. Its output need not be parseable.
+            usage = data.get("usage")
+            if isinstance(usage, dict) and usage:
+                try:
+                    billed = self.parse({"usage": usage})
+                except (
+                    provider_types.ProviderError,
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    IndexError,
+                ):
+                    pass  # Malformed usage does not replace the upstream error.
+                else:
+                    _book_response(
+                        self.budget,
+                        self.route,
+                        dataclasses.replace(billed, serving=transcript.serving),
+                    )
+                    exc.usage = billed.usage
             self._refuse_tier(exc, transcript.serving)
             raise
         except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:

@@ -426,3 +426,36 @@ def test_a_tier_refusal_without_a_parameter_keeps_the_reason(
         with pytest.raises(provider_types.ProviderError, match=message) as exc:
             worker.call(system="s", messages=[])
     assert exc.value.fatal and "providers.work.service_tier" in str(exc.value) and len(calls) == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_billed_tier_mismatch_keeps_the_failed_generations_usage(
+    tmp_path: pathlib.Path, stream: bool
+) -> None:
+    body = {
+        "status": "failed",
+        "model": "snapshot",
+        "service_tier": "priority",
+        "error": {"code": "server_error", "message": "Generation failed"},
+        "usage": {"input_tokens": 10, "output_tokens": 2, "cost": 0.25},
+    }
+    with provider_endpoint.serve(
+        [{"type": "response.failed", "response": body}] if stream else body
+    ) as (url, calls):
+        worker = _worker(tmp_path, url, "responses", stream, service_tier="flex")
+        with pytest.raises(provider_types.ProviderError, match="Generation failed") as exc:
+            worker.call(system="s", messages=[])
+    reason = str(exc.value)
+    assert (
+        exc.value.fatal
+        and "providers.work.service_tier" in reason
+        and "asked 'flex', served 'priority'" in reason
+    )
+    assert len(calls) == 1 and worker.budget.snapshot().usd_own_calls == 0.25
+    transcript, rows = _records(tmp_path)
+    assert len(rows) == 2 and transcript["usage"]["cost_usd"] == 0.25
+    assert all(
+        (row["input_tokens"], row["output_tokens"], row["cost_usd"], row["served_service_tier"])
+        == (10, 2, 0.25, "priority")
+        for row in rows
+    )
