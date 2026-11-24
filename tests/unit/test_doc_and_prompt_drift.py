@@ -303,3 +303,10 @@ def test_documentation_and_web_copy_use_straight_quotes() -> None:
     web = REPO / "src" / "agent6" / "ui" / "web"
     files = [REPO / "README.md", *(REPO / "docs").rglob("*.md"), *web.glob("*.js")]
     assert not [p.relative_to(REPO) for p in files if curly.search(p.read_text(encoding="utf-8"))]
+
+
+def test_agents_md_names_every_shared_ui_helper() -> None:
+    """The list left out `ui/operator_images.py` and `ui/parallel_preview.py`."""
+    listed = set(re.findall(r"`ui/(\w+\.py)`", (REPO / "AGENTS.md").read_text(encoding="utf-8")))
+    helpers = {path.name for path in (REPO / "src/agent6/ui").glob("*.py")} - {"__init__.py"}
+    assert listed == helpers
