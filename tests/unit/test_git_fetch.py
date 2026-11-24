@@ -262,6 +262,34 @@ def test_a_fetch_works_from_a_linked_worktree_and_in_a_shallow_clone(
     assert _git(shallow, "fsck", "--no-dangling") == ""
 
 
+def test_a_shallow_file_that_is_no_list_of_object_ids_is_refused_unquoted(
+    pair: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """A `.git/shallow` linked to another file put that file's first line in the failure.
+
+    A command that can write `.git` makes the link. The scratch repository got a copy of
+    what the link names, and git dies on a line that is no object id, quoting it.
+    """
+    _, work = pair
+    private = tmp_path / "private"
+    private.write_text("MARKER the first line of another file\nits second\n", encoding="utf-8")
+    (work / ".git" / "shallow").symlink_to(private)
+
+    with pytest.raises(errors.GitError, match="shallow") as caught:
+        git_fetch.scratch_fetch(
+            work,
+            _git(work, "remote", "get-url", "origin"),
+            ["+refs/heads/*:refs/remotes/origin/*"],
+            protocols="file",
+            source="origin",
+            sender=None,
+        )
+
+    assert "MARKER" not in str(caught.value)
+    assert "is not a list of object ids" in str(caught.value)
+    assert not list((paths.state_base() / "fetch").iterdir())
+
+
 @pytest.mark.parametrize("name", ["..", ".git"])
 def test_a_fetch_refuses_a_tree_git_would_not_check_out(
     pair: tuple[pathlib.Path, pathlib.Path], name: str

@@ -266,7 +266,7 @@ def scratch_fetch(
         shallow = pathlib.Path(common, "shallow")
         if shallow.is_file():
             # A shallow clone's boundary: without it git walks into history the clone lacks.
-            shutil.copyfile(shallow, scratch / "shallow")
+            _copy_shallow(shallow, scratch / "shallow", hashes)
         serving = (
             ()
             if sender is None
@@ -312,6 +312,30 @@ def scratch_fetch(
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return written
+
+
+def _copy_shallow(source: pathlib.Path, target: pathlib.Path, hashes: str) -> None:
+    """Copy a shallow file's object ids, and refuse a file that holds anything else.
+
+    A jailed command that can write `.git` can link the file to any other, and git quotes a
+    line it cannot read as an object id.
+
+    Args:
+        source: The repository's shallow file.
+        target: The scratch repository's.
+        hashes: The repository's object format, which sets an id's length.
+
+    Raises:
+        GitError: A line is no object id; the reason does not quote it.
+    """
+    width = 40 if hashes == "sha1" else 64
+    object_id = re.compile(rb"[0-9a-f]{%d}\n?" % width)
+    with source.open("rb") as lines, target.open("wb") as copy:
+        # At most one id and its newline per read: no other line is ever held whole.
+        while line := lines.readline(width + 2):
+            if object_id.fullmatch(line) is None:
+                raise errors.GitError(f"{source} is not a list of object ids; nothing was fetched")
+            copy.write(line.rstrip(b"\n") + b"\n")
 
 
 def refs(path: pathlib.Path, *patterns: str, env: dict[str, str] | None = None) -> dict[str, str]:
