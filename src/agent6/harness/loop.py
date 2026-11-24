@@ -730,14 +730,22 @@ class Harness:
         mode = self.compaction.cold_start
         if state.cold_start is not None and (endpoint or mode == "resend"):
             loop_resume.report_cold_start(self, state, "endpoint" if endpoint else "resend", 0)
-        before = compaction_window.context_chars(conversation) if state.cold_start else 0
+        cold = state.cold_start is not None
+        before = compaction_window.context_chars(conversation) if cold else 0
         restarted = not endpoint and self.compactor.compact(
             self.compaction_context(conversation, state, tools)
         )
         if restarted and self.contract is None:
             state.focus.surfaced_task_id = None
             self._maybe_surface_current_task(conversation, state)
-        if state.cold_start is not None:
+        if cold:
+            # The operator can edit plan.md while the cold helper is running.
+            if self.contract is None:
+                parked = self._maybe_inject_plan(
+                    conversation, state, turn=ctx.turn, restarted=restarted
+                )
+                if parked is not None:
+                    return parked
             action = "summary_failed" if mode == "summarize" and not restarted else mode
             loop_resume.report_cold_start(
                 self, state, action, before - compaction_window.context_chars(conversation)
@@ -747,7 +755,7 @@ class Harness:
             conversation.notice(
                 review_prompts.reply_notice(ctx.turn, self.contract.max_turns), origin="reply_count"
             )
-        if restarted or self.contract is not None:
+        if cold or restarted or self.contract is not None:
             conversation.roll_cache_marks()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
         loop_resume.save_resume_snapshot(
@@ -765,6 +773,7 @@ class Harness:
         state: loop_state.LoopState,
         *,
         turn: int,
+        restarted: bool = False,
     ) -> loop_snapshot.SessionResult | None:
         """Show the planner the plan.md on disk when it changed.
 
@@ -775,6 +784,7 @@ class Harness:
             conversation: The conversation the plan enters.
             state: The execution to park if the file is unreadable.
             turn: The current turn.
+            restarted: Replace the retained plan notice instead of appending another.
 
         Returns:
             The parked end when the file is unreadable, else None.
@@ -796,10 +806,8 @@ class Harness:
                 turn=turn,
             )
         notice = f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}"
-        saved = loop_conversation.latest_plan(conversation.messages)
-        if saved is not None and saved.plan_text == notice:
+        if not conversation.show_plan(notice, restarted=restarted):
             return None
-        conversation.notice(notice, origin="plan")
         self.log(f"  plan re-read from disk: {len(text)} chars")
         self.emit(
             journal.PlanReread(

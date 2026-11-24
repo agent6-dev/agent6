@@ -379,6 +379,25 @@ class Conversation:
         """
         self._append_notices((Notice(text, origin, operator_words),))
 
+    def show_plan(self, text: str, *, restarted: bool) -> bool:
+        """Show a changed plan without duplicating the notice kept by a restart.
+
+        Args:
+            text: The plan notice from disk, including its header.
+            restarted: The history holds at most one retained plan notice.
+
+        Returns:
+            Whether the plan notice changed.
+        """
+        saved = latest_plan(self._messages)
+        if saved is not None and saved.plan_text == text:
+            return False
+        if restarted and saved is not None:
+            self._messages[self._messages.index(saved)] = UserMessage((Notice(text, "plan"),))
+        else:
+            self.notice(text, origin="plan")
+        return True
+
     @property
     def initiator(self) -> str:
         """Who the next call answers: `user` when operator text arrived since the last reply.

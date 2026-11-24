@@ -48,7 +48,7 @@ def _resume(
     *,
     limit: float = -1,
     endpoint: bool = False,
-    helper_reply: str = "Helper handoff.",
+    helper: writers.Writer | None = None,
     drop_at: int = 10**8,
     plan: pathlib.Path | None = None,
     saved: loop_conversation.Conversation | None = None,
@@ -66,7 +66,7 @@ def _resume(
     )
     worker = mock.MagicMock()
     worker.call.return_value = test_harness._resp("Done.")
-    helper = writers.Writer(writers.response(helper_reply))
+    helper = helper or writers.Writer(writers.response("Helper handoff."))
     lines: list[str] = []
     dispatcher = mock.MagicMock(
         config=config.Config(), last_verification=None, execution_id="new", verify_withheld=False
@@ -105,9 +105,13 @@ def _resume(
         ),
         max_turns=1,
     )
-    wf.resume(steer="Continue here.")
-    worker.call.assert_called_once()
-    sent = worker.call.call_args.kwargs["messages"]
+    result = wf.resume(steer="Continue here.")
+    if result.reason == "plan_unreadable":
+        worker.call.assert_not_called()
+        sent = []
+    else:
+        worker.call.assert_called_once()
+        sent = worker.call.call_args.kwargs["messages"]
     return sent, [json.loads(line) for line in path.read_text().splitlines()], lines, helper
 
 
@@ -228,9 +232,49 @@ def test_a_planner_restart_without_plan_md_keeps_the_checkpoint_plan(
         ] == [notice]
 
 
+@pytest.mark.parametrize("edit", [b"Use the new fixture instead.", b"\xff"])
+def test_cold_helper_plan_edit_reaches_the_worker_or_parks_it(
+    tmp_path: pathlib.Path, edit: bytes
+) -> None:
+    """An edit during the summary must reach both the request and its checkpoint."""
+    plan = tmp_path / "plan.md"
+    plan.write_text("Use the old fixture.")
+    previous = [rules.request(actor="planner", model="other")]
+    resend, _, _, _ = _resume(tmp_path, "resend", previous, plan=plan)
+
+    class EditingHelper(writers.Writer):
+        def call(self, **kwargs: Any) -> provider_types.ProviderResponse:
+            plan.write_bytes(edit)
+            return super().call(**kwargs)
+
+    sent, rows, _, helper = _resume(
+        tmp_path, "summarize", previous, plan=plan, helper=EditingHelper(writers.response())
+    )
+    assert len(helper.calls) == 1
+    if edit == b"\xff":
+        assert not sent
+        assert any(r["type"] == "plan.read_failed" for r in rows)
+        assert any(r["type"] == "session.stop" and r["reason"] == "plan_unreadable" for r in rows)
+        return
+    snapshot = json.loads((tmp_path / "loop_state.json").read_text())
+    for messages in (sent, snapshot["messages"]):
+        assert str(messages).count(nudges.PLAN_ON_DISK_HEADER) == 1
+        assert str(messages).count(edit.decode()) == 1 and "Use the old fixture." not in str(
+            messages
+        )
+    before, after = (
+        window.context_chars(loop_conversation.Conversation.from_wire(w)) for w in (resend, sent)
+    )
+    (row,) = [r for r in rows if r["type"] == "compact.cold_start"]
+    assert row["chars_not_sent"] == before - after
+
+
 def test_rejected_cold_summary_keeps_the_request(tmp_path: pathlib.Path) -> None:
     sent, rows, _, helper = _resume(
-        tmp_path, "summarize", [rules.request(model="other")], helper_reply=""
+        tmp_path,
+        "summarize",
+        [rules.request(model="other")],
+        helper=writers.Writer(writers.response("")),
     )
     assert len(helper.calls) == 1 and "Old evidence." in str(sent)
     (row,) = [r for r in rows if r["type"] == "compact.cold_start"]

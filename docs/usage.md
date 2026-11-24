@@ -572,6 +572,7 @@ The next ordinary check handles size and any pending `/compact`.
 The start line and `compact.cold_start` journal entry report the route change or the gap and limit, the action, and the net context characters the cold step did not send to the worker.
 This is not a token count or evidence that the endpoint evicted the cache.
 At a local restart, the planner keeps one plan notice: the current `plan.md`, or its latest checkpoint copy if the fork has no file.
+The planner reads `plan.md` again after the cold helper returns and parks if it cannot read the file.
 On an endpoint that writes signed summaries, the line reports that the local mode does not apply.
 
 **What a local restart keeps.** `compaction.keep_operator_messages` reserves the newest task, steers and answers word for word.
