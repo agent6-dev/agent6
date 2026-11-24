@@ -578,6 +578,9 @@ class BearerCredential(Protocol):
         ...
 
 
+type ToolChoice = Literal["auto", "none"]
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ToolDefinition:
     """One tool exposed to the model.

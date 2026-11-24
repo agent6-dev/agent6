@@ -46,8 +46,12 @@ Keep other provider settings the same as in the recording.
   Both arms use the same recorded user messages, tool definitions, temperature and output cap where the wire supplies them.
 - **Order:** Each repetition makes one independent call per arm.
   The recorded arm goes first on odd repetitions and second on even ones.
-  The model may ask for a tool, but nothing answers that request.
+  By default the model may ask for a tool, but nothing answers that request.
   An accompanying text verdict does not count.
+- **`--no-tools`:** Forbid tool calls on both arms without removing the recorded tool definitions.
+  The option changes only `tool_choice`: `"none"` on Responses (including ChatGPT) and Chat Completions, or `{"type": "none"}` on Anthropic Messages.
+  This measures the verdict the reviewer gives from the recorded opening alone.
+  It does not measure whether the reviewer would investigate or what it would conclude after using tools.
 - **Coverage:** The reader accepts agent6 text openings on Chat Completions, Anthropic Messages and Responses (including ChatGPT).
   It reads the reply limit from the first reply notice or the limit in a single-message opening's system prompt.
   An unreadable selected opening stops the run before any model call.
@@ -57,8 +61,9 @@ Keep other provider settings the same as in the recording.
 
 ## Read the results
 
-Stdout has one JSON line per logical call: child session, source transcript, repetition, arm, model, requested effort, system text hash and outcome.
+Stdout has one JSON line per logical call: child session, source transcript, repetition, arm, model, requested effort, tool choice, system text hash and outcome.
 `requested_effort` records the argument, not an observation of the model's reasoning or the adapter's wire representation.
+`tool_choice` is `auto` by default and `none` with `--no-tools`.
 A complete run has `2 × reviews × repeats` lines.
 On a provider or budget error, a `call failed` line identifies the interrupted pair and the command exits nonzero.
 The input state stays unchanged.

@@ -164,6 +164,7 @@ class ResponsesProvider:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[provider_types.ToolDefinition] | None = None,
+        tool_choice: provider_types.ToolChoice = "auto",
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         extended_thinking: dict[str, Any] | None = None,
@@ -180,7 +181,8 @@ class ResponsesProvider:
         Args:
             system: The system prompt, sent as `instructions`.
             messages: The conversation in Anthropic shape.
-            tools: The tools the model may call.
+            tools: The tool definitions shown to the model.
+            tool_choice: `none` forbids tool calls without removing their definitions.
             max_tokens: The output cap, sent as `max_output_tokens`.
             temperature: The sampling temperature; dropped after the endpoint refuses it.
             extended_thinking: Ignored; this wire has no equivalent.
@@ -213,7 +215,7 @@ class ResponsesProvider:
             "model": self.model,
             "instructions": system,
             "input": responses_codec.responses_input(messages, route=self._route),
-            "tool_choice": "auto",
+            "tool_choice": tool_choice,
             "store": False,
             responses_codec.MAX_OUTPUT_TOKENS_FIELD: max_tokens,
             # The encrypted reasoning items replayed for continuity across tool calls.

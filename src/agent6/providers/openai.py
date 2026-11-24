@@ -243,6 +243,7 @@ class OpenAIProvider:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[provider_types.ToolDefinition] | None = None,
+        tool_choice: provider_types.ToolChoice = "auto",
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         extended_thinking: dict[str, Any] | None = None,
@@ -259,7 +260,8 @@ class OpenAIProvider:
         Args:
             system: The system prompt.
             messages: The conversation in Anthropic shape.
-            tools: The tools the model may call.
+            tools: The tool definitions shown to the model.
+            tool_choice: `none` forbids tool calls without removing their definitions.
             max_tokens: The output cap; lifted to the reasoning floor for a reasoning model.
             temperature: The sampling temperature; omitted where the host rejects one.
             extended_thinking: Ignored; this wire has no equivalent of a thinking budget.
@@ -335,6 +337,8 @@ class OpenAIProvider:
             body["temperature"] = temperature
         if tools:
             body["tools"] = openai_messages.tools_to_openai(tools)
+        if tool_choice == "none":
+            body["tool_choice"] = tool_choice
         if self.extra_body:
             # The structural keys stay agent6's; tuning keys merge last and win.
             reserved = {

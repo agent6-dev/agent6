@@ -167,6 +167,78 @@ def test_no_recordings_fail_before_calling_the_provider(
     assert not out and "no finished panel reviewers" in err
 
 
+@pytest.mark.parametrize("backend", ["anthropic", "openai", "responses"])
+def test_no_tools_changes_only_tool_choice_on_both_arms(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str,
+) -> None:
+    """Forbidding calls keeps the recorded schemas and does not steer either prompt."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "provider.toml"
+    config.write_text(
+        '[models.default]\nmodel = "p/source-model"\n[providers.p]\n'
+        f'backend = "{backend}"\nbase_url = "https://scripted.invalid/v1"\nauth_style = "none"\n'
+    )
+    tool = {"name": "run_command", "description": "Recorded command description."}
+    messages = [{"role": "user", "content": text} for text in (env.OPENING, env.NOTICE)]
+    usage = {"input_tokens": 18, "output_tokens": 9}
+    sampling = {"model": "source-model", "temperature": 0.25, "max_tokens": 4321}
+    if backend == "anthropic":
+        cache = {"cache_control": {"type": "ephemeral"}}
+        opening = {
+            **sampling,
+            "system": [{"type": "text", "text": env.SYSTEM, **cache}],
+            "messages": messages,
+            "tools": [{**tool, "input_schema": env.SCHEMA, **cache}],
+        }
+        reply = {
+            "content": [{"type": "text", "text": answer()}],
+            "stop_reason": "end_turn",
+            "usage": usage,
+        }
+    elif backend == "openai":
+        opening = {
+            **sampling,
+            "messages": [{"role": "system", "content": env.SYSTEM}, *messages],
+            "tools": [{"type": "function", "function": {**tool, "parameters": env.SCHEMA}}],
+        }
+        reply = {
+            "choices": [
+                {"message": {"role": "assistant", "content": answer()}, "finish_reason": "stop"}
+            ],
+            "usage": {"prompt_tokens": 18, "completion_tokens": 9},
+        }
+    else:
+        opening = env.responses_body()
+        message = {"type": "message", "content": [{"type": "output_text", "text": answer()}]}
+        reply = {"status": "completed", "output": [message], "usage": usage}
+    env.record_review(tmp_path, "first", opening)
+    requests: list[dict[str, Any]] = []
+
+    def post(url: str, *, content: bytes, **kwargs: Any) -> httpx2.Response:
+        requests.append(json.loads(content))
+        return httpx2.Response(200, json=reply)
+
+    monkeypatch.setattr(transport, "http_post", post)
+    effort = "low" if backend == "responses" else "default"
+    args = [str(tmp_path), "--config", str(config), "--model", "p/source-model", "--effort", effort]
+    assert replay.main(args) == 0
+    assert replay.main([*args, "--no-tools"]) == 0
+    recorded, tree, no_tools_recorded, no_tools_tree = requests
+    assert recorded == opening
+    assert tree["tools"] == opening["tools"]
+    for normal, forced in ((recorded, no_tools_recorded), (tree, no_tools_tree)):
+        assert forced == {
+            **normal,
+            "tool_choice": {"type": "none"} if backend == "anthropic" else "none",
+        }
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [r["tool_choice"] for r in rows] == ["auto", "auto", "none", "none"]
+    assert [r["verdict"] for r in rows] == ["pass"] * 4
+
+
 @pytest.mark.parametrize(
     "part",
     ["sessions", "reviewers", "child", "completion", "transcripts", "opening", "objects", "object"],
@@ -266,14 +338,11 @@ def test_cli_displays_a_gateway_error_as_text(
     env.record_review(tmp_path, "first", env.responses_body())
     failure = mock.Mock(return_value=httpx2.Response(400, text="bad\x01 request"))
     monkeypatch.setattr(transport, "http_post", failure)
-    assert (
-        replay.main(
-            [str(tmp_path), "--config", str(responses_config), "--model", "p/m", "--effort", "high"]
-        )
-        == 1
-    )
+    args = [str(tmp_path), "--config", str(responses_config), "--model", "p/m", "--effort", "high"]
+    assert replay.main([*args, "--no-tools"]) == 1
     out, err = capsys.readouterr()
-    assert json.loads(out)["outcome"] == "call failed"
+    row = json.loads(out)
+    assert row["outcome"] == "call failed" and row["tool_choice"] == "none"
     assert "bad request" in err and "\x01" not in err
 
 

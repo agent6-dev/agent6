@@ -173,9 +173,14 @@ def test_request_body_and_headers_speak_the_codex_dialect(
     ]
     with mock.patch("httpx2.stream", side_effect=fake_stream):
         resp = provider.call(system="SYS", messages=history, tools=tools, temperature=0.7)
+        body = captured["body"]
+        provider.call(
+            system="SYS", messages=history, tools=tools, temperature=0.7, tool_choice="none"
+        )
 
     assert captured["url"] == "https://chatgpt.com/backend-api/codex/responses"
-    body = captured["body"]
+    assert body["tool_choice"] == "auto"
+    assert captured["body"] == {**body, "tool_choice": "none"}
     assert body["model"] == "gpt-5-codex" and body["instructions"] == "SYS"
     assert body["store"] is False and body["stream"] is True
     assert body["include"] == ["reasoning.encrypted_content"]

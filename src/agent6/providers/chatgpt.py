@@ -296,6 +296,7 @@ class ChatGPTProvider:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[provider_types.ToolDefinition] | None = None,
+        tool_choice: provider_types.ToolChoice = "auto",
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         extended_thinking: dict[str, Any] | None = None,
@@ -312,7 +313,8 @@ class ChatGPTProvider:
         Args:
             system: The system prompt, sent as `instructions`.
             messages: The conversation in Anthropic shape.
-            tools: The tools the model may call.
+            tools: The tool definitions shown to the model.
+            tool_choice: `none` forbids tool calls without removing their definitions.
             max_tokens: Ignored; the backend sizes its output.
             temperature: Ignored; the backend rejects one, and effort is the only knob.
             extended_thinking: Ignored; this wire has no equivalent.
@@ -351,7 +353,7 @@ class ChatGPTProvider:
             "model": self.model,
             "instructions": system,
             "input": responses_codec.responses_input(messages, route=self._route),
-            "tool_choice": "auto",
+            "tool_choice": tool_choice,
             "parallel_tool_calls": True,
             "store": False,
             "stream": True,

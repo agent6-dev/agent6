@@ -393,6 +393,7 @@ class AnthropicProvider:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[provider_types.ToolDefinition] | None = None,
+        tool_choice: provider_types.ToolChoice = "auto",
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         reasoning_effort: str | None = None,
@@ -408,7 +409,8 @@ class AnthropicProvider:
         Args:
             system: The system prompt.
             messages: The conversation in Anthropic shape.
-            tools: The tools the model may call.
+            tools: The tool definitions shown to the model.
+            tool_choice: `none` forbids tool calls without removing their definitions.
             max_tokens: The output cap; lifted to leave room to answer after thinking.
             temperature: The sampling temperature; dropped while thinking.
             reasoning_effort: Ignored; thinking is configured on the provider's `effort`.
@@ -490,6 +492,8 @@ class AnthropicProvider:
             body["temperature"] = temperature
         if tool_payload:
             body["tools"] = tool_payload
+        if tool_choice == "none":
+            body["tool_choice"] = {"type": tool_choice}
         if self.extra_body:
             # The structural keys stay agent6's; tuning keys merge last and win.
             reserved = {
