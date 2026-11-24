@@ -20,6 +20,15 @@ from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
 
+@pytest.fixture
+def fresh_dir(host_tmp_path: pathlib.Path) -> pathlib.Path:
+    """Keep git discovery outside any checkout enclosing pytest's basetemp."""
+    root = host_tmp_path / "workspace"
+    root.mkdir()
+    assert not git_read.is_git_repo(root)
+    return root
+
+
 def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
     """The headless approval refusal, from the CLI's angle.
 
@@ -51,10 +60,10 @@ def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_run_surfaces_git_wall_before_provider_wall(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    fresh_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # Non-git scratch dir with no provider: the not-a-git-repo error surfaces first.
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.chdir(fresh_dir)
     rc = main(["run", "do a thing"])
     assert rc == 2
     err = capsys.readouterr().err
@@ -63,9 +72,9 @@ def test_run_surfaces_git_wall_before_provider_wall(
 
 
 def test_require_git_repo_errors_outside_repo(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    fresh_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert preflight.require_git_repo(tmp_path) is False
+    assert preflight.require_git_repo(fresh_dir) is False
     err = capsys.readouterr().err
     assert "not a git repository" in err
     assert "agent6 init" in err  # points at the guided fix
@@ -77,22 +86,22 @@ def test_require_git_repo_ok_inside_repo(tmp_path: pathlib.Path) -> None:
 
 
 def test_offer_git_setup_noninteractive_just_notes(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    fresh_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    ic._offer_git_setup(tmp_path, (tmp_path / "AGENTS.md",), interactive=False)
+    ic._offer_git_setup(fresh_dir, (fresh_dir / "AGENTS.md",), interactive=False)
     out = capsys.readouterr().out
     assert "not a git repository" in out
-    assert git_read.is_git_repo(tmp_path) is False  # did NOT create a repo non-interactively
+    assert git_read.is_git_repo(fresh_dir) is False  # did NOT create a repo non-interactively
 
 
 def test_offer_git_setup_instructions_stage_only_the_scaffold(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    fresh_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    scaffold = tmp_path / "AGENTS.md"
+    scaffold = fresh_dir / "AGENTS.md"
     scaffold.write_text("new\n", encoding="utf-8")
-    (tmp_path / "operator-wip.txt").write_text("mine\n", encoding="utf-8")
+    (fresh_dir / "operator-wip.txt").write_text("mine\n", encoding="utf-8")
 
-    ic._offer_git_setup(tmp_path, (scaffold,), interactive=False)
+    ic._offer_git_setup(fresh_dir, (scaffold,), interactive=False)
 
     out = capsys.readouterr().out
     assert "git add -A" not in out
@@ -101,9 +110,9 @@ def test_offer_git_setup_instructions_stage_only_the_scaffold(
 
 
 def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    fresh_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    scaffold = tmp_path / "AGENTS.md"
+    scaffold = fresh_dir / "AGENTS.md"
     scaffold.write_text("new\n", encoding="utf-8")
 
     def _yes(_prompt: str, default: bool) -> bool:
@@ -114,7 +123,7 @@ def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
 
     monkeypatch.setattr(init_wizard, "_ask", _yes)
     monkeypatch.setattr(git_ops, "commit_paths", _fail_commit)
-    ic._offer_git_setup(tmp_path, (scaffold,), interactive=True)
+    ic._offer_git_setup(fresh_dir, (scaffold,), interactive=True)
 
     out = capsys.readouterr().out
     assert "git add -A" not in out
@@ -122,7 +131,7 @@ def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
 
 
 def test_offer_git_setup_interactive_inits_and_commits(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    fresh_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _yes(_prompt: str) -> str:
         return "y"
@@ -133,22 +142,22 @@ def test_offer_git_setup_interactive_inits_and_commits(
         monkeypatch.setenv(k, "Test")
     for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
         monkeypatch.setenv(k, "t@t.t")
-    (tmp_path / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
-    (tmp_path / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
+    (fresh_dir / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    (fresh_dir / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
     # The per-repo config lives outside the workspace; such a path is filtered and never committed.
-    out_of_repo_cfg = tmp_path.parent / "a6-state" / "config.toml"
+    out_of_repo_cfg = fresh_dir.parent / "a6-state" / "config.toml"
     out_of_repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     out_of_repo_cfg.write_text("# cfg\n", encoding="utf-8")
 
     ic._offer_git_setup(
-        tmp_path,
-        (out_of_repo_cfg, tmp_path / "AGENTS.md", tmp_path / ".gitignore"),
+        fresh_dir,
+        (out_of_repo_cfg, fresh_dir / "AGENTS.md", fresh_dir / ".gitignore"),
         interactive=True,
     )
 
-    assert git_read.is_git_repo(tmp_path) is True
+    assert git_read.is_git_repo(fresh_dir) is True
     tracked = subprocess.run(
-        ["git", "-C", str(tmp_path), "ls-files"], capture_output=True, text=True, check=True
+        ["git", "-C", str(fresh_dir), "ls-files"], capture_output=True, text=True, check=True
     ).stdout.split()
     assert "AGENTS.md" in tracked
     assert ".gitignore" in tracked
@@ -398,10 +407,10 @@ def test_init_never_commits_a_gitignore_with_existing_edits(
 
 
 def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    fresh_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Init in a fresh repo leaves out an AGENTS.md the operator wrote, untracked though it is."""
-    repo = tmp_path / "fresh"
+    repo = fresh_dir / "fresh"
     repo.mkdir()
     # Carries a verify section already, so init leaves the file untouched.
     (repo / "AGENTS.md").write_text(
@@ -429,9 +438,9 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
 
 
 def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    fresh_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = tmp_path / "fresh"
+    repo = fresh_dir / "fresh"
     repo.mkdir()
     (repo / "AGENTS.md").write_text("## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8")
     (repo / ".gitignore").write_text("operator-entry\n", encoding="utf-8")
