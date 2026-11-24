@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 
@@ -9,6 +10,7 @@ from agent6 import errors
 from agent6.config import Config
 from agent6.sessions import child_dispatch
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
@@ -100,8 +102,16 @@ def preserve(origin: pathlib.Path, clone: pathlib.Path, record: pathlib.Path, cf
         work = git_read.worktree_tree(clone, seed, excluded)
         if work != (scan.end_tree or git_read.tree_sha(clone, seed)):
             return "uncommitted files outside the recorded end tree"
-        if any(git_read.tree_has_gitlinks(clone, tree) for tree in {head, index, work}):
-            return "a gitlink records a nested commit, not the nested checkout's files"
+        try:
+            base = sessions_manifest.read_manifest(record).base_sha
+        except sessions_manifest.ManifestError:
+            base = ""
+        # The origin holds the base's gitlinks. An unrecorded base accounts for none.
+        known = git_read.tree_gitlinks(clone, base) if base else {}
+        for tree in {head, index, work}:
+            for path, commit in git_read.tree_gitlinks(clone, tree).items():
+                if known.get(path) != commit or os.path.lexists(clone / path / ".git"):
+                    return "a gitlink records a nested commit, not the nested checkout's files"
     except (errors.GitError, OSError) as exc:
         return f"could not preserve the child's files: {exc}"
     return ""

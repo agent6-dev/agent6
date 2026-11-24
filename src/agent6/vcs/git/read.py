@@ -933,10 +933,15 @@ def chain_dirty_paths(
     return tree_diff_paths(path, base_tree, worktree_tree(path, base, exclude))[:limit]
 
 
-def tree_has_gitlinks(path: pathlib.Path, tree: str) -> bool:
-    """Return whether the tree names any nested repository by commit."""
+def tree_gitlinks(path: pathlib.Path, tree: str) -> dict[str, str]:
+    """Return the commit the tree names for each nested repository, by its path."""
     entries = git_command.nul_fields(path, "ls-tree", "-r", "-z", "--end-of-options", tree)
-    return any(entry.startswith("160000 ") for entry in entries)
+    links: dict[str, str] = {}
+    for entry in entries:
+        meta, _, name = entry.partition("\t")
+        if meta.startswith("160000 "):
+            links[name] = meta.rpartition(" ")[2]
+    return links
 
 
 def tree_paths(path: pathlib.Path, ref: str) -> frozenset[str]:

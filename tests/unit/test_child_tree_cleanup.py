@@ -76,3 +76,53 @@ def test_cleanup_requires_both_dirty_trees(
     else:
         assert (clone / "draft").read_text() == "working"
         assert cli._git(clone, "show", ":draft") == "staged"
+
+
+@pytest.mark.parametrize("sweep", [False, True], ids=["cleanup", "prune"])
+@pytest.mark.parametrize("nested", ["unchanged", "moved", "populated"])
+def test_cleanup_keeps_a_clone_for_nested_work_only(
+    tmp_path: pathlib.Path, sweep: bool, nested: str
+) -> None:
+    """A gitlink the child's base records, with no nested checkout, kept every clone."""
+    lib = tmp_path / "lib"
+    background._init_repo(lib)
+    repo = tmp_path / "repo"
+    background._init_repo(repo)
+    link = cli._git(lib, "rev-parse", "HEAD")
+    cli._git(repo, "update-index", "--add", "--cacheinfo", f"160000,{link},vendor")
+    cli._git(repo, "commit", "-q", "-m", "track a nested repository")
+    base = cli._git(repo, "rev-parse", "HEAD")
+    cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}})
+    group = worktrees.place(cfg, repo, "parent-p1")
+    clone = group / "child-1"
+    sid = "parent-p1-l1"
+    cli._git(repo, "clone", str(repo), str(clone))
+    state = paths.state_dir(repo)
+    record = state / "sessions" / "runs" / sid
+    record.mkdir(parents=True)
+    (record / "manifest.json").write_text(
+        json.dumps({"session_id": sid, "mode": "run", "git_control": "model", "base_sha": base})
+    )
+    if nested == "moved":
+        cli._git(clone, "update-index", "--cacheinfo", f"160000,{base},vendor")
+    if nested == "populated":
+        cli._git(lib, "clone", "-q", str(lib), str(clone / "vendor"))
+        (clone / "vendor" / "README.md").write_text("uncommitted nested work")
+    tree = cli._git(clone, "write-tree")
+    stop = {"type": "session.stop", "reason": "finish_session", "tree": tree, "index_tree": tree}
+    (record / "logs.jsonl").write_text(json.dumps(stop) + "\n")
+    if sweep:
+        worktrees.sweep_group_clones(repo, cfg)
+    else:
+        worktrees.cleanup(
+            [child_records.ChildSpec(1, sid, clone, None)],
+            origin=repo,
+            record_state=state,
+            worktree_root=group,
+            base=group.parent,
+            launch_dir=tmp_path / "launch",
+            cfg=cfg,
+        )
+    assert clone.exists() is (nested != "unchanged")
+    if nested == "populated":
+        assert (clone / "vendor" / "README.md").read_text() == "uncommitted nested work"
