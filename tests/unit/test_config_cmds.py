@@ -735,6 +735,33 @@ def test_config_fix_drops_an_unknown_key(
     assert "protct_git" not in gpath.read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("table", ["providers.p", "presets.demo.providers.p"])
+def test_config_fix_drops_a_refused_provider_leaf(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    table: str,
+) -> None:
+    """Fix named `providers.p.openai.idle_compact_s`, a key no file holds, and dropped nothing."""
+    from agent6.ui.cli import main
+
+    gpath = paths.global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text(
+        f'[models.default]\nmodel = "p/m"\n[{table}]\nbackend = "openai"\n'
+        'base_url = "http://127.0.0.1:1/v1"\napi_key_env = "K"\nidle_compact_s = 0\nbogus = 1\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["config", "fix"]) == 0
+    out = capsys.readouterr().out
+    assert f"Removed {table}.idle_compact_s = 0" in out and f"{table}.bogus" in out
+    text = gpath.read_text(encoding="utf-8")
+    assert "idle_compact_s" not in text and "bogus" not in text and 'backend = "openai"' in text
+    assert main(["config", "show"]) == 0  # the config loads again
+
+
 def test_config_fix_labels_a_repo_layer_entry(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

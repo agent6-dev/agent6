@@ -15,12 +15,12 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, get_args
 
 import pydantic
 
 from agent6 import paths
-from agent6.config import io, layer_data, layer_presets, validation
+from agent6.config import io, layer_data, layer_presets, provider_config, validation
 from agent6.config import model as config_model
 
 # The display order every surface shares (`config show`, `config fill`, the TUI and the web):
@@ -288,7 +288,12 @@ def _diagnose_errors(
     blocked: list[str] = []
     seen: set[str] = set()
     for issue in exc.errors():
-        loc = io.render_key(str(part) for part in issue["loc"])
+        parts = [str(part) for part in issue["loc"]]
+        backends = get_args(provider_config.Backend)
+        if len(parts) > 3 and parts[0] == "providers" and parts[2] in backends:
+            # pydantic names the union member after the provider's name; no file holds that key.
+            del parts[2]
+        loc = io.render_key(parts)
         note = f"  - {loc or '<root>'}: {issue['msg']}"
         match = _removable_for(loc, origin)
         if match is None:
