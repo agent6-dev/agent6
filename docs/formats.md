@@ -1671,8 +1671,11 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 `sessions show --json` emits one `_cmd_status` object.
 `ps --json` emits an array of `_Row` records, including nested children.
 
-In the session commands and the web API, `children[].status` is the child's own state, not its dispatch outcome.
-Use `children[].outcome` to tell whether its work merged. See [ChildView](#childview) for both fields.
+**Child dispatch rows:** `sessions list --json`, `sessions show --json`, `attach --json` and `sessions receipt --json` include [ChildView](#childview) rows.
+The web session snapshot (`/api/session/<id>`), its event stream and `/api/session/<id>/receipt` carry the same child fields.
+In these rows `children[].status` is the child's own state.
+Read `children[].outcome` for the parent's decision, or an empty string for none.
+Child rows in `ps --json` and `/api/hub` have no `outcome` field.
 
 ### `sessions list --json` row
 

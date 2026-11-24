@@ -598,9 +598,10 @@ These levels describe serialized formats, not Python imports.
 Formats are not stable until 1.0.
 From 1.0, changes will be backwards compatible, and deprecations will carry a warning for a period before removal.
 
-**Child rows in CLI JSON and the web API:** `children[].status` reports the child's own state.
-Consumers that used `status` as a merge result must read `children[].outcome` instead.
-An empty `outcome` means the parent has recorded none.
+**Child dispatch rows:** `children[].status` reports the child's own state.
+Read `children[].outcome` for the parent's decision, or an empty string for none.
+See [CLI JSON](formats.md#cli-json) for the session and receipt payloads that carry these fields.
+Child rows in `ps --json` and `/api/hub` have no `outcome` field.
 """
 
 
