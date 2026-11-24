@@ -3,8 +3,10 @@ const CHILD_REFRESH_MS = 1000;
 
 function childFacts(c) {
   const model = [c.model, c.route !== c.model && c.route].filter(Boolean).join(' · ');
-  const usage = c.launched || c.settled
-    ? (c.usd_partial && !c.spend_usd ? '$?' : `${c.usd_partial ? '~' : ''}$${c.spend_usd}`) : '';
+  // The figure `budget.format_usd` prints: cents from one cent up, four decimals below it.
+  const usd = c.spend_usd, mark = c.usd_partial ? '~' : '';
+  const usage = !(c.launched || c.settled) ? ''
+    : usd ? `${mark}$${usd.toFixed(usd >= 0.01 ? 2 : 4)}` : c.usd_partial ? '$?' : '$0';
   return [
     [c.holds_task && `holds task ${c.holds_task}`, model, c.current_tool, c.turn != null && `turn ${c.turn}`, c.tokens != null && `${c.tokens.toLocaleString()} tokens`,
      usage, c.elapsed_s != null && `${c.elapsed_s}s elapsed`],
