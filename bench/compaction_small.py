@@ -113,7 +113,7 @@ def prepare(dest: pathlib.Path) -> compaction_slot.Opening:
                     TASK,
                 ],
                 cwd=repo,
-                env=env,
+                env=env | {"AGENT6_DETACHED_AWAY": "deny"},
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=log,

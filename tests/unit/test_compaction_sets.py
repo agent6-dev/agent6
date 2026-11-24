@@ -8,7 +8,17 @@ import sys
 
 import pytest
 from bench import compaction_bench as bench
-from bench import compaction_slot
+from bench import compaction_slot, compaction_small
+
+
+def test_scripted_opening_needs_no_command_grant(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The three scripted reads start under the default attended command policy."""
+    for key in ("CONFIG", "STATE", "CACHE", "DATA"):
+        monkeypatch.setenv(f"XDG_{key}_HOME", str(tmp_path / key.lower()))
+    seed = compaction_small.prepare(tmp_path / "six-modules")
+    assert seed.turn == 4 and seed.recall == compaction_small.LABEL
 
 
 def test_small_pilot_grades_edits_and_counts_the_new_execution(
