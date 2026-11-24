@@ -244,11 +244,9 @@ class ToolDispatcher:
             schema.ReadBackgroundInput.TOOL_NAME: lambda ctx, raw: self._read_background(raw),
             schema.StopBackgroundInput.TOOL_NAME: lambda ctx, raw: self._stop_background(raw),
             schema.RunMetricInput.TOOL_NAME: lambda ctx, raw: self._run_metric(raw),
-            schema.FinishSessionInput.TOOL_NAME: lambda ctx, raw: control_tools.finish_session(raw),
-            schema.FinishPlanningInput.TOOL_NAME: lambda ctx, raw: control_tools.finish_planning(
-                raw
-            ),
-            schema.AskUserInput.TOOL_NAME: lambda ctx, raw: self._ask_user(raw),
+            schema.FinishSessionInput.TOOL_NAME: control_tools.finish_session,
+            schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
+            schema.AskUserInput.TOOL_NAME: control_tools.ask_user,
             schema.ListFindingsInput.TOOL_NAME: lambda ctx, raw: self._list_findings(raw),
             schema.ParallelInput.TOOL_NAME: lambda ctx, raw: self._parallel(raw),
             schema.SteerChildInput.TOOL_NAME: lambda ctx, raw: self._steer_child(raw),
@@ -1246,18 +1244,6 @@ class ToolDispatcher:
         if self.children is None:
             raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
         return results.SteeredResult(request.id, self.children.steer(request.id, request.text))
-
-    def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:
-        """Return the operator's answers to the model's questions."""
-        args = schema.AskUserInput.model_validate(raw)
-        answer = self._prompts.ask(args.questions, call_id=self._gating_call_id(), wait=args.wait)
-        return results.AnswersResult(
-            id=answer.id,
-            answers=None if answer.status == "pending" else answer.answers,
-            status=answer.status,
-            note=answer.note,
-            asked=tuple(q.question for q in args.questions),
-        )
 
     def resolved_skills(self) -> skills.ResolvedSkills:
         """Return the operator's skills, resolved once per dispatcher.

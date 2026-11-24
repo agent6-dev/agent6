@@ -1,22 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run-control signal handlers: finish_session and finish_planning.
+"""Run-control handlers: ask the operator or signal the end of the session.
 
-Neither acts; the harness checks for the tool name in the response's tool uses and exits the
-loop after dispatching it.
+The harness exits the loop after dispatching a finish signal.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent6.tools import results, schema
 
+if TYPE_CHECKING:
+    from agent6.tools import dispatch
 
-def finish_session(raw: dict[str, Any]) -> results.FinishSessionResult:
+
+def finish_session(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.FinishSessionResult:
     """Echo the validated summary and the structured `result` payload.
 
     Args:
+        ctx: Unused for finish signals.
         raw: The tool call's arguments.
 
     Returns:
@@ -28,12 +31,13 @@ def finish_session(raw: dict[str, Any]) -> results.FinishSessionResult:
     )
 
 
-def finish_planning(raw: dict[str, Any]) -> results.FinishPlanningResult:
+def finish_planning(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.FinishPlanningResult:
     """Echo the validated summary of a planning pass.
 
     The harness writes `plan_markdown` to disk and exits after dispatching the call.
 
     Args:
+        ctx: Unused for finish signals.
         raw: The tool call's arguments.
 
     Returns:
@@ -43,4 +47,17 @@ def finish_planning(raw: dict[str, Any]) -> results.FinishPlanningResult:
     return results.FinishPlanningResult(
         summary_text=args.summary,
         plan_bytes=len(args.plan_markdown.encode("utf-8")),
+    )
+
+
+def ask_user(ctx: dispatch.ToolContext, raw: dict[str, Any]) -> results.AnswersResult:
+    """Return the operator's answers to the model's questions."""
+    args = schema.AskUserInput.model_validate(raw)
+    answer = ctx.prompts.ask(args.questions, call_id=ctx.call_id, wait=args.wait)
+    return results.AnswersResult(
+        id=answer.id,
+        answers=None if answer.status == "pending" else answer.answers,
+        status=answer.status,
+        note=answer.note,
+        asked=tuple(q.question for q in args.questions),
     )
