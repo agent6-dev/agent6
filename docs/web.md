@@ -98,7 +98,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
       Confirm to mark it obsolete at the next step without stopping a worker.
       A graph shown as of a commit is read-only.
     - In **Findings**, choose **Resolve**, pick a disposition and give a reason.
-      An update to another finding keeps your reason and your place in the form.
+      The form keeps your reason and focus while the finding still accepts the same action.
     - **Children** folds to one line in Details, such as `children: 1 merged, 1 ranked, 1 running`.
       Each child counts once by its recorded outcome, or by its status if it has no outcome.
       On a phone, choose **Children** from **Widgets**.

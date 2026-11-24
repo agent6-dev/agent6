@@ -32,17 +32,21 @@ function reviewRules(panel) {
   }
   return box;
 }
-function findingCard(entry) {
+function findingCard(entry, card = el('span', 'finding')) {
   const f = entry.observation.finding, loc = f.location;
-  const card = el('span', 'finding'); card.dataset.finding = entry.finding.finding_id;
+  card.dataset.finding = entry.finding.finding_id;
   card.rowKey = entry.finding.finding_id; // a repaint finds the focused control in it again (refocus)
   card.dataset.side = loc.side;
-  const title = card.appendChild(el('span', 'finding-title', f.severity + ' · ' + entry.finding.status + ' · ' + f.title));
+  const record = card.firstChild || card.appendChild(el('span', 'finding-record'));
+  const titleId = record.firstChild?.id; // the form's buttons describe themselves with this title
+  record.replaceChildren();
+  const title = record.appendChild(el('span', 'finding-title', f.severity + ' · ' + entry.finding.status + ' · ' + f.title));
+  if (titleId) title.id = titleId;
   const range = loc.start_line == null ? ' (file)' : ':' + loc.start_line
     + (loc.end_line !== loc.start_line ? '-' + loc.end_line : '');
-  card.appendChild(el('span', 'muted', entry.finding.finding_id + ' · ' + loc.side + ' · ' + loc.path + range));
-  card.appendChild(el('span', 'finding-detail', f.detail));
-  const links = el('span', 'row wrap'); card.appendChild(links);
+  record.appendChild(el('span', 'muted', entry.finding.finding_id + ' · ' + loc.side + ' · ' + loc.path + range));
+  record.appendChild(el('span', 'finding-detail', f.detail));
+  const links = el('span', 'row wrap'); record.appendChild(links);
   const origin = entry.observation.line_origin;
   if (origin?.kind === 'pre_existing') {
     const base = origin.base_location, badge = el('a', 'finding-origin', 'Pre-existing line');
@@ -129,7 +133,6 @@ function findingActions(card, entry, cards) {
   const row = el('span', 'row wrap'); card.appendChild(row);
   if (entry.finding.status === 'open') {
     const fix = el('button', 'mini'); card.fix = fix;
-    fix.disabled = entry.finding.fix_state === 'delivery_unknown';
     fix.onclick = async () => {
       const dead = cards._reviewDead;
       if (fix.hasAttribute('aria-disabled') || (dead && !await confirmDialog('Resume this session to reproduce and fix ' + entry.finding.finding_id + '?', 'The finding stays open.', 'Resume to fix'))) return;
@@ -184,14 +187,23 @@ function reviewPanel(panel) {
   }
   return block;
 }
-function sessionFinding(entry, cards) {
-  const card = findingCard(entry);
-  if (entry.finding.fix_state !== 'none') card.appendChild(el('span', 'muted', 'Fix: ' + entry.finding.fix_state.replaceAll('_', ' ')));
-  for (const action of entry.finding.actions) card.appendChild(el('span', 'finding-history', action.type.split('.').at(-1)
-    + (action.resolution ? ' · ' + dispositionLabels[action.resolution.disposition] : '') + ': '
-    + (action.resolution ? action.resolution.reason : action.reason || action.error || action.action || '')));
-  if (!cards._readOnly) findingActions(card, entry, cards);
-  return card;
+function paintSessionFinding(card, entry, cards) {
+  const sig = JSON.stringify([entry.finding, entry.panel.target]);
+  if (sig !== card.recordSig) {
+    const fresh = !card.firstChild;
+    card.recordSig = sig;
+    findingCard(entry, card);
+    const record = card.firstChild;
+    if (entry.finding.fix_state !== 'none') record.appendChild(el('span', 'muted', 'Fix: ' + entry.finding.fix_state.replaceAll('_', ' ')));
+    for (const action of entry.finding.actions) record.appendChild(el('span', 'finding-history', action.type.split('.').at(-1)
+      + (action.resolution ? ' · ' + dispositionLabels[action.resolution.disposition] : '') + ': '
+      + (action.resolution ? action.resolution.reason : action.reason || action.error || action.action || '')));
+    if (fresh && !cards._readOnly) findingActions(card, entry, cards);
+  }
+  if (card.fix) {
+    card.fix.textContent = cards._reviewDead ? 'Resume to fix' : 'Fix';
+    card.fix.disabled = entry.finding.fix_state === 'delivery_unknown';
+  }
 }
 function makeFindings(cards) {
   const host = cards.findings, head = el('div', 'row finding-head');
@@ -243,8 +255,9 @@ function makeFindings(cards) {
     const entries = reviewEntries(cards._review, '').filter(e =>
       (status.value === 'all' || e.finding.status === status.value) &&
       (severity.value === 'all' || e.observation.finding.severity === severity.value));
-    patchRows(list, entries.map(e => ({key: e.finding.finding_id, data: [e.finding, e.panel.target], paint: () => sessionFinding(e, cards)})));
-    for (const card of list.children) if (card.fix) card.fix.textContent = cards._reviewDead ? 'Resume to fix' : 'Fix';
+    // Resolve and Reopen have different forms. Other changes update the record beside the form.
+    patchRows(list, entries.map(e => ({key: e.finding.finding_id, data: e.finding.status, paint: () => el('span', 'finding')})));
+    entries.forEach((e, i) => paintSessionFinding(list.children[i], e, cards));
     list.hidden = !entries.length; empty.hidden = !!entries.length;
   };
   status.onchange = severity.onchange = paintList;

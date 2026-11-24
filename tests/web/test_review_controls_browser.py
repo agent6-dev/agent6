@@ -141,8 +141,45 @@ def test_a_worker_refusal_allows_a_fresh_resolution(
     sync_api.expect(submit).to_be_enabled()
     with page.expect_response(url) as retried:
         submit.click()
-    assert retried.value.request.post_data_json["request_id"] != queued.value.json()["request_id"]
-    assert retried.value.request.post_data_json["expected_version"] == version + 1
+    body = retried.value.request.post_data_json
+    assert body is not None
+    assert body["request_id"] != queued.value.json()["request_id"]
+    assert body["expected_version"] == version + 1
     assert retried.value.status == 200, retried.value.json()
     sync_api.expect(findings).to_contain_text("2 block")
     assert not [e for e in errors if not e.startswith("Failed to load resource")]
+
+
+def test_a_fix_to_the_open_finding_keeps_its_resolution_form(
+    open_page: OpenPage, evidence: tuple[int, dict[str, Any]], tmp_path: pathlib.Path
+) -> None:
+    """Fix history updates beside the focused form, including its duplicate and reason fields."""
+    from playwright import sync_api
+
+    port, _ = evidence
+    run = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
+    process.write_worker_pid(run.session_dir, os.getpid())
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    card = page.locator('.card-findings [data-finding="rename"]')
+    card.get_by_role("button", name="Resolve", exact=True).click()
+    card.get_by_label("Disposition").select_option("duplicate")
+    card.get_by_label("Duplicate finding ID").fill("delete")
+    reason = card.get_by_role("textbox", name="Reason")
+    reason.fill("The same change handles both.")
+    fix = review_records.FindingAction(
+        request_id="other-fix",
+        expected_version=actions.read_review(run.session_dir).version,
+        action="fix",
+    )
+    assert actions.act(run.session_dir, "rename", fix, source="cli", wait_s=0).status == "queued"
+    actions.drain(event_log.EventSink(run.logs_path), execution_id="worker")
+    sync_api.expect(card).to_contain_text("Fix: submitted")
+    sync_api.expect(reason).to_be_focused()
+    sync_api.expect(reason).to_have_value("The same change handles both.")
+    sync_api.expect(card.get_by_label("Disposition")).to_have_value("duplicate")
+    sync_api.expect(card.get_by_label("Duplicate finding ID")).to_have_value("delete")
+    process.clear_worker_pid(run.session_dir)
+    card.get_by_role("button", name="Submit resolution").click()
+    sync_api.expect(page.locator(".card-findings")).to_contain_text("3 block")
+    assert not errors
