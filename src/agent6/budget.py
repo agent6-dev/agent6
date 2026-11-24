@@ -548,8 +548,8 @@ class BudgetTracker:
             self._check_ceilings(route.provider, plan_usage)
 
     def _call_quote(self, route: kinds.ModelRoute, serving: kinds.Serving) -> pricing.Quote | None:
-        """Return the served tier's quote, or None for an unconfirmed tier request."""
-        if serving.requested_tier is not None and serving.tier is None:
+        """Return the served tier's quote, or None for an unconfirmed non-standard request."""
+        if serving.requested_tier not in (None, "default") and serving.tier is None:
             return None
         key = (route, serving.canonical_tier)
         if key not in self._quotes:

@@ -273,11 +273,6 @@ def test_only_matching_tier_quotes_price_an_auto_call(
                 "service_tier": "priority",
                 "pricing": {"prompt": "0.01", "completion": "0.02"},
             },
-            {
-                "id": "alias",
-                "service_tier": "flex",
-                "pricing": {"prompt": "0.001", "completion": "0.002"},
-            },
         ]
     }
     with provider_endpoint.serve(listing) as (url, _calls):
@@ -311,22 +306,75 @@ def test_only_matching_tier_quotes_price_an_auto_call(
             cost_usd=reported,
         )
     snap = tracker.snapshot()
-    assert snap.usd_own_calls == pytest.approx(0.14 + 0.014 + 0.25)
+    assert snap.usd_own_calls == pytest.approx(0.14 + 0.25 + 12)
     assert snap.usd_partial and snap.unmetered_tokens == 12 and snap.exhausted
 
 
-@pytest.mark.parametrize("quoted_tier", [None, "flex"])
-def test_a_concrete_tier_needs_a_listed_rate_and_a_serving_tier(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, quoted_tier: str | None
+@pytest.mark.parametrize(
+    ("tier", "serving", "listed", "preflight_priced", "usd"),
+    [
+        ("standard", kinds.Serving(requested_tier="default", tier="default"), None, True, 14),
+        ("standard", kinds.Serving(requested_tier="default"), None, True, 14),
+        ("standard", kinds.Serving(requested_tier="default", tier="default"), "default", True, 70),
+        (None, kinds.Serving(tier="default"), None, True, 14),
+        ("auto", kinds.Serving(requested_tier="auto", tier="default"), None, False, 14),
+    ],
+)
+def test_the_standard_tier_is_priced_at_the_unqualified_rates(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tier: str | None,
+    serving: kinds.Serving,
+    listed: str | None,
+    preflight_priced: bool,
+    usd: float,
+) -> None:
+    """A listing without a standard-tier row leaves `max_usd` unbound on a standard route."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    rows = [{"id": "alias", "pricing": {"prompt": "1", "completion": "2"}}]
+    if listed is not None:
+        rows.append(
+            {"id": "alias", "service_tier": listed, "pricing": {"prompt": "5", "completion": "10"}}
+        )
+    settings = {"service_tier": tier} if tier is not None else {}
+    with provider_endpoint.serve({"data": rows}) as (url, _calls):
+        cfg = config.Config.model_validate(
+            {
+                "models": {"default": {"model": "work/alias"}},
+                "providers": {"work": {"backend": "responses", "base_url": url, **settings}},
+                "budget": {"max_tokens_fallback": 0},
+            }
+        )
+        assert cache.fetch_models_live("work", cfg.providers["work"], None)
+    assert (preflight.budget_preflight(cfg) is None) == preflight_priced
+    tracker = budget.BudgetTracker(
+        providers=cfg.providers, max_usd=-1, max_tokens_fallback=12, max_plan_points=-1
+    )
+    tracker.record(
+        route=kinds.ModelRoute("work", "alias"),
+        serving=serving,
+        input_tokens=10,
+        output_tokens=2,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+    )
+    snap = tracker.snapshot()
+    assert snap.usd_own_calls == pytest.approx(usd) and snap.unmetered_tokens == 0
+
+
+@pytest.mark.parametrize(("tier", "wire"), [("flex", "flex"), ("fast", "priority")])
+@pytest.mark.parametrize("listed", [False, True])
+def test_flex_and_fast_need_a_listed_rate_and_a_serving_tier(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tier: str, wire: str, listed: bool
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     row = {
         "id": "alias",
-        "service_tier": quoted_tier,
+        "service_tier": wire if listed else None,
         "pricing": {"prompt": "1", "completion": "2"},
     }
     with provider_endpoint.serve({"data": [row]}) as (url, _calls):
-        worker = _worker(tmp_path, url, "responses", False, service_tier="flex")
+        worker = _worker(tmp_path, url, "responses", False, service_tier=tier)
         providers = worker.budget.providers
         assert cache.fetch_models_live("work", providers["work"], None)
     cfg = config.Config.model_validate(
@@ -336,13 +384,13 @@ def test_a_concrete_tier_needs_a_listed_rate_and_a_serving_tier(
             "budget": {"max_tokens_fallback": 0},
         }
     )
-    assert (preflight.budget_preflight(cfg) is None) == (quoted_tier == "flex")
+    assert (preflight.budget_preflight(cfg) is None) == listed
     tracker = budget.BudgetTracker(
         providers=providers, max_usd=-1, max_tokens_fallback=12, max_plan_points=-1
     )
     tracker.record(
         route=kinds.ModelRoute("work", "alias"),
-        serving=kinds.Serving(requested_tier="flex", tier="flex" if quoted_tier is None else None),
+        serving=kinds.Serving(requested_tier=wire, tier=None if listed else wire),
         input_tokens=10,
         output_tokens=2,
         cache_read_tokens=0,

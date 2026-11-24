@@ -94,6 +94,9 @@ def lookup_price(
 ) -> Quote | None:
     """Read a bound price without touching the network.
 
+    The standard tier (`default` on the wire) reads the listing's unqualified rates when the
+    listing has no row for that tier; `flex` and `priority` read only their own rows.
+
     Args:
         route: The provider and model that receive the call.
         providers: The current provider entries.
@@ -110,24 +113,25 @@ def lookup_price(
     if listing is None:
         return None
     data = listing_store.read(listing_store.cache_path(source))
+    if data.get("binding") != listing_store.binding(listing):
+        return None
     tier = served_tier
     if tier is None and isinstance(
         entry, (config.OpenAIProviderEntry, config.ResponsesProviderEntry)
     ):
         tier = entry.wire_tier
-    prices = data.get("pricing")
-    if tier is not None:
-        tiers = data.get("tier_pricing")
-        prices = tiers.get(tier) if isinstance(tiers, dict) else None
-    if data.get("binding") != listing_store.binding(listing) or not isinstance(prices, dict):
-        return None
     models = set(listing_store.model_ids(data) or ())
     model = route.model
     if model not in models and source != route.provider and "/" not in model:
         model = _reference_id(model, entry.direct_vendor, models)
     if model is None or model not in models:
         return None
-    row = prices.get(model)
+    tiers = data.get("tier_pricing")
+    listed = tiers.get(tier) if tier is not None and isinstance(tiers, dict) else None
+    row = listed.get(model) if isinstance(listed, dict) else None
+    if row is None and tier in (None, "default"):
+        prices = data.get("pricing")
+        row = prices.get(model) if isinstance(prices, dict) else None
     if (
         not isinstance(row, list)
         or len(row) not in (2, 4)
