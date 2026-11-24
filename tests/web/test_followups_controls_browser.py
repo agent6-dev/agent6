@@ -35,7 +35,7 @@ def test_occasional_run_actions_fold_on_phones(
         expect(compact).to_be_hidden()
         bar = page.locator(".run-app > .actions").bounding_box()
         assert bar and bar["height"] < 45, bar
-        page.locator(".run-more summary").click()
+        page.get_by_role("button", name="More", exact=True).click()
     expect(compact).to_be_visible()
     expect(page.get_by_role("button", name="Stop now", exact=True)).to_be_visible()
     captures.save(page, "run-actions")

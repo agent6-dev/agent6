@@ -251,7 +251,7 @@ def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
     page.goto(f"http://127.0.0.1:{port}/#/session/bar-AAA111")
     bar = page.locator(".run-app .actions")
     if width == 390:
-        page.locator(".run-more summary").click()
+        page.get_by_role("button", name="More", exact=True).click()
     delete = bar.get_by_role("button", name="Delete", exact=True)
     live_controls = [
         bar.get_by_role("button", name=name, include_hidden=True)

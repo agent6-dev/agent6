@@ -60,3 +60,40 @@ def test_arrows_reveal_the_active_directive(
     entry.press("ArrowDown")
     sync_api.expect(options.first).to_be_in_viewport(ratio=1)
     assert not errors
+
+
+def test_more_dismisses_and_uses_the_inline_actions_when_wide(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """Escape, a click outside and a choice close More. Widening needs no second set of buttons."""
+    from playwright import sync_api
+
+    session_logs.write_run(tmp_path, "more", [], live=True)
+    page, errors = open_page(port)
+    phone: sync_api.ViewportSize = {"width": 390, "height": 640}
+    page.set_viewport_size(phone)
+    page.goto(f"http://127.0.0.1:{port}/#/session/more")
+    bar = page.locator(".run-app .actions")
+    more = bar.get_by_text("More", exact=True)
+    compact = bar.get_by_role("button", name="Compact context", exact=True)
+    more.click()
+    sync_api.expect(compact).to_be_visible()
+    page.keyboard.press("Escape")
+    sync_api.expect(compact).to_be_hidden()
+    more.click()
+    page.locator(".card-conv h2").click(position={"x": 2, "y": 2})
+    sync_api.expect(compact).to_be_hidden()
+    more.click()
+    compact.click()
+    sync_api.expect(compact).to_be_hidden()
+    more.click()
+    menu = bar.locator('[popover="auto"]:popover-open')
+    sync_api.expect(menu).to_be_visible()
+    page.set_viewport_size({"width": 1280, "height": 900})
+    sync_api.expect(more).to_be_hidden()
+    sync_api.expect(menu).to_have_count(0)
+    sync_api.expect(compact).to_be_visible()
+    sync_api.expect(bar.get_by_text("Compact context", exact=True)).to_have_count(1)
+    page.set_viewport_size(phone)
+    sync_api.expect(compact).to_be_hidden()
+    assert not errors

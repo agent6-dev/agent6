@@ -13,6 +13,15 @@ async function stopRun(base, label) {
 // The run's state word, from the one field the fold stamps it in.
 function runState(s) { return s.status_label || ''; }
 
+function sizeRunMenu(menu) {
+  if (phoneLayout.matches) menu.popover = 'auto';
+  else menu.removeAttribute('popover');
+}
+phoneLayout.addEventListener('change', () => {
+  const menu = view.querySelector('.run-more-items');
+  if (menu) sizeRunMenu(menu);
+});
+
 async function renderRun(id, opts, gen) {
   opts = opts || {};
   const base = opts.base || ('/api/session/' + encodeURIComponent(id));
@@ -116,12 +125,13 @@ async function renderRun(id, opts, gen) {
     };
     cards._review_btn = reviewBtn; // paintRun gates it: the CLI refuses a live run's review
     actions.appendChild(stopBtn);
-    const more = el('details', 'run-more');
-    more.appendChild(el('summary', null, 'More'));
+    const more = el('button', 'run-more', 'More');
     const menu = el('div', 'run-more-items');
+    sizeRunMenu(menu);
+    more.popoverTargetElement = menu;
     menu.append(turnBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn);
-    menu.addEventListener('click', e => { if (e.target.closest('button')) more.open = false; });
-    more.appendChild(menu); actions.appendChild(more);
+    menu.addEventListener('click', e => { if (e.target.closest('button') && menu.matches(':popover-open')) menu.hidePopover(); });
+    actions.append(more, menu);
     cards._stop_btn = stopBtn; cards._turn_btn = turnBtn; // paintRun shows these only while the run is live
     cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
     cards._plan_btn = planBtn;
