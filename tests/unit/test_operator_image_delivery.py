@@ -260,7 +260,7 @@ def test_an_opening_ignores_a_launch_record_written_for_other_words(
     ref = stored(tmp_path)
     ipc.write_launch_input(tmp_path, operator_input.OperatorInput(parts=("first task", ref)))
 
-    assert ipc.take_launch_images(tmp_path, words) == ()
+    assert ipc.take_launch_input(tmp_path, words).images == ()
 
 
 def _operator_wire() -> tuple[list[dict[str, Any]], str]:

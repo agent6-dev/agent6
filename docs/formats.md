@@ -1315,6 +1315,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `images[].media_type` | `Literal['image/gif', 'image/jpeg', 'image/png', 'image/webp']` | The image's media type. |
 | `images[].byte_size` | `int` | The size of the stored image in bytes. |
 | `images[].sha256` | `str` | The SHA-256 of the stored bytes, in hex. |
+| `message_id` | `str, optional` | The id the front-end that took the task gave it, if any. |
 
 ### session.stop
 
@@ -1423,6 +1424,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `images[].media_type` | `Literal['image/gif', 'image/jpeg', 'image/png', 'image/webp']` | The image's media type. |
 | `images[].byte_size` | `int` | The size of the stored image in bytes. |
 | `images[].sha256` | `str` | The SHA-256 of the stored bytes, in hex. |
+| `message_id` | `str, optional` | The id the front-end that took the instruction gave it, if any. |
 
 ### steer.parent
 

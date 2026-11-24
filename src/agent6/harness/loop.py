@@ -249,22 +249,25 @@ class Harness:
             raise ValueError("Harness(mode='plan') requires plan_output_path to be set")
         if operator_task is None:
             operator_task = user_task
-        # The images a front-end stored for this task before it launched the run.
-        images = (
-            ipc.take_launch_images(self.session_dir, operator_task)
+        # The task as a front-end recorded it before it launched the run: its images and its id.
+        launch = (
+            ipc.take_launch_input(self.session_dir, operator_task)
             if self.session_dir is not None and self.contract is None
-            else ()
+            else operator_input.OperatorInput()
         )
-        self._emit_start(
-            journal.SessionStart(
-                session_id=self.session_id,
-                user_task=operator_task,
-                task_source=self.task_source,
-                mode=self.mode,
-                execution_id=self.execution_id,
-                images=images,
-            )
+        images = launch.images
+        start = journal.SessionStart(
+            session_id=self.session_id,
+            user_task=operator_task,
+            task_source=self.task_source,
+            mode=self.mode,
+            execution_id=self.execution_id,
+            images=images,
         )
+        if launch.message_id:
+            # The row names a message id only when the front-end gave one.
+            start = start.model_copy(update={"message_id": launch.message_id})
+        self._emit_start(start)
         if self.mode == "run" and self.events is not None:
             self.metrics.restore(self.events.path)
         system, conversation, root_id = (

@@ -134,9 +134,9 @@ def test_a_launch_record_gives_its_images_only_to_the_message_it_was_written_for
     message = operator_input.OperatorInput(parts=("fix the layout", ref))
 
     ipc.write_launch_input(tmp_path, message)
-    assert ipc.take_launch_images(tmp_path, message.text) == (ref,)
-    assert ipc.take_launch_images(tmp_path, message.text) == ()  # consumed
+    assert ipc.take_launch_input(tmp_path, message.text).images == (ref,)
+    assert ipc.take_launch_input(tmp_path, message.text).images == ()  # consumed
 
     ipc.write_launch_input(tmp_path, message)
-    assert ipc.take_launch_images(tmp_path, "another task") == ()
+    assert ipc.take_launch_input(tmp_path, "another task").images == ()
     assert not (tmp_path / ipc.LAUNCH_INPUT_FILE).exists()

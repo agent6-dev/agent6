@@ -207,7 +207,7 @@ def test_new_work_reserves_the_session_and_launches_it_with_the_images(
     task = launched[0][-1]
     assert launched[0][-4:-1] == ["--session-id", session.name, "--"]
     assert task.startswith("match this mockup\n\n[image image/png, 1 KiB, sha256 ")
-    (ref,) = ipc.take_launch_images(session, task)
+    (ref,) = ipc.take_launch_input(session, task).images
     assert ref.sha256 == blob.name
     # An ask reserves no session, and a /parallel task has several: both refuse in words.
     status, data = _post(port, "/api/new", {"mode": "ask", "task": "what?", "images": _body(1)})
@@ -252,7 +252,7 @@ def test_a_resume_stores_the_images_and_launches_with_their_labels(
 
     assert (status, data["ok"]) == (200, True)
     steer = next(a for a in launched[0] if a.startswith("--steer=")).removeprefix("--steer=")
-    (ref,) = ipc.take_launch_images(session, steer)
+    (ref,) = ipc.take_launch_input(session, steer).images
     assert steer == f"now fix this\n\n[{ref.label()}]"
     assert attachments.load(session, ref) == kinds.MediaAttachment(png(2), "image/png", "")
 

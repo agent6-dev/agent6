@@ -402,9 +402,11 @@ def reset_bridge(
         keep_questions=[request.id for request in carried.pending],
         keep_steer=scan.stop_reason == "setup_command_failed",
     )
-    # The images a front-end stored for this steer before it launched the resume.
-    images = ipc.take_launch_images(layout.session_dir, steer)
-    if steer.strip() and not ipc.submit_steer(layout.session_dir, steer, images=images):
+    # The steer as a front-end recorded it before it launched the resume: its images and its id.
+    launch = ipc.take_launch_input(layout.session_dir, steer)
+    if steer.strip() and not ipc.submit_steer(
+        layout.session_dir, steer, images=launch.images, message_id=launch.message_id, first=True
+    ):
         reporter.error("could not write the initial steer request")
         raise preflight.SessionRefusedError(2)
     return carried

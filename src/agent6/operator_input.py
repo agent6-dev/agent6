@@ -32,6 +32,9 @@ class OperatorInput(pydantic.BaseModel, frozen=True, extra="forbid"):
     parts: tuple[str | ImageRef, ...] = pydantic.Field(
         default=(), description="The text parts and image references, in order."
     )
+    message_id: str = pydantic.Field(
+        default="", description="The id the front-end that took the message gave it, or empty."
+    )
 
     @property
     def images(self) -> tuple[ImageRef, ...]:

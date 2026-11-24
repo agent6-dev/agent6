@@ -627,9 +627,15 @@ def _seed_steer(
     Raises:
         preflight.SessionRefusedError: The steer could not be written.
     """
-    # The images a front-end stored for this steer before it launched the resume.
-    images = ipc.take_launch_images(layout.session_dir, steer)
-    if not ipc.submit_steer(layout.session_dir, steer.strip(), images=images):
+    # The steer as a front-end recorded it before it launched the resume: its images and its id.
+    launch = ipc.take_launch_input(layout.session_dir, steer)
+    if not ipc.submit_steer(
+        layout.session_dir,
+        steer.strip(),
+        images=launch.images,
+        message_id=launch.message_id,
+        first=True,
+    ):
         reporter.error("could not write the initial steer request")
         raise preflight.SessionRefusedError(2)
 

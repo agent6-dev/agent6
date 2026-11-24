@@ -182,6 +182,11 @@ def review_message(bridge: OperatorBridge, text: str) -> tuple[bool, str] | None
     return bridge.review_preparer(target)
 
 
+def _named(row: journal.SteerInjected, message_id: str) -> journal.SteerInjected:
+    """Return the row with the id its front-end gave the steer; unchanged when it gave none."""
+    return row.model_copy(update={"message_id": message_id}) if message_id else row
+
+
 def try_pin(pins: list[str], instruction: str) -> bool:
     """Append an instruction to the pins when it is non-empty and fits `PINS_MAX_CHARS`.
 
@@ -259,10 +264,14 @@ class Steering:
             return None
         self.emit(journal.SteerRequested(turn=turn))
         self.log(f"STEER: operator steering at turn {turn}")
+        images: tuple[operator_input.ImageRef, ...] = ()
+        message_id = ""
         try:
             text = self.bridge.steer_prompt() or ""
-            # Read before the clear, which drops the slot's images with its answer.
-            images = ipc.take_steer_images(self.session_dir) if self.session_dir is not None else ()
+            # Read before the clear, which drops the slot's images and message id with its answer.
+            if self.session_dir is not None:
+                images = ipc.take_steer_images(self.session_dir)
+                message_id = ipc.take_steer_message_id(self.session_dir)
         finally:
             self.bridge.steer_clear()
         if not text.strip() and not images:
@@ -278,7 +287,9 @@ class Steering:
             self.emit(journal.SteerFromParent(chars=len(said), text=said))
             conversation.notice(steer_text)
             return None
-        return self.operator_steer(conversation, turn, state, text, heading=heading, images=images)
+        return self.operator_steer(
+            conversation, turn, state, text, heading=heading, images=images, message_id=message_id
+        )
 
     def tell_operator(self, line: str) -> None:
         """Say a line to the operator: in the run's log and as feedback on the journal."""
@@ -294,6 +305,7 @@ class Steering:
         *,
         heading: str,
         images: tuple[operator_input.ImageRef, ...] = (),
+        message_id: str = "",
     ) -> str | None:
         """Take the operator's own words: a verb, a review, a directive, or an instruction.
 
@@ -304,12 +316,15 @@ class Steering:
             text: The steer as the operator sent it; blank only beside images.
             heading: The notice introducing the operator's instruction.
             images: The images sent with it, which only an instruction carries.
+            message_id: The id its front-end gave the steer, journaled with an instruction.
 
         Returns:
             The verb's name when the steer was one; None otherwise.
         """
         before = len(conversation)
-        verb = self._route_steer(conversation, turn, state, text, heading=heading, images=images)
+        verb = self._route_steer(
+            conversation, turn, state, text, heading=heading, images=images, message_id=message_id
+        )
         if len(conversation) > before:
             last = conversation.messages[-1]
             if isinstance(last, loop_conversation.UserMessage) and any(
@@ -328,6 +343,7 @@ class Steering:
         *,
         heading: str,
         images: tuple[operator_input.ImageRef, ...] = (),
+        message_id: str = "",
     ) -> str | None:
         """Route an operator verb, directive or message.
 
@@ -338,6 +354,7 @@ class Steering:
             text: The steer as the operator sent it; blank only beside images.
             heading: The notice introducing the operator's instruction.
             images: The images sent with it.
+            message_id: The id its front-end gave the steer.
 
         Returns:
             The verb ending the turn, or None to continue.
@@ -357,7 +374,7 @@ class Steering:
             inject, message = prepared
             if inject:
                 state.settled.restart()
-                self.emit(journal.SteerInjected(chars=len(text), text=text))
+                self.emit(_named(journal.SteerInjected(chars=len(text), text=text), message_id))
                 conversation.notice(
                     f"{heading}\n{message}", origin="operator", operator_words=(text,)
                 )
@@ -374,7 +391,8 @@ class Steering:
         ):
             return None
         self.log(f"  injecting steering instruction ({len(steer_text)} chars)")
-        self.emit(journal.SteerInjected(chars=len(text), text=text, images=images))
+        injected = journal.SteerInjected(chars=len(text), text=text, images=images)
+        self.emit(_named(injected, message_id))
         asked = loop_conversation.last_assistant_prose(conversation)
         if question := nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)

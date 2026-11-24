@@ -1585,6 +1585,9 @@ class SessionStart(Event):
     images: tuple[operator_input.ImageRef, ...] = pydantic.Field(
         default=(), description="The images the operator sent with the task."
     )
+    message_id: str | None = pydantic.Field(
+        default=None, description="The id the front-end that took the task gave it, if any."
+    )
 
 
 class SettingObservation(pydantic.BaseModel, frozen=True, extra="forbid"):
@@ -1756,6 +1759,9 @@ class SteerInjected(Event):
     text: str = pydantic.Field(description="The event's text.")
     images: tuple[operator_input.ImageRef, ...] = pydantic.Field(
         default=(), description="The images the operator sent with the instruction."
+    )
+    message_id: str | None = pydantic.Field(
+        default=None, description="The id the front-end that took the instruction gave it, if any."
     )
 
 

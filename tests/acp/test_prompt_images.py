@@ -55,7 +55,7 @@ def test_a_prompts_image_is_stored_for_the_run_it_starts(
 
     def _run_task(_cfg: object, task: str, **kw: Any) -> int:
         session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / str(kw["session_id"])
-        (ref,) = ipc.take_launch_images(session_dir, task)
+        (ref,) = ipc.take_launch_input(session_dir, task).images
         started.append((task, attachments.load(session_dir, ref).data))
         return 0
 
@@ -97,7 +97,7 @@ def test_a_follow_up_prompts_image_goes_with_the_resume(
     test_runner._bridge({})._run(session, "", resuming=True, started_at=time.time())
 
     (steer,) = resumed
-    (ref,) = ipc.take_launch_images(session_dir, steer)
+    (ref,) = ipc.take_launch_input(session_dir, steer).images
     assert steer == f"[{ref.label()}]"  # an image alone is a prompt
     assert attachments.load(session_dir, ref).data == png(6)
 
