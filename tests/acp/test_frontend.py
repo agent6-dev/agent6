@@ -211,10 +211,11 @@ def test_the_editor_is_the_live_view_and_nothing_is_drawn() -> None:
     assert front.should_spawn_tui(True, True, "run") is False
 
 
-def test_the_steer_seam_is_inert() -> None:
+def test_the_steer_seam_is_inert(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ACP steers by prompting into a live session; a pause menu has no terminal to draw on."""
+    monkeypatch.setattr(ipc, "FRONTEND_DEAD_GRACE_S", 0.0)
     front, _asked = _frontend()
-    steer = front.make_steer_state(None, pathlib.Path("/x"), lambda: None)  # pyright: ignore[reportArgumentType]
+    steer = front.make_steer_state(None, tmp_path, lambda: None)  # pyright: ignore[reportArgumentType]
     assert steer.requested() is False
     assert steer.prompt() is None
     assert steer.abort_pending() is False
