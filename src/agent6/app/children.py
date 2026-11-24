@@ -604,8 +604,8 @@ def finish_import(
     result = recorded_result(
         res.spec, res.branch, dest, imported, origin=origin, stopped_by=stopped_by
     )
-    # Stopped children keep their clone and private launch for a parent-owned continuation.
-    if result.stopped_by:
+    # A child recorded `stopped` keeps its clone and private launch for its continuation.
+    if result.ok and result.stopped_by:
         return result
     # Each child removes its own dirs only; the group dir goes with whichever empties it last.
     worktrees.cleanup(

@@ -2744,6 +2744,38 @@ def test_a_parent_stop_keeps_the_clone_before_the_result_returns(
     assert git_read.branch_exists(origin, result.branch)
 
 
+def test_a_child_that_failed_under_a_pending_stop_loses_its_clone(
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_children.ChildRuntime
+) -> None:
+    """A child the dispatch records `failed` kept its clone because a stop was pending."""
+    state = paths.state_dir(origin)
+    spec = child_records.ChildSpec(1, "parent-p1-l1", tmp_path / "clone", None)
+    result = app_children.run_child_to_completion(
+        spec,
+        "work",
+        cfg=Config(),
+        explicit_leaves=frozenset(),
+        origin=origin,
+        record_state=state,
+        group="parent-p1",
+        parent="parent",
+        runtime=runtime,
+        spawner=_FakeSpawner(
+            origin,
+            state,
+            tmp_path / "child-state",
+            group_id="parent-p1",
+            status_by_child={1: "failed"},
+        ),
+        should_stop=lambda: True,
+        poll_interval_s=0.01,
+    )
+    assert not result.ok
+    assert result.stopped_by == "stopped by its parent"
+    assert not spec.worktree.exists()
+    assert git_read.branch_exists(origin, result.branch)
+
+
 @pytest.mark.parametrize("control", ["agent6", "model"])
 def test_parent_reads_commits_beyond_start_while_the_child_runs(
     origin: pathlib.Path,
