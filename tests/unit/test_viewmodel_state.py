@@ -28,7 +28,12 @@ from agent6.viewmodel.session import state as viewmodel_state
 
 def test_tool_results_match_the_execution_and_call_together() -> None:
     """A late command result cannot complete a resumed execution's call of the same id."""
-    call = {"type": "tool.call", "call_id": 1, "name": "run_command", "args_preview": {}}
+    call: dict[str, Any] = {
+        "type": "tool.call",
+        "call_id": 1,
+        "name": "run_command",
+        "args_preview": {},
+    }
     result = {"type": "tool.result", "call_id": 1, "ok": True, "name": "run_command"}
     state = viewmodel_state.fold_session(
         [
@@ -302,7 +307,7 @@ def test_run_start_records_run_id() -> None:
 
 def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
     # root -> (a -> a1), b  (children order preserved, DFS pre-order, depths)
-    nodes = {
+    nodes: dict[str, Any] = {
         "root": {
             "title": "root",
             "parent_id": None,
@@ -332,7 +337,7 @@ def test_graph_update_orders_multiple_roots_like_tree_order() -> None:
 
     The node map's iteration order is insertion order live and filesystem order after a resume.
     """
-    nodes = {
+    nodes: dict[str, Any] = {
         "01LATER00000000000000000A": {"title": "second", "parent_id": None, "children": []},
         "01EARLY00000000000000000A": {"title": "first", "parent_id": None, "children": []},
     }
@@ -342,7 +347,7 @@ def test_graph_update_orders_multiple_roots_like_tree_order() -> None:
 
 def test_graph_update_shows_an_orphan_after_the_roots_like_tree_order() -> None:
     """A node whose parent is missing is not a root; `tree_order` appends it after the roots."""
-    nodes = {
+    nodes: dict[str, Any] = {
         "01AAAA00000000000000000000": {"title": "orphan", "parent_id": "gone", "children": []},
         "01BBBB00000000000000000000": {"title": "root", "parent_id": None, "children": []},
     }
@@ -609,7 +614,7 @@ def test_tool_history_is_bounded() -> None:
 
 def test_full_run_trace_replay() -> None:
     """End-to-end: feed a plausible event sequence and assert final state."""
-    tasks = {
+    tasks: dict[str, Any] = {
         "one": {"title": "one", "parent_id": None, "status": "passed", "children": []},
         "two": {"title": "two", "parent_id": None, "status": "failed", "children": []},
     }
@@ -1262,7 +1267,7 @@ def test_a_commit_label_is_one_line_every_surface_shows() -> None:
 
 def test_the_end_takes_the_cursor_off_the_task_in_progress() -> None:
     """Once the run ended no task is in progress: each draws its own status."""
-    nodes = {
+    nodes: dict[str, Any] = {
         "root": {"title": "root", "parent_id": None, "status": "passed", "children": ["a"]},
         "a": {"title": "task a", "parent_id": "root", "status": "passed", "children": []},
     }
@@ -1359,7 +1364,7 @@ def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> Non
     """A queued question stays pending past a resume; only a waiting question blocks the run."""
     from agent6.viewmodel.session import view as state_view
 
-    queued = {
+    queued: dict[str, Any] = {
         "type": "question.prompt",
         "id": "question-1",
         "questions": [{"question": "a?", "options": []}],

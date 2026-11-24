@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 from collections.abc import Callable
+from typing import Any
 
 from agent6 import kinds
 from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, secret_store
@@ -45,7 +46,7 @@ def provider_model_choices(
         out.update(cache.cached_models(provider))
     else:
         try:
-            secrets = secret_store.load_secrets()
+            secrets: dict[str, Any] = secret_store.load_secrets()
         except secret_store.SecretsError:
             secrets = {}
         api_key = secret_store.resolve_api_key(

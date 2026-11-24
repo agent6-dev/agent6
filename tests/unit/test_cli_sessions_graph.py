@@ -8,6 +8,7 @@ import datetime
 import json
 import os
 import pathlib
+from typing import Any
 
 import pytest
 
@@ -86,7 +87,12 @@ def test_the_task_tree_prints_beside_a_dispatch_record_this_version_cannot_read(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id=sid)
     records = child_dispatch.records_dir(layout.session_dir)
     records.mkdir()
-    old = {"version": 5, "identity": f"{sid}-p1", "join_policy": "merge", "segments": []}
+    old: dict[str, Any] = {
+        "version": 5,
+        "identity": f"{sid}-p1",
+        "join_policy": "merge",
+        "segments": [],
+    }
     (records / f"{sid}-p1.json").write_text(json.dumps(old), encoding="utf-8")
     assert main(["sessions", command, sid]) == 0
     out = capsys.readouterr().out

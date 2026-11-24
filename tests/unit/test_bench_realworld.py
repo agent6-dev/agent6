@@ -75,7 +75,7 @@ def bench_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathl
     repo = tmp_path / "repo"
     tasks = repo / "bench" / "realworld" / "tasks"
     tasks.mkdir(parents=True)
-    task = {
+    task: dict[str, Any] = {
         "name": "fixture",
         "description": "Local file restoration",
         "files": {"value.txt": "restored\n"},

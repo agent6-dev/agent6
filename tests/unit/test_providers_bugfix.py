@@ -181,6 +181,7 @@ def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None
     misses both.
     """
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1, max_plan_points=-1)
+    body: dict[str, Any]
     for body in (
         {"error": "model not found"},
         {
@@ -735,6 +736,7 @@ def test_anthropic_malformed_content_is_provider_error() -> None:
     Content as a bare string, or a list holding a non-dict element, must not iterate characters into
     an AttributeError.
     """
+    body: dict[str, Any]
     for body in (
         {"content": "hello", "usage": {"input_tokens": 5, "output_tokens": 3}},
         {"content": [{"type": "text", "text": "hi"}, "oops"], "usage": {}},
@@ -756,6 +758,7 @@ def test_metered_gate_coerces_gateway_typed_counts() -> None:
         {"prompt_tokens": "700"}, source="t"
     )  # missing completion is fine
     anthropic_parse.require_metered_usage({"input_tokens": 700.0, "output_tokens": 3}, source="t")
+    bad: dict[str, Any]
     for bad in ({"prompt_tokens": 0}, {"prompt_tokens": "abc"}, {}):
         with pytest.raises(provider_types.ProviderError) as ei:
             openai._require_metered_usage(bad, source="t")

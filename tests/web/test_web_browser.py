@@ -12,7 +12,7 @@ import pathlib
 import re
 import threading
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -367,7 +367,7 @@ def test_a_long_command_expands_to_whole_arguments(
     session = paths.state_dir(tmp_path) / "sessions" / "runs" / "whole-tool-AAA111"
     session.mkdir(parents=True)
     words = "script " * 900 + "LAST SCRIPT BYTE"
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"type": "session.start", "mode": "run", "user_task": "Show commands"},
         {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sh", "-c", words]}},
         {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"},

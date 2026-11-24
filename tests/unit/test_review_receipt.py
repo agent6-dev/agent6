@@ -156,7 +156,7 @@ def test_receipt_binds_pass_to_observed_tree(
     saved = tmp_path / "saved"
     saved.mkdir()
     (saved / "manifest.json").write_text("{}")
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"type": "session.start", "execution_id": "exec"},
         {
             "type": "verify.end",

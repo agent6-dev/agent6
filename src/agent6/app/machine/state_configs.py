@@ -14,6 +14,7 @@ import os
 import pathlib
 import shlex
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from typing import Any
 
 from agent6 import kinds
 from agent6.config import Config, ConfigError, SandboxConfig, io, layer, layer_data
@@ -445,7 +446,7 @@ def agent_config(
     """
     data = config.model_dump(mode="python")
     if effort is not None:
-        worker = data.setdefault("models", {}).get("worker")
+        worker: dict[str, Any] | None = data.setdefault("models", {}).get("worker")
         if worker is None:
             worker = {}
             data["models"]["worker"] = worker

@@ -324,7 +324,9 @@ def _added_widening(
         return None
     try:
         prior = tomllib.loads(prior_text).get("config", {})
-        before = _overlay_problems(prior if isinstance(prior, dict) else {}, config_paths)
+        before: dict[str, str] = _overlay_problems(
+            prior if isinstance(prior, dict) else {}, config_paths
+        )
     except (tomllib.TOMLDecodeError, ConfigError):
         before = {}
     added = [

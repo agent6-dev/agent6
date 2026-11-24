@@ -32,7 +32,12 @@ _TOOLS = [ToolDefinition(name="read_file", description="d", input_schema={"type"
 _USAGE = {"input_tokens": 42, "output_tokens": 9, "total_tokens": 51}
 
 # A reply that reasons, searches once, cites a result and calls one of agent6's own tools.
-_REASONING = {"type": "reasoning", "id": "rs_1", "encrypted_content": "X", "summary": []}
+_REASONING: dict[str, Any] = {
+    "type": "reasoning",
+    "id": "rs_1",
+    "encrypted_content": "X",
+    "summary": [],
+}
 _SEARCH_ITEM = {
     "type": "web_search_call",
     "id": "ws_1",

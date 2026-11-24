@@ -139,7 +139,12 @@ def test_every_surface_shows_the_search_line(search_event: dict[str, Any]) -> No
 def test_a_failed_search_names_its_outcome_and_provider_text_stays_inert() -> None:
     """An outcome other than completed is said; a control sequence in a query cannot paint."""
     fold = transcript.TranscriptFold()
-    failed = {"type": "model.web_search", "query": "q", "status": "max_uses_exceeded", "urls": []}
+    failed: dict[str, Any] = {
+        "type": "model.web_search",
+        "query": "q",
+        "status": "max_uses_exceeded",
+        "urls": [],
+    }
     assert fold.feed(failed)[0].body == "Search: q (max_uses_exceeded)"
     hostile = {
         "type": "model.web_search",

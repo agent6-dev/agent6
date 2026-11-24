@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from agent6.viewmodel import fold_transcript, restate, transcript_text
 from agent6.viewmodel.session import status as session_status
 
@@ -140,7 +142,7 @@ def test_tool_only_turn_has_no_empty_text_item() -> None:
 
 def test_verify_badge_replaces_the_tool_item() -> None:
     """A model verify call ends as one verify item carrying the gate's badge, not a tool item."""
-    events = [
+    events: list[dict[str, Any]] = [
         {"type": "tool.call", "name": "run_verify_command", "args_preview": {}},
         {"type": "verify.start", "command": ["pytest"]},
         {"type": "verify.end", "exit_code": 0, "duration_s": 0.2},
@@ -1082,7 +1084,12 @@ def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
 
 def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
     """A call still open at session.stop or the next execution's start settles as not returned."""
-    call = {"type": "tool.call", "name": "run_verify_command", "args_preview": {}, "call_id": 3}
+    call: dict[str, Any] = {
+        "type": "tool.call",
+        "name": "run_verify_command",
+        "args_preview": {},
+        "call_id": 3,
+    }
     items = fold_transcript([call, {"type": "session.stop", "reason": "crashed"}])
     assert [i.kind for i in items] == ["tool", "done"]
     assert items[0].ok is False and items[0].call_id == "3" and "no result" in items[0].detail

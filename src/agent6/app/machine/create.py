@@ -273,7 +273,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     overlay["sandbox"] = {
         **overlay.get("sandbox", {}),
         "run_commands": "deny",
-        "fetch_approved_hosts": [],
+        "fetch_approved_hosts": list[str](),
     }
     # Resolved on the host: the confined execution cannot read ~/.gitconfig.
     try:

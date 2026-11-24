@@ -177,7 +177,7 @@ def _graph_event(nodes: dict[str, Any], cursor: str | None = None) -> dict[str, 
 
 
 def test_plan_block_prints_when_the_dag_is_seeded() -> None:
-    nodes = {
+    nodes: dict[str, Any] = {
         "01A": {
             "title": "root task",
             "status": "in_progress",
@@ -195,12 +195,15 @@ def test_plan_block_prints_when_the_dag_is_seeded() -> None:
 
 
 def test_plan_block_reprints_only_when_the_dag_grows() -> None:
-    n1 = {
+    n1: dict[str, Any] = {
         "01A": {"title": "root", "status": "pending", "parent_id": None, "children": ["01B"]},
         "01B": {"title": "a", "status": "pending", "parent_id": "01A", "children": []},
     }
     n2 = dict(n1)  # same set of tasks -> no reprint
-    n3 = {**n1, "01C": {"title": "b", "status": "pending", "parent_id": "01A", "children": []}}
+    n3: dict[str, Any] = {
+        **n1,
+        "01C": {"title": "b", "status": "pending", "parent_id": "01A", "children": []},
+    }
     n1["01A"]["children"] = ["01B"]
     n3["01A"]["children"] = ["01B", "01C"]
     out = _render([_graph_event(n1), _graph_event(n2), _graph_event(n3)])

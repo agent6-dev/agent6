@@ -1469,7 +1469,7 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
         ),
     )
     wf.chain = dataclasses.replace(wf.chain, base_sha="a" * 40)
-    fields = {
+    fields: dict[str, Any] = {
         "system": "s",
         "messages": [],
         "tool_calls": 0,

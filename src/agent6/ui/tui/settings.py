@@ -43,7 +43,7 @@ def _save_ui_key(key: str, value: str, user: paths.RealUser | None = None) -> No
     data = load_ui_settings(user)
     ui = data.get("ui")
     if not isinstance(ui, dict):
-        ui = {}
+        ui = dict[str, Any]()
     ui[key] = value
     data["ui"] = ui
     try:

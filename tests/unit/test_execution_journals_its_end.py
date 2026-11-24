@@ -36,7 +36,7 @@ from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
 
 # The preflight accepts this snapshot and Conversation.from_wire rejects it: a result with no call.
-TORN = {
+TORN: dict[str, Any] = {
     "version": loop_snapshot.SNAPSHOT_VERSION,
     "system": "s",
     "messages": [

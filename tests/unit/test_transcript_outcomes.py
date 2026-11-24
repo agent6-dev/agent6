@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from typing import Any
 
 import pytest
 
@@ -56,7 +57,7 @@ def test_sessions_transcript_labels_an_unfinalized_record(
 @pytest.mark.parametrize("outcome", ["incomplete", "failed", "interrupted", "aborted"])
 def test_fold_marks_every_attempt_that_did_not_complete(outcome: str) -> None:
     """The HTTP status cannot stand in for the attempt's outcome; a completed one is quiet."""
-    record = {
+    record: dict[str, Any] = {
         "seq": 7,
         "outcome": outcome,
         "request": {"body": {"messages": []}},

@@ -73,7 +73,7 @@ def _relay(master: int, proc: jail.JailedProcess) -> None:
         tty.setraw(0, termios.TCSADRAIN)  # the default flush would drop what was typed ahead
         watched = [master, 0]
         while proc.popen.poll() is None:
-            ready, _, _ = select.select(watched, [], [], _RELAY_POLL_S)
+            ready = select.select(watched, [], [], _RELAY_POLL_S)[0]
             if master in ready:
                 try:
                     shown = os.read(master, 65536)

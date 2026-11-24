@@ -750,7 +750,7 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     roster = child_work.roster(wf.parallel)
     assert [(line.id, line.running) for line in roster] == [(one, False), (two, False)]
     assert roster[0].state.startswith("merged into parent chain at ") and roster[1].state == words
-    (failed,) = [[], *(_events(tmp_path / "run", "parallel.failed"))][-1:]
+    (failed,) = [list[Any](), *(_events(tmp_path / "run", "parallel.failed"))][-1:]
     assert failed == [], "a stopped child is no failed merge"
     rows = _events(tmp_path / "run", "parallel.returned")
     assert rows[0]["children"][0]["status"] == "stopped" and rows[0]["children"][0]["commits"] == 1

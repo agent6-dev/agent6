@@ -107,7 +107,7 @@ def test_pause_menu_slash_commands(
                             "title": "fix the bars",
                             "parent_id": None,
                             "status": "in_progress",
-                            "children": [],
+                            "children": list[str](),
                         }
                     },
                 },
@@ -385,7 +385,7 @@ def test_pause_menu_status_shows_compaction_truth(
                     "gisted": 3,
                     "demoted": 0,
                     "paths": ["a.py", "b.py", "c.py"],
-                    "demoted_paths": [],
+                    "demoted_paths": list[str](),
                 },
             )
         ),

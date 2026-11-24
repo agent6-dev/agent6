@@ -23,7 +23,7 @@ def write_value(key: str, value: str | None) -> int:
         Zero on success, 2 for a refused key, value or secrets file.
     """
     try:
-        parts = io.split_key(key)
+        parts: list[str] = io.split_key(key)
     except ConfigError:
         parts = []
     valid = len(parts) == 3 and parts[:2] == ["telemetry", "headers"]

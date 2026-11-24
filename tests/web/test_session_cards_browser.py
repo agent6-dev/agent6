@@ -227,7 +227,7 @@ def test_a_task_title_wraps_and_a_skipped_task_strikes_only_its_title(
     from playwright.sync_api import expect
 
     title = "Handle a quoted field that spans a CRLF and keeps a doubled quote " * 2
-    nodes = {
+    nodes: dict[str, Any] = {
         "t1": {"title": title, "parent_id": None, "status": "skipped", "children": []},
     }
     session_logs.write_run(

@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -154,14 +155,15 @@ def test_an_item_carries_full_only_when_it_shows_more() -> None:
     or added `arguments: (none)` or the head's own path.
     """
     words = "script " * 900 + "LAST SCRIPT BYTE"
-    for name, args, more in (
+    calls: tuple[tuple[str, dict[str, Any], bool], ...] = (
         ("read_file", {"path": "a.py"}, False),
         ("run_command", {"argv": ["make", "test"]}, False),
         ("run_verify_command", {}, False),
         ("read_file", {"path": "a.py", "start_line": 40}, True),
         ("run_command", {"argv": ["python", "-c", words], "background": True}, True),
         ("apply_edit", {"path": "a.py", "edits": [{"new_string": words}]}, True),
-    ):
+    )
+    for name, args, more in calls:
         for settled in (False, True):
             events: list[dict[str, object]] = [
                 {"type": "tool.call", "name": name, "args_preview": args}

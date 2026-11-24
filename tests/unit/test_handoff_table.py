@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from typing import Any
 
 import pytest
 
@@ -13,7 +14,7 @@ def test_table_shows_acceptance_coverage_and_spread(
 ) -> None:
     from bench.handoff import table
 
-    base = dict(
+    base: dict[str, Any] = dict(
         split="scripted",
         model="scripted/worker",
         effort="medium",

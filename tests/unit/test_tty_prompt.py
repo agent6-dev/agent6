@@ -45,7 +45,7 @@ def _drive_pty(child: Any, expect: bytes, reply: bytes) -> int:
     deadline = time.monotonic() + 15
     try:
         while expect not in buf and time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], 0.5)
+            ready = select.select([master], [], [], 0.5)[0]
             if not ready:
                 continue
             try:
@@ -94,7 +94,7 @@ def test_tty_prompt_discards_type_ahead() -> None:
     try:
         os.write(master, b"/detach\n")  # type-ahead, before any prompt exists
         while b"APPROVE>" not in buf and time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], 0.5)
+            ready = select.select([master], [], [], 0.5)[0]
             if not ready:
                 continue
             try:
@@ -408,7 +408,7 @@ def test_tty_prompt_ends_once_until_holds(tmp_path: pathlib.Path) -> None:
     deadline = time.monotonic() + 15
     try:
         while b"PICK>" not in buf and time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], 0.5)
+            ready = select.select([master], [], [], 0.5)[0]
             if ready:
                 buf += os.read(master, 4096)
         assert b"PICK>" in buf, f"prompt never appeared: {buf[-500:]!r}"
@@ -416,7 +416,7 @@ def test_tty_prompt_ends_once_until_holds(tmp_path: pathlib.Path) -> None:
         time.sleep(0.3)
         flag.write_text("1", encoding="utf-8")
         while b"NEXT>" not in buf and time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], 0.5)
+            ready = select.select([master], [], [], 0.5)[0]
             if ready:
                 buf += os.read(master, 4096)
         assert b"NEXT>" in buf, f"second prompt never appeared: {buf[-500:]!r}"
@@ -465,13 +465,13 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: pathlib.Path) -> None
     deadline = time.monotonic() + 15
     try:
         while b"[y/N/a/d]" not in buf and time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], 0.5)
+            ready = select.select([master], [], [], 0.5)[0]
             if ready:
                 buf += os.read(master, 4096)
         assert b"[y/N/a/d]" in buf, f"approval never prompted: {buf[-500:]!r}"
         ipc.write_answer(session_dir, "approval-1", "yes")
         while b"port?" not in buf and time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], 0.5)
+            ready = select.select([master], [], [], 0.5)[0]
             if ready:
                 buf += os.read(master, 4096)
         assert b"port?" in buf, f"question never prompted: {buf[-500:]!r}"
@@ -508,7 +508,7 @@ def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: pathlib
     def drain_until(marker: bytes) -> None:
         nonlocal buf
         while marker not in buf and time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], 0.5)
+            ready = select.select([master], [], [], 0.5)[0]
             if ready:
                 try:
                     buf += os.read(master, 4096)

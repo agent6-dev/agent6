@@ -248,7 +248,7 @@ def _files(repo: pathlib.Path, base: str, head: str) -> tuple[list[dict[str, Any
     """Return the changed files, whether the list was cut and whether the head has local edits."""
     if head == git_history.WORKTREE:
         rows = git_history.worktree_files(repo, base)
-        states = {rel: code for code, rel in git_read.porcelain_entries(repo)}
+        states: dict[str, str] = {rel: code for code, rel in git_read.porcelain_entries(repo)}
     else:
         rows = git_history.changed_files(repo, base, head)
         states = {}

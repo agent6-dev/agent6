@@ -550,7 +550,12 @@ def test_answer_offers_the_sessions_holding_a_pending_question(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "mode": "run"},
-                {"type": "question.prompt", "id": "question-1", "questions": [], "wait": False},
+                {
+                    "type": "question.prompt",
+                    "id": "question-1",
+                    "questions": list[str](),
+                    "wait": False,
+                },
                 {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             )
         ),

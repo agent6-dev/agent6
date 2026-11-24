@@ -16,6 +16,7 @@ import dataclasses
 import difflib
 import pathlib
 from collections.abc import Sequence
+from typing import Any
 
 from agent6 import directive as agent6_directive
 from agent6 import kinds
@@ -96,7 +97,7 @@ def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
     if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
         return None  # no listing: the binary resolves model names itself
     try:
-        secrets = secret_store.load_secrets()
+        secrets: dict[str, Any] = secret_store.load_secrets()
     except secret_store.SecretsError:
         secrets = {}
     key = secret_store.resolve_api_key(provider_name, entry.api_key_env, secrets=secrets)

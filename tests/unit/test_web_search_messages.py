@@ -127,7 +127,7 @@ def _stream_of(content: list[dict[str, Any]]) -> list[str]:
         start = copy.deepcopy(block)
         deltas: list[dict[str, Any]] = []
         if block["type"] in ("tool_use", "server_tool_use"):
-            start["input"] = {}
+            start["input"] = dict[str, Any]()
             raw = json.dumps(block["input"])
             deltas = [
                 {"type": "input_json_delta", "partial_json": raw[:7]},

@@ -124,9 +124,9 @@ def test_flip_advisory_needs_a_prior_red_verify() -> None:
 
 def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
     for wf, state_kw in (
-        (_wf(state_dir=None), {}),
+        (_wf(state_dir=None), dict[str, Any]()),
         (_wf(), {"memory": guards.MemoryState(written=True)}),
-        (_wf(mode="ask"), {}),
+        (_wf(mode="ask"), dict[str, Any]()),
     ):
         state = _state(
             **state_kw, verify=verify_verdict.VerifyVerdict(last_ok=False, ever_failed=True)
@@ -262,7 +262,11 @@ def test_a_finish_after_a_recovery_is_honoured_at_once() -> None:
 def test_the_flip_advisory_follows_the_config_key() -> None:
     """`harness.memory_advisory = false` sends no advisory at a recovery; the default sends it."""
     assert Config.model_validate({}).harness.memory_advisory is True
-    for harness, sent in (({}, [nudges.MEMORY_FLIP_NUDGE]), ({"memory_advisory": False}, [])):
+    cases: tuple[tuple[dict[str, bool], list[str]], ...] = (
+        ({}, [nudges.MEMORY_FLIP_NUDGE]),
+        ({"memory_advisory": False}, []),
+    )
+    for harness, sent in cases:
         wf = _wf(config=Config.model_validate({"harness": harness}))
         state = _state()
         _verify(wf, state, _turn(1), rc=1)

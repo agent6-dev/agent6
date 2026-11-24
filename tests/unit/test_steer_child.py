@@ -227,7 +227,7 @@ def test_finish_review_holds_the_child_on_both_parent_rosters(tmp_path: pathlib.
     process.write_worker_pid(child, os.getpid())
     (child / "manifest.json").write_text(json.dumps({"mode": "run", "session_id": sid}))
     panel = {"panel_id": "p", "execution_id": "work", "turn": 2, "trigger": "finish"}
-    target = {
+    target: dict[str, Any] = {
         "base_commit": None,
         "base_tree": "a" * 40,
         "head_commit": None,
@@ -236,7 +236,7 @@ def test_finish_review_holds_the_child_on_both_parent_rosters(tmp_path: pathlib.
         "paths": [],
         "source": "worktree",
     }
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"type": "session.start", "mode": "run", "user_task": "t", "execution_id": "work"},
         {"type": "review.start", **panel, "target": target, "reviewers": []},
     ]

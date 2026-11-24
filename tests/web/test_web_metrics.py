@@ -70,6 +70,7 @@ def test_metrics_is_404_without_the_web_opt_in(
 ) -> None:
     """An exporter does not expose the route."""
     _configure(tmp_path, web, metrics)
+    headers: dict[str, str]
     for headers in ({}, {"Authorization": f"Bearer {signin.SECRET}"}):
         assert _get(port, headers)[0] == 404
 
@@ -88,6 +89,7 @@ def test_metrics_requires_the_secret_not_a_cookie_or_login_token(
     _configure(tmp_path)
     assert _get(port, {"Authorization": f"Bearer {signin.SECRET}"})[0] == 200
     token = signin.token(port)
+    headers: dict[str, str]
     for headers in (
         {},
         {"Authorization": "Bearer wrong-secret"},

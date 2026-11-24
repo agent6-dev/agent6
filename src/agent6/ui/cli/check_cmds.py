@@ -163,7 +163,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
     probed: dict[str, MCPServerEntry] = {}
     # The same refusals a run applies first: a probe never starts a server under a config
     # the run would refuse, such as `home = "tmp"` below `full`.
-    servers = cfg.mcp.enabled_servers
+    servers: dict[str, MCPServerEntry] = cfg.mcp.enabled_servers
     if (refusal := confine.startup_refusal(cfg, isolation, root, mcp_network=False)) is not None:
         detail = f"a run would refuse: {refusal}"
         print(f"  {detail}")

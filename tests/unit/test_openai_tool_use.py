@@ -915,7 +915,7 @@ def test_blank_name_tool_use_and_orphan_result_dropped_in_translation() -> None:
     A blank-name assistant tool_use already in history (e.g. a resumed snapshot) and its orphaned
     tool_result are both dropped so the request stays well-formed for strict backends.
     """
-    history = [
+    history: list[dict[str, Any]] = [
         {
             "role": "assistant",
             "content": [
@@ -1018,7 +1018,7 @@ def test_temperature_400_adapts_and_retries(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_null_usage_fields_do_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = {
+    payload: dict[str, Any] = {
         "choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": None, "completion_tokens": None},
     }

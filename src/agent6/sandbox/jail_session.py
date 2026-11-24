@@ -623,9 +623,9 @@ class JailSession:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         break
-                    readable, _, _ = select.select(
+                    readable = select.select(
                         [self._proc.stdout], [], [], min(remaining, jail_protocol.ANSWER_POLL_S)
-                    )
+                    )[0]
                     if readable and not os.read(self._proc.stdout.fileno(), 65536):
                         break
         with contextlib.suppress(subprocess.TimeoutExpired, OSError):

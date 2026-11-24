@@ -98,7 +98,12 @@ def test_a_tool_is_a_call_and_then_an_outcome() -> None:
 
     An editor that only saw the finished pair could not show a long verify in progress.
     """
-    call = {"type": "tool.call", "name": "run_verify_command", "args_preview": {}, "call_id": 1}
+    call: dict[str, Any] = {
+        "type": "tool.call",
+        "name": "run_verify_command",
+        "args_preview": {},
+        "call_id": 1,
+    }
     result = {"type": "tool.result", "name": "run_verify_command", "ok": True, "call_id": 1}
     updates = updates_for_events([call, result], acp_session_id="s")
     assert _kinds(updates) == ["tool_call", "tool_call_update"]

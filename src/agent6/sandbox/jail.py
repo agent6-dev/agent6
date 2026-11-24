@@ -164,7 +164,7 @@ def read_available(pipe: IO[bytes] | None, budget_s: float = 0.5) -> bytes:
     chunks: list[bytes] = []
     deadline = time.monotonic() + budget_s
     while time.monotonic() < deadline:
-        readable, _, _ = select.select([pipe], [], [], 0.05)
+        readable = select.select([pipe], [], [], 0.05)[0]
         if not readable:
             break
         chunk = os.read(pipe.fileno(), 4096)
@@ -225,7 +225,7 @@ class SessionNetwork:
         try:
             assert proc.stdout is not None
             # A launcher without --hold-netns reads a policy from stdin and blocks forever.
-            ready, _, _ = select.select([proc.stdout], [], [], _HOLDER_READY_TIMEOUT_S)
+            ready = select.select([proc.stdout], [], [], _HOLDER_READY_TIMEOUT_S)[0]
             if not ready or proc.stdout.readline().strip() != b"ready":
                 try:
                     code: int | None = proc.wait(timeout=0.5)

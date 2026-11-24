@@ -371,7 +371,7 @@ def _seed_source_run(
     # A real curator DAG: root at graph_version 1, child at 2, child passed at 3, as recorded.
     _seed_graph(layout)
     for turn in turns:
-        payload = {
+        payload: dict[str, Any] = {
             "version": loop_snapshot.SNAPSHOT_VERSION,
             "system": "sys",
             "messages": [{"role": "user", "content": f"turn {turn}"}],
@@ -810,7 +810,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
     src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2))
-    latest_payload = {
+    latest_payload: dict[str, Any] = {
         "version": loop_snapshot.SNAPSHOT_VERSION,
         "system": "sys",
         "messages": [{"role": "user", "content": "turn 3 from loop_state"}],

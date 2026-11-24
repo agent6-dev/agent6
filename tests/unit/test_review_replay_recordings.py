@@ -119,7 +119,7 @@ def test_incomplete_openings_cannot_be_replaced_by_a_guess(
     elif damage == "limit":
         body["input"].pop()
     elif damage == "local process":
-        body = {"stdin": [], "system": "old", "messages": []}
+        body: dict[str, Any] = {"stdin": [], "system": "old", "messages": []}
     child = env.record_review(tmp_path, "run-rp1-l1", body)
     path = sorted(child.transcripts_dir.glob("*.json"))[1]
     if damage == "object":

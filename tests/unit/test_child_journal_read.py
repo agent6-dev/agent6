@@ -50,7 +50,7 @@ def test_a_continued_child_looks_up_sessions_in_its_clone(
         ("read_session", args)
         for args in (
             {"id": "parent-p1-l1"},
-            {},
+            dict[str, str](),
             {"id": "parent-p1-l"},
             {"id": "parent"},
             {"id": "local"},

@@ -32,7 +32,7 @@ def _read_until(fd: int, pattern: bytes, timeout_s: float = 20.0) -> bytes:
     seen = b""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        ready, _, _ = select.select([fd], [], [], 0.1)
+        ready = select.select([fd], [], [], 0.1)[0]
         if not ready:
             continue
         try:

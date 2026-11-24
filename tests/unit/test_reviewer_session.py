@@ -175,12 +175,13 @@ def test_a_contract_stops_at_its_turn_limit_without_running_the_last_tools(
     assert result.reason == "max_turns" and result.summary == "final answer"
     tools = provider.call.call_args_list[0].kwargs["tools"]
     assert [t.name for t in tools] == ["read_file"]
-    for forbidden, raw in (
+    withheld: tuple[tuple[str, dict[str, Any]], ...] = (
         ("apply_edit", {"path": "x", "edits": []}),
         ("run_command", {"argv": ["true"]}),
         ("run_verify_command", {}),
         ("fetch", {"url": "http://127.0.0.1:1/"}),
-    ):
+    )
+    for forbidden, raw in withheld:
         with pytest.raises(tool_errors.ToolError, match="not available"):
             disp.dispatch(forbidden, raw)
 

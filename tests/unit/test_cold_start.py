@@ -111,7 +111,7 @@ def _resume(
     result = wf.resume(steer="Continue here.")
     if result.reason in ("plan_unreadable", "provider_error", "budget_exhausted"):
         worker.call.assert_not_called()
-        sent = []
+        sent: list[dict[str, Any]] = []
     else:
         worker.call.assert_called_once()
         sent = worker.call.call_args.kwargs["messages"]

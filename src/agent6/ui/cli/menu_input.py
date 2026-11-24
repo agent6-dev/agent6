@@ -95,7 +95,7 @@ def read_line_until(fd: int, until: Callable[[], bool] | None) -> str | None:
             continue
         if until is not None and until():
             return None
-        select.select([fd], [], [], 0.2 if until is not None else None)
+        select.select([fd], (), (), 0.2 if until is not None else None)
 
 
 def _read_key_until(fd: int, until: Callable[[], bool]) -> str:
@@ -120,7 +120,7 @@ def _read_key_until(fd: int, until: Callable[[], bool]) -> str:
 def _read_escape(fd: int) -> str:
     """Return the rest of an ESC-initiated key: a name, "esc" for a bare Escape, "" if ignored."""
     # Distinguish a bare Esc from an escape sequence by a short poll.
-    ready, _, _ = select.select([fd], [], [], 0.03)
+    ready = select.select([fd], [], [], 0.03)[0]
     if not ready:
         return "esc"
     lead = os.read(fd, 1)

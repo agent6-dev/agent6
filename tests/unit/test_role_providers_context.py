@@ -66,7 +66,7 @@ def _mock_http(monkeypatch: pytest.MonkeyPatch, *, reject_temperature: bool = Fa
         text = '{"verdict":"pass","findings":[],"summary":"ok"}'
         usage = {"prompt_tokens": 10, "completion_tokens": 5}
         if streaming:
-            chunks = [
+            chunks: list[dict[str, Any]] = [
                 {"choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}]},
                 {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
                 {"choices": [], "usage": usage},

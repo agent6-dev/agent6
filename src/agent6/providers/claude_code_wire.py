@@ -280,7 +280,8 @@ def render_history(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]
     content: list[dict[str, Any]] = opening
     if len(opening) == 1:
         # Without images the task and the replay stay one text block.
-        parts, content = [first, _HARNESS_REPLAY], []
+        parts = [first, _HARNESS_REPLAY]
+        content = []
     names: dict[str, str] = {}
     for message in messages[1:]:
         role = str(message.get("role", "user"))

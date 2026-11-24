@@ -189,7 +189,9 @@ def test_launch_reports_low_state_disk_space_without_refusing(
         assert cli_main(command) == 0
         notice = capsys.readouterr().err
         assert state in seen
-        expected = [] if free_note is None else [f"[agent6] low disk space: {free_note} at {state}"]
+        expected: list[str] = (
+            [] if free_note is None else [f"[agent6] low disk space: {free_note} at {state}"]
+        )
         assert [line for line in notice.splitlines() if "low disk space" in line] == expected
         seen.clear()
 

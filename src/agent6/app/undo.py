@@ -201,7 +201,8 @@ def _rewind_checkout(
     current = git_read.worktree_tree(checkout, tip, exclude)
     differing = git_read.tree_diff_paths(checkout, sha, current)
     if not end_tree:
-        put_back, left = differing, []
+        put_back = differing
+        left: list[str] = []
     else:
         own = set(git_read.tree_diff_paths(checkout, sha, end_tree))
         since = set(git_read.tree_diff_paths(checkout, end_tree, current))

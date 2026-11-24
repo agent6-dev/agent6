@@ -55,7 +55,7 @@ def _serve(
 def _mcp_reply(request: dict[str, Any]) -> dict[str, Any]:
     method = request.get("method")
     if method == "initialize":
-        result: Any = {"protocolVersion": "2024-11-05", "capabilities": {}}
+        result: dict[str, Any] = {"protocolVersion": "2024-11-05", "capabilities": {}}
     elif method == "tools/list":
         result = {"tools": [{"name": "ping", "description": "d", "inputSchema": {}}]}
     else:

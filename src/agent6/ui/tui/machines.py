@@ -12,7 +12,7 @@ import json
 import os
 import pathlib
 from collections.abc import Callable
-from typing import ClassVar, override
+from typing import Any, ClassVar, override
 
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import watch as machine_watch
@@ -204,7 +204,7 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         # A per-process claim; concurrent web and TUI watchers each hold their own.
         process.register_frontend(self._root, os.getpid())
         try:
-            events = self._journal.read()
+            events: list[Any] = self._journal.read()
         except JournalError:
             events = []  # the first poll surfaces the corruption in the header
         seeded = fold_machine(self._spec, events)

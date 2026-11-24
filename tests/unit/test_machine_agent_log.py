@@ -99,7 +99,9 @@ class _SteeredOnce(_Finishes):
         if len(self.seen) > 1:
             return super().call(**kw)
         assert ipc.submit_steer(self.state, "Read the tests first.")
-        tools = ({"type": "tool_use", "id": "t0", "name": "list_dir", "input": {}},)
+        tools: tuple[dict[str, Any], ...] = (
+            {"type": "tool_use", "id": "t0", "name": "list_dir", "input": {}},
+        )
         return ProviderResponse(
             text="",
             tool_uses=tools,
@@ -195,7 +197,12 @@ def test_a_restart_states_the_rendered_prompt_as_the_task(
                 return super().call(**kw)
             self.turns += 1
             assert self.turns <= 3
-            call = {"type": "tool_use", "id": str(self.turns), "name": "list_dir", "input": {}}
+            call: dict[str, Any] = {
+                "type": "tool_use",
+                "id": str(self.turns),
+                "name": "list_dir",
+                "input": {},
+            }
             return writers.response(
                 "", tool_uses=(call,), stop_reason="tool_use", raw={"content": [call]}
             )

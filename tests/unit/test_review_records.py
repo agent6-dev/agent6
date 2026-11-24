@@ -147,7 +147,7 @@ def test_frozen_records_round_trip() -> None:
 def test_review_target_defaults_missing_hidden_paths_and_round_trips_exclusions() -> None:
     """Older targets remain readable while new targets retain their excluded names."""
     adapter = pydantic.TypeAdapter(review_records.ReviewTarget)
-    legacy = dict(
+    legacy: dict[str, Any] = dict(
         base_commit="base",
         base_tree="base-tree",
         head_commit="head",

@@ -138,6 +138,7 @@ def test_prune_keeps_and_names_work_no_commit_has_after_a_merge(
     (worktree / "notes.txt").write_text("untracked notes\n", encoding="utf-8")
     capsys.readouterr()
 
+    args: list[str]
     for args in ([], ["--delete-squashed"]):
         assert main(["sessions", "prune", *args]) == 0
 

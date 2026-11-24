@@ -88,7 +88,7 @@ class DryRunReport:
 
 def synthesize_record(
     spec: schema.MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()
-) -> Any:
+) -> dict[str, Any]:
     """Return a minimal schema-valid example object for a schema.
 
     Exactly the required fields: scalars zero, lists empty, enums their first member, nested
@@ -122,11 +122,11 @@ def _synthesize_field(spec: schema.MachineSpec, field: Any, seen: tuple[str, ...
     if t in _SCALAR_EXAMPLES:
         return _SCALAR_EXAMPLES[t]
     if t == "json":
-        return {}
+        return dict[str, Any]()
     if _LIST_RE.match(t):
-        return []
+        return list[Any]()
     if t in spec.schemas:  # record reference (guard cycles already rejected at load)
-        return {} if t in seen else synthesize_record(spec, t, seen)
+        return dict[str, Any]() if t in seen else synthesize_record(spec, t, seen)
     return None  # pragma: no cover - unknown types already rejected at load
 
 
@@ -135,7 +135,7 @@ def _capture_summary(capture: Any) -> str:
     if capture is None:
         return "no capture"
     if capture.stdout_json is not None:
-        targets = [capture.stdout_json]
+        targets: list[str] = [capture.stdout_json]
     elif capture.finish_json is not None:
         targets = [capture.finish_json]
     elif capture.set is not None:

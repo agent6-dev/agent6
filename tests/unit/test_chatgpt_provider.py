@@ -919,7 +919,12 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
     The commentary message never hoists ahead of the reasoning that produced it; a display-only
     thinking block replays nothing.
     """
-    r1 = {"type": "reasoning", "id": "rs_1", "encrypted_content": "A", "summary": []}
+    r1: dict[str, Any] = {
+        "type": "reasoning",
+        "id": "rs_1",
+        "encrypted_content": "A",
+        "summary": [],
+    }
     note = {
         "type": "message",
         "role": "assistant",
@@ -977,7 +982,7 @@ def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
     An orphan 400s the request.
     """
     item = {"type": "reasoning", "id": "rs_1"}
-    blocks = [
+    blocks: list[dict[str, Any]] = [
         {"type": "thinking", "thinking": "", "reasoning_replay": _replay(item)},
         {"type": "tool_use", "id": "c1", "name": "", "input": {}},
     ]

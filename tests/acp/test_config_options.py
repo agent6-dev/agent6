@@ -124,7 +124,7 @@ def _recorded_run(repo: pathlib.Path, session_id: str, **manifest: Any) -> pathl
         **manifest,
     }
     (session_dir / "manifest.json").write_text(json.dumps(record), encoding="utf-8")
-    snapshot = {
+    snapshot: dict[str, Any] = {
         "version": loop_snapshot.SNAPSHOT_VERSION,
         "system": "s",
         "messages": [],

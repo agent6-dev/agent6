@@ -41,7 +41,7 @@ def raise_rejection(status: int | None, text: str, body: dict[str, Any]) -> None
     try:
         obj = json.loads(text[text.index("{") :])
     except (ValueError, TypeError):
-        obj = {}
+        obj = dict[str, Any]()
     error = obj.get("error", obj) if isinstance(obj, dict) else {}
     code = error.get("code", "") if isinstance(error, dict) else ""
     match = _CODES.get(code) if isinstance(code, str) else None

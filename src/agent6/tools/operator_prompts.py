@@ -418,7 +418,8 @@ class OperatorPrompts:
         Returns:
             The answered prompts, oldest first; each answer file is consumed once.
         """
-        taken, self._undelivered = self._undelivered, []
+        taken = self._undelivered
+        self._undelivered = []
         if self._session_dir is None:
             return tuple(taken)
         for request in list(self._pending.values()):

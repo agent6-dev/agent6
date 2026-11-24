@@ -519,7 +519,7 @@ def test_create_counts_every_attempts_own_cost_in_the_cost_metric(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
-    attempts = iter([({}, 0.02), (_draft(VALID_MACHINE), 0.03)])
+    attempts = iter([(dict[str, str](), 0.02), (_draft(VALID_MACHINE), 0.03)])
 
     def fake_build(
         overlays: object, root: pathlib.Path, transcript_dir: pathlib.Path, **_kw: object

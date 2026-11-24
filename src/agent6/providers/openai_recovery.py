@@ -268,7 +268,7 @@ def _extract_tool_call_obj(
             raw_args = obj[key]
             break
     else:
-        raw_args = {}
+        raw_args = dict[str, Any]()
     # A few templates double-encode the args as a JSON string.
     if isinstance(raw_args, str):
         try:

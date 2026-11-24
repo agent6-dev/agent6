@@ -94,6 +94,7 @@ def test_parent_names_the_child_that_verified_its_exact_tree(
     assert child_verify.covering_pass(parent, "another-tree", command) is None
     logs = parent.parent / child / "logs.jsonl"
     events = [json.loads(line) for line in logs.read_text().splitlines()]
+    changes: dict[str, Any]
     for changes in ({"scoped": True}, {"tree_before": "changed"}, {"verify_id": None}):
         logs.write_text(
             "".join(

@@ -238,7 +238,8 @@ class TranscriptFold:
         """
         etype = event.get("type", "")
         if self._fold_receipt(event, etype):
-            deferred, self._deferred = self._deferred, []
+            deferred = self._deferred
+            self._deferred = []
             return deferred
         if etype == "model.call":
             self._thinking.clear()

@@ -1799,7 +1799,9 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
     """
 
     def _multi(*names: str) -> ProviderResponse:
-        tus = tuple({"id": f"t{i}", "name": n, "input": {}} for i, n in enumerate(names))
+        tus: tuple[dict[str, Any], ...] = tuple(
+            {"id": f"t{i}", "name": n, "input": {}} for i, n in enumerate(names)
+        )
         return ProviderResponse(
             text="",
             tool_uses=tus,
@@ -9362,7 +9364,7 @@ def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Pa
             del kwargs
             self.calls += 1
             if self.calls == 8:
-                blocks = [
+                blocks: list[dict[str, Any]] = [
                     {"type": "tool_use", "id": "v8", "name": "run_verify_command", "input": {}},
                     {
                         "type": "tool_use",

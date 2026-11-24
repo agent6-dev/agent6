@@ -77,7 +77,8 @@ def test_settled_accounting_follows_the_actual_command_result(
         if action == "failed":
             raw = {"argv": ["/bin/false"]}
         elif action == "roster":
-            name, raw = "read_background", {}
+            name = "read_background"
+            raw = {}
         elif action == "live_poll":
             name, raw = "read_background", {"id": sibling.background_id, "wait_s": 0}
         elif action in ("handback", "detached"):

@@ -840,7 +840,7 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
 
     def lagging(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> None:
         # Scheduled out after the child wrote: wait for its stderr, then sleep inside the join cap.
-        select.select([pipe], [], [], 5.0)
+        select.select([pipe], (), (), 5.0)
         time.sleep(0.2)
         real(pipe, keep, close=close)
 

@@ -35,7 +35,7 @@ def _node(**kw: Any) -> models.TaskNode:
 
 def test_the_tree_view_carries_who_added_a_task() -> None:
     """The graph.update snapshot carries `created_by`, telling queued work from the model's own."""
-    nodes = {
+    nodes: dict[str, Any] = {
         "root": {"title": "run", "parent_id": None, "children": ["a", "b"], "created_by": "user"},
         "a": {"title": "model's", "parent_id": "root", "children": [], "created_by": "worker"},
         "b": {"title": "yours", "parent_id": "root", "children": [], "created_by": "user"},
@@ -49,7 +49,7 @@ def test_the_tree_view_carries_who_added_a_task() -> None:
 
 def test_an_old_run_dir_reads_as_the_models() -> None:
     """A snapshot written before the field existed simply lacks it."""
-    nodes = {"a": {"title": "old", "parent_id": None, "children": []}}
+    nodes: dict[str, Any] = {"a": {"title": "old", "parent_id": None, "children": []}}
 
     assert state.task_tree_views(nodes, cursor=None)[0].created_by == ""
 
@@ -91,7 +91,7 @@ def test_every_surface_reads_one_owner_note() -> None:
     """
     from agent6.ui.cli import task_tree
 
-    nodes = {
+    nodes: dict[str, Any] = {
         "0001": {
             "title": "the run",
             "parent_id": None,

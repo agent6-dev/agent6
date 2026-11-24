@@ -214,7 +214,7 @@ def _writing_secrets(user: paths.RealUser) -> Generator[dict[str, Any]]:
         if not held:
             raise SecretsError(_lock_refusal(path))
         try:
-            data = _read_secrets_toml(path, user)
+            data: dict[str, Any] = _read_secrets_toml(path, user)
         except FileNotFoundError:
             data = {}
         before = _render_secrets_toml(data)
@@ -244,7 +244,7 @@ def _save_provider_entry(
     with _writing_secrets(user) as data:
         providers = data.get("providers")
         if not isinstance(providers, dict):
-            providers = {}
+            providers = dict[str, Any]()
         providers[provider_name] = entry
         data["providers"] = providers
     return paths.secrets_path(user)

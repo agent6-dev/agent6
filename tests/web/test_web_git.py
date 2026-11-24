@@ -1037,7 +1037,7 @@ def test_a_first_parent_keeps_its_column_past_a_side_branchs_fork() -> None:
 
     The layout ended master's column at the fork's child and moved master into the branch's column.
     """
-    history = [
+    history: list[dict[str, Any]] = [
         {"sha": "m2", "parents": ["m1"]},
         {"sha": "s1", "parents": ["x"]},
         {"sha": "m1", "parents": ["x"]},
@@ -1057,7 +1057,7 @@ def test_the_working_tree_runs_a_column_of_its_own_down_to_head() -> None:
 
     The working-tree row sat in column 0 with no line, above whatever commit was newest.
     """
-    history = [
+    history: list[dict[str, Any]] = [
         {"sha": "WORKTREE", "parents": ["h"]},
         {"sha": "m", "parents": ["n", "h"]},
         {"sha": "n", "parents": ["h"]},

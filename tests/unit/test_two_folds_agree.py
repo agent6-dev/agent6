@@ -326,7 +326,7 @@ def test_both_folds_tell_a_timed_out_gate_from_a_red_one(tmp_path: pathlib.Path)
 
 def test_the_folds_agree_that_a_queued_question_blocks_nothing(tmp_path: pathlib.Path) -> None:
     """Both folds carry a queued question past a resume and block only on a waiting one."""
-    prompt = {
+    prompt: dict[str, Any] = {
         "ts": "2026-07-14T10:00:01+00:00",
         "type": "question.prompt",
         "id": "question-1",

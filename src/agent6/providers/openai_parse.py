@@ -113,7 +113,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
     """
     choices = data.get("choices")
     if choices is None:
-        choices = []
+        choices = list[Any]()
     if not isinstance(choices, list):
         raise provider_types.ProviderError("OpenAI response choices was not an array")
     text = ""
@@ -144,7 +144,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
         stop_reason = "" if raw_stop is None else response_string(raw_stop, "finish_reason")
         raw_calls = message.get("tool_calls")
         if raw_calls is None:
-            raw_calls = []
+            raw_calls = list[Any]()
         if not isinstance(raw_calls, list):
             raise provider_types.ProviderError("OpenAI response tool_calls was not an array")
         parsed_calls: list[dict[str, Any]] = []

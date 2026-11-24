@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+from typing import Any
 
 import pytest
 
@@ -112,7 +113,7 @@ def test_listing_separates_session_and_group_activity(tmp_path: pathlib.Path) ->
 @pytest.mark.parametrize("family", ["approval", "question"])
 def test_live_prompt_lists_keep_answered_prompts(family: str) -> None:
     """The prompt lists include answered and outstanding prompts without duplicate lists."""
-    journal = [
+    journal: list[dict[str, Any]] = [
         {"type": "session.start", "mode": "run"},
         {"type": f"{family}.prompt", "id": "answered", "prompt": "First?", "questions": []},
         {"type": f"{family}.answer", "id": "answered", "answer": "yes", "answers": ["yes"]},

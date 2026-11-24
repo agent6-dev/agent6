@@ -4,6 +4,7 @@ import asyncio
 import json
 import pathlib
 import subprocess
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -609,7 +610,7 @@ def test_tui_header_reads_recorded_environment(resumed: layout.SessionLayout) ->
 
 def test_an_unknown_target_field_does_not_supply_the_launcher_digest() -> None:
     """Only the digest field identifies the launcher binary."""
-    stamp = {
+    stamp: dict[str, Any] = {
         "transport": "container",
         "host_root": "/w",
         "command_root": "/w",

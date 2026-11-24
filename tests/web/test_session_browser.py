@@ -108,7 +108,7 @@ def test_each_answer_reads_within_its_question_or_command(
     from playwright.sync_api import expect
 
     approval = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: make"}
-    ask = {
+    ask: dict[str, Any] = {
         "type": "question.prompt",
         "id": "question-1",
         "wait": True,
@@ -458,7 +458,7 @@ def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     """
     from playwright.sync_api import expect
 
-    ask = {
+    ask: dict[str, Any] = {
         "type": "question.prompt",
         "id": "question-1",
         "wait": True,
@@ -506,7 +506,7 @@ def test_the_approval_a_run_waits_on_sits_under_its_queued_questions(
     from playwright.sync_api import expect
 
     def queued(qid: str, text: str) -> dict[str, Any]:
-        ask = [{"question": text, "options": []}]
+        ask: list[dict[str, Any]] = [{"question": text, "options": []}]
         return {"type": "question.prompt", "id": qid, "wait": False, "questions": ask}
 
     command = f"Allow run_command: {LONG_COMMAND}"

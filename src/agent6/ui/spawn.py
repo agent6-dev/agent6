@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import IO
+from typing import IO, Any
 
 from agent6 import directive, kinds, paths
 from agent6.app import child_wait
@@ -504,7 +504,9 @@ def _located(
             return d
         if owner is None:
             rows = tail.tail_events(d / layout.LOGS_NAME, follow=False)
-            start = next((row for row in rows if row.get("type") == "session.start"), {})
+            start: dict[str, Any] = next(
+                (row for row in rows if row.get("type") == "session.start"), {}
+            )
             if start.get("worker_pid") == pid:
                 return d
     return None

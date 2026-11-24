@@ -51,7 +51,13 @@ def test_objects_are_sanitized_canonical_and_reused_on_retry(
     secret = "sk-private-credential-123456789"
     message = {"role": "user", "content": secret}
     headers = {"authorization": f"Bearer {secret}"}
-    body = {field: [message], "system": "sys", "instructions": "inst", "tools": [], "model": "m"}
+    body: dict[str, Any] = {
+        field: [message],
+        "system": "sys",
+        "instructions": "inst",
+        "tools": [],
+        "model": "m",
+    }
     writes: list[pathlib.Path] = []
     real_write = portable.atomic_write
 
@@ -99,7 +105,11 @@ def test_transcript_readers_materialize_before_search_and_seq_window(
     layout.ensure()
     layout.logs_path.write_text('{"type": "session.start"}\n')
     message = {"role": "user", "content": "operator needle"}
-    record = {"seq": 2, "request": {"body": {field: [message]}}, "response": {"body": {}}}
+    record: dict[str, Any] = {
+        "seq": 2,
+        "request": {"body": {field: [message]}},
+        "response": {"body": {}},
+    }
     stored = json.loads(json.dumps(record))
     if referenced:
         stored["request"]["body"][field] = [_reference(message, layout.session_dir / "objects")]

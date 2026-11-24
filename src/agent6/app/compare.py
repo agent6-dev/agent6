@@ -119,7 +119,9 @@ def rank(
     spent, unknown = 0.0, False
     with judging_status():
         try:
-            results = [child.result.result() for child in spawner(tasks, "r1", at=None)]
+            results: list[child_records.ChildResult] = [
+                child.result.result() for child in spawner(tasks, "r1", at=None)
+            ]
         except Exception as exc:
             # A judge that cannot start is reported: the table must not read as ranked by it.
             detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__

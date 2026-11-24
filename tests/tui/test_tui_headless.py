@@ -1961,7 +1961,7 @@ def test_every_dashboard_pane_is_titled_and_the_run_widget_stays_short(
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
             await _show_dashboard(pilot)
-            target = {
+            target: dict[str, Any] = {
                 "transport": transport,
                 "host_root": "/repo",
                 "command_root": "/repo",

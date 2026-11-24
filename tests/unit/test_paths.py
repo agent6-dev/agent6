@@ -372,7 +372,8 @@ def test_the_id_decodes_back_to_the_path_it_names(path: str) -> None:
     flat, tag = rid.rsplit("-", 1)
     # The name fixes the bit LENGTH, which is what makes leading zeros safe.
     marks = bin(int(tag, 16))[2:].zfill(flat.count("-"))
-    out, seen = [], 0
+    out: list[str] = []
+    seen = 0
     for ch in flat:
         if ch == "-":
             out.append("/" if marks[seen] == "1" else "-")

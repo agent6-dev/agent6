@@ -790,7 +790,7 @@ def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
 def test_a_nested_usage_count_error_names_its_path() -> None:
     from agent6.providers import openai_parse, provider_types
 
-    body = {
+    body: dict[str, Any] = {
         "choices": [],
         "usage": {
             "prompt_tokens": 1,

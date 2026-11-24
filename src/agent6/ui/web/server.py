@@ -602,7 +602,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         Returns:
             Whether the header parsed.
         """
-        lengths = self.headers.get_all("Content-Length", [])
+        lengths: list[str] = self.headers.get_all("Content-Length", [])
         raw = "0" if not lengths else (lengths[0].strip() if len(lengths) == 1 else "")
         if not (raw.isascii() and raw.isdigit()):
             self.close_connection = True

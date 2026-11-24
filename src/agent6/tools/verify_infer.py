@@ -22,6 +22,7 @@ import pathlib
 import re
 import shlex
 from collections.abc import Callable, Iterator
+from typing import Any
 
 from agent6 import path_safety
 from agent6.vcs.git import read as git_read
@@ -381,7 +382,7 @@ def _package_json(
     try:
         data = json.loads(path_safety.read_workspace_text(repo_root, "package.json", hide))
     except ValueError:
-        data = {}
+        data = dict[str, Any]()
     scripts = data.get("scripts") if isinstance(data, dict) else None
     script = scripts.get("test") if isinstance(scripts, dict) else None
     if not isinstance(script, str) or _NPM_PLACEHOLDER.fullmatch(script.strip()):
@@ -515,7 +516,7 @@ def gather_repo_manifests(
     """Return the clipped manifest files and AGENTS.md as the LLM call's context."""
     parts: list[str] = []
     try:
-        top = sorted(
+        top: list[str] = sorted(
             p.name + ("/" if p.is_dir() else "")
             for p in repo_root.iterdir()
             if not _hidden(repo_root, p.name, hide)

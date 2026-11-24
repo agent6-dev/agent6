@@ -435,7 +435,7 @@ def test_flex_and_fast_need_a_listed_rate_and_a_serving_tier(
 def test_responses_reported_dollars_take_precedence_over_a_missing_tier_price(
     tmp_path: pathlib.Path, stream: bool
 ) -> None:
-    body = {
+    body: dict[str, Any] = {
         "status": "completed",
         "service_tier": "flex",
         "usage": {"input_tokens": 10, "output_tokens": 2, "cost": 0.2},

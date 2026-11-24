@@ -933,7 +933,10 @@ def _v4a_split_hunks(
         nonlocal cur_hints, cur_old, cur_new, cur_body
         if cur_old or cur_new:
             hunks.append((cur_hints, cur_old, cur_new, cur_body))
-        cur_hints, cur_old, cur_new, cur_body = [], [], [], []
+        cur_hints = []
+        cur_old = []
+        cur_new = []
+        cur_body = []
 
     for ln in section:
         if ln.startswith("@@"):

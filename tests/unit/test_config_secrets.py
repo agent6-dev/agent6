@@ -45,6 +45,7 @@ def test_secret_set_round_trips_without_touching_config_or_printing_the_value(
     assert secret_store.telemetry_headers(("Authorization",)) == {"Authorization": value}
     assert paths.global_config_path().read_bytes() == config
     assert not paths.repo_config_path(tmp_path).exists()
+    flags: list[str]
     for flags in ([], ["--json"]):
         assert main(["config", "show", "telemetry", *flags]) == 0
         shown = capsys.readouterr()

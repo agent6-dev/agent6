@@ -90,6 +90,7 @@ def test_non_object_params_name_the_supported_method_they_malformed() -> None:
 
 
 def test_initialize_requires_a_numeric_protocol_version() -> None:
+    params: dict[str, Any]
     for params in (
         {},
         {"protocolVersion": "one"},
@@ -103,6 +104,7 @@ def test_initialize_requires_a_numeric_protocol_version() -> None:
 
 
 def test_an_invalid_request_id_is_refused_with_a_null_protocol_id() -> None:
+    bad_id: Any
     for bad_id in ([], True, 1.5):
         (reply,) = _exchange({**_init(), "id": bad_id})
         assert reply["id"] is None
