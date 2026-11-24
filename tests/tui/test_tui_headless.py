@@ -2127,7 +2127,7 @@ def test_a_queued_question_pops_no_modal_until_asked_for(tmp_path: pathlib.Path)
             self.dispatcher = prompts.PromptDispatcher(self, answerable=lambda: False, lost="lost")
             self.notices: list[str] = []
 
-        def notify(self, message: Any, **kwargs: Any) -> None:  # type: ignore[override]
+        def notify(self, message: Any, **kwargs: Any) -> None:  # pyrefly: ignore[missing-override-decorator]
             self.notices.append(str(message))
 
     async def scenario() -> None:
@@ -2185,7 +2185,7 @@ def test_a_waiting_question_of_a_dead_run_is_answered_for_the_resume(
             self.dispatcher = prompts.PromptDispatcher(self, answerable=lambda: False, lost="lost")
             self.notices: list[str] = []
 
-        def notify(self, message: Any, **kwargs: Any) -> None:  # type: ignore[override]
+        def notify(self, message: Any, **kwargs: Any) -> None:  # pyrefly: ignore[missing-override-decorator]
             self.notices.append(str(message))
 
     async def scenario() -> None:

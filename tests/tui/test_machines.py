@@ -197,7 +197,7 @@ def test_watch_screen_carries_the_menu_bar_and_its_items_resolve(
     from agent6.machine import load_machine
     from agent6.ui.tui import menubar
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     spec = load_machine(f)
@@ -231,7 +231,7 @@ def test_watch_screen_shows_states_transitions_and_end(
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
@@ -272,13 +272,13 @@ def test_watch_screen_does_not_reannounce_a_stale_end(
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     fired: list[tuple[str, str]] = []
 
     def fake_notify(title: str, body: str) -> None:
         fired.append((title, body))
 
-    monkeypatch.setattr(notify, "desktop_notify", fake_notify)  # type: ignore[attr-defined]
+    monkeypatch.setattr(notify, "desktop_notify", fake_notify)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
@@ -312,7 +312,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
@@ -360,7 +360,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0  # terminates at once -> ended
@@ -417,7 +417,7 @@ def test_create_opens_dashboard_on_the_draft(tmp_path: pathlib.Path, monkeypatch
     def _fake_locate(*_a: object, **_k: object) -> tuple[pathlib.Path, str]:
         return draft, ""
 
-    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_locate)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -453,7 +453,7 @@ def test_create_spawns_off_the_ui_thread(tmp_path: pathlib.Path, monkeypatch: ob
             return None, "the test never released the spawn"
         return draft, ""
 
-    monkeypatch.setattr(spawn, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _slow_locate)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -544,7 +544,7 @@ def test_machine_run_confirms_then_spawns(tmp_path: pathlib.Path, monkeypatch: o
         captured.append(list(argv))
         return ""
 
-    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -613,7 +613,7 @@ def test_machine_run_refusal_notifies_and_skips_watch(
     def _fake_spawn(argv: list[str], cwd: pathlib.Path, **_k: object) -> str:
         return "agent6 machine exited (1) before starting:\nERROR: lock held"
 
-    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -726,7 +726,7 @@ def test_machine_create_spawns_with_task(tmp_path: pathlib.Path, monkeypatch: ob
         captured.append(list(argv))
         return draft, ""
 
-    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_locate)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -753,7 +753,7 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
     """
     from agent6.machine import load_machine
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     spec = load_machine(f)
@@ -992,7 +992,7 @@ def test_machines_page_lists_instances_with_their_files(
     """
     from agent6.ui.cli import main as cli_main
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     (tmp_path / "other.asm.toml").write_text(TINY.replace('"tiny"', '"other"'), encoding="utf-8")
@@ -1040,7 +1040,7 @@ def test_a_create_whose_screen_was_left_still_opens_its_draft(
             return None, "the test never released the spawn"
         return draft, ""
 
-    monkeypatch.setattr(spawn, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_locate", _slow_locate)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -1080,7 +1080,7 @@ def test_a_run_whose_screen_was_left_still_opens_its_watch(
             return "the test never released the spawn"
         return ""
 
-    monkeypatch.setattr(spawn, "spawn_and_confirm", _slow_confirm)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _slow_confirm)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -1111,7 +1111,7 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
-    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    monkeypatch.chdir(tmp_path)  # pyrefly: ignore[missing-attribute]
     f = _write(tmp_path / "waiter.asm.toml")
     assert cli_main(["machine", "run", str(f), "--exit-on-wait"]) == 0  # parks, worker gone
     instance = paths.state_dir(tmp_path) / "machines" / "waiter_demo"
@@ -1144,7 +1144,7 @@ def test_machine_run_confirm_backs_out_on_q(tmp_path: pathlib.Path, monkeypatch:
         captured.append(list(argv))
         return ""
 
-    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(spawn, "spawn_and_confirm", _fake_spawn)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -1487,9 +1487,9 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            machines.fold_machine = counting_fold  # type: ignore[assignment]
-            vm_mod.fold_machine = counting_fold  # type: ignore[assignment]
-            machine_logs.newest_agent_execution = counting_execution  # type: ignore[assignment]
+            machines.fold_machine = counting_fold  # pyrefly: ignore[bad-assignment]
+            vm_mod.fold_machine = counting_fold  # pyrefly: ignore[bad-assignment]
+            machine_logs.newest_agent_execution = counting_execution  # pyrefly: ignore[bad-assignment]
             try:
                 screen._poll()
             finally:

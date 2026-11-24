@@ -21,7 +21,7 @@ class _App(tui_app.Agent6TUI):
         super().__init__(session_dir)
         self.notices: list[str] = []
 
-    def notify(self, message: Any, **kwargs: Any) -> None:  # type: ignore[override]
+    def notify(self, message: Any, **kwargs: Any) -> None:  # pyrefly: ignore[missing-override-decorator]
         self.notices.append(str(message))
         super().notify(message, **kwargs)
 

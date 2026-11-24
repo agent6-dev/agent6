@@ -12,6 +12,7 @@ import pytest
 from rich import style as rich_style
 from textual import app as textual_app
 from textual import color as textual_color
+from textual import pilot as textual_pilot
 from textual import theme as textual_theme
 from textual import widgets
 
@@ -284,17 +285,19 @@ def test_saved_extra_theme_applies_on_mount(cfg: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-async def _select_theme(pilot: object, field: forms.ChoiceField, target: str) -> None:
+async def _select_theme(
+    pilot: textual_pilot.Pilot[None], field: forms.ChoiceField, target: str
+) -> None:
     """Highlight down to *target*, then Space to select it (applies live)."""
     for _ in range(len(field._options)):
         if field._options[field._cursor] == target:
             break
-        await pilot.press("down")  # type: ignore[attr-defined]
-        await pilot.pause()  # type: ignore[attr-defined]
+        await pilot.press("down")
+        await pilot.pause()
     else:
         raise AssertionError(f"{target} not reachable in the picker")
-    await pilot.press("space")  # type: ignore[attr-defined]
-    await pilot.pause()  # type: ignore[attr-defined]
+    await pilot.press("space")
+    await pilot.pause()
 
 
 def test_picker_preview_on_select_and_esc_keeps(cfg: pathlib.Path) -> None:

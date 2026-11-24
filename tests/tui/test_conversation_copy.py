@@ -14,7 +14,7 @@ def test_copy_text_emits_the_osc52_sequence_via_the_seam(tmp_path: pathlib.Path)
     logs.write_text("", encoding="utf-8")
     screen = conversation.ConversationScreen(logs, title=lambda _ctx: "t")
     written: list[str] = []
-    screen._emit = written.append  # type: ignore[method-assign]  # sub the raw-write seam
+    screen._emit = written.append  # pyrefly: ignore[bad-assignment, method-assign]  # sub the raw-write seam
     status = screen._copy_text("hello", method="osc52")
     assert written == ["\x1b]52;c;aGVsbG8=\x07"]  # base64("hello") == "aGVsbG8="
     assert "osc" in status.lower()
@@ -29,7 +29,7 @@ def test_copy_prefers_the_current_selection_else_whole_transcript(tmp_path: path
     text, what = screen._selected_or_all()
     assert text == "line one\nline two" and what == "whole transcript"
     # A body selection -> that selection (footer/chrome never contribute).
-    screen._body_selection = lambda: "one"  # type: ignore[method-assign]
+    screen._body_selection = lambda: "one"  # pyrefly: ignore[method-assign]
     text, what = screen._selected_or_all()
     assert text == "one" and what == "selection"
 
@@ -39,9 +39,9 @@ def test_get_selected_text_gathers_body_only(tmp_path: pathlib.Path) -> None:
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
     screen = conversation.ConversationScreen(logs, title=lambda _ctx: "t")
-    screen._body_selection = lambda: "body text"  # type: ignore[method-assign]
+    screen._body_selection = lambda: "body text"  # pyrefly: ignore[method-assign]
     assert screen.get_selected_text() == "body text"
-    screen._body_selection = lambda: None  # type: ignore[method-assign]
+    screen._body_selection = lambda: None  # pyrefly: ignore[method-assign]
     assert screen.get_selected_text() is None
 
 

@@ -78,7 +78,7 @@ def test_logscreen_skips_streaming_deltas(tmp_path: pathlib.Path) -> None:
         app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
-            lines = _lines(app.screen)  # type: ignore[arg-type]
+            lines = _lines(app.screen)  # pyrefly: ignore[bad-argument-type]
             assert len(lines) == 2  # model.call + model.result; the 3 deltas are dropped
             assert not any("delta" in ln for ln in lines)
 
@@ -101,7 +101,7 @@ def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: path
         app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
-            lines = _lines(app.screen)  # type: ignore[arg-type]
+            lines = _lines(app.screen)  # pyrefly: ignore[bad-argument-type]
             assert len(lines) == 2
             assert not any("loop." in ln for ln in lines)
 

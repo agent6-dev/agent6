@@ -42,7 +42,7 @@ def test_home_menu_items_all_resolve() -> None:
         app = home.Agent6HomeApp(adir, repo)
         async with app.run_test() as pilot:
             await pilot.pause()
-            _assert_all_items_resolve(app.screen, app.screen.MENUS)  # type: ignore[attr-defined]
+            _assert_all_items_resolve(app.screen, app.screen.MENUS)  # pyrefly: ignore[missing-attribute]
 
     asyncio.run(scenario())
 

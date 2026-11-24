@@ -729,7 +729,7 @@ def test_q_backs_out_from_config_but_types_in_search(repo: pathlib.Path) -> None
             assert isinstance(screen, config_page.ConfigScreen)
             exits: list[int] = []
             orig = app.exit
-            app.exit = lambda *a, **k: exits.append(1) or orig(*a, **k)  # type: ignore[assignment]
+            app.exit = lambda *a, **k: exits.append(1) or orig(*a, **k)  # pyrefly: ignore[bad-argument-type, method-assign]
 
             # In the search Input, q types (no quit).
             screen.action_search()
@@ -1123,7 +1123,7 @@ def test_arrows_flow_through_section_headers(repo: pathlib.Path) -> None:
             await pilot.pause()
             assert on_header()  # back up onto the header
             # Enter on the header toggles its section.
-            section = app.focused.parent.id[4:]  # type: ignore[union-attr]
+            section = app.focused.parent.id[4:]  # pyrefly: ignore[missing-attribute]
             col = screen.query_one(f"#sec-{section}", widgets.Collapsible)
             was = col.collapsed
             await pilot.press("enter")
@@ -1792,7 +1792,7 @@ def test_unset_names_the_layer_instead_of_claiming_the_default(repo: pathlib.Pat
                 if s.key == "sandbox.run_commands"
             )
             assert setting.source == "repo"
-            screen._current_setting = lambda: setting  # type: ignore[method-assign]
+            screen._current_setting = lambda: setting  # pyrefly: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
             assert layer.load_effective(repo).config.sandbox.run_commands == "allow"
@@ -1825,7 +1825,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: pathlib.Path) 
                 if s.key == "review.when"
             )
             assert setting.source == "preset" and setting.modified
-            screen._current_setting = lambda: setting  # type: ignore[method-assign]
+            screen._current_setting = lambda: setting  # pyrefly: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
             notes = [n.message for n in app._notifications]
@@ -1857,7 +1857,7 @@ def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(
                 if s.key == "review.when"
             )
             assert setting.source == f"flag ({overlay})" and setting.modified
-            screen._current_setting = lambda: setting  # type: ignore[method-assign]
+            screen._current_setting = lambda: setting  # pyrefly: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
             notes = [n.message for n in app._notifications]

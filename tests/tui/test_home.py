@@ -1214,7 +1214,7 @@ def test_delete_action_confirms_then_shells_out(
         calls.append(session_id)
         return True, "removed"
 
-    monkeypatch.setattr(home, "_run_delete_cli", _fake_delete)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "_run_delete_cli", _fake_delete)  # pyrefly: ignore[missing-attribute]
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -1289,8 +1289,8 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
         calls.append(("asks", False))
         return True, "cleared"
 
-    monkeypatch.setattr(home, "_run_prune_cli", _fake_prune)  # type: ignore[attr-defined]
-    monkeypatch.setattr(home, "_run_clear_asks_cli", _fake_clear)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "_run_prune_cli", _fake_prune)
+    monkeypatch.setattr(home, "_run_clear_asks_cli", _fake_clear)
     actions = {item.action for item in tui_home.HomeScreen.MENUS[0].items}
     assert {"prune", "prune_squashed", "clear_asks"} <= actions
 
