@@ -3,10 +3,11 @@
 """Generate docs/architecture.md from docs/architecture_template.md.
 
 Two markers expand from the current source: `<!-- diagram: NAME -->` becomes a
-mermaid block and `<!-- generated: NAME -->` becomes generated text or a table. A diagram
+mermaid block and `<!-- generated: NAME -->` becomes generated text or a list. A diagram
 carries a shape (the layer chain, the stage order, the gate chain); names that
-only need listing are listed. Regenerate with `uv run python
-docs/gen_diagrams.py`; pinned by tests/unit/test_gen_diagrams.py.
+only need listing are listed, and the package list is each package's docstring.
+Regenerate with `uv run python docs/gen_diagrams.py`; pinned by
+tests/unit/test_gen_diagrams.py.
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ import sys
 import tempfile
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
+_SRC = _ROOT / "src" / "agent6"
+_TREE_URL = "https://github.com/agent6-dev/agent6/tree/master/src/agent6"
 _TEMPLATE = _ROOT / "docs" / "architecture_template.md"
 _OUT = _ROOT / "docs" / "architecture.md"
 # A diagram owns its line; a generated list substitutes in place, so it can sit in a sentence.
@@ -29,6 +32,8 @@ _GENERATED = re.compile(r"<!-- generated: ([a-z-]+) -->")
 
 # The documented layering, top to bottom; every other top-level package is substrate.
 _CORE_LAYERS = ("ui", "app", "harness", "tools", "sandbox")
+# A package docstring ends with this line; the names on it are checked against the directory.
+_MAIN_MODULES = "Main modules: "
 
 
 def _nid(name: str) -> str:
@@ -91,6 +96,64 @@ def _substrate_names() -> str:
     """Return the substrate packages as a sorted inline list."""
     _, substrate = _package_edges(_tach_graph())
     return ", ".join(f"`{name}`" for name in sorted(substrate))
+
+
+def _package_sentences(package: pathlib.Path) -> list[str]:
+    """Return a package docstring's sentences, a wrapped one joined.
+
+    Args:
+        package: The package's directory.
+
+    Returns:
+        The summary, then each later sentence, the main modules last.
+
+    Raises:
+        SystemExit: The package has no docstring, or its docstring names no main modules or
+            one the directory does not hold.
+    """
+    init = package / "__init__.py"
+    where = init.relative_to(_SRC.parent).as_posix()
+    doc = ast.get_docstring(ast.parse(init.read_text(encoding="utf-8")))
+    if not doc:
+        raise SystemExit(f"{where} has no docstring")
+    sentences: list[str] = []
+    for line in filter(None, doc.splitlines()):
+        if sentences and not sentences[-1].endswith("."):
+            sentences[-1] += f" {line}"
+        else:
+            sentences.append(line)
+    if not sentences[-1].startswith(_MAIN_MODULES):
+        raise SystemExit(f"{where}: the docstring does not end with `{_MAIN_MODULES.strip()}`")
+    missing = [
+        name
+        for name in re.findall(r"`(\w+)`", sentences[-1])
+        if not ((package / f"{name}.py").is_file() or (package / name / "__init__.py").is_file())
+    ]
+    if missing:
+        raise SystemExit(f"{where} names no such module: {', '.join(missing)}")
+    return sentences
+
+
+def _layers_first(package: pathlib.PurePath) -> tuple[int, tuple[str, ...]]:
+    """Return a sort key: the root, the layers top to bottom, then the other packages by name."""
+    top = package.parts[:1]
+    if not top:
+        return -1, ()
+    layer = _CORE_LAYERS.index(top[0]) if top[0] in _CORE_LAYERS else len(_CORE_LAYERS)
+    return layer, package.parts
+
+
+def _packages() -> str:
+    """Return every package's docstring as a list: its summary, then a bullet per sentence."""
+    lines: list[str] = []
+    packages = (init.parent.relative_to(_SRC) for init in _SRC.rglob("__init__.py"))
+    for package in sorted(packages, key=_layers_first):
+        name = package.as_posix() if package.parts else "agent6"
+        url = f"{_TREE_URL}/{package.as_posix()}" if package.parts else _TREE_URL
+        summary, *rest = _package_sentences(_SRC / package)
+        lines.append(f"- **[`{name}`]({url})**: {summary}")
+        lines += [f"    - {sentence}" for sentence in rest]
+    return "\n".join(lines)
 
 
 def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
@@ -302,9 +365,10 @@ def _tool_names() -> str:
 
 _BLOCKS = {
     "layering": _layering_mermaid,
+    "packages": _packages,
     "run-lifecycle": _run_lifecycle_mermaid,
-    "tool-dispatch": _dispatch_mermaid,
     "substrate-names": _substrate_names,
+    "tool-dispatch": _dispatch_mermaid,
     "tool-names": _tool_names,
 }
 

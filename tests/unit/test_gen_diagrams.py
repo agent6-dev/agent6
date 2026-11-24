@@ -148,6 +148,55 @@ def test_the_generated_tool_list_names_tools_a_model_can_call() -> None:
     assert "run_verify_command" in listed
 
 
+def test_the_package_list_names_every_package() -> None:
+    """Every package under `src/agent6` is listed, the root first and the layers before the rest."""
+    gen = _load_generator()
+    src = _ROOT / "src" / "agent6"
+    listed = re.findall(r"^- \*\*\[`([\w/]+)`\]", gen._packages(), re.M)
+    packages = [init.parent.relative_to(src).as_posix() for init in src.rglob("__init__.py")]
+    assert sorted(listed) == sorted("agent6" if name == "." else name for name in packages)
+    assert listed[:2] == ["agent6", "ui"]
+
+
+@pytest.mark.parametrize(
+    ("source", "refusal"),
+    [
+        ("from __future__ import annotations\n", "agent6/__init__.py has no docstring"),
+        ('"""Own a thing."""\n', "does not end with `Main modules:`"),
+        ('"""Own a thing.\n\nMain modules: `gone`.\n"""\n', "names no such module: gone"),
+    ],
+)
+def test_a_package_docstring_the_page_cannot_list_stops_generation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str, refusal: str
+) -> None:
+    """A package with no docstring, or one that names a module it lacks, fails the page."""
+    gen = _load_generator()
+    package = tmp_path / "agent6"
+    package.mkdir()
+    (package / "__init__.py").write_text(source, encoding="utf-8")
+    monkeypatch.setattr(gen, "_SRC", package)
+    with pytest.raises(SystemExit, match=re.escape(refusal)):
+        gen._packages()
+
+
+def test_a_wrapped_docstring_sentence_is_one_bullet(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gen = _load_generator()
+    package = tmp_path / "agent6"
+    package.mkdir()
+    (package / "loop.py").touch()
+    (package / "__init__.py").write_text(
+        '"""Own a thing.\n\nIt imports one layer\nand no other.\nMain modules: `loop`.\n"""\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gen, "_SRC", package)
+    assert gen._packages().splitlines()[1:] == [
+        "    - It imports one layer and no other.",
+        "    - Main modules: `loop`.",
+    ]
+
+
 def test_every_asset_the_site_config_references_exists() -> None:
     """Deleting a docs asset leaves no dangling `extra_css` or `extra_javascript` entry."""
     config = (_ROOT / "docs" / "mkdocs.yml").read_text(encoding="utf-8")
@@ -159,7 +208,8 @@ def test_every_asset_the_site_config_references_exists() -> None:
 def test_architecture_page_is_not_stale() -> None:
     """`docs/architecture.md` is rendered from the template plus the current source, committed.
 
-    Regenerate with `uv run python docs/gen_diagrams.py`.
+    A changed package docstring makes it stale. Regenerate with `uv run python
+    docs/gen_diagrams.py`.
     """
     gen = _load_generator()
     template = (_ROOT / "docs" / "architecture_template.md").read_text(encoding="utf-8")

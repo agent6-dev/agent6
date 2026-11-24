@@ -1,7 +1,7 @@
 # Architecture
 
 How agent6 runs, end to end.
-Three diagrams are built from the current source at site-build time (`docs/gen_diagrams.py`); the other three are drawn by hand, and each says so above its block.
+`docs/gen_diagrams.py` builds three diagrams and the package list from the current source; the other three diagrams are drawn by hand, and each says so above its block.
 [security.md](security.md) covers the threat model and what each isolation level enforces; [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) covers per-file conventions and stability rules.
 
 ## Layering
@@ -16,23 +16,11 @@ An edge is "imports from"; a dashed edge would mark an import climbing the stack
 
 Any layer may also use the shared substrate: <!-- generated: substrate-names -->.
 
-The `vcs/git` package holds agent6's own git operations: `ops.py` writes, `read.py` queries, and `history.py` reads for display.
-Only the `vcs` package's modules import the runner, `command.py`.
-`policy.py` holds the hardening flags and the hook and driver policy; `errors.py` owns `GitError`.
+## Packages
 
-- **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
-    - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`
-    - `ui/mcp_server.py`: agent6 as an MCP server
-    - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
-- **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` group
-    - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `ChildRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` drives `run` and `resume` through `provider_call`.
-  The panel uses `review.gate`, `review.verdict` and `review.panel`.
-  `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
-- **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
-  `harness/toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
-- **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the `agent6-jail` launcher and its policy.
-  The jail bounds commands, one launcher per run; the agent process itself is never confined.
+Each entry is the package's docstring.
+
+<!-- generated: packages -->
 
 **Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a mode.
 

@@ -2,7 +2,7 @@
 # Architecture
 
 How agent6 runs, end to end.
-Three diagrams are built from the current source at site-build time (`docs/gen_diagrams.py`); the other three are drawn by hand, and each says so above its block.
+`docs/gen_diagrams.py` builds three diagrams and the package list from the current source; the other three diagrams are drawn by hand, and each says so above its block.
 [security.md](security.md) covers the threat model and what each isolation level enforces; [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) covers per-file conventions and stability rules.
 
 ## Layering
@@ -28,23 +28,152 @@ graph TD
 
 Any layer may also use the shared substrate: `budget`, `child_env`, `child_records`, `config`, `context`, `credit_usage`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `llm_json`, `machine`, `media`, `models`, `operator_input`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `token_usage`, `vcs`, `viewmodel`, `words`.
 
-The `vcs/git` package holds agent6's own git operations: `ops.py` writes, `read.py` queries, and `history.py` reads for display.
-Only the `vcs` package's modules import the runner, `command.py`.
-`policy.py` holds the hardening flags and the hook and driver policy; `errors.py` owns `GitError`.
+## Packages
 
-- **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
-    - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`
-    - `ui/mcp_server.py`: agent6 as an MCP server
-    - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
-- **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` group
-    - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `ChildRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` drives `run` and `resume` through `provider_call`.
-  The panel uses `review.gate`, `review.verdict` and `review.panel`.
-  `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
-- **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
-  `harness/toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
-- **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the `agent6-jail` launcher and its policy.
-  The jail bounds commands, one launcher per run; the agent process itself is never confined.
+Each entry is the package's docstring.
+
+- **[`agent6`](https://github.com/agent6-dev/agent6/tree/master/src/agent6)**: agent6 is a coding agent that jails model commands and uses editable state machines.
+    - The layers are `ui`, `app`, `harness`, `tools` and `sandbox`, and each imports only below itself.
+    - Every other package and the modules at this level are shared: any layer may import them.
+    - `__version__` here is the one version every surface reads.
+    - Main modules: `kinds`, `paths`, `errors`, `budget`, `directive`, `evidence`, `pack`.
+- **[`ui`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)**: Present agent6: the four front-ends and the helpers beside them.
+    - The top layer and the composition root: it imports every layer, and no layer imports it.
+    - The front-ends are `cli`, `tui`, `web` and `acp`, and `telemetry` exports session journals.
+    - Main modules: `spawn`, `steer`, `directive_actions`, `keymap`, `notify`, `btw`, `mcp_server`.
+- **[`ui/acp`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/acp)**: Serve the Agent Client Protocol: agent6 driven by an editor.
+    - A front-end: it may import every layer and the shared `ui` helpers, never another front-end.
+    - It reports through the viewmodel fold and acts through `SessionFrontend`, like the other three.
+    - ACP's `initialize` is a capability exchange, so it maps onto `FrontendCapabilities`.
+    - Every path is absolute and line numbers are 1-based, as the spec states.
+    - ACP's client-owned `fs/*` and `terminal/*` are not adopted: the operator's jail does that work.
+    - Main modules: `server`, `session`, `runner`, `updates`, `frontend`.
+- **[`ui/cli`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/cli)**: The agent6 command-line interface.
+    - The entry point that wires a run: it imports every other `ui` package, and none imports it.
+    - `entry` parses argv and dispatches to one module per command family.
+    - The console script and the tests enter through `main` and `cli_main`.
+    - Main modules: `entry`, `run`, `sessions_cmds`, `machine_cmds`, `config_cmds`.
+- **[`ui/telemetry`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/telemetry)**: The telemetry exporter: a reader of session journals beside the four front-ends.
+    - It imports `viewmodel`, `sessions` and `config`, and no layer below `ui`.
+    - `otlp` and `prometheus` encode the projection's records, and neither opens a socket.
+    - Main modules: `export`, `otlp`, `prometheus`.
+- **[`ui/tui`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui)**: The terminal UI: the hub and the run views over a session's event stream.
+    - A front-end: it may import every layer and the shared `ui` helpers, never another front-end.
+    - It runs outside the worker's process and reads `<session-dir>/logs.jsonl` from disk.
+    - The render-ready state and the tailer live in `agent6.viewmodel`.
+    - It answers through `agent6.sessions.ipc` and spawns through `agent6.ui.spawn`.
+    - Main modules: `app`, `home`, `dashboard`, `conversation`, `composer`.
+- **[`ui/web`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web)**: Serve the browser front-end.
+    - A front-end: it may import every layer and the shared `ui` helpers, never another front-end.
+    - `agent6 web [target]` serves one page from a stdlib `http.server`, fed by JSON and SSE endpoints.
+    - The endpoints use the folds (`agent6.viewmodel`), spawn (`agent6.ui.spawn`) and answer files (`agent6.sessions.ipc`) every other front-end uses.
+    - The server binds loopback, and a non-loopback bind is opt-in under `[web]`.
+    - Remote access is expected behind `tailscale serve`.
+    - No secret is ever served.
+    - Main modules: `server`, `page`, `model`, `actions`, `sse`.
+- **[`app`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)**: Compose executions into the run, resume, fork and machine lifecycles.
+    - App owns what spans executions: the manifest, the writer lock and the providers.
+    - The loop and every primitive it calls in a turn belong to `harness`.
+    - App imports `harness` and the layers below it, never `ui`.
+    - A front-end injects what app cannot do itself: `frontend.SessionFrontend`, `children.ChildRuntime`.
+    - Output goes through the injected `reporter.Reporter`, never a direct `print`.
+    - Main modules: `run`, `resume`, `fork`, `execution`, `children`, `merge`, `finalize`, `stop`.
+- **[`app/machine`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app/machine)**: Compose the machine engine behind `agent6 machine run` and `create`.
+    - Part of `app`: it imports `agent6.machine`, `harness` and the layers below, never `ui`.
+    - It resolves one config per state and runs the sandbox, egress and budget preflight.
+    - It spawns the runner of each `agent` state.
+    - `ui/cli/machine_cmds.py` keeps argv adaptation and console rendering.
+    - Main modules: `run`, `create`, `agent`, `check`, `state_configs`, `scriptcheck`.
+- **[`app/review`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app/review)**: The reviews an operator starts or acts on: finding actions, `/review` and `sessions review`.
+    - Part of `app`: it imports `harness` and the layers below, never `ui`.
+    - The panel the loop runs itself is `harness.review`.
+    - Main modules: `actions`, `directive`, `recap`.
+- **[`app/session`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app/session)**: What the run and resume lifecycles share: a session's preparation, runtime, config and pruning.
+    - Part of `app`: it imports `harness` and the layers below, never `ui`.
+    - Main modules: `prepare`, `runtime`, `setup`, `prune`.
+- **[`harness`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)**: Run the agent loop over one execution of a session.
+    - Harness is the loop plus every primitive it calls in a turn.
+    - `Harness` in `loop` drives one execution: provider calls, tool dispatch, guards, gates, snapshots.
+    - What spans executions belongs to `app`, which composes executions into lifecycles.
+    - Harness imports `tools`, `sandbox` and the shared packages, never `app` or `ui`.
+    - `system_prompt_for` and `model_exchange_for` give `agent6 prompt show` the run's first exchange.
+    - Main modules: `loop`, `provider_call`, `guards`, `finish_gates`, `parallel_dispatch`, `run_chain`.
+- **[`harness/compaction`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/compaction)**: Context compaction: its driver, the elision of old tool results, its rules and its window.
+    - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
+    - `default_strategy` picks the built-in strategy for the driving route.
+    - Main modules: `driver`, `strategy`, `rules`, `elision`, `window`, `retention`, `cold_start`.
+- **[`harness/review`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/review)**: The review panel the loop runs: its gate, reviewers and history.
+    - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
+    - The reviews an operator starts (`/review`, `sessions review`) are `app.review`.
+    - Main modules: `gate`, `panel`, `verdict`, `history`.
+- **[`harness/verify`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness/verify)**: The verify gate: when the harness runs it, its scoped retry and its verdict.
+    - Part of `harness`: it imports `tools` and the layers below, never `app` or `ui`.
+    - Main modules: `gate`, `scope`, `verdict`, `child`.
+- **[`tools`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)**: Tool dispatch and the schemas exposed to the LLM.
+    - A layer: it imports `sandbox` and the shared packages, never `harness`, `app` or `ui`.
+    - The package itself loads nothing: import the submodule you need.
+    - Main modules: `schema`, `dispatch`, `command_tools`, `fs_tools`, `policy`, `results`.
+- **[`sandbox`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)**: Host and kernel detection, the Landlock ABI probe, and the jail launcher.
+    - The bottom layer: every layer may import it, and it imports only root-level modules.
+    - Main modules: `jail`, `jail_session`, `detect`, `container`, `landlock`.
+- **[`config`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config)**: The config models, file IO and layered resolve.
+    - A shared package: any layer may import it, and it imports no layer.
+    - The models are the package's public API and are re-exported here.
+    - The IO and layering are imported from `agent6.config.io` and `agent6.config.layer`.
+    - Main modules: `model`, `layer`, `io`, `write`, `secret_store`.
+- **[`context`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/context)**: Store repository memory and discover operator-installed skills.
+    - A shared package: any layer may import it, and it imports no layer.
+    - Main modules: `memory`, `skills`.
+- **[`graph`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)**: The task graph: one session's persistent plan.
+    - A shared package: any layer may import it, and it imports no layer.
+    - The worker, the planner and the operator's steering mutate it through one `GraphCurator`.
+    - The curator owns the graph files in the session dir: `graph.jsonl`, `graph/*.md`, `cursor.json`.
+    - The `worker.lock` flock keeps one writer, and the per-mutation flock also serialises fork's copy.
+    - The session dir lives under the state base, which the jail masks under `full`.
+    - Main modules: `curator`, `models`, `storage`, `order`, `replay`.
+- **[`machine`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/machine)**: State machines: declarative, replayable mini-agents.
+    - A shared package: it imports `sandbox` and no layer above it.
+    - The engine drives a machine deterministically over an append-only journal.
+    - The journal gives crash recovery and offline replay.
+    - An `agent` state runs an agent6 loop through an injected runner.
+    - Main modules: `schema`, `semantics`, `engine`, `execution`, `journal`, `live_world`, `graph`.
+- **[`models`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/models)**: The provider model catalog: cached listings, prices, capabilities and validation.
+    - A shared package: any layer may import it, and it imports no layer.
+    - The package re-exports nothing.
+    - That keeps `budget -> models.pricing` and `models.cache -> providers -> budget` acyclic.
+    - Main modules: `cache`, `pricing`, `registry`, `validate`, `choices`.
+- **[`prompts`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts)**: Static prompt text: the strings agent6 sends to models.
+    - A shared leaf: any layer may import it, and it imports nothing from agent6.
+    - The text is pure, with `{...}` placeholders its callers fill.
+    - Main modules: `loop`, `review`, `review_directive`, `compaction`, `machine`.
+- **[`providers`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)**: Model providers behind one `Provider` protocol.
+    - A shared package: it imports `sandbox` and no layer above it.
+    - The providers are interchangeable, and `[models.<role>]` routes each role.
+    - Main modules: `anthropic`, `openai`, `responses`, `chatgpt`, `claude_code`, `provider_types`.
+- **[`sessions`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sessions)**: Session identity and on-disk state.
+    - A shared package: any layer may import it, and it imports no layer.
+    - The package re-exports nothing: import the submodules directly.
+    - Main modules: `id`, `layout`, `manifest`, `journal`, `event_log`, `lock`, `ipc`, `process`.
+- **[`vcs`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/vcs)**: Version control for agent6's own commits, refs and merges.
+    - A shared package: any layer may import it, and it imports no layer.
+    - Git lives in the `git` sub-package, and only this package's modules import its runner.
+    - The package spells no push, `--force`, history rewrite or `reset --hard`.
+    - Main modules: `commit_message`, `commit_graph`, `review`, `review_rule_reader`.
+- **[`vcs/git`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/vcs/git)**: agent6's own git: the hardened runner, its policy, reads, writes, diffs and snapshots.
+    - Part of `vcs`: it imports no layer.
+    - Main modules: `command`, `policy`, `ops`, `read`, `history`, `files`, `fetch`, `snapshots`.
+- **[`viewmodel`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)**: Fold the JSONL event stream into the render-ready state every front-end paints.
+    - A shared package: any layer may import it, and it imports no layer.
+    - The CLI, the TUI, the web UI and ACP fold the same `<session-dir>/logs.jsonl` through it.
+    - The folds are pure functions over frozen dataclasses, with no I/O and no async.
+    - A viewer in any language mirrors `SessionState` and `MachineState` field for field.
+    - Main modules: `transcript`, `listing`, `review`, `receipt`, `wire`, `telemetry`, `tail`.
+- **[`viewmodel/machine`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel/machine)**: A state machine as the surfaces read it: its logs, its state and its watch stream.
+    - Part of `viewmodel`: it imports `agent6.machine` and no layer.
+    - Main modules: `state`, `logs`, `watch`.
+- **[`viewmodel/session`](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel/session)**: A session as the surfaces read it: its core fold, its log scan and its status words.
+    - Part of `viewmodel`: it imports no layer.
+    - Main modules: `core`, `state`, `log`, `status`, `records`, `view`.
 
 **Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a mode.
 
