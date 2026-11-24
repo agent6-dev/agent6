@@ -413,7 +413,10 @@ def interrupted_result(name: str) -> str:
 
 
 def fold_interrupted_turn(
-    snapshot: SessionSnapshot, flight: TurnInFlight
+    snapshot: SessionSnapshot,
+    flight: TurnInFlight,
+    *,
+    load_image: loop_conversation.ImageLoader | None = None,
 ) -> tuple[SessionSnapshot, tuple[str, ...]]:
     """Return the snapshot advanced past the turn its execution died in.
 
@@ -423,6 +426,7 @@ def fold_interrupted_turn(
     Args:
         snapshot: The snapshot written before the turn's model call.
         flight: The turn's marker.
+        load_image: Reloads an operator's image the snapshot names.
 
     Returns:
         The snapshot whose next model call follows the turn, and the names of the calls that
@@ -431,7 +435,9 @@ def fold_interrupted_turn(
     Raises:
         ValueError: The marker's blocks do not continue the snapshot's conversation.
     """
-    conversation = loop_conversation.Conversation.from_wire(snapshot.messages)
+    conversation = loop_conversation.Conversation.from_wire(
+        snapshot.messages, load_image=load_image
+    )
     calls = conversation.assistant(flight.assistant).tool_uses
     if not calls:
         raise ValueError("the in-flight turn holds no tool call")

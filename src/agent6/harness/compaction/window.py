@@ -120,7 +120,7 @@ def message_chars(message: loop_conversation.Message) -> int:
     return sum(
         (len(item.content) + (media.MEDIA_CONTEXT_CHARS if item.attachment else 0))
         if isinstance(item, loop_conversation.ToolResultItem)
-        else len(item.text)
+        else len(item.text) + media.MEDIA_CONTEXT_CHARS * len(item.images)
         for item in message.items
     )
 

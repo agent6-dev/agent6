@@ -150,8 +150,8 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, standing_goal, tool_effects}, harness/compaction/{calls, retention, rules, strategy, window, writers}, harness/verify/gate
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (55 test files exercise it)
+- **Read by:** app/fork, harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, standing_goal, tool_effects}, harness/compaction/{calls, retention, rules, strategy, window, writers}, harness/verify/gate
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (56 test files exercise it)
 
 ## SessionManifest
 

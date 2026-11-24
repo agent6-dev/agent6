@@ -333,7 +333,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         keep_questions=[request.id for request in carried.pending],
         keep_steer=scan.stop_reason == "setup_command_failed",
     )
-    if steer.strip() and not ipc.submit_steer(layout.session_dir, steer):
+    # The images a front-end stored for this steer before it launched the resume.
+    images = ipc.take_launch_images(layout.session_dir, steer)
+    if steer.strip() and not ipc.submit_steer(layout.session_dir, steer, images=images):
         reporter.error("could not write the initial steer request")
         lock.release_single_writer(worker_lock_fd)
         return 2

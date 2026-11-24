@@ -9,14 +9,15 @@ verbs, and the pin invariant.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+import pathlib
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from agent6 import child_records, kinds
+from agent6 import child_records, kinds, operator_input
 from agent6 import directive as agent6_directive
 from agent6.context import skills
 from agent6.harness import loop_conversation, nudges
-from agent6.sessions import child_dispatch, ipc, journal
+from agent6.sessions import attachments, child_dispatch, ipc, journal
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state, parallel_dispatch
@@ -37,6 +38,54 @@ STEER_VERBS: dict[str, tuple[str, type[journal.Event], str]] = {
         "detach - stopping to resume in the background",
     ),
 }
+
+
+def stored_image(
+    session_dir: pathlib.Path | None, ref: operator_input.ImageRef
+) -> kinds.MediaAttachment | str:
+    """Return an operator's image from the session's attachments, or why it cannot be shown.
+
+    Args:
+        session_dir: The session directory; None holds no image.
+        ref: The image a message, a journal event or a checkpoint names.
+
+    Returns:
+        The image, or the reason as a clause.
+    """
+    if session_dir is None:
+        return "this run has no session directory"
+    try:
+        return attachments.load(session_dir, ref)
+    except attachments.AttachmentError as exc:
+        return str(exc)
+
+
+def stored_images(
+    session_dir: pathlib.Path | None,
+    refs: Sequence[operator_input.ImageRef],
+    report: Callable[[str], None],
+) -> tuple[tuple[kinds.MediaAttachment, ...], str]:
+    """Load the images of an operator message from the session's attachments.
+
+    Args:
+        session_dir: The session directory; None holds no image.
+        refs: The images the message names.
+        report: Tells the operator each image that cannot be shown.
+
+    Returns:
+        The images that loaded, and the lines to add to the message for those that did not,
+        each on a new line.
+    """
+    images: list[kinds.MediaAttachment] = []
+    lines: list[str] = []
+    for ref in refs:
+        loaded = stored_image(session_dir, ref)
+        if isinstance(loaded, str):
+            lines.append(loop_conversation.unshown_image_line(ref, loaded))
+            report(lines[-1])
+        else:
+            images.append(loaded)
+    return tuple(images), "".join(f"\n{line}" for line in lines)
 
 
 # The heading of a steer a child's parent sent with `steer_child`: the first line of the text
@@ -170,6 +219,7 @@ class Steering:
         record_decision: Records an answered question as a ruling.
         log: The run's text logger.
         emit: The run's event sink.
+        session_dir: The session directory, which holds the images sent with a steer.
     """
 
     bridge: OperatorBridge
@@ -178,6 +228,7 @@ class Steering:
     record_decision: Callable[[loop_state.LoopState, str, str], None]
     log: Callable[[str], None]
     emit: Callable[..., None]
+    session_dir: pathlib.Path | None = None
 
     def handle(
         self,
@@ -208,10 +259,12 @@ class Steering:
         self.emit(journal.SteerRequested(turn=turn))
         self.log(f"STEER: operator steering at turn {turn}")
         try:
-            text = self.bridge.steer_prompt()
+            text = self.bridge.steer_prompt() or ""
+            # Read before the clear, which drops the slot's images with its answer.
+            images = ipc.take_steer_images(self.session_dir) if self.session_dir is not None else ()
         finally:
             self.bridge.steer_clear()
-        if text is None or not text.strip():
+        if not text.strip() and not images:
             self.log("  (empty - continuing)")
             return None
         steer_text = text.strip()
@@ -224,7 +277,12 @@ class Steering:
             self.emit(journal.SteerFromParent(chars=len(said), text=said))
             conversation.notice(steer_text)
             return None
-        return self.operator_steer(conversation, turn, state, text, heading=heading)
+        return self.operator_steer(conversation, turn, state, text, heading=heading, images=images)
+
+    def tell_operator(self, line: str) -> None:
+        """Say a line to the operator: in the run's log and as feedback on the journal."""
+        self.log(f"  {line}")
+        self.emit(journal.SteerFeedback(text=line))
 
     def operator_steer(
         self,
@@ -234,6 +292,7 @@ class Steering:
         text: str,
         *,
         heading: str,
+        images: tuple[operator_input.ImageRef, ...] = (),
     ) -> str | None:
         """Take the operator's own words: a verb, a review, a directive, or an instruction.
 
@@ -241,14 +300,15 @@ class Steering:
             conversation: The run's conversation.
             turn: The turn just completed.
             state: The loop state.
-            text: The steer as the operator sent it, not blank.
+            text: The steer as the operator sent it; blank only beside images.
             heading: The notice introducing the operator's instruction.
+            images: The images sent with it, which only an instruction carries.
 
         Returns:
             The verb's name when the steer was one; None otherwise.
         """
         before = len(conversation)
-        verb = self._route_steer(conversation, turn, state, text, heading=heading)
+        verb = self._route_steer(conversation, turn, state, text, heading=heading, images=images)
         if len(conversation) > before:
             last = conversation.messages[-1]
             if isinstance(last, loop_conversation.UserMessage) and any(
@@ -266,6 +326,7 @@ class Steering:
         text: str,
         *,
         heading: str,
+        images: tuple[operator_input.ImageRef, ...] = (),
     ) -> str | None:
         """Route an operator verb, directive or message.
 
@@ -273,13 +334,19 @@ class Steering:
             conversation: The run's conversation.
             turn: The turn just completed.
             state: The loop state.
-            text: The steer as the operator sent it, not blank.
+            text: The steer as the operator sent it; blank only beside images.
             heading: The notice introducing the operator's instruction.
+            images: The images sent with it.
 
         Returns:
             The verb ending the turn, or None to continue.
         """
         steer_text = text.strip()
+        if not self._takes_images(steer_text) and images:
+            self.tell_operator(
+                f"{len(images)} image(s) not delivered: only an ordinary instruction carries one"
+            )
+            images = ()
         if verb := STEER_VERBS.get(steer_text.lower()):
             name, record, line = verb
             self.emit(record())
@@ -306,12 +373,22 @@ class Steering:
         ):
             return None
         self.log(f"  injecting steering instruction ({len(steer_text)} chars)")
-        self.emit(journal.SteerInjected(chars=len(text), text=text))
+        self.emit(journal.SteerInjected(chars=len(text), text=text, images=images))
         asked = loop_conversation.last_assistant_prose(conversation)
         if question := nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)
-        conversation.notice(f"{heading}\n{steer_text}", origin="operator", operator_words=(text,))
+        loaded, unshown = stored_images(self.session_dir, images, self.tell_operator)
+        conversation.notice(
+            f"{heading}\n{steer_text}{unshown}",
+            origin="operator",
+            operator_words=(text,),
+            images=loaded,
+        )
         return None
+
+    def _takes_images(self, steer_text: str) -> bool:
+        """Return whether the steer is an ordinary instruction, the one kind that carries images."""
+        return steer_text.lower() not in STEER_VERBS and not steer_text.startswith("/")
 
     def skill(self, conversation: loop_conversation.Conversation, steer_text: str) -> bool:
         """Handle a `/<skill> [args]` steer: the skill's full text is injected as the instruction.

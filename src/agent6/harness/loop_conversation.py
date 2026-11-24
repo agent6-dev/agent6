@@ -28,18 +28,62 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import dataclasses
 import json
 from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
-from agent6 import kinds, media
+from agent6 import kinds, media, operator_input
 from agent6.harness import nudges
 
 TaskSource = Literal["harness", "operator", "model", "panel"]
 NoticeOrigin = TaskSource | Literal["plan", "restart", "contract", "reply_count"]
+# Reloads an operator's image a snapshot names; a string says why it cannot be shown.
+ImageLoader = Callable[[operator_input.ImageRef], "kinds.MediaAttachment | str"]
 
 _EPHEMERAL = {"type": "ephemeral"}
+# Why an older image leaves a request: `media.AttachmentBudget` counts the newest first.
+_OVER_BUDGET = "newer images took the request's limit of four images and 4 MiB"
+
+
+def image_block(image: kinds.MediaAttachment) -> dict[str, Any]:
+    """Return the wire block that carries an image or a document inline.
+
+    Args:
+        image: The media.
+
+    Returns:
+        The block `read_file` results and operator messages share.
+    """
+    return {
+        "type": image.modality,
+        "source": {
+            "type": "base64",
+            "media_type": image.media_type,
+            "data": base64.b64encode(image.data).decode("ascii"),
+        },
+    }
+
+
+def unshown_image_line(ref: operator_input.ImageRef, reason: str) -> str:
+    """Return the line that stands in a message for an operator image the model is not shown.
+
+    Args:
+        ref: The image.
+        reason: Why it is not shown, as a clause.
+
+    Returns:
+        The line, naming the image as its label in the message does.
+    """
+    return f"[{ref.label()} is not shown: {reason}]"
+
+
+def image_ref(image: kinds.MediaAttachment) -> operator_input.ImageRef:
+    """Return the reference that names an operator's image."""
+    return operator_input.ImageRef.model_validate(
+        {"media_type": image.media_type, "byte_size": image.byte_size, "sha256": image.sha256}
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -90,12 +134,14 @@ class Notice:
         origin: Who delivered the notice. A local summary is a `restart`.
         operator_words: Verbatim inputs within a rendered task, steer, answer notice or restart.
         result_index: Zero-based position of this answer's capped result in the same message.
+        images: The images the operator sent with the text, which names each by its label.
     """
 
     text: str
     origin: NoticeOrigin = "harness"
     operator_words: tuple[str, ...] = ()
     result_index: int | None = None
+    images: tuple[kinds.MediaAttachment, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -370,6 +416,7 @@ class Conversation:
         *,
         origin: NoticeOrigin = "harness",
         operator_words: tuple[str, ...] = (),
+        images: tuple[kinds.MediaAttachment, ...] = (),
     ) -> None:
         """Append harness or operator text as its own user message.
 
@@ -377,8 +424,9 @@ class Conversation:
             text: The notice.
             origin: `operator` for the task, a steer or an answer.
             operator_words: The operator input without its harness framing.
+            images: The images the operator sent with the text.
         """
-        self._append_notices((Notice(text, origin, operator_words),))
+        self._append_notices((Notice(text, origin, operator_words, images=images),))
 
     def show_plan(self, text: str, *, restarted: bool) -> bool:
         """Show a changed plan without duplicating the notice kept by a restart.
@@ -526,6 +574,48 @@ class Conversation:
         )
         self._messages[message_idx] = UserMessage(items=tuple(items))
 
+    def drop_notice_images(
+        self,
+        message_idx: int,
+        item_idx: int,
+        drop: Callable[[kinds.MediaAttachment], str],
+    ) -> tuple[str, ...]:
+        """Take images out of an operator's notice, leaving a line that says why for each.
+
+        Args:
+            message_idx: The user message's index.
+            item_idx: The notice's index in the message.
+            drop: Returns why an image is not shown, or "" to keep it; called newest first.
+
+        Returns:
+            The lines added to the notice, one per dropped image.
+
+        Raises:
+            ValueError: The position is not a notice in a user message.
+        """
+        message = self._messages[message_idx]
+        if not isinstance(message, UserMessage):
+            raise ValueError("drop_notice_images targets a user message")
+        item = message.items[item_idx]
+        if not isinstance(item, Notice):
+            raise ValueError("drop_notice_images targets a notice")
+        reasons = {id(image): drop(image) for image in reversed(item.images)}
+        lines = tuple(
+            unshown_image_line(image_ref(image), reasons[id(image)])
+            for image in item.images
+            if reasons[id(image)]
+        )
+        if not lines:
+            return ()
+        items = list(message.items)
+        items[item_idx] = dataclasses.replace(
+            item,
+            text="\n".join((item.text, *lines)),
+            images=tuple(image for image in item.images if not reasons[id(image)]),
+        )
+        self._messages[message_idx] = UserMessage(items=tuple(items))
+        return lines
+
     def limit_attachments(self, *, append_only: bool = False) -> tuple[tuple[str, str], ...]:
         """Keep attachments inside the outbound request limits.
 
@@ -533,7 +623,8 @@ class Conversation:
             append_only: Give previously delivered media priority over new results.
 
         Returns:
-            The call IDs and refusal texts of attachments replaced in canonical history.
+            The call IDs and refusal texts of attachments replaced in canonical history; an
+            operator's image has no call ID.
         """
         budget = media.AttachmentBudget()
         refused: list[tuple[str, str]] = []
@@ -545,11 +636,12 @@ class Conversation:
             indices = range(len(message.items))
             for ii in indices if append_only else reversed(indices):
                 item = message.items[ii]
-                if (
-                    isinstance(item, ToolResultItem)
-                    and item.attachment is not None
-                    and (reason := budget.refusal(item.attachment))
-                ):
+                if isinstance(item, Notice):
+                    lines = self.drop_notice_images(
+                        mi, ii, lambda image: _OVER_BUDGET if budget.refusal(image) else ""
+                    )
+                    refused.extend(("", line) for line in lines)
+                elif item.attachment is not None and (reason := budget.refusal(item.attachment)):
                     self.set_result_content(mi, ii, reason, drop_attachment=True)
                     refused.append((item.tool_use_id, reason))
         return tuple(refused)
@@ -604,25 +696,14 @@ class Conversation:
                         "type": "tool_result",
                         "tool_use_id": item.tool_use_id,
                         "content": (
-                            [
-                                {"type": "text", "text": item.content},
-                                {
-                                    "type": item.attachment.modality,
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": item.attachment.media_type,
-                                        "data": base64.b64encode(item.attachment.data).decode(
-                                            "ascii"
-                                        ),
-                                    },
-                                },
-                            ]
+                            [{"type": "text", "text": item.content}, image_block(item.attachment)]
                             if item.attachment is not None
                             else item.content
                         ),
                     }
                     if snapshot and item.unshown_answer is not None:
                         block["unshown_answer"] = item.unshown_answer
+                    blocks.append(block)
                 else:
                     block = {"type": "text", "text": item.text}
                     if snapshot and item.origin != "harness":
@@ -631,22 +712,29 @@ class Conversation:
                         block["operator_words"] = list(item.operator_words)
                     if snapshot and item.result_index is not None:
                         block["result_index"] = item.result_index
+                    blocks.append(block)
+                    blocks.extend(image_block(image) for image in item.images)
                 if (m_idx, i_idx) in marks:
-                    block["cache_control"] = dict(_EPHEMERAL)
-                blocks.append(block)
+                    # The item's last block, so the cached prefix covers its images.
+                    blocks[-1]["cache_control"] = dict(_EPHEMERAL)
             out.append({"role": "user", "content": blocks})
         return out
 
     @classmethod
-    def from_wire(cls, messages: Sequence[Any]) -> Conversation:
+    def from_wire(
+        cls, messages: Sequence[Any], *, load_image: ImageLoader | None = None
+    ) -> Conversation:
         """Parse a persisted message list.
 
         A message in canonical order round-trips byte-for-byte through `to_wire`; a
         notice ahead of its results is moved after them on load, each mark kept
-        on its own block.
+        on its own block. A snapshot holds an operator's image as its reference: the
+        loader's image returns to its notice, and one it cannot load becomes a line there.
 
         Args:
             messages: The snapshot's message list.
+            load_image: Reloads an operator's image from the session's attachments; without
+                one, a referenced image is not shown.
 
         Returns:
             The conversation with its marks.
@@ -672,8 +760,16 @@ class Conversation:
             pending = list(prev.tool_uses) if isinstance(prev, AssistantMessage) else []
             parsed: list[tuple[ToolResultItem | Notice, bool]] = []
             for i_idx, block in enumerate(content):
-                item = _parse_user_block(block, pending, where=f"{where} block {i_idx}")
-                parsed.append((item, _block_mark(block, where=f"{where} block {i_idx}")))
+                at = f"{where} block {i_idx}"
+                last = parsed[-1][0] if parsed else None
+                is_image = isinstance(block, dict) and block.get("type") == "image"
+                # An operator's image follows the text it came with.
+                if is_image and isinstance(last, Notice):
+                    notice = _with_image(last, block, load_image, where=at)
+                    parsed[-1] = (notice, parsed[-1][1] or _block_mark(block, where=at))
+                    continue
+                item = _parse_user_block(block, pending, where=at)
+                parsed.append((item, _block_mark(block, where=at)))
             # Canonicalize before recording positions, so each mark stays on its block.
             parsed = _results_first(parsed, key=lambda pair: pair[0])
             for i_idx, (_, marked) in enumerate(parsed):
@@ -686,6 +782,76 @@ class Conversation:
                 conv._append_notices(tuple(items))
         conv._marks = marks
         return conv
+
+
+def _snapshot_ref(source: dict[str, Any]) -> operator_input.ImageRef:
+    """Return the reference a snapshot keeps in place of an operator image's bytes."""
+    return operator_input.ImageRef.model_validate(
+        {key: source.get(key) for key in ("media_type", "byte_size", "sha256")}
+    )
+
+
+def referenced_images(messages: Sequence[Any]) -> tuple[operator_input.ImageRef, ...]:
+    """Return the operator images a snapshot's messages name, in order.
+
+    Args:
+        messages: A snapshot's or a checkpoint's message list.
+
+    Returns:
+        The references; a block that is not a well-formed reference is left out.
+    """
+    refs: list[operator_input.ImageRef] = []
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else ():
+            source = block.get("source") if isinstance(block, dict) else None
+            if (
+                isinstance(source, dict)
+                and block.get("type") == "image"
+                and source.get("payload_omitted") is True
+            ):
+                with contextlib.suppress(ValueError):
+                    refs.append(_snapshot_ref(source))
+    return tuple(refs)
+
+
+def _with_image(
+    notice: Notice, block: dict[str, Any], load_image: ImageLoader | None, *, where: str
+) -> Notice:
+    """Return the notice with the image a following wire block carries or names.
+
+    Args:
+        notice: The notice the image came with.
+        block: The image block: inline base64, or the reference a snapshot keeps.
+        load_image: Reloads a referenced image.
+        where: The block's position, for the error.
+
+    Returns:
+        The notice with the image, or with the line that says why it is not shown.
+
+    Raises:
+        ValueError: The block is neither shape.
+    """
+    source = block.get("source")
+    if set(block) - {"cache_control"} != {"type", "source"} or not isinstance(source, dict):
+        raise ValueError(f"malformed conversation: {where} is not an image block")
+    try:
+        if source.get("payload_omitted") is True:
+            ref = _snapshot_ref(source)
+            loaded = load_image(ref) if load_image is not None else "its file was not reloaded"
+            if isinstance(loaded, str):
+                line = unshown_image_line(ref, loaded)
+                return dataclasses.replace(notice, text=f"{notice.text}\n{line}")
+        else:
+            if set(source) != {"type", "media_type", "data"} or source["type"] != "base64":
+                raise ValueError("not a base64 source")
+            loaded = kinds.MediaAttachment(
+                base64.b64decode(source["data"], validate=True), source["media_type"], ""
+            )
+            image_ref(loaded)  # an operator's image is never a document
+    except (ValueError, TypeError, binascii.Error) as exc:
+        raise ValueError(f"malformed conversation: {where} is not an image block") from exc
+    return dataclasses.replace(notice, images=(*notice.images, loaded))
 
 
 def _block_mark(block: dict[str, Any], *, where: str) -> bool:

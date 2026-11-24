@@ -14,7 +14,7 @@ from typing import Any, ClassVar, Literal
 
 import pydantic
 
-from agent6 import credit_usage, kinds
+from agent6 import credit_usage, kinds, operator_input
 
 
 class Event(pydantic.BaseModel):
@@ -626,7 +626,9 @@ class MediaRefused(Event):
     """An attachment was refused by its tool or model route."""
 
     TYPE: ClassVar[str] = "media.refused"
-    provider_tool_call_id: str = pydantic.Field(description="The provider's tool-use identifier.")
+    provider_tool_call_id: str = pydantic.Field(
+        description="The provider's tool-use identifier; empty for an image the operator sent."
+    )
     reason: str = pydantic.Field(description="The reason for the outcome.")
     route: str | None = pydantic.Field(
         default=None,
@@ -1577,6 +1579,9 @@ class SessionStart(Event):
     user_task: str = pydantic.Field(description="The displayed task text.")
     mode: str = pydantic.Field(description="The execution mode.")
     execution_id: str = pydantic.Field(description="Execution identifier.")
+    images: tuple[operator_input.ImageRef, ...] = pydantic.Field(
+        default=(), description="The images the operator sent with the task."
+    )
 
 
 class SettingObservation(pydantic.BaseModel, frozen=True, extra="forbid"):
@@ -1746,6 +1751,9 @@ class SteerInjected(Event):
     TYPE: ClassVar[str] = "steer.injected"
     chars: int = pydantic.Field(description="Text length in characters.")
     text: str = pydantic.Field(description="The event's text.")
+    images: tuple[operator_input.ImageRef, ...] = pydantic.Field(
+        default=(), description="The images the operator sent with the instruction."
+    )
 
 
 class SteerFromParent(Event):

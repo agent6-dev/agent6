@@ -140,6 +140,12 @@ def reasoning_starvation(resp: ProviderResponse) -> int:
 
 # The registry belongs to one execution, not a dispatcher or a process-global model cache.
 MediaRejections = dict[kinds.ModelRoute, set[Literal["image", "document"]]]
+# Why a route refuses media, by `MediaInputError.reason`.
+_REFUSAL_DETAIL = {
+    "unsupported": "{modality} input is unsupported",
+    "invalid": "the provider rejected the {modality} as malformed",
+    "too_large": "the {modality} exceeds the provider's size limit",
+}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -181,35 +187,36 @@ class MediaRecovery:
             if self.append_only
             else 0
         )
+
+        def why(modality: Literal["image", "document"], call_id: str) -> str:
+            """Return the reason the route refuses this media, or "" when it takes it."""
+            if rejected is not None:
+                named = not rejected.call_ids or call_id in rejected.call_ids
+                return rejected.reason if modality == rejected.modality and named else ""
+            known = modality in self.unsupported
+            return (
+                "unsupported"
+                if known or getattr(self.capabilities, modality) == "unsupported"
+                else ""
+            )
+
         for mi, message in enumerate(messages[start:], start=start):
             if not isinstance(message, loop_conversation.UserMessage):
                 continue
             for ii, item in enumerate(message.items):
-                if (
-                    not isinstance(item, loop_conversation.ToolResultItem)
-                    or item.attachment is None
-                ):
+                if isinstance(item, loop_conversation.Notice):
+                    changed |= self._refuse_operator_images(
+                        conversation, mi, ii, why("image", ""), emit
+                    )
+                    continue
+                if item.attachment is None:
                     continue
                 attachment = item.attachment
                 modality = attachment.modality
-                if rejected is not None:
-                    if modality != rejected.modality or (
-                        rejected.call_ids and item.tool_use_id not in rejected.call_ids
-                    ):
-                        continue
-                    reason = rejected.reason
-                elif (
-                    modality in self.unsupported
-                    or getattr(self.capabilities, modality) == "unsupported"
-                ):
-                    reason = "unsupported"
-                else:
+                reason = why(modality, item.tool_use_id)
+                if not reason:
                     continue
-                detail = {
-                    "unsupported": f"{modality} input is unsupported",
-                    "invalid": f"the provider rejected the {modality} as malformed",
-                    "too_large": f"the {modality} exceeds the provider's size limit",
-                }[reason]
+                detail = _REFUSAL_DETAIL[reason].format(modality=modality)
                 suggestion = (
                     "Extract the text with a jailed command."
                     if modality == "document"
@@ -237,6 +244,49 @@ class MediaRecovery:
                         )
                     )
         return changed
+
+    def _refuse_operator_images(
+        self,
+        conversation: loop_conversation.Conversation,
+        message_idx: int,
+        item_idx: int,
+        reason: str,
+        emit: Callable[..., None] | None,
+    ) -> bool:
+        """Replace a notice's images with the route's refusal, in words the model reads.
+
+        Args:
+            conversation: The calling role's history.
+            message_idx: The user message's index.
+            item_idx: The notice's index in the message.
+            reason: Why the route refuses an image, or "" when it takes one.
+            emit: The journal emitter, when present.
+
+        Returns:
+            Whether any image was replaced.
+        """
+        if not reason:
+            return False
+        route = self.capabilities.route.spec
+        detail = f"{route}: {_REFUSAL_DETAIL[reason].format(modality='image')}"
+        notice = conversation.messages[message_idx].items[item_idx]
+        assert isinstance(notice, loop_conversation.Notice)
+        images = notice.images
+        lines = conversation.drop_notice_images(message_idx, item_idx, lambda _image: detail)
+        if reason == "unsupported" and lines:
+            self.unsupported.add("image")
+        if emit is not None:
+            for image, line in zip(images, lines, strict=True):
+                emit(
+                    journal.MediaRefused(
+                        provider_tool_call_id="",
+                        route=route,
+                        reason=reason,
+                        text=line,
+                        attachment=image.metadata(),
+                    )
+                )
+        return bool(lines)
 
 
 def call_with_media_recovery(

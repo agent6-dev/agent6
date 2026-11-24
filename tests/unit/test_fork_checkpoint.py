@@ -39,7 +39,7 @@ from agent6.harness import (
     run_chain,
     toolset,
 )
-from agent6.sessions import event_log, ipc
+from agent6.sessions import attachments, event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
 from agent6.ui.cli import (
@@ -50,6 +50,7 @@ from agent6.ui.cli import (
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import session_state_as_dict
+from tests.unit import test_operator_images
 
 pytestmark = pytest.mark.usefixtures("linked_worktrees")
 
@@ -452,6 +453,39 @@ def test_fork_preserves_source_run_mode(
     )
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
     assert not (state / "sessions" / "runs" / "plan-fork-BBBB22").exists()
+
+
+def test_fork_copies_the_images_its_checkpoint_names(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork's resume found the operator's image missing: only the source held its file."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = paths.state_dir(repo)
+    source = _seed_source_run(state, "plan-src-AAAA11", head_sha=head, turns=(1,), mode="plan")
+    png = test_operator_images.png
+    named = attachments.store(source.session_dir, kinds.MediaAttachment(png(1), "image/png", ""))
+    attachments.store(source.session_dir, kinds.MediaAttachment(png(2), "image/png", ""))
+    reference = {**named.model_dump(), "source_path": "", "payload_omitted": True}
+    for path in (source.checkpoint_path(1), source.session_dir / "loop_state.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["messages"] = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "TASK:\nlook", "origin": "operator"},
+                    {"type": "image", "source": reference},
+                ],
+            }
+        ]
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert fork._cmd_fork((), "plan-src", new_session_id="plan-fork-BBBB22", no_run=True) == 0
+
+    forked = state / "sessions" / "plans" / "plan-fork-BBBB22"
+    assert [p.name for p in (forked / "attachments").iterdir()] == [named.sha256]
+    assert attachments.load(forked, named).data == png(1)
 
 
 def test_a_plan_fork_creates_no_git_refs(

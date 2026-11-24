@@ -25,7 +25,9 @@ if TYPE_CHECKING:
 
 
 def fold_interrupted_turn(
-    harness: loop.Harness, snapshot: loop_snapshot.SessionSnapshot
+    harness: loop.Harness,
+    snapshot: loop_snapshot.SessionSnapshot,
+    load_image: loop_conversation.ImageLoader | None = None,
 ) -> tuple[loop_snapshot.SessionSnapshot, tuple[str, ...]]:
     """Advance the snapshot past a turn the last execution died in, and drop the marker.
 
@@ -35,6 +37,7 @@ def fold_interrupted_turn(
     Args:
         harness: The execution's harness.
         snapshot: The snapshot the execution resumes from.
+        load_image: Reloads an operator's image the snapshot names.
 
     Returns:
         The snapshot to resume from, and the names of the calls that never returned.
@@ -55,7 +58,9 @@ def fold_interrupted_turn(
     interrupted: tuple[str, ...] = ()
     if flight is not None and flight.turn == snapshot.next_turn:
         try:
-            snapshot, interrupted = loop_snapshot.fold_interrupted_turn(snapshot, flight)
+            snapshot, interrupted = loop_snapshot.fold_interrupted_turn(
+                snapshot, flight, load_image=load_image
+            )
         except ValueError as exc:
             harness.log(
                 f"LOOP: dropped an in-flight turn record the snapshot does not lead to: {exc}"

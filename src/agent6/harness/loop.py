@@ -28,6 +28,7 @@ from agent6 import (
     errors,
     kinds,
     media,
+    operator_input,
     review_records,
     task_text,
     terminal,
@@ -84,7 +85,7 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
 )
-from agent6.sessions import budget_events, completion, journal, process
+from agent6.sessions import budget_events, completion, ipc, journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors, waits
 from agent6.vcs.git import ops as git_ops
 
@@ -247,6 +248,12 @@ class Harness:
             raise ValueError("Harness(mode='plan') requires plan_output_path to be set")
         if operator_task is None:
             operator_task = user_task
+        # The images a front-end stored for this task before it launched the run.
+        images = (
+            ipc.take_launch_images(self.session_dir, operator_task)
+            if self.session_dir is not None and self.contract is None
+            else ()
+        )
         self._emit_start(
             journal.SessionStart(
                 session_id=self.session_id,
@@ -254,12 +261,13 @@ class Harness:
                 task_source=self.task_source,
                 mode=self.mode,
                 execution_id=self.execution_id,
+                images=images,
             )
         )
         if self.mode == "run" and self.events is not None:
             self.metrics.restore(self.events.path)
         system, conversation, root_id = (
-            self._open_task(user_task)
+            self._open_task(user_task, images)
             if self.contract is None
             else self._open_contract(self.contract)
         )
@@ -273,11 +281,14 @@ class Harness:
             operator_task=operator_task,
         )
 
-    def _open_task(self, user_task: str) -> tuple[str, loop_conversation.Conversation, str | None]:
+    def _open_task(
+        self, user_task: str, images: tuple[operator_input.ImageRef, ...] = ()
+    ) -> tuple[str, loop_conversation.Conversation, str | None]:
         """Open a worker's execution: the assembled system prompt, the task block, the root task.
 
         Args:
             user_task: The task, with any seed digest or skill block prepended.
+            images: The images the operator sent with the task.
 
         Returns:
             The system prompt, the conversation holding the task block, and the root task's
@@ -328,9 +339,14 @@ class Harness:
                 verify_verdict.VerifyVerdict()
             ),  # the start: nothing adopted or denied
         )
-        initial_user = f"TASK:\n{user_task}\n\n{instructions}{dag_hint}"
+        loaded, unshown = operator_bridge.stored_images(
+            self.session_dir, images, self.steering.tell_operator
+        )
+        initial_user = f"TASK:\n{user_task}{unshown}\n\n{instructions}{dag_hint}"
         conversation = loop_conversation.Conversation()
-        conversation.notice(initial_user, origin=self.task_source, operator_words=(user_task,))
+        conversation.notice(
+            initial_user, origin=self.task_source, operator_words=(user_task,), images=loaded
+        )
         return system, conversation, root_id
 
     def _open_contract(
@@ -393,10 +409,21 @@ class Harness:
         if self.resume_state_path is None:
             raise loop_snapshot.ResumeError("resume() called but resume_state_path is None")
         self._prepare_rulings_file()
+        unshown: list[str] = []  # told to the operator once the execution's log has opened
+
+        def reload(ref: operator_input.ImageRef) -> kinds.MediaAttachment | str:
+            """Return an operator's image from the session's attachments, or why it is gone."""
+            loaded = operator_bridge.stored_image(self.session_dir, ref)
+            if isinstance(loaded, str):
+                unshown.append(loop_conversation.unshown_image_line(ref, loaded))
+            return loaded
+
         try:
             snapshot = loop_snapshot.load_session_snapshot(self.resume_state_path)
-            snapshot, interrupted = loop_resume.fold_interrupted_turn(self, snapshot)
-            conversation = loop_conversation.Conversation.from_wire(snapshot.messages)
+            snapshot, interrupted = loop_resume.fold_interrupted_turn(self, snapshot, reload)
+            conversation = loop_conversation.Conversation.from_wire(
+                snapshot.messages, load_image=reload
+            )
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise loop_snapshot.ResumeError(
                 f"failed to load resume snapshot from {self.resume_state_path}: {exc}"
@@ -416,6 +443,8 @@ class Harness:
                 execution_id=self.execution_id,
             )
         )
+        for line in unshown:
+            self.steering.tell_operator(line)
         self.log(
             f"LOOP: RESUME from {self.resume_state_path} "
             f"(turn={snapshot.next_turn}, messages={len(snapshot.messages)}, "
@@ -2204,6 +2233,7 @@ class Harness:
             record_decision=self.record_decision,
             log=self.log,
             emit=self.emit,
+            session_dir=self.session_dir,
         )
 
     @functools.cached_property
@@ -2258,6 +2288,11 @@ class Harness:
     def session_id(self) -> str:
         """Return the session id, the session dir's name; "" without a log."""
         return self.events.path.parent.name if self.events is not None else ""
+
+    @property
+    def session_dir(self) -> pathlib.Path | None:
+        """Return the session directory, where the journal sits; None without a log."""
+        return self.events.path.parent if self.events is not None else None
 
     def log(self, msg: str) -> None:
         """Write one line to the run log."""

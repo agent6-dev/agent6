@@ -549,7 +549,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `provider_tool_call_id` | `str` | The provider's tool-use identifier. |
+| `provider_tool_call_id` | `str` | The provider's tool-use identifier; empty for an image the operator sent. |
 | `reason` | `str` | The reason for the outcome. |
 | `route` | `str, optional` | The model route that refused the attachment. |
 | `text` | `str, optional` | The event's text. |
@@ -1311,6 +1311,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `user_task` | `str` | The displayed task text. |
 | `mode` | `str` | The execution mode. |
 | `execution_id` | `str` | Execution identifier. |
+| `images` | `list, optional` | The images the operator sent with the task. |
+| `images[].media_type` | `Literal['image/gif', 'image/jpeg', 'image/png', 'image/webp']` | The image's media type. |
+| `images[].byte_size` | `int` | The size of the stored image in bytes. |
+| `images[].sha256` | `str` | The SHA-256 of the stored bytes, in hex. |
 
 ### session.stop
 
@@ -1415,6 +1419,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `chars` | `int` | Text length in characters. |
 | `text` | `str` | The event's text. |
+| `images` | `list, optional` | The images the operator sent with the instruction. |
+| `images[].media_type` | `Literal['image/gif', 'image/jpeg', 'image/png', 'image/webp']` | The image's media type. |
+| `images[].byte_size` | `int` | The size of the stored image in bytes. |
+| `images[].sha256` | `str` | The SHA-256 of the stored bytes, in hex. |
 
 ### steer.parent
 

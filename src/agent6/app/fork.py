@@ -29,9 +29,9 @@ from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
-from agent6.harness import loop_snapshot
+from agent6.harness import loop_conversation, loop_snapshot
 from agent6.sandbox import detect
-from agent6.sessions import event_log, id, journal, layout, retention
+from agent6.sessions import attachments, event_log, id, journal, layout, retention
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -506,6 +506,12 @@ def _materialize_fork(
         reporter.error(f"target session dir already exists: {dst.session_dir}")
         return 2
     dst.ensure()
+    # The operator's images the checkpoint names: a fork reloads them from its own directory.
+    attachments.copy(
+        src.session_dir,
+        dst.session_dir,
+        loop_conversation.referenced_images(plan.checkpoint.messages),
+    )
 
     if plan.metric is not None:
         event_log.EventSink(dst.logs_path).emit(plan.metric)
