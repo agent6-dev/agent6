@@ -25,6 +25,7 @@ Keep the provider settings the same as in the recording, including any `extra_bo
 
 - **Source:** A completion bound to a panel identifies a reviewer child; judges and children without completions do not enter the sample.
   The replay reads the first `reviewer:<focus>` transcript by sequence and resolves its object references.
+  A bare `reviewer` actor does not identify the focus needed for the tree prompt and is refused.
   It does not reconstruct the opening from the current repository or the final verdict.
 - **Arms:** `recorded` sends the system text from the request.
   `tree` calls `agent6.prompts.review.panel_prompt` with the recorded focus, reply limit and whether the reviewer had `run_command`.

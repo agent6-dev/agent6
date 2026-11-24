@@ -95,6 +95,17 @@ def test_a_limit_in_the_system_prompt_needs_no_synthetic_reply_notice(
     assert request.tree == review.panel_prompt("security", max_turns=4, commands=True)
 
 
+def test_a_reviewer_actor_without_a_focus_is_reported_not_missing(tmp_path: pathlib.Path) -> None:
+    child = env.record_review(tmp_path, "no-focus", env.responses_body())
+    for path in child.transcripts_dir.glob("*.json"):
+        transcript = json.loads(path.read_text())
+        if transcript["actor"].startswith("reviewer:"):
+            transcript["actor"] = "reviewer"
+            path.write_text(json.dumps(transcript))
+    with pytest.raises(recordings.RecordingError, match="actor 'reviewer' has no recorded focus"):
+        recordings.read_reviews(tmp_path)
+
+
 @pytest.mark.parametrize("damage", ["object", "pruned", "tool history", "limit", "local process"])
 def test_incomplete_openings_cannot_be_replaced_by_a_guess(
     tmp_path: pathlib.Path, damage: str

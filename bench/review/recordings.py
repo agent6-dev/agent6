@@ -120,6 +120,10 @@ def _first(child: layout.SessionLayout) -> Opening:
             if record["seq"] != seq:
                 raise RecordingError(f"missing transcript sequence {seq}")
             actor = record["actor"]
+            if actor == "reviewer":
+                raise RecordingError(
+                    "actor 'reviewer' has no recorded focus; expected reviewer:<focus>"
+                )
             if isinstance(actor, str) and actor.startswith("reviewer:"):
                 body = objects.materialize(
                     record["request"]["body"], child.objects_dir, record_path=path
