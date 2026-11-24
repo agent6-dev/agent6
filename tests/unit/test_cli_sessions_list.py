@@ -502,8 +502,9 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     assert "same paths" not in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("sibling", ["none", "unrelated_rank", "unreadable_dispatch"])
 def test_a_merge_note_leaves_out_the_runs_own_ranked_out_attempt(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, sibling: str
 ) -> None:
     """A run's merge note leaves out the attempt its own ranking left unmerged.
 
@@ -554,10 +555,15 @@ def test_a_merge_note_leaves_out_the_runs_own_ranked_out_attempt(
         return d
 
     def child(
-        group: int, number: int, status: child_records.MergeStatus, detail: str = ""
+        group: int,
+        number: int,
+        status: child_records.MergeStatus,
+        detail: str = "",
+        *,
+        owner: str = parent,
     ) -> child_dispatch.ChildRecord:
         """Commit a child's b.txt on its own chain and branch, as the parent's import leaves it."""
-        session_id = f"{parent}-p{group}-l{number}"
+        session_id = f"{owner}-p{group}-l{number}"
         (repo / "b.txt").write_text(f"{session_id}\n", encoding="utf-8")
         tip = git_ops.chain_commit(
             repo,
@@ -568,9 +574,7 @@ def test_a_merge_note_leaves_out_the_runs_own_ranked_out_attempt(
         )
         assert tip is not None
         git("checkout", "-q", base)
-        session(
-            session_id, tip, {"group": f"{parent}-p{group}", "number": number, "parent": parent}
-        )
+        session(session_id, tip, {"group": f"{owner}-p{group}", "number": number, "parent": owner})
         merge = child_dispatch.MergeRecord(
             branch=f"agent6/{session_id}",
             status=status,
@@ -582,10 +586,13 @@ def test_a_merge_note_leaves_out_the_runs_own_ranked_out_attempt(
         )
 
     def dispatch(
-        group: int, policy: child_records.MergePolicy, *children: child_dispatch.ChildRecord
+        directory: pathlib.Path,
+        group: int,
+        policy: child_records.MergePolicy,
+        *children: child_dispatch.ChildRecord,
     ) -> None:
         record = child_dispatch.DispatchRecord(
-            identity=f"{parent}-p{group}",
+            identity=f"{directory.name}-p{group}",
             source="operator",
             merge_policy=policy,
             owner="execution",
@@ -594,7 +601,7 @@ def test_a_merge_note_leaves_out_the_runs_own_ranked_out_attempt(
             children=children,
             state="complete",
         )
-        child_dispatch.write_record(run, record, now=0.0)
+        child_dispatch.write_record(directory, record, now=0.0)
 
     first = child(1, 1, "merged")
     ranked_out = child(1, 2, "ranked", "2 of 2")
@@ -604,11 +611,22 @@ def test_a_merge_note_leaves_out_the_runs_own_ranked_out_attempt(
     git("update-ref", git_read.chain_ref_for(parent), first.merge.sha)
     git("branch", f"agent6/{parent}", first.merge.sha)
     run = session(parent, first.merge.sha, None)
-    dispatch(1, "rank", first, ranked_out)
-    dispatch(2, "merge", conflicted)
+    dispatch(run, 1, "rank", first, ranked_out)
+    dispatch(run, 2, "merge", conflicted)
 
     same = f"unmerged runs that changed some of the same paths: {conflicted.session_id} (b.txt)"
-    assert merge_plan.same_paths_note(repo, run) == same
+    if sibling == "unrelated_rank":
+        other = session("other-run-AAAAAA", base, None)
+        alternative = child(1, 2, "ranked", "2 of 2", owner=other.name)
+        dispatch(other, 1, "rank", alternative)
+        note = merge_plan.same_paths_note(repo, run)
+        assert f"{alternative.session_id} (b.txt)" in note
+        assert f"{conflicted.session_id} (b.txt)" in note and ranked_out.session_id not in note
+    else:
+        if sibling == "unreadable_dispatch":
+            child_dispatch.record_path(run, "broken").write_bytes(b"{\xff")
+            same += "\nRank exclusions may be incomplete. Unreadable dispatch records: broken"
+        assert merge_plan.same_paths_note(repo, run) == same
 
 
 def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(

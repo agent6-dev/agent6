@@ -241,9 +241,17 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
     return rows
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class SamePathRuns:
+    """Runs with shared paths and the dispatch records missing from the rank exclusions."""
+
+    shared: dict[str, tuple[str, ...]]
+    unreadable: tuple[str, ...]
+
+
 def same_path_runs(
     cwd: pathlib.Path, session_dir: pathlib.Path, base: str, tip: str
-) -> dict[str, tuple[str, ...]]:
+) -> SamePathRuns:
     """Return the other ended, unmerged runs that changed paths a run changed.
 
     A merge reports them: each one's own merge now meets the work this run merged.
@@ -256,8 +264,7 @@ def same_path_runs(
         tip: Its tip.
 
     Returns:
-        Each such run's id with the repo-relative paths both changed, sorted; newest
-        activity first. Costs one tree diff per ended, unmerged run.
+        The shared paths by run, newest activity first, and any unreadable dispatch ids.
     """
 
     def changed(old: str, new: str) -> frozenset[str]:
@@ -268,16 +275,19 @@ def same_path_runs(
 
     mine = changed(base, tip)
     tips = git_read.run_ref_tips(cwd)
-    try:
-        dispatches = child_dispatch.read_records(session_dir)
-    except child_dispatch.DispatchRecordError:
-        dispatches = ()
-    left_out = {session_dir.name} | {
-        child.session_id
-        for record in dispatches
-        for child in record.children
-        if child.merge is not None and child.merge.status == "ranked"
-    }
+    left_out = {session_dir.name}
+    unreadable: list[str] = []
+    for path in sorted(child_dispatch.records_dir(session_dir).glob("*.json")):
+        try:
+            record = child_dispatch.read_record(path)
+        except child_dispatch.DispatchRecordError:
+            unreadable.append(path.stem)
+            continue
+        left_out.update(
+            child.session_id
+            for child in record.children
+            if child.merge is not None and child.merge.status == "ranked"
+        )
     others = [
         s
         for d in session_dirs(paths.state_dir(cwd), layout.SESSION_BUCKETS)
@@ -288,11 +298,12 @@ def same_path_runs(
         and s.source_tip
     ]
     others.sort(key=lambda s: s.last_activity, reverse=True)
-    return {
+    shared_paths = {
         s.session_id: tuple(sorted(shared))
         for s in others
         if (shared := mine & changed(s.base_sha, s.source_tip))
     }
+    return SamePathRuns(shared_paths, tuple(unreadable))
 
 
 def rows_for(

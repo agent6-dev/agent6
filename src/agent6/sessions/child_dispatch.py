@@ -348,7 +348,7 @@ def read_record(path: pathlib.Path) -> DispatchRecord:
         DispatchRecordError: The file is malformed, unreadable or written by a newer agent6.
     """
     try:
-        record = DispatchRecord.model_validate_json(path.read_text(encoding="utf-8"))
+        record = DispatchRecord.model_validate_json(path.read_bytes())
     except (OSError, pydantic.ValidationError) as exc:
         raise DispatchRecordError(f"invalid dispatch record {path}: {exc}") from exc
     if record.version > RECORD_VERSION:

@@ -421,7 +421,7 @@ def merge_session_dir(
 
 
 def same_paths_note(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
-    """Return the line naming the unmerged runs that changed paths this run changed.
+    """Name the unmerged runs that changed paths this run changed.
 
     The merge command prints it after merging. Front-ends show it before confirmation.
 
@@ -430,9 +430,8 @@ def same_paths_note(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
         session_dir: The run's directory.
 
     Returns:
-        Four runs at most, each with its first shared path, then the count of the rest;
-        "" when no other unmerged run shares a path, or this run has no commits or no
-        readable manifest. The run's own ranked-out attempts are never named.
+        Up to four runs and their first shared paths. A warning names unreadable
+        dispatch records. An empty note means there is nothing to report.
     """
     try:
         manifest = sessions_manifest.read_manifest(session_dir)
@@ -441,13 +440,18 @@ def same_paths_note(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
     ref = commits_ref(cwd, manifest)
     if not ref.head_ref or not manifest.base_sha:
         return ""
-    runs = listing.same_path_runs(cwd, session_dir, manifest.base_sha, ref.head_ref)
-    if not runs:
-        return ""
+    overlap = listing.same_path_runs(cwd, session_dir, manifest.base_sha, ref.head_ref)
+    runs = overlap.shared
     named = [
         f"{run} ({terminal.printable_name(shared[0])}"
         + (f" and {len(shared) - 1} more)" if len(shared) > 1 else ")")
         for run, shared in list(runs.items())[:4]
     ]
     more = f", and {len(runs) - len(named)} more" if len(runs) > len(named) else ""
-    return "unmerged runs that changed some of the same paths: " + ", ".join(named) + more
+    lines: list[str] = []
+    if named:
+        lines.append(f"unmerged runs that changed some of the same paths: {', '.join(named)}{more}")
+    if overlap.unreadable:
+        ids = ", ".join(terminal.printable_name(identity) for identity in overlap.unreadable)
+        lines.append(f"Rank exclusions may be incomplete. Unreadable dispatch records: {ids}")
+    return "\n".join(lines)
