@@ -6,11 +6,14 @@ import argparse
 import contextlib
 import copy
 import http.server
+import io
 import itertools
 import json
 import pathlib
+import socket
 import threading
-from collections.abc import Callable, Generator
+import time
+from collections.abc import Buffer, Callable, Generator
 from typing import Any, ClassVar
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
@@ -23,6 +26,25 @@ SAMPLES = json.loads(
 )
 
 
+class Deadline(io.RawIOBase):
+    """Give each socket read the time left until one deadline."""
+
+    def __init__(self, sock: socket.socket, seconds: float) -> None:
+        super().__init__()
+        self.sock = sock
+        self.end = time.monotonic() + seconds
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Buffer, /) -> int:
+        left = self.end - time.monotonic()
+        if left <= 0:
+            raise TimeoutError("the request passed its deadline")
+        self.sock.settimeout(left)
+        return self.sock.recv_into(buffer)
+
+
 class Messages(http.server.BaseHTTPRequestHandler):
     """Check the replay before serving the next captured reply."""
 
@@ -31,6 +53,11 @@ class Messages(http.server.BaseHTTPRequestHandler):
     previous: ClassVar[dict[str, Any]] = {}
     reply: ClassVar[list[dict[str, Any]]] = []
     turns: ClassVar[int] = 0
+
+    def setup(self) -> None:
+        """Read the request line, the headers and the body within `timeout` seconds."""
+        super().setup()
+        self.rfile = io.BufferedReader(Deadline(self.connection, self.timeout))
 
     def do_GET(self) -> None:
         """Return the local model listing."""
