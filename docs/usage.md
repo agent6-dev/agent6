@@ -472,6 +472,7 @@ The child holds that task until its result returns. The parent can work on the n
 The task passes or fails with the child's result. A refused launch leaves the task available.
 A pending text dispatch under the task must return before the parent can hand off that task.
 A requested merge holds its task until the merge result is recorded.
+Merging a continuation's retained result records the merge commit on the task it passed.
 Continuing a child after its task has passed or been retired leaves that task alone.
 One call is one task.
 The call starts its children in fresh clones of the committed tree, under the run's shared remaining budget, and returns at once with each child's session id.

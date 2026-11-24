@@ -206,7 +206,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         parent_node: The DAG node the task was dispatched under; None without a graph and
             for a panel.
         node_id: The listed task held before launch, or the node added for a text task's
-            outcome. None for a panel, without a graph or for a follow-up to a final task.
+            outcome. None for a panel, without a graph or for work detached from a final task.
         children: The children, in child order.
         state: How far the dispatch got; `ranking` while a task's judges run.
         message: The notice of what merged, "" until complete.

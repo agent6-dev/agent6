@@ -1137,6 +1137,41 @@ def test_a_child_can_continue_without_reopening_its_passed_task(tmp_path: pathli
     assert graph.nodes()["0002"] == before
 
 
+@pytest.mark.parametrize("stopped", [False, True])
+def test_a_requested_merge_records_the_sha_only_on_the_task_its_result_passed(
+    tmp_path: pathlib.Path, stopped: bool
+) -> None:
+    """Merging the continuation records its commit unless a different execution passed the task."""
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+    assert wf.tool_turn
+    conversation = wf.tool_turn[0]
+    (sid,) = work.start("", "", task_id="0002").children
+    children.stop(sid, path="")
+    wf.parallel.settle(conversation, 2)
+    work.steer(sid, "Count the pears")
+    if stopped:
+        children.stop(sid, path="pears")
+    else:
+        children.end(sid, path="pears")
+    wf.parallel.settle(conversation, 3)
+    if stopped:
+        graph.update_status(models.UpdateStatusIntent(id="0002", new_status="pending"))
+        (retry,) = work.start("", "", task_id="0002").children
+        children.end(retry, path="count")
+        wf.parallel.settle(conversation, 4)
+    before = graph.get("0002")
+    assert before.status == "passed" and bool(before.commit_sha) is stopped
+    work.merge(sid)
+    wf.parallel.settle(conversation, 5)
+    assert (children.repo / "pears").is_file()
+    after = graph.get("0002")
+    if stopped:
+        assert after == before
+    else:
+        assert after.status == "passed" and after.commit_sha == wf.parallel.chain.tip()
+
+
 def test_close_reports_only_children_whose_tasks_await_resume(tmp_path: pathlib.Path) -> None:
     wf, children, graph = _listed_task(tmp_path)
     (sid,) = child_work.ChildWork(wf).start("", "", task_id="0002").children

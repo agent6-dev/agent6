@@ -49,13 +49,17 @@ def listed(
 
 
 def followup(
-    dispatcher: parallel_dispatch.ParallelDispatcher, record: child_dispatch.DispatchRecord
+    dispatcher: parallel_dispatch.ParallelDispatcher,
+    record: child_dispatch.DispatchRecord,
+    *,
+    merging: child_dispatch.MergeRecord | None = None,
 ) -> child_dispatch.DispatchRecord:
-    """Keep the task for a retry, or detach the follow-up from a final task.
+    """Keep a retry's task or the task the retained result passed.
 
     Args:
         dispatcher: The parent run.
         record: The child's completed dispatch, before its next operation.
+        merging: The result to merge, or None for a new execution.
 
     Returns:
         The dispatch with the node that can take its result, if any.
@@ -64,7 +68,10 @@ def followup(
         ToolError: The unfinished task cannot take this child.
     """
     if record.node_id and dispatcher.curator:
-        if dispatcher.curator.get(record.node_id).status in order.DONE_STATUSES:
+        status = dispatcher.curator.get(record.node_id).status
+        if status == "passed" and merging is not None and merging.status == "retained":
+            return record
+        if status in order.DONE_STATUSES:
             return record.model_copy(update={"node_id": None, "parent_node": None})
         listed(dispatcher, record.node_id, retry=True)
     return record

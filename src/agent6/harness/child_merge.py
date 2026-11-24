@@ -62,7 +62,7 @@ def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> 
             if dispatcher.chain.dirty() and not dispatcher.chain.per_turn:
                 raise tool_errors.ToolError("commit the working tree before requesting a merge")
             if not pending(child):
-                target = child_tasks.followup(dispatcher, record)
+                target = child_tasks.followup(dispatcher, record, merging=child.merge)
                 dispatcher.write(
                     target.with_child(
                         child.model_copy(update={"merge_request": child_dispatch.MergeRequest()})

@@ -431,6 +431,8 @@ def stamp_parallel_node(
     try:
         if sha:
             curator.record_commit(graph_models.RecordCommitIntent(id=node_id, sha=sha))
+        if status == "passed" and curator.get(node_id).status == "passed":
+            return
         curator.update_status(
             graph_models.UpdateStatusIntent(id=node_id, new_status=status, note=note)
         )
