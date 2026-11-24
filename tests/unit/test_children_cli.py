@@ -8,10 +8,12 @@ The parent runs in this process through `cli_main`; each child is the detached p
 
 from __future__ import annotations
 
+import contextlib
 import json
 import pathlib
 import re
 import subprocess
+import sys
 import threading
 from typing import Any
 
@@ -23,7 +25,9 @@ from agent6.harness import parallel_merge
 from agent6.sessions import child_dispatch
 from agent6.tools import schema
 from agent6.ui.cli import cli_main
+from agent6.ui.web import server as web_server
 from tests import launch_env
+from tests.web import signin
 
 # A child's session id: its parent's, the task's group and the child's number.
 _CHILD_ID = re.compile(r"-p\d+-l\d+$")
@@ -63,6 +67,136 @@ def _started(body: dict[str, Any]) -> list[str]:
         if isinstance(answer, dict) and answer.get("dispatched"):
             ids.extend(answer["children"])
     return ids
+
+
+def test_three_listed_tasks_two_children_and_no_refill(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A handoff holds the listed task until return, without taking the parent's next task."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(
+        repo,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.com",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "base",
+    )
+    base = _git(repo, "rev-parse", "HEAD")
+    agent6 = pathlib.Path(sys.executable).with_name("agent6")
+    monkeypatch.chdir(repo)
+    stages: list[list[tuple[str, str, list[str]]]] = []
+    release = {name: threading.Event() for name in ("Apples", "Pears")}
+    briefs: list[str] = []
+    parent_calls: list[dict[str, Any]] = []
+    live_graph: list[str] = []
+    live_children: list[str] = []
+    web: dict[str, Any] = {}
+
+    def reply(body: dict[str, Any]) -> launch_env.Reply:  # noqa: PLR0911  # one reply per scripted turn
+        task = _first_task(body)
+        if "Fruit inventory" not in task:
+            if _turn(body) == 0:
+                briefs.append(task)
+                name = next(name for name in release if name in task)
+                assert release[name].wait(45)
+                return ("apply_edit", {"path": name, "old_string": "", "new_string": "counted\n"})
+            if _turn(body) == 1:
+                return _commit()
+            return launch_env.FINISH
+        turn = len(parent_calls)
+        parent_calls.append(body)
+        answers = [_text(m) for m in body["messages"] if m["role"] == "tool"]
+        if answers and (rows := json.loads(answers[-1]).get("tasks")):
+            stages.append([(r["id"], r["status"], r.get("held_by", [])) for r in rows])
+        one, two = (*_started(body), "", "")[:2]
+        if turn == 0:
+            return [
+                (
+                    "add_task",
+                    {"title": name, "rationale": f"Count {name}", "acceptance": f"File {name}"},
+                )
+                for name in ("Apples", "Pears", "Total")
+            ]
+        if turn in (1, 3, 5, 7, 9, 11):
+            return ("list_tasks", {})
+        if turn == 2:
+            return ("parallel", {"task_id": "0002"})
+        if turn == 4:
+            return ("parallel", {"task_id": "0003"})
+        if turn == 6 and one and two:
+            parent = one.removesuffix("-p1-l1")
+            live_graph.append(
+                subprocess.check_output([agent6, "sessions", "graph", parent], text=True)
+            )
+            live_children.append(
+                subprocess.check_output([agent6, "sessions", "list", "--children"], text=True)
+            )
+            with web_server.WebServer(("127.0.0.1", 0), repo, "", secret=signin.SECRET) as srv:
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                try:
+                    with contextlib.closing(signin.SignedIn(int(srv.server_address[1]))) as conn:
+                        conn.request("GET", f"/api/session/{parent}")
+                        response = conn.getresponse()
+                        assert response.status == 200
+                        web.update(json.load(response))
+                finally:
+                    srv.shutdown()
+            release["Pears"].set()
+            return ("read_background", {"id": two, "wait_s": 60})
+        if turn == 8 and one:
+            release["Apples"].set()
+            return ("read_background", {"id": one, "wait_s": 60})
+        if turn == 10:
+            return ("update_task", {"id": "0004", "status": "passed"})
+        return ("finish_session", {"summary": "inventory complete"})
+
+    with launch_env.scripted_provider(reply_for=reply) as (url, _calls):
+        cfg = Config.model_validate(
+            {
+                "providers": {"p": {"backend": "openai", "base_url": url}},
+                "models": {"default": {"model": "p/m"}},
+                "git": {"control": "model", "worktree": {"base_dir": str(tmp_path / "clones")}},
+                "sandbox": {"isolation": "none", "run_commands": "allow"},
+                "harness": {"parallel": {"tool": True}, "verify": {"infer": False}},
+                "review": {"when": "never"},
+            }
+        )
+        config = tmp_path / "config.toml"
+        config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
+        subprocess.run(
+            [agent6, "--config", config, "run", "--auto-approve", "Fruit inventory"],
+            check=True,
+            timeout=150,
+        )
+
+    one, two = _started(parent_calls[-1])
+    assert all(s[0] == ("0001", "pending", []) for s in stages)
+    assert [s[1:] for s in stages] == [
+        [("0002", "in_progress", []), ("0003", "pending", []), ("0004", "pending", [])],
+        [("0002", "in_progress", [one]), ("0003", "in_progress", []), ("0004", "pending", [])],
+        [
+            ("0002", "in_progress", [one]),
+            ("0003", "in_progress", [two]),
+            ("0004", "in_progress", []),
+        ],
+        [("0002", "in_progress", [one]), ("0003", "passed", []), ("0004", "in_progress", [])],
+        [("0002", "passed", []), ("0003", "passed", []), ("0004", "in_progress", [])],
+        [("0002", "passed", []), ("0003", "passed", []), ("0004", "passed", [])],
+    ]
+    for name, task_id, child in (("Apples", "0002", one), ("Pears", "0003", two)):
+        assert any(f"{name}\nRationale: Count {name}\nAcceptance: File {name}" in b for b in briefs)
+        assert f"held by {child}" in live_graph[0]
+        assert f"holds task {task_id}" in live_children[0]
+        assert any(c["session_id"] == child and c["holds_task"] == task_id for c in web["children"])
+        assert any(t["id"] == task_id and f"held by {child}" in t["note"] for t in web["tasks"])
+        assert _git(repo, "show", f"refs/agent6/{child}/head:{name}") == "counted"
+    assert _git(repo, "rev-parse", "HEAD") == base
 
 
 @pytest.mark.parametrize("control", ["agent6", "model"])

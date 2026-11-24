@@ -1855,7 +1855,7 @@ class Harness:
     def _emit_graph_snapshot(self) -> None:
         """Emit the task graph for the live viewers.
 
-        Each node projects to the six fields the viewers render; a full dump would carry
+        Each node projects to the fields the viewers render; a full dump would carry
         unbounded model text into the event log.
         """
         if self.curator is None:
@@ -1870,6 +1870,7 @@ class Harness:
                 "children": list(n.children),
                 "created_by": n.created_by,
                 "standing": n.standing,
+                **({"held_by": list(n.held_by)} if n.held_by else {}),
             }
             for nid, n in self.curator.nodes().items()
         }

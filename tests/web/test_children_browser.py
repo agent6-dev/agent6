@@ -144,6 +144,7 @@ def seed_family(repo: pathlib.Path, prompt: str) -> pathlib.Path:
             base="a" * 40,
             source="panel" if mode == "reviewer" else "model",
             state="running" if session == live else "complete",
+            node_id="0002" if session == live else None,
             children=(child,),
         )
         child_dispatch.write_record(parent, record, now=start)
@@ -240,6 +241,7 @@ def test_read_and_message_a_child_in_place(
     captures.save(page, "children-folded")
     summary.press("Enter")
     reviewer, row, held = card.locator("details").all()
+    sync_api.expect(row.locator("summary")).to_contain_text("holds task 0002")
     sync_api.expect(held).to_contain_text("2 commits beyond start")
     sync_api.expect(held).to_contain_text("agent6/line-endings")
     sync_api.expect(held).to_contain_text("stopped after the newline check")

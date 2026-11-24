@@ -205,8 +205,8 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         spec: The task's child spec as given; "" for one default child and for a panel.
         parent_node: The DAG node the task was dispatched under; None without a graph and
             for a panel.
-        node_id: The task's DAG node, added when its work merges or its dispatch fails; None
-            until then, without a graph and for a panel.
+        node_id: The listed task held before launch, or the node added for a text task's
+            outcome. None for a panel or without a graph.
         children: The children, in child order.
         state: How far the dispatch got; `ranking` while a task's judges run.
         message: The notice of what merged, "" until complete.
@@ -230,6 +230,13 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     message: str = ""
     delivered: bool = False
     written_at: float = 0.0
+
+    @property
+    def holders(self) -> tuple[str, ...]:
+        """Return the children holding this node until the parent records their outcome."""
+        if not self.node_id or self.state == "complete":
+            return ()
+        return tuple(c.session_id for c in self.children if c.merge is None)
 
     def child(self, session_id: str) -> ChildRecord:
         """Return the child with this session id.

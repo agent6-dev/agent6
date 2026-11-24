@@ -213,7 +213,7 @@ class GraphCurator:
         Returns:
             The nodes by id.
         """
-        return dict(self._nodes)
+        return storage.with_holds(self._nodes, self._layout)
 
     def get(self, node_id: str) -> models.TaskNode:
         """Return one node.
@@ -230,6 +230,18 @@ class GraphCurator:
         if node_id not in self._nodes:
             raise CuratorError(f"unknown node: {node_id}")
         return self._nodes[node_id]
+
+    def require_free(self, node_id: str) -> None:
+        """Refuse a change to work a child holds.
+
+        Args:
+            node_id: The listed task id.
+
+        Raises:
+            CuratorError: The task is held by one or more children.
+        """
+        if (node := self.nodes().get(node_id)) and node.held_by:
+            raise CuratorError(f"task {node_id} is held by {', '.join(node.held_by)}")
 
     def cursor(self) -> str | None:
         """Read the focused node's id from disk.
@@ -299,6 +311,8 @@ class GraphCurator:
             parent = self._nodes.get(intent.parent_id) if intent.parent_id else None
             if intent.parent_id is not None and parent is None:
                 raise CuratorError(f"add_subtask: unknown parent {intent.parent_id!r}")
+            if parent is not None:
+                self.require_free(parent.id)
             if intent.after is not None and (parent is None or intent.after not in parent.children):
                 raise CuratorError(
                     f"add_subtask: after {intent.after!r} is not a child of"
@@ -378,6 +392,7 @@ class GraphCurator:
         """
         with self._mutating():
             node = self.get(intent.id)
+            self.require_free(intent.id)
             if node.status == "passed" and intent.new_status != "obsolete":
                 raise CuratorError(
                     f"cannot transition passed node {intent.id} to {intent.new_status}"
@@ -432,6 +447,7 @@ class GraphCurator:
         """
         with self._mutating():
             node = self.get(intent.id)
+            self.require_free(intent.id)
             if intent.depends_on not in self._nodes:
                 raise CuratorError(f"unknown dep {intent.depends_on!r}")
             if intent.depends_on in node.depends_on:

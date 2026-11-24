@@ -479,7 +479,7 @@ class MCPServer:
             layout = id.resolve_session(self._agent6_dir, session_id)
         except id.SessionIdError as exc:
             raise tool_errors.ToolError(str(exc)) from exc
-        nodes = storage.load_graph(layout)
+        nodes = storage.with_holds(storage.load_graph(layout), layout)
         return {
             "session_id": session_id,
             "nodes": {nid: node.model_dump(mode="json") for nid, node in nodes.items()},

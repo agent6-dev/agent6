@@ -53,7 +53,7 @@ class _Work:
     def __init__(self) -> None:
         self.steered: list[tuple[str, str]] = []
 
-    def start(self, task: str, spec: str) -> tools_results.StartedResult:
+    def start(self, task: str, spec: str, *, task_id: str = "") -> tools_results.StartedResult:
         raise AssertionError((task, spec))
 
     def roster(self) -> tuple[child_tools.ChildLine, ...]:

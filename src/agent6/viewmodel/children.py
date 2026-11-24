@@ -52,6 +52,7 @@ class ChildView:
         commits: Its measured commits beyond its start, None when unknown.
         verdict_order: A reviewer's order of attempts, best first.
         verdict_summary: The summary from the reviewer's verdict.
+        holds_task: The id of the task this child holds, or None.
     """
 
     session_id: str
@@ -79,6 +80,7 @@ class ChildView:
     verdict_order: tuple[str, ...] = ()
     verdict_summary: str = ""
     merged_into_parent: str = ""
+    holds_task: str | None = None
 
     def with_status(self, word: str, reason: format.StatusReason = "") -> ChildView:
         """Return the row with its session or launch status and the reason in words."""
@@ -293,7 +295,13 @@ def _recorded_child(
     bucket: pathlib.Path,
 ) -> ChildView:
     row = ChildView(
-        child.session_id, child.number, record.identity, record.source, child.task, child.model
+        child.session_id,
+        child.number,
+        record.identity,
+        record.source,
+        child.task,
+        child.model,
+        holds_task=record.node_id if child.session_id in record.holders else None,
     )
     if not layout.is_safe_session_id(child.session_id):
         return dataclasses.replace(row.with_status("failed"), error="invalid child session id")

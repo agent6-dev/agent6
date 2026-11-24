@@ -88,7 +88,7 @@ class _Work:
         self.stopped: list[str] = []
         self.lines: list[child_tools.ChildLine] = []
 
-    def start(self, task: str, spec: str) -> tools_results.StartedResult:
+    def start(self, task: str, spec: str, *, task_id: str = "") -> tools_results.StartedResult:
         self.started.append((task, spec))
         child = f"run-p{len(self.started)}-l1"
         self.lines.append(child_tools.ChildLine(child, 1, "running", task, True))
@@ -202,6 +202,14 @@ def test_a_blank_task_is_refused_before_any_handler(tmp_path: pathlib.Path) -> N
     assert work.started == []
     with pytest.raises(tool_errors.ToolError, match="spec"):
         d.dispatch("parallel", {"task": "t", "spec": "x" * 300})
+
+
+def test_parallel_accepts_task_text_or_a_listed_id_but_not_both(tmp_path: pathlib.Path) -> None:
+    d = _dispatcher(tmp_path, _config(tool=True), work=_Work())
+    for invalid in ({}, {"task": "text", "task_id": "0002"}, {"task_id": " "}):
+        with pytest.raises(tool_errors.ToolError, match="task"):
+            d.dispatch("parallel", invalid)
+    assert schema.ParallelInput.model_validate({"task_id": "0002"}).task_id == "0002"
 
 
 def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathlib.Path) -> None:

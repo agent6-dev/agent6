@@ -55,7 +55,7 @@ def unresolved_children(nodes: dict[str, models.TaskNode], node: models.TaskNode
 
 
 def ready_subtask(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> bool:
-    """Return whether the node is an open subtask with its dependencies done and no open child.
+    """Return whether the node is open, unheld, with its dependencies done and no open child.
 
     Args:
         nodes: The graph by id.
@@ -64,7 +64,7 @@ def ready_subtask(nodes: dict[str, models.TaskNode], node: models.TaskNode) -> b
     Returns:
         True when the node is a unit of work the frontier may surface.
     """
-    if node.parent_id is None or node.status not in OPEN_STATUSES:
+    if node.parent_id is None or node.status not in OPEN_STATUSES or node.held_by:
         return False
     for dep in node.depends_on:
         d = nodes.get(dep)

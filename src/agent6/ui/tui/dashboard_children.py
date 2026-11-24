@@ -36,6 +36,8 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
         One line per cell, in column order.
     """
     result: list[str] = []
+    if child.holds_task:
+        result.append(f"holds task {child.holds_task}")
     if not child.launched and child.status == "failed":
         result.append("not started")
     if child.commit_count_text:

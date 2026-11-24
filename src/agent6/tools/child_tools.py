@@ -32,6 +32,7 @@ class ChildLine:
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
         mergeable: Whether the child stopped or its continued work awaits an explicit merge.
         commits: Its measured commits beyond start, None when unknown.
+        holds_task: The id of the listed task the child holds, or None.
     """
 
     id: str
@@ -41,10 +42,14 @@ class ChildLine:
     running: bool
     mergeable: bool = False
     commits: int | None = None
+    holds_task: str | None = None
 
     def to_wire(self) -> dict[str, object]:
         """Return the fields beside the child's transcript tail."""
-        return dataclasses.asdict(self)
+        fields = dataclasses.asdict(self)
+        if not self.holds_task:
+            del fields["holds_task"]
+        return fields
 
     def line(self) -> str:
         """Return the roster line."""
@@ -53,13 +58,14 @@ class ChildLine:
             if self.commits is None
             else (f" · {self.commits} commit{'' if self.commits == 1 else 's'} beyond start")
         )
-        return f"[{self.id}] attempt {self.attempt} · {self.state}{count}: {self.task}"
+        holding = f" · holds task {self.holds_task}" if self.holds_task else ""
+        return f"[{self.id}] attempt {self.attempt} · {self.state}{holding}{count}: {self.task}"
 
 
 class Children(Protocol):
     """The children of one run, as its loop hands them to the tools."""
 
-    def start(self, task: str, spec: str) -> results.StartedResult:
+    def start(self, task: str, spec: str, *, task_id: str = "") -> results.StartedResult:
         """Start one task's children and return their ids at once."""
         ...
 

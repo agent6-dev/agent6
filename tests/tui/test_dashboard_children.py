@@ -48,7 +48,7 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
             sid = f"{group}-l{number}"
             merge = None
             if number == 4:
-                merge = child_dispatch.MergeRecord(status="failed", detail="no matching provider")
+                merge = child_dispatch.MergeRecord(status="failed", detail="never started")
             else:
                 child = layout.SessionLayout(
                     state, sid, layout.EVIDENCE_BUCKET if panel else "runs"
@@ -122,6 +122,7 @@ def family(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
                 merge_policy="record_only" if panel else "rank",
                 base="a" * 40,
                 spec="",
+                node_id=None if panel else "0002",
                 children=tuple(children),
                 state="complete" if panel else "running",
             ),
@@ -155,12 +156,13 @@ def test_dashboard_child_rows(family: pathlib.Path, size: tuple[int, int]) -> No
                 "2",
                 "124",
                 "~$0.03",
+                "holds task 0002",
             } <= set(live)
             assert any(s.endswith("s") and s[:-1].isdigit() and int(s[:-1]) >= 50 for s in live)
             for sid, words in (
                 ("atlas-p1-l2", ("stopped", "1 commit", "agent6/atlas-p1-l2", "12s")),
                 ("atlas-p1-l3", ("passed · retained", "2 commits", "agent6/atlas-p1-l3")),
-                ("atlas-p1-l4", ("failed", "not started", "no matching provider", "alternate")),
+                ("atlas-p1-l4", ("failed", "not started", "never started", "alternate")),
                 (
                     "atlas-rpanel-l1",
                     ("reviewer 1", "answered · no changes", "B > A", "B checks both flags"),

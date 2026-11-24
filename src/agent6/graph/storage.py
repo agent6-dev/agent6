@@ -21,6 +21,7 @@ from collections.abc import Generator
 
 from agent6 import paths, portable
 from agent6.graph import models
+from agent6.sessions import child_dispatch
 from agent6.sessions import layout as sessions_layout
 
 
@@ -333,6 +334,25 @@ def _prune_stale_node_files(
         with contextlib.suppress(OSError):
             stale.unlink()
             portable.fsync_dir(stale.parent)
+
+
+def with_holds(
+    nodes: dict[str, models.TaskNode], layout: sessions_layout.SessionLayout
+) -> dict[str, models.TaskNode]:
+    """Return the graph with the child ids that hold each dispatched task.
+
+    Args:
+        nodes: The persisted nodes by id.
+        layout: The session whose dispatch records own the holds.
+
+    Returns:
+        The read model. A fork has its own dispatch records.
+    """
+    view = nodes.copy()
+    for record in child_dispatch.read_records(layout.session_dir):
+        if (nid := record.node_id) and nid in view and (holders := record.holders):
+            view[nid] = nodes[nid].model_copy(update={"held_by": holders})
+    return view
 
 
 def load_graph(layout: sessions_layout.SessionLayout) -> dict[str, models.TaskNode]:

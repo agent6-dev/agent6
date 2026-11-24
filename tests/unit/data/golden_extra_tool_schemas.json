@@ -84,12 +84,11 @@
   },
   {
     "name": "parallel",
-    "required": [
-      "task"
-    ],
+    "required": [],
     "properties": {
       "spec": "string",
-      "task": "string"
+      "task": "string",
+      "task_id": "string"
     }
   },
   {

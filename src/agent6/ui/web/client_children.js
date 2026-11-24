@@ -6,7 +6,7 @@ function childFacts(c) {
   const usage = c.launched || c.settled
     ? (c.usd_partial && !c.spend_usd ? '$?' : `${c.usd_partial ? '~' : ''}$${c.spend_usd}`) : '';
   return [
-    [model, c.current_tool, c.turn != null && `turn ${c.turn}`, c.tokens != null && `${c.tokens.toLocaleString()} tokens`,
+    [c.holds_task && `holds task ${c.holds_task}`, model, c.current_tool, c.turn != null && `turn ${c.turn}`, c.tokens != null && `${c.tokens.toLocaleString()} tokens`,
      usage, c.elapsed_s != null && `${c.elapsed_s}s elapsed`],
     [!c.launched && c.status === 'failed' && c.error !== 'never started' && 'never started',
      c.commits != null && `${c.commits} commit${c.commits === 1 ? '' : 's'} beyond start`, c.imported_ref, c.error],

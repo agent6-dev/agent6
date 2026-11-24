@@ -637,7 +637,7 @@ def _print_task_tree(session_dir: pathlib.Path) -> None:
     from agent6.ui.cli import task_tree  # noqa: PLC0415
 
     layout = sessions_layout.layout_of(session_dir)
-    nodes = storage.load_graph(layout)
+    nodes = storage.with_holds(storage.load_graph(layout), layout)
     if len(nodes) <= 1:
         return
     lines = task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})

@@ -165,6 +165,7 @@ def list_tasks(
                 "depends_on": list(node.depends_on),
                 # A standing task never passes and never gates a finish.
                 "standing": node.standing,
+                **({"held_by": list(node.held_by)} if node.held_by else {}),
             }
         )
     return results.ListTasksResult(tasks=tuple(out), count=len(out))

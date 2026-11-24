@@ -327,17 +327,18 @@ class ParallelInput(_ToolInput):
         " or waits for the next to end; `steer_child` sends an instruction to a running"
         " child or continues an unmerged child; `stop_background` stops one. `finish_session`"
         " is refused while a child runs or its task awaits completion at a turn boundary."
+        " Give `task` text or a ready `task_id` from `list_tasks`, not both."
     )
 
-    task: str = pydantic.Field(min_length=1, max_length=20_000)
+    task: str = pydantic.Field(default="", min_length=1, max_length=20_000)
+    task_id: str = pydantic.Field(default="", min_length=1, max_length=26)
     spec: str = pydantic.Field(default="", max_length=200)
 
-    @pydantic.field_validator("task")
-    @classmethod
-    def _nonblank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("task is blank")
-        return value
+    @pydantic.model_validator(mode="after")
+    def _one_task(self) -> ParallelInput:
+        if bool(self.task) == bool(self.task_id) or not (self.task or self.task_id).strip():
+            raise ValueError("give task text or task_id, not both")
+        return self
 
 
 class MergeChildInput(_ToolInput):

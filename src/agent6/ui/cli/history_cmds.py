@@ -576,7 +576,7 @@ def _cmd_history_graph(session_id: str) -> int:
         )
 
     target_id = layout.session_id
-    nodes = storage.load_graph(layout)
+    nodes = storage.with_holds(storage.load_graph(layout), layout)
     if not nodes:
         common.error(f"session {target_id} has no persisted graph nodes")
         return 2

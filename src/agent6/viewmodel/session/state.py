@@ -381,20 +381,24 @@ def task_tree_views(
         seen.add(nid)
         created_by, standing = str(node.get("created_by", "")), bool(node.get("standing", False))
         parent_id = node.get("parent_id")
+        holders = node.get("held_by") or ()
+        note = models.owner_note(
+            created_by=created_by,
+            parent_id=str(parent_id) if isinstance(parent_id, str) else None,
+            standing=standing,
+        )
+        if holders:
+            note = "; ".join(filter(None, (note, f"held by {', '.join(holders)}")))
         out.append(
             state_types.TaskNodeView(
                 id=nid,
                 title=str(node.get("title", "")),
                 status=node.get("status", "pending"),
                 depth=depth,
-                is_cursor=(nid == cursor),
+                is_cursor=(nid == cursor and not holders),
                 created_by=created_by,
                 standing=standing,
-                note=models.owner_note(
-                    created_by=created_by,
-                    parent_id=str(parent_id) if isinstance(parent_id, str) else None,
-                    standing=standing,
-                ),
+                note=note,
                 short_id=format.short_task_id(nid),
             )
         )

@@ -2886,7 +2886,7 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `base` | `str` | The chain tip the children were cut from. |
 | `spec` | `str` | The task's child spec as given; "" for one default child and for a panel. |
 | `parent_node` | `str \| None` | The DAG node the task was dispatched under; None without a graph and for a panel. |
-| `node_id` | `str \| None` | The task's DAG node, added when its work merges or its dispatch fails; None until then, without a graph and for a panel. |
+| `node_id` | `str \| None` | The listed task held before launch, or the node added for a text task's outcome. None for a panel or without a graph. |
 | `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
 | `state` | `Literal['prepared', 'running', 'settling', 'ranking', 'merging', 'complete']` | How far the dispatch got; `ranking` while a task's judges run. |
 | `message` | `str` | The notice of what merged, "" until complete. |
@@ -3062,6 +3062,7 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `verdict_order` | `tuple[str, ...]` | A reviewer's order of attempts, best first. |
 | `verdict_summary` | `str` | The summary from the reviewer's verdict. |
 | `merged_into_parent` | `str` | The parent session whose chain received the merge, "" without a merge. |
+| `holds_task` | `str \| None` | The id of the task this child holds, or None. |
 
 ### DispatchView
 

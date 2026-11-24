@@ -15,6 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
+from agent6.graph import order
 from agent6.harness import child_continue, child_merge, operator_bridge, parallel_merge
 from agent6.sessions import child_dispatch, ipc
 from agent6.sessions import layout as sessions_layout
@@ -131,7 +132,14 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             )
             lines.append(
                 child_tools.ChildLine(
-                    sid, child.number, state, title[:80], running, mergeable, commits
+                    sid,
+                    child.number,
+                    state,
+                    title[:80],
+                    running,
+                    mergeable,
+                    commits,
+                    holds_task=record.node_id if sid in record.holders else None,
                 )
             )
     return tuple(lines)
@@ -243,7 +251,7 @@ class ChildWork:
 
     harness: loop.Harness
 
-    def start(self, task: str, spec: str) -> results.StartedResult:
+    def start(self, task: str, spec: str, *, task_id: str = "") -> results.StartedResult:
         """Start one task's children for the model's `parallel` call, through the steer's path.
 
         The dispatch is recorded with the model as its source, and the call returns at once.
@@ -251,6 +259,7 @@ class ChildWork:
         Args:
             task: The task.
             spec: The child spec: "" for one child, a count or a selector list for attempts.
+            task_id: A listed task in place of text.
 
         Returns:
             The children's session ids and the line that says what started, or the refusal.
@@ -261,8 +270,33 @@ class ChildWork:
         if self.harness.tool_turn is None:
             raise tool_errors.ToolError("not available: no turn in progress")
         conversation, state, turn = self.harness.tool_turn
+        if task_id:
+            curator = self.harness.curator
+            nodes = curator.nodes() if curator else {}
+            node = nodes.get(task_id)
+            if node is None:
+                return results.StartedResult((), f"[parallel] no listed task {task_id}.")
+            if node.held_by:
+                return results.StartedResult(
+                    (), f"[parallel] task {task_id} is held by {', '.join(node.held_by)}."
+                )
+            if not order.is_focusable_subtask(nodes, node) or order.unresolved_children(
+                nodes, node
+            ):
+                return results.StartedResult(
+                    (), f"[parallel] task {task_id} is not a ready ordinary subtask."
+                )
+            task = node.title
+            if node.rationale:
+                task += f"\nRationale: {node.rationale}"
+            if node.acceptance:
+                task += f"\nAcceptance: {node.acceptance}"
         started = self.harness.parallel.dispatch(
-            conversation, turn, state, [directive.Segment(task=task, spec=spec)], source="model"
+            conversation,
+            turn,
+            state,
+            [directive.Segment(task=task, spec=spec, node_id=task_id or None)],
+            source="model",
         )
         return results.StartedResult(started.children, started.message)
 

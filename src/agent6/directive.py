@@ -124,10 +124,12 @@ class Segment:
     Attributes:
         spec: The child spec; "" is one default child.
         task: The task text, internal whitespace and newlines preserved.
+        node_id: The listed task the model handed off, None for a text brief.
     """
 
     spec: str
     task: str
+    node_id: str | None = None
 
 
 def counted_selectors(entries: Sequence[str], *, default: str, limit: int) -> list[tuple[str, int]]:

@@ -66,6 +66,8 @@ class ChildRow:
         meter = [f"turn {c.turn}" if c.turn is not None else "turn ?"]
         if c.current_tool:
             meter.append(c.current_tool)
+        if c.holds_task:
+            meter.append(f"holds task {c.holds_task}")
         if c.commit_count_text:
             meter.append(c.commit_count_text)
         meter += [

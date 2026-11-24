@@ -24,7 +24,7 @@
      )
  
      path: str = pydantic.Field(min_length=1)
-@@ -315,18 +310,15 @@
+@@ -315,19 +310,16 @@
      TOOL_NAME: ClassVar[str] = "parallel"
      # The toolset adds the run's resolved roles, providers and limits.
      TOOL_DESCRIPTION: ClassVar[str] = (
@@ -40,6 +40,7 @@
 -        " or waits for the next to end; `steer_child` sends an instruction to a running"
 -        " child or continues an unmerged child; `stop_background` stops one. `finish_session`"
 -        " is refused while a child runs or its task awaits completion at a turn boundary."
+-        " Give `task` text or a ready `task_id` from `list_tasks`, not both."
 +        "Start one child task on a fresh clone of the committed tree; return its id at once."
 +        " Call once per task. Empty spec: one child. A count >1 or comma-separated selectors:"
 +        " that many attempts, ranked after all end. With git.control=agent6 the first merges"
@@ -49,9 +50,10 @@
 +        " child or waits for the next end. steer_child instructs a running child or continues an"
 +        " unmerged one; stop_background stops one. finish_session refuses while a child runs or"
 +        " its task awaits turn-boundary completion."
++        " Give task text or a ready task_id from list_tasks."
      )
  
-     task: str = pydantic.Field(min_length=1, max_length=20_000)
+     task: str = pydantic.Field(default="", min_length=1, max_length=20_000)
 @@ -639,17 +631,12 @@
  
      TOOL_NAME: ClassVar[str] = "ask_user"

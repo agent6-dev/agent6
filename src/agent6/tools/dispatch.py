@@ -1160,7 +1160,7 @@ class ToolDispatcher:
         request = schema.ParallelInput.model_validate(raw)
         if self.children is None:
             raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
-        return self.children.start(request.task, request.spec)
+        return self.children.start(request.task, request.spec, task_id=request.task_id)
 
     def _merge_child(self, raw: dict[str, Any]) -> results.RawResult:
         """Request a child's merge through the loop.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from agent6 import budget, child_records
+from agent6.graph import curator as graph_curator
 from agent6.harness import child_merge, parallel_dispatch
 from agent6.sessions import child_dispatch, journal
 from agent6.tools import tool_errors
@@ -43,6 +44,11 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
     record, child = found
     if record.state != "complete":
         raise tool_errors.ToolError("the task's other attempts have not ended; nothing continued")
+    if record.node_id and dispatcher.curator:
+        try:
+            dispatcher.curator.require_free(record.node_id)
+        except graph_curator.CuratorError as exc:
+            raise tool_errors.ToolError(str(exc)) from exc
     merge = child.merge
     if merge is None:
         raise tool_errors.ToolError(f"child {session_id} has no recorded result")
@@ -116,6 +122,7 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
         dispatcher.write(record)
         raise tool_errors.ToolError(f"child {session_id} could not continue: {exc}") from exc
     dispatcher.open[record.identity] = parallel_dispatch.OpenDispatch(running, started)
+    dispatcher.emit_graph_snapshot()
     dispatcher.stopping.discard(session_id)
     dispatcher.emit(
         journal.ParallelChildContinued(

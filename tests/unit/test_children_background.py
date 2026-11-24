@@ -24,8 +24,11 @@ from agent6 import budget as agent6_budget
 from agent6 import child_records, directive
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
+from agent6.graph import models
 from agent6.harness import (
     child_work,
+    dag_focus,
+    guards,
     loop,
     loop_conversation,
     loop_state,
@@ -38,7 +41,7 @@ from agent6.harness import (
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, event_log, ipc
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import dispatch
+from agent6.tools import dispatch, tool_errors
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -981,6 +984,125 @@ def test_a_dispatched_task_joins_the_task_graph_when_its_work_merges(
     records = child_dispatch.read_records(layout.session_dir)
     assert [record.node_id for record in records] == [tasks["write a"].id, tasks["write b"].id]
     assert [record.parent_node for record in records] == [root.id, root.id]
+
+
+def _listed_task(
+    tmp_path: pathlib.Path,
+) -> tuple[loop.Harness, _Children, graph_curator.GraphCurator]:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="run")
+    graph = graph_curator.GraphCurator(layout)
+    for parent, title in ((None, "Root"), ("0001", "Listed task")):
+        graph.add_subtask(
+            models.AddSubtaskIntent(
+                parent_id=parent, draft=models.TaskNodeDraft(title=title, created_by="worker")
+            )
+        )
+    children = _Children(repo, "run")
+    wf = _harness(repo, layout.session_dir, _Script(), children, curator=graph, max_turns=2)
+    wf.tool_turn = (
+        loop_conversation.Conversation(),
+        loop_state.LoopState(original_task="t", tool_calls=0, root_task_id="0001"),
+        1,
+    )
+    return wf, children, graph
+
+
+def test_a_listed_task_is_held_before_launch_and_free_after_a_refusal(
+    tmp_path: pathlib.Path,
+) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+    seen: list[tuple[str, ...]] = []
+
+    def refuse(
+        children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.StartedChild]:
+        seen.append(graph.nodes()["0002"].held_by)
+        raise OSError("no clone")
+
+    for invalid in ("0001", "unknown"):
+        assert not work.start("", "", task_id=invalid).children
+    wf.parallel.child_spawner = refuse
+    assert not work.start("", "", task_id="0002").children
+    node = graph.nodes()["0002"]
+    assert (seen, node.status, node.held_by) == ([("run-p1-l1",)], "pending", ())
+    wf.parallel.child_spawner = children
+    assert work.start("", "2", task_id="0002").children == ("run-p2-l1", "run-p2-l2")
+    assert "held by run-p2-l1, run-p2-l2" in work.start("", "", task_id="0002").message
+    with pytest.raises(graph_curator.CuratorError, match="held by"):
+        graph.update_status(models.UpdateStatusIntent(id="0002", new_status="passed"))
+    assert work.roster()[0].holds_task is None
+    assert [(line.id, line.holds_task) for line in work.roster()[1:]] == [
+        ("run-p2-l1", "0002"),
+        ("run-p2-l2", "0002"),
+    ]
+    wf.parallel.close(2)
+    node = graph.nodes()["0002"]
+    assert (node.held_by, node.status) == ((), "failed")
+    assert not work.start("", "", task_id="0002").children
+
+
+def test_resume_releases_a_prelaunch_hold_without_reusing_its_child_id(
+    tmp_path: pathlib.Path,
+) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+
+    class Crash(BaseException):
+        pass
+
+    def crash(*args: Any, **kwargs: Any) -> None:
+        raise Crash
+
+    wf.parallel.save_snapshot = crash
+    with pytest.raises(Crash):
+        work.start("", "", task_id="0002")
+    assert graph.nodes()["0002"].held_by == ("run-p1-l1",)
+    # Resume from the snapshot preceding the prepared record.
+    conversation = loop_conversation.Conversation()
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    wf.tool_turn = conversation, state, 2
+    wf.parallel.child_recoverer = lambda group, children: []
+    parallel_recovery.reconcile(wf.parallel, state, conversation, turn=1)
+    assert not children.tasks
+    node = graph.nodes()["0002"]
+    assert (node.status, node.held_by) == ("pending", ())
+    wf.parallel.save_snapshot = lambda *args, **kwargs: None
+    assert work.start("", "", task_id="0002").children == ("run-p2-l1",)
+    children.stop("run-p2-l1")
+    wf.parallel.settle(conversation, 3)
+    assert graph.nodes()["0002"].status == "failed" and not graph.nodes()["0002"].held_by
+
+
+def test_handoff_resets_the_stuck_count_and_refuses_a_second_owner(tmp_path: pathlib.Path) -> None:
+    wf, children, graph = _listed_task(tmp_path)
+    work = child_work.ChildWork(wf)
+    assert wf.tool_turn
+    conversation, state, turn = wf.tool_turn
+    for title, deps in (("Next", ()), ("Blocked", ("0002",))):
+        graph.add_subtask(
+            models.AddSubtaskIntent(
+                parent_id="0001",
+                draft=models.TaskNodeDraft(title=title, created_by="worker", depends_on=deps),
+            )
+        )
+    assert not work.start("", "", task_id="0004").children
+    state.focus.last_focus_id = "0002"
+    state.focus.turns_on_task = dag_focus.STUCK_ON_TASK_AFTER - 1
+    (child,) = work.start("", "", task_id="0002").children
+    nodes = graph.nodes()
+    assert dag_focus.current_task_id(nodes, "0002") == "0003"
+    assert guards.stuck_on_task(state, "0003", nodes["0003"], nodes) is None
+    assert state.focus.turns_on_task == 0
+    children.stop(child)
+    wf.parallel.settle(conversation, turn)
+    graph.update_status(models.UpdateStatusIntent(id="0002", new_status="pending"))
+    (retry,) = work.start("", "", task_id="0002").children
+    with pytest.raises(tool_errors.ToolError, match=f"held by {retry}"):
+        work.steer(child, "Continue the old attempt")
+    assert graph.nodes()["0002"].held_by == (retry,)
 
 
 def test_a_merge_at_the_runs_last_boundary_is_in_the_snapshot_a_resume_reads(

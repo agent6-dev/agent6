@@ -208,6 +208,10 @@ class ParallelDispatcher:
         for seg, children in zip(segments, tasks, strict=True):
             state.parallel_groups_dispatched += 1
             identity = f"{self.session_id}-p{state.parallel_groups_dispatched}"
+            # A prepared record can survive the snapshot that was to reserve its number.
+            while child_dispatch.record_path(self.session_dir, identity).exists():
+                state.parallel_groups_dispatched += 1
+                identity = f"{self.session_id}-p{state.parallel_groups_dispatched}"
             record = child_dispatch.DispatchRecord(
                 identity=identity,
                 source=source,
@@ -216,7 +220,12 @@ class ParallelDispatcher:
                 turn=turn,
                 base=base,
                 spec=seg.spec,
-                parent_node=parent_id,
+                node_id=seg.node_id,
+                parent_node=(
+                    self.curator.get(seg.node_id).parent_id
+                    if self.curator and seg.node_id
+                    else parent_id
+                ),
                 children=tuple(
                     child_dispatch.ChildRecord(
                         session_id=f"{identity}-l{i}",
@@ -264,6 +273,8 @@ class ParallelDispatcher:
         """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
         assert self.child_spawner is not None
         group = record.identity.removeprefix(f"{self.session_id}-")
+        if record.node_id:
+            self.emit_graph_snapshot()
         record = self.announce(record, children)
         # The children start under what the run has left now, and share it.
         ceiling = self.budget.available() if self.budget is not None else None
@@ -486,9 +497,9 @@ class ParallelDispatcher:
     def close(self, turn: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """End the execution's children: stop each still running, wait, charge what it used.
 
-        Their work stays on their branches and their records stay incomplete. A stopped child
-        never merges; the next execution merges the task of one that had ended by itself. A
-        task's judges are stopped and charged with it.
+        A stopped child never merges. A listed task whose attempts all stopped or failed
+        releases its hold. The next execution settles any outstanding merge. A task's judges
+        are stopped and charged with it.
 
         Args:
             turn: The turn the execution ended on.
@@ -509,11 +520,12 @@ class ParallelDispatcher:
             for judge in task.judging.children if task.judging is not None else ():
                 judge.stop()
         for task in self.open.values():
-            self.settled(
-                task.record,
-                {child.session_id: self.result_of(task.record, child) for child in task.children},
-                turn=turn,
-            )
+            results = [self.result_of(task.record, child) for child in task.children]
+            if task.record.node_id and all(res.stopped_by or not res.ok for res in results):
+                # No work can merge. Release the listed task even if the parent never resumes.
+                self.complete(task.record, results, turn=turn)
+            else:
+                self.settled(task.record, {res.spec.session_id: res for res in results}, turn=turn)
             if (judging := task.judging) is not None:
                 self.settled(
                     judging.record,
@@ -547,7 +559,11 @@ class ParallelDispatcher:
         by_id = {res.spec.session_id: res for res in results}
         turn = record.turn if turn is None else turn
         record = self.settled(record, by_id, turn=turn)
-        clean = record.merge_policy == "record_only" or self.ensure_clean(turn, "merging children")
+        clean = (
+            record.merge_policy == "record_only"
+            or all(res.stopped_by or not res.ok for res in results)
+            or self.ensure_clean(turn, "merging children")
+        )
         record = self.merged(record, by_id, clean=clean)
         merges = [parallel_merge.merge_of(child) for child in record.children]
         if record.node_id is None:
@@ -555,7 +571,6 @@ class ParallelDispatcher:
             record = self.noded(record)
             self.write(record)
         parallel_merge.stamp_segment_node(self.curator, record.node_id, merges, log=self.log)
-        self.emit_graph_snapshot()
         message = parallel_merge.summary_text(record.identity, merges, record.ranking)
         self.record_return(record, message, merges)
         return child_records.DispatchResult(
@@ -603,6 +618,8 @@ class ParallelDispatcher:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
         record = record.advanced("complete", message=message)
         self.write(record)
+        if record.node_id:
+            self.emit_graph_snapshot()
         return record
 
     def settled(
@@ -863,7 +880,7 @@ class ParallelDispatcher:
     def fail_nodes(
         self, record: child_dispatch.DispatchRecord, note: str
     ) -> child_dispatch.DispatchRecord:
-        """Add the task's DAG node and stamp it failed with the note.
+        """Record a text brief's failure. A listed task keeps its status on a refusal.
 
         Args:
             record: The task's record.
@@ -872,6 +889,9 @@ class ParallelDispatcher:
         Returns:
             The record naming the node, for the caller to write.
         """
+        if record.node_id is not None:
+            # No child produced a result. A listed task keeps its status and can be tried again.
+            return record
         record = self.noded(record)
         parallel_merge.stamp_parallel_node(
             self.curator, record.node_id, status="failed", note=note, log=self.log
