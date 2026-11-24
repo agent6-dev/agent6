@@ -67,11 +67,14 @@ def test_under_two_excludes_full_intervals_and_counts_each_waiting_task(
     assert row["started_twice"] == 1 and row["never_started"] == 4
     assert row["all_accepted"] is False
     assert (row["turns"], row["stuck_notices"], row["off_arm_calls"]) == (4, 1, 1)
-    assert (row["input_tokens"], row["output_tokens"]) == (20, 4)
+    assert (row["input_tokens"], row["output_tokens"]) == (12, 4)
+    assert (row["cache_read_tokens"], row["cache_write_tokens"]) == (6, 2)
     assert row["stop_reason"] == "max_turns"
 
 
-@pytest.mark.parametrize("missing", ["ts", "detail", "status", "cache_read_tokens"])
+@pytest.mark.parametrize(
+    "missing", ["ts", "detail", "status", "input_tokens", "cache_write_tokens"]
+)
 def test_missing_fields_leave_only_their_measures_unknown(
     tmp_path: pathlib.Path, missing: str
 ) -> None:
@@ -89,8 +92,11 @@ def test_missing_fields_leave_only_their_measures_unknown(
         assert row["never_started"] == (None if missing == "detail" else 4)
     elif missing == "status":
         assert row["all_accepted"] is None
-    else:
+    elif missing == "input_tokens":
         assert row["input_tokens"] is None
+    else:
+        assert row["cache_write_tokens"] is None and row["input_tokens"] == 12
+        return
     assert row["issues"]
 
 

@@ -124,14 +124,11 @@ def _usage(rows: list[Event], result: Event) -> None:
     if not attempts or calls != ended or calls != {a["model_call_id"] for a in attempts}:
         result["issues"].append("missing parent model call or usage")
         return
-    for key, fields in (
-        ("input_tokens", ("input_tokens", "cache_read_tokens", "cache_write_tokens")),
-        ("output_tokens", ("output_tokens",)),
-    ):
-        counts = [a.get(k) for a in attempts for k in fields]
+    for key in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"):
+        counts = [a.get(key) for a in attempts]
         if all(type(v) is int and v >= 0 for v in counts):
             result[key] = sum(counts)
-        else:
+        elif key in ("input_tokens", "output_tokens"):
             result["issues"].append(f"unreported parent {key}")
 
 
@@ -144,6 +141,8 @@ def measure(path: pathlib.Path, arm: str) -> dict[str, Any]:
             "stuck_notices",
             "input_tokens",
             "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
             "all_accepted",
             "off_arm_calls",
             "starts_by_task",
