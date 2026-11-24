@@ -22,7 +22,7 @@ class _CommandParser(argparse.ArgumentParser):
         raise rpc.RpcError(rpc.INVALID_PARAMS, f"{self.prog}: {message}")
 
 
-def _parse(command: str, text: str) -> argparse.Namespace:
+def _parse(command: str, text: str) -> argparse.Namespace | None:
     parser = _CommandParser(prog=command, add_help=False, allow_abbrev=False)
     if command == "/receipt":
         return parser.parse_args(shlex.split(text)[1:])
@@ -36,12 +36,14 @@ def _parse(command: str, text: str) -> argparse.Namespace:
         parser.add_argument("finding_ids", nargs="*")
         parser.add_argument("--all", action="store_true")
         parser.add_argument("--resume", action="store_true")
-    else:
+    elif command in {"/resolve", "/reopen"}:
         parser.add_argument("finding_id")
         parser.add_argument("--reason", required=True)
         if command == "/resolve":
             parser.add_argument("--as", dest="disposition", required=True)
             parser.add_argument("--duplicate-of")
+    else:
+        return None
     args = parser.parse_args(shlex.split(text)[1:])
     if command == "/fix" and bool(args.finding_ids) == args.all:
         parser.error("name the finding IDs to fix, or --all for every open one without a Fix")
@@ -215,11 +217,11 @@ def handle_command(
         RpcError: The command is invalid or its action was refused.
     """
     command = text.split(maxsplit=1)[0]
-    names = {c["name"] for c in updates.REVIEW_COMMANDS} | {updates.ANSWER_COMMAND["name"]}
-    if command.removeprefix("/") not in names or not command.startswith("/"):
+    if not command.startswith("/"):
         return False
     try:
-        args = _parse(command, text)
+        if (args := _parse(command, text)) is None:
+            return False
         body = (
             _answer_reply(sessions, current, args)
             if command == "/answer"

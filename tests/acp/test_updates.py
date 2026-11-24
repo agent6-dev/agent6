@@ -506,6 +506,18 @@ def test_the_session_is_titled_by_the_tasks_headline() -> None:
     assert titles == [{"sessionUpdate": "session_info_update", "title": "Fix the bug"}]
 
 
+def test_available_commands_match_the_registered_editor_commands() -> None:
+    start = {"type": "session.start", "user_task": "x", "mode": "run"}
+    (commands,) = [u for u in _updates_of(_info(), [start]) if "availableCommands" in u]
+    offered = {
+        f"/{cmd['name']}": (cmd["description"], cmd.get("input", {}).get("hint", ""))
+        for cmd in commands["availableCommands"]
+    }
+    assert offered == {
+        c.name: (c.help, c.usage.partition(" ")[2]) for c in directive.commands_for("acp")
+    }
+
+
 def test_the_pin_directive_is_advertised_when_the_run_starts() -> None:
     """The one directive a later prompt carries into the run; the others are a front-end's."""
     start = {"type": "session.start", "user_task": "x", "mode": "run"}

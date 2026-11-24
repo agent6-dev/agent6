@@ -62,60 +62,21 @@ _TOOL_KINDS = {
 }
 
 
-# Stored-finding commands are front-end actions; /pin and /review reach the worker.
-REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
-    {
-        "name": "receipt",
-        "description": "Inspect recorded testing, review and reversal evidence",
-    },
-    {
-        "name": "findings",
-        "description": "List this run's open review findings",
-        "input": {"hint": "[--all]"},
-    },
-    {
-        "name": "fix",
-        "description": "Resume an idle session to reproduce stored findings; leaves them open",
-        "input": {"hint": "<finding-id>... --resume | --all --resume"},
-    },
-    {
-        "name": "resolve",
-        "description": "Resolve a finding with the operator's disposition and reason",
-        "input": {"hint": "<finding-id> --as <disposition> --reason <text> [--duplicate-of <id>]"},
-    },
-    {
-        "name": "reopen",
-        "description": "Reopen a finding with a reason",
-        "input": {"hint": "<finding-id> --reason <text>"},
-    },
-)
-
-ANSWER_COMMAND: dict[str, Any] = {
-    "name": "answer",
-    "description": "Answer a pending question; the run reads it at its next turn, or at its resume",
-    "input": {"hint": "<question-id> <text>..."},
-}
-
-_PARALLEL_COMMAND = {
-    "name": "parallel",
-    "description": directive.STEER_COMMANDS["/parallel"],
-    "input": {"hint": "[SPEC --] TASK"},
-}
-
-_COMMANDS: tuple[dict[str, Any], ...] = (
-    {
-        "name": "pin",
-        "description": directive.STEER_COMMANDS["/pin"],
-        "input": {"type": "text", "hint": "<text>"},
-    },
-    {
-        "name": "review",
-        "description": directive.STEER_COMMANDS["/review"],
-        "input": {"type": "text", "hint": "[TARGET]"},
-    },
-    ANSWER_COMMAND,
-    *REVIEW_COMMANDS,
-)
+def _available_commands(mode: str) -> list[dict[str, Any]]:
+    """Return the registered commands an editor can offer for this execution."""
+    can_dispatch = child_launch.can_dispatch_work(mode)
+    offered: list[dict[str, Any]] = []
+    for command in directive.commands_for("acp"):
+        if command.kind == "starts children" and not can_dispatch:
+            continue
+        word, _, hint = command.usage.partition(" ")
+        entry: dict[str, Any] = {"name": word.removeprefix("/"), "description": command.help}
+        if hint:
+            entry["input"] = {"hint": hint}
+            if word in {"/pin", "/review"}:
+                entry["input"]["type"] = "text"
+        offered.append(entry)
+    return offered
 
 
 @dataclasses.dataclass
@@ -220,9 +181,7 @@ class RunInfo:
             )
         commands = {
             "sessionUpdate": "available_commands_update",
-            "availableCommands": [*_COMMANDS, _PARALLEL_COMMAND]
-            if child_launch.can_dispatch_work(mode)
-            else list(_COMMANDS),
+            "availableCommands": _available_commands(mode),
         }
         out.append(_update(self.acp_session_id, commands))
         return out

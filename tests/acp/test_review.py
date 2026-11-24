@@ -61,7 +61,7 @@ def test_review_commands_are_advertised() -> None:
         for update in updates.RunInfo("editor").feed(dict(type="session.start", user_task="task"))
         if update["params"]["update"]["sessionUpdate"] == "available_commands_update"
     )
-    assert {c["name"] for c in commands} >= {"findings", "fix", "resolve", "reopen"}
+    assert {c["name"] for c in commands} >= {"receipt", "findings", "fix", "resolve", "reopen"}
     fix = next(c for c in commands if c["name"] == "fix")
     assert "idle" in fix["description"] and "--resume" in fix["input"]["hint"]
 
@@ -324,7 +324,6 @@ def test_receipt_command_never_reaches_the_worker(tmp_path: pathlib.Path) -> Non
     _prompt(connection, current, "/receipt")
     assert not ran
     assert "Testing" in _notices(out) and "How to revert" in _notices(out)
-    assert any(c["name"] == "receipt" for c in updates.REVIEW_COMMANDS)
 
 
 def test_answer_writes_the_pending_questions_file_and_never_reaches_the_model(
