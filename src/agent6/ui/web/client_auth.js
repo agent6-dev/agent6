@@ -36,7 +36,7 @@ async function getBlob(url) { return (await getResponse(url)).blob(); }
 async function postJSON(url, body, {keepalive = false} = {}) {
   const r = await serverFetch(url, { method: 'POST', keepalive, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok || data.ok === false) throw Object.assign(new Error(data.error || r.statusText || 'HTTP ' + r.status), { data });
+  if (!r.ok || data.ok === false) throw Object.assign(new Error(data.error || r.statusText || 'HTTP ' + r.status), { data, status: r.status });
   return data;
 }
 

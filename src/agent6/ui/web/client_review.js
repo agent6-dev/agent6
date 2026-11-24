@@ -106,26 +106,34 @@ function findingRequestId() {
 function findingActions(card, entry, cards) {
   const base = cards._base + '/findings/' + encodeURIComponent(entry.finding.finding_id);
   // A button busy with its request reads disabled (aria-disabled) but keeps the keyboard focus.
-  const send = async (button, verb, body) => {
+  const send = async (button, verb, fields) => {
     if (button.hasAttribute('aria-disabled')) return;
     button.setAttribute('aria-disabled', 'true');
+    const intent = JSON.stringify(fields);
+    // Until the worker answers, a retry sends the same envelope, including its version.
+    if (button.attempt?.intent !== intent) button.attempt = {intent, body: {
+      ...fields, request_id: findingRequestId(), expected_version: cards._review.version,
+    }};
     try {
-      const result = await postJSON(base + '/' + verb, body);
+      const result = await postJSON(base + '/' + verb, button.attempt.body);
+      if (!['queued', 'delivery_unknown'].includes(result.status)) button.attempt = null;
       toast(result.message || result.status);
       const snap = await getJSON(cards._base);
       if (cards.findings.isConnected) paintRun(cards, snap);
-    } catch (e) { toast(e.message, true); }
+    } catch (e) {
+      if (e.data?.error && [404, 409, 422].includes(e.status)) button.attempt = null;
+      toast(e.message, true);
+    }
     finally { button.removeAttribute('aria-disabled'); }
   };
   const row = el('span', 'row wrap'); card.appendChild(row);
   if (entry.finding.status === 'open') {
     const fix = el('button', 'mini'); card.fix = fix;
-    const request_id = findingRequestId();
     fix.disabled = entry.finding.fix_state === 'delivery_unknown';
     fix.onclick = async () => {
-      const dead = cards._reviewDead, version = cards._review.version;
+      const dead = cards._reviewDead;
       if (fix.hasAttribute('aria-disabled') || (dead && !await confirmDialog('Resume this session to reproduce and fix ' + entry.finding.finding_id + '?', 'The finding stays open.', 'Resume to fix'))) return;
-      return send(fix, 'fix', {request_id, expected_version: version, resume: dead});
+      return send(fix, 'fix', {resume: dead});
     };
     row.appendChild(fix);
   }
@@ -143,15 +151,14 @@ function findingActions(card, entry, cards) {
   const reason = el('textarea', 'field'); reason.maxLength = 2000; reason.required = true;
   form.append(fieldLabel(reason, reasonLabel), reason);
   const submit = el('button', 'mini', verb === 'resolve' ? 'Submit resolution' : 'Submit reopen'); submit.type = 'submit'; form.appendChild(submit);
-  const request_id = findingRequestId();
   for (const control of card.querySelectorAll('button')) describedBy(card.querySelector('.finding-title'), control);
   form.onsubmit = event => {
     event.preventDefault();
     if (!reason.value.trim()) { reason.focus(); return; }
-    const body = {request_id, expected_version: cards._review.version};
-    if (verb === 'resolve') body.resolution = {disposition: disposition.value, reason: reason.value,
-      ...(disposition.value === 'duplicate' ? {duplicate_of: duplicate.value.trim()} : {})};
-    else body.reason = reason.value;
+    const body = verb === 'reopen' ? {reason: reason.value} : {resolution: {
+      disposition: disposition.value, reason: reason.value,
+      ...(disposition.value === 'duplicate' ? {duplicate_of: duplicate.value.trim()} : {}),
+    }};
     return send(submit, verb, body);
   };
   // The button shows and hides its form and says which.

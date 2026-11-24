@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import os
+import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from agent6 import paths, review_records
+from agent6.app.review import actions
+from agent6.sessions import event_log, layout, process
 from agent6.ui import keymap
 from tests.web import (
     geometry,
@@ -95,3 +100,49 @@ def test_another_resolution_preserves_the_reason_and_uses_the_new_version(
     card.get_by_role("button", name="Submit resolution").click()
     sync_api.expect(findings).to_contain_text("2 block")
     assert not errors
+
+
+def test_a_worker_refusal_allows_a_fresh_resolution(
+    open_page: OpenPage, evidence: tuple[int, dict[str, Any]], tmp_path: pathlib.Path
+) -> None:
+    """An unacknowledged request keeps its id, but the worker remembers a refused id forever."""
+    from playwright import sync_api
+
+    port, _ = evidence
+    run = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
+    version = actions.read_review(run.session_dir).version
+    process.write_worker_pid(run.session_dir, os.getpid())
+    first = review_records.FindingAction(
+        request_id="0",  # Sorts before the browser's request in the worker queue.
+        expected_version=version,
+        action="resolve",
+        resolution=review_records.FindingResolution(disposition="fixed", reason="Checked."),
+    )
+    assert actions.act(run.session_dir, "delete", first, source="cli", wait_s=0).status == "queued"
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    findings = page.locator(".card-findings")
+    card = findings.locator('[data-finding="rename"]')
+    card.get_by_role("button", name="Resolve", exact=True).click()
+    card.get_by_role("textbox", name="Reason").fill("The renamed file works.")
+    submit = card.get_by_role("button", name="Submit resolution")
+    url = "**/findings/rename/resolve"
+    with page.expect_response(url) as queued:
+        submit.click()
+    assert queued.value.status == 202
+    sync_api.expect(submit).to_be_enabled()
+    actions.drain(event_log.EventSink(run.logs_path), execution_id="worker")
+    process.clear_worker_pid(run.session_dir)
+    sync_api.expect(findings.locator(".finding-counts")).to_contain_text("3 block")
+    with page.expect_response(url) as refused:
+        submit.click()
+    assert refused.value.status == 409
+    assert refused.value.request.post_data_json == queued.value.request.post_data_json
+    sync_api.expect(submit).to_be_enabled()
+    with page.expect_response(url) as retried:
+        submit.click()
+    assert retried.value.request.post_data_json["request_id"] != queued.value.json()["request_id"]
+    assert retried.value.request.post_data_json["expected_version"] == version + 1
+    assert retried.value.status == 200, retried.value.json()
+    sync_api.expect(findings).to_contain_text("2 block")
+    assert not [e for e in errors if not e.startswith("Failed to load resource")]
